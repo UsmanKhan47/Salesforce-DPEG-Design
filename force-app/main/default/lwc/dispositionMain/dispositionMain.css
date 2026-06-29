@@ -1,0 +1,11 @@
+:host { display: block; }
+.listing-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+    align-items: start;
+}
+@media (max-width: 768px) {
+    .listing-row { grid-template-columns: 1fr; }
+}

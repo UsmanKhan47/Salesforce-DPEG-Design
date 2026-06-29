@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Completion_Pct__c</fullName>
+    <description>Checklist completion percent (Tasks Complete / Tasks Total). Drives the dashboard &quot;Completion by Deal&quot; bar chart.</description>
+    <externalId>false</externalId>
+    <formula>IF(Tasks_Total__c &gt; 0, ROUND(100 * Tasks_Complete__c / Tasks_Total__c, 0), 0)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Completion %</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

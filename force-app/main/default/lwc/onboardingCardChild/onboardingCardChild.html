@@ -1,0 +1,16 @@
+<template>
+    <article class={cardClass}>
+        <div class="card-body">
+            <lightning-icon
+                icon-name={iconName}
+                size="small"
+                class="stat-icon"
+                style={iconStyle}>
+            </lightning-icon>
+            <div class="text-col">
+                <span class="slds-text-heading_medium stat-value" title={value}>{value}</span>
+                <span class="slds-text-title_caps stat-label" title={label}>{label}</span>
+            </div>
+        </div>
+    </article>
+</template>

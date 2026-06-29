@@ -1,0 +1,699 @@
+SALESFORCE CRM
+
+Implementation Brief
+
+Acquisitions & Dispositions -- Full Transaction Lifecycle
+
+Prepared by: Danish -- A&D, Dhanani Private Equity Group (DPEG)
+Date: April 2026
+Deal Type Covered: Full Marathon Deal (30-Day Feasibility / 30-Day Close)
+Concurrent Deals: 10­15 active at any time
+
+CONFIDENTIAL -- FOR INTERNAL USE ONLY                                      Dhanani Private Equity Group
+    01 OVERVIEW & OBJECTIVES
+
+Background
+
+The Acquisitions & Dispositions (A&D) department at DPEG manages the full lifecycle of commercial real estate
+transactions -- from contract execution through post-closing handoff to property management. At any given time, the
+A&D team is running 10 to 15 simultaneous deals, each with its own critical dates, vendor coordination, financing
+structure, and legal requirements.
+
+Currently, deal tracking is managed via a manual Excel critical dates sheet, physical Manila folders, calendar
+reminders, and email. This creates significant risk of tasks falling through the cracks -- particularly on parallel
+workstreams that are not dependent on each other but must all be completed within a tight feasibility window.
+
+Primary Objectives for Salesforce
+
+             · Central deal record for every transaction -- single source of truth replacing Excel tracking sheet
+
+             · Auto-generate ALL tasks simultaneously the moment a deal is created (tasks are parallel, not
+             sequential)
+
+             · Task due dates dynamically tied to critical dates (earnest money due, feasibility end, closing date)
+
+             · Conditional task groups: financing tasks activate only when 'Loan Required' = Yes on the deal
+             record
+
+             · Dashboard visibility: overdue tasks and upcoming deadlines across all 10­15 active deals at a
+             glance
+
+             · Vendor tracking: BBG, LPRD, appraisers, insurance brokers, title company -- deliverable status
+             per deal
+
+             · Post-closing checklist automation: utilities, loan setup, document uploads, tenant notifications
+             · Deal stage progression: Contract Executed  Due Diligence  Pre-Closing  Closed  Asset
+             Under Management
+
+Key Design Principle
+
+         s ALL tasks spawn simultaneously on Day 1 of the deal. Nothing waits for anything else. The
+         team operates at maximum velocity from the moment the contract is executed. Task urgency is
+         driven by the feasibility window -- a 5-day feasibility is a sprint; a 60-day deal (30-day feasibility
+         + 30-day close) is the standard marathon baseline.
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief  Page 2
+02 DEAL RECORD -- OBJECT & FIELD REQUIREMENTS
+
+Recommended Custom Object: Transaction__c (or customize Opportunity)
+
+Required Fields
+
+FIELD NAME                                TYPE                        STATUS       NOTES
+
+Deal Name                       Text                                  Required     e.g. 'First Cavalry Plaza --
+                                                                                   Acquisition'
+
+Deal Type                       Picklist                              Required     Acquisition / Disposition
+
+Property Address                Text/Address                          Required     Full property address
+
+Seller Name                     Lookup: Contact/Account Required                   Linked seller record
+
+Buyer Name                      Lookup: Contact/Account Required                   Linked buyer record
+
+Contract Executed Date          Date                                  Required     Day 0 -- triggers all task
+                                                                                   generation
+
+Earnest Money Due Date          Date                                  Required     Typically Contract Date + 3 days
+
+Feasibility End Date            Date                                  Required     Critical -- drives task urgency
+
+Closing Date                    Date                                  Required     Target closing date
+
+Earnest Money Amount            Currency                              Required
+
+Loan Required?                  Checkbox / Picklist                   Required     Controls financing task group
+                                (Yes/No)                                           visibility
+
+Estimated Loan Amount           Currency                              Conditional  Required if Loan Required = Yes
+
+Deal Stage                      Picklist                              Required     See Stage definitions below
+
+Title Company                   Lookup: Account                       Required
+
+Title File Number               Text                                  Required     Assigned by title company on
+                                                                                   opening
+
+Insurance Binding               Date                                  Required
+Deadline
+
+Extensions / Notes              Long Text Area                        Optional     Critical date exceptions, extension
+                                                                                   terms
+
+Feasibility Window (days) Formula / Number                            Auto         Feasibility End Date - Contract
+                                                                                   Executed Date
+
+Days to Closing                 Formula / Number                      Auto         Closing Date - Today()
+
+Deal Stage Picklist Values                                                       DESCRIPTION
+                         STAGE            Contract signed, title company notified, critical dates received
+
+      1 -- Contract Executed
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                                    Page 3
+                   STAGE                                            DESCRIPTION
+2 -- Due Diligence Active    All parallel workstreams running (reports, financing, insurance, etc.)
+3 -- Financing Secured       Term sheet signed, entity formed, bank accounts open
+4 -- Pre-Closing             All reports in, closing statement review, final signatures
+5 -- Closed                  Funds wired, closing authorized, deal complete
+6 -- Asset Under Management  Handed off to property management, post-closing checklist running
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                 Page 4
+03 TASK AUTOMATION -- PARALLEL WORKSTREAMS
+
+  s Implementation Note: When a deal record is created (Stage = Contract Executed), Salesforce
+  should auto-generate ALL tasks below simultaneously via Flow or Process Builder. Due dates
+  are calculated relative to the critical date fields on the deal record. Tasks marked 'FINANCING
+  ONLY' should only generate when Loan Required = Yes.
+
+GROUP A -- Contract Execution & Title Opening
+
+Triggers: Day 0 (Contract Executed Date)
+
+TASK                                      OWNER                         TIMING / TRIGGER       LINKED TO
+                                                                      Day 0
+Receive executed contract from      Danish (A&D;)                     Day 0               Contract Executed
+legal counsel                                                         Day 0­1             Date
+                                                                      Day 0­1
+Send executed contract to title     Danish (A&D;)                                         Contract Executed
+company                                                               Day 0­1             Date
+                                                                      Day 0­1
+Receive title file number from title Danish (A&D;)                                        Title File Number
+company                                                                                   field
+
+Receive critical dates from title   Danish (A&D;)                                         Earnest Money
+company                                                                                   Due, Feasibility
+                                                                                          End, Closing Date
+Log critical dates into Salesforce  Danish (A&D;)                                         fields
+deal record
+                                                                                          All date fields on
+Note any extensions or additional Danish (A&D;)                                           record
+earnest money schedules
+                                                                                          Extensions/Notes
+                                                                                          field
+
+GROUP B -- Earnest Money Wire
+
+Triggers: Earnest Money Due Date (typically Contract Date + 3 days) -- URGENT
+
+TASK                                      OWNER                       TIMING / TRIGGER    LINKED TO
+
+Request wiring instructions from    Danish (A&D;)                     Earnest Money Due - 2 Title Company
+title company
+                                                                      days                contact
+
+Call title company to verbally      Danish (A&D;)                     Earnest Money Due - 1 Verified Wire
+verify wiring instructions
+(anti-fraud step)                                                     day                 Instructions
+
+Send wire request to accounting     Danish (A&D;)                     Earnest Money Due - 1 Accounting Team
+team with soft copy + verified                                        day
+instructions
+
+Confirm wire sent (check or wire) Accounting                          By Earnest Money Due Earnest Money Due
+and mark task complete
+                                                                      Date                Date field
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                          Page 5
+                    TASK                    OWNER                       TIMING / TRIGGER           LINKED TO
+                                  Danish (A&D;)                       Same day as wire        Deal Record
+Update deal record: Earnest
+Money Sent = Yes
+
+GROUP C -- Property Condition Report (BBG)
+
+Triggers: Day 0 -- Begin immediately, complete before Feasibility End Date
+
+TASK                                  OWNER                           TIMING / TRIGGER             LINKED TO
+                                                                                              BBG Vendor
+Email BBG team (Kelly +           Danish (A&D;)                       Day 0­1                 Record
+contacts) to request bid for                                                                  BBG Bid document
+Property Condition Report                                                                     BBG Contract
+                                                                                              Seller Contact
+Review and approve BBG bid        Danish (A&D;)                       Day 2­3                 Due Diligence folder
+                                                                                              Deal Record / Notes
+Sign BBG engagement contract      Danish (A&D;)                       Day 3­4
+and return                                                                                    Document Storage
+
+Coordinate BBG site visit with    Danish (A&D;)                       Day 3­5
+seller / seller's representative
+
+Receive completed Property        Danish (A&D;)                       Before Feasibility End
+Condition Report from BBG
+
+Review PCR -- note required       Danish (A&D;)                       Before Feasibility End
+repairs, capital expenses,
+structural issues
+
+Upload PCR to deal's Google       Danish (A&D;)                       Upon receipt
+Drive / document folder
+
+GROUP D -- LPRD Cash Flow Verification
+
+Triggers: Day 0 -- Begin immediately
+
+TASK                                  OWNER                             TIMING / TRIGGER           LINKED TO
+                                                                      Day 0­2
+Engage LPRD (New York due         Danish (A&D;)                                               LPRD Vendor
+diligence firm) and send due                                                                  Record
+diligence materials
+
+Send LPRD: leases, rent roll,     Danish (A&D;)                       Day 1­2                 Deal Documents
+financial model, seller-reported
+NOI
+
+Request LPRD to build             Danish (A&D;)                       Day 1­2                 LPRD Contact
+independent cash flow model
+
+Receive and review LPRD cash      Danish (A&D;)                       Before Feasibility End Cash Flow Model
+flow model -- verify against
+seller-reported NOI
+
+Upload LPRD report to deal folder Danish (A&D;)                       Upon receipt            Document Storage
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                            Page 6
+GROUP E -- Appraisal
+
+Triggers: Day 0­3                   OWNER                               TIMING / TRIGGER           LINKED TO
+                          TASK                                        Day 0­3
+                                                                                              Appraiser Vendor
+Select and engage appraisal         Danish (A&D;)                     Day 3­5                 Record
+vendor
+                                                                                              Seller Contact
+Schedule appraisal and              Danish (A&D;)
+
+coordinate site access with seller
+
+Send appraisal vendor: financial    Danish (A&D;)                     Day 3­5                 Deal Documents
+models, deal details
+
+Receive completed appraisal         Danish (A&D;)                     Before Feasibility End
+report
+
+Review appraisal -- confirm         Danish (A&D;)                     Upon receipt            Deal Record
+valuation supports deal
+underwriting
+
+Upload appraisal to deal folder     Danish (A&D;)                     Upon receipt            Document Storage
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                            Page 7
+GROUP F -- Loan Package & Financing [FINANCING DEALS ONLY]
+
+         s These tasks only generate when 'Loan Required?' = Yes on the deal record.
+
+TASK                                OWNER                               TIMING / TRIGGER       LINKED TO
+                                                                      Day 0­3             Deal Record
+Build loan package: cash flow       Danish (A&D;)
+model, budget, rent roll, target                                      Day 3­5             Bankers List /
+loan proceeds                                                         Day 5­7             Contacts
+                                                                      Day 7­14            Banker Contacts
+Send loan package to all bankers Danish (A&D;)                        Day 14­16
+on bankers list                                                       Day 16­18           Term Sheet
+                                                                      Day 14­18           documents
+Follow up with bankers -- confirm Danish (A&D;)                       Day 18­22           CFO Contact
+receipt of package                                                    Day 18­22
+                                                                      Day 20­24           Executed Term
+Receive and compare term sheets Danish (A&D;)                         Day 20­24           Sheet
+from bankers                                                          Post-Close Day 1    Entity Formation
+
+Review term sheets with CFO --      Danish (A&D;) + CFO                                   Bank Contact
+select preferred lender
+                                                                                          Bank Record
+Sign selected term sheet            Danish (A&D;)                                         Bank Wiring
+                                                                                          Instructions
+Work with legal to form entity      Legal Dept.                                           Company
+(LLC/LP) for the deal                                                                     Agreement doc
+                                    Danish (A&D;) +                                       Loan Record -- see
+Open bank account at lender's       Accounting                                            Group I
+bank for the deal entity            Danish (A&D;)
+                                    Accounting
+Select bank account type
+                                    Legal / Danish
+Obtain wiring instructions from
+lender bank                         Accounting
+
+Send executed company
+agreement to lender bank
+
+Set up auto loan payment
+(CRITICAL -- frequently missed)
+
+GROUP G -- Insurance
+
+Triggers: Day 0 -- Bind by Insurance Binding Deadline field
+
+TASK                                OWNER                             TIMING / TRIGGER         LINKED TO
+                                                                                          Insurance Broker
+Send insurance quote request to     Danish (A&D;)                     Day 0­2             Contact
+DPEG insurance broker                                                                     Insurance Binding
+                                                                                          Deadline field
+Provide broker: estimated loan      Danish (A&D;)                     Day 0­2
+amount, required coverage                                                                 Broker Contacts
+amounts, binding deadline
+
+Request quotes from multiple        Danish (A&D;)                     Day 0­5
+
+brokers (ideal -- compare pricing)
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                          Page 8
+                    TASK                     OWNER                      TIMING / TRIGGER         LINKED TO
+                                   Danish (A&D;)
+Review and compare insurance                                          Before Binding        Binding Deadline
+quotes                             Danish (A&D;)                      Deadline              field
+                                                                                            Document Storage
+Select and bind insurance policy                                      By Insurance Binding
+                                                                      Deadline
+Upload insurance documents to      Danish (A&D;)
+deal folder                                                           At binding
+
+GROUP H -- Entity Formation & Investor Relations (FES)
+
+Triggers: Day 3­7
+
+TASK                                    OWNER                         TIMING / TRIGGER           LINKED TO
+                                                                                            FES Contact
+Internal discussion with FES       Danish + FES                       Day 3­7
+(investor relations) -- determine                                                           Entity Name /
+entity structure                                                                            Structure
+                                                                                            Deal Record
+Legal department forms the deal    Legal Dept.                        Day 7­14
+entity                                                                                      Investor List
+
+FES prepares investor launch       FES                                Day 7­20              Bank Account
+
+deck / pitch presentation
+
+FES launches deal to investors -- FES                                 Day 15­25
+calls for capital commitments
+
+Confirm equity capital is fully    FES / Accounting                   Before Closing Date
+committed and deposited
+
+GROUP H2 -- Tenant Interviews & Estoppels
+
+Triggers: Day 5­10
+
+TASK                                    OWNER                           TIMING / TRIGGER         LINKED TO
+                                                                      Day 5­7
+Request tenant contact info from   Danish (A&D;)                      Day 7­15              Sales Broker
+sales broker                                                          Day 5­10              Contact
+
+Schedule and conduct tenant        Danish (A&D;)                                            Tenant Contact
+interviews                                                                                  records
+
+Request estoppels from seller      Danish (A&D;)                                            Seller Contact
+(verifies lease accuracy)
+
+Review received estoppels --       Danish (A&D;)                      Before Feasibility End Lease Documents
+confirm lease terms match seller
+representations
+
+Collect SNDAs from tenants via     Prop. Mgmt.                        Post-Close            See Group I
+property management (if seller
+requires)
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                          Page 9
+GROUP I -- Pre-Closing & Closing
+
+Triggers: Day 40­55 (within 20 days of Closing Date)
+
+TASK                                  OWNER                             TIMING / TRIGGER          LINKED TO
+                                                                      Closing Date - 7 days  Title Company
+Request closing statement from        Danish (A&D;)                   Closing Date - 5 days  Closing Statement
+title company                                                                                doc
+                                                                      Closing Date - 4 days  Seller/Buyer
+Review closing statement: taxes,      Danish (A&D;)                   Closing Date - 3 days  Contact
+rental income, expenses, tax                                          Closing Date - 2 days  Legal Dept.
+certificate                                                           Closing Date - 2 days  CEO / Signatory
+                                                                      Closing Date - 1 day   Title Company
+Resolve any discrepancies with        Danish (A&D;) + Legal           Closing Date           Title Company
+seller/buyer                                                                                 Closing Date field
+                                                                      Closing Date
+Send closing statement to legal       Danish (A&D;)                   Closing Date           Title Company
+department for final approval                                                                Deal Stage field
+
+Obtain authorized signatures          Danish (A&D;)
+from CEO / authorized signatory
+
+Request wiring instructions from      Danish (A&D;)
+title company for closing funds
+
+Verify wiring instructions by         Danish (A&D;)
+phone (anti-fraud)
+
+Send closing wire to title            Accounting
+company -- provide soft copy +
+verified instructions to
+accounting
+
+Authorize closing with title          Danish (A&D;)
+company
+
+Confirm closing complete --           Danish (A&D;)
+update deal stage to Closed
+
+GROUP J -- Post-Closing Checklist [Auto-generate when Stage = Closed]
+
+         s These tasks auto-generate the moment the deal stage flips to 'Closed'. Many of these have
+         historically been missed -- Salesforce should treat them as required tasks with escalation
+         alerts if not completed within 3 business days.
+
+                    TASK                        OWNER                   TIMING / TRIGGER          LINKED TO
+                                      Danish (A&D;)                   Closing Day
+Send closing announcement via                                                                Office Group / All
+WhatsApp / email to entire office     Danish (A&D;)                   Closing Day            Staff
+
+Announce next steps to the team       Property Mgmt.                  Day 1­3 post-close     Utility Vendors
+in announcement                       Accounting                      Day 1­3 post-close     Loan Record
+
+Transfer all utilities to new entity
+
+Set up auto loan payment at
+lender bank (CRITICAL)
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                             Page 10
+TASK                                     OWNER                          TIMING / TRIGGER        LINKED TO
+                                                                      Day 1­3 post-close   Document Storage
+Upload survey to deal document      Danish (A&D;)                     Day 1­3 post-close   Document Storage
+folder                                                                Day 1­3 post-close   Document Storage
+                                                                      Day 1­3 post-close   Document Storage
+Upload all insurance documents      Danish (A&D;)                     Day 1­3 post-close   Document Storage
+(bound policy)                                                        Day 1­5 post-close
+                                                                      Day 1­5 post-close   AppFolio
+Upload rent roll                    Danish (A&D;)                     Day 1­3 post-close   Investor List
+
+Upload all closing documents and Danish (A&D;)                        Day 3­7 post-close   Tax Litigation
+closing statement                                                     Day 3­7 post-close   Vendor
+                                                                      Day 3­5 post-close   Document Storage
+Upload tenant contact information Danish (A&D;)                       Day 3­7 post-close   Global Cash Flow
+                                                                                           model
+File original executed documents Danish (A&D;)                        Days 30, 60, 90      Tenant Contacts
+(physical)
+                                                                      Day 7­30 post-close  Property Mgmt.
+Set up property in AppFolio / ERP Property Mgmt.                                           Contact
+(property management software)                                        Day 3­5 post-close   Tenant Contacts
+
+FES blasts investor                 FES                                                    Deal Stage = AUM
+
+announcement -- property
+
+successfully acquired
+
+Notify tax litigation company       Danish (A&D;)
+(CBRE / Daniel Ambrose / other)
+
+Upload warranties (if applicable) Danish (A&D;)
+
+Upload all loan information to      Accounting
+Global Cash Flow tracker
+
+Send welcome letter / email to all  Danish (A&D;) / Prop.
+tenants (new ownership              Mgmt.
+notification)
+
+Verify property management          Danish (A&D;)
+progress -- check in at 30, 60, 90
+days post-close
+
+Collect SNDAs from tenants via      Property Mgmt.
+property management (if
+required)
+
+Archive deal record -- move         Danish (A&D;)
+Manila folder equivalent to closed
+files
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                         Page 11
+04 VENDOR & CONTACT RECORDS
+
+The following vendors should be set up as Account records in Salesforce with linked Contact records. Each deal
+should have a lookup relationship to the relevant vendor accounts so vendor deliverables can be tracked per deal.
+
+VENDOR / CONTACT          ROLE IN TRANSACTION                                            FREQUENCY
+
+Title Company             Open title, assign file number, send critical dates, provide   Per deal -- varies
+
+                          wiring instructions, issue closing statement, process closing
+
+BBG                       Property Condition Report (PCR) -- structure, roof,            Per deal -- Kelly +
+                          systems, capital expense estimates                             team
+
+LPRD (New York)           Independent cash flow model / NOI verification from lease      Per deal
+                          and financial documents
+
+Appraisal Vendor          Third-party property appraisal                                 Per deal -- varies
+
+Insurance Broker (DPEG) Obtain insurance quotes from multiple carriers, bind policy      Per deal + renewal
+                                         by deadline
+
+Bankers List              Multiple lenders -- receive loan packages, issue term          Per deal -- see
+                          sheets                                                         Bankers List sheet
+
+FES (Investor Relations)  Entity formation coordination, investor launch deck, capital   Internal team
+                          calls, investor announcements
+
+Legal Department          Contract review, entity formation, company agreement,          Internal / External
+                          closing document approval                                      counsel
+
+Accounting Team           Wire execution, loan payment setup, document uploads,          Internal
+                          global cash flow updates
+
+Property Management       AppFolio/ERP setup, utility transfers, tenant SNDAs,           Internal / Third-party
+                          ongoing operations
+
+Tax Litigation Company    Property tax protest and litigation (CBRE, Daniel Ambrose,     Per deal -- varies
+                          others)
+
+Sales Broker              Tenant contact info, deal sourcing                             Per deal
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                          Page 12
+    05 AUTOMATION & FLOW REQUIREMENTS
+
+Flow 1 -- Deal Creation Task Blast
+
+             · Trigger: Deal record created with Stage = Contract Executed
+             · Action: Create ALL tasks in Groups A through H2 simultaneously
+             · Due dates calculated dynamically from: Contract Executed Date, Earnest Money Due Date,
+             Feasibility End Date, Closing Date
+             · Condition: Tasks in Group F (Financing) only create if Loan Required = Yes
+             · Assign tasks to correct owner based on task type (Danish, Accounting, Legal, FES, Property
+             Mgmt.)
+
+Flow 2 -- Post-Closing Task Blast
+
+             · Trigger: Deal Stage changes to Closed
+             · Action: Create ALL tasks in Group J simultaneously
+             · Escalation: If any Group J task is not completed within 3 business days, send alert to Danish
+             · Auto loan payment task (Group J) should have a separate high-priority flag -- this is frequently
+             missed
+
+Flow 3 -- Critical Date Alerts
+
+             · Earnest Money Due Date - 2 days: Alert Danish to request wiring instructions
+             · Feasibility End Date - 5 days: Alert if any open due diligence tasks remain (PCR, LPRD, appraisal,
+             estoppels)
+             · Feasibility End Date - 2 days: Red flag alert -- any open feasibility tasks
+             · Closing Date - 7 days: Alert to request closing statement
+             · Closing Date - 2 days: Alert to verify wiring instructions
+             · Insurance Binding Deadline - 3 days: Alert if insurance not yet bound
+
+Flow 4 -- Loan Required Conditional Logic
+
+             · On deal record creation: if Loan Required = No, suppress all Group F financing tasks
+             · If Loan Required is changed to Yes after record creation: trigger Group F task creation retroactively
+             · Consider a prompt at deal creation: 'Is this deal being financed?'  Yes / No dropdown
+
+Dashboard Requirements
+
+             · Active Deals Board: All deals in stages 1­5, with feasibility end date and days remaining
+             · Overdue Tasks View: All tasks past due date across all active deals, sorted by urgency
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                                  Page 13
+· Upcoming Tasks (Next 7 Days): Tasks due in the next 7 days across all deals
+· Deal Pipeline: Count and stage of all active deals
+· Post-Close Checklist Status: For recently closed deals, % of Group J tasks completed
+· Vendor Deliverable Tracker: Open vendor tasks (PCR, LPRD, appraisal, insurance) by deal
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                       Page 14
+    06 WIRE FRAUD PREVENTION PROTOCOL
+
+         ss CRITICAL COMPLIANCE REQUIREMENT: Every wire transfer -- both earnest money and
+         closing funds -- must follow this verification protocol without exception. Salesforce task
+         checklists should enforce this as a required step before marking any wire task complete.
+
+    Step 1: Request wiring instructions from title company or lender via email
+    Step 2: CALL the title company / lender directly (do not use the phone number from the email -- look it up
+    independently) to verbally verify every digit of the wiring instructions
+    Step 3: Confirm: Bank name, ABA routing number, account number, account name, reference number
+    Step 4: Provide verified wiring instructions to accounting team -- both the soft copy from email AND a written
+    confirmation of the verbal verification
+    Step 5: Accounting sends wire only after receiving BOTH the document and verbal confirmation note
+    Step 6: Log verification in Salesforce task notes: 'Verified by phone with [name] at [phone number] on [date/time]'
+
+Salesforce Implementation Note: The wire verification task should have a mandatory checkbox field 'Verbal
+Verification Completed' that must be checked before the task can be closed. Consider adding a required text field for
+the name of the person who confirmed and the phone number used.
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief  Page 15
+07 STANDARD 60-DAY DEAL TIMELINE
+
+The following is the standard marathon deal timeline (30-day feasibility + 30-day close). All task due dates in
+Salesforce should be calculated relative to the dates below.
+
+TIMEFRAM  MILESTONE                                                   KEY ACTIONS
+      E
+
+Day 0     Contract Executed     Contract received from legal, signed, sent to title company. ALL tasks
+                                auto-generated in Salesforce.
+
+Day 0­1   Title Opens File      File number assigned. Critical dates received and logged.
+
+Day 0­3   Earnest Money Due     Wire verified and sent to title company.
+
+Day 0­5   Vendor Engagement     BBG engaged, LPRD engaged, appraiser engaged, insurance broker
+                                contacted, loan package started (if financed).
+
+Day 5­15  Due Diligence Active  Site visits, tenant interviews, estoppels requested, banker outreach
+                                ongoing.
+
+Day 14­20 Term Sheets Received Review with CFO, select lender, sign term sheet.
+
+Day 18­25 Entity & Banking      Entity formed, bank accounts opened, company agreement executed.
+
+Day 20­28 Reports Coming In     PCR, LPRD model, appraisal received and reviewed.
+
+Day 25­30 Feasibility End       All reports reviewed, deal go/no-go decision. Insurance bound.
+
+Day 30­50 Pre-Closing Prep      Investor capital called, equity committed, survey reviewed.
+
+Day 53    Closing Statement     Request closing statement from title. Review taxes, rent, expenses.
+
+Day 55    Legal Approval        Closing documents approved by legal. Signatures obtained.
+
+Day 58    Wire Verification     Verify closing wire instructions by phone.
+
+Day 60    CLOSING               Closing wire sent. Closing authorized. Deal stage  Closed.
+                                Post-closing tasks auto-generate.
+
+Day 60+   Post-Closing          Utilities transferred, loan payment set up, documents uploaded, tenants
+                                notified, tax litigator engaged.
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                             Page 16
+    08 IMPLEMENTATION NOTES & KNOWN PAIN POINTS
+
+Critical Items That Have Historically Been Missed
+
+         s The following are known failure points in the current manual process. Salesforce must treat
+         these as high-priority flagged tasks with escalation alerts.
+
+Auto Loan Payment Setup
+Accounting team frequently forgets to set up auto loan payment post-closing. This task must be flagged as CRITICAL
+in Salesforce with a mandatory completion checkbox and 3-day escalation alert.
+
+Loan Package Distribution
+Danish has experienced sending a signed term sheet without first distributing the loan package to all bankers.
+Salesforce should enforce that 'Loan Package Sent' task is completed before 'Term Sheet Signed' task can be
+closed.
+
+Wire Fraud Verification
+Every wire must include verbal verification. Salesforce should not allow wire tasks to close without a mandatory
+'Verbal Verification Completed' checkbox.
+
+Insurance Binding Deadline
+Insurance binding deadlines are easily missed. Salesforce should send alerts 7 days and 3 days before binding
+deadline.
+
+Post-Closing Document Uploads
+Survey, insurance docs, rent roll, closing statement, and loan info uploads often happen inconsistently. Salesforce
+Group J tasks enforce this systematically.
+
+Banker Outreach Coverage
+Danish acknowledges he often only contacts 1­2 bankers rather than the full bankers list. Salesforce should prompt
+distribution to full list with a 'Bankers Contacted' counter field.
+
+30/60/90 Day Post-Close Check-In
+Property management progress verification after closing is often deprioritized. Salesforce should auto-create
+recurring check-in tasks at 30, 60, and 90 days post-close.
+
+Email Integration Note
+
+All third-party coordination (BBG, LPRD, title company, bankers, appraisers, insurance brokers) is managed via email
+and will continue to be managed via email. Danish is not looking to replace email. However, Salesforce should allow
+him to manually log email milestones against vendor tasks (e.g., mark 'BBG bid received' as complete, log date
+received). If Salesforce can integrate with Gmail/Outlook to auto-log emails from known vendor contacts against a
+deal record, this would be an ideal enhancement to explore in Phase 2.
+
+Future Phase -- Cash Deal Workflow Variant
+
+Once the full marathon deal workflow is built and operational, a simplified cash deal variant should be configured. In a
+cash deal: Group F (financing tasks) are suppressed. The bank account for the deal entity is still required (for equity
+capital deposits). The property condition report, appraisal, insurance, LPRD, and all due diligence tasks remain.
+Feasibility windows for cash deals may be shorter (5­15 days), so task urgency logic should adapt accordingly.
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief  Page 17
+Document prepared for Salesforce Implementation Team | DPEG Acquisitions & Dispositions | April 2026
+Questions on this brief should be directed to Danish -- A&D Department, Dhanani Private Equity Group.
+
+DPEG | Acquisitions & Dispositions | Salesforce Implementation Brief                                   Page 18
+

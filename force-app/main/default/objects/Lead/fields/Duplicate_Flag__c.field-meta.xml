@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Duplicate_Flag__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>TRUE when the same property address was already submitted within the broker-protection window. Pairs with Broker_First__c / DPEG_First__c / BP_Expiry__c for duplicate detection.</description>
+    <label>Duplicate Flag</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>

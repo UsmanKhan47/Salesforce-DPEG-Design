@@ -1,0 +1,21 @@
+:host {
+    display: block;
+}
+
+.cards-wrap {
+    padding: 0.25rem 1rem 1rem;
+    box-sizing: border-box;
+}
+
+.cards-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+}
+
+@media (max-width: 1024px) {
+    .cards-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

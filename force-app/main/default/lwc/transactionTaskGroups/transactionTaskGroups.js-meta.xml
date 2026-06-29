@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Transaction Task Groups</masterLabel>
+    <description>This deal's tasks grouped by Task Group (stage) with per-stage progress and complete toggles.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <property name="phase" type="String" label="Phase"
+                description="Pin this instance to one deal phase (hides the phase buttons). Blank = show all phases with buttons."
+                datasource="open,dd,close,post"/>
+            <objects>
+                <object>Transaction__c</object>
+            </objects>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

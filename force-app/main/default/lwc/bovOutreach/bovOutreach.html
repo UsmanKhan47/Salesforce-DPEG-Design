@@ -1,0 +1,29 @@
+<template>
+    <template if:true={summary}>
+        <div class="card">
+            <div class="card-header">
+                <div class="header-left">
+                    <div class="card-title">BOV Outreach — {summary.assetName}</div>
+                </div>
+                <template if:true={summary.matrixGenerated}>
+                    <span class="matrix-badge"><span class="badge-dot"></span>Matrix Generated ✓</span>
+                </template>
+            </div>
+            <div class="cards-grid">
+                <template for:each={stats} for:item="stat">
+                    <c-onboarding-card-child
+                        key={stat.key}
+                        value={stat.value}
+                        label={stat.label}
+                        icon-name={stat.iconName}
+                        icon-color={stat.iconColor}>
+                    </c-onboarding-card-child>
+                </template>
+            </div>
+            <div class="nda-row">
+                <span class="nda-label">NDA Status</span>
+                <span class={ndaPillClass}><span class="nda-dot"></span>{ndaStatus}</span>
+            </div>
+        </div>
+    </template>
+</template>

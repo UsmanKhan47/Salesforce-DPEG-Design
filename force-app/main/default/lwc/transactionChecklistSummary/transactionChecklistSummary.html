@@ -1,0 +1,13 @@
+<template>
+    <div class="cs">
+        <div class="cs-row">
+            <div class="cs-title">
+                <lightning-icon icon-name="standard:task" size="small" class="cs-icon"></lightning-icon>
+                <span>Closing Checklist</span>
+            </div>
+            <span class="cs-pct">{overall.pctLabel}</span>
+        </div>
+        <div class="cs-track"><div class="cs-bar" style={overall.barStyle}></div></div>
+        <div class="cs-foot"><span class="cs-count">{overall.label}</span></div>
+    </div>
+</template>

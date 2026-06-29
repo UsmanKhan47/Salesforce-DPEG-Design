@@ -1,0 +1,19 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Underwriting__c",
+        "referenceId": "uw_0"
+      },
+      "Opportunity__c": "@opp_0",
+      "My_Price__c": 31500000,
+      "My_Cap_Rate__c": 6.5,
+      "Market_Cap_Rate__c": 6.5,
+      "Underwritten_NOI__c": 2050000,
+      "Target_Return__c": 17.4,
+      "Hold_Period__c": 5,
+      "Equity_Required__c": 9450000,
+      "Projected_Loan__c": 22050000
+    }
+  ]
+}

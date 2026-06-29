@@ -1,0 +1,22 @@
+<template>
+    <div class="card">
+        <div class="section-header">Disposition Offers</div>
+        <template if:true={hasOffers}>
+            <div class="offer-list">
+                <template for:each={offers} for:item="o">
+                    <div key={o.id} class="offer-row">
+                        <div class="offer-buyer">{o.buyerName}</div>
+                        <div class="offer-amount">{o.amountLabel}</div>
+                        <div class="offer-date">{o.dateLabel}</div>
+                    </div>
+                </template>
+            </div>
+        </template>
+        <template if:false={hasOffers}>
+            <div class="empty-msg">No offers yet. 6-week clock active.</div>
+        </template>
+        <div class="log-btn-wrap">
+            <button class="log-btn" onclick={handleLogOffer}>+ Log Offer</button>
+        </div>
+    </div>
+</template>

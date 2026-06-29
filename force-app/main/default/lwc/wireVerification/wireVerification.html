@@ -1,0 +1,71 @@
+<template>
+    <div class="card">
+        <div class="card-header">
+            <div class="header-left">
+                <div class="card-title">Wire — 6-Field Fraud Prevention</div>
+            </div>
+            <span class="progress-badge" style={progressBadgeStyle}><span class="badge-dot"></span>{fieldsComplete}/6 fields complete</span>
+        </div>
+
+        <div class="field-list">
+            <div class="field-card">
+                <div class="field-num">1</div>
+                <div class="field-body">
+                    <div class="field-api">Verifier Name</div>
+                    <lightning-input type="text" label="" placeholder="Enter verifier name..."
+                        value={verifierName} onchange={onNameChange}></lightning-input>
+                </div>
+            </div>
+
+            <div class="field-card">
+                <div class="field-num">2</div>
+                <div class="field-body">
+                    <div class="field-api">Verifier Phone</div>
+                    <lightning-input type="tel" label="" placeholder="Enter verifier phone..."
+                        value={verifierPhone} onchange={onPhoneChange}></lightning-input>
+                </div>
+            </div>
+
+            <div class="field-card field-card--readonly">
+                <div class="field-num">3</div>
+                <div class="field-body">
+                    <div class="field-api">Verified Date/Time</div>
+                    <div class="readonly-val">{verifiedDateTimeLabel}</div>
+                </div>
+            </div>
+
+            <div class="field-card">
+                <div class="field-num">4</div>
+                <div class="field-body">
+                    <div class="field-api">Wire Instructions Source</div>
+                    <lightning-input type="text" label="" placeholder="Enter wire instructions source..."
+                        value={wireSource} onchange={onSourceChange}></lightning-input>
+                </div>
+            </div>
+
+            <div class="field-card">
+                <div class="field-num">5</div>
+                <div class="field-body">
+                    <div class="field-api">Confirmed Wire Amount</div>
+                    <lightning-input type="number" label="" placeholder="Enter amount..."
+                        value={confirmedAmount} formatter="currency" onchange={onAmountChange}></lightning-input>
+                </div>
+            </div>
+
+            <div class="field-card">
+                <div class="field-num">6</div>
+                <div class="field-body">
+                    <div class="field-api">Verbal Verification Completed</div>
+                    <lightning-input type="checkbox" label="Verbal verification completed"
+                        checked={verbalChecked} onchange={onVerbalChange}></lightning-input>
+                </div>
+            </div>
+        </div>
+
+        <div class="save-bar">
+            <button class="save-btn" onclick={handleSave} disabled={isSaving}>
+                {saveLabel}
+            </button>
+        </div>
+    </div>
+</template>

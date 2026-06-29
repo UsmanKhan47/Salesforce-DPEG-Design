@@ -1,0 +1,20 @@
+<template>
+    <div class="card">
+        <div class="hd">
+            <lightning-icon icon-name="standard:task" size="small" class="hd__icon"></lightning-icon>
+            <span class="hd__title">Task Progress</span>
+        </div>
+        <div class="cards-grid">
+            <template for:each={cards} for:item="c">
+                <c-onboarding-card-child
+                    key={c.key}
+                    value={c.value}
+                    label={c.label}
+                    icon-name={c.iconName}
+                    icon-color={c.iconColor}
+                    done={c.done}>
+                </c-onboarding-card-child>
+            </template>
+        </div>
+    </div>
+</template>

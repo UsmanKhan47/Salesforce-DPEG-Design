@@ -1,0 +1,30 @@
+<template>
+    <lightning-card icon-name="standard:asset_object">
+        <span slot="title">Sell Meter ({count})</span>
+
+        <c-list-datatable
+            key-field="id"
+            data={rows}
+            columns={columns}
+            column-widths-mode="auto"
+            hide-checkbox-column
+            onrowaction={handleRowAction}>
+        </c-list-datatable>
+
+        <div slot="footer" class="sm-foot">
+            <span class="sm-range">{rangeLabel}</span>
+            <template if:true={showPager}>
+                <div class="sm-pager">
+                    <button class="sm-pgbtn" onclick={prevPage} disabled={isFirstPage} title="Previous">
+                        <lightning-icon icon-name="utility:chevronleft" size="xx-small"></lightning-icon>
+                    </button>
+                    <span class="sm-pglabel">{pageLabel}</span>
+                    <button class="sm-pgbtn" onclick={nextPage} disabled={isLastPage} title="Next">
+                        <lightning-icon icon-name="utility:chevronright" size="xx-small"></lightning-icon>
+                    </button>
+                </div>
+            </template>
+            <a href={listUrl} class="sm-viewall" onclick={viewAll}>View All</a>
+        </div>
+    </lightning-card>
+</template>

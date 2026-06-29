@@ -1,0 +1,13 @@
+<template>
+    <lightning-card icon-name="standard:checklist">
+        <span slot="title">Task Progress by Category</span>
+        <div class="grid">
+            <template for:each={tiles} for:item="t">
+                <div key={t.key} class="tile" style={t.tileStyle}>
+                    <div class="count">{t.count}</div>
+                    <div class="name">{t.name}</div>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

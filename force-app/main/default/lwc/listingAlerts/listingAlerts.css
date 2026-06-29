@@ -1,0 +1,40 @@
+:host {
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    color: #181818;
+}
+.card {
+    background: #fff;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.section-header {
+    padding: 16px 18px 13px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #181818;
+    letter-spacing: -0.01em;
+    border-bottom: 1px solid #eef1f4;
+}
+.alert-list { padding: 4px 0; }
+.alert-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px;
+    border-bottom: 1px solid #f3f5f7;
+    font-size: 12px;
+}
+.alert-row:last-child { border-bottom: none; }
+.alert-trigger {
+    font-weight: 700;
+    font-size: 11px;
+    min-width: 56px;
+    flex-shrink: 0;
+}
+.trigger--muted  { color: #8a96a3; }
+.trigger--yellow { color: #b45309; }
+.trigger--red    { color: #b91c1c; }
+.trigger--green  { color: #1b7a4b; }
+.alert-desc { color: #46586a; }

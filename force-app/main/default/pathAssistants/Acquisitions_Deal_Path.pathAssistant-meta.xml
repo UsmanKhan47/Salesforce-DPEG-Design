@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Opportunity</entityName>
+    <fieldName>StageName</fieldName>
+    <masterLabel>Acquisitions Deal Path</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Asking_Price__c</fieldNames>
+        <info>Closing wire confirmed. Property Asset (AUM) created (Conv 4). Offering goes Active. Broker fully credited.</info>
+        <picklistValueName>Closed Won</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Rejection_Reason__c</fieldNames>
+        <info>Deal dropped at any stage. Rejection Reason is required. Broker protection is preserved for future re-engagement.</info>
+        <picklistValueName>Dead/Pass</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>OneDrive_Folder_URL__c</fieldNames>
+        <info>Both parties signed the LOI. PSA negotiation begins with Rahila. Give Faiz (IR) a soft heads-up that a deal is coming.</info>
+        <picklistValueName>LOI Signed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Deal_Status__c</fieldNames>
+        <info>Submit the LOI for Nick&amp;#39;s approval (the only formal approval in Phase 1). After it is sent: Working, then Countered (3-day window), or Killed.</info>
+        <picklistValueName>LOI Submitted</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Property__c</fieldNames>
+        <fieldNames>Broker_First_Seen__c</fieldNames>
+        <info>Post-Conversion 1. Confirm the broker Account/Contact and Property are populated, then advance to Under Review to begin the NDA.</info>
+        <picklistValueName>New</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Is_Portfolio_Parent__c</fieldNames>
+        <fieldNames>Bundle_LOI__c</fieldNames>
+        <info>One seller selling multiple properties, bundled for a single LOI. Each child deal tracks its own broker protection independently.</info>
+        <picklistValueName>Portfolio Deal</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Contract_Executed_Date__c</fieldNames>
+        <fieldNames>Loan_Required__c</fieldNames>
+        <info>DAY 0. Setting Contract Executed Date fires the 75-task fan-out, activates the Transaction (Conv 2), and creates the IR Offering (Conv 3).</info>
+        <picklistValueName>Under Contract</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>My_Price__c</fieldNames>
+        <fieldNames>My_Cap_Rate__c</fieldNames>
+        <info>NDA process: Pending then Sent then Signed. Validation blocks advancing to Underwriting until NDA Signed = TRUE.</info>
+        <picklistValueName>Under Review</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Market_Cap_Rate__c</fieldNames>
+        <info>Capture the 10 key underwriting fields. CoStar + Placer market data auto-populates the Property. Principals review (2 of 3 agree).</info>
+        <picklistValueName>Underwriting</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

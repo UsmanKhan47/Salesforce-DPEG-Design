@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Type__c</fullName>
+    <label>Type</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Closing Date</fullName>
+                <default>false</default>
+                <label>Closing Date</label>
+            </value>
+            <value>
+                <fullName>Feasibility End</fullName>
+                <default>false</default>
+                <label>Feasibility End</label>
+            </value>
+            <value>
+                <fullName>Insurance Binding</fullName>
+                <default>false</default>
+                <label>Insurance Binding</label>
+            </value>
+            <value>
+                <fullName>Loan Commitment</fullName>
+                <default>false</default>
+                <label>Loan Commitment</label>
+            </value>
+            <value>
+                <fullName>Earnest Money Due</fullName>
+                <default>false</default>
+                <label>Earnest Money Due</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

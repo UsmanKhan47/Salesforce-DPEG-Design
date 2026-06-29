@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Lead</entityName>
+    <fieldName>Status</fieldName>
+    <masterLabel>Lead Funnel Path</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>First_Seen_Date__c</fieldNames>
+        <info>Conversion 1 fired: Opportunity + broker Account/Contact + Property created. The Lead lifecycle ends here.</info>
+        <picklistValueName>Converted</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Disqualification_Reason__c</fieldNames>
+        <info>Not pursued. Disqualification Reason is required. Broker protection is preserved should the deal re-enter the market.</info>
+        <picklistValueName>Disqualified</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Property_Address__c</fieldNames>
+        <fieldNames>Broker_First__c</fieldNames>
+        <info>Deal received via Email-to-Lead, Broker Portal, or Manual Entry. First Seen Date is stamped immutably — broker protection starts now.</info>
+        <picklistValueName>New</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Asset_Type__c</fieldNames>
+        <info>All intake fields complete. Ready to convert — the broker will be formally engaged via the NDA on the Opportunity.</info>
+        <picklistValueName>Qualified</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>My_Price__c</fieldNames>
+        <fieldNames>My_Cap_Rate__c</fieldNames>
+        <fieldNames>Deal_Notes__c</fieldNames>
+        <info>Evaluate the address against the market. Enter My Price, My Cap Rate, and Deal Notes. Check CoStar/Placer before committing to an NDA.</info>
+        <picklistValueName>Under Review</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

@@ -1,0 +1,44 @@
+:host {
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    color: #181818;
+}
+.card {
+    background: #fff;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.card-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid #eef1f4;
+}
+.card-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #181818;
+}
+.firm-name {
+    margin-top: 5px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #16284b;
+    line-height: 1.2;
+}
+.broker-name {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #5a6b7b;
+}
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    padding: 4px 16px 14px;
+}
+.empty {
+    padding: 14px 20px 16px;
+    font-size: 12.5px;
+    color: #aeb8c4;
+    font-style: italic;
+}

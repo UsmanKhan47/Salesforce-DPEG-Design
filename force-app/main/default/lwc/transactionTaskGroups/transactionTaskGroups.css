@@ -1,0 +1,506 @@
+:host {
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    color: #080707;
+}
+.tg {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ---- Phase cards (premium, with progress) ---- */
+.tg-phases {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+.tg-phase {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px 15px;
+    background: #fff;
+    border: 1px solid #e5e9ef;
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+    overflow: hidden;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.tg-phase::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: transparent;
+    transition: background 0.16s ease;
+}
+.tg-phase:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(16, 24, 40, 0.1);
+    border-color: #c9def5;
+}
+.tg-phase:active:not(:disabled) {
+    transform: translateY(0);
+}
+.tg-phase--active {
+    border-color: #0176d3;
+    box-shadow: 0 8px 20px rgba(1, 118, 211, 0.16);
+}
+.tg-phase--active::before {
+    background: linear-gradient(90deg, #0176d3, #1b96ff);
+}
+.tg-phase--done::before {
+    background: #2e7d32;
+}
+.tg-phase--empty,
+.tg-phase:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+.tg-phase-top {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+.tg-phase-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: #eef4fb;
+}
+.tg-phase-ico lightning-icon {
+    --slds-c-icon-color-foreground-default: #0176d3;
+    --sds-c-icon-color-foreground-default: #0176d3;
+}
+.tg-phase--done .tg-phase-ico {
+    background: #e7f4ea;
+}
+.tg-phase--done .tg-phase-ico lightning-icon {
+    --slds-c-icon-color-foreground-default: #2e7d32;
+    --sds-c-icon-color-foreground-default: #2e7d32;
+}
+.tg-phase-name {
+    flex: 1 1 auto;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #16325c;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tg-phase-check {
+    flex: 0 0 auto;
+    --slds-c-icon-color-foreground-default: #2e7d32;
+    --sds-c-icon-color-foreground-default: #2e7d32;
+}
+.tg-phase-stats {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+.tg-phase-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: #706e6b;
+    font-variant-numeric: tabular-nums;
+}
+.tg-phase-pct {
+    font-size: 16px;
+    font-weight: 700;
+    color: #16325c;
+    font-variant-numeric: tabular-nums;
+}
+.tg-phase--done .tg-phase-pct {
+    color: #2e7d32;
+}
+.tg-phase-bar {
+    height: 5px;
+    background: #eef1f4;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.tg-phase-fill {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.4s ease;
+}
+
+/* ---- Layout: group tabs above, full-width tasks below ---- */
+.tg-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ---- Group tabs (horizontal, with conic progress ring) ---- */
+.tg-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.tg-gchip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px 9px 10px;
+    background: #fff;
+    border: 1px solid #e5e9ef;
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+    transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+.tg-gchip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(16, 24, 40, 0.1);
+    border-color: #c9def5;
+}
+.tg-gchip--active {
+    border-color: #0176d3;
+    background: #f5faff;
+    box-shadow: 0 5px 14px rgba(1, 118, 211, 0.15);
+}
+.tg-ring {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: conic-gradient(var(--ring, #1565c0) var(--pct, 0%), #e5e9ef 0);
+}
+.tg-ring-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ring, #1565c0);
+}
+.tg-gchip-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.tg-gchip-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #16325c;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+.tg-gchip-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.tg-gchip-count {
+    color: #706e6b;
+    font-size: 11.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Detail pane (full width) ---- */
+.tg-detail {
+    background: #fff;
+    border: 1px solid #e5e9ef;
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+    padding: 16px 18px 10px;
+}
+.tg-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.tg-detail-titles {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.tg-detail-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #080707;
+}
+.tg-detail-sub {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+}
+.tg-detail-count {
+    color: #080707;
+    font-size: 12.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.tg-detail-track {
+    margin: 12px 0 4px;
+    height: 6px;
+    background: #ecebea;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* ---- Shared badge ---- */
+.tg-badge {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+}
+.tg-badge--lg {
+    min-width: 34px;
+    height: 30px;
+    font-size: 14px;
+    border-radius: 6px;
+}
+.tg-cond {
+    background: #fdf0e1;
+    color: #bf5d0a;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+.tg-owner {
+    color: #514f4d;
+    background: #f3f2f2;
+    border-radius: 10px;
+    padding: 2px 9px;
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+.tg-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+.tg-done-icon {
+    flex: 0 0 auto;
+    --slds-c-icon-color-foreground-default: #2e7d32;
+    --sds-c-icon-color-foreground-default: #2e7d32;
+}
+
+/* ---- Task rows ---- */
+.tg-tasks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.tg-task {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 9px 4px;
+    border-bottom: 1px solid #f3f2f2;
+    border-radius: 4px;
+}
+.tg-task:last-child {
+    border-bottom: none;
+}
+.tg-task:hover {
+    background: #f8f8f8;
+}
+.tg-check {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #2e7d32;
+}
+/* Completed task: locked checkbox (can't be unchecked) but kept crisp, not faded. */
+.tg-check:disabled {
+    cursor: default;
+    opacity: 1;
+}
+.tg-subject {
+    flex: 1 1 auto;
+    font-size: 13px;
+    color: #080707;
+}
+.tg-task--done .tg-subject {
+    color: #969492;
+    text-decoration: line-through;
+}
+.tg-task--critical {
+    background: #fef6f6;
+}
+.tg-task--critical:hover {
+    background: #fcecec;
+}
+.tg-flag {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: #feded8;
+    color: #ba0517;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 2px 7px 2px 5px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+.tg-flag-icon {
+    --slds-c-icon-color-foreground-default: #ba0517;
+    --sds-c-icon-color-foreground-default: #ba0517;
+}
+.tg-flag--ok {
+    background: #ebf7ee;
+    color: #2e7d32;
+}
+.tg-ok-icon {
+    --slds-c-icon-color-foreground-default: #2e7d32;
+    --sds-c-icon-color-foreground-default: #2e7d32;
+}
+.tg-meta {
+    flex: 0 0 auto;
+    color: #706e6b;
+    font-size: 12px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Row "View" — Salesforce-style link (no chrome; underlines on hover) */
+.tg-view-btn {
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    padding: 0;
+    color: #0070d2;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+}
+.tg-view-btn:hover {
+    text-decoration: underline;
+}
+
+/* View-details dialog body */
+.tg-view-row {
+    display: flex;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0efef;
+}
+.tg-view-label {
+    flex: 0 0 110px;
+    color: #706e6b;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.tg-view-val {
+    color: #080707;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+.tg-view-notes-label {
+    margin: 12px 0 4px;
+    color: #706e6b;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.tg-view-notes {
+    color: #080707;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* ---- Wire verification modal ---- */
+.tg-modal-sub {
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: #b0adab;
+    font-weight: 400;
+}
+.tg-verify-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #fef6f6;
+    border: 1px solid #f5c4c0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    color: #5c1d1d;
+    line-height: 1.4;
+}
+.tg-modal-error {
+    margin-top: 12px;
+    color: #ba0517;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.tg-modal-note {
+    margin-top: 14px;
+    color: #706e6b;
+    font-size: 12px;
+    font-style: italic;
+}
+.tg-confirm-subject {
+    margin-top: 8px;
+    font-weight: 700;
+    color: #080707;
+}
+
+/* ---- Empty ---- */
+.tg-empty {
+    padding: 28px;
+    text-align: center;
+    color: #969492;
+    font-size: 13px;
+    background: #fff;
+    border: 1px solid #dddbda;
+    border-radius: 6px;
+}
+
+/* ---- Responsive: 2-up phase buttons on narrow regions ---- */
+@media (max-width: 640px) {
+    .tg-phases {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Development_Feasibility_Review__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Development Feasibility Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Feasibility review delivered. Hand the opinion back to the deal team to proceed.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Engineer assesses flood plain, drainage and developability. Get at least 3 like-for-like proposals to compare, reach out to the MUD engineer (they often do the civil work too), and build the comparison sheet before taking cost up.</info>
+        <picklistValueName>Feasibility analysis</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Junior forwards the land deal from Under Review. Confirm the drainage-study timeline with the civil engineer, flag any deal-killer cost impact to Junior, and note whether a zoning change triggers the PD process.</info>
+        <picklistValueName>Requested</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Summarize the feasibility findings and cost impact, and present a Go / Conditional / No-Go recommendation to Acquisitions.</info>
+        <picklistValueName>Share Opinion</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Collect and compare vendor proposals on a like-for-like basis before forming an opinion.</info>
+        <picklistValueName>Vendor proposals</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

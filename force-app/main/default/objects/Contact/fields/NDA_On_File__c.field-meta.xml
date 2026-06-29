@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>NDA_On_File__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>TRUE if DPEG holds a signed NDA with this broker from any previous deal. Speeds the NDA process on future deals.</description>
+    <label>NDA On File</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>

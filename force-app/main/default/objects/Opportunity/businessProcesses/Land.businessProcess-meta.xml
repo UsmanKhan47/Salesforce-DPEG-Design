@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BusinessProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Land</fullName>
+    <isActive>true</isActive>
+    <values>
+        <fullName>Closed Won</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Dead%2FPass</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Development Review</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Initiate LOI</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>LOI Signed</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>LOI Submitted</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>LOI Under Approval</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>New</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Under Contract</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Under Review</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Underwriting</fullName>
+        <default>false</default>
+    </values>
+</BusinessProcess>

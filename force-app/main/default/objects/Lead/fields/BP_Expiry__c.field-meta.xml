@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>BP_Expiry__c</fullName>
+    <description>Broker protection expiry = First Seen Date (fallback CreatedDate) + 90 days. Mirrors LeadFunnelController.BP_WINDOW_DAYS.</description>
+    <formula>DATEVALUE(IF(ISBLANK(First_Seen_Date__c), CreatedDate, First_Seen_Date__c)) + 90</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>BP Expiry</label>
+    <required>false</required>
+    <type>Date</type>
+</CustomField>

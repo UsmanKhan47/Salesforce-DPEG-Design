@@ -1,0 +1,59 @@
+<template>
+    <lightning-card icon-name="standard:task2">
+        <span slot="title">Onboarding Checklist <span class="sub">— {headerLabel}</span></span>
+
+        <div class="chips">
+            <template for:each={chips} for:item="c">
+                <div key={c.key} data-name={c.name} style={c.chipStyle} onclick={selectFilter}>{c.label}</div>
+            </template>
+        </div>
+
+        <div class="tiles">
+            <template for:each={tiles} for:item="g">
+                <div key={g.key} data-index={g.index} style={g.tileStyle} onclick={selectGroup}>
+                    <span style={g.badgeStyle}>{g.letter}</span>
+                    <div class="tmeta">
+                        <span class="tname">{g.name}</span>
+                        <span class="tcount">{g.count}</span>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <div class="selhead">
+            <div class="selbadge">{selected.letter}</div>
+            <div class="selname">{selected.name}</div>
+            <span class="selcount">{selected.count}</span>
+        </div>
+        <div class="seltrack"><div style={selected.fillStyle}></div></div>
+
+        <div class="items">
+            <template for:each={items} for:item="it">
+                <div key={it.id} class="row">
+                    <div style={it.controlStyle}>{it.controlMark}</div>
+                    <div class="rmain">
+                        <span style={it.nameStyle}>{it.name}</span>
+                        <div class="rmeta">
+                            <span style={it.sysStyle}>{it.system}</span>
+                            <span style={it.badgeStyle}><span style={it.dotStyle}></span>{it.statusLabel}</span>
+                            <template if:true={it.isBlocked}>
+                                <span class="reason">{it.reason}</span>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="rowner">
+                        <div style={it.avatarStyle}>{it.initials}</div>
+                        <span class="oname">{it.ownerShort} ·</span>
+                        <span style={it.dueStyle}>{it.due}</span>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={it.notesColor} stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" title="Notes">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </template>
+            <template if:true={isEmpty}>
+                <div class="empty">No tasks match this filter in this category.</div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

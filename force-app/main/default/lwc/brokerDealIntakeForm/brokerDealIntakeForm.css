@@ -1,0 +1,122 @@
+:host {
+    --dpeg-header: #0a2610;
+    --dpeg-subheader: #1565c0;
+    --dpeg-teal: #2bafac;
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    background: #f3f5f8;
+    padding: 24px 0;
+}
+.portal {
+    max-width: 880px;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.portal__header {
+    background: var(--dpeg-header);
+    color: #ffffff;
+    padding: 24px 28px;
+}
+.portal__title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+}
+.portal__subtitle {
+    margin: 6px 0 0;
+    font-size: 14px;
+    opacity: 0.85;
+}
+.form,
+.confirmation {
+    padding: 24px 28px;
+}
+.section__title {
+    color: #111111;
+    font-size: 15px;
+    font-weight: 700;
+    margin: 18px 0 8px;
+    border-bottom: 1px solid #e3e6eb;
+    padding-bottom: 6px;
+}
+.section__title:first-child {
+    margin-top: 0;
+}
+lightning-input,
+lightning-combobox,
+lightning-textarea {
+    display: block;
+    margin-bottom: 12px;
+}
+.form__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+}
+/* Recolor the SLDS brand buttons to the DPEG header green via styling hooks. */
+lightning-button {
+    --slds-c-button-brand-color-background: #0a2610;
+    --slds-c-button-brand-color-border: #0a2610;
+    --slds-c-button-brand-color-background-hover: #0e361a;
+    --slds-c-button-brand-color-border-hover: #0e361a;
+    --slds-c-button-brand-color-background-active: #07200d;
+    --slds-c-button-brand-color-border-active: #07200d;
+    --slds-c-button-brand-color-background-focus: #0a2610;
+    --slds-c-button-brand-color-border-focus: #0a2610;
+}
+.form__error {
+    background: #fde7e9;
+    color: #b91c1c;
+    border: 1px solid #f5c2c7;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    font-size: 13px;
+}
+.confirmation {
+    text-align: center;
+    padding: 48px 28px;
+}
+.confirmation h2 {
+    color: var(--dpeg-header);
+    margin: 16px 0 8px;
+}
+.confirmation p {
+    color: #4a4f57;
+    margin: 0 0 24px;
+}
+.hp {
+    display: none;
+}
+.portal__logo-chip {
+    display: inline-block;
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 7px 12px;
+    margin-bottom: 14px;
+    line-height: 0;
+}
+.portal__logo {
+    display: block;
+    height: 30px;
+    width: auto;
+}
+.form__columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 28px;
+    align-items: start;
+}
+.form__col .section__title {
+    margin-top: 0;
+}
+@media (max-width: 700px) {
+    .form__columns {
+        grid-template-columns: 1fr;
+    }
+}

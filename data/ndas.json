@@ -1,0 +1,17 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "NDA__c",
+        "referenceId": "nda_0"
+      },
+      "Opportunity__c": "@opp_0",
+      "Status__c": "Signed",
+      "NDA_Signed__c": true,
+      "Method__c": "DocuSign",
+      "Date_Sent__c": "2026-04-10",
+      "Date_Signed__c": "2026-04-11",
+      "NDA_Expiry_Date__c": "2026-10-11"
+    }
+  ]
+}

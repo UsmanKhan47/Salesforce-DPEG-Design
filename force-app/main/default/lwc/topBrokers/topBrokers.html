@@ -1,0 +1,25 @@
+<template>
+    <lightning-card icon-name="standard:reward">
+        <span slot="title">Top Brokers</span>
+        <span slot="actions" class="tb-sub">By active listings</span>
+
+        <template if:true={hasData}>
+            <ul class="rows">
+                <template for:each={brokers} for:item="b">
+                    <li key={b.id} class={b.rowClass}>
+                        <span class={b.rankClass}>{b.rank}</span>
+                        <div class="info">
+                            <span class="name" title={b.name}>{b.name}</span>
+                            <span class="firm" title={b.firm}>{b.firm}</span>
+                        </div>
+                        <span class="count">{b.count}</span>
+                    </li>
+                </template>
+            </ul>
+        </template>
+
+        <template if:false={hasData}>
+            <div class="empty">No broker listings yet.</div>
+        </template>
+    </lightning-card>
+</template>

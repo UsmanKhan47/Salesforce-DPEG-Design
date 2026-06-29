@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Contract_Review__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Contract Review Path</masterLabel>
+    <pathAssistantSteps>
+        <info>PSA fully executed. Record the execution date and hand off to the transaction team to open escrow.</info>
+        <picklistValueName>Contract Execution (Signed)</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Redline and negotiate terms with the counterparty. Lock down price, contingencies, and timelines before execution.</info>
+        <picklistValueName>Contract Negotiation</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Draft the purchase &amp;amp; sale agreement from the agreed LOI terms. Circulate the first draft and capture the PSA date.</info>
+        <picklistValueName>PSA Drafting</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Days_in_System__c</fullName>
+    <description>Age in days since First Seen Date (fallback CreatedDate), formatted &quot;Nd&quot;. Mirrors LeadFunnelController.</description>
+    <externalId>false</externalId>
+    <formula>TEXT(TODAY() - DATEVALUE(IF(ISBLANK(First_Seen_Date__c), CreatedDate, First_Seen_Date__c))) &amp; &quot;d&quot;</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Days in System</label>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

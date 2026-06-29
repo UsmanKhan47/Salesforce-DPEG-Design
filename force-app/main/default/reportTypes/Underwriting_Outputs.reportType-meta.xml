@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReportType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <baseObject>Underwriting__c</baseObject>
+    <category>other</category>
+    <deployed>true</deployed>
+    <description>Underwriting outputs for acquisitions metrics</description>
+    <label>Underwriting Outputs</label>
+    <sections>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Opportunity__c</field>
+            <table>Underwriting__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>My_Cap_Rate__c</field>
+            <table>Underwriting__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Year_5_IRR__c</field>
+            <table>Underwriting__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>My_Price__c</field>
+            <table>Underwriting__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Target_Return__c</field>
+            <table>Underwriting__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Verdict__c</field>
+            <table>Underwriting__c</table>
+        </columns>
+        <masterLabel>Underwriting Outputs</masterLabel>
+    </sections>
+</ReportType>

@@ -1,0 +1,85 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Lead",
+        "referenceId": "lead_0"
+      },
+      "LastName": "Broker",
+      "Company": "Marcus & Millichap",
+      "Status": "New",
+      "Asset_Type__c": "Retail",
+      "Property_Address__c": "Hwy 290 Retail Center",
+      "Guidance_Price__c": 8200000,
+      "Broker_First__c": "Marcus & Millichap",
+      "Parse_Confidence__c": "HIGH",
+      "LeadSource": "Email-to-Lead",
+      "First_Seen_Date__c": "2026-06-04T09:00:00.000Z"
+    },
+    {
+      "attributes": {
+        "type": "Lead",
+        "referenceId": "lead_1"
+      },
+      "LastName": "Broker",
+      "Company": "CBRE",
+      "Status": "Under Review",
+      "Asset_Type__c": "Retail",
+      "Property_Address__c": "Katy Mills Outparcel",
+      "Guidance_Price__c": 3400000,
+      "Broker_First__c": "CBRE · D.Willis",
+      "Parse_Confidence__c": "MEDIUM",
+      "LeadSource": "Broker Portal",
+      "First_Seen_Date__c": "2026-06-02T09:00:00.000Z"
+    },
+    {
+      "attributes": {
+        "type": "Lead",
+        "referenceId": "lead_2"
+      },
+      "LastName": "Broker",
+      "Company": "JLL",
+      "Status": "Qualified",
+      "Asset_Type__c": "Industrial",
+      "Property_Address__c": "Westwood Industrial Pk",
+      "Guidance_Price__c": 19600000,
+      "Broker_First__c": "JLL",
+      "Parse_Confidence__c": "HIGH",
+      "LeadSource": "Email-to-Lead",
+      "First_Seen_Date__c": "2026-05-30T09:00:00.000Z"
+    },
+    {
+      "attributes": {
+        "type": "Lead",
+        "referenceId": "lead_3"
+      },
+      "LastName": "Broker",
+      "Company": "Newmark",
+      "Status": "Converted",
+      "Asset_Type__c": "Office",
+      "Property_Address__c": "Greenway Plaza Office",
+      "Guidance_Price__c": 42000000,
+      "Broker_First__c": "Newmark",
+      "Parse_Confidence__c": "HIGH",
+      "LeadSource": "Manual Entry",
+      "First_Seen_Date__c": "2026-05-25T09:00:00.000Z"
+    },
+    {
+      "attributes": {
+        "type": "Lead",
+        "referenceId": "lead_4"
+      },
+      "LastName": "Broker",
+      "Company": "Unknown",
+      "Status": "Disqualified",
+      "Asset_Type__c": "Retail",
+      "Property_Address__c": "Galveston Beach Retail",
+      "Guidance_Price__c": 7100000,
+      "Broker_First__c": "Unknown",
+      "Parse_Confidence__c": "LOW",
+      "LeadSource": "Email-to-Lead",
+      "First_Seen_Date__c": "2026-05-15T09:00:00.000Z",
+      "Disqualification_Reason__c": "Bad Anchor Tenant"
+    }
+  ]
+}

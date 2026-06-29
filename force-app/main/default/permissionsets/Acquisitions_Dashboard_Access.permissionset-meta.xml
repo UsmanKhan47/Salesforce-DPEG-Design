@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Field access for derived fields used by the Acquisitions dashboard tables (e.g. Underwriting Verdict formula).</description>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Days_Out__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Underwriting__c.Verdict__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Acquisitions Dashboard Access</label>
+</PermissionSet>

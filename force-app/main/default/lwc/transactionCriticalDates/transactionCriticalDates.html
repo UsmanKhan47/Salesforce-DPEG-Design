@@ -1,0 +1,35 @@
+<template>
+    <div class="cd">
+        <div class="cd-head">
+            <lightning-icon icon-name="standard:event" size="small" class="cd-head-ico"></lightning-icon>
+            <span class="cd-title">Critical Dates</span>
+        </div>
+        <template if:true={hasData}>
+            <ul class="cd-list">
+                <template for:each={rows} for:item="r">
+                    <li key={r.key} class="cd-row">
+                        <span class="cd-ico" style={r.iconStyle}>
+                            <lightning-icon icon-name={r.icon} size="x-small"></lightning-icon>
+                        </span>
+                        <span class="cd-main">
+                            <span class="cd-label">{r.label}</span>
+                            <span class="cd-sub">
+                                <template if:true={r.amountLabel}>
+                                    <span class="cd-amount">{r.amountLabel}</span>
+                                </template>
+                                <span class={r.statusClass}>{r.statusLabel}</span>
+                                <template if:true={r.atRisk}>
+                                    <span class="cd-risk">At Risk</span>
+                                </template>
+                            </span>
+                        </span>
+                        <span class="cd-right-date">{r.dateLabel}</span>
+                    </li>
+                </template>
+            </ul>
+        </template>
+        <template if:false={hasData}>
+            <div class="cd-empty">No critical dates on this deal yet.</div>
+        </template>
+    </div>
+</template>

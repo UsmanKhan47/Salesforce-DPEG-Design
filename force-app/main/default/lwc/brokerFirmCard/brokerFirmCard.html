@@ -1,0 +1,37 @@
+<template>
+    <template if:true={data}>
+        <div class="card">
+            <div class="card-header">
+                <div class="header-text">
+                    <div class="firm-name">{heading}</div>
+                </div>
+            </div>
+
+            <template if:true={hasFirm}>
+                <div class="cards-grid">
+                    <c-onboarding-card-child
+                        value={dealsSubmitted}
+                        label="Deals Submitted"
+                        icon-name="utility:upload"
+                        icon-color="#5DA8EC">
+                    </c-onboarding-card-child>
+                    <c-onboarding-card-child
+                        value={dealsWon}
+                        label="Deals Won"
+                        icon-name="utility:check"
+                        icon-color="#3BA755">
+                    </c-onboarding-card-child>
+                    <c-onboarding-card-child
+                        value={dealsLost}
+                        label="Deals Lost"
+                        icon-name="utility:close"
+                        icon-color="#E0463F">
+                    </c-onboarding-card-child>
+                </div>
+            </template>
+            <template if:false={hasFirm}>
+                <div class="empty">No broker firm linked to this deal.</div>
+            </template>
+        </div>
+    </template>
+</template>

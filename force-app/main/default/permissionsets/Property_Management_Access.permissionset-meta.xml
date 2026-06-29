@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <classAccesses><apexClass>OnboardingController</apexClass><enabled>true</enabled></classAccesses>
+    <classAccesses><apexClass>OnboardingTaskRollupService</apexClass><enabled>true</enabled></classAccesses>
+    <description>Object, field, tab and Apex access for the Property Management (Onboarding) app.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Property Management Access</label>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Onboarding__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <!-- One block per writable field (editable=true): -->
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Stage__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Status__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Property_Asset__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Start_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Target_Completion_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Onboarding_Lead__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Completion_Pct__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Total__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Complete__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_In_Progress__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Not_Started__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Blocked__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_NA__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Open__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Overdue__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Blocked_Now__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Stalled__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Tasks_Due_7d__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Days_To_Onboard__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Age_Days__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Oldest_Open_Days__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Onboarding__c.Past_Target__c</field><readable>true</readable></fieldPermissions>
+    <!-- Formula fields are read-only (editable=false): -->
+    <fieldPermissions><editable>false</editable><field>Onboarding__c.Property_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Onboarding__c.Property_Type_Display__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Onboarding__c.Address_Display__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Onboarding__c.Gross_Sq_Ft__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Onboarding__c.Tasks_Display__c</field><readable>true</readable></fieldPermissions>
+    <!-- Task custom fields: -->
+    <fieldPermissions><editable>true</editable><field>Task.Onboarding__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Task.Onboarding_Category__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Task.Source_System__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Task.Onboarding_Status__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Task.Blocked_Reason__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Task.Task_Owner_Label__c</field><readable>true</readable></fieldPermissions>
+    <tabSettings><tab>Onboarding</tab><visibility>Visible</visibility></tabSettings>
+    <tabSettings><tab>Onboarding__c</tab><visibility>Visible</visibility></tabSettings>
+    <tabSettings><tab>standard-Task</tab><visibility>Visible</visibility></tabSettings>
+</PermissionSet>

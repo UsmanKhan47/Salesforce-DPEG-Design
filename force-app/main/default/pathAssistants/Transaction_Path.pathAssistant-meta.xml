@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Transaction__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Transaction Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Transaction closed and funded.</info>
+        <picklistValueName>Closed Won</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Target_Close_Date__c</fieldNames>
+        <info>Clear title, finalize the closing statement, and schedule the wire (6-field fraud gate).</info>
+        <picklistValueName>Closing Prep</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Feasibility_Deadline__c</fieldNames>
+        <fieldNames>EM_Wired_Date__c</fieldNames>
+        <info>Run feasibility / due diligence. Wire earnest money before the feasibility deadline.</info>
+        <picklistValueName>Due Diligence</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Contract_Executed_Date__c</fieldNames>
+        <fieldNames>Loan_Required__c</fieldNames>
+        <info>Purchase contract signed. Execute the PSA and open escrow.</info>
+        <picklistValueName>Open Contract</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Tasks_Complete__c</fieldNames>
+        <info>Complete the post-closing checklist and file recorded documents.</info>
+        <picklistValueName>Post-Closing</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

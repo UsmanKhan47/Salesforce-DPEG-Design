@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Verdict__c</fullName>
+    <description>Derived: &quot;Go&quot; when Year 5 IRR meets or beats the Target Return, otherwise &quot;—&quot;.</description>
+    <externalId>false</externalId>
+    <formula>IF(ISBLANK(Year_5_IRR__c), &quot;—&quot;, IF(Year_5_IRR__c &gt;= Target_Return__c, &quot;Go&quot;, &quot;—&quot;))</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Verdict</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

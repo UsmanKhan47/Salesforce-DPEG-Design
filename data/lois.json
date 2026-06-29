@@ -1,0 +1,18 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "LOI__c",
+        "referenceId": "loi_0"
+      },
+      "Opportunity__c": "@opp_0",
+      "LOI_Status__c": "Signed",
+      "Offer_Price__c": 31500000,
+      "Offer_Cap_Rate__c": 6.5,
+      "Submitted_Date__c": "2026-04-22",
+      "Approved_Date__c": "2026-04-23",
+      "LOI_Signed__c": true,
+      "LOI_Signed_Date__c": "2026-05-02"
+    }
+  ]
+}

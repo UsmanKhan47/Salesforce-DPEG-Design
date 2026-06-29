@@ -1,0 +1,26 @@
+<template>
+    <lightning-card icon-name="standard:metrics">
+        <span slot="title">Portfolio Progress</span>
+        <div class="body">
+            <div class="top">
+                <div class="donut" style={donutStyle}>
+                    <div class="hole"><span class="dpct">{pctLabel}</span><span class="dcap">complete</span></div>
+                </div>
+                <div class="nums">
+                    <div class="caps">Tasks Completed</div>
+                    <div class="big"><span class="comp">{completeLabel}</span><span class="tot">{totalLabel}</span></div>
+                </div>
+            </div>
+            <div class="stack">
+                <template for:each={segments} for:item="s">
+                    <div key={s.key} style={s.barStyle}></div>
+                </template>
+            </div>
+            <div class="legend">
+                <template for:each={segments} for:item="s">
+                    <div key={s.key} class="leg"><span style={s.dotStyle}></span><span class="llabel">{s.label}</span><span class="lcount">{s.count}</span></div>
+                </template>
+            </div>
+        </div>
+    </lightning-card>
+</template>

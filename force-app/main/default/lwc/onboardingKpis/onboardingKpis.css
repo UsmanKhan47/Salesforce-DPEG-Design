@@ -1,0 +1,3 @@
+.dashboard-cards { padding: 2px 0; }
+.cards-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+@media (max-width: 1024px) { .cards-row { grid-template-columns: repeat(2, 1fr); } }

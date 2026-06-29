@@ -1,0 +1,154 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_0"
+      },
+      "Name": "Magnolia Crossing",
+      "Address__c": "2410 FM 1488",
+      "City__c": "Magnolia",
+      "State__c": "TX",
+      "Asset_Type__c": "Retail",
+      "Market_Cap_Rate__c": 6.5,
+      "Monthly_Visits__c": 8000,
+      "YoY_Growth__c": 3,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_1"
+      },
+      "Name": "Hwy 290 Retail Center",
+      "Address__c": "12900 US-290",
+      "City__c": "Cypress",
+      "State__c": "TX",
+      "Asset_Type__c": "Retail",
+      "Market_Cap_Rate__c": 6.8,
+      "Monthly_Visits__c": 9500,
+      "YoY_Growth__c": 4,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_2"
+      },
+      "Name": "Katy Mills Outparcel",
+      "Address__c": "5000 Katy Mills Cir",
+      "City__c": "Katy",
+      "State__c": "TX",
+      "Asset_Type__c": "Retail",
+      "Market_Cap_Rate__c": 6.6,
+      "Monthly_Visits__c": 11000,
+      "YoY_Growth__c": 5,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_3"
+      },
+      "Name": "Westwood Industrial Pk",
+      "Address__c": "8800 Westpark Dr",
+      "City__c": "Houston",
+      "State__c": "TX",
+      "Asset_Type__c": "Industrial",
+      "Market_Cap_Rate__c": 6.1,
+      "Monthly_Visits__c": 12500,
+      "YoY_Growth__c": 6,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_4"
+      },
+      "Name": "Greenway Plaza Office",
+      "Address__c": "3 Greenway Plaza",
+      "City__c": "Houston",
+      "State__c": "TX",
+      "Asset_Type__c": "Office",
+      "Market_Cap_Rate__c": 7.2,
+      "Monthly_Visits__c": 14000,
+      "YoY_Growth__c": 7,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_5"
+      },
+      "Name": "Memorial City Office",
+      "Address__c": "900 Gessner Rd",
+      "City__c": "Houston",
+      "State__c": "TX",
+      "Asset_Type__c": "Office",
+      "Market_Cap_Rate__c": 7,
+      "Monthly_Visits__c": 15500,
+      "YoY_Growth__c": 8,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_6"
+      },
+      "Name": "Riverside Commons",
+      "Address__c": "1200 Riverside Dr",
+      "City__c": "Austin",
+      "State__c": "TX",
+      "Asset_Type__c": "Mixed-Use",
+      "Market_Cap_Rate__c": 6.3,
+      "Monthly_Visits__c": 17000,
+      "YoY_Growth__c": 3,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_7"
+      },
+      "Name": "Oak Street Center",
+      "Address__c": "450 Oak St",
+      "City__c": "Dallas",
+      "State__c": "TX",
+      "Asset_Type__c": "Retail",
+      "Market_Cap_Rate__c": 6.5,
+      "Monthly_Visits__c": 18500,
+      "YoY_Growth__c": 4,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_8"
+      },
+      "Name": "Texas City Storage",
+      "Address__c": "2800 Palmer Hwy",
+      "City__c": "Texas City",
+      "State__c": "TX",
+      "Asset_Type__c": "Industrial",
+      "Market_Cap_Rate__c": 7.9,
+      "Monthly_Visits__c": 20000,
+      "YoY_Growth__c": 5,
+      "Placer_Fetch_Status__c": "Success"
+    },
+    {
+      "attributes": {
+        "type": "Property__c",
+        "referenceId": "prop_9"
+      },
+      "Name": "Pearland Pad #14",
+      "Address__c": "2700 Pearland Pkwy",
+      "City__c": "Pearland",
+      "State__c": "TX",
+      "Asset_Type__c": "Land",
+      "Market_Cap_Rate__c": 6.7,
+      "Monthly_Visits__c": 21500,
+      "YoY_Growth__c": 6,
+      "Placer_Fetch_Status__c": "Success"
+    }
+  ]
+}

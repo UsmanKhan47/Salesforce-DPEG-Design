@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Offer_Status__c</fullName>
+    <label>Offer Status</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Received</fullName>
+                <default>true</default>
+                <label>Received</label>
+            </value>
+            <value>
+                <fullName>Under Review</fullName>
+                <default>false</default>
+                <label>Under Review</label>
+            </value>
+            <value>
+                <fullName>Countered by DPEG</fullName>
+                <default>false</default>
+                <label>Countered by DPEG</label>
+            </value>
+            <value>
+                <fullName>Counter Received from Buyer</fullName>
+                <default>false</default>
+                <label>Counter Received from Buyer</label>
+            </value>
+            <value>
+                <fullName>Accepted</fullName>
+                <default>false</default>
+                <label>Accepted</label>
+            </value>
+            <value>
+                <fullName>Rejected</fullName>
+                <default>false</default>
+                <label>Rejected</label>
+            </value>
+            <value>
+                <fullName>Withdrawn by Buyer</fullName>
+                <default>false</default>
+                <label>Withdrawn by Buyer</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

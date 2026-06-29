@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReportType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <baseObject>NDA__c</baseObject>
+    <category>other</category>
+    <deployed>true</deployed>
+    <description>NDAs for acquisitions metrics</description>
+    <label>NDAs</label>
+    <sections>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Status__c</field>
+            <table>NDA__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Date_Sent__c</field>
+            <table>NDA__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Date_Signed__c</field>
+            <table>NDA__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>NDA_Expiry_Date__c</field>
+            <table>NDA__c</table>
+        </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>Opportunity__c</field>
+            <table>NDA__c</table>
+        </columns>
+        <masterLabel>NDAs</masterLabel>
+    </sections>
+</ReportType>

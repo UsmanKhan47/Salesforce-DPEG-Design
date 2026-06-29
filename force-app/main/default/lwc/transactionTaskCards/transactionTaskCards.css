@@ -1,0 +1,29 @@
+:host {
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    color: #181818;
+}
+.card {
+    background: #fff;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.hd {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 16px;
+    border-bottom: 1px solid #eef1f4;
+}
+.hd__title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #181818;
+}
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    padding: 4px 16px 14px;
+}

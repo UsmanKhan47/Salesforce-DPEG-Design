@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stage__c</fullName>
+    <label>Stage</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Requested</fullName>
+                <default>true</default>
+                <label>Requested</label>
+            </value>
+            <value>
+                <fullName>Feasibility analysis</fullName>
+                <default>false</default>
+                <label>Feasibility analysis</label>
+            </value>
+            <value>
+                <fullName>Vendor proposals</fullName>
+                <default>false</default>
+                <label>Vendor proposals</label>
+            </value>
+            <value>
+                <fullName>Share Opinion</fullName>
+                <default>false</default>
+                <label>Share Opinion</label>
+            </value>
+            <value>
+                <fullName>Completed</fullName>
+                <default>false</default>
+                <label>Completed</label>
+            </value>
+            <value>
+                <fullName>Go / Conditional</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Go / Conditional</label>
+            </value>
+            <value>
+                <fullName>No-Go</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>No-Go</label>
+            </value>
+            <value>
+                <fullName>Opinion to Acquisition</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Opinion to Acquisition</label>
+            </value>
+            <value>
+                <fullName>Opinion to Junior</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Opinion to Junior</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

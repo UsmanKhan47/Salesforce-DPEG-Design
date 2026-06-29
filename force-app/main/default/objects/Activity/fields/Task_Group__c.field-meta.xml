@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Task_Group__c</fullName>
+    <label>Task Group</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>A. Contract Execution &amp; Title Opening</fullName>
+                <default>false</default>
+                <label>A. Contract Execution &amp; Title Opening</label>
+            </value>
+            <value>
+                <fullName>B. Earnest Money Wire</fullName>
+                <default>false</default>
+                <label>B. Earnest Money Wire</label>
+            </value>
+            <value>
+                <fullName>C. Property Condition Report (BBG)</fullName>
+                <default>false</default>
+                <label>C. Property Condition Report (BBG)</label>
+            </value>
+            <value>
+                <fullName>D. LPRD Cash Flow Verification</fullName>
+                <default>false</default>
+                <label>D. LPRD Cash Flow Verification</label>
+            </value>
+            <value>
+                <fullName>E. Appraisal</fullName>
+                <default>false</default>
+                <label>E. Appraisal</label>
+            </value>
+            <value>
+                <fullName>F. Loan Package &amp; Financing</fullName>
+                <default>false</default>
+                <label>F. Loan Package &amp; Financing</label>
+            </value>
+            <value>
+                <fullName>G. Insurance</fullName>
+                <default>false</default>
+                <label>G. Insurance</label>
+            </value>
+            <value>
+                <fullName>H. Entity Formation &amp; Investor Relations</fullName>
+                <default>false</default>
+                <label>H. Entity Formation &amp; Investor Relations</label>
+            </value>
+            <value>
+                <fullName>H2. Tenant Interviews &amp; Estoppels</fullName>
+                <default>false</default>
+                <label>H2. Tenant Interviews &amp; Estoppels</label>
+            </value>
+            <value>
+                <fullName>I. Pre-Closing &amp; Closing</fullName>
+                <default>false</default>
+                <label>I. Pre-Closing &amp; Closing</label>
+            </value>
+            <value>
+                <fullName>J. Post-Closing Checklist</fullName>
+                <default>false</default>
+                <label>J. Post-Closing Checklist</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,0 +1,73 @@
+<template>
+    <lightning-card icon-name="standard:currency">
+        <span slot="title">Counter Offers ({count})</span>
+
+        <template lwc:if={hasPrimaryLoi}>
+            <lightning-button
+                slot="actions"
+                label="Add"
+                icon-name="utility:add"
+                onclick={handleAdd}
+                disabled={editing}>
+            </lightning-button>
+        </template>
+
+        <div class="slds-p-horizontal_small slds-p-bottom_small">
+            <template lwc:if={hasPrimaryLoi}>
+                <!-- Entry form -->
+                <template lwc:if={editing}>
+                    <div class="slds-box slds-box_x-small slds-m-bottom_small">
+                        <lightning-input
+                            type="number"
+                            formatter="currency"
+                            label="Counter Price"
+                            value={counterPrice}
+                            onchange={handlePriceChange}>
+                        </lightning-input>
+                        <lightning-textarea
+                            class="slds-m-top_x-small"
+                            label="Counter Response"
+                            value={counterResponse}
+                            onchange={handleResponseChange}>
+                        </lightning-textarea>
+                        <div class="slds-m-top_small">
+                            <lightning-button
+                                class="slds-m-right_x-small"
+                                variant="brand"
+                                label="Save"
+                                onclick={handleSave}>
+                            </lightning-button>
+                            <lightning-button
+                                variant="neutral"
+                                label="Cancel"
+                                onclick={handleCancel}>
+                            </lightning-button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- History, native related-list datatable (newest first) -->
+                <template lwc:if={hasOffers}>
+                    <c-list-datatable
+                        key-field="id"
+                        data={rows}
+                        columns={columns}
+                        sorted-by={sortedBy}
+                        sorted-direction={sortedDirection}
+                        onsort={handleSort}
+                        show-row-number-column
+                        hide-checkbox-column>
+                    </c-list-datatable>
+                </template>
+                <template lwc:else>
+                    <p class="slds-text-color_weak slds-p-vertical_x-small">No counter offers yet.</p>
+                </template>
+            </template>
+            <template lwc:else>
+                <p class="slds-text-color_weak">
+                    Set a Primary LOI on this deal to record a counter offer.
+                </p>
+            </template>
+        </div>
+    </lightning-card>
+</template>

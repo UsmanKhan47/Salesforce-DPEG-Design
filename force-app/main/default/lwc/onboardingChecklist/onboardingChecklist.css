@@ -1,0 +1,18 @@
+.sub { font-weight: 400; color: #706E6B; font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 14px 14px; border-bottom: 1px solid #EDEDED; }
+.tiles { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; border-bottom: 1px solid #EDEDED; }
+.tmeta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tname { font-size: 12.5px; font-weight: 600; color: #181818; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcount { font-size: 11.5px; color: #706E6B; }
+.selhead { display: flex; align-items: center; gap: 12px; padding: 16px 14px 4px; }
+.selbadge { width: 34px; height: 34px; border-radius: 8px; background: #1B3A6B; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; flex: none; }
+.selname { font-size: 15.5px; font-weight: 700; color: #181818; }
+.selcount { font-size: 12px; font-weight: 600; color: #5C5C5C; background: #F2F2F2; border-radius: 9999px; padding: 2px 10px; }
+.seltrack { height: 6px; background: #ECEBEA; border-radius: 9999px; overflow: hidden; margin: 8px 14px 4px; }
+.row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-top: 1px solid #F2F2F2; }
+.rmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.reason { font-size: 11px; color: #C0392B; }
+.rowner { display: flex; align-items: center; gap: 7px; flex: none; }
+.oname { font-size: 12px; color: #5C5C5C; white-space: nowrap; }
+.empty { padding: 18px 14px; border-top: 1px solid #F2F2F2; font-size: 13px; color: #9A9A9A; }

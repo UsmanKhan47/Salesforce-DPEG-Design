@@ -1,0 +1,93 @@
+:host {
+    display: block;
+}
+.body {
+    padding: 4px 14px 14px;
+}
+
+/* ── Donut ── */
+.donut {
+    position: relative;
+    width: 168px;
+    max-width: 100%;
+    margin: 4px auto 14px;
+}
+.donut__svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+.donut__center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.donut__total {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    color: #181818;
+    font-variant-numeric: tabular-nums;
+}
+.donut__cap {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8a96a3;
+    font-weight: 700;
+    margin-top: 3px;
+}
+
+/* ── Legend ── */
+.legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.legend__row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 2px;
+    border-top: 1px solid #f3f5f7;
+}
+.legend__row:first-child {
+    border-top: none;
+}
+.legend__swatch {
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.legend__name {
+    font-size: 12.5px;
+    color: #3e3e3e;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.legend__count {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #181818;
+    font-variant-numeric: tabular-nums;
+}
+.legend__pct {
+    font-size: 11.5px;
+    color: #8a96a3;
+    font-variant-numeric: tabular-nums;
+    min-width: 34px;
+    text-align: right;
+}
+.empty {
+    text-align: center;
+    color: #8a96a3;
+    font-size: 13px;
+    padding: 24px 0;
+}

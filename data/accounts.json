@@ -1,0 +1,52 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Account",
+        "referenceId": "acc_0"
+      },
+      "Name": "JLL Houston",
+      "Type": "Broker Firm"
+    },
+    {
+      "attributes": {
+        "type": "Account",
+        "referenceId": "acc_1"
+      },
+      "Name": "CBRE",
+      "Type": "Broker Firm"
+    },
+    {
+      "attributes": {
+        "type": "Account",
+        "referenceId": "acc_2"
+      },
+      "Name": "Marcus & Millichap",
+      "Type": "Broker Firm"
+    },
+    {
+      "attributes": {
+        "type": "Account",
+        "referenceId": "acc_3"
+      },
+      "Name": "Newmark",
+      "Type": "Broker Firm"
+    },
+    {
+      "attributes": {
+        "type": "Account",
+        "referenceId": "acc_4"
+      },
+      "Name": "Cushman & Wakefield",
+      "Type": "Broker Firm"
+    },
+    {
+      "attributes": {
+        "type": "Account",
+        "referenceId": "acc_5"
+      },
+      "Name": "Colliers",
+      "Type": "Broker Firm"
+    }
+  ]
+}

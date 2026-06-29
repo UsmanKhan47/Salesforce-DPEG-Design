@@ -1,0 +1,11 @@
+<template>
+    <template if:true={isBovOutreach}>
+        <c-bov-outreach record-id={recordId}></c-bov-outreach>
+    </template>
+    <template if:true={isActiveListing}>
+        <c-disposition-offer record-id={recordId}></c-disposition-offer>
+    </template>
+    <template if:true={isClosing}>
+        <c-disposition-closing record-id={recordId}></c-disposition-closing>
+    </template>
+</template>

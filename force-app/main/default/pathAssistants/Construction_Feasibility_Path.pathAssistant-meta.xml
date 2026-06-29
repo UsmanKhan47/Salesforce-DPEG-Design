@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Construction_Feasibility_Review__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Construction Condition Assessment Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Condition assessment delivered. Hand the opinion back to the deal team.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Assess roof, structure, HVAC / MEP, parking, and envelope. Note any additional work, upgrades, and code / compliance concerns, and set an overall condition rating.</info>
+        <picklistValueName>Condition Assessment</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Estimate the cost to address the roof, MEP, upgrades, and any additions.</info>
+        <picklistValueName>Cost Estimate</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Commercial deal forwarded for a construction condition assessment. Schedule the site visit.</info>
+        <picklistValueName>Requested</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Summarize the condition findings and cost impact, set the Go / Conditional / No-Go recommendation, note any conditions and timeline impact, and record the delivery date.</info>
+        <picklistValueName>Share Opinion</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Schedule and complete the on-site visit. Capture access notes and photos, and record who performed the visit.</info>
+        <picklistValueName>Site Visit</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

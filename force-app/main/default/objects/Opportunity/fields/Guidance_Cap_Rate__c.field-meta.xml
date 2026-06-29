@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Guidance_Cap_Rate__c</fullName>
+    <description>Seller&apos;s stated asking cap rate, carried from the Lead for reference throughout the deal. (Guidance Price is held in Asking_Price__c.)</description>
+    <label>Guidance Cap Rate</label>
+    <precision>5</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Percent</type>
+</CustomField>

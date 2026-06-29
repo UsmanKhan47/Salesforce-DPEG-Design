@@ -1,0 +1,13 @@
+<template>
+    <lightning-card icon-name="standard:incident">
+        <span slot="title">Risk &amp; Alerts</span>
+        <div class="grid">
+            <template for:each={tiles} for:item="t">
+                <div key={t.key} class="tile" style={t.tileStyle}>
+                    <div class="val" style={t.valueStyle}>{t.value}</div>
+                    <div class="lbl">{t.label}</div>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

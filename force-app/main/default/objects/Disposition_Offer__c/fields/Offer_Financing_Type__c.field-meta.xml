@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Offer_Financing_Type__c</fullName>
+    <label>Offer Financing Type</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>All Cash</fullName>
+                <default>false</default>
+                <label>All Cash</label>
+            </value>
+            <value>
+                <fullName>Financed (with contingency)</fullName>
+                <default>false</default>
+                <label>Financed (with contingency)</label>
+            </value>
+            <value>
+                <fullName>Financed (no contingency)</fullName>
+                <default>false</default>
+                <label>Financed (no contingency)</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

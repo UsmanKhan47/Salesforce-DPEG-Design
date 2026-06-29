@@ -1,0 +1,17 @@
+<template>
+    <lightning-card icon-name="standard:contract">
+        <span slot="title">BOV Comparison Matrix ({count})</span>
+
+        <c-list-datatable
+            key-field="id"
+            data={rows}
+            columns={columns}
+            column-widths-mode="auto"
+            hide-checkbox-column>
+        </c-list-datatable>
+
+        <div slot="footer" class="view-all-footer">
+            <a href={listUrl} onclick={viewAll}>View All</a>
+        </div>
+    </lightning-card>
+</template>

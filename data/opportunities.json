@@ -1,0 +1,196 @@
+{
+  "records": [
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_0"
+      },
+      "Name": "Magnolia Crossing",
+      "StageName": "LOI Signed",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_0",
+      "Property__c": "@prop_0",
+      "Asset_Type__c": "Retail Strip",
+      "Asking_Price__c": 31500000,
+      "Amount": 31500000,
+      "My_Cap_Rate__c": 6.5,
+      "Market_Cap_Rate__c": 6.5,
+      "Deal_Status__c": "LOI Signed",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_1"
+      },
+      "Name": "Hwy 290 Retail Center",
+      "StageName": "New",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_1",
+      "Property__c": "@prop_1",
+      "Asset_Type__c": "Retail Strip",
+      "Asking_Price__c": 18800000,
+      "Amount": 18800000,
+      "My_Cap_Rate__c": 7,
+      "Market_Cap_Rate__c": 6.8,
+      "Deal_Status__c": "Evaluating",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_2"
+      },
+      "Name": "Katy Mills Outparcel",
+      "StageName": "Under Review",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_2",
+      "Property__c": "@prop_2",
+      "Asset_Type__c": "Retail Strip",
+      "Asking_Price__c": 9400000,
+      "Amount": 9400000,
+      "My_Cap_Rate__c": 6.75,
+      "Market_Cap_Rate__c": 6.6,
+      "Deal_Status__c": "Working",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_3"
+      },
+      "Name": "Westwood Industrial Pk",
+      "StageName": "Underwriting",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_3",
+      "Property__c": "@prop_3",
+      "Asset_Type__c": "Industrial",
+      "Asking_Price__c": 42300000,
+      "Amount": 42300000,
+      "My_Cap_Rate__c": 6.25,
+      "Market_Cap_Rate__c": 6.1,
+      "Deal_Status__c": "Working",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_4"
+      },
+      "Name": "Greenway Plaza Office",
+      "StageName": "LOI Submitted",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_4",
+      "Property__c": "@prop_4",
+      "Asset_Type__c": "Office",
+      "Asking_Price__c": 55600000,
+      "Amount": 55600000,
+      "My_Cap_Rate__c": 7.5,
+      "Market_Cap_Rate__c": 7.2,
+      "Deal_Status__c": "Countered",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_5"
+      },
+      "Name": "Memorial City Office",
+      "StageName": "LOI Signed",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_5",
+      "Property__c": "@prop_5",
+      "Asset_Type__c": "Office",
+      "Asking_Price__c": 38900000,
+      "Amount": 38900000,
+      "My_Cap_Rate__c": 7.25,
+      "Market_Cap_Rate__c": 7,
+      "Deal_Status__c": "LOI Signed",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_6"
+      },
+      "Name": "Riverside Commons",
+      "StageName": "Under Contract",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_1",
+      "Property__c": "@prop_6",
+      "Asset_Type__c": "Mixed-Use",
+      "Asking_Price__c": 27400000,
+      "Amount": 27400000,
+      "My_Cap_Rate__c": 6.4,
+      "Market_Cap_Rate__c": 6.3,
+      "Deal_Status__c": "Contract Signed",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_7"
+      },
+      "Name": "Oak Street Center",
+      "StageName": "Closed Won",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_2",
+      "Property__c": "@prop_7",
+      "Asset_Type__c": "Retail Strip",
+      "Asking_Price__c": 21100000,
+      "Amount": 21100000,
+      "My_Cap_Rate__c": 6.6,
+      "Market_Cap_Rate__c": 6.5,
+      "Deal_Status__c": "Asset Under Management",
+      "Deal_Category__c": "Closed",
+      "Broker_First_Seen__c": "2026-04-01"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_8"
+      },
+      "Name": "Texas City Storage",
+      "StageName": "Dead/Pass",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_3",
+      "Property__c": "@prop_8",
+      "Asset_Type__c": "Industrial",
+      "Asking_Price__c": 12750000,
+      "Amount": 12750000,
+      "My_Cap_Rate__c": 7.8,
+      "Market_Cap_Rate__c": 7.9,
+      "Deal_Status__c": "Killed",
+      "Deal_Category__c": "Dead",
+      "Broker_First_Seen__c": "2026-04-01",
+      "Rejection_Reason__c": "Bad Anchor Tenant"
+    },
+    {
+      "attributes": {
+        "type": "Opportunity",
+        "referenceId": "opp_9"
+      },
+      "Name": "Pearland Pad #14",
+      "StageName": "Portfolio Deal",
+      "CloseDate": "2026-09-30",
+      "AccountId": "@acc_4",
+      "Property__c": "@prop_9",
+      "Asset_Type__c": "Land",
+      "Asking_Price__c": 6800000,
+      "Amount": 6800000,
+      "My_Cap_Rate__c": 6.9,
+      "Market_Cap_Rate__c": 6.7,
+      "Deal_Status__c": "Evaluating",
+      "Deal_Category__c": "Live",
+      "Broker_First_Seen__c": "2026-04-01",
+      "Is_Portfolio_Parent__c": true
+    }
+  ]
+}

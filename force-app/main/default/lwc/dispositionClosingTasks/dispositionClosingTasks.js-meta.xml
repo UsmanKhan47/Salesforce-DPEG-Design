@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <isExposed>false</isExposed>
+    <masterLabel>Disposition Closing Tasks</masterLabel>
+    <description>Closing checklist (PSA / Title Company / Closing Statement) shown under the wire-fraud card on a Disposition.</description>
+</LightningComponentBundle>

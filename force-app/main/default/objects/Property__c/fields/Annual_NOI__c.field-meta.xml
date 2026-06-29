@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Annual_NOI__c</fullName>
+    <description>Net Operating Income as reported by the seller (the seller&apos;s number, not DPEG&apos;s underwritten NOI). Entered from the Offering Memorandum.</description>
+    <label>Annual NOI</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Development_Highlights</fullName>
+    <fields>Summary__c</fields>
+    <fields>Deal_Type__c</fields>
+    <fields>Asset_Type__c</fields>
+    <fields>Stage__c</fields>
+    <label>Development Highlights</label>
+</CompactLayout>

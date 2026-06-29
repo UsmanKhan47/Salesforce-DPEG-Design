@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <columns>
+        <field>NDA__c.Opportunity__c</field>
+    </columns>
+    <columns>
+        <field>NDA__c.Status__c</field>
+    </columns>
+    <columns>
+        <field>NDA__c.Date_Sent__c</field>
+    </columns>
+    <columns>
+        <field>NDA__c.Days_Out__c</field>
+    </columns>
+    <filter>
+        <criteriaItems>
+            <column>NDA__c.Opportunity__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>notEqual</operator>
+            <value></value>
+        </criteriaItems>
+    </filter>
+    <format>Tabular</format>
+    <name>NDA Tracker - Recent</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
+    <reportType>CustomEntity$NDA__c</reportType>
+    <scope>organization</scope>
+    <showDetails>true</showDetails>
+    <showGrandTotal>true</showGrandTotal>
+    <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>NDA__c.Date_Sent__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
+</Report>

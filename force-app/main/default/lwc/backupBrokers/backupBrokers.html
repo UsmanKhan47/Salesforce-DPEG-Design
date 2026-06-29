@@ -1,0 +1,19 @@
+<template>
+    <div class="card">
+        <div class="section-header">Backup Brokers</div>
+        <div class="broker-list">
+            <template for:each={rows} for:item="r">
+                <div key={r.id} class="broker-row">
+                    <lightning-icon icon-name="utility:user" size="x-small" class="broker-icon"></lightning-icon>
+                    <div class="broker-info">
+                        <div class="broker-name">{r.brokerFirm} · {r.contactName}</div>
+                        <div class="broker-meta">Score {r.bovScore} · {r.bovAmountLabel}</div>
+                    </div>
+                </div>
+            </template>
+            <template if:true={isEmpty}>
+                <div class="empty-msg">No backup brokers.</div>
+            </template>
+        </div>
+    </div>
+</template>

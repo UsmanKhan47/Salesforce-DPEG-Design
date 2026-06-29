@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Deal_Highlights</fullName>
+    <fields>Asking_Price__c</fields>
+    <fields>My_Cap_Rate__c</fields>
+    <fields>Market_Cap_Rate__c</fields>
+    <fields>Deal_Status__c</fields>
+    <fields>Broker_First_Seen__c</fields>
+    <label>Deal Highlights</label>
+</CompactLayout>

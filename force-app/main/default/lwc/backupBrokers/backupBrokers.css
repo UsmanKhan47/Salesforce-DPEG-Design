@@ -1,0 +1,36 @@
+:host {
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    color: #181818;
+}
+.card {
+    background: #fff;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.section-header {
+    padding: 16px 18px 13px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #181818;
+    letter-spacing: -0.01em;
+    border-bottom: 1px solid #eef1f4;
+}
+.broker-list { padding: 4px 0; }
+.broker-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid #f3f5f7;
+}
+.broker-row:last-child { border-bottom: none; }
+.broker-icon {
+    flex-shrink: 0;
+    --slds-c-icon-color-foreground-default: #98a6b3;
+}
+.broker-info { min-width: 0; }
+.broker-name { font-weight: 400; font-size: 12px; color: #181818; }
+.broker-meta { font-size: 11px; color: #8a96a3; margin-top: 2px; }
+.empty-msg { padding: 16px 18px; color: #8a96a3; font-size: 12px; }

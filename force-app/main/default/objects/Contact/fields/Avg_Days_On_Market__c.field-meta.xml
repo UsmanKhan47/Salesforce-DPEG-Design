@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Avg_Days_On_Market__c</fullName>
+    <defaultValue>0</defaultValue>
+    <description>Average days on market across the broker&apos;s listings.</description>
+    <externalId>false</externalId>
+    <label>Avg Days on Market</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

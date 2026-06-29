@@ -1,0 +1,18 @@
+<template>
+    <lightning-card>
+        <span slot="title">Opportunities by Stage</span>
+        <div class="cards-wrap">
+            <div class="cards-grid">
+                <template for:each={metrics} for:item="metric">
+                    <c-stat-card
+                        key={metric.key}
+                        value={metric.displayValue}
+                        label={metric.label}
+                        icon-name={metric.iconName}
+                        icon-color={metric.iconColor}>
+                    </c-stat-card>
+                </template>
+            </div>
+        </div>
+    </lightning-card>
+</template>

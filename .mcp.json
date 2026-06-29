@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "salesforce": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@salesforce/mcp",
+        "--orgs",
+        "ALLOW_ALL_ORGS",
+        "--toolsets",
+        "all"
+      ]
+    }
+  }
+}

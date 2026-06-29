@@ -1,0 +1,7 @@
+:host {
+    display: block;
+    /* Divider above the card so it reads as a separate component from the LOI detail section. */
+    margin-top: 1rem;
+    border-top: 1px solid #d8dde6;
+    padding-top: 1rem;
+}

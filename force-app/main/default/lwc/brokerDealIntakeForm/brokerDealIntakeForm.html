@@ -1,0 +1,64 @@
+<template>
+    <div class="portal">
+        <div class="portal__header">
+            <span class="portal__logo-chip">
+                <img src={logoUrl} alt="Dhanani" class="portal__logo" />
+            </span>
+            <h1 class="portal__title">Submit a Deal</h1>
+            <p class="portal__subtitle">Bring your property to DPEG. We review every submission.</p>
+        </div>
+
+        <template lwc:if={submitted}>
+            <div class="confirmation">
+                <lightning-icon icon-name="utility:success" variant="success" size="large"></lightning-icon>
+                <h2>Thank you! We've received your deal.</h2>
+                <p>Our acquisitions team will review it shortly.</p>
+                <lightning-button label="Submit another deal" variant="brand" onclick={handleReset}></lightning-button>
+            </div>
+        </template>
+
+        <template lwc:else>
+            <div class="form">
+                <template lwc:if={errorMessage}>
+                    <div class="form__error" role="alert">{errorMessage}</div>
+                </template>
+
+                <div class="form__columns">
+                    <div class="form__col">
+                        <h3 class="section__title">Your Details</h3>
+                        <lightning-input class="validate" data-field="firstName" label="First Name"
+                            value={firstName} onchange={handleChange} required max-length="40"></lightning-input>
+                        <lightning-input class="validate" data-field="lastName" label="Last Name"
+                            value={lastName} onchange={handleChange} required max-length="80"></lightning-input>
+                        <lightning-input class="validate" data-field="brokerageFirm" label="Brokerage Firm"
+                            value={brokerageFirm} onchange={handleChange} required max-length="255"></lightning-input>
+                        <lightning-input class="validate" type="email" data-field="email" label="Email"
+                            value={email} onchange={handleChange} required max-length="80"></lightning-input>
+                        <lightning-input type="tel" data-field="phone" label="Phone"
+                            value={phone} onchange={handleChange} max-length="40"></lightning-input>
+                    </div>
+                    <div class="form__col">
+                        <h3 class="section__title">Deal Details</h3>
+                        <lightning-input class="validate" data-field="propertyAddress" label="Property Address"
+                            value={propertyAddress} onchange={handleChange} required max-length="255"></lightning-input>
+                        <lightning-combobox class="validate" data-field="assetType" label="Asset Type" value={assetType}
+                            options={assetTypeOptions} onchange={handleChange} required placeholder="Select..."></lightning-combobox>
+                    </div>
+                </div>
+
+                <!-- Honeypot: hidden from humans, catches bots -->
+                <div class="hp" aria-hidden="true">
+                    <input tabindex="-1" autocomplete="off" data-field="website" value={website} onchange={handleChange} />
+                </div>
+
+                <div class="form__actions">
+                    <lightning-button label="Submit Deal" variant="brand" onclick={handleSubmit}
+                        disabled={submitting}></lightning-button>
+                    <template lwc:if={submitting}>
+                        <lightning-spinner alternative-text="Submitting" size="small"></lightning-spinner>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </div>
+</template>

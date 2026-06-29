@@ -1,0 +1,66 @@
+[
+  {
+    "sobject": "Account",
+    "saveRefs": true,
+    "resolveRefs": false,
+    "files": [
+      "accounts.json"
+    ]
+  },
+  {
+    "sobject": "Contact",
+    "saveRefs": false,
+    "resolveRefs": true,
+    "files": [
+      "contacts.json"
+    ]
+  },
+  {
+    "sobject": "Property__c",
+    "saveRefs": true,
+    "resolveRefs": false,
+    "files": [
+      "properties.json"
+    ]
+  },
+  {
+    "sobject": "Opportunity",
+    "saveRefs": true,
+    "resolveRefs": true,
+    "files": [
+      "opportunities.json"
+    ]
+  },
+  {
+    "sobject": "Lead",
+    "saveRefs": false,
+    "resolveRefs": false,
+    "files": [
+      "leads.json"
+    ]
+  },
+  {
+    "sobject": "NDA__c",
+    "saveRefs": false,
+    "resolveRefs": true,
+    "files": [
+      "ndas.json"
+    ]
+  },
+  {
+    "sobject": "Underwriting__c",
+    "saveRefs": false,
+    "resolveRefs": true,
+    "files": [
+      "underwritings.json"
+    ]
+  },
+  {
+    "sobject": "LOI__c",
+    "saveRefs": false,
+    "resolveRefs": true,
+    "files": [
+      "lois.json"
+    ]
+  }
+]

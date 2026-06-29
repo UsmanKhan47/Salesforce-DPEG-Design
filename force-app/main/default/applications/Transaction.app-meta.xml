@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Transaction Record Page</comment>
+        <content>Transaction_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Transaction__c</pageOrSobjectType>
+    </actionOverrides>
+    <brand>
+        <headerColor>#3B357F</headerColor>
+        <logo>DPEG_Logo_Clear</logo>
+        <logoVersion>1</logoVersion>
+        <shouldOverrideOrgTheme>true</shouldOverrideOrgTheme>
+    </brand>
+    <description>DPEG real estate transactions — contract-to-close execution, earnest, wire and feasibility tracking.</description>
+    <formFactors>Large</formFactors>
+    <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
+    <isNavPersonalizationDisabled>true</isNavPersonalizationDisabled>
+    <isNavTabPersistenceDisabled>true</isNavTabPersistenceDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
+    <label>Transaction</label>
+    <navType>Standard</navType>
+    <tabs>Active_Transactions</tabs>
+    <tabs>Transaction__c</tabs>
+    <tabs>standard-report</tabs>
+    <tabs>Transaction_Dashboard</tabs>
+    <uiType>Lightning</uiType>
+</CustomApplication>

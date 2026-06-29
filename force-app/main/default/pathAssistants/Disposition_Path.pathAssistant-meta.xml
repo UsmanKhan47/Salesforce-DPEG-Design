@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Disposition__c</entityName>
+    <fieldName>Disposition_Stage__c</fieldName>
+    <masterLabel>Disposition Path</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Selected_Broker__c</fieldNames>
+        <info>6-week marketing clock starts on listing date. Week 4 triggers YELLOW flag. Week 6 triggers Hard Stop + escalation to Ali.</info>
+        <picklistValueName>Active Listing</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Package_Sent__c</fieldNames>
+        <fieldNames>Submission_Deadline__c</fieldNames>
+        <info>Send OM packages to 5-6 brokers. Matrix auto-generates when 3+ BOV responses are received.</info>
+        <picklistValueName>BOV Outreach</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>PSA_Executed__c</fieldNames>
+        <fieldNames>Title_Company__c</fieldNames>
+        <info>PSA Executed = TRUE spawns closing tasks. Wire fraud prevention gate (6 fields) must be complete before wiring.</info>
+        <picklistValueName>Closing</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Closing_Date__c</fieldNames>
+        <fieldNames>Net_Sale_Proceeds__c</fieldNames>
+        <info>Deal closed. Confirm the closing date, net sale proceeds, and that the closing statement is on file.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Property_Asset__c</fieldNames>
+        <info>Confirm the asset metrics and Argus signal support the sell decision before advancing to BOV Outreach.</info>
+        <picklistValueName>Disposition Readiness</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

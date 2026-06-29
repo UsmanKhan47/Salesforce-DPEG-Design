@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Due_Diligence_Days__c</fullName>
+    <description>Number of days in the due diligence period as proposed in the LOI. Typically 30-45 days. The feasibility window where DPEG can walk away.</description>
+    <externalId>false</externalId>
+    <label>Due Diligence Days</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,87 @@
+<template>
+    <div class="board">
+        <!-- ============ LEADS PANEL ============ -->
+        <section class="panel panel-leads">
+            <header class="phead phead-leads">
+                <div class="phead-text">
+                    <h2 class="ptitle">Leads by Stage</h2>
+                </div>
+                <div class="total-pill">
+                    <span class="pill-label">TOTAL LEADS</span>
+                    <span class="pill-num">{leadTotal}</span>
+                </div>
+                <svg class="art art-funnel" viewBox="0 0 132 98" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                    <circle cx="50" cy="15" r="8.5" fill="#7fd8cb"/>
+                    <circle cx="75" cy="15" r="8.5" fill="#aae8de"/>
+                    <path d="M37 35c0-7.2 5.8-13 13-13s13 5.8 13 13z" fill="#7fd8cb"/>
+                    <path d="M62 35c0-7.2 5.8-13 13-13s13 5.8 13 13z" fill="#aae8de"/>
+                    <path d="M28 43h68L69 71v18l-14 7V71z" fill="#8ddccf" fill-opacity="0.85"/>
+                </svg>
+            </header>
+            <div class="rows rows-single">
+                <template for:each={leadRows} for:item="r">
+                    <div key={r.key} class="srow">
+                        <span class="row-icon" style={r.iconWrapStyle}>
+                            <lightning-icon icon-name={r.icon} size="x-small" style={r.iconStyle}></lightning-icon>
+                        </span>
+                        <div class="row-main">
+                            <div class="row-label">{r.label}<template if:true={r.hasSuffix}> <span class="row-suffix">{r.suffix}</span></template></div>
+                        </div>
+                        <div class="row-val" style={r.valueStyle}>{r.value}</div>
+                    </div>
+                </template>
+            </div>
+        </section>
+
+        <!-- ============ OPPORTUNITIES PANEL ============ -->
+        <section class="panel panel-opps">
+            <header class="phead phead-opps">
+                <div class="phead-text">
+                    <h2 class="ptitle">Opportunities by Stage</h2>
+                </div>
+                <div class="total-pill">
+                    <span class="pill-label">TOTAL OPPORTUNITIES</span>
+                    <span class="pill-num">{oppTotal}</span>
+                </div>
+                <svg class="art art-chart" viewBox="0 0 168 98" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                    <rect x="96"  y="62" width="13" height="30" rx="3" fill="#cdc9f6"/>
+                    <rect x="115" y="50" width="13" height="42" rx="3" fill="#cdc9f6"/>
+                    <rect x="134" y="38" width="13" height="54" rx="3" fill="#bdb8f1"/>
+                    <rect x="153" y="26" width="13" height="66" rx="3" fill="#bdb8f1"/>
+                    <polyline points="34,74 70,58 106,46 142,24" fill="none" stroke="#8b83e6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.5 7"/>
+                    <circle cx="34" cy="74" r="3.5" fill="#8b83e6"/>
+                    <circle cx="106" cy="46" r="3.5" fill="#8b83e6"/>
+                    <circle cx="142" cy="24" r="4.5" fill="#6f66dd"/>
+                </svg>
+            </header>
+            <div class="rows rows-double">
+                <div class="rows-col">
+                    <template for:each={oppRowsLeft} for:item="r">
+                        <div key={r.key} class="srow">
+                            <span class="row-icon" style={r.iconWrapStyle}>
+                                <lightning-icon icon-name={r.icon} size="x-small" style={r.iconStyle}></lightning-icon>
+                            </span>
+                            <div class="row-main">
+                                <div class="row-label">{r.label}<template if:true={r.hasSuffix}> <span class="row-suffix">{r.suffix}</span></template></div>
+                            </div>
+                            <div class="row-val" style={r.valueStyle}>{r.value}</div>
+                        </div>
+                    </template>
+                </div>
+                <div class="rows-col">
+                    <template for:each={oppRowsRight} for:item="r">
+                        <div key={r.key} class="srow">
+                            <span class="row-icon" style={r.iconWrapStyle}>
+                                <lightning-icon icon-name={r.icon} size="x-small" style={r.iconStyle}></lightning-icon>
+                            </span>
+                            <div class="row-main">
+                                <div class="row-label">{r.label}<template if:true={r.hasSuffix}> <span class="row-suffix">{r.suffix}</span></template></div>
+                            </div>
+                            <div class="row-val" style={r.valueStyle}>{r.value}</div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </section>
+    </div>
+</template>

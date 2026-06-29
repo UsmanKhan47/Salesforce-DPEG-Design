@@ -1,0 +1,116 @@
+:host {
+    display: block;
+}
+
+.body {
+    padding: 0 14px 10px;
+    border-top: 1px solid #e5e8ec;
+}
+.body > :first-child {
+    padding-top: 6px;
+}
+
+.doc-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+.doc-icon {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.doc-icon--nda {
+    background: rgba(46, 134, 222, 0.13);
+}
+.doc-icon--loi {
+    background: rgba(23, 169, 140, 0.13);
+}
+.doc-icon--dev {
+    background: rgba(183, 121, 31, 0.13);
+}
+.doc-icon--con {
+    background: rgba(194, 65, 12, 0.13);
+}
+.doc-icon--contract {
+    background: rgba(126, 87, 194, 0.13);
+}
+
+.doc {
+    padding: 8px 0;
+}
+.doc-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.doc-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0176d3;
+    cursor: pointer;
+}
+.doc-name:hover {
+    text-decoration: underline;
+}
+.doc-name--muted {
+    color: #16325c;
+    cursor: default;
+}
+.doc-meta {
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: #5a6b7b;
+}
+.doc-meta--empty {
+    color: #aeb8c4;
+    font-style: italic;
+}
+
+.divider {
+    height: 1px;
+    background: #f0f2f5;
+}
+
+/* status pills */
+.pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 11px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.45;
+    white-space: nowrap;
+}
+.pill--green {
+    background: #e6f4ea;
+    color: #1b7a4b;
+    box-shadow: inset 0 0 0 1px #b6e0c6;
+}
+.pill--blue {
+    background: #e8f1fc;
+    color: #0b5cab;
+    box-shadow: inset 0 0 0 1px #bcd9f5;
+}
+.pill--amber {
+    background: #fdf3e3;
+    color: #a86403;
+    box-shadow: inset 0 0 0 1px #f3d9ab;
+}
+.pill--red {
+    background: #fdeceb;
+    color: #b3271e;
+    box-shadow: inset 0 0 0 1px #f5c4c0;
+}
+.pill--grey {
+    background: #eef1f4;
+    color: #5a6b7b;
+    box-shadow: inset 0 0 0 1px #dfe4ea;
+}

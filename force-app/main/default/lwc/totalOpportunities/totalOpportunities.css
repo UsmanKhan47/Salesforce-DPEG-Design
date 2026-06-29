@@ -1,0 +1,28 @@
+:host {
+    display: block;
+}
+
+.cards-wrap {
+    padding: 0.25rem 1rem 1rem;
+    box-sizing: border-box;
+}
+
+.cards-grid {
+    display: grid;
+    /* 5 equal columns -> the 10 stage cards fill two full-width rows of 5 */
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+}
+
+@media (max-width: 1024px) {
+    .cards-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

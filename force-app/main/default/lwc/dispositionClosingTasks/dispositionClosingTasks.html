@@ -1,0 +1,31 @@
+<template>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Closing Checklist</div>
+            <span class="progress-badge" style={badgeStyle}>
+                <span class="badge-dot"></span>{badgeLabel}
+            </span>
+        </div>
+
+        <ul class="task-list">
+            <template for:each={rows} for:item="row">
+                <li key={row.id} class={row.rowClass}>
+                    <lightning-input
+                        type="checkbox"
+                        label={row.subject}
+                        variant="label-hidden"
+                        checked={row.done}
+                        data-id={row.id}
+                        onchange={handleToggle}>
+                    </lightning-input>
+                    <div class="task-body">
+                        <span class="task-subject">{row.subject}</span>
+                        <template if:true={row.metaLabel}>
+                            <span class="task-meta">{row.metaLabel}</span>
+                        </template>
+                    </div>
+                </li>
+            </template>
+        </ul>
+    </div>
+</template>

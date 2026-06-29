@@ -1,0 +1,124 @@
+<template>
+    <lightning-card icon-name="standard:document">
+        <span slot="title" class="card-title">Deal Summary</span>
+
+        <div class="body">
+            <!-- NDA -->
+            <div class="doc">
+                <div class="doc-head">
+                    <span class="doc-left">
+                        <span class="doc-icon doc-icon--nda">
+                            <lightning-icon icon-name="utility:lock" size="x-small"
+                                style="--slds-c-icon-color-foreground-default:#2E86DE;--sds-c-icon-color-foreground-default:#2E86DE">
+                            </lightning-icon>
+                        </span>
+                        <template if:true={hasNda}>
+                            <a class="doc-name" onclick={openNda} title="Open NDA">NDA</a>
+                        </template>
+                        <template if:false={hasNda}>
+                            <span class="doc-name doc-name--muted">NDA</span>
+                        </template>
+                    </span>
+                    <span class={ndaPillClass}>{ndaStatus}</span>
+                </div>
+                <template if:true={hasNda}>
+                    <div class="doc-meta">{ndaMeta}</div>
+                </template>
+                <template if:false={hasNda}>
+                    <div class="doc-meta doc-meta--empty">No NDA on this deal yet</div>
+                </template>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- LOI -->
+            <div class="doc">
+                <div class="doc-head">
+                    <span class="doc-left">
+                        <span class="doc-icon doc-icon--loi">
+                            <lightning-icon icon-name="utility:contract" size="x-small"
+                                style="--slds-c-icon-color-foreground-default:#17A98C;--sds-c-icon-color-foreground-default:#17A98C">
+                            </lightning-icon>
+                        </span>
+                        <template if:true={hasLoi}>
+                            <a class="doc-name" onclick={openLoi} title="Open LOI">LOI</a>
+                        </template>
+                        <template if:false={hasLoi}>
+                            <span class="doc-name doc-name--muted">LOI</span>
+                        </template>
+                    </span>
+                    <span class={loiPillClass}>{loiStatus}</span>
+                </div>
+                <template if:true={hasLoi}>
+                    <div class="doc-meta">{loiMeta}</div>
+                </template>
+                <template if:false={hasLoi}>
+                    <div class="doc-meta doc-meta--empty">No LOI on this deal yet</div>
+                </template>
+            </div>
+
+            <!-- Development Feasibility Review (only when one exists) -->
+            <template if:true={hasDevelopment}>
+                <div class="divider"></div>
+                <div class="doc">
+                    <div class="doc-head">
+                        <span class="doc-left">
+                            <span class="doc-icon doc-icon--dev">
+                                <lightning-icon icon-name="utility:office" size="x-small"
+                                    style="--slds-c-icon-color-foreground-default:#B7791F;--sds-c-icon-color-foreground-default:#B7791F">
+                                </lightning-icon>
+                            </span>
+                            <a class="doc-name" onclick={openDevelopment} title="Open Development Review">Development</a>
+                        </span>
+                        <span class={developmentPillClass}>{developmentStage}</span>
+                    </div>
+                    <template if:true={developmentMeta}>
+                        <div class="doc-meta">{developmentMeta}</div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Construction Feasibility Review (only when one exists) -->
+            <template if:true={hasConstruction}>
+                <div class="divider"></div>
+                <div class="doc">
+                    <div class="doc-head">
+                        <span class="doc-left">
+                            <span class="doc-icon doc-icon--con">
+                                <lightning-icon icon-name="utility:builder" size="x-small"
+                                    style="--slds-c-icon-color-foreground-default:#C2410C;--sds-c-icon-color-foreground-default:#C2410C">
+                                </lightning-icon>
+                            </span>
+                            <a class="doc-name" onclick={openConstruction} title="Open Construction Review">Construction</a>
+                        </span>
+                        <span class={constructionPillClass}>{constructionStage}</span>
+                    </div>
+                    <template if:true={constructionMeta}>
+                        <div class="doc-meta">{constructionMeta}</div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Contract Review (only when one exists) -->
+            <template if:true={hasContract}>
+                <div class="divider"></div>
+                <div class="doc">
+                    <div class="doc-head">
+                        <span class="doc-left">
+                            <span class="doc-icon doc-icon--contract">
+                                <lightning-icon icon-name="utility:signature" size="x-small"
+                                    style="--slds-c-icon-color-foreground-default:#7E57C2;--sds-c-icon-color-foreground-default:#7E57C2">
+                                </lightning-icon>
+                            </span>
+                            <a class="doc-name" onclick={openContract} title="Open Contract">Contract</a>
+                        </span>
+                        <span class={contractPillClass}>{contractStage}</span>
+                    </div>
+                    <template if:true={contractMeta}>
+                        <div class="doc-meta">{contractMeta}</div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

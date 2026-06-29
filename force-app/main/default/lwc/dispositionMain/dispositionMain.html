@@ -1,0 +1,16 @@
+<template>
+    <template if:true={isBovOutreach}>
+        <c-bov-comparison-matrix record-id={recordId}></c-bov-comparison-matrix>
+    </template>
+    <template if:true={isActiveListing}>
+        <c-broker-listing record-id={recordId}></c-broker-listing>
+        <div class="listing-row">
+            <c-listing-alerts></c-listing-alerts>
+            <c-backup-brokers record-id={recordId}></c-backup-brokers>
+        </div>
+    </template>
+    <template if:true={isClosing}>
+        <c-wire-verification record-id={recordId}></c-wire-verification>
+        <c-disposition-closing-tasks record-id={recordId}></c-disposition-closing-tasks>
+    </template>
+</template>

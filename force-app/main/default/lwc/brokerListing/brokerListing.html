@@ -1,0 +1,32 @@
+<template>
+    <template if:true={listing}>
+        <div class="card">
+            <div class="card-header">
+                <div class="header-left">
+                    <div class="card-title">{listing.assetName}</div>
+                    <div class="card-sub">{listing.brokerFirm} · {listing.contactName}</div>
+                </div>
+                <div class="header-right">
+                    <template if:true={hasWeekLabel}>
+                        <span class="risk-badge"><span class="risk-dot"></span>{listing.weekLabel}</span>
+                    </template>
+                    <button class="replace-btn" onclick={handleReplaceBroker}>Replace Broker</button>
+                </div>
+            </div>
+            <div class="cards-grid">
+                <template for:each={stats} for:item="stat">
+                    <c-onboarding-card-child
+                        key={stat.key}
+                        value={stat.value}
+                        label={stat.label}
+                        icon-name={stat.iconName}
+                        icon-color={stat.iconColor}>
+                    </c-onboarding-card-child>
+                </template>
+            </div>
+        </div>
+    </template>
+    <template if:false={listing}>
+        <div class="empty-card">No broker listing on record.</div>
+    </template>
+</template>

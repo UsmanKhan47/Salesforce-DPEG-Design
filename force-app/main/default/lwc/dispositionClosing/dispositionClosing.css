@@ -1,0 +1,42 @@
+:host {
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    color: #181818;
+}
+.card {
+    background: #fff;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid #eef1f4;
+    gap: 12px;
+}
+.card-title { font-weight: 700; font-size: 13px; color: #181818; }
+.card-sub { font-size: 11px; color: #8a96a3; margin-top: 3px; }
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #eceff1;
+    color: #5a6b7b;
+    border: 1px solid #e1e6ea;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 11px;
+    border-radius: 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    padding: 4px 16px 14px;
+}

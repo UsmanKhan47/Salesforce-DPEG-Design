@@ -1,0 +1,20 @@
+.formula-label {
+    font-size: 11px;
+    color: #8a96a3;
+    font-weight: 400;
+    white-space: nowrap;
+}
+
+.view-all-footer {
+    text-align: center;
+}
+
+.view-all-footer a {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    text-decoration: none;
+    font-size: 0.8125rem;
+}
+
+.view-all-footer a:hover {
+    text-decoration: underline;
+}

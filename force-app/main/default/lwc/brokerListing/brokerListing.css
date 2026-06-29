@@ -1,0 +1,61 @@
+:host {
+    display: block;
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    color: #181818;
+}
+.card {
+    background: #fff;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid #eef1f4;
+    gap: 12px;
+}
+.card-title { font-weight: 700; font-size: 13px; color: #181818; }
+.card-sub { font-size: 11px; color: #8a96a3; margin-top: 3px; }
+.header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.risk-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+.risk-dot { width: 7px; height: 7px; border-radius: 50%; background: #d97706; flex-shrink: 0; }
+.replace-btn {
+    border: 1.5px solid #1565c0;
+    background: #fff;
+    color: #1565c0;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+}
+.replace-btn:hover { background: #f0f6fd; }
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    padding: 4px 16px 14px;
+}
+.empty-card {
+    padding: 20px;
+    text-align: center;
+    color: #8a96a3;
+    font-size: 12px;
+}

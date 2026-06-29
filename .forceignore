@@ -1,0 +1,16 @@
+# List files or directories below to ignore them when deploying/retrieving metadata
+package.xml
+
+# LWC configuration files
+**/jsconfig.json
+**/.eslintrc.json
+
+# LWC Jest
+**/__tests__/**
+
+# Local docs / design assets (not Salesforce metadata)
+docs/
+
+# CustomMetadata records: file-based deploy throws UNKNOWN_EXCEPTION in this org.
+# Records are loaded via scripts/load-*-defs.apex (Apex Metadata API). Files kept as source-of-truth.
+**/customMetadata/**

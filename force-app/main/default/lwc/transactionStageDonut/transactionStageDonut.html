@@ -1,0 +1,37 @@
+<template>
+    <lightning-card icon-name="standard:metrics">
+        <span slot="title">Transactions by Stage</span>
+
+        <div class="body">
+            <template if:true={hasData}>
+                <div class="donut">
+                    <svg viewBox="0 0 180 180" class="donut__svg">
+                        <circle cx="90" cy="90" r="64" fill="none" stroke="#eef1f4" stroke-width="22"></circle>
+                        <template for:each={segments} for:item="seg">
+                            <circle key={seg.key} cx="90" cy="90" r="64" fill="none" stroke-width="22"
+                                    stroke={seg.color} stroke-dasharray={seg.dashArray}
+                                    stroke-linecap="butt" transform={seg.transform}></circle>
+                        </template>
+                    </svg>
+                    <div class="donut__center">
+                        <div class="donut__total">{total}</div>
+                        <div class="donut__cap">Deals</div>
+                    </div>
+                </div>
+                <ul class="legend">
+                    <template for:each={legend} for:item="l">
+                        <li key={l.key} class="legend__row">
+                            <span class="legend__swatch" style={l.swatchStyle}></span>
+                            <span class="legend__name">{l.stage}</span>
+                            <span class="legend__count">{l.count}</span>
+                            <span class="legend__pct">{l.pct}</span>
+                        </li>
+                    </template>
+                </ul>
+            </template>
+            <template if:false={hasData}>
+                <div class="empty">No active transactions</div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

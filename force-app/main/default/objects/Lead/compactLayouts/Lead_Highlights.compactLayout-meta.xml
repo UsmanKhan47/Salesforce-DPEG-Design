@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lead_Highlights</fullName>
+    <fields>Guidance_Price__c</fields>
+    <fields>My_Cap_Rate__c</fields>
+    <fields>BP_Expiry__c</fields>
+    <fields>Days_in_System__c</fields>
+    <label>Lead Highlights</label>
+</CompactLayout>
