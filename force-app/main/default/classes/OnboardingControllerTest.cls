@@ -69,4 +69,21 @@ private class OnboardingControllerTest {
         System.assertEquals('Leasing', leasing.category);
         System.assertEquals(true, leasing.items[0].overdue, 'open & past due');
     }
+    @isTest static void completeTaskMarksCompleteAndRollsUp() {
+        Onboarding__c o = new Onboarding__c(Stage__c='Property Set up', Status__c='In Progress');
+        insert o;
+        Task t = new Task(Onboarding__c=o.Id, Subject='Open task', Onboarding_Category__c='Property Set up',
+            Onboarding_Status__c='Not Started', Status='Open', Source_System__c='Yardi',
+            Task_Owner_Label__c='Isha Patel', ActivityDate=Date.today().addDays(3));
+        insert t;
+        Test.startTest();
+        OnboardingController.completeTask(t.Id, 'Done via checkbox');
+        Test.stopTest();
+        Task after = [SELECT Onboarding_Status__c, Status, Description FROM Task WHERE Id = :t.Id];
+        System.assertEquals('Complete', after.Onboarding_Status__c, 'status flips to Complete');
+        System.assertEquals('Completed', after.Status, 'std status closed');
+        System.assert(after.Description != null && after.Description.contains('Done via checkbox'), 'note appended');
+        Onboarding__c rolled = [SELECT Tasks_Complete__c FROM Onboarding__c WHERE Id = :o.Id];
+        System.assertEquals(1, rolled.Tasks_Complete__c, 'rollup sees the completed task');
+    }
 }

@@ -1,10 +1,13 @@
 <template>
-    <lightning-card icon-name="standard:task2">
-        <span slot="title">Onboarding Checklist</span>
-        <span slot="actions" class="pct">{overall.pctLabel}</span>
-        <div class="wrap">
-            <div class="track"><div style={overall.barStyle}></div></div>
-            <div class="label">{overall.label}</div>
+    <div class="cs">
+        <div class="cs-row">
+            <div class="cs-title">
+                <lightning-icon icon-name="standard:task" size="small" class="cs-icon"></lightning-icon>
+                <span>Onboarding Checklist</span>
+            </div>
+            <span class="cs-pct">{overall.pctLabel}</span>
         </div>
-    </lightning-card>
+        <div class="cs-track"><div class="cs-bar" style={overall.barStyle}></div></div>
+        <div class="cs-foot"><span class="cs-count">{overall.label}</span></div>
+    </div>
 </template>

@@ -1,59 +1,95 @@
 <template>
-    <lightning-card icon-name="standard:task2">
-        <span slot="title">Onboarding Checklist <span class="sub">— {headerLabel}</span></span>
+    <div class="oc">
+            <!-- Filter chips -->
+            <div class="oc-filters">
+                <template for:each={chips} for:item="c">
+                    <button key={c.key} class={c.chipClass} data-name={c.name} onclick={selectFilter}>{c.label}</button>
+                </template>
+            </div>
 
-        <div class="chips">
-            <template for:each={chips} for:item="c">
-                <div key={c.key} data-name={c.name} style={c.chipStyle} onclick={selectFilter}>{c.label}</div>
-            </template>
-        </div>
+            <!-- Group chips with conic progress rings -->
+            <div class="oc-groups">
+                <template for:each={tiles} for:item="g">
+                    <button key={g.key} class={g.chipClass} data-index={g.index} onclick={selectGroup}>
+                        <span class="oc-ring" style={g.ringStyle}>
+                            <span class="oc-ring-inner">{g.letter}</span>
+                        </span>
+                        <span class="oc-gchip-body">
+                            <span class="oc-gchip-name">{g.name}</span>
+                            <span class="oc-gchip-sub">
+                                <span class="oc-gchip-count">{g.count}</span>
+                                <template if:true={g.complete100}>
+                                    <lightning-icon icon-name="utility:success" size="xx-small"
+                                        class="oc-done-icon"></lightning-icon>
+                                </template>
+                            </span>
+                        </span>
+                    </button>
+                </template>
+            </div>
 
-        <div class="tiles">
-            <template for:each={tiles} for:item="g">
-                <div key={g.key} data-index={g.index} style={g.tileStyle} onclick={selectGroup}>
-                    <span style={g.badgeStyle}>{g.letter}</span>
-                    <div class="tmeta">
-                        <span class="tname">{g.name}</span>
-                        <span class="tcount">{g.count}</span>
-                    </div>
-                </div>
-            </template>
-        </div>
-
-        <div class="selhead">
-            <div class="selbadge">{selected.letter}</div>
-            <div class="selname">{selected.name}</div>
-            <span class="selcount">{selected.count}</span>
-        </div>
-        <div class="seltrack"><div style={selected.fillStyle}></div></div>
-
-        <div class="items">
-            <template for:each={items} for:item="it">
-                <div key={it.id} class="row">
-                    <div style={it.controlStyle}>{it.controlMark}</div>
-                    <div class="rmain">
-                        <span style={it.nameStyle}>{it.name}</span>
-                        <div class="rmeta">
-                            <span style={it.sysStyle}>{it.system}</span>
-                            <span style={it.badgeStyle}><span style={it.dotStyle}></span>{it.statusLabel}</span>
-                            <template if:true={it.isBlocked}>
-                                <span class="reason">{it.reason}</span>
-                            </template>
+            <!-- Detail card -->
+            <div class="oc-detail">
+                <div class="oc-detail-head">
+                    <span class="oc-badge">{selected.letter}</span>
+                    <div class="oc-detail-titles">
+                        <div class="oc-detail-name">{selected.name}</div>
+                        <div class="oc-detail-sub">
+                            <span class="oc-detail-count">{selected.count}</span>
                         </div>
                     </div>
-                    <div class="rowner">
-                        <div style={it.avatarStyle}>{it.initials}</div>
-                        <span class="oname">{it.ownerShort} ·</span>
-                        <span style={it.dueStyle}>{it.due}</span>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={it.notesColor} stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" title="Notes">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                        </svg>
-                    </div>
                 </div>
-            </template>
-            <template if:true={isEmpty}>
-                <div class="empty">No tasks match this filter in this category.</div>
-            </template>
-        </div>
-    </lightning-card>
+                <div class="oc-detail-track"><div class="oc-bar" style={selected.barStyle}></div></div>
+
+                <ul class="oc-tasks">
+                    <template for:each={items} for:item="it">
+                        <li key={it.id} class={it.rowClass}>
+                            <input type="checkbox" class="oc-check" checked={it.done} disabled={it.locked}
+                                data-id={it.id} data-subject={it.name} onchange={handleCheck} />
+                            <span class="oc-subject">{it.name}</span>
+                            <template if:true={it.isBlocked}>
+                                <span class="oc-flag" title={it.reason}>
+                                    <lightning-icon icon-name="utility:warning" size="xx-small"
+                                        class="oc-flag-icon"></lightning-icon>Blocked
+                                </span>
+                            </template>
+                            <template if:true={it.isNA}>
+                                <span class="oc-na-tag">N/A</span>
+                            </template>
+                            <span class={it.metaClass}>{it.meta}</span>
+                        </li>
+                    </template>
+                    <template if:true={isEmpty}>
+                        <li class="oc-empty">No tasks match this filter in this category.</li>
+                    </template>
+                </ul>
+            </div>
+    </div>
+
+    <!-- Confirm-complete dialog -->
+    <template if:true={showConfirmModal}>
+        <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="oc-confirm-heading"
+            class="slds-modal slds-fade-in-open oc-modal">
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                        title="Close" onclick={cancelConfirm}>
+                        <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
+                    </button>
+                    <h2 id="oc-confirm-heading" class="slds-modal__title slds-hyphenate">Complete Task?</h2>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <p class="oc-confirm-subject">{confirmSubject}</p>
+                    <lightning-textarea label="Comments" value={confirmNotes} onchange={handleConfirmNotes}
+                        class="slds-m-top_small" placeholder="Add comments for this task…"></lightning-textarea>
+                </div>
+                <footer class="slds-modal__footer">
+                    <button class="slds-button slds-button_neutral" onclick={cancelConfirm}>Cancel</button>
+                    <button class="slds-button slds-button_brand" onclick={confirmComplete}
+                        disabled={saving}>Confirm</button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
 </template>

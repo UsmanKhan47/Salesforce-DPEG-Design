@@ -201,4 +201,24 @@ public with sharing class OnboardingController {
         for (String c : CATEGORY_ORDER) out.add(byCat.get(c));
         return out;
     }
+
+    // Mark a checklist task complete (from the interactive checkbox), append any note, and
+    // roll the change up onto the parent Onboarding so the rings/bars/KPIs reflect it.
+    @AuraEnabled
+    public static void completeTask(Id taskId, String notes) {
+        Task t = [
+            SELECT Id, Onboarding__c, Onboarding_Status__c, Status, Description
+            FROM Task WHERE Id = :taskId LIMIT 1
+        ];
+        t.Onboarding_Status__c = 'Complete';
+        t.Status = 'Completed';
+        t.ActivityDate = Date.today();
+        if (String.isNotBlank(notes)) {
+            t.Description = String.isBlank(t.Description) ? notes : (t.Description + '\n\n' + notes);
+        }
+        update t;
+        if (t.Onboarding__c != null) {
+            OnboardingTaskRollupService.recalc(new Set<Id>{ t.Onboarding__c });
+        }
+    }
 }
