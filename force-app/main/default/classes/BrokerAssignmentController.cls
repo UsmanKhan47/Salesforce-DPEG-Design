@@ -194,6 +194,16 @@ public with sharing class BrokerAssignmentController {
         update new Broker_Assignment__c(Id=assignmentId, Status__c=status,
             Listing_End_Date__c = endDate == null ? Date.today() : endDate, Reason_Ended__c=reason);
     }
+    public class BrokerOption { @AuraEnabled public Id id; @AuraEnabled public String label; }
+    @AuraEnabled(cacheable=true)
+    public static List<BrokerOption> getBrokerOptions() {
+        List<BrokerOption> out = new List<BrokerOption>();
+        for (Contact c : [SELECT Id, Name, Broker_Firm__c FROM Contact WHERE Is_Broker__c = true ORDER BY Name]) {
+            BrokerOption o = new BrokerOption(); o.id=c.Id; o.label = c.Broker_Firm__c == null ? c.Name : (c.Name + ' · ' + c.Broker_Firm__c); out.add(o);
+        }
+        return out;
+    }
+
     @AuraEnabled
     public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate, String reason) {
         Date eff = effectiveDate == null ? Date.today() : effectiveDate;

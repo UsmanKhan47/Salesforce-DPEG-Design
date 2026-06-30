@@ -91,4 +91,7 @@ private class BrokerAssignmentControllerTest {
         System.assertEquals(nb.Id, newA.Broker__c);
         System.assertEquals(a.Property_Asset__c, newA.Property_Asset__c);
     }
+    @isTest static void getBrokerOptionsReturnsBrokers() {
+        System.assertEquals(2, BrokerAssignmentController.getBrokerOptions().size());
+    }
 }

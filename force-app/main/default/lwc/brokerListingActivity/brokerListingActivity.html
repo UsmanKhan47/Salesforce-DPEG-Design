@@ -1,0 +1,11 @@
+<template>
+    <article class="la-card">
+        <div class="la-hd">
+            <span class="la-icon"><lightning-icon icon-name="utility:clock" size="x-small" variant="inverse"></lightning-icon></span>
+            <span class="la-title">Listing Activity</span>
+        </div>
+        <div class="la-big">{activeDays}<span class="la-unit">active days</span></div>
+        <div class="la-row"><span class="la-lbl">Last check-in</span><span class="la-val">{lastCheckIn}</span></div>
+        <div class="la-row"><span class="la-lbl">Days since check-in</span><span class="la-val">{daysIdle}</span></div>
+    </article>
+</template>
