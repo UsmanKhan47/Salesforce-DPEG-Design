@@ -1,0 +1,22 @@
+<template>
+    <lightning-card>
+        <div slot="title" class="hdr">
+            <span class="hdr-icon"><lightning-icon icon-name="utility:company" size="x-small" variant="inverse"></lightning-icon></span>
+            <span class="hdr-title">Broker Assignments ({count})</span>
+        </div>
+        <div slot="actions">
+            <lightning-button variant="brand" label="New Assignment" icon-name="utility:add" onclick={newAssignment}></lightning-button>
+        </div>
+        <div class="toolbar">
+            <div class="tabs">
+                <template for:each={statusTabs} for:item="t">
+                    <button key={t.key} data-key={t.key} class={t.cls} onclick={handleStatus}>{t.label}<span class="tab-count">{t.count}</span></button>
+                </template>
+            </div>
+            <lightning-combobox class="broker-filter" variant="label-hidden" value={brokerFilter} options={brokerOptions} onchange={handleBroker}></lightning-combobox>
+        </div>
+        <c-list-datatable key-field="id" data={rows} columns={columns} column-widths-mode="fixed" hide-checkbox-column
+            sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}></c-list-datatable>
+        <div slot="footer" class="note">Records are never deleted — closed listings stay visible by changing status. Click any row to open it.</div>
+    </lightning-card>
+</template>
