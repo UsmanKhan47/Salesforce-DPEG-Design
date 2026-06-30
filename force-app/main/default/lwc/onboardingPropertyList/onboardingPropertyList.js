@@ -8,21 +8,23 @@ const pillDot = (c) => `width:7px;height:7px;border-radius:50%;background:${c};f
 const pctColor = (p) => (p >= 80 ? '#1A7A6B' : p >= 50 ? '#D4940A' : '#C0392B');
 
 const COLUMNS = [
-    { label: 'Property', fieldName: 'recordUrl', type: 'url', initialWidth: 180, typeAttributes: { label: { fieldName: 'propertyName' }, target: '_self' } },
-    { label: 'Start', fieldName: 'startLabel', type: 'text', initialWidth: 130 },
-    { label: 'Target', fieldName: 'targetLabel', type: 'text', initialWidth: 130 },
-    { label: 'Stage', fieldName: 'stage', type: 'pill', initialWidth: 175, typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
+    // Property + Stage have no initialWidth: in fixed mode they flex to fill the
+    // leftover width, so the table fills the card and stays responsive.
+    { label: 'Property', fieldName: 'recordUrl', type: 'url', typeAttributes: { label: { fieldName: 'propertyName' }, target: '_self' } },
+    { label: 'Start', fieldName: 'startLabel', type: 'text', initialWidth: 120 },
+    { label: 'Target', fieldName: 'targetLabel', type: 'text', initialWidth: 120 },
+    { label: 'Stage', fieldName: 'stage', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
     {
-        label: '% Complete', fieldName: 'pctText', type: 'progress', initialWidth: 140,
+        label: '% Complete', fieldName: 'pctText', type: 'progress', initialWidth: 150,
         typeAttributes: {
-            wrapStyle: 'display:flex;align-items:center;gap:8px;min-width:115px',
-            trackStyle: 'width:80px;height:8px;background:#ECEBEA;border-radius:9999px;overflow:hidden',
+            wrapStyle: 'display:flex;align-items:center;gap:8px;min-width:120px',
+            trackStyle: 'width:90px;height:8px;background:#ECEBEA;border-radius:9999px;overflow:hidden',
             barStyle: { fieldName: 'pctBar' },
             numStyle: 'color:#3B3B3B;font-weight:700;white-space:nowrap;font-size:12px;font-variant-numeric:tabular-nums',
             text: { fieldName: 'pctText' }
         }
     },
-    { label: 'Open', fieldName: 'openTasks', type: 'number', initialWidth: 85, cellAttributes: { alignment: 'center' } }
+    { label: 'Open', fieldName: 'openTasks', type: 'number', initialWidth: 90, cellAttributes: { alignment: 'center' } }
 ];
 
 export default class OnboardingPropertyList extends NavigationMixin(LightningElement) {
