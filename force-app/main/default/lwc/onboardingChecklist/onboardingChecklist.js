@@ -5,7 +5,7 @@ import getChecklist from '@salesforce/apex/OnboardingController.getChecklist';
 import completeTask from '@salesforce/apex/OnboardingController.completeTask';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const FILTERS = ['All','In Progress','Blocked','Not Applicable','Overdue'];
+const FILTERS = ['All','In Progress','Not Applicable','Overdue'];
 
 const ownerShort = (n) => !n ? '' : (n === 'Accounting Queue' ? 'Accounting' : n.split(' ')[0]);
 
