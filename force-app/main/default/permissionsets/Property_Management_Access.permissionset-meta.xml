@@ -324,6 +324,10 @@
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <tabSettings>
+        <tab>Broker_Assignments</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
         <tab>Broker_Assignment__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
