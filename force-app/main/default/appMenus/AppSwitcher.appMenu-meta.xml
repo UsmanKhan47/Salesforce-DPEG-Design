@@ -92,4 +92,8 @@
         <name>DPEG Broker Portal</name>
         <type>Network</type>
     </appMenuItems>
+    <appMenuItems>
+        <name>Property_Management</name>
+        <type>CustomApplication</type>
+    </appMenuItems>
 </AppMenu>

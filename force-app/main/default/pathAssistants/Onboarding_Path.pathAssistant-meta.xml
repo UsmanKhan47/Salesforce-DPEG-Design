@@ -5,8 +5,28 @@
     <fieldName>Stage__c</fieldName>
     <masterLabel>Onboarding Path</masterLabel>
     <pathAssistantSteps>
+        <info>Sign the listing agreement and configure leasing.</info>
+        <picklistValueName>Leasing</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Define NNN charges, recovery pools, and generate first tenant statements.</info>
+        <picklistValueName>NNN Reconciliation &amp; Billing Setup</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Onboarding complete.</info>
+        <picklistValueName>Onboarding Complete</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Stand up KPI tracking in Salesforce.</info>
+        <picklistValueName>Performance Tracking</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
         <info>Create the property record, link accounts, and assign the onboarding owner.</info>
         <picklistValueName>Property Set up</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Send tenant communications and complete the transition.</info>
+        <picklistValueName>Tenant Communication &amp; Transition</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <info>Load units, leases, rent schedules, and reconcile the rent roll.</info>
@@ -15,26 +35,6 @@
     <pathAssistantSteps>
         <info>Enter vendors, service contracts, insurance, and recurring expenses.</info>
         <picklistValueName>Vendor &amp; Expense Management</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Define NNN charges, recovery pools, and generate first tenant statements.</info>
-        <picklistValueName>NNN Reconciliation &amp; Billing Setup</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Send tenant communications and complete the transition.</info>
-        <picklistValueName>Tenant Communication &amp; Transition</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Stand up KPI tracking in Salesforce.</info>
-        <picklistValueName>Performance Tracking</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Sign the listing agreement and configure leasing.</info>
-        <picklistValueName>Leasing</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Onboarding complete.</info>
-        <picklistValueName>Onboarding Complete</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>__MASTER__</recordTypeName>
 </PathAssistant>

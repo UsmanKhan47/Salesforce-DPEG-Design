@@ -77,6 +77,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>BOV_Submission__c.Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>BOV_Submission__c.Commission_Rate__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1098,11 +1103,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Underwritten_NOI__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>BOV_Submission__c.Cap_Rate__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

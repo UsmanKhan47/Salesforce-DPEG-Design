@@ -3,20 +3,46 @@
     <fullName>Onboarding_Category__c</fullName>
     <label>Onboarding Category</label>
     <required>false</required>
-    <trackHistory>false</trackHistory>
-    <trackTrending>false</trackTrending>
     <type>Picklist</type>
     <valueSet>
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
-            <value><fullName>Property Set up</fullName><default>false</default><label>Property Set up</label></value>
-            <value><fullName>Unit &amp; Tenant Setup</fullName><default>false</default><label>Unit &amp; Tenant Setup</label></value>
-            <value><fullName>Vendor &amp; Expense Management</fullName><default>false</default><label>Vendor &amp; Expense Management</label></value>
-            <value><fullName>NNN Reconciliation &amp; Billing Setup</fullName><default>false</default><label>NNN Reconciliation &amp; Billing Setup</label></value>
-            <value><fullName>Tenant Communication &amp; Transition</fullName><default>false</default><label>Tenant Communication &amp; Transition</label></value>
-            <value><fullName>Performance Tracking</fullName><default>false</default><label>Performance Tracking</label></value>
-            <value><fullName>Leasing</fullName><default>false</default><label>Leasing</label></value>
+            <value>
+                <fullName>Property Set up</fullName>
+                <default>false</default>
+                <label>Property Set up</label>
+            </value>
+            <value>
+                <fullName>Unit &amp; Tenant Setup</fullName>
+                <default>false</default>
+                <label>Unit &amp; Tenant Setup</label>
+            </value>
+            <value>
+                <fullName>Vendor &amp; Expense Management</fullName>
+                <default>false</default>
+                <label>Vendor &amp; Expense Management</label>
+            </value>
+            <value>
+                <fullName>NNN Reconciliation &amp; Billing Setup</fullName>
+                <default>false</default>
+                <label>NNN Reconciliation &amp; Billing Setup</label>
+            </value>
+            <value>
+                <fullName>Tenant Communication &amp; Transition</fullName>
+                <default>false</default>
+                <label>Tenant Communication &amp; Transition</label>
+            </value>
+            <value>
+                <fullName>Performance Tracking</fullName>
+                <default>false</default>
+                <label>Performance Tracking</label>
+            </value>
+            <value>
+                <fullName>Leasing</fullName>
+                <default>false</default>
+                <label>Leasing</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>
