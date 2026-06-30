@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/shadows.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/radii.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/motion.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/base.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/styles.css">
+  <script src="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/_ds_bundle.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #f3f2ef; }
+    *::-webkit-scrollbar { width: 12px; height: 12px; }
+    *::-webkit-scrollbar-thumb { background: var(--color-neutral-200); border-radius: 8px; border: 3px solid #f3f2ef; }
+    *::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</helmet>
+
+<div style="display:flex; flex-direction:column; height:100vh; width:100%; font-family:var(--font-body); color:var(--text-primary); background:#f3f2ef; overflow:hidden;">
+
+  <!-- ===== GLOBAL HEADER BAR ===== -->
+  <div style="flex-shrink:0; height:54px; background:#fff; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; padding:0 16px; gap:16px;">
+    <div style="display:flex; align-items:center; gap:9px; flex-shrink:0;">
+      <svg width="38" height="32" viewBox="0 0 48 40"><path d="M24 3 L45 24 H35 L24 13 L13 24 H3 Z" fill="#57b277"/><path d="M24 17 L41 34 H32 L24 26 L16 34 H7 Z" fill="#2f8a52"/></svg>
+      <span style="font-family:var(--font-body); font-size:21px; font-weight:700; letter-spacing:0.04em; color:#2D2A26;">DHANANI</span>
+    </div>
+    <div style="flex:1; display:flex; justify-content:center;">
+      <div style="position:relative; width:100%; max-width:520px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A8680" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; left:13px; top:50%; transform:translateY(-50%);"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input placeholder="Search..." style="width:100%; height:34px; padding:0 12px 0 36px; border:1px solid var(--border-default); border-radius:6px; background:#fff; font-family:var(--font-body); font-size:14px; color:var(--text-primary); box-sizing:border-box;"/>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+      <div style="display:flex; align-items:center; gap:4px; height:30px; padding:0 8px; border:1px solid var(--border-default); border-radius:5px; color:var(--text-secondary);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5 14 7.5l5.5.8-4 3.9.9 5.5-4.9-2.6L7.5 18l.9-5.5-4-3.9L9.9 7.5z"/></svg>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F3C38" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F3C38" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F3C38" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      <div style="position:relative;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F3C38" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span style="position:absolute; top:-5px; right:-5px; background:var(--color-error-600); color:#fff; font-size:9px; font-weight:700; min-width:15px; height:15px; padding:0 3px; border-radius:9999px; display:flex; align-items:center; justify-content:center;">3</span>
+      </div>
+      <div style="width:32px; height:32px; border-radius:50%; background:var(--color-navy-800); display:flex; align-items:center; justify-content:center; color:var(--color-gold-300); font-size:12px; font-weight:700; flex-shrink:0;">ZD</div>
+    </div>
+  </div>
+
+  <!-- ===== APP CONTEXT BAR ===== -->
+  <div style="flex-shrink:0; height:48px; background:#fff; border-bottom:1px solid var(--border-default); box-shadow:0 1px 2px rgba(7,20,40,0.05); display:flex; align-items:stretch; padding:0 16px; gap:18px;">
+    <div style="display:flex; align-items:center; gap:11px; flex-shrink:0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#5A5752"><circle cx="5" cy="5" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="19" cy="5" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/><circle cx="5" cy="19" r="1.6"/><circle cx="12" cy="19" r="1.6"/><circle cx="19" cy="19" r="1.6"/></svg>
+      <span style="font-size:17px; font-weight:700; color:var(--text-primary); letter-spacing:-0.01em;">Property Management</span>
+    </div>
+    <nav style="display:flex; align-items:stretch; gap:4px;">
+      <button onClick="{{ goList }}" style="{{ tabListStyle }}">Assignments</button>
+      <button onClick="{{ goScore }}" style="{{ tabScoreStyle }}">Broker Scorecard</button>
+      <button onClick="{{ goForm }}" style="{{ tabFormStyle }}">New Assignment</button>
+    </nav>
+  </div>
+
+  <!-- ===== CONTENT ===== -->
+  <div style="flex:1; overflow:auto; padding:18px 22px 40px;">
+
+    <!-- page header -->
+    <div style="display:flex; align-items:center; gap:13px; margin-bottom:18px;">
+      <div style="width:42px; height:42px; border-radius:8px; background:var(--color-gold-500); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg>
+      </div>
+      <h1 style="margin:0; font-family:var(--font-body); font-size:24px; font-weight:400; color:var(--color-neutral-700); line-height:1.2;">{{ screenTitle }}</h1>
+    </div>
+
+    <!-- ========== LIST VIEW ========== -->
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+    <div>
+      <!-- KPI cards -->
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px;">
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:20px 22px; box-shadow:0 1px 2px rgba(7,20,40,0.06); display:flex; align-items:center; gap:16px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-navy-700)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg>
+          <div><div style="font-size:28px; font-weight:700; color:var(--text-primary); line-height:1;">{{ summary.total }}</div><div style="font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-tertiary); margin-top:7px;">Total assignments</div></div>
+        </div>
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:20px 22px; box-shadow:0 1px 2px rgba(7,20,40,0.06); display:flex; align-items:center; gap:16px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-success-600)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>
+          <div><div style="font-size:28px; font-weight:700; color:var(--text-primary); line-height:1;">{{ summary.active }}</div><div style="font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-tertiary); margin-top:7px;">Active listings</div></div>
+        </div>
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:20px 22px; box-shadow:0 1px 2px rgba(7,20,40,0.06); display:flex; align-items:center; gap:16px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning-600)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <div><div style="font-size:28px; font-weight:700; color:var(--text-primary); line-height:1;">{{ summary.overdue }}</div><div style="font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-tertiary); margin-top:7px;">Check-in overdue</div></div>
+        </div>
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:20px 22px; box-shadow:0 1px 2px rgba(7,20,40,0.06); display:flex; align-items:center; gap:16px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-500)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+          <div><div style="font-size:28px; font-weight:700; color:var(--text-primary); line-height:1;">{{ summary.leased }}</div><div style="font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-tertiary); margin-top:7px;">Fully leased</div></div>
+        </div>
+      </div>
+
+      <!-- main grid -->
+      <div style="display:grid; grid-template-columns:minmax(0,1fr) 332px; gap:18px; align-items:start;">
+
+        <!-- table card -->
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden;">
+          <div style="padding:14px 18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:9px; flex:1; min-width:200px;">
+              <div style="width:26px; height:26px; border-radius:50%; background:var(--color-navy-700); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>
+              </div>
+              <span style="font-size:16px; font-weight:700; color:var(--text-primary);">Broker Assignments ({{ rowCount }})</span>
+            </div>
+            <div style="display:inline-flex; background:var(--color-neutral-100); border-radius:6px; padding:3px; gap:2px;">
+              <sc-for list="{{ statusTabs }}" as="tab" hint-placeholder-count="5">
+                <button onClick="{{ tab.onClick }}" style="{{ tab.style }}">{{ tab.label }}<span style="{{ tab.countStyle }}">{{ tab.count }}</span></button>
+              </sc-for>
+            </div>
+            <select value="{{ brokerFilterValue }}" onChange="{{ onBrokerFilter }}" style="height:32px; padding:0 28px 0 11px; border:1px solid var(--border-default); border-radius:5px; font-family:var(--font-body); font-size:13px; color:var(--text-primary); background:#fff; cursor:pointer; appearance:none; background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2214%22 height=%2214%22 fill=%22none%22 stroke=%22%23524F4A%22 stroke-width=%222%22><path d=%22m3 5 4 4 4-4%22/></svg>'); background-repeat:no-repeat; background-position:right 9px center;">
+              <sc-for list="{{ brokerOptions }}" as="opt" hint-placeholder-count="5"><option value="{{ opt.value }}">{{ opt.label }}</option></sc-for>
+            </select>
+          </div>
+
+          <div style="overflow-x:auto;">
+            <table style="width:100%; min-width:840px; border-collapse:collapse; font-family:var(--font-body);">
+              <thead>
+                <tr style="background:var(--color-neutral-50); border-top:1px solid var(--border-subtle); border-bottom:1px solid var(--border-default);">
+                  <th style="{{ thStyle }}">Property</th>
+                  <th style="{{ thStyle }}">Broker</th>
+                  <th style="{{ thStyle }}">Status</th>
+                  <th style="{{ thStyle }}">Listed</th>
+                  <th style="{{ thStyle }}">Last check-in</th>
+                  <th onClick="{{ onToggleSort }}" style="{{ thSortStyle }}"><span style="display:inline-flex; align-items:center; gap:4px;">Days idle {{ sortArrow }}</span></th>
+                  <th style="{{ thStyle }}">Follow-up</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+                  <tr onClick="{{ row.open }}" style="{{ row.rowStyle }}" style-hover="background:var(--color-navy-50);">
+                    <td style="{{ tdCell }}"><span style="color:var(--text-link); font-weight:600; cursor:pointer;" style-hover="text-decoration:underline;">{{ row.propertyName }}</span><div style="font-size:11px; color:var(--text-tertiary); margin-top:1px;">{{ row.propertyAddr }}</div></td>
+                    <td style="{{ tdCell }}"><div style="font-weight:500;">{{ row.brokerName }}</div><div style="font-size:11px; color:var(--text-tertiary); margin-top:1px;">{{ row.brokerFirm }}</div></td>
+                    <td style="{{ tdCell }}"><span style="{{ row.statusBadgeStyle }}"><span style="{{ row.statusDotStyle }}"></span>{{ row.statusLabel }}</span></td>
+                    <td style="{{ tdCell }}"><div style="color:var(--text-secondary);">{{ row.startDisp }}</div><div style="font-size:11px; color:var(--text-tertiary); margin-top:1px;">{{ row.endDisp }}</div></td>
+                    <td style="{{ tdCell }}"><span style="color:var(--text-secondary);">{{ row.checkInDisp }}</span></td>
+                    <td style="{{ tdCell }}">
+                      <div style="display:flex; align-items:center; gap:9px;">
+                        <div style="flex:1; min-width:54px; height:6px; border-radius:9999px; background:var(--color-neutral-100); overflow:hidden;"><div style="{{ row.barStyle }}"></div></div>
+                        <span style="{{ row.daysStyle }}">{{ row.daysDisp }}</span>
+                      </div>
+                    </td>
+                    <td style="{{ tdCell }}">
+                      <sc-if value="{{ row.showFlag }}" hint-placeholder-val="{{ true }}"><span style="{{ row.flagBadgeStyle }}"><span style="{{ row.flagDotStyle }}"></span>{{ row.flagLabel }}</span></sc-if>
+                      <sc-if value="{{ row.noFlag }}" hint-placeholder-val="{{ true }}"><span style="color:var(--text-tertiary);">—</span></sc-if>
+                    </td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <sc-if value="{{ rowsEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:44px; text-align:center; color:var(--text-tertiary); font-size:14px;">No assignments match these filters.</div></sc-if>
+          <div style="padding:13px; text-align:center; border-top:1px solid var(--border-subtle);"><button onClick="{{ viewAll }}" style="background:none; border:none; cursor:pointer; color:var(--text-link); font-family:var(--font-body); font-size:13px; font-weight:600;" style-hover="text-decoration:underline;">View all</button></div>
+        </div>
+
+        <!-- right rail -->
+        <div style="display:flex; flex-direction:column; gap:18px;">
+          <!-- portfolio status widget -->
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px;">
+            <div style="display:flex; align-items:center; gap:9px; margin-bottom:16px;">
+              <div style="width:26px; height:26px; border-radius:50%; background:var(--color-navy-700); display:flex; align-items:center; justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg></div>
+              <span style="font-size:16px; font-weight:700;">Portfolio Status</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:16px; margin-bottom:18px;">
+              <div style="position:relative; width:112px; height:112px; flex-shrink:0;">
+                <svg width="112" height="112" viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r="50" fill="none" stroke="var(--color-neutral-100)" stroke-width="13"/>
+                  <circle cx="60" cy="60" r="50" fill="none" stroke="var(--color-success-600)" stroke-width="13" stroke-linecap="round" stroke-dasharray="{{ donut.dash }}" transform="rotate(-90 60 60)"/>
+                </svg>
+                <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;"><div style="font-family:var(--font-mono); font-size:22px; font-weight:600; color:var(--text-primary);">{{ donut.pct }}%</div><div style="font-size:9px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-tertiary);">Active</div></div>
+              </div>
+              <div><div style="font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-tertiary);">Active listings</div><div style="margin-top:4px;"><span style="font-family:var(--font-mono); font-size:30px; font-weight:600; color:var(--text-primary);">{{ summary.active }}</span><span style="font-family:var(--font-mono); font-size:16px; color:var(--text-tertiary);"> / {{ summary.total }}</span></div><div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">broker-property records</div></div>
+            </div>
+            <div style="display:flex; height:9px; border-radius:9999px; overflow:hidden; background:var(--color-neutral-100); margin-bottom:14px;">
+              <sc-for list="{{ statusBar }}" as="seg" hint-placeholder-count="4"><div style="{{ seg.style }}"></div></sc-for>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <sc-for list="{{ statusLegend }}" as="lg" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; gap:8px; font-size:12px;"><span style="{{ lg.dotStyle }}"></span><span style="flex:1; color:var(--text-secondary);">{{ lg.label }}</span><span style="font-family:var(--font-mono); font-weight:600; color:var(--text-primary);">{{ lg.count }}</span></div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- check-in alerts widget -->
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px;">
+            <div style="display:flex; align-items:center; gap:9px; margin-bottom:14px;">
+              <div style="width:26px; height:26px; border-radius:50%; background:var(--color-error-600); display:flex; align-items:center; justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"/><path d="M12 8v4M12 16h.01"/></svg></div>
+              <span style="font-size:16px; font-weight:700;">Check-in Alerts</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <sc-for list="{{ alertTiles }}" as="t" hint-placeholder-count="4">
+                <div style="{{ t.style }}"><div style="font-family:var(--font-mono); font-size:24px; font-weight:700;">{{ t.value }}</div><div style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; margin-top:5px;">{{ t.label }}</div></div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--text-tertiary); display:flex; align-items:center; gap:6px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        Records are never deleted — closed listings stay visible by changing status. Click any row to open it.
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ========== DETAIL VIEW ========== -->
+    <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+    <div style="max-width:1120px;">
+      <button onClick="{{ goBackList }}" style="display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; color:var(--text-link); font-family:var(--font-body); font-size:13px; font-weight:600; padding:0; margin-bottom:16px;" style-hover="text-decoration:underline;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Back to assignments
+      </button>
+
+      <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px 24px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap;">
+          <div style="display:flex; gap:14px; align-items:flex-start;">
+            <div style="width:44px; height:44px; border-radius:8px; background:var(--color-gold-500); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
+            <div><div style="font-size:12px; color:var(--text-secondary);">Broker Assignment</div><h2 style="margin:2px 0 0; font-family:var(--font-display); font-size:23px; font-weight:600;">{{ detail.propertyName }}</h2></div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <sc-if value="{{ detail.canReplace }}" hint-placeholder-val="{{ false }}"><button onClick="{{ logCheckin }}" style="display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 14px; border:1px solid var(--border-default); border-radius:5px; background:#fff; color:var(--text-link); font-family:var(--font-body); font-size:13px; font-weight:600; cursor:pointer;" style-hover="background:var(--color-neutral-50);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Log Check-in</button></sc-if>
+            <sc-if value="{{ detail.canReplace }}" hint-placeholder-val="{{ false }}"><button onClick="{{ openReplace }}" style="display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 14px; border:1px solid var(--border-default); border-radius:5px; background:#fff; color:var(--text-link); font-family:var(--font-body); font-size:13px; font-weight:600; cursor:pointer;" style-hover="background:var(--color-neutral-50);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>Replace Broker</button></sc-if>
+            <button onClick="{{ goBackList }}" style="display:inline-flex; align-items:center; height:32px; padding:0 14px; border:1px solid var(--border-default); border-radius:5px; background:#fff; color:var(--text-link); font-family:var(--font-body); font-size:13px; font-weight:600; cursor:pointer;" style-hover="background:var(--color-neutral-50);">Back to List</button>
+          </div>
+        </div>
+        <div style="display:flex; gap:0; margin-top:18px; flex-wrap:wrap; border-top:1px solid var(--border-subtle); padding-top:16px;">
+          <div style="display:flex; flex-direction:column; gap:5px; padding-right:36px;"><div style="font-size:12px; color:var(--text-secondary);">Status</div><span style="{{ detail.statusBadgeStyle }}"><span style="{{ detail.statusDotStyle }}"></span>{{ detail.statusLabel }}</span></div>
+          <div style="display:flex; flex-direction:column; gap:5px; padding-right:36px;"><div style="font-size:12px; color:var(--text-secondary);">Broker</div><div style="font-size:14px;">{{ detail.brokerName }}</div></div>
+          <div style="display:flex; flex-direction:column; gap:5px; padding-right:36px;"><div style="font-size:12px; color:var(--text-secondary);">Listing Start</div><div style="font-size:14px; font-family:var(--font-mono);">{{ detail.startDisp }}</div></div>
+          <div style="display:flex; flex-direction:column; gap:5px; padding-right:36px;"><div style="font-size:12px; color:var(--text-secondary);">Last Check-In</div><div style="font-size:14px; font-family:var(--font-mono);">{{ detail.checkInDisp }}</div></div>
+          <div style="display:flex; flex-direction:column; gap:5px;"><div style="font-size:12px; color:var(--text-secondary);">Days Idle</div><div style="{{ detail.daysHlStyle }}">{{ detail.daysDisp }}</div></div>
+        </div>
+      </div>
+
+      <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:13px 16px; margin-bottom:16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+        <div style="display:flex; flex:1; min-width:300px; gap:0;">
+          <sc-for list="{{ pathStages }}" as="ps" hint-placeholder-count="4"><button onClick="{{ ps.onClick }}" style="{{ ps.style }}">{{ ps.label }}</button></sc-for>
+        </div>
+        <button onClick="{{ markStatus }}" style="display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 16px; border:none; border-radius:5px; background:var(--brand-primary); color:#fff; font-family:var(--font-body); font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;" style-hover="background:var(--brand-primary-hover);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Mark as {{ detail.draftStatus }}</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1.55fr 1fr; gap:20px; align-items:start;">
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden;">
+          <div style="display:flex; gap:0; border-bottom:1px solid var(--border-subtle); padding:0 12px;">
+            <button onClick="{{ tabDetails }}" style="{{ tabDetailsStyle }}">Details</button>
+            <button onClick="{{ tabHistory }}" style="{{ tabHistoryStyle }}">History</button>
+            <button onClick="{{ tabNotes }}" style="{{ tabNotesStyle }}">Notes &amp; Attachments</button>
+          </div>
+          <sc-if value="{{ detailTabDetails }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:6px 24px 24px;">
+            <div style="display:flex; align-items:center; gap:8px; background:var(--color-neutral-50); margin:14px -24px 0; padding:9px 24px; font-size:14px; font-weight:600;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Property</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 48px;">
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Property Asset</div><span style="font-size:14px; color:var(--text-link); font-weight:600; cursor:pointer;" style-hover="text-decoration:underline;">{{ detail.propertyName }}</span></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Property Type</div><div style="font-size:14px;">{{ detail.propertyType }}</div></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Gross Sq Ft</div><div style="font-size:14px; font-family:var(--font-mono);">{{ detail.sqftDisp }}</div></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Address</div><div style="font-size:14px;">{{ detail.propertyAddr }}</div></div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; background:var(--color-neutral-50); margin:18px -24px 0; padding:9px 24px; font-size:14px; font-weight:600;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Listing</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 48px;">
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Status</div><span style="{{ detail.statusBadgeStyle }}"><span style="{{ detail.statusDotStyle }}"></span>{{ detail.statusLabel }}</span></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Days Since Check-In</div><div style="{{ detail.daysHlStyle }}">{{ detail.daysDisp }}</div></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Listing Start</div><div style="font-size:14px; font-family:var(--font-mono);">{{ detail.startDisp }}</div></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Listing End</div><div style="font-size:14px; font-family:var(--font-mono);">{{ detail.endDisp }}</div></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Last Check-In</div><input type="date" value="{{ detail.draftCheckIn }}" onChange="{{ onCheckinInline }}" style="margin-top:2px; height:32px; padding:0 8px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:13px; color:var(--text-primary); background:#fff; box-sizing:border-box; max-width:168px;"/></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Reason Ended</div><div style="font-size:14px; color:var(--text-secondary);">{{ detail.reasonDisp }}</div></div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; background:var(--color-neutral-50); margin:18px -24px 0; padding:9px 24px; font-size:14px; font-weight:600;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Broker</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 48px;">
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Broker</div><span style="font-size:14px; color:var(--text-link); font-weight:600;">{{ detail.brokerName }}</span></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Firm / Company</div><div style="font-size:14px;">{{ detail.brokerFirm }}</div></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Email</div><div style="font-size:14px;">{{ detail.brokerEmail }}</div></div>
+              <div style="padding:13px 0; border-bottom:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:3px;"><div style="font-size:12px; color:var(--text-secondary);">Phone</div><div style="font-size:14px; font-family:var(--font-mono);">{{ detail.brokerPhone }}</div></div>
+            </div>
+            <sc-if value="{{ detail.showFlag }}" hint-placeholder-val="{{ false }}"><div style="{{ detail.flagBannerStyle }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg><span>{{ detail.flagBanner }}</span></div></sc-if>
+          </div>
+          </sc-if>
+          <sc-if value="{{ detailTabHistory }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:10px 24px 18px;">
+            <div style="font-size:12px; color:var(--text-secondary); margin:6px 0 2px;">Every broker ever assigned to {{ detail.propertyName }} — nothing is deleted.</div>
+            <sc-for list="{{ detail.history }}" as="h" hint-placeholder-count="2">
+              <div style="{{ h.rowStyle }}">
+                <div style="display:flex; align-items:center; gap:12px;"><span style="{{ h.statusBadgeStyle }}"><span style="{{ h.statusDotStyle }}"></span>{{ h.statusLabel }}</span><div><div style="font-weight:600; font-size:14px;">{{ h.brokerName }}</div><div style="font-size:12px; color:var(--text-tertiary);">{{ h.brokerFirm }}</div></div></div>
+                <div style="text-align:right;"><div style="font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);">{{ h.rangeDisp }}</div><div style="font-size:11px; color:var(--text-tertiary); margin-top:1px;">{{ h.reasonDisp }}</div></div>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+          <sc-if value="{{ detailTabNotes }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:48px 24px; text-align:center; color:var(--text-tertiary); font-size:14px;">No notes or attachments yet.</div>
+          </sc-if>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:18px;">
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px 20px;">
+            <div style="display:flex; align-items:center; gap:9px; margin-bottom:14px;"><div style="width:26px; height:26px; border-radius:50%; background:var(--color-success-600); display:flex; align-items:center; justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><span style="font-size:15px; font-weight:700;">Check-in cadence</span></div>
+            <div style="display:flex; align-items:baseline; gap:8px;"><span style="{{ detail.daysHlStyle }}; font-size:32px;">{{ detail.daysDisp }}</span><span style="font-size:13px; color:var(--text-secondary);">since last contact</span></div>
+            <sc-if value="{{ detail.showFlag }}" hint-placeholder-val="{{ false }}"><div style="font-size:12px; color:var(--text-secondary); margin-top:6px;">{{ detail.flagBanner }}</div></sc-if>
+            <sc-if value="{{ detail.canReplace }}" hint-placeholder-val="{{ false }}"><button onClick="{{ logCheckin }}" style="display:inline-flex; align-items:center; justify-content:center; gap:7px; width:100%; height:40px; margin-top:14px; border:1px solid var(--color-navy-700); border-radius:4px; background:#fff; color:var(--color-navy-700); font-family:var(--font-body); font-size:14px; font-weight:600; cursor:pointer;" style-hover="background:var(--color-navy-50);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Log check-in for today</button></sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ========== SCORECARD ========== -->
+    <sc-if value="{{ isScore }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="font-size:13px; color:var(--text-secondary); margin-bottom:18px; max-width:680px;">Outcome record for each broker across every property they've ever been assigned. Active counts reflect live listings; closed outcomes are the track record.</div>
+      <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:18px;">
+        <sc-for list="{{ brokerCards }}" as="b" hint-placeholder-count="4">
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden;">
+            <div style="padding:18px 22px; display:flex; align-items:center; gap:14px; border-bottom:1px solid var(--border-subtle);">
+              <div style="width:46px; height:46px; border-radius:50%; background:var(--color-navy-800); display:flex; align-items:center; justify-content:center; color:var(--color-gold-300); font-weight:700; font-size:15px; flex-shrink:0;">{{ b.initials }}</div>
+              <div style="flex:1;"><div style="font-family:var(--font-display); font-size:18px; font-weight:600;">{{ b.name }}</div><div style="font-size:13px; color:var(--text-secondary);">{{ b.firm }}</div></div>
+              <button onClick="{{ b.open }}" style="display:inline-flex; align-items:center; gap:5px; height:32px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; background:#fff; font-family:var(--font-body); font-size:12px; font-weight:600; color:var(--text-secondary); cursor:pointer;" style-hover="border-color:var(--border-strong);">View listings</button>
+            </div>
+            <div style="padding:20px 22px;">
+              <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:14px;"><span style="font-family:var(--font-mono); font-size:34px; font-weight:500; color:var(--color-success-700);">{{ b.active }}</span><span style="font-size:13px; color:var(--text-secondary);">active now · {{ b.total }} assigned all-time</span></div>
+              <div style="display:flex; height:8px; border-radius:9999px; overflow:hidden; background:var(--color-neutral-100); margin-bottom:16px;"><sc-for list="{{ b.bars }}" as="seg" hint-placeholder-count="3"><div style="{{ seg.style }}"></div></sc-for></div>
+              <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
+                <div style="text-align:center;"><div style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-success-700);">{{ b.active }}</div><div style="font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-top:2px;">Active</div></div>
+                <div style="text-align:center;"><div style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-gold-700);">{{ b.leased }}</div><div style="font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-top:2px;">Leased</div></div>
+                <div style="text-align:center;"><div style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-error-700);">{{ b.replaced }}</div><div style="font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-top:2px;">Replaced</div></div>
+                <div style="text-align:center;"><div style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-error-700);">{{ b.terminated }}</div><div style="font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-top:2px;">Term.</div></div>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ========== NEW ASSIGNMENT FORM ========== -->
+    <sc-if value="{{ isForm }}" hint-placeholder-val="{{ false }}">
+    <div style="max-width:620px;">
+      <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden;">
+        <div style="padding:20px 26px; border-bottom:1px solid var(--border-subtle);"><div style="font-family:var(--font-display); font-size:18px; font-weight:600;">Assign a broker to a property</div><div style="font-size:13px; color:var(--text-secondary); margin-top:2px;">Creates a new Active listing record with today's date as the first check-in.</div></div>
+        <div style="padding:24px 26px; display:flex; flex-direction:column; gap:20px;">
+          <div><label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:6px;">Property</label><select value="{{ form.propertyId }}" onChange="{{ onFormProperty }}" style="width:100%; height:44px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; cursor:pointer;"><sc-for list="{{ propertyOptions }}" as="opt" hint-placeholder-count="6"><option value="{{ opt.value }}">{{ opt.label }}</option></sc-for></select></div>
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><label style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary);">Broker</label><button onClick="{{ toggleAddBroker }}" style="background:none; border:none; cursor:pointer; color:var(--text-link); font-family:var(--font-body); font-size:12px; font-weight:600; padding:0;" style-hover="text-decoration:underline;">{{ addBrokerToggleLabel }}</button></div>
+            <sc-if value="{{ form.choosingExisting }}" hint-placeholder-val="{{ true }}"><select value="{{ form.brokerId }}" onChange="{{ onFormBroker }}" style="width:100%; height:44px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; cursor:pointer;"><sc-for list="{{ brokerSelectOptions }}" as="opt" hint-placeholder-count="4"><option value="{{ opt.value }}">{{ opt.label }}</option></sc-for></select></sc-if>
+            <sc-if value="{{ form.addingBroker }}" hint-placeholder-val="{{ false }}"><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px; background:var(--color-neutral-50); border:1px solid var(--border-subtle); border-radius:6px;"><input value="{{ form.nbName }}" onChange="{{ onNbName }}" placeholder="Broker name" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/><input value="{{ form.nbFirm }}" onChange="{{ onNbFirm }}" placeholder="Firm / company" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/><input value="{{ form.nbEmail }}" onChange="{{ onNbEmail }}" placeholder="Email" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/><input value="{{ form.nbPhone }}" onChange="{{ onNbPhone }}" placeholder="Phone" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/></div></sc-if>
+          </div>
+          <div><label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:6px;">Listing start date</label><input type="date" value="{{ form.start }}" onChange="{{ onFormStart }}" style="width:100%; height:44px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; box-sizing:border-box;"/></div>
+          <sc-if value="{{ formError }}" hint-placeholder-val="{{ false }}"><div style="display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--color-error-50); border:1px solid var(--color-error-100); border-radius:4px; color:var(--color-error-700); font-size:13px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>{{ formError }}</div></sc-if>
+          <div style="display:flex; gap:12px;"><button onClick="{{ submitForm }}" style="display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:1; height:44px; border:none; border-radius:4px; background:var(--brand-primary); color:#fff; font-family:var(--font-body); font-size:14px; font-weight:600; cursor:pointer; transition:background 150ms ease-out;" style-hover="background:var(--brand-primary-hover);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>Create assignment</button><button onClick="{{ goList }}" style="height:44px; padding:0 20px; border:1px solid var(--border-default); border-radius:4px; background:#fff; font-family:var(--font-body); font-size:14px; font-weight:600; color:var(--text-secondary); cursor:pointer;">Cancel</button></div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ closingOut }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; inset:0; background:rgba(4,13,28,0.55); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px;">
+      <div style="background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(4,13,28,0.4); width:440px; max-width:100%; overflow:hidden;">
+        <div style="padding:18px 22px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:10px;">
+          <div style="width:30px; height:30px; border-radius:50%; background:var(--color-navy-700); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+          <div><div style="font-family:var(--font-display); font-size:17px; font-weight:600;">Close out listing</div><div style="font-size:12px; color:var(--text-secondary);">{{ detail.propertyName }}</div></div>
+        </div>
+        <div style="padding:20px 22px; display:flex; flex-direction:column; gap:16px;">
+          <div style="display:flex; gap:9px; padding:11px 13px; background:var(--color-navy-50); border:1px solid var(--color-navy-100); border-radius:6px; font-size:12px; color:var(--color-navy-800); line-height:1.5;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <span>Status changes to <b>{{ detail.draftStatus }}</b> — the record stays visible in history and is never deleted.</span>
+          </div>
+          <div><label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:6px;">Listing end date</label><input type="date" value="{{ detail.draftEnd }}" onChange="{{ onDraftEnd }}" style="width:100%; height:42px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; box-sizing:border-box;"/></div>
+          <div><label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:6px;">Reason ended</label><select value="{{ detail.draftReason }}" onChange="{{ onDraftReason }}" style="width:100%; height:42px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; cursor:pointer;"><sc-for list="{{ reasonOptions }}" as="r" hint-placeholder-count="4"><option value="{{ r.value }}">{{ r.label }}</option></sc-for></select></div>
+        </div>
+        <div style="padding:0 22px 20px; display:flex; gap:12px;">
+          <button onClick="{{ confirmCloseout }}" style="display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:1; height:44px; border:none; border-radius:4px; background:var(--brand-primary); color:#fff; font-family:var(--font-body); font-size:14px; font-weight:600; cursor:pointer;" style-hover="background:var(--brand-primary-hover);">Mark as {{ detail.draftStatus }}</button>
+          <button onClick="{{ cancelCloseout }}" style="height:44px; padding:0 20px; border:1px solid var(--border-default); border-radius:4px; background:#fff; font-family:var(--font-body); font-size:14px; font-weight:600; color:var(--text-secondary); cursor:pointer;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ replacing }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; inset:0; background:rgba(4,13,28,0.55); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px;">
+      <div style="background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(4,13,28,0.4); width:480px; max-width:100%; overflow:hidden;">
+        <div style="padding:18px 22px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:10px;">
+          <div style="width:30px; height:30px; border-radius:50%; background:var(--color-navy-700); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg></div>
+          <div><div style="font-family:var(--font-display); font-size:17px; font-weight:600;">Replace broker</div><div style="font-size:12px; color:var(--text-secondary);">{{ detail.propertyName }}</div></div>
+        </div>
+        <div style="padding:20px 22px; display:flex; flex-direction:column; gap:16px;">
+          <div style="display:flex; gap:9px; padding:11px 13px; background:var(--color-navy-50); border:1px solid var(--color-navy-100); border-radius:6px; font-size:12px; color:var(--color-navy-800); line-height:1.5;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <span>{{ detail.brokerName }}'s listing is closed as Replaced — the full record stays visible — and a new Active listing opens for the incoming broker.</span>
+          </div>
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><label style="font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary);">Incoming broker</label><button onClick="{{ repToggleAdd }}" style="background:none; border:none; cursor:pointer; color:var(--text-link); font-family:var(--font-body); font-size:12px; font-weight:600; padding:0;" style-hover="text-decoration:underline;">{{ repAddToggleLabel }}</button></div>
+            <sc-if value="{{ rep.choosingExisting }}" hint-placeholder-val="{{ true }}"><select value="{{ rep.brokerId }}" onChange="{{ onRepBroker }}" style="width:100%; height:42px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; cursor:pointer;"><sc-for list="{{ repBrokerOptions }}" as="opt" hint-placeholder-count="4"><option value="{{ opt.value }}">{{ opt.label }}</option></sc-for></select></sc-if>
+            <sc-if value="{{ rep.addingBroker }}" hint-placeholder-val="{{ false }}"><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><input value="{{ rep.nbName }}" onChange="{{ onRepNbName }}" placeholder="Broker name" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/><input value="{{ rep.nbFirm }}" onChange="{{ onRepNbFirm }}" placeholder="Firm / company" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/><input value="{{ rep.nbEmail }}" onChange="{{ onRepNbEmail }}" placeholder="Email" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/><input value="{{ rep.nbPhone }}" onChange="{{ onRepNbPhone }}" placeholder="Phone" style="height:40px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; background:#fff; box-sizing:border-box;"/></div></sc-if>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+            <div><label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:6px;">Reason previous broker ended</label><select value="{{ rep.reason }}" onChange="{{ onRepReason }}" style="width:100%; height:42px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; cursor:pointer;"><sc-for list="{{ repReasonOptions }}" as="r" hint-placeholder-count="3"><option value="{{ r.value }}">{{ r.label }}</option></sc-for></select></div>
+            <div><label style="display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); margin-bottom:6px;">Effective date</label><input type="date" value="{{ rep.date }}" onChange="{{ onRepDate }}" style="width:100%; height:42px; padding:0 12px; border:1px solid var(--border-default); border-radius:4px; font-family:var(--font-body); font-size:14px; color:var(--text-primary); background:#fff; box-sizing:border-box;"/></div>
+          </div>
+          <sc-if value="{{ repError }}" hint-placeholder-val="{{ false }}"><div style="display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--color-error-50); border:1px solid var(--color-error-100); border-radius:4px; color:var(--color-error-700); font-size:13px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>{{ repError }}</div></sc-if>
+        </div>
+        <div style="padding:0 22px 20px; display:flex; gap:12px;">
+          <button onClick="{{ confirmReplace }}" style="display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:1; height:44px; border:none; border-radius:4px; background:var(--brand-primary); color:#fff; font-family:var(--font-body); font-size:14px; font-weight:600; cursor:pointer; transition:background 150ms ease-out;" style-hover="background:var(--brand-primary-hover);">Confirm replacement</button>
+          <button onClick="{{ closeReplace }}" style="height:44px; padding:0 20px; border:1px solid var(--border-default); border-radius:4px; background:#fff; font-family:var(--font-body); font-size:14px; font-weight:600; color:var(--text-secondary); cursor:pointer;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showToast }}" hint-placeholder-val="{{ false }}"><div style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--color-navy-900); color:#fff; padding:12px 20px; border-radius:8px; box-shadow:0 8px 24px rgba(4,13,28,0.35); font-size:14px; font-weight:500; display:flex; align-items:center; gap:9px; z-index:50;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold-400)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>{{ toastMsg }}</div></sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:860},&quot;warnDays&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:14,&quot;min&quot;:7,&quot;max&quot;:30,&quot;step&quot;:1,&quot;unit&quot;:&quot; days&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Check-in thresholds&quot;},&quot;overdueDays&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:21,&quot;min&quot;:10,&quot;max&quot;:45,&quot;step&quot;:1,&quot;unit&quot;:&quot; days&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Check-in thresholds&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;comfortable&quot;,&quot;options&quot;:[&quot;comfortable&quot;,&quot;compact&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Table&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'list', selectedId: null,
+    statusFilter: 'all', brokerFilter: 'all', sortDesc: true, detailTab: 'details', closingOut: false,
+    draft: null, toast: null,
+    form: { propertyId: '', brokerId: '', start: '2026-06-30', addingBroker: false, nbName: '', nbFirm: '', nbEmail: '', nbPhone: '', err: '' },
+    replacing: false,
+    rep: { brokerId: '', addingBroker: false, nbName: '', nbFirm: '', nbEmail: '', nbPhone: '', reason: 'Performance Issue', date: '2026-06-30', err: '' },
+    brokers: [
+      { id: 'b1', name: 'Marcus Webb', firm: 'Lee & Associates', email: 'marcus.webb@lee-associates.com', phone: '(713) 555-0142' },
+      { id: 'b2', name: 'Priya Nair', firm: 'CBRE Houston', email: 'priya.nair@cbre.com', phone: '(281) 555-0198' },
+      { id: 'b3', name: 'Daniel Reyes', firm: 'Colliers', email: 'daniel.reyes@colliers.com', phone: '(832) 555-0173' },
+      { id: 'b4', name: 'Sandra Koch', firm: 'NAI Partners', email: 'sandra.koch@naipartners.com', phone: '(713) 555-0226' },
+    ],
+    properties: [
+      { id: 'p1', name: 'Westgate Plaza', addr: '8420 Westheimer Rd, Houston, TX', sqft: 42000, type: 'Retail Strip Center' },
+      { id: 'p2', name: 'Sterling Crossing', addr: '1205 N Shepherd Dr, Houston, TX', sqft: 28500, type: 'Neighborhood Retail' },
+      { id: 'p3', name: 'Magnolia Commons', addr: '3340 FM 1960, Spring, TX', sqft: 65200, type: 'Power Center' },
+      { id: 'p4', name: 'Bayou Bend Center', addr: '770 Studemont St, Houston, TX', sqft: 19800, type: 'Mixed-Use Retail' },
+      { id: 'p5', name: 'Katy Mills Strip', addr: '5000 Katy Fwy, Katy, TX', sqft: 51400, type: 'Retail Strip Center' },
+      { id: 'p6', name: 'Heights Marketplace', addr: '1820 W 18th St, Houston, TX', sqft: 33750, type: 'Neighborhood Retail' },
+    ],
+    assignments: [
+      { id: 'a1', propertyId: 'p1', brokerId: 'b1', status: 'Active', start: '2026-05-12', end: '', reason: '', lastCheckIn: '2026-06-25' },
+      { id: 'a2', propertyId: 'p2', brokerId: 'b2', status: 'Active', start: '2026-04-02', end: '', reason: '', lastCheckIn: '2026-06-04' },
+      { id: 'a3', propertyId: 'p3', brokerId: 'b3', status: 'Active', start: '2026-03-15', end: '', reason: '', lastCheckIn: '2026-06-12' },
+      { id: 'a4', propertyId: 'p4', brokerId: 'b4', status: 'Fully Leased', start: '2025-09-01', end: '2026-02-20', reason: 'Leased Up', lastCheckIn: '2026-02-15' },
+      { id: 'a5', propertyId: 'p5', brokerId: 'b1', status: 'Replaced', start: '2025-06-10', end: '2025-11-30', reason: 'Performance Issue', lastCheckIn: '2025-11-20' },
+      { id: 'a6', propertyId: 'p5', brokerId: 'b2', status: 'Active', start: '2025-12-01', end: '', reason: '', lastCheckIn: '2026-06-28' },
+      { id: 'a7', propertyId: 'p6', brokerId: 'b3', status: 'Terminated', start: '2025-08-15', end: '2026-01-10', reason: 'Company Decision', lastCheckIn: '2026-01-05' },
+      { id: 'a8', propertyId: 'p6', brokerId: 'b4', status: 'Active', start: '2026-01-15', end: '', reason: '', lastCheckIn: '2026-06-08' },
+      { id: 'a9', propertyId: 'p1', brokerId: 'b3', status: 'Replaced', start: '2024-11-01', end: '2025-04-30', reason: 'Performance Issue', lastCheckIn: '2025-04-20' },
+      { id: 'a10', propertyId: 'p3', brokerId: 'b4', status: 'Fully Leased', start: '2024-05-01', end: '2025-02-28', reason: 'Leased Up', lastCheckIn: '2025-02-20' },
+    ],
+  };
+
+  MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  todayMs() { return Date.UTC(2026, 5, 30); }
+  daysSince(s) { if (!s) return null; const p = s.split('-').map(Number); return Math.round((this.todayMs() - Date.UTC(p[0], p[1] - 1, p[2])) / 86400000); }
+  fmt(s) { if (!s) return '—'; const p = s.split('-').map(Number); return this.MONTHS[p[1] - 1] + ' ' + p[2] + ', ' + p[0]; }
+  warnDays() { return this.props.warnDays ?? 14; }
+  overDays() { return this.props.overdueDays ?? 21; }
+  brokerById(id) { return this.state.brokers.find(b => b.id === id) || {}; }
+  propertyById(id) { return this.state.properties.find(p => p.id === id) || {}; }
+  initials(name) { return (name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(); }
+
+  statusMeta(status) {
+    const m = {
+      'Active': { label: 'Active', bg: '#EBF9F1', fg: '#146830', dot: '#22A652' },
+      'Fully Leased': { label: 'Fully Leased', bg: '#E2E0DB', fg: '#3F3C38', dot: '#8A8680' },
+      'Replaced': { label: 'Replaced', bg: '#FDF0F0', fg: '#B52020', dot: '#D93636' },
+      'Terminated': { label: 'Terminated', bg: '#F9CECE', fg: '#8B1A1A', dot: '#B52020' },
+    };
+    return m[status] || m['Active'];
+  }
+  badgeStyle(m) { return `display:inline-flex;align-items:center;gap:6px;background:${m.bg};color:${m.fg};font-size:11px;font-weight:600;font-family:var(--font-body);letter-spacing:0.02em;padding:3px 10px;border-radius:9999px;line-height:1.4;white-space:nowrap;`; }
+  dotStyle(c) { return `width:6px;height:6px;border-radius:50%;background:${c};flex-shrink:0;`; }
+
+  flagFor(a) {
+    if (a.status !== 'Active') return null;
+    const d = this.daysSince(a.lastCheckIn);
+    if (d > this.overDays()) return { label: 'Overdue', m: { bg: '#FDF0F0', fg: '#8B1A1A', dot: '#D93636' }, rowBg: '#FCF3F3', bar: '#D93636', banner: `Check-in overdue — ${d} days since last contact (threshold ${this.overDays()} days). Follow up with the broker.`, bannerBg: '#FDF0F0', bannerFg: '#8B1A1A', bannerBd: '#F9CECE' };
+    if (d >= this.warnDays()) return { label: 'Follow up', m: { bg: '#FDF5E6', fg: '#7A4A00', dot: '#C88010' }, rowBg: '#FDFAF2', bar: '#C88010', banner: `Approaching follow-up window — ${d} days since last check-in.`, bannerBg: '#FDF5E6', bannerFg: '#7A4A00', bannerBd: '#FAEAC8' };
+    return { label: 'On track', m: { bg: '#EBF9F1', fg: '#146830', dot: '#22A652' }, rowBg: '#fff', bar: '#22A652' };
+  }
+
+  go = (screen) => this.setState({ screen });
+  navDetail = (id) => { const a = this.state.assignments.find(x => x.id === id); this.setState({ screen: 'detail', selectedId: id, draft: { status: a.status, lastCheckIn: a.lastCheckIn, end: a.end || '2026-06-30', reason: a.reason } }); };
+  flash = (msg) => { this.setState({ toast: msg }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ toast: null }), 2800); };
+
+  saveDraft = () => {
+    const { selectedId, draft } = this.state; const ending = draft.status !== 'Active';
+    this.setState(st => ({ assignments: st.assignments.map(a => a.id === selectedId ? { ...a, status: draft.status, lastCheckIn: draft.lastCheckIn, end: ending ? (draft.end || '2026-06-30') : '', reason: ending ? draft.reason : '' } : a) }));
+    this.flash('Assignment updated');
+  };
+
+  submitForm = () => {
+    const f = this.state.form;
+    if (!f.propertyId) { this.setState({ form: { ...f, err: 'Select a property.' } }); return; }
+    if (f.addingBroker && !f.nbName.trim()) { this.setState({ form: { ...f, err: 'Enter the new broker name.' } }); return; }
+    if (!f.addingBroker && !f.brokerId) { this.setState({ form: { ...f, err: 'Select a broker.' } }); return; }
+    if (!f.start) { this.setState({ form: { ...f, err: 'Set a listing start date.' } }); return; }
+    const newId = 'a' + Date.now();
+    this.setState(st => {
+      let brokers = st.brokers; let brokerId = f.brokerId;
+      if (f.addingBroker) { brokerId = 'b' + Date.now(); brokers = [...st.brokers, { id: brokerId, name: f.nbName.trim(), firm: f.nbFirm.trim() || '—', email: f.nbEmail.trim() || '—', phone: f.nbPhone.trim() || '—' }]; }
+      return { brokers, assignments: [...st.assignments, { id: newId, propertyId: f.propertyId, brokerId, status: 'Active', start: f.start, end: '', reason: '', lastCheckIn: f.start }], form: { propertyId: '', brokerId: '', start: '2026-06-30', addingBroker: false, nbName: '', nbFirm: '', nbEmail: '', nbPhone: '', err: '' }, screen: 'list', statusFilter: 'all', brokerFilter: 'all' };
+    });
+    this.flash('Assignment created');
+  };
+
+  markStatus = () => {
+    if (this.state.draft.status === 'Active') { this.saveDraft(); }
+    else { this.setState(st => ({ closingOut: true, draft: { ...st.draft, end: st.draft.end || '2026-06-30' } })); }
+  };
+  confirmCloseout = () => { this.saveDraft(); this.setState({ closingOut: false }); };
+  cancelCloseout = () => this.setState(st => { const a = st.assignments.find(x => x.id === st.selectedId); return { closingOut: false, draft: { ...st.draft, status: a ? a.status : st.draft.status } }; });
+  onCheckinInline = (e) => { const v = e.target.value; this.setState(st => ({ assignments: st.assignments.map(a => a.id === st.selectedId ? { ...a, lastCheckIn: v } : a), draft: { ...st.draft, lastCheckIn: v } })); this.flash('Check-in date updated'); };
+  logCheckin = () => {
+    this.setState(st => ({ assignments: st.assignments.map(a => a.id === st.selectedId ? { ...a, lastCheckIn: '2026-06-30' } : a), draft: { ...st.draft, lastCheckIn: '2026-06-30' } }));
+    this.flash('Check-in logged for today');
+  };
+  openReplace = () => this.setState({ replacing: true, rep: { brokerId: '', addingBroker: false, nbName: '', nbFirm: '', nbEmail: '', nbPhone: '', reason: 'Performance Issue', date: '2026-06-30', err: '' } });
+  closeReplace = () => this.setState({ replacing: false });
+  confirmReplace = () => {
+    const r = this.state.rep; const old = this.state.assignments.find(x => x.id === this.state.selectedId);
+    if (r.addingBroker && !r.nbName.trim()) { this.setState({ rep: { ...r, err: 'Enter the incoming broker name.' } }); return; }
+    if (!r.addingBroker && !r.brokerId) { this.setState({ rep: { ...r, err: 'Select the replacement broker.' } }); return; }
+    if (!r.date) { this.setState({ rep: { ...r, err: 'Set an effective date.' } }); return; }
+    const newId = 'a' + Date.now();
+    this.setState(st => {
+      let brokers = st.brokers; let brokerId = r.brokerId;
+      if (r.addingBroker) { brokerId = 'b' + Date.now(); brokers = [...st.brokers, { id: brokerId, name: r.nbName.trim(), firm: r.nbFirm.trim() || '—', email: r.nbEmail.trim() || '—', phone: r.nbPhone.trim() || '—' }]; }
+      const assignments = st.assignments.map(a => a.id === st.selectedId ? { ...a, status: 'Replaced', end: r.date, reason: r.reason } : a);
+      assignments.push({ id: newId, propertyId: old.propertyId, brokerId, status: 'Active', start: r.date, end: '', reason: '', lastCheckIn: r.date });
+      return { brokers, assignments, replacing: false, selectedId: newId, draft: { status: 'Active', lastCheckIn: r.date, end: '2026-06-30', reason: '' } };
+    });
+    this.flash('Broker replaced — previous record kept as Replaced');
+  };
+
+  renderVals() {
+    const st = this.state;
+    const tdPad = (this.props.density === 'compact') ? 9 : 14;
+    const tdCell = `padding:${tdPad}px 14px;border-bottom:1px solid var(--border-subtle);font-size:13px;color:var(--text-primary);vertical-align:middle;cursor:pointer;`;
+    const thStyle = `text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text-secondary);border-right:1px solid var(--border-subtle);white-space:nowrap;`;
+    const thSortStyle = thStyle + 'cursor:pointer;user-select:none;';
+
+    const all = st.assignments;
+    const activeAll = all.filter(a => a.status === 'Active');
+    const summary = {
+      total: all.length, active: activeAll.length,
+      overdue: activeAll.filter(a => this.daysSince(a.lastCheckIn) > this.overDays()).length,
+      leased: all.filter(a => a.status === 'Fully Leased').length,
+    };
+
+    // donut: active / total
+    const circ = 2 * Math.PI * 50;
+    const pct = summary.total ? summary.active / summary.total : 0;
+    const arc = pct * circ;
+    const donut = { pct: Math.round(pct * 100), dash: `${arc.toFixed(1)} ${(circ - arc).toFixed(1)}` };
+
+    // status bar + legend
+    const order = [
+      { key: 'Active', label: 'Active', color: '#22A652' },
+      { key: 'Fully Leased', label: 'Fully Leased', color: '#C8A045' },
+      { key: 'Replaced', label: 'Replaced', color: '#D93636' },
+      { key: 'Terminated', label: 'Terminated', color: '#8B1A1A' },
+    ];
+    const totalForBar = all.length || 1;
+    const statusBar = order.map(o => ({ count: all.filter(a => a.status === o.key).length, color: o.color })).filter(s => s.count > 0).map(s => ({ style: `width:${(s.count / totalForBar) * 100}%;background:${s.color};height:100%;` }));
+    const statusLegend = order.map(o => ({ label: o.label, count: all.filter(a => a.status === o.key).length, dotStyle: `width:9px;height:9px;border-radius:2px;background:${o.color};flex-shrink:0;` }));
+
+    // alert tiles
+    const dueSoon = activeAll.filter(a => { const d = this.daysSince(a.lastCheckIn); return d >= this.warnDays() && d <= this.overDays(); }).length;
+    const onTrack = activeAll.filter(a => this.daysSince(a.lastCheckIn) < this.warnDays()).length;
+    const tile = (bg, fg, bd) => `background:${bg};border:1px solid ${bd};border-radius:6px;padding:12px 14px;color:${fg};`;
+    const alertTiles = [
+      { value: summary.overdue, label: 'Overdue check-ins', style: tile('#FDF0F0', '#8B1A1A', '#F9CECE') },
+      { value: dueSoon, label: 'Due for follow-up', style: tile('#FDF5E6', '#7A4A00', '#FAEAC8') },
+      { value: onTrack, label: 'On track', style: tile('#EBF9F1', '#146830', '#CCEEDD') },
+      { value: summary.active, label: 'Active listings', style: tile('#E8EFF7', '#1A3464', '#B8CDE8') },
+    ];
+
+    // status tabs
+    const statusList = ['all', 'Active', 'Fully Leased', 'Replaced', 'Terminated'];
+    const labels = { all: 'All', 'Active': 'Active', 'Fully Leased': 'Leased', 'Replaced': 'Replaced', 'Terminated': 'Terminated' };
+    const statusTabs = statusList.map(key => {
+      const active = st.statusFilter === key;
+      const count = key === 'all' ? all.length : all.filter(a => a.status === key).length;
+      return { label: labels[key], count, onClick: () => this.setState({ statusFilter: key }),
+        style: `display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border:none;border-radius:4px;cursor:pointer;font-family:var(--font-body);font-size:12px;font-weight:600;transition:all 150ms ease-out;background:${active ? '#fff' : 'transparent'};color:${active ? 'var(--text-primary)' : 'var(--text-secondary)'};box-shadow:${active ? '0 1px 2px rgba(7,20,40,0.12)' : 'none'};`,
+        countStyle: 'font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--text-tertiary);' };
+    });
+    const brokerOptions = [{ value: 'all', label: 'All brokers' }, ...st.brokers.map(b => ({ value: b.id, label: b.name }))];
+
+    // rows
+    let rows = all.filter(a => (st.statusFilter === 'all' || a.status === st.statusFilter) && (st.brokerFilter === 'all' || a.brokerId === st.brokerFilter));
+    rows = rows.map(a => {
+      const p = this.propertyById(a.propertyId), b = this.brokerById(a.brokerId);
+      const sm = this.statusMeta(a.status); const days = this.daysSince(a.lastCheckIn); const flag = this.flagFor(a);
+      const barColor = a.status === 'Active' ? (flag ? flag.bar : '#22A652') : '#C8C4BE';
+      const barW = Math.max(4, Math.min((days || 0) / this.overDays(), 1) * 100);
+      let daysColor = 'var(--text-tertiary)';
+      if (a.status === 'Active') daysColor = flag && flag.fg ? flag.m.fg : 'var(--text-secondary)';
+      return {
+        _days: days === null ? -1 : days, id: a.id, open: () => this.navDetail(a.id),
+        propertyName: p.name, propertyAddr: p.addr, brokerName: b.name, brokerFirm: b.firm,
+        statusLabel: sm.label, statusBadgeStyle: this.badgeStyle(sm), statusDotStyle: this.dotStyle(sm.dot),
+        startDisp: this.fmt(a.start), endDisp: a.end ? 'Ended ' + this.fmt(a.end) : (a.status === 'Active' ? 'Listing open' : '—'),
+        checkInDisp: this.fmt(a.lastCheckIn), daysDisp: (days === null ? '—' : days + 'd'),
+        daysStyle: `font-family:var(--font-mono);font-weight:600;font-size:13px;color:${daysColor};min-width:34px;text-align:right;`,
+        barStyle: `width:${barW}%;height:100%;background:${barColor};border-radius:9999px;`,
+        showFlag: a.status === 'Active', noFlag: a.status !== 'Active',
+        flagLabel: flag ? flag.label : '', flagBadgeStyle: flag ? this.badgeStyle(flag.m) : '', flagDotStyle: flag ? this.dotStyle(flag.m.dot) : '',
+        rowStyle: `background:${flag && flag.rowBg ? flag.rowBg : '#fff'};${flag && flag.bar && flag.rowBg !== '#fff' ? `box-shadow:inset 3px 0 0 ${flag.bar};` : ''}transition:background 150ms ease-out;`,
+      };
+    });
+    rows.sort((x, y) => st.sortDesc ? (y._days - x._days) : (x._days - y._days));
+
+    const titles = { list: 'Broker Assignments', detail: 'Assignment Detail', score: 'Broker Scorecard', form: 'New Assignment' };
+    const tabStyle = (active) => `display:flex;align-items:center;height:100%;padding:0 6px;background:none;border:none;border-bottom:3px solid ${active ? 'var(--color-navy-700)' : 'transparent'};cursor:pointer;font-family:var(--font-body);font-size:14px;font-weight:${active ? 700 : 400};color:${active ? 'var(--color-navy-700)' : 'var(--text-secondary)'};transition:all 150ms ease-out;`;
+
+    // detail
+    let detail = {};
+    if (st.screen === 'detail' && st.selectedId) {
+      const a = st.assignments.find(x => x.id === st.selectedId);
+      const p = this.propertyById(a.propertyId), b = this.brokerById(a.brokerId);
+      const sm = this.statusMeta(a.status); const flag = this.flagFor(a);
+      const reasonName = { '': 'Not applicable', 'Leased Up': 'Leased Up', 'Performance Issue': 'Performance Issue', 'Company Decision': 'Company Decision', 'Other': 'Other' };
+      const hist = st.assignments.filter(x => x.propertyId === a.propertyId).sort((x, y) => x.start < y.start ? -1 : 1).map(x => {
+        const hb = this.brokerById(x.brokerId), hm = this.statusMeta(x.status); const cur = x.id === a.id;
+        return { brokerName: hb.name, brokerFirm: hb.firm, statusLabel: hm.label, statusBadgeStyle: this.badgeStyle(hm), statusDotStyle: this.dotStyle(hm.dot),
+          rangeDisp: this.fmt(x.start) + ' → ' + (x.end ? this.fmt(x.end) : 'present'), reasonDisp: x.reason || (x.status === 'Active' ? 'Active listing' : '—'),
+          rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px;margin-top:8px;border-radius:6px;border:1px solid ${cur ? 'var(--color-gold-300)' : 'var(--border-subtle)'};background:${cur ? 'var(--color-gold-50)' : '#fff'};` };
+      });
+      const dIdle = this.daysSince(a.lastCheckIn);
+      const daysHl = 'font-family:var(--font-mono); font-size:14px; font-weight:600; color:' + (a.status === 'Active' ? (flag ? flag.m.fg : 'var(--text-secondary)') : 'var(--text-tertiary)') + ';';
+      detail = {
+        propertyType: p.type || 'Retail', daysDisp: (dIdle === null ? '—' : dIdle + ' days'), daysHlStyle: daysHl,
+        propertyName: p.name, propertyAddr: p.addr, sqftDisp: (p.sqft ? p.sqft.toLocaleString() + ' sq ft' : ''),
+        brokerName: b.name, brokerFirm: b.firm, brokerEmail: b.email, brokerPhone: b.phone, brokerInitials: this.initials(b.name),
+        statusLabel: sm.label, statusBadgeStyle: this.badgeStyle(sm), statusDotStyle: this.dotStyle(sm.dot),
+        startDisp: this.fmt(a.start), endDisp: a.end ? this.fmt(a.end) : '—', checkInDisp: this.fmt(a.lastCheckIn), reasonDisp: reasonName[a.reason] || '—',
+        showFlag: !!(flag && flag.bar && flag.rowBg !== '#fff'), flagBanner: flag ? flag.banner : '',
+        flagBannerStyle: flag && flag.banner ? `display:flex;align-items:center;gap:9px;margin-top:18px;padding:12px 14px;border-radius:6px;font-size:13px;font-weight:500;background:${flag.bannerBg};color:${flag.bannerFg};border:1px solid ${flag.bannerBd};` : '',
+        canReplace: a.status === 'Active', history: hist, draftStatus: st.draft.status, draftCheckIn: st.draft.lastCheckIn, draftEnd: st.draft.end, draftReason: st.draft.reason, isEnding: st.draft.status !== 'Active',
+      };
+    }
+
+    const brokerCards = st.brokers.map(b => {
+      const mine = all.filter(a => a.brokerId === b.id); const cnt = s => mine.filter(a => a.status === s).length;
+      const active = cnt('Active'), leased = cnt('Fully Leased'), replaced = cnt('Replaced'), terminated = cnt('Terminated'); const total = mine.length || 1;
+      const seg = (n, c) => ({ n, style: `width:${(n / total) * 100}%;background:${c};height:100%;` });
+      return { id: b.id, name: b.name, firm: b.firm, initials: this.initials(b.name), active, leased, replaced, terminated, total: mine.length,
+        bars: [seg(active, '#22A652'), seg(leased, '#C8A045'), seg(replaced, '#D93636'), seg(terminated, '#8B1A1A')].filter(s => s.n > 0),
+        open: () => this.setState({ screen: 'list', brokerFilter: b.id, statusFilter: 'all' }) };
+    });
+
+    const dTab = st.detailTab;
+    const tabBtn = (on) => `display:flex; align-items:center; height:44px; padding:0 16px; background:none; border:none; border-bottom:3px solid ${on ? 'var(--color-navy-700)' : 'transparent'}; cursor:pointer; font-family:var(--font-body); font-size:14px; font-weight:${on ? 700 : 600}; color:${on ? 'var(--color-navy-700)' : 'var(--text-secondary)'};`;
+    let pathStages = [];
+    if (st.screen === 'detail' && st.selectedId) {
+      const cur = st.draft.status;
+      pathStages = ['Active', 'Fully Leased', 'Replaced', 'Terminated'].map((k, i) => {
+        const on = cur === k;
+        const clip = i === 0 ? 'polygon(0 0, calc(100% - 13px) 0, 100% 50%, calc(100% - 13px) 100%, 0 100%)' : 'polygon(0 0, calc(100% - 13px) 0, 100% 50%, calc(100% - 13px) 100%, 0 100%, 13px 50%)';
+        return { label: k, onClick: () => this.setState(s => ({ draft: { ...s.draft, status: k } })), style: `position:relative; flex:1; min-width:92px; height:36px; display:flex; align-items:center; justify-content:center; padding:0 8px; border:none; cursor:pointer; font-family:var(--font-body); font-size:12px; font-weight:600; white-space:nowrap; clip-path:${clip}; margin-right:-7px; background:${on ? 'var(--color-navy-700)' : 'var(--color-neutral-100)'}; color:${on ? '#fff' : 'var(--text-secondary)'};` };
+      });
+    }
+    const selA = st.assignments.find(x => x.id === st.selectedId);
+    const rp = st.rep;
+    const repBrokerOptions = [{ value: '', label: 'Select replacement broker…' }, ...st.brokers.filter(b => !selA || b.id !== selA.brokerId).map(b => ({ value: b.id, label: b.name + ' · ' + b.firm }))];
+    const f = st.form;
+    const propertyOptions = [{ value: '', label: 'Select a property…' }, ...st.properties.map(p => ({ value: p.id, label: p.name + ' — ' + p.addr }))];
+    const brokerSelectOptions = [{ value: '', label: 'Select a broker…' }, ...st.brokers.map(b => ({ value: b.id, label: b.name + ' · ' + b.firm }))];
+
+    return {
+      isList: st.screen === 'list', isDetail: st.screen === 'detail', isScore: st.screen === 'score', isForm: st.screen === 'form',
+      screenTitle: titles[st.screen],
+      tabListStyle: tabStyle(st.screen === 'list' || st.screen === 'detail'), tabScoreStyle: tabStyle(st.screen === 'score'), tabFormStyle: tabStyle(st.screen === 'form'),
+      goList: () => this.setState({ screen: 'list' }), goScore: () => this.go('score'), goForm: () => this.go('form'), goBackList: () => this.setState({ screen: 'list' }),
+      summary, donut, statusBar, statusLegend, alertTiles, tdCell, thStyle, thSortStyle,
+      statusTabs, brokerOptions, brokerFilterValue: st.brokerFilter, onBrokerFilter: (e) => this.setState({ brokerFilter: e.target.value }),
+      sortArrow: st.sortDesc ? '↓' : '↑', onToggleSort: () => this.setState(s => ({ sortDesc: !s.sortDesc })),
+      rows, rowCount: rows.length, rowsEmpty: rows.length === 0, viewAll: () => this.setState({ statusFilter: 'all', brokerFilter: 'all' }),
+      detail, statusOptions: ['Active', 'Fully Leased', 'Replaced', 'Terminated'],
+      reasonOptions: [{ value: '', label: 'Select reason…' }, { value: 'Leased Up', label: 'Leased Up' }, { value: 'Performance Issue', label: 'Performance Issue' }, { value: 'Company Decision', label: 'Company Decision' }, { value: 'Other', label: 'Other' }],
+      onDraftStatus: (e) => this.setState(s => ({ draft: { ...s.draft, status: e.target.value } })),
+      onDraftCheckIn: (e) => this.setState(s => ({ draft: { ...s.draft, lastCheckIn: e.target.value } })),
+      onDraftEnd: (e) => this.setState(s => ({ draft: { ...s.draft, end: e.target.value } })),
+      onDraftReason: (e) => this.setState(s => ({ draft: { ...s.draft, reason: e.target.value } })),
+      saveDraft: this.saveDraft, brokerCards, logCheckin: this.logCheckin, pathStages,
+      markStatus: this.markStatus, confirmCloseout: this.confirmCloseout, cancelCloseout: this.cancelCloseout, onCheckinInline: this.onCheckinInline, closingOut: st.closingOut,
+      detailTabDetails: dTab === 'details', detailTabHistory: dTab === 'history', detailTabNotes: dTab === 'notes',
+      tabDetails: () => this.setState({ detailTab: 'details' }), tabHistory: () => this.setState({ detailTab: 'history' }), tabNotes: () => this.setState({ detailTab: 'notes' }),
+      tabDetailsStyle: tabBtn(dTab === 'details'), tabHistoryStyle: tabBtn(dTab === 'history'), tabNotesStyle: tabBtn(dTab === 'notes'),
+      replacing: st.replacing, openReplace: this.openReplace, closeReplace: this.closeReplace, confirmReplace: this.confirmReplace,
+      rep: { brokerId: rp.brokerId, addingBroker: rp.addingBroker, choosingExisting: !rp.addingBroker, nbName: rp.nbName, nbFirm: rp.nbFirm, nbEmail: rp.nbEmail, nbPhone: rp.nbPhone, reason: rp.reason, date: rp.date },
+      repBrokerOptions, repError: rp.err,
+      repReasonOptions: [{ value: 'Performance Issue', label: 'Performance Issue' }, { value: 'Company Decision', label: 'Company Decision' }, { value: 'Other', label: 'Other' }],
+      repAddToggleLabel: rp.addingBroker ? 'Choose existing broker' : '+ Add new broker',
+      onRepBroker: (e) => this.setState(s => ({ rep: { ...s.rep, brokerId: e.target.value, err: '' } })),
+      repToggleAdd: () => this.setState(s => ({ rep: { ...s.rep, addingBroker: !s.rep.addingBroker, err: '' } })),
+      onRepReason: (e) => this.setState(s => ({ rep: { ...s.rep, reason: e.target.value } })),
+      onRepDate: (e) => this.setState(s => ({ rep: { ...s.rep, date: e.target.value } })),
+      onRepNbName: (e) => this.setState(s => ({ rep: { ...s.rep, nbName: e.target.value } })),
+      onRepNbFirm: (e) => this.setState(s => ({ rep: { ...s.rep, nbFirm: e.target.value } })),
+      onRepNbEmail: (e) => this.setState(s => ({ rep: { ...s.rep, nbEmail: e.target.value } })),
+      onRepNbPhone: (e) => this.setState(s => ({ rep: { ...s.rep, nbPhone: e.target.value } })),
+      form: { propertyId: f.propertyId, brokerId: f.brokerId, start: f.start, addingBroker: f.addingBroker, choosingExisting: !f.addingBroker, nbName: f.nbName, nbFirm: f.nbFirm, nbEmail: f.nbEmail, nbPhone: f.nbPhone },
+      propertyOptions, brokerSelectOptions, addBrokerToggleLabel: f.addingBroker ? 'Choose existing broker' : '+ Add new broker', formError: f.err,
+      onFormProperty: (e) => this.setState(s => ({ form: { ...s.form, propertyId: e.target.value, err: '' } })),
+      onFormBroker: (e) => this.setState(s => ({ form: { ...s.form, brokerId: e.target.value, err: '' } })),
+      onFormStart: (e) => this.setState(s => ({ form: { ...s.form, start: e.target.value } })),
+      toggleAddBroker: () => this.setState(s => ({ form: { ...s.form, addingBroker: !s.form.addingBroker, err: '' } })),
+      onNbName: (e) => this.setState(s => ({ form: { ...s.form, nbName: e.target.value } })),
+      onNbFirm: (e) => this.setState(s => ({ form: { ...s.form, nbFirm: e.target.value } })),
+      onNbEmail: (e) => this.setState(s => ({ form: { ...s.form, nbEmail: e.target.value } })),
+      onNbPhone: (e) => this.setState(s => ({ form: { ...s.form, nbPhone: e.target.value } })),
+      submitForm: this.submitForm, showToast: !!st.toast, toastMsg: st.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>
