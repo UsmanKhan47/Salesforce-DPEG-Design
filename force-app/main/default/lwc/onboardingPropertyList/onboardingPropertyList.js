@@ -17,7 +17,6 @@ const pctColor = (p) => (p >= 80 ? '#1A7A6B' : p >= 50 ? '#D4940A' : '#C0392B');
 
 const COLUMNS = [
     { label: 'Property', fieldName: 'recordUrl', type: 'url', typeAttributes: { label: { fieldName: 'propertyName' }, target: '_self' } },
-    { label: 'Start', fieldName: 'startLabel', type: 'text' },
     { label: 'Target', fieldName: 'targetLabel', type: 'text' },
     { label: 'Stage', fieldName: 'stage', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
     {
@@ -31,8 +30,7 @@ const COLUMNS = [
         }
     },
     { label: 'Open', fieldName: 'openTasks', type: 'number', cellAttributes: { alignment: 'center' } },
-    { label: 'Status', fieldName: 'status', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'statusWrap' }, dotStyle: { fieldName: 'statusDot' } } },
-    { label: 'Owner', fieldName: 'owner', type: 'text' }
+    { label: 'Status', fieldName: 'status', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'statusWrap' }, dotStyle: { fieldName: 'statusDot' } } }
 ];
 
 export default class OnboardingPropertyList extends NavigationMixin(LightningElement) {
@@ -58,7 +56,6 @@ export default class OnboardingPropertyList extends NavigationMixin(LightningEle
                 id: o.id,
                 propertyName: o.propertyName || o.name,
                 recordUrl: `/lightning/r/Onboarding__c/${o.id}/view`,
-                startLabel: this.dateLabel(o.startDate),
                 targetLabel: this.dateLabel(o.targetDate),
                 stage: o.stage || '—',
                 stageWrap: pillWrap('#EEF1F5'),
@@ -68,8 +65,7 @@ export default class OnboardingPropertyList extends NavigationMixin(LightningEle
                 openTasks: o.openTasks,
                 status: o.status || '—',
                 statusWrap: pillWrap(sBg),
-                statusDot: pillDot(sDot),
-                owner: o.owner || '—'
+                statusDot: pillDot(sDot)
             };
         });
     }
