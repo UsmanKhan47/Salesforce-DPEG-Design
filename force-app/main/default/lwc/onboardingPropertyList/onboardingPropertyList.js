@@ -9,14 +9,14 @@ const pctColor = (p) => (p >= 80 ? '#1A7A6B' : p >= 50 ? '#D4940A' : '#C0392B');
 
 const COLUMNS = [
     { label: 'Property', fieldName: 'recordUrl', type: 'url', typeAttributes: { label: { fieldName: 'propertyName' }, target: '_self' } },
-    { label: 'Start', fieldName: 'startLabel', type: 'text' },
-    { label: 'Target', fieldName: 'targetLabel', type: 'text' },
-    { label: 'Stage', fieldName: 'stage', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
+    { label: 'Start', fieldName: 'startLabel', type: 'text', initialWidth: 130 },
+    { label: 'Target', fieldName: 'targetLabel', type: 'text', initialWidth: 130 },
+    { label: 'Stage', fieldName: 'stage', type: 'pill', initialWidth: 150, typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
     {
-        label: '% Complete', fieldName: 'pctText', type: 'progress',
+        label: '% Complete', fieldName: 'pctText', type: 'progress', initialWidth: 120,
         typeAttributes: {
-            wrapStyle: 'display:flex;align-items:center;gap:10px;min-width:150px',
-            trackStyle: 'width:96px;height:8px;background:#ECEBEA;border-radius:9999px;overflow:hidden',
+            wrapStyle: 'display:flex;align-items:center;gap:8px;min-width:100px',
+            trackStyle: 'width:62px;height:8px;background:#ECEBEA;border-radius:9999px;overflow:hidden',
             barStyle: { fieldName: 'pctBar' },
             numStyle: 'color:#3B3B3B;font-weight:700;white-space:nowrap;font-size:12px;font-variant-numeric:tabular-nums',
             text: { fieldName: 'pctText' }
