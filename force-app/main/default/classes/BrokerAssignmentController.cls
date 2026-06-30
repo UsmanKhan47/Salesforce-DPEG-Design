@@ -80,7 +80,7 @@ public with sharing class BrokerAssignmentController {
             Integer d = idle(a);
             if (d != null && d > OVERDUE_DAYS) al.overdue++;
             else if (d != null && d >= WARN_DAYS) al.dueSoon++;
-            else al.onTrack++;
+            else al.onTrack++; // Active with no check-in date yet → treated as on-track
         }
         return al;
     }
@@ -128,6 +128,15 @@ public with sharing class BrokerAssignmentController {
     private class BrokerTotalComparator implements Comparator<BrokerTotal> {
         public Integer compare(BrokerTotal a, BrokerTotal b) { return b.totalProperties - a.totalProperties; }
     }
+    // Sorts Broker_Assignment__c records by Listing_Start_Date__c ascending; null treated as earliest.
+    private class StartDateAscComparator implements Comparator<Broker_Assignment__c> {
+        public Integer compare(Broker_Assignment__c a, Broker_Assignment__c b) {
+            if (a.Listing_Start_Date__c == b.Listing_Start_Date__c) return 0;
+            if (a.Listing_Start_Date__c == null) return -1;
+            if (b.Listing_Start_Date__c == null) return 1;
+            return a.Listing_Start_Date__c < b.Listing_Start_Date__c ? -1 : 1;
+        }
+    }
 
     public class HistoryRow {
         @AuraEnabled public Id id; @AuraEnabled public String brokerName; @AuraEnabled public String brokerFirm;
@@ -158,13 +167,13 @@ public with sharing class BrokerAssignmentController {
         d.brokerName=a.Broker_Name__c; d.brokerFirm=a.Broker_Firm__c; d.brokerEmail=a.Broker_Email__c; d.brokerPhone=a.Broker_Phone__c;
         d.status=a.Status__c; d.startDate=a.Listing_Start_Date__c; d.endDate=a.Listing_End_Date__c; d.lastCheckIn=a.Last_Check_In_Date__c;
         d.daysIdle=idle(a); d.reason=a.Reason_Ended__c;
-        // history = same Property Asset, oldest -> newest
+        // history = same Property Asset, oldest -> newest; built from queryAll() result already in memory
+        List<Broker_Assignment__c> same = new List<Broker_Assignment__c>();
+        for (Broker_Assignment__c r : recs) {
+            if (r.Property_Asset__c == a.Property_Asset__c) same.add(r);
+        }
+        same.sort(new StartDateAscComparator());
         List<HistoryRow> hist = new List<HistoryRow>();
-        List<Broker_Assignment__c> same = [
-            SELECT Id, Broker_Name__c, Broker_Firm__c, Status__c, Listing_Start_Date__c, Listing_End_Date__c, Reason_Ended__c
-            FROM Broker_Assignment__c WHERE Property_Asset__c = :a.Property_Asset__c
-            ORDER BY Listing_Start_Date__c ASC NULLS FIRST
-        ];
         for (Broker_Assignment__c h : same) {
             HistoryRow hr = new HistoryRow();
             hr.id=h.Id; hr.brokerName=h.Broker_Name__c; hr.brokerFirm=h.Broker_Firm__c; hr.status=h.Status__c;

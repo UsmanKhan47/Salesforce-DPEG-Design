@@ -48,7 +48,7 @@ private class BrokerAssignmentControllerTest {
         BrokerAssignmentController.Detail d = BrokerAssignmentController.getDetail(anId);
         System.assertEquals('Westgate Plaza', d.propertyName);
         System.assertEquals(5, d.history.size(), 'all 5 share one Property Asset');
-        System.assert(d.grossSqFt == 42000);
+        System.assertEquals(42000, d.grossSqFt);
         System.assertEquals(8000, d.vacantArea, 'vacancy spans from the Property Asset');
         System.assertNotEquals(null, d.activeDays);
     }
@@ -86,6 +86,7 @@ private class BrokerAssignmentControllerTest {
         Broker_Assignment__c oldA = [SELECT Status__c, Listing_End_Date__c, Reason_Ended__c FROM Broker_Assignment__c WHERE Id=:a.Id];
         Broker_Assignment__c newA = [SELECT Status__c, Broker__c, Property_Asset__c, Listing_Start_Date__c FROM Broker_Assignment__c WHERE Id=:newId];
         System.assertEquals('Replaced', oldA.Status__c);
+        System.assertEquals(Date.today(), oldA.Listing_End_Date__c);
         System.assertEquals('Active', newA.Status__c);
         System.assertEquals(nb.Id, newA.Broker__c);
         System.assertEquals(a.Property_Asset__c, newA.Property_Asset__c);
