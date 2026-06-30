@@ -99,7 +99,7 @@ public with sharing class OnboardingController {
 
     public class RiskAlerts {
         @AuraEnabled public Integer overdue;
-        @AuraEnabled public Integer blocked;
+        @AuraEnabled public Integer pastTarget;
         @AuraEnabled public Integer stalled;
         @AuraEnabled public Integer due7d;
     }
@@ -107,10 +107,10 @@ public with sharing class OnboardingController {
     @AuraEnabled(cacheable=true)
     public static RiskAlerts getRiskAlerts() {
         RiskAlerts a = new RiskAlerts();
-        a.overdue = 0; a.blocked = 0; a.stalled = 0; a.due7d = 0;
+        a.overdue = 0; a.pastTarget = 0; a.stalled = 0; a.due7d = 0;
         for (Onboarding__c o : activeOnboardings()) {
             a.overdue += (Integer) nz(o.Tasks_Overdue__c);
-            a.blocked += (Integer) nz(o.Tasks_Blocked_Now__c);
+            if (o.Past_Target__c == true) a.pastTarget += 1;
             a.stalled += (Integer) nz(o.Tasks_Stalled__c);
             a.due7d += (Integer) nz(o.Tasks_Due_7d__c);
         }

@@ -2,10 +2,10 @@ import { LightningElement, wire } from 'lwc';
 import getRiskAlerts from '@salesforce/apex/OnboardingController.getRiskAlerts';
 
 const TILES = [
-    { key: 'overdue', label: 'Overdue Tasks',   tone: 'red' },
-    { key: 'blocked', label: 'Blocked Tasks',   tone: 'red' },
-    { key: 'stalled', label: 'Stalled Over 7 Days', tone: 'amber' },
-    { key: 'due7d',   label: 'Due Next 7 Days', tone: 'amber' }
+    { key: 'overdue',    label: 'Overdue Tasks',   tone: 'red' },
+    { key: 'pastTarget', label: 'Past Target Date', tone: 'red' },
+    { key: 'stalled',    label: 'Stalled Over 7 Days', tone: 'amber' },
+    { key: 'due7d',      label: 'Due Next 7 Days', tone: 'amber' }
 ];
 const TONE = {
     red:   { bg: '#FCF3F1', border: '#F1C9C2', fg: '#C0392B' },

@@ -5,7 +5,7 @@ import getChecklist from '@salesforce/apex/OnboardingController.getChecklist';
 import completeTask from '@salesforce/apex/OnboardingController.completeTask';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const FILTERS = ['All','In Progress','Not Applicable','Overdue'];
+const FILTERS = ['All','Not Started','Overdue','Completed'];
 
 const ownerShort = (n) => !n ? '' : (n === 'Accounting Queue' ? 'Accounting' : n.split(' ')[0]);
 
@@ -57,7 +57,8 @@ export default class OnboardingChecklist extends LightningElement {
         const f = this.filter;
         if (f === 'All') return true;
         if (f === 'Overdue') return it.overdue;
-        return it.status === f;
+        if (f === 'Completed') return it.status === 'Complete';
+        return it.status === f; // 'Not Started'
     }
     enrich(it) {
         const done = it.status === 'Complete';

@@ -44,7 +44,7 @@ private class OnboardingControllerTest {
     @isTest static void riskAndSla() {
         OnboardingController.RiskAlerts a = OnboardingController.getRiskAlerts();
         System.assertEquals(14, a.overdue);
-        System.assertEquals(5, a.blocked);
+        System.assertEquals(1, a.pastTarget, 'one active onboarding is past target');
         OnboardingController.TimeSla t = OnboardingController.getTimeSla();
         System.assertEquals(1, t.pastTarget);
         System.assertEquals(41, t.oldestOpen);
