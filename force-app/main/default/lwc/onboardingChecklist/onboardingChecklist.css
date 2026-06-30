@@ -235,27 +235,6 @@
     text-decoration: line-through;
 }
 .oc-task--na .oc-subject { color: #969492; }
-.oc-task--blocked { background: #fef6f6; }
-.oc-task--blocked:hover { background: #fcecec; }
-.oc-flag {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    background: #feded8;
-    color: #ba0517;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    padding: 2px 7px 2px 5px;
-    border-radius: 10px;
-    white-space: nowrap;
-}
-.oc-flag-icon {
-    --slds-c-icon-color-foreground-default: #ba0517;
-    --sds-c-icon-color-foreground-default: #ba0517;
-}
 .oc-na-tag {
     flex: 0 0 auto;
     color: #969492;

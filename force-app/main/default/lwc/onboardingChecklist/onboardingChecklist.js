@@ -64,13 +64,11 @@ export default class OnboardingChecklist extends LightningElement {
         const isNA = it.status === 'Not Applicable';
         const dateTxt = isNA ? '—' : this.dateLabel(it.due);
         return {
-            id: it.id, name: it.name, done, locked: done || isNA,
-            isBlocked: it.status === 'Blocked', isNA, reason: it.reason || 'Blocked',
+            id: it.id, name: it.name, done, locked: done || isNA, isNA,
             meta: `${ownerShort(it.owner)} · ${dateTxt}`,
             metaClass: it.overdue ? 'oc-meta oc-meta--overdue' : 'oc-meta',
             rowClass: 'oc-task'
                 + (done ? ' oc-task--done' : '')
-                + (it.status === 'Blocked' ? ' oc-task--blocked' : '')
                 + (isNA ? ' oc-task--na' : '')
         };
     }

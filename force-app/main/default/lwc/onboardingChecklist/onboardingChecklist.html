@@ -47,12 +47,6 @@
                             <input type="checkbox" class="oc-check" checked={it.done} disabled={it.locked}
                                 data-id={it.id} data-subject={it.name} onchange={handleCheck} />
                             <span class="oc-subject">{it.name}</span>
-                            <template if:true={it.isBlocked}>
-                                <span class="oc-flag" title={it.reason}>
-                                    <lightning-icon icon-name="utility:warning" size="xx-small"
-                                        class="oc-flag-icon"></lightning-icon>Blocked
-                                </span>
-                            </template>
                             <template if:true={it.isNA}>
                                 <span class="oc-na-tag">N/A</span>
                             </template>
