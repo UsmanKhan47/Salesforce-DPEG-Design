@@ -37,5 +37,6 @@
     <tabs>standard-report</tabs>
     <tabs>Broker_Assignments</tabs>
     <tabs>Broker_Assignment__c</tabs>
+    <tabs>Broker_Scorecard</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>

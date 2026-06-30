@@ -343,4 +343,8 @@
         <tab>standard-Task</tab>
         <visibility>Visible</visibility>
     </tabSettings>
+    <tabSettings>
+        <tab>Broker_Scorecard</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
 </PermissionSet>

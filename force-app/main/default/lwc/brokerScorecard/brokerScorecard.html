@@ -1,0 +1,66 @@
+<template>
+    <div class="scorecard-wrapper">
+        <p class="scorecard-intro">
+            Outcome record for each broker across every property they&apos;ve ever been assigned.
+            Active counts reflect live listings; closed outcomes are the track record.
+        </p>
+
+        <template if:true={hasCards}>
+            <div class="card-grid">
+                <template for:each={cards} for:item="b">
+                    <div key={b.brokerId} class="broker-card">
+                        <!-- Card header: avatar + name + firm + button -->
+                        <div class="card-header">
+                            <div class="avatar">{b.initials}</div>
+                            <div class="broker-info">
+                                <div class="broker-name">{b.name}</div>
+                                <div class="broker-firm">{b.firm}</div>
+                            </div>
+                            <button class="view-btn" onclick={viewListings}>View listings</button>
+                        </div>
+
+                        <!-- Card body: active count + bar + footer stats -->
+                        <div class="card-body">
+                            <!-- Big active count -->
+                            <div class="active-row">
+                                <span class="active-count">{b.active}</span>
+                                <span class="active-label">active now &middot; {b.total} assigned all-time</span>
+                            </div>
+
+                            <!-- Stacked bar -->
+                            <div class="stacked-bar">
+                                <template for:each={b.bars} for:item="seg">
+                                    <div key={seg.key} style={seg.style}></div>
+                                </template>
+                            </div>
+
+                            <!-- 4-stat footer -->
+                            <div class="stat-grid">
+                                <div class="stat">
+                                    <div class="stat-num stat-active">{b.active}</div>
+                                    <div class="stat-label">Active</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-num stat-leased">{b.leased}</div>
+                                    <div class="stat-label">Leased</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-num stat-replaced">{b.replaced}</div>
+                                    <div class="stat-label">Replaced</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-num stat-terminated">{b.terminated}</div>
+                                    <div class="stat-label">Term.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <template if:false={hasCards}>
+            <div class="empty-state">No broker scorecard data available.</div>
+        </template>
+    </div>
+</template>

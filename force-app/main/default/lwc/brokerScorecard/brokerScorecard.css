@@ -1,0 +1,167 @@
+/* ── Wrapper ───────────────────────────────────────────────── */
+.scorecard-wrapper {
+    padding: 16px;
+}
+
+.scorecard-intro {
+    font-size: 13px;
+    color: #5a6a7a;
+    margin: 0 0 18px 0;
+    max-width: 680px;
+    line-height: 1.5;
+}
+
+/* ── 2-column card grid ────────────────────────────────────── */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+}
+
+/* ── Individual card ───────────────────────────────────────── */
+.broker-card {
+    background: #ffffff;
+    border: 1px solid #e4e9ef;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
+    overflow: hidden;
+}
+
+/* ── Card header ───────────────────────────────────────────── */
+.card-header {
+    padding: 18px 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid #e4e9ef;
+}
+
+/* Circular avatar — navy bg, gold text */
+.avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #0C1E3C;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #E0C47E;
+    font-weight: 700;
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+.broker-info {
+    flex: 1;
+}
+
+.broker-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #0c1e3c;
+    line-height: 1.2;
+}
+
+.broker-firm {
+    font-size: 13px;
+    color: #5a6a7a;
+    margin-top: 2px;
+}
+
+/* View listings button */
+.view-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid #c9d3dc;
+    border-radius: 4px;
+    background: #ffffff;
+    font-size: 12px;
+    font-weight: 600;
+    color: #5a6a7a;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 120ms ease-out;
+}
+
+.view-btn:hover {
+    border-color: #6b7a8d;
+}
+
+/* ── Card body ─────────────────────────────────────────────── */
+.card-body {
+    padding: 20px 22px;
+}
+
+/* Big active count row */
+.active-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.active-count {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 34px;
+    font-weight: 500;
+    color: #146830;
+    line-height: 1;
+}
+
+.active-label {
+    font-size: 13px;
+    color: #5a6a7a;
+}
+
+/* Stacked bar */
+.stacked-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 9999px;
+    overflow: hidden;
+    background: #f0f2f5;
+    margin-bottom: 16px;
+}
+
+/* ── 4-stat footer ─────────────────────────────────────────── */
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.stat {
+    text-align: center;
+}
+
+.stat-num {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8a97a5;
+    margin-top: 2px;
+}
+
+/* Outcome colours */
+.stat-active     { color: #146830; }
+.stat-leased     { color: #8B6800; }
+.stat-replaced   { color: #B52020; }
+.stat-terminated { color: #8B1A1A; }
+
+/* ── Empty state ───────────────────────────────────────────── */
+.empty-state {
+    padding: 32px 0;
+    font-size: 14px;
+    color: #5a6a7a;
+    text-align: center;
+}
