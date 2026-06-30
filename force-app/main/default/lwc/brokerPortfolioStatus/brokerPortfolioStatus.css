@@ -1,0 +1,133 @@
+.ps-card {
+    background: #fff;
+    border: 1px solid #E2E0DB;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
+    padding: 18px;
+    display: block;
+}
+
+/* Header */
+.ps-hd {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 16px;
+}
+.ps-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #132850;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.ps-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1A1714;
+}
+
+/* Donut + readout row */
+.ps-top {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+/* Donut */
+.ps-donut-wrap {
+    position: relative;
+    width: 112px;
+    height: 112px;
+    flex-shrink: 0;
+}
+.ps-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.ps-pct {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 22px;
+    font-weight: 600;
+    color: #1A1714;
+    line-height: 1;
+}
+.ps-act-lbl {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8A8680;
+    margin-top: 2px;
+}
+
+/* Readout panel */
+.ps-readout {
+    flex: 1;
+}
+.ps-rd-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #8A8680;
+}
+.ps-rd-nums {
+    margin-top: 4px;
+}
+.ps-rd-active {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 30px;
+    font-weight: 600;
+    color: #1A1714;
+}
+.ps-rd-total {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 16px;
+    color: #8A8680;
+}
+.ps-rd-sub {
+    font-size: 12px;
+    color: #6B6560;
+    margin-top: 2px;
+}
+
+/* Stacked bar */
+.ps-bar {
+    display: flex;
+    height: 9px;
+    border-radius: 9999px;
+    overflow: hidden;
+    background: #EBEBEB;
+    margin-bottom: 14px;
+}
+
+/* Legend */
+.ps-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ps-leg-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+.ps-leg-lbl {
+    flex: 1;
+    color: #6B6560;
+}
+.ps-leg-cnt {
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 600;
+    color: #1A1714;
+}

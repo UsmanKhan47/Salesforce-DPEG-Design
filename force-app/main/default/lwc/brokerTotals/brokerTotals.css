@@ -1,0 +1,13 @@
+.bt-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; display:block; }
+.bt-hd { display:flex; align-items:center; gap:9px; margin-bottom:14px; }
+.bt-icon { width:26px; height:26px; border-radius:50%; background:#132850; display:inline-flex; align-items:center; justify-content:center; }
+.bt-title { font-size:16px; font-weight:700; color:#1A1714; }
+.bt-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.bt-row { display:flex; align-items:center; gap:12px; }
+.bt-avatar { width:34px; height:34px; border-radius:50%; background:#0C1E3C; color:#E0C47E; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.bt-name { display:flex; flex-direction:column; flex:1; min-width:0; }
+.bt-n { font-size:14px; font-weight:600; color:#1A1714; }
+.bt-f { font-size:12px; color:#8A8680; }
+.bt-count { font-size:20px; font-weight:700; color:#132850; display:flex; align-items:baseline; gap:5px; }
+.bt-unit { font-size:11px; font-weight:600; color:#8A8680; }
+.bt-empty { font-size:13px; color:#8A8680; }

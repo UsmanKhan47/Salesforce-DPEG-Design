@@ -1,0 +1,27 @@
+<template>
+    <article class="bt-card">
+        <div class="bt-hd">
+            <span class="bt-icon">
+                <lightning-icon icon-name="utility:user" size="x-small" variant="inverse"></lightning-icon>
+            </span>
+            <span class="bt-title">Brokers — Total Properties</span>
+        </div>
+        <template if:true={hasRows}>
+            <ul class="bt-list">
+                <template for:each={rows} for:item="r">
+                    <li key={r.brokerId} class="bt-row">
+                        <span class="bt-avatar">{r.initials}</span>
+                        <span class="bt-name">
+                            <span class="bt-n">{r.name}</span>
+                            <span class="bt-f">{r.firm}</span>
+                        </span>
+                        <span class="bt-count">{r.total}<span class="bt-unit">{r.unitLabel}</span></span>
+                    </li>
+                </template>
+            </ul>
+        </template>
+        <template if:false={hasRows}>
+            <div class="bt-empty">No brokers assigned yet.</div>
+        </template>
+    </article>
+</template>

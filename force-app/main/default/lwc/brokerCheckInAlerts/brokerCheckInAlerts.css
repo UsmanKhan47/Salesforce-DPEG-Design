@@ -1,0 +1,55 @@
+.ca-card {
+    background: #fff;
+    border: 1px solid #E2E0DB;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
+    padding: 18px;
+    display: block;
+}
+
+/* Header */
+.ca-hd {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 14px;
+}
+.ca-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #C0392B;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.ca-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1A1714;
+}
+
+/* 2×2 tile grid */
+.ca-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+/* Tile value (big mono number) */
+.ca-val {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* Tile label (uppercase small) */
+.ca-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-top: 5px;
+}
