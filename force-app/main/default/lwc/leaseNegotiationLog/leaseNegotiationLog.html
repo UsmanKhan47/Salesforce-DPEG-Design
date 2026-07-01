@@ -1,0 +1,97 @@
+<template>
+    <div class="lnl-card">
+        <!-- header -->
+        <div class="lnl-head">
+            <div class="lnl-head-left">
+                <span class="lnl-head-icon">
+                    <lightning-icon icon-name="utility:comments" size="x-small" variant="inverse"></lightning-icon>
+                </span>
+                <div>
+                    <div class="lnl-title">Negotiation history</div>
+                    <div class="lnl-sub">{count} entries · append-only, never overwritten</div>
+                </div>
+            </div>
+            <template if:true={canLog}>
+                <button class="lnl-add" onclick={openComposer} disabled={adding}>
+                    <lightning-icon icon-name="utility:add" size="xx-small" variant="inverse"></lightning-icon>
+                    Add Update
+                </button>
+            </template>
+        </div>
+
+        <!-- composer -->
+        <template if:true={adding}>
+            <div class="lnl-composer">
+                <lightning-textarea
+                    class="lnl-textarea"
+                    label="New update"
+                    value={upDetails}
+                    onchange={onDetails}
+                    placeholder="Log the counter-offer, response, or status change…">
+                </lightning-textarea>
+
+                <div class="lnl-composer-row">
+                    <lightning-combobox
+                        label="Ball in court now"
+                        value={upBall}
+                        options={ballOptions}
+                        onchange={onBall}
+                        variant="label-stacked">
+                    </lightning-combobox>
+                </div>
+
+                <template if:true={canAdvance}>
+                    <label class="lnl-check">
+                        <input type="checkbox" checked={upAdvance} onchange={onAdvance} />
+                        <span>{advanceLabel}</span>
+                    </label>
+                </template>
+
+                <template if:true={error}>
+                    <div class="lnl-error">{error}</div>
+                </template>
+
+                <div class="lnl-composer-actions">
+                    <button class="lnl-save" onclick={save}>
+                        <lightning-icon icon-name="utility:check" size="xx-small" variant="inverse"></lightning-icon>
+                        Save to log
+                    </button>
+                    <button class="lnl-cancel" onclick={cancel}>Cancel</button>
+                </div>
+            </div>
+        </template>
+
+        <!-- log -->
+        <div class="lnl-body">
+            <template for:each={entries} for:item="e">
+                <div key={e.id} class="lnl-entry">
+                    <div class="lnl-rail">
+                        <span class={e.markerClass}></span>
+                        <template if:true={e.showLine}><span class="lnl-line"></span></template>
+                    </div>
+                    <div class="lnl-content">
+                        <div class="lnl-entry-head">
+                            <span class="lnl-by">{e.enteredBy}</span>
+                            <lightning-formatted-date-time
+                                class="lnl-date"
+                                value={e.entryDate}
+                                year="numeric" month="short" day="2-digit"
+                                hour="2-digit" minute="2-digit">
+                            </lightning-formatted-date-time>
+                        </div>
+                        <div class="lnl-details">{e.details}</div>
+                        <div class="lnl-entry-foot">
+                            <span class="lnl-handed">Handed to</span>
+                            <span class={e.ballClass}>{e.ball}</span>
+                            <template if:true={e.isLatest}><span class="lnl-latest">Latest</span></template>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <div class="lnl-foot-note">
+                <lightning-icon icon-name="utility:lock" size="xx-small"></lightning-icon>
+                Entries are permanent. Adding an update never edits or erases what came before.
+            </div>
+        </div>
+    </div>
+</template>
