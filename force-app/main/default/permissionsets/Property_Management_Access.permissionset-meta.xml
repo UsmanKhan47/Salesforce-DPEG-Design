@@ -498,4 +498,8 @@
         <tab>Broker_Scorecard</tab>
         <visibility>Visible</visibility>
     </tabSettings>
+    <tabSettings>
+        <tab>Lease_Inquiry__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
 </PermissionSet>

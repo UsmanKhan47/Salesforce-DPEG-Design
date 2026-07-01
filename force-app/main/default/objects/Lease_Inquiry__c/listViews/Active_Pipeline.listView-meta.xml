@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Active_Pipeline</fullName>
+    <columns>NAME</columns>
+    <columns>Tenant_Name__c</columns>
+    <columns>Property_Name__c</columns>
+    <columns>Broker_Name__c</columns>
+    <columns>Stage__c</columns>
+    <columns>Ball_In_Court__c</columns>
+    <columns>Days_In_Stage__c</columns>
+    <columns>Aging__c</columns>
+    <filters>
+        <field>Status__c</field>
+        <operation>equals</operation>
+        <value>Active</value>
+    </filters>
+    <filterScope>Everything</filterScope>
+    <label>Active Pipeline</label>
+</ListView>
