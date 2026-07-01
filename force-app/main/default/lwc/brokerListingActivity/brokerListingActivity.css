@@ -1,14 +1,13 @@
-.la-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:16px 18px; }
-.la-hd { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:16px; }
-.la-hd-left { display:flex; align-items:center; gap:9px; }
-.la-icon { width:26px; height:26px; border-radius:50%; background:#132850; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
-.la-title { font-size:15px; font-weight:700; color:#1A1714; }
-.la-pill { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; }
-.la-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-.la-pill-txt { font-size:12px; font-weight:600; white-space:nowrap; }
-.la-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px 12px; }
-.la-tile { display:flex; align-items:center; gap:11px; min-width:0; }
-.la-tile-icon { width:34px; height:34px; border-radius:50%; background:#132850; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+:host { display:block; font-family:'Salesforce Sans', Arial, sans-serif; color:#181818; }
+.la-card { background:#fff; border:1px solid #e3e6eb; border-radius:10px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; }
+.la-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 20px 12px; border-bottom:1px solid #eef1f4; }
+.la-title { font-size:13px; font-weight:700; color:#181818; }
+.la-pill { display:inline-flex; align-items:center; gap:6px; background:#eceff1; border:1px solid #e1e6ea; border-radius:14px; padding:4px 11px; flex-shrink:0; }
+.la-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.la-pill-txt { font-size:10px; font-weight:600; color:#5a6b7b; white-space:nowrap; }
+.la-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; padding:4px 16px 14px; }
+.la-tile { display:flex; align-items:center; gap:0.625rem; background:#f3f2f2; border:1px solid #e5e5e5; border-radius:0.5rem; padding:0.625rem 0.75rem; min-width:0; }
+.la-tile-icon { flex-shrink:0; }
 .la-tile-txt { display:flex; flex-direction:column; min-width:0; }
-.la-tile-val { font-size:16px; font-weight:700; color:#1A1714; line-height:1.15; }
-.la-tile-lbl { font-size:10.5px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#8A8680; margin-top:2px; }
+.la-tile-val { font-size:0.875rem; font-weight:700; color:#181818; line-height:1.15; margin-bottom:0.125rem; white-space:normal; overflow-wrap:break-word; }
+.la-tile-lbl { font-size:0.625rem; font-weight:400; letter-spacing:0.0625rem; text-transform:uppercase; color:#5a6b7b; white-space:normal; overflow-wrap:break-word; }

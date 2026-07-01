@@ -11,6 +11,7 @@ const fmtDate = (v) => {
     const p = String(v).split('-').map(Number);
     return `${MONTHS[p[1] - 1]} ${p[2]}, ${p[0]}`;
 };
+const iconVar = (c) => `--sds-c-icon-color-foreground-default:${c};--slds-c-icon-color-foreground-default:${c}`;
 
 export default class BrokerListingActivity extends LightningElement {
     @api recordId;
@@ -24,11 +25,12 @@ export default class BrokerListingActivity extends LightningElement {
     get tiles() {
         const active = getFieldValue(this.record, ACTIVE_DAYS);
         const idle = this._idle;
+        const health = this._healthColor(idle);
         return [
-            { key: 'active',  icon: 'utility:clock',     value: active == null ? '—' : `${active}`, label: 'Active Days', valStyle: '' },
-            { key: 'start',   icon: 'utility:event',     value: fmtDate(getFieldValue(this.record, LISTING_START)), label: 'Listing Start', valStyle: '' },
-            { key: 'checkin', icon: 'utility:check',     value: fmtDate(getFieldValue(this.record, LAST_CHECKIN)), label: 'Last Check-In', valStyle: '' },
-            { key: 'idle',    icon: 'utility:date_time', value: idle == null ? '—' : `${idle}`, label: 'Days Since Check-In', valStyle: `color:${this._healthColor(idle)}` }
+            { key: 'active',  icon: 'utility:clock',     iconStyle: iconVar('#132850'), value: active == null ? '—' : `${active}`, valStyle: '', label: 'Active Days' },
+            { key: 'start',   icon: 'utility:event',     iconStyle: iconVar('#C8A045'), value: fmtDate(getFieldValue(this.record, LISTING_START)), valStyle: '', label: 'Listing Start' },
+            { key: 'checkin', icon: 'utility:check',     iconStyle: iconVar('#198A40'), value: fmtDate(getFieldValue(this.record, LAST_CHECKIN)), valStyle: '', label: 'Last Check-In' },
+            { key: 'idle',    icon: 'utility:date_time', iconStyle: iconVar(health), value: idle == null ? '—' : `${idle}`, valStyle: `color:${health}`, label: 'Days Since Check-In' }
         ];
     }
 
@@ -47,5 +49,4 @@ export default class BrokerListingActivity extends LightningElement {
     }
     get healthLabel() { return this._health.label; }
     get pillDotStyle() { return `background:${this._health.color}`; }
-    get pillTextStyle() { return `color:${this._health.color}`; }
 }
