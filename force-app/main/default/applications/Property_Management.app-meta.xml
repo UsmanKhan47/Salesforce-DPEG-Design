@@ -44,8 +44,10 @@
     <tabs>Onboarding</tabs>
     <tabs>Onboarding__c</tabs>
     <tabs>standard-report</tabs>
+    <tabs>standard-Dashboard</tabs>
     <tabs>Broker_Assignments</tabs>
     <tabs>Broker_Assignment__c</tabs>
     <tabs>Broker_Scorecard</tabs>
+    <tabs>Lease_Inquiry__c</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>
