@@ -1,9 +1,14 @@
-.la-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px 20px; }
-.la-hd { display:flex; align-items:center; gap:9px; margin-bottom:14px; }
-.la-icon { width:26px; height:26px; border-radius:50%; background:#198A40; display:inline-flex; align-items:center; justify-content:center; }
+.la-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:16px 18px; }
+.la-hd { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:16px; }
+.la-hd-left { display:flex; align-items:center; gap:9px; }
+.la-icon { width:26px; height:26px; border-radius:50%; background:#132850; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 .la-title { font-size:15px; font-weight:700; color:#1A1714; }
-.la-big { font-size:32px; font-weight:700; color:#132850; display:flex; align-items:baseline; gap:8px; margin-bottom:14px; }
-.la-unit { font-size:13px; font-weight:500; color:#524F4A; }
-.la-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-top:1px solid #E2E0DB; }
-.la-lbl { font-size:12px; color:#524F4A; }
-.la-val { font-size:13px; font-weight:600; color:#1A1714; }
+.la-pill { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; }
+.la-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.la-pill-txt { font-size:12px; font-weight:600; white-space:nowrap; }
+.la-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px 12px; }
+.la-tile { display:flex; align-items:center; gap:11px; min-width:0; }
+.la-tile-icon { width:34px; height:34px; border-radius:50%; background:#132850; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.la-tile-txt { display:flex; flex-direction:column; min-width:0; }
+.la-tile-val { font-size:16px; font-weight:700; color:#1A1714; line-height:1.15; }
+.la-tile-lbl { font-size:10.5px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#8A8680; margin-top:2px; }

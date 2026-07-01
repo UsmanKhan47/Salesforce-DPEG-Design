@@ -1,11 +1,25 @@
 <template>
     <article class="la-card">
         <div class="la-hd">
-            <span class="la-icon"><lightning-icon icon-name="utility:clock" size="x-small" variant="inverse"></lightning-icon></span>
-            <span class="la-title">Listing Activity</span>
+            <span class="la-hd-left">
+                <span class="la-icon"><lightning-icon icon-name="utility:clock" size="x-small" variant="inverse"></lightning-icon></span>
+                <span class="la-title">Listing Activity</span>
+            </span>
+            <span class="la-pill">
+                <span class="la-dot" style={pillDotStyle}></span>
+                <span class="la-pill-txt" style={pillTextStyle}>{healthLabel}</span>
+            </span>
         </div>
-        <div class="la-big">{activeDays}<span class="la-unit">active days</span></div>
-        <div class="la-row"><span class="la-lbl">Last check-in</span><span class="la-val">{lastCheckIn}</span></div>
-        <div class="la-row"><span class="la-lbl">Days since check-in</span><span class="la-val">{daysIdle}</span></div>
+        <div class="la-grid">
+            <template for:each={tiles} for:item="t">
+                <div key={t.key} class="la-tile">
+                    <span class="la-tile-icon"><lightning-icon icon-name={t.icon} size="x-small" variant="inverse"></lightning-icon></span>
+                    <span class="la-tile-txt">
+                        <span class="la-tile-val" style={t.valStyle}>{t.value}</span>
+                        <span class="la-tile-lbl">{t.label}</span>
+                    </span>
+                </div>
+            </template>
+        </div>
     </article>
 </template>
