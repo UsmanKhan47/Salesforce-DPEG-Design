@@ -1,63 +1,16 @@
 <template>
     <template if:true={hasData}>
-        <!-- ===== header card ===== -->
-        <div class="ba-card ba-headcard">
-            <div class="ba-headrow">
-                <div class="ba-headtitle">
-                    <div class="ba-iconbox">
-                        <lightning-icon icon-name="utility:company" size="small" variant="inverse"></lightning-icon>
-                    </div>
-                    <div>
-                        <div class="ba-eyebrow">Broker Assignment</div>
-                        <h2 class="ba-h2">{propertyName}</h2>
-                    </div>
-                </div>
-                <div class="ba-actions">
-                    <template if:true={canReplace}>
-                        <button class="ba-btn ba-btn--ghost" onclick={handleLogCheckIn}>
-                            <lightning-icon icon-name="utility:check" size="xx-small"></lightning-icon>Log Check-in
-                        </button>
-                        <button class="ba-btn ba-btn--ghost" onclick={openReplace}>
-                            <lightning-icon icon-name="utility:change_owner" size="xx-small"></lightning-icon>Replace Broker
-                        </button>
-                    </template>
-                </div>
+        <!-- ===== action toolbar ===== -->
+        <template if:true={canReplace}>
+            <div class="ba-toolbar">
+                <button class="ba-btn ba-btn--ghost" onclick={handleLogCheckIn}>
+                    <lightning-icon icon-name="utility:check" size="xx-small"></lightning-icon>Log Check-in
+                </button>
+                <button class="ba-btn ba-btn--ghost" onclick={openReplace}>
+                    <lightning-icon icon-name="utility:change_owner" size="xx-small"></lightning-icon>Replace Broker
+                </button>
             </div>
-            <div class="ba-headmeta">
-                <div class="ba-metacol">
-                    <div class="ba-metalbl">Status</div>
-                    <span style={statusBadgeStyle}><span style={statusDotStyle}></span>{statusLabel}</span>
-                </div>
-                <div class="ba-metacol">
-                    <div class="ba-metalbl">Broker</div>
-                    <div class="ba-metaval">{brokerName}</div>
-                </div>
-                <div class="ba-metacol">
-                    <div class="ba-metalbl">Listing Start</div>
-                    <div class="ba-metaval ba-mono">{startDisp}</div>
-                </div>
-                <div class="ba-metacol">
-                    <div class="ba-metalbl">Last Check-In</div>
-                    <div class="ba-metaval ba-mono">{checkInDisp}</div>
-                </div>
-                <div class="ba-metacol">
-                    <div class="ba-metalbl">Days Idle</div>
-                    <div style={daysHlStyle}>{daysDisp}</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ===== status path ===== -->
-        <div class="ba-card ba-pathcard">
-            <div class="ba-path">
-                <template for:each={pathStages} for:item="ps">
-                    <button key={ps.key} class={ps.cls} data-key={ps.key} onclick={pickStage}>{ps.label}</button>
-                </template>
-            </div>
-            <button class="ba-btn ba-btn--primary" onclick={markStatus}>
-                <lightning-icon icon-name="utility:check" size="xx-small" variant="inverse"></lightning-icon>{markLabel}
-            </button>
-        </div>
+        </template>
 
         <!-- ===== tabbed card ===== -->
         <div class="ba-card ba-tabcard">
@@ -139,35 +92,6 @@
                 <div class="ba-empty">No notes or attachments yet.</div>
             </template>
         </div>
-    </template>
-
-    <!-- ===== Close-out modal ===== -->
-    <template if:true={closingOut}>
-        <section role="dialog" aria-modal="true" aria-label="Close out listing" class="ba-overlay">
-            <div class="ba-modal">
-                <div class="ba-modalhd">
-                    <div class="ba-modalicon">
-                        <lightning-icon icon-name="utility:check" size="xx-small" variant="inverse"></lightning-icon>
-                    </div>
-                    <div>
-                        <div class="ba-modaltitle">Close out listing</div>
-                        <div class="ba-modalsub">{propertyName}</div>
-                    </div>
-                </div>
-                <div class="ba-modalbody">
-                    <div class="ba-infobox">
-                        <lightning-icon icon-name="utility:info" size="xx-small"></lightning-icon>
-                        <span>{closeoutNote}</span>
-                    </div>
-                    <lightning-input type="date" label="Listing end date" value={draftEnd} onchange={onDraftEnd}></lightning-input>
-                    <lightning-combobox label="Reason ended" value={draftReason} placeholder="Select a reason" options={reasonOptions} onchange={onDraftReason}></lightning-combobox>
-                </div>
-                <div class="ba-modalfoot">
-                    <button class="ba-btn ba-btn--primary ba-btn--block" onclick={confirmCloseout}>{markLabel}</button>
-                    <button class="ba-btn ba-btn--ghost" onclick={cancelCloseout}>Cancel</button>
-                </div>
-            </div>
-        </section>
     </template>
 
     <!-- ===== Replace modal ===== -->

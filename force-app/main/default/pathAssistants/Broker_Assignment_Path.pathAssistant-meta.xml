@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Broker_Assignment__c</entityName>
+    <fieldName>Status__c</fieldName>
+    <masterLabel>Broker Assignment Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Listing is live. Log check-ins regularly and watch the days-idle counter to keep the broker engaged.</info>
+        <picklistValueName>Active</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Listing_End_Date__c</fieldNames>
+        <fieldNames>Reason_Ended__c</fieldNames>
+        <info>Space is fully leased. Record the listing end date and reason so the record closes out cleanly in history.</info>
+        <picklistValueName>Fully Leased</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Listing_End_Date__c</fieldNames>
+        <fieldNames>Reason_Ended__c</fieldNames>
+        <info>Broker has been replaced. Capture the end date and reason before a new Active listing opens for the incoming broker.</info>
+        <picklistValueName>Replaced</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Listing_End_Date__c</fieldNames>
+        <fieldNames>Reason_Ended__c</fieldNames>
+        <info>Assignment terminated. Record the end date and reason to close out the listing in history.</info>
+        <picklistValueName>Terminated</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

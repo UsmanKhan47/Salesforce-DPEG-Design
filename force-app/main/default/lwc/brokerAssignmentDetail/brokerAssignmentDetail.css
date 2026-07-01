@@ -5,6 +5,9 @@
 .ba-mono { font-variant-numeric:tabular-nums; }
 .ba-muted { color:#524F4A; }
 
+/* ===== action toolbar ===== */
+.ba-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+
 /* ===== header card ===== */
 .ba-headcard { padding:18px 24px; margin-bottom:14px; }
 .ba-headrow { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap; }

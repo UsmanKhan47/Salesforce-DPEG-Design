@@ -4,7 +4,6 @@ import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 import getDetail from '@salesforce/apex/BrokerAssignmentController.getDetail';
 import getBrokerOptions from '@salesforce/apex/BrokerAssignmentController.getBrokerOptions';
 import logCheckIn from '@salesforce/apex/BrokerAssignmentController.logCheckIn';
-import closeOut from '@salesforce/apex/BrokerAssignmentController.closeOut';
 import replaceBroker from '@salesforce/apex/BrokerAssignmentController.replaceBroker';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -15,7 +14,6 @@ const STATUS_META = {
     'Terminated':   { bg: '#F9CECE', fg: '#8B1A1A', dot: '#B52020' }
 };
 const REASONS = ['Leased Up', 'Performance Issue', 'Company Decision', 'Other'];
-const PATH_STAGES = ['Active', 'Fully Leased', 'Replaced', 'Terminated'];
 
 const pillWrap = (m) => `display:inline-flex;align-items:center;gap:6px;background:${m.bg};color:${m.fg};font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;line-height:1.4;white-space:nowrap`;
 const pillDot = (c) => `width:6px;height:6px;border-radius:50%;background:${c};flex-shrink:0`;
@@ -27,11 +25,7 @@ export default class BrokerAssignmentDetail extends LightningElement {
     d;
     _wire;
     @track tab = 'details';
-    @track closingOut = false;
     @track replacing = false;
-    @track draftStatus;
-    @track draftEnd;
-    @track draftReason;
     @track repBrokerId;
     @track repReason = 'Performance Issue';
     @track repDate;
@@ -42,7 +36,6 @@ export default class BrokerAssignmentDetail extends LightningElement {
         this._wire = result;
         if (result.data) {
             this.d = result.data;
-            this.draftStatus = result.data.status;
         }
     }
     @wire(getBrokerOptions) brokerOpts;
@@ -124,18 +117,7 @@ export default class BrokerAssignmentDetail extends LightningElement {
     selectHistory() { this.tab = 'history'; }
     selectNotes() { this.tab = 'notes'; }
 
-    // ---------- status path ----------
-    get pathStages() {
-        return PATH_STAGES.map((k, i) => ({
-            key: k,
-            label: k,
-            on: this.draftStatus === k,
-            cls: this.draftStatus === k ? 'ba-stage ba-stage--on' : 'ba-stage',
-            first: i === 0
-        }));
-    }
-    pickStage(e) { this.draftStatus = e.currentTarget.dataset.key; }
-    get markLabel() { return `Mark as ${this.draftStatus || ''}`; }
+    // ---------- action gating ----------
     get canReplace() { return !!(this.d && this.d.status === 'Active'); }
 
     // ---------- history rows ----------
@@ -177,35 +159,6 @@ export default class BrokerAssignmentDetail extends LightningElement {
             this._saving = false;
         }
     }
-    markStatus() {
-        if (this.draftStatus === 'Active') {
-            // Active is the live state; nothing to close out.
-            return;
-        }
-        this.draftEnd = null;
-        this.draftReason = null;
-        this.closingOut = true;
-    }
-    cancelCloseout() {
-        this.closingOut = false;
-        this.draftStatus = this.d ? this.d.status : this.draftStatus;
-    }
-    async confirmCloseout() {
-        if (this._saving) return;
-        this._saving = true;
-        try {
-            await closeOut({
-                assignmentId: this.recordId,
-                status: this.draftStatus,
-                endDate: this.draftEnd,
-                reason: this.draftReason
-            });
-            this.closingOut = false;
-            await this.refresh();
-        } finally {
-            this._saving = false;
-        }
-    }
     openReplace() {
         this.replacing = true;
         this.repBrokerId = null;
@@ -235,12 +188,9 @@ export default class BrokerAssignmentDetail extends LightningElement {
     get brokerOptionList() {
         return ((this.brokerOpts && this.brokerOpts.data) || []).map((o) => ({ label: o.label, value: o.id }));
     }
-    onDraftEnd(e) { this.draftEnd = e.target.value; }
-    onDraftReason(e) { this.draftReason = e.detail.value; }
     onRepBroker(e) { this.repBrokerId = e.detail.value; }
     onRepReason(e) { this.repReason = e.detail.value; }
     onRepDate(e) { this.repDate = e.target.value; }
-    get closeoutNote() { return `Status changes to ${this.draftStatus} — the record stays visible in history and is never deleted.`; }
     get replaceNote() {
         return `${this.brokerName}'s listing is closed as Replaced — the full record stays visible — and a new Active listing opens for the incoming broker.`;
     }
