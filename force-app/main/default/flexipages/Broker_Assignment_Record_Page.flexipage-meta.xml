@@ -125,12 +125,6 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentName>brokerAssignmentActions</componentName>
-                <identifier>brokerAssignmentActionsComponent</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
                 <componentName>brokerListingActivity</componentName>
                 <identifier>brokerListingActivityComponent</identifier>
             </componentInstance>
