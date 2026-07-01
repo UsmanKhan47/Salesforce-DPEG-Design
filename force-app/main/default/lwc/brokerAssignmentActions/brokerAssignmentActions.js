@@ -6,15 +6,12 @@ import getBrokerOptions from '@salesforce/apex/BrokerAssignmentController.getBro
 import logCheckIn from '@salesforce/apex/BrokerAssignmentController.logCheckIn';
 import replaceBroker from '@salesforce/apex/BrokerAssignmentController.replaceBroker';
 
-const REASONS = ['Leased Up', 'Performance Issue', 'Company Decision', 'Other'];
-
 export default class BrokerAssignmentActions extends LightningElement {
     @api recordId;
     d;
     _wire;
     @track replacing = false;
     @track repBrokerId;
-    @track repReason = 'Performance Issue';
     @track repDate;
     _saving = false;
 
@@ -55,19 +52,17 @@ export default class BrokerAssignmentActions extends LightningElement {
     openReplace() {
         this.replacing = true;
         this.repBrokerId = null;
-        this.repReason = 'Performance Issue';
         this.repDate = null;
     }
     closeReplace() { this.replacing = false; }
     async confirmReplace() {
-        if (this._saving) return;
+        if (this._saving || !this.repBrokerId) return;
         this._saving = true;
         try {
             await replaceBroker({
                 assignmentId: this.recordId,
                 newBrokerId: this.repBrokerId,
-                effectiveDate: this.repDate,
-                reason: this.repReason
+                effectiveDate: this.repDate
             });
             this.replacing = false;
             await this.refresh();
@@ -77,14 +72,12 @@ export default class BrokerAssignmentActions extends LightningElement {
     }
 
     // ---------- modal option lists & handlers ----------
-    get reasonOptions() { return REASONS.map((r) => ({ label: r, value: r })); }
     get brokerOptionList() {
         return ((this.brokerOpts && this.brokerOpts.data) || []).map((o) => ({ label: o.label, value: o.id }));
     }
     onRepBroker(e) { this.repBrokerId = e.detail.value; }
-    onRepReason(e) { this.repReason = e.detail.value; }
     onRepDate(e) { this.repDate = e.target.value; }
     get replaceNote() {
-        return `${this.brokerName}'s listing is closed as Disposed — the full record stays visible — and a new Active listing opens for the incoming broker.`;
+        return `This listing stays Active — ${this.brokerName} is replaced by the incoming broker, whose tenure starts on the effective date.`;
     }
 }

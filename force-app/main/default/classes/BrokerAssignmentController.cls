@@ -204,14 +204,19 @@ public with sharing class BrokerAssignmentController {
     }
 
     @AuraEnabled
-    public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate, String reason) {
+    public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate) {
         Date eff = effectiveDate == null ? Date.today() : effectiveDate;
-        Broker_Assignment__c old = [SELECT Id, Property_Asset__c FROM Broker_Assignment__c WHERE Id=:assignmentId LIMIT 1];
-        update new Broker_Assignment__c(Id=old.Id, Status__c='Disposed', Listing_End_Date__c=eff, Reason_Ended__c=reason);
-        Broker_Assignment__c neu = new Broker_Assignment__c(
-            Property_Asset__c=old.Property_Asset__c, Broker__c=newBrokerId, Status__c='Active',
-            Listing_Start_Date__c=eff, Last_Check_In_Date__c=eff);
-        insert neu;
-        return neu.Id;
+        // Swap the broker on the current listing in place — the listing stays Active.
+        // The incoming broker's tenure starts on the effective date; the check-in
+        // clock resets and any prior end date / reason is cleared since it stays open.
+        update new Broker_Assignment__c(
+            Id=assignmentId,
+            Broker__c=newBrokerId,
+            Status__c='Active',
+            Listing_Start_Date__c=eff,
+            Last_Check_In_Date__c=eff,
+            Listing_End_Date__c=null,
+            Reason_Ended__c=null);
+        return assignmentId;
     }
 }

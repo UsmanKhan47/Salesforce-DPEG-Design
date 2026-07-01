@@ -21,14 +21,7 @@
                     onchange={onRepBroker}
                     required
                     class="slds-m-top_small"></lightning-combobox>
-                <div class="slds-grid slds-gutters slds-m-top_small">
-                    <div class="slds-col">
-                        <lightning-combobox label="Reason previous broker ended" value={repReason} options={reasonOptions} onchange={onRepReason}></lightning-combobox>
-                    </div>
-                    <div class="slds-col">
-                        <lightning-input type="date" label="Effective date" value={repDate} onchange={onRepDate}></lightning-input>
-                    </div>
-                </div>
+                <lightning-input type="date" label="Effective date" value={repDate} onchange={onRepDate} class="slds-m-top_small"></lightning-input>
                 <template if:true={error}>
                     <div class="slds-text-color_error slds-m-top_small" role="alert">{error}</div>
                 </template>

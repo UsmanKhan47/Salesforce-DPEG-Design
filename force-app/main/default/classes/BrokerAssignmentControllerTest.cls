@@ -76,19 +76,24 @@ private class BrokerAssignmentControllerTest {
         System.assertEquals('Leased Up', after.Reason_Ended__c);
         System.assertEquals(Date.today(), after.Listing_End_Date__c);
     }
-    @isTest static void replaceBrokerOpensNewKeepsOld() {
+    @isTest static void replaceBrokerSwapsInPlaceStaysActive() {
         Broker_Assignment__c a = [SELECT Id, Property_Asset__c FROM Broker_Assignment__c WHERE Status__c='Active' LIMIT 1];
         Contact nb = [SELECT Id FROM Contact WHERE Is_Broker__c=true AND Email='pn@x.com' LIMIT 1];
+        Integer before = [SELECT COUNT() FROM Broker_Assignment__c];
         Test.startTest();
-        Id newId = BrokerAssignmentController.replaceBroker(a.Id, nb.Id, Date.today(), 'Performance Issue');
+        Id sameId = BrokerAssignmentController.replaceBroker(a.Id, nb.Id, Date.today());
         Test.stopTest();
-        Broker_Assignment__c oldA = [SELECT Status__c, Listing_End_Date__c, Reason_Ended__c FROM Broker_Assignment__c WHERE Id=:a.Id];
-        Broker_Assignment__c newA = [SELECT Status__c, Broker__c, Property_Asset__c, Listing_Start_Date__c FROM Broker_Assignment__c WHERE Id=:newId];
-        System.assertEquals('Disposed', oldA.Status__c);
-        System.assertEquals(Date.today(), oldA.Listing_End_Date__c);
-        System.assertEquals('Active', newA.Status__c);
-        System.assertEquals(nb.Id, newA.Broker__c);
-        System.assertEquals(a.Property_Asset__c, newA.Property_Asset__c);
+        Integer after = [SELECT COUNT() FROM Broker_Assignment__c];
+        Broker_Assignment__c rec = [SELECT Status__c, Broker__c, Listing_Start_Date__c, Last_Check_In_Date__c, Listing_End_Date__c, Reason_Ended__c
+                                    FROM Broker_Assignment__c WHERE Id=:a.Id];
+        System.assertEquals(a.Id, sameId, 'Replace returns the same record');
+        System.assertEquals(before, after, 'Replace updates in place — no new record');
+        System.assertEquals('Active', rec.Status__c, 'Listing stays Active after replacement');
+        System.assertEquals(nb.Id, rec.Broker__c, 'Broker is swapped to the incoming broker');
+        System.assertEquals(Date.today(), rec.Listing_Start_Date__c);
+        System.assertEquals(Date.today(), rec.Last_Check_In_Date__c);
+        System.assertEquals(null, rec.Listing_End_Date__c);
+        System.assertEquals(null, rec.Reason_Ended__c);
     }
     @isTest static void getBrokerOptionsReturnsBrokers() {
         System.assertEquals(2, BrokerAssignmentController.getBrokerOptions().size());
