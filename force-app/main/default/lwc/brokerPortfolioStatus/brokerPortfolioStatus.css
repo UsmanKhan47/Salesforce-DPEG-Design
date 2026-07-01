@@ -15,10 +15,6 @@
     margin-bottom: 16px;
 }
 .ps-icon {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: #132850;
     display: inline-flex;
     align-items: center;
     justify-content: center;
