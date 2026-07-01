@@ -13,7 +13,6 @@
                     <button key={t.key} data-key={t.key} class={t.cls} onclick={handleStatus}>{t.label}<span class="tab-count">{t.count}</span></button>
                 </template>
             </div>
-            <lightning-combobox class="broker-filter" variant="label-hidden" value={brokerFilter} options={brokerOptions} onchange={handleBroker}></lightning-combobox>
         </div>
         <c-list-datatable key-field="id" data={rows} columns={columns} column-widths-mode="fixed" hide-checkbox-column
             sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}></c-list-datatable>

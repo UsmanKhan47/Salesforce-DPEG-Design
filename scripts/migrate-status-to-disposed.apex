@@ -1,0 +1,1 @@
+List<Broker_Assignment__c> u = [SELECT Id FROM Broker_Assignment__c WHERE Status__c IN ('Replaced','Terminated')]; for (Broker_Assignment__c a : u) a.Status__c='Disposed'; update u; System.debug('Migrated '+u.size());

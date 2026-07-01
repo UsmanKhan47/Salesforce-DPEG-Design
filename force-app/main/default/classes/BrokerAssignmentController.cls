@@ -56,16 +56,15 @@ public with sharing class BrokerAssignmentController {
         return out;
     }
 
-    public class Portfolio { @AuraEnabled public Integer total; @AuraEnabled public Integer active; @AuraEnabled public Integer leased; @AuraEnabled public Integer replaced; @AuraEnabled public Integer terminated; }
+    public class Portfolio { @AuraEnabled public Integer total; @AuraEnabled public Integer active; @AuraEnabled public Integer leased; @AuraEnabled public Integer disposed; }
     @AuraEnabled(cacheable=true)
     public static Portfolio getPortfolio() {
-        Portfolio p = new Portfolio(); p.total=0; p.active=0; p.leased=0; p.replaced=0; p.terminated=0;
+        Portfolio p = new Portfolio(); p.total=0; p.active=0; p.leased=0; p.disposed=0;
         for (Broker_Assignment__c a : queryAll()) {
             p.total++;
             if (a.Status__c=='Active') p.active++;
             else if (a.Status__c=='Fully Leased') p.leased++;
-            else if (a.Status__c=='Replaced') p.replaced++;
-            else if (a.Status__c=='Terminated') p.terminated++;
+            else if (a.Status__c=='Disposed') p.disposed++;
         }
         return p;
     }
@@ -87,8 +86,8 @@ public with sharing class BrokerAssignmentController {
 
     public class BrokerCard {
         @AuraEnabled public Id brokerId; @AuraEnabled public String name; @AuraEnabled public String firm;
-        @AuraEnabled public Integer active; @AuraEnabled public Integer leased; @AuraEnabled public Integer replaced;
-        @AuraEnabled public Integer terminated; @AuraEnabled public Integer total;
+        @AuraEnabled public Integer active; @AuraEnabled public Integer leased; @AuraEnabled public Integer disposed;
+        @AuraEnabled public Integer total;
     }
     @AuraEnabled(cacheable=true)
     public static List<BrokerCard> getScorecard() {
@@ -96,12 +95,11 @@ public with sharing class BrokerAssignmentController {
         for (Broker_Assignment__c a : queryAll()) {
             if (a.Broker__c == null) continue;
             BrokerCard c = byBroker.get(a.Broker__c);
-            if (c == null) { c = new BrokerCard(); c.brokerId=a.Broker__c; c.name=a.Broker_Name__c; c.firm=a.Broker_Firm__c; c.active=0; c.leased=0; c.replaced=0; c.terminated=0; c.total=0; byBroker.put(a.Broker__c, c); }
+            if (c == null) { c = new BrokerCard(); c.brokerId=a.Broker__c; c.name=a.Broker_Name__c; c.firm=a.Broker_Firm__c; c.active=0; c.leased=0; c.disposed=0; c.total=0; byBroker.put(a.Broker__c, c); }
             c.total++;
             if (a.Status__c=='Active') c.active++;
             else if (a.Status__c=='Fully Leased') c.leased++;
-            else if (a.Status__c=='Replaced') c.replaced++;
-            else if (a.Status__c=='Terminated') c.terminated++;
+            else if (a.Status__c=='Disposed') c.disposed++;
         }
         return byBroker.values();
     }
@@ -208,7 +206,7 @@ public with sharing class BrokerAssignmentController {
     public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate, String reason) {
         Date eff = effectiveDate == null ? Date.today() : effectiveDate;
         Broker_Assignment__c old = [SELECT Id, Property_Asset__c FROM Broker_Assignment__c WHERE Id=:assignmentId LIMIT 1];
-        update new Broker_Assignment__c(Id=old.Id, Status__c='Replaced', Listing_End_Date__c=eff, Reason_Ended__c=reason);
+        update new Broker_Assignment__c(Id=old.Id, Status__c='Disposed', Listing_End_Date__c=eff, Reason_Ended__c=reason);
         Broker_Assignment__c neu = new Broker_Assignment__c(
             Property_Asset__c=old.Property_Asset__c, Broker__c=newBrokerId, Status__c='Active',
             Listing_Start_Date__c=eff, Last_Check_In_Date__c=eff);

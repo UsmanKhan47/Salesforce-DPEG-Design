@@ -9,8 +9,7 @@
             <sorted>false</sorted>
             <value><fullName>Active</fullName><default>true</default><label>Active</label></value>
             <value><fullName>Fully Leased</fullName><default>false</default><label>Fully Leased</label></value>
-            <value><fullName>Replaced</fullName><default>false</default><label>Replaced</label></value>
-            <value><fullName>Terminated</fullName><default>false</default><label>Terminated</label></value>
+            <value><fullName>Disposed</fullName><default>false</default><label>Disposed</label></value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

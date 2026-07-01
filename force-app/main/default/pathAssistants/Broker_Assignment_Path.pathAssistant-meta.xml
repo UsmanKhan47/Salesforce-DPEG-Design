@@ -17,14 +17,8 @@
     <pathAssistantSteps>
         <fieldNames>Listing_End_Date__c</fieldNames>
         <fieldNames>Reason_Ended__c</fieldNames>
-        <info>Broker has been replaced. Capture the end date and reason before a new Active listing opens for the incoming broker.</info>
-        <picklistValueName>Replaced</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <fieldNames>Listing_End_Date__c</fieldNames>
-        <fieldNames>Reason_Ended__c</fieldNames>
-        <info>Assignment terminated. Record the end date and reason to close out the listing in history.</info>
-        <picklistValueName>Terminated</picklistValueName>
+        <info>Listing is closed out. Capture the end date and reason so the full record stays visible in history.</info>
+        <picklistValueName>Disposed</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>__MASTER__</recordTypeName>
 </PathAssistant>

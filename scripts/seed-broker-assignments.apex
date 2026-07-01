@@ -94,7 +94,7 @@ Property_Asset__c pa5 = assets[4]; // Katy Mills Strip    – 51400 sqft, vacant
 Property_Asset__c pa6 = assets[5]; // Heights Marketplace – 33750 sqft, vacant 9000  → leased 24750
 
 // ─── 4) Broker Assignments (10) ─────────────────────────────────────────────
-// Leased_Area__c is set on Active assignments only (null on Fully Leased/Replaced/Terminated).
+// Leased_Area__c is set on Active assignments only (null on Fully Leased/Disposed).
 // Active leased area = (sqft − vacant):
 //   a1 p1 b1 Active – leased 31000  (42000 − 11000)
 //   a2 p2 b2 Active – leased 21000  (28500 −  7500)
@@ -140,11 +140,11 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Reason_Ended__c     = 'Leased Up',
         Last_Check_In_Date__c = Date.newInstance(2026, 2, 15)
     ),
-    // a5  p5/b1  Replaced
+    // a5  p5/b1  Disposed
     new Broker_Assignment__c(
         Property_Asset__c   = pa5.Id,
         Broker__c           = b1,
-        Status__c           = 'Replaced',
+        Status__c           = 'Disposed',
         Listing_Start_Date__c = Date.newInstance(2025, 6, 10),
         Listing_End_Date__c   = Date.newInstance(2025, 11, 30),
         Reason_Ended__c     = 'Performance Issue',
@@ -159,11 +159,11 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Last_Check_In_Date__c = Date.newInstance(2026, 6, 28),
         Leased_Area__c      = 37400
     ),
-    // a7  p6/b3  Terminated
+    // a7  p6/b3  Disposed
     new Broker_Assignment__c(
         Property_Asset__c   = pa6.Id,
         Broker__c           = b3,
-        Status__c           = 'Terminated',
+        Status__c           = 'Disposed',
         Listing_Start_Date__c = Date.newInstance(2025, 8, 15),
         Listing_End_Date__c   = Date.newInstance(2026, 1, 10),
         Reason_Ended__c     = 'Company Decision',
@@ -178,11 +178,11 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Last_Check_In_Date__c = Date.newInstance(2026, 6, 8),
         Leased_Area__c      = 24750
     ),
-    // a9  p1/b3  Replaced
+    // a9  p1/b3  Disposed
     new Broker_Assignment__c(
         Property_Asset__c   = pa1.Id,
         Broker__c           = b3,
-        Status__c           = 'Replaced',
+        Status__c           = 'Disposed',
         Listing_Start_Date__c = Date.newInstance(2024, 11, 1),
         Listing_End_Date__c   = Date.newInstance(2025, 4, 30),
         Reason_Ended__c     = 'Performance Issue',

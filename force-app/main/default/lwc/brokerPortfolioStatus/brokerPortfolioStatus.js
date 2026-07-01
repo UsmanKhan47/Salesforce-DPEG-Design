@@ -2,10 +2,9 @@ import { LightningElement, wire } from 'lwc';
 import getPortfolio from '@salesforce/apex/BrokerAssignmentController.getPortfolio';
 
 const SEG = [
-    { key:'active',     label:'Active',      color:'#22A652' },
-    { key:'leased',     label:'Fully Leased', color:'#C8A045' },
-    { key:'replaced',   label:'Replaced',    color:'#D93636' },
-    { key:'terminated', label:'Terminated',  color:'#8B1A1A' }
+    { key:'active',   label:'Active',       color:'#22A652' },
+    { key:'leased',   label:'Fully Leased', color:'#C8A045' },
+    { key:'disposed', label:'Disposed',     color:'#64748B' }
 ];
 const CIRC = 2 * Math.PI * 50;
 

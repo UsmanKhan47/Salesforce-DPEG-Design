@@ -17,10 +17,10 @@
             <componentInstance><componentName>brokerPortfolioStatus</componentName><identifier>brokerPortfolioStatusComponent</identifier></componentInstance>
         </itemInstances>
         <itemInstances>
-            <componentInstance><componentName>brokerCheckInAlerts</componentName><identifier>brokerCheckInAlertsComponent</identifier></componentInstance>
+            <componentInstance><componentName>brokerTotals</componentName><identifier>brokerTotalsComponent</identifier></componentInstance>
         </itemInstances>
         <itemInstances>
-            <componentInstance><componentName>brokerTotals</componentName><identifier>brokerTotalsComponent</identifier></componentInstance>
+            <componentInstance><componentName>brokerCheckInAlerts</componentName><identifier>brokerCheckInAlertsComponent</identifier></componentInstance>
         </itemInstances>
         <name>region3</name><type>Region</type>
     </flexiPageRegions>

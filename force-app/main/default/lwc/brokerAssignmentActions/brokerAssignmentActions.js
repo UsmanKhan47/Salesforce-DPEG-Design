@@ -85,6 +85,6 @@ export default class BrokerAssignmentActions extends LightningElement {
     onRepReason(e) { this.repReason = e.detail.value; }
     onRepDate(e) { this.repDate = e.target.value; }
     get replaceNote() {
-        return `${this.brokerName}'s listing is closed as Replaced — the full record stays visible — and a new Active listing opens for the incoming broker.`;
+        return `${this.brokerName}'s listing is closed as Disposed — the full record stays visible — and a new Active listing opens for the incoming broker.`;
     }
 }

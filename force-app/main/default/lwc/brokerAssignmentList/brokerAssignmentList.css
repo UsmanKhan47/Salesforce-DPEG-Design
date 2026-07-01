@@ -1,10 +1,9 @@
 .hdr { display:flex; align-items:center; gap:9px; }
 .hdr-icon { width:26px; height:26px; border-radius:50%; background:#132850; display:inline-flex; align-items:center; justify-content:center; }
 .hdr-title { font-size:16px; font-weight:700; color:#1A1714; }
-.toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:0 1rem 0.75rem; }
-.tabs { display:inline-flex; background:#E2E0DB; border-radius:6px; padding:3px; gap:2px; }
+.toolbar { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; padding:0 1rem 0.75rem; }
+.tabs { display:inline-flex; margin-left:auto; background:#E2E0DB; border-radius:6px; padding:3px; gap:2px; }
 .sf-tab { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 11px; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; background:transparent; color:#524F4A; }
 .sf-tab--active { background:#fff; color:#1A1714; box-shadow:0 1px 2px rgba(7,20,40,0.12); }
 .tab-count { font-size:10px; font-weight:600; color:#8A8680; }
-.broker-filter { min-width:170px; }
 .note { font-size:12px; color:#8A8680; text-align:left; }

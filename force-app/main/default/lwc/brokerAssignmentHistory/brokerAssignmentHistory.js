@@ -5,8 +5,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const STATUS_META = {
     'Active':       { bg: '#EBF9F1', fg: '#146830', dot: '#22A652' },
     'Fully Leased': { bg: '#E2E0DB', fg: '#3F3C38', dot: '#8A8680' },
-    'Replaced':     { bg: '#FDF0F0', fg: '#B52020', dot: '#D93636' },
-    'Terminated':   { bg: '#F9CECE', fg: '#8B1A1A', dot: '#B52020' }
+    'Disposed':     { bg: '#EEF1F5', fg: '#475569', dot: '#64748B' }
 };
 
 const pillWrap = (m) => `display:inline-flex;align-items:center;gap:6px;background:${m.bg};color:${m.fg};font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;line-height:1.4;white-space:nowrap`;

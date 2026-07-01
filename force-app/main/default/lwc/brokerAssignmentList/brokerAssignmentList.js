@@ -6,15 +6,14 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const STATUS_META = {
     'Active':       { bg:'#EBF9F1', fg:'#146830', dot:'#22A652' },
     'Fully Leased': { bg:'#E2E0DB', fg:'#3F3C38', dot:'#8A8680' },
-    'Replaced':     { bg:'#FDF0F0', fg:'#B52020', dot:'#D93636' },
-    'Terminated':   { bg:'#F9CECE', fg:'#8B1A1A', dot:'#B52020' }
+    'Disposed':     { bg:'#EEF1F5', fg:'#475569', dot:'#64748B' }
 };
 const pillWrap = (m) => `display:inline-flex;align-items:center;gap:6px;background:${m.bg};color:${m.fg};font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;line-height:1.4;white-space:nowrap`;
 const pillDot  = (c) => `width:6px;height:6px;border-radius:50%;background:${c};flex-shrink:0`;
 
 const STATUS_TABS = [
-    { key:'all', label:'All' }, { key:'Active', label:'Active' }, { key:'Fully Leased', label:'Leased' },
-    { key:'Replaced', label:'Replaced' }, { key:'Terminated', label:'Terminated' }
+    { key:'all', label:'All' }, { key:'Active', label:'Active' },
+    { key:'Fully Leased', label:'Leased' }, { key:'Disposed', label:'Disposed' }
 ];
 
 const COLUMNS = [
@@ -36,7 +35,6 @@ export default class BrokerAssignmentList extends NavigationMixin(LightningEleme
     columns = COLUMNS;
     _data = [];
     @track statusFilter = 'all';
-    @track brokerFilter = 'all';
     @track sortDesc = true;
 
     @wire(getAssignments) wired({ data }) { if (data) this._data = data; }
@@ -57,15 +55,9 @@ export default class BrokerAssignmentList extends NavigationMixin(LightningEleme
                 cls: active ? 'sf-tab sf-tab--active' : 'sf-tab' };
         });
     }
-    get brokerOptions() {
-        const seen = new Map();
-        this._data.forEach(a => { if (a.brokerId && !seen.has(a.brokerId)) seen.set(a.brokerId, a.brokerName); });
-        return [{ value:'all', label:'All brokers' }, ...[...seen].map(([value,label]) => ({ value, label }))];
-    }
     get rows() {
         let rows = this._data.filter(a =>
-            (this.statusFilter === 'all' || a.status === this.statusFilter) &&
-            (this.brokerFilter === 'all' || a.brokerId === this.brokerFilter));
+            (this.statusFilter === 'all' || a.status === this.statusFilter));
         rows = rows.map(a => {
             const m = STATUS_META[a.status] || STATUS_META['Active'];
             const flag = this.flagFor(a);
@@ -96,7 +88,6 @@ export default class BrokerAssignmentList extends NavigationMixin(LightningEleme
     get sortDirection() { return this.sortDesc ? 'desc' : 'asc'; }
 
     handleStatus(e) { this.statusFilter = e.currentTarget.dataset.key; }
-    handleBroker(e) { this.brokerFilter = e.detail ? e.detail.value : e.target.value; }
     handleSort(e) { this.sortDesc = e.detail.sortDirection === 'desc'; }
     newAssignment() {
         this[NavigationMixin.Navigate]({

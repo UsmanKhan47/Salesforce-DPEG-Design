@@ -16,7 +16,7 @@ private class BrokerAssignmentControllerTest {
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-25), Last_Check_In_Date__c=t.addDays(-17)), // dueSoon
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-10), Last_Check_In_Date__c=t.addDays(-3)),  // onTrack
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Fully Leased', Listing_Start_Date__c=t.addDays(-300), Listing_End_Date__c=t.addDays(-120), Reason_Ended__c='Leased Up', Last_Check_In_Date__c=t.addDays(-125)),
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Replaced', Listing_Start_Date__c=t.addDays(-400), Listing_End_Date__c=t.addDays(-250), Reason_Ended__c='Performance Issue', Last_Check_In_Date__c=t.addDays(-255))
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Disposed', Listing_Start_Date__c=t.addDays(-400), Listing_End_Date__c=t.addDays(-250), Reason_Ended__c='Performance Issue', Last_Check_In_Date__c=t.addDays(-255))
         };
     }
     @isTest static void kpis() {
@@ -38,8 +38,7 @@ private class BrokerAssignmentControllerTest {
         System.assertEquals(5, p.total);
         System.assertEquals(3, p.active);
         System.assertEquals(1, p.leased);
-        System.assertEquals(1, p.replaced);
-        System.assertEquals(0, p.terminated);
+        System.assertEquals(1, p.disposed);
     }
     @isTest static void rowsAndDetailAndHistory() {
         List<BrokerAssignmentController.Row> rows = BrokerAssignmentController.getAssignments();
@@ -85,7 +84,7 @@ private class BrokerAssignmentControllerTest {
         Test.stopTest();
         Broker_Assignment__c oldA = [SELECT Status__c, Listing_End_Date__c, Reason_Ended__c FROM Broker_Assignment__c WHERE Id=:a.Id];
         Broker_Assignment__c newA = [SELECT Status__c, Broker__c, Property_Asset__c, Listing_Start_Date__c FROM Broker_Assignment__c WHERE Id=:newId];
-        System.assertEquals('Replaced', oldA.Status__c);
+        System.assertEquals('Disposed', oldA.Status__c);
         System.assertEquals(Date.today(), oldA.Listing_End_Date__c);
         System.assertEquals('Active', newA.Status__c);
         System.assertEquals(nb.Id, newA.Broker__c);

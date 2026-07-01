@@ -8,7 +8,7 @@ private class BrokerCheckInReminderSchedulableTest {
         insert new List<Broker_Assignment__c>{
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=b.Id, Status__c='Active', Last_Check_In_Date__c=t.addDays(-40)), // overdue
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=b.Id, Status__c='Active', Last_Check_In_Date__c=t.addDays(-5)),  // fine
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=b.Id, Status__c='Replaced', Last_Check_In_Date__c=t.addDays(-90)) // closed -> ignore
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=b.Id, Status__c='Disposed', Last_Check_In_Date__c=t.addDays(-90)) // closed -> ignore
         };
     }
     @isTest static void createsOneReminderForOverdueActiveOnly() {

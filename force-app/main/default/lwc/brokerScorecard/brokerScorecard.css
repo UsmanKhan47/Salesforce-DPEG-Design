@@ -129,7 +129,7 @@
 /* ── 4-stat footer ─────────────────────────────────────────── */
 .stat-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
 }
 
@@ -153,10 +153,9 @@
 }
 
 /* Outcome colours */
-.stat-active     { color: #146830; }
-.stat-leased     { color: #8B6800; }
-.stat-replaced   { color: #B52020; }
-.stat-terminated { color: #8B1A1A; }
+.stat-active   { color: #146830; }
+.stat-leased   { color: #8B6800; }
+.stat-disposed { color: #475569; }
 
 /* ── Empty state ───────────────────────────────────────────── */
 .empty-state {

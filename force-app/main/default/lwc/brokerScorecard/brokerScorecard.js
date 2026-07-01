@@ -3,10 +3,9 @@ import { NavigationMixin } from 'lightning/navigation';
 import getScorecard from '@salesforce/apex/BrokerAssignmentController.getScorecard';
 
 const BARS = [
-    ['active',     '#22A652'],
-    ['leased',     '#C8A045'],
-    ['replaced',   '#D93636'],
-    ['terminated', '#8B1A1A']
+    ['active',   '#22A652'],
+    ['leased',   '#C8A045'],
+    ['disposed', '#64748B']
 ];
 
 export default class BrokerScorecard extends NavigationMixin(LightningElement) {
@@ -41,11 +40,10 @@ export default class BrokerScorecard extends NavigationMixin(LightningElement) {
                 name:       b.name,
                 firm:       b.firm,
                 initials:   this.initials(b.name),
-                active:     b.active     || 0,
-                leased:     b.leased     || 0,
-                replaced:   b.replaced   || 0,
-                terminated: b.terminated || 0,
-                total:      b.total      || 0,
+                active:     b.active   || 0,
+                leased:     b.leased   || 0,
+                disposed:   b.disposed || 0,
+                total:      b.total    || 0,
                 bars
             };
         });
