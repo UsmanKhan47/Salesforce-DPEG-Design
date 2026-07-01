@@ -69,17 +69,17 @@ public with sharing class BrokerAssignmentController {
         return p;
     }
 
-    public class Alerts { @AuraEnabled public Integer overdue; @AuraEnabled public Integer dueSoon; @AuraEnabled public Integer onTrack; @AuraEnabled public Integer active; }
+    public class Alerts { @AuraEnabled public Integer stale7; @AuraEnabled public Integer stale30; }
     @AuraEnabled(cacheable=true)
     public static Alerts getAlerts() {
-        Alerts al = new Alerts(); al.overdue=0; al.dueSoon=0; al.onTrack=0; al.active=0;
+        // Stale = Active listings whose last check-in is at least N days ago (cumulative: stale30 is a subset of stale7).
+        Alerts al = new Alerts(); al.stale7=0; al.stale30=0;
         for (Broker_Assignment__c a : queryAll()) {
             if (a.Status__c != 'Active') continue;
-            al.active++;
             Integer d = idle(a);
-            if (d != null && d > OVERDUE_DAYS) al.overdue++;
-            else if (d != null && d >= WARN_DAYS) al.dueSoon++;
-            else al.onTrack++; // Active with no check-in date yet → treated as on-track
+            if (d == null) continue;
+            if (d >= 7) al.stale7++;
+            if (d >= 30) al.stale30++;
         }
         return al;
     }

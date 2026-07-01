@@ -27,11 +27,10 @@ private class BrokerAssignmentControllerTest {
         System.assertEquals(1, k.leased);
     }
     @isTest static void alerts() {
+        // Active check-in ages in setup: 30, 17, 3 days. stale7 (>=7): 30,17 -> 2. stale30 (>=30): 30 -> 1.
         BrokerAssignmentController.Alerts a = BrokerAssignmentController.getAlerts();
-        System.assertEquals(1, a.overdue);
-        System.assertEquals(1, a.dueSoon);
-        System.assertEquals(1, a.onTrack);
-        System.assertEquals(3, a.active);
+        System.assertEquals(2, a.stale7, 'active listings idle >= 7 days');
+        System.assertEquals(1, a.stale30, 'active listings idle >= 30 days');
     }
     @isTest static void portfolio() {
         BrokerAssignmentController.Portfolio p = BrokerAssignmentController.getPortfolio();
