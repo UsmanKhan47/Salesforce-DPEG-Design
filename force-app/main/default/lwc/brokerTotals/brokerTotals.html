@@ -1,27 +1,28 @@
 <template>
-    <article class="bt-card">
-        <div class="bt-hd">
-            <span class="bt-icon">
+    <article class="tb-card">
+        <div class="tb-hd">
+            <span class="tb-icon">
                 <lightning-icon icon-name="utility:user" size="x-small" variant="inverse"></lightning-icon>
             </span>
-            <span class="bt-title">Brokers — Total Properties</span>
+            <span class="tb-title">Top Brokers</span>
+            <span class="tb-cap">By total properties</span>
         </div>
         <template if:true={hasRows}>
-            <ul class="bt-list">
+            <ul class="tb-list">
                 <template for:each={rows} for:item="r">
-                    <li key={r.brokerId} class="bt-row">
-                        <span class="bt-avatar">{r.initials}</span>
-                        <span class="bt-name">
-                            <span class="bt-n">{r.name}</span>
-                            <span class="bt-f">{r.firm}</span>
+                    <li key={r.brokerId} class={r.rowClass}>
+                        <span class="tb-rank">{r.rank}</span>
+                        <span class="tb-name">
+                            <span class="tb-n">{r.name}</span>
+                            <span class="tb-f">{r.firm}</span>
                         </span>
-                        <span class="bt-count">{r.total}<span class="bt-unit">{r.unitLabel}</span></span>
+                        <span class="tb-count">{r.total}</span>
                     </li>
                 </template>
             </ul>
         </template>
         <template if:false={hasRows}>
-            <div class="bt-empty">No brokers assigned yet.</div>
+            <div class="tb-empty">No brokers assigned yet.</div>
         </template>
     </article>
 </template>
