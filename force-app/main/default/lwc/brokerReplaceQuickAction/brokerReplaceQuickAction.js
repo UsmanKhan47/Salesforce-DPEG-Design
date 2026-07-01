@@ -1,31 +1,32 @@
 import { LightningElement, api, wire } from 'lwc';
+import { getRecord, getFieldValue, notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 import { CloseActionScreenEvent } from 'lightning/actions';
-import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import getDetail from '@salesforce/apex/BrokerAssignmentController.getDetail';
+import STATUS from '@salesforce/schema/Broker_Assignment__c.Status__c';
+import BROKER_NAME from '@salesforce/schema/Broker_Assignment__c.Broker_Name__c';
 import getBrokerOptions from '@salesforce/apex/BrokerAssignmentController.getBrokerOptions';
 import replaceBroker from '@salesforce/apex/BrokerAssignmentController.replaceBroker';
 
 // Screen-action quick action on Broker_Assignment__c. Swaps the broker on the
 // current listing in place — the listing stays Active and the incoming broker's
-// tenure starts on the effective date. Only valid for Active listings.
+// tenure starts on the effective date. Gated to Active listings, read from the
+// live LDS record (getRecord) so a just-changed status is always current.
 export default class BrokerReplaceQuickAction extends LightningElement {
     @api recordId;
-    d;
+    _rec;
     repBrokerId;
     repDate;
     error;
     _saving = false;
 
-    @wire(getDetail, { assignmentId: '$recordId' })
-    wired({ data }) { if (data) this.d = data; }
+    @wire(getRecord, { recordId: '$recordId', fields: [STATUS, BROKER_NAME] })
+    wired(result) { this._rec = result; }
     @wire(getBrokerOptions) brokerOpts;
 
-    get hasData() { return !!this.d; }
-    get isActive() { return !!(this.d && this.d.status === 'Active'); }
-    get status() { return (this.d && this.d.status) || ''; }
-    get propertyName() { return (this.d && this.d.propertyName) || '—'; }
-    get brokerName() { return (this.d && this.d.brokerName) || '—'; }
+    get hasData() { return !!(this._rec && this._rec.data); }
+    get status() { return this.hasData ? getFieldValue(this._rec.data, STATUS) : ''; }
+    get isActive() { return this.status === 'Active'; }
+    get brokerName() { return (this.hasData && getFieldValue(this._rec.data, BROKER_NAME)) || '—'; }
     get brokerOptionList() {
         return ((this.brokerOpts && this.brokerOpts.data) || []).map((o) => ({ label: o.label, value: o.id }));
     }
