@@ -6,7 +6,6 @@
                 <template for:each={historyRows} for:item="h">
                     <div key={h.id} style={h.rowStyle}>
                         <div class="ba-histleft">
-                            <span style={h.wrapStyle}><span style={h.dotStyle}></span>{h.statusLabel}</span>
                             <div>
                                 <div class="ba-histname">{h.brokerName}</div>
                                 <div class="ba-histfirm">{h.brokerFirm}</div>

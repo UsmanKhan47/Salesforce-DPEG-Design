@@ -4,15 +4,13 @@
             <span class="hdr-icon"><lightning-icon icon-name="utility:company" size="x-small" variant="inverse"></lightning-icon></span>
             <span class="hdr-title">Broker Assignments ({count})</span>
         </div>
-        <div slot="actions">
-            <lightning-button variant="brand" label="New Assignment" icon-name="utility:add" onclick={newAssignment}></lightning-button>
-        </div>
-        <div class="toolbar">
+        <div slot="actions" class="hdr-actions">
             <div class="tabs">
                 <template for:each={statusTabs} for:item="t">
                     <button key={t.key} data-key={t.key} class={t.cls} onclick={handleStatus}>{t.label}<span class="tab-count">{t.count}</span></button>
                 </template>
             </div>
+            <lightning-button variant="brand" label="New Assignment" icon-name="utility:add" onclick={newAssignment}></lightning-button>
         </div>
         <c-list-datatable key-field="id" data={rows} columns={columns} column-widths-mode="fixed" hide-checkbox-column
             sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}></c-list-datatable>

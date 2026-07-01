@@ -12,7 +12,7 @@ private class BrokerAssignmentControllerTest {
         insert bk;
         Date t = Date.today();
         insert new List<Broker_Assignment__c>{
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-40), Last_Check_In_Date__c=t.addDays(-30), Leased_Area__c=12000), // overdue
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-40), Last_Check_In_Date__c=t.addDays(-30)), // overdue
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-25), Last_Check_In_Date__c=t.addDays(-17)), // dueSoon
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-10), Last_Check_In_Date__c=t.addDays(-3)),  // onTrack
             new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Fully Leased', Listing_Start_Date__c=t.addDays(-300), Listing_End_Date__c=t.addDays(-120), Reason_Ended__c='Leased Up', Last_Check_In_Date__c=t.addDays(-125)),
@@ -49,6 +49,7 @@ private class BrokerAssignmentControllerTest {
         System.assertEquals(5, d.history.size(), 'all 5 share one Property Asset');
         System.assertEquals(42000, d.grossSqFt);
         System.assertEquals(8000, d.vacantArea, 'vacancy spans from the Property Asset');
+        System.assertEquals(34000, d.leasedArea, 'leased = gross 42000 − vacant 8000 (formula)');
         System.assertNotEquals(null, d.activeDays);
     }
     @isTest static void scorecard() {

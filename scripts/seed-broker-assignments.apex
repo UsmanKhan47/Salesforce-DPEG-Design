@@ -94,8 +94,8 @@ Property_Asset__c pa5 = assets[4]; // Katy Mills Strip    – 51400 sqft, vacant
 Property_Asset__c pa6 = assets[5]; // Heights Marketplace – 33750 sqft, vacant 9000  → leased 24750
 
 // ─── 4) Broker Assignments (10) ─────────────────────────────────────────────
-// Leased_Area__c is set on Active assignments only (null on Fully Leased/Disposed).
-// Active leased area = (sqft − vacant):
+// Leased_Area__c is now a formula (Gross Sq Ft − Vacant Area) — not written here.
+// Derived leased area = (sqft − vacant):
 //   a1 p1 b1 Active – leased 31000  (42000 − 11000)
 //   a2 p2 b2 Active – leased 21000  (28500 −  7500)
 //   a3 p3 b3 Active – leased 47200  (65200 − 18000)
@@ -109,8 +109,7 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Broker__c           = b1,
         Status__c           = 'Active',
         Listing_Start_Date__c = Date.newInstance(2026, 5, 12),
-        Last_Check_In_Date__c = Date.newInstance(2026, 6, 25),
-        Leased_Area__c      = 31000
+        Last_Check_In_Date__c = Date.newInstance(2026, 6, 25)
     ),
     // a2  p2/b2  Active
     new Broker_Assignment__c(
@@ -118,8 +117,7 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Broker__c           = b2,
         Status__c           = 'Active',
         Listing_Start_Date__c = Date.newInstance(2026, 4, 2),
-        Last_Check_In_Date__c = Date.newInstance(2026, 6, 4),
-        Leased_Area__c      = 21000
+        Last_Check_In_Date__c = Date.newInstance(2026, 6, 4)
     ),
     // a3  p3/b3  Active
     new Broker_Assignment__c(
@@ -127,8 +125,7 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Broker__c           = b3,
         Status__c           = 'Active',
         Listing_Start_Date__c = Date.newInstance(2026, 3, 15),
-        Last_Check_In_Date__c = Date.newInstance(2026, 6, 12),
-        Leased_Area__c      = 47200
+        Last_Check_In_Date__c = Date.newInstance(2026, 6, 12)
     ),
     // a4  p4/b4  Fully Leased
     new Broker_Assignment__c(
@@ -156,8 +153,7 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Broker__c           = b2,
         Status__c           = 'Active',
         Listing_Start_Date__c = Date.newInstance(2025, 12, 1),
-        Last_Check_In_Date__c = Date.newInstance(2026, 6, 28),
-        Leased_Area__c      = 37400
+        Last_Check_In_Date__c = Date.newInstance(2026, 6, 28)
     ),
     // a7  p6/b3  Disposed
     new Broker_Assignment__c(
@@ -175,8 +171,7 @@ List<Broker_Assignment__c> assignments = new List<Broker_Assignment__c>{
         Broker__c           = b4,
         Status__c           = 'Active',
         Listing_Start_Date__c = Date.newInstance(2026, 1, 15),
-        Last_Check_In_Date__c = Date.newInstance(2026, 6, 8),
-        Leased_Area__c      = 24750
+        Last_Check_In_Date__c = Date.newInstance(2026, 6, 8)
     ),
     // a9  p1/b3  Disposed
     new Broker_Assignment__c(
