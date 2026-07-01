@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lease_Inquiry_Compact</fullName>
+    <fields>Tenant_Name__c</fields>
+    <fields>Stage__c</fields>
+    <fields>Ball_In_Court__c</fields>
+    <fields>Days_In_Stage__c</fields>
+    <fields>Property_Name__c</fields>
+    <label>Lease Inquiry Compact</label>
+</CompactLayout>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Lease_Inquiry__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Lease Inquiry Path</masterLabel>
+    <pathAssistantSteps>
+        <info>A broker brought a prospect. Qualify the requirement and set the ball in court to Landlord for the first response.</info>
+        <picklistValueName>Inquiry Received</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>LOI_Date__c</fieldNames>
+        <info>First formal offer is in. Record the LOI date and forward to the landlord for review.</info>
+        <picklistValueName>LOI Received</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Counter-offers are in flight. Log every round in the negotiation history so nothing is lost.</info>
+        <picklistValueName>LOI Negotiation</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Base_Rent__c</fieldNames>
+        <fieldNames>Lease_Term__c</fieldNames>
+        <fieldNames>Free_Rent__c</fieldNames>
+        <fieldNames>TI_Allowance__c</fieldNames>
+        <fieldNames>Commencement_Date__c</fieldNames>
+        <info>Key terms are locked. Capture the agreed LOI terms — they stay fixed from here.</info>
+        <picklistValueName>LOI Signed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Legal is drafting the lease. Track redlines and exhibits in the negotiation history.</info>
+        <picklistValueName>Lease Drafting</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Status__c</fieldNames>
+        <info>Deal done — the space is leased. Set Status to Closed Won to close the record out in history.</info>
+        <picklistValueName>Lease Signed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>
