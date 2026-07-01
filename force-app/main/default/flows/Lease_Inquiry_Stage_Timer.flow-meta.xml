@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <assignments>
+        <name>Set_Stage_Start</name>
+        <label>Set Stage Start Date</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Stage_Start_Date__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.CurrentDate</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <decisions>
+        <name>Is_New_Or_Stage_Changed</name>
+        <label>Is New or Stage Changed</label>
+        <locationX>176</locationX>
+        <locationY>180</locationY>
+        <defaultConnectorLabel>No change</defaultConnectorLabel>
+        <rules>
+            <name>Reset_Timer</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>SetTimer</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Set_Stage_Start</targetReference>
+            </connector>
+            <label>Reset Timer</label>
+        </rules>
+    </decisions>
+    <environments>Default</environments>
+    <formulas>
+        <name>SetTimer</name>
+        <dataType>Boolean</dataType>
+        <expression>ISNEW() || ISCHANGED({!$Record.Stage__c})</expression>
+    </formulas>
+    <interviewLabel>Lease Inquiry Stage Timer {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Lease Inquiry Stage Timer</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Is_New_Or_Stage_Changed</targetReference>
+        </connector>
+        <object>Lease_Inquiry__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordBeforeSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>
