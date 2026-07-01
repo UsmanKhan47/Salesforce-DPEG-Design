@@ -18,7 +18,7 @@ export default class BrokerPortfolioStatus extends LightningElement {
     get segments() {
         const p = this.p || {}; const total = p.total || 1;
         return SEG.map(s => ({
-            key: s.key, color: s.color, count: p[s.key] || 0,
+            key: s.key, label: s.label, color: s.color, count: p[s.key] || 0,
             barStyle: `width:${((p[s.key] || 0) / total) * 100}%;background:${s.color};height:100%`,
             dotStyle: `width:9px;height:9px;border-radius:2px;background:${s.color};flex-shrink:0`
         }));
