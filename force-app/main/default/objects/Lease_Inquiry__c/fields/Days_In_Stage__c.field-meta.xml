@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Days_In_Stage__c</fullName>
+    <label>Days in Stage</label>
+    <formula>IF(OR(ISPICKVAL(Status__c, "Closed Won"), ISPICKVAL(Status__c, "Closed Lost")), 0, IF(ISBLANK(Stage_Start_Date__c), null, TODAY() - Stage_Start_Date__c))</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <scale>0</scale>
+    <required>false</required>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>
