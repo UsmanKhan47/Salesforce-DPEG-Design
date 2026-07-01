@@ -1,5 +1,5 @@
 .hdr { display:flex; align-items:center; gap:9px; }
-.hdr-icon { width:26px; height:26px; border-radius:50%; background:#132850; display:inline-flex; align-items:center; justify-content:center; }
+.hdr-icon { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 .hdr-title { font-size:16px; font-weight:700; color:#1A1714; }
 .hdr-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; }
 .tabs { display:inline-flex; background:#E2E0DB; border-radius:6px; padding:3px; gap:2px; }
