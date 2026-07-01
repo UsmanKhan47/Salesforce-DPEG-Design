@@ -4,16 +4,26 @@
             <div class="ba-histbody">
                 <div class="ba-histintro">{historyIntro}</div>
                 <template for:each={historyRows} for:item="h">
-                    <div key={h.id} style={h.rowStyle}>
+                    <div key={h.id} class={h.rowClass}>
                         <div class="ba-histleft">
                             <div>
-                                <div class="ba-histname">{h.brokerName}</div>
+                                <div class="ba-histnamerow">
+                                    <span class="ba-histname">{h.brokerName}</span>
+                                    <template if:true={h.isActive}>
+                                        <span class="ba-histbadge">Active</span>
+                                    </template>
+                                </div>
                                 <div class="ba-histfirm">{h.brokerFirm}</div>
+                                <template if:true={h.hasNotes}>
+                                    <div class="ba-histnotes">{h.notes}</div>
+                                </template>
                             </div>
                         </div>
                         <div class="ba-histright">
                             <div class="ba-mono ba-histrange">{h.rangeDisp}</div>
-                            <div class="ba-histreason">{h.reasonDisp}</div>
+                            <template if:true={h.hasReason}>
+                                <div class="ba-histreason">{h.reasonDisp}</div>
+                            </template>
                         </div>
                     </div>
                 </template>

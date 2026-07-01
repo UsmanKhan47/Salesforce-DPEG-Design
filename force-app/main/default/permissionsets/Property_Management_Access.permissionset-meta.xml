@@ -239,6 +239,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Broker_Assignment__c.Replacement_Notes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Broker_Assignment__c.Last_Check_In_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>

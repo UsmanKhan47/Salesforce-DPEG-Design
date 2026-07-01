@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Replacement_Notes__c</fullName>
+    <label>Replacement Notes</label>
+    <description>Free-text notes captured when a broker is replaced, kept on the outgoing broker's closed listing and shown under that broker in history.</description>
+    <length>1000</length>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+</CustomField>

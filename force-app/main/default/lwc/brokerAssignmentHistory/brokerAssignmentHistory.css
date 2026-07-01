@@ -8,9 +8,14 @@
 .ba-histcard { overflow:hidden; }
 .ba-histbody { padding:10px 24px 18px; }
 .ba-histintro { font-size:12px; color:#524F4A; margin:6px 0 2px; }
-.ba-histleft { display:flex; align-items:center; gap:12px; }
+.ba-histrow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 16px; margin-top:10px; border:1px solid #E2E0DB; background:#fff; border-radius:8px; }
+.ba-histrow--active { border-color:#22A652; background:#E9F8EF; }
+.ba-histleft { display:flex; align-items:flex-start; gap:12px; }
+.ba-histnamerow { display:flex; align-items:center; gap:8px; }
 .ba-histname { font-weight:600; font-size:14px; color:#1A1714; }
-.ba-histfirm { font-size:12px; color:#8A8680; }
-.ba-histright { text-align:right; }
+.ba-histbadge { display:inline-flex; align-items:center; font-size:10px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#146830; background:#D6F0E0; border:1px solid #22A652; border-radius:9999px; padding:1px 8px; }
+.ba-histfirm { font-size:12px; color:#8A8680; margin-top:1px; }
+.ba-histnotes { font-size:12px; color:#524F4A; margin-top:5px; white-space:pre-wrap; }
+.ba-histright { text-align:right; flex-shrink:0; }
 .ba-histrange { font-size:12px; color:#524F4A; }
-.ba-histreason { font-size:11px; color:#8A8680; margin-top:1px; }
+.ba-histreason { font-size:11px; color:#8A8680; margin-top:3px; }

@@ -22,6 +22,8 @@
                     required
                     class="slds-m-top_small"></lightning-combobox>
                 <lightning-input type="date" label="Effective date" value={repDate} onchange={onRepDate} class="slds-m-top_small"></lightning-input>
+                <lightning-combobox label="Reason previous broker ended" value={repReason} placeholder="Select a reason" options={reasonOptions} onchange={onRepReason} class="slds-m-top_small"></lightning-combobox>
+                <lightning-textarea label="Notes" value={repNotes} placeholder="Notes about this broker or the handover" onchange={onRepNotes} class="slds-m-top_small"></lightning-textarea>
                 <template if:true={error}>
                     <div class="slds-text-color_error slds-m-top_small" role="alert">{error}</div>
                 </template>

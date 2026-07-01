@@ -4,7 +4,7 @@ public with sharing class BrokerAssignmentController {
 
     private static List<Broker_Assignment__c> queryAll() {
         return [
-            SELECT Id, Status__c, Listing_Start_Date__c, Listing_End_Date__c, Reason_Ended__c,
+            SELECT Id, Status__c, Listing_Start_Date__c, Listing_End_Date__c, Reason_Ended__c, Replacement_Notes__c,
                    Last_Check_In_Date__c, Days_Since_Check_In__c, Listing_Active_Days__c,
                    Leased_Area__c, Vacant_Area__c,
                    Property_Asset__c, Property_Display_Name__c, Property_Type_Display__c,
@@ -140,7 +140,7 @@ public with sharing class BrokerAssignmentController {
     public class HistoryRow {
         @AuraEnabled public Id id; @AuraEnabled public String brokerName; @AuraEnabled public String brokerFirm;
         @AuraEnabled public String status; @AuraEnabled public Date startDate; @AuraEnabled public Date endDate;
-        @AuraEnabled public String reason; @AuraEnabled public Boolean current;
+        @AuraEnabled public String reason; @AuraEnabled public String notes; @AuraEnabled public Boolean current;
     }
     public class Detail {
         @AuraEnabled public Id id; @AuraEnabled public Id propertyAssetId;
@@ -176,7 +176,8 @@ public with sharing class BrokerAssignmentController {
         for (Broker_Assignment__c h : same) {
             HistoryRow hr = new HistoryRow();
             hr.id=h.Id; hr.brokerName=h.Broker_Name__c; hr.brokerFirm=h.Broker_Firm__c; hr.status=h.Status__c;
-            hr.startDate=h.Listing_Start_Date__c; hr.endDate=h.Listing_End_Date__c; hr.reason=h.Reason_Ended__c;
+            hr.startDate=h.Listing_Start_Date__c; hr.endDate=h.Listing_End_Date__c;
+            hr.reason=h.Reason_Ended__c; hr.notes=h.Replacement_Notes__c;
             hr.current = (h.Id == a.Id);
             hist.add(hr);
         }
@@ -204,11 +205,26 @@ public with sharing class BrokerAssignmentController {
     }
 
     @AuraEnabled
-    public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate) {
+    public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate, String reason, String notes) {
         Date eff = effectiveDate == null ? Date.today() : effectiveDate;
-        // Swap the broker on the current listing in place — the listing stays Active.
+        Broker_Assignment__c cur = [SELECT Id, Property_Asset__c, Broker__c, Listing_Start_Date__c, Last_Check_In_Date__c
+                                    FROM Broker_Assignment__c WHERE Id=:assignmentId LIMIT 1];
+        // Snapshot the outgoing broker's stint as a closed (Disposed) history record,
+        // carrying the reason and notes for the replacement.
+        if (cur.Broker__c != null) {
+            insert new Broker_Assignment__c(
+                Property_Asset__c=cur.Property_Asset__c,
+                Broker__c=cur.Broker__c,
+                Status__c='Disposed',
+                Listing_Start_Date__c=cur.Listing_Start_Date__c,
+                Listing_End_Date__c=eff,
+                Last_Check_In_Date__c=cur.Last_Check_In_Date__c,
+                Reason_Ended__c=reason,
+                Replacement_Notes__c=notes);
+        }
+        // Swap the current listing in place to the incoming broker — it stays Active.
         // The incoming broker's tenure starts on the effective date; the check-in
-        // clock resets and any prior end date / reason is cleared since it stays open.
+        // clock resets and any prior end date / reason / notes are cleared.
         update new Broker_Assignment__c(
             Id=assignmentId,
             Broker__c=newBrokerId,
@@ -216,7 +232,8 @@ public with sharing class BrokerAssignmentController {
             Listing_Start_Date__c=eff,
             Last_Check_In_Date__c=eff,
             Listing_End_Date__c=null,
-            Reason_Ended__c=null);
+            Reason_Ended__c=null,
+            Replacement_Notes__c=null);
         return assignmentId;
     }
 }

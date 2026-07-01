@@ -76,24 +76,40 @@ private class BrokerAssignmentControllerTest {
         System.assertEquals('Leased Up', after.Reason_Ended__c);
         System.assertEquals(Date.today(), after.Listing_End_Date__c);
     }
-    @isTest static void replaceBrokerSwapsInPlaceStaysActive() {
-        Broker_Assignment__c a = [SELECT Id, Property_Asset__c FROM Broker_Assignment__c WHERE Status__c='Active' LIMIT 1];
+    @isTest static void replaceBrokerSnapshotsOldAndStaysActive() {
+        Broker_Assignment__c a = [SELECT Id, Property_Asset__c, Broker__c FROM Broker_Assignment__c WHERE Status__c='Active' LIMIT 1];
+        Id oldBroker = a.Broker__c;
         Contact nb = [SELECT Id FROM Contact WHERE Is_Broker__c=true AND Email='pn@x.com' LIMIT 1];
-        Integer before = [SELECT COUNT() FROM Broker_Assignment__c];
+        Map<Id, Broker_Assignment__c> beforeMap = new Map<Id, Broker_Assignment__c>([SELECT Id FROM Broker_Assignment__c]);
+        Integer before = beforeMap.size();
         Test.startTest();
-        Id sameId = BrokerAssignmentController.replaceBroker(a.Id, nb.Id, Date.today());
+        Id sameId = BrokerAssignmentController.replaceBroker(a.Id, nb.Id, Date.today(), 'Performance Issue', 'Handover complete');
         Test.stopTest();
         Integer after = [SELECT COUNT() FROM Broker_Assignment__c];
-        Broker_Assignment__c rec = [SELECT Status__c, Broker__c, Listing_Start_Date__c, Last_Check_In_Date__c, Listing_End_Date__c, Reason_Ended__c
+        // Current listing stays Active with the incoming broker; its own reason/notes are clear.
+        Broker_Assignment__c rec = [SELECT Status__c, Broker__c, Listing_Start_Date__c, Last_Check_In_Date__c, Listing_End_Date__c, Reason_Ended__c, Replacement_Notes__c
                                     FROM Broker_Assignment__c WHERE Id=:a.Id];
         System.assertEquals(a.Id, sameId, 'Replace returns the same record');
-        System.assertEquals(before, after, 'Replace updates in place — no new record');
+        System.assertEquals(before + 1, after, 'Replace snapshots the outgoing broker as one new record');
         System.assertEquals('Active', rec.Status__c, 'Listing stays Active after replacement');
         System.assertEquals(nb.Id, rec.Broker__c, 'Broker is swapped to the incoming broker');
         System.assertEquals(Date.today(), rec.Listing_Start_Date__c);
         System.assertEquals(Date.today(), rec.Last_Check_In_Date__c);
         System.assertEquals(null, rec.Listing_End_Date__c);
         System.assertEquals(null, rec.Reason_Ended__c);
+        System.assertEquals(null, rec.Replacement_Notes__c);
+        // Outgoing broker preserved as a Disposed history snapshot carrying reason + notes.
+        // Identify it as the one record that did not exist before the replace.
+        List<Broker_Assignment__c> newRecs = [SELECT Status__c, Broker__c, Property_Asset__c, Listing_End_Date__c, Reason_Ended__c, Replacement_Notes__c
+                                              FROM Broker_Assignment__c WHERE Id NOT IN :beforeMap.keySet()];
+        System.assertEquals(1, newRecs.size(), 'Exactly one snapshot record is created');
+        Broker_Assignment__c snap = newRecs[0];
+        System.assertEquals('Disposed', snap.Status__c, 'Snapshot is Disposed');
+        System.assertEquals(a.Property_Asset__c, snap.Property_Asset__c, 'Snapshot keeps the same property');
+        System.assertEquals(oldBroker, snap.Broker__c, 'Snapshot keeps the outgoing broker');
+        System.assertEquals(Date.today(), snap.Listing_End_Date__c);
+        System.assertEquals('Performance Issue', snap.Reason_Ended__c);
+        System.assertEquals('Handover complete', snap.Replacement_Notes__c);
     }
     @isTest static void getBrokerOptionsReturnsBrokers() {
         System.assertEquals(2, BrokerAssignmentController.getBrokerOptions().size());

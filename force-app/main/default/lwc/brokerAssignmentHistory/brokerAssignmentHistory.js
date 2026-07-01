@@ -37,11 +37,13 @@ export default class BrokerAssignmentHistory extends LightningElement {
             id: h.id,
             brokerName: h.brokerName || '—',
             brokerFirm: h.brokerFirm || '—',
-            reasonDisp: h.reason || '—',
+            isActive: h.status === 'Active',
+            notes: h.notes || '',
+            hasNotes: !!h.notes,
+            hasReason: !!h.reason,
+            reasonDisp: h.reason ? `Reason: ${h.reason}` : '',
             rangeDisp: `${this.fmt(h.startDate)} → ${h.endDate ? this.fmt(h.endDate) : 'present'}`,
-            rowStyle: h.current
-                ? 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;margin-top:10px;border:1px solid #22A652;background:#F3FBF6;border-radius:8px'
-                : 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;margin-top:10px;border:1px solid #E2E0DB;background:#fff;border-radius:8px'
+            rowClass: h.status === 'Active' ? 'ba-histrow ba-histrow--active' : 'ba-histrow'
         }));
     }
 }

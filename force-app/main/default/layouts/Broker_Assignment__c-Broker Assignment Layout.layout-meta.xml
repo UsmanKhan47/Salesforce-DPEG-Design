@@ -26,10 +26,6 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>
-                <field>Vacant_Area__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Readonly</behavior>
                 <field>Address_Display__c</field>
             </layoutItems>
         </layoutColumns>
@@ -44,6 +40,10 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Listing_Start_Date__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Vacant_Area__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>

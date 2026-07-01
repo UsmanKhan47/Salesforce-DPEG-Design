@@ -7,8 +7,8 @@
     <enableHistory>true</enableHistory>
     <enableReports>true</enableReports>
     <enableSearch>true</enableSearch>
-    <label>Broker Assignment</label>
-    <pluralLabel>Broker Assignments</pluralLabel>
+    <label>Broker Tracker</label>
+    <pluralLabel>Broker Tracker</pluralLabel>
     <nameField>
         <displayFormat>BA-{0000}</displayFormat>
         <label>Assignment Number</label>
