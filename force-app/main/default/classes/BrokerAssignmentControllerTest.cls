@@ -23,7 +23,7 @@ private class BrokerAssignmentControllerTest {
         BrokerAssignmentController.Kpis k = BrokerAssignmentController.getKpis();
         System.assertEquals(5, k.total);
         System.assertEquals(3, k.active);
-        System.assertEquals(1, k.overdue, 'only the 30-day-idle Active is > 21');
+        System.assertEquals(2, k.stale, 'active listings idle >= 7 days (30 and 17)');
         System.assertEquals(1, k.leased);
     }
     @isTest static void alerts() {

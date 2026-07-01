@@ -17,19 +17,20 @@ public with sharing class BrokerAssignmentController {
     private static Integer idle(Broker_Assignment__c a) {
         return a.Days_Since_Check_In__c == null ? null : (Integer) a.Days_Since_Check_In__c;
     }
-    private static Boolean isOverdue(Broker_Assignment__c a) {
-        Integer d = idle(a); return a.Status__c == 'Active' && d != null && d > OVERDUE_DAYS;
+    // Stale = an Active listing whose last check-in is at least 7 days ago (matches the Alerts 7-day tile).
+    private static Boolean isStale(Broker_Assignment__c a) {
+        Integer d = idle(a); return a.Status__c == 'Active' && d != null && d >= 7;
     }
 
-    public class Kpis { @AuraEnabled public Integer total; @AuraEnabled public Integer active; @AuraEnabled public Integer overdue; @AuraEnabled public Integer leased; }
+    public class Kpis { @AuraEnabled public Integer total; @AuraEnabled public Integer active; @AuraEnabled public Integer stale; @AuraEnabled public Integer leased; }
     @AuraEnabled(cacheable=true)
     public static Kpis getKpis() {
-        Kpis k = new Kpis(); k.total=0; k.active=0; k.overdue=0; k.leased=0;
+        Kpis k = new Kpis(); k.total=0; k.active=0; k.stale=0; k.leased=0;
         for (Broker_Assignment__c a : queryAll()) {
             k.total++;
             if (a.Status__c == 'Active') k.active++;
             if (a.Status__c == 'Fully Leased') k.leased++;
-            if (isOverdue(a)) k.overdue++;
+            if (isStale(a)) k.stale++;
         }
         return k;
     }
