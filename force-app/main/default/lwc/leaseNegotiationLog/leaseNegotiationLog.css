@@ -5,7 +5,15 @@
 /* header */
 .lnl-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px; border-bottom:1px solid #E2E0DB; }
 .lnl-head-left { display:flex; align-items:center; gap:10px; }
-.lnl-head-icon { width:26px; height:26px; border-radius:50%; background:#1A3464; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.lnl-head-icon { width:26px; height:26px; border-radius:50%; background:#1A3464; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; animation:lnl-pulse 2.4s ease-out infinite; }
+@keyframes lnl-pulse {
+    0%   { box-shadow:0 0 0 0 rgba(26,52,100,0.40); }
+    70%  { box-shadow:0 0 0 9px rgba(26,52,100,0); }
+    100% { box-shadow:0 0 0 0 rgba(26,52,100,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lnl-head-icon { animation:none; }
+}
 .lnl-title { font-size:15px; font-weight:700; line-height:1.1; color:#1A1714; }
 .lnl-sub { font-size:11px; color:#8A8680; margin-top:2px; }
 
