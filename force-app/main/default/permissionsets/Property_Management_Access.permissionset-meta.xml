@@ -499,6 +499,10 @@
         <visibility>Visible</visibility>
     </tabSettings>
     <tabSettings>
+        <tab>Lease_Activity_Tracker</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
         <tab>Lease_Inquiry__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
