@@ -127,7 +127,7 @@ private class LeaseInquiryControllerTest {
 
     @isTest static void pipelineByStage() {
         List<LeaseInquiryController.StageCount> out = LeaseInquiryController.getPipelineByStage();
-        System.assertEquals(6, out.size(), 'one bucket per stage');
+        System.assertEquals(7, out.size(), 'one bucket per stage (incl. Lease Ready)');
         System.assertEquals('Inquiry Received', out[0].stage);
         System.assertEquals(1, out[0].count, 'the one active inquiry sits in Inquiry Received');
     }
@@ -137,5 +137,33 @@ private class LeaseInquiryControllerTest {
         List<LeaseInquiryController.InquiryRow> rows = LeaseInquiryController.getAttention();
         System.assertEquals(1, rows.size());
         System.assertEquals('Sunrise Cafe', rows[0].tenant);
+    }
+
+    @isTest static void signedYtdCounts() {
+        Lease_Inquiry__c inq = theInquiry();
+        inq.Stage__c = 'Lease Signed';
+        inq.Status__c = 'Closed Won';
+        update inq; // Signed Date flow stamps today (this year)
+        Lease_Inquiry__c after = [SELECT Signed_Date__c FROM Lease_Inquiry__c WHERE Id = :inq.Id];
+        System.assertEquals(Date.today(), after.Signed_Date__c, 'Signed Date flow stamps on Closed Won');
+        LeaseInquiryController.HomeKpis k = LeaseInquiryController.getHomeKpis();
+        System.assertEquals(1, k.signed, 'Closed Won with a Signed Date this year counts toward YTD');
+        System.assertEquals(0, k.active, 'no active inquiries remain');
+    }
+
+    @isTest static void leaseCreatedAtDraftingAndSummary() {
+        Lease_Inquiry__c inq = theInquiry();
+        LeaseInquiryController.LeaseSummary before = LeaseInquiryController.getLeaseSummary(inq.Id);
+        System.assertEquals(false, before.exists, 'no Lease before drafting');
+        Test.startTest();
+        inq.Stage__c = 'Lease Drafting';
+        update inq; // Create Lease flow fires
+        Test.stopTest();
+        System.assertEquals(1, [SELECT COUNT() FROM Lease__c WHERE Lease_Inquiry__c = :inq.Id], 'one Lease auto-created');
+        LeaseInquiryController.LeaseSummary after = LeaseInquiryController.getLeaseSummary(inq.Id);
+        System.assertEquals(true, after.exists, 'Lease auto-created at Lease Drafting');
+        System.assertEquals('Draft', after.stage);
+        System.assertEquals(3, after.steps.size());
+        System.assertEquals(true, after.steps[0].current, 'Draft is the current step');
     }
 }

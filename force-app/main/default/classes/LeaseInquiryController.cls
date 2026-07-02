@@ -7,8 +7,9 @@
 public with sharing class LeaseInquiryController {
 
     private static final List<String> STAGES = new List<String>{
-        'Inquiry Received', 'LOI Received', 'LOI Negotiation', 'LOI Signed', 'Lease Drafting', 'Lease Signed'
+        'Inquiry Received', 'LOI Received', 'LOI Negotiation', 'LOI Signed', 'Lease Drafting', 'Lease Ready', 'Lease Signed'
     };
+    private static final List<String> LEASE_STAGES = new List<String>{ 'Draft', 'Prepare/Review', 'Completed' };
 
     public class LogView {
         @AuraEnabled public List<Entry> entries;
@@ -117,11 +118,13 @@ public with sharing class LeaseInquiryController {
     public static HomeKpis getHomeKpis() {
         HomeKpis k = new HomeKpis();
         Date today = Date.today();
+        Date yearStart = Date.newInstance(today.year(), 1, 1);
         for (Lease_Inquiry__c q : [
-            SELECT Status__c, Ball_In_Court__c, Stage_Start_Date__c FROM Lease_Inquiry__c
+            SELECT Status__c, Ball_In_Court__c, Stage_Start_Date__c, Signed_Date__c FROM Lease_Inquiry__c
         ]) {
             Boolean closed = q.Status__c == 'Closed Won' || q.Status__c == 'Closed Lost';
-            if (q.Status__c == 'Closed Won') k.signed++;
+            // Signed Leases (YTD): Closed Won with a Signed Date in the current calendar year.
+            if (q.Status__c == 'Closed Won' && q.Signed_Date__c != null && q.Signed_Date__c >= yearStart) k.signed++;
             if (!closed) {
                 k.active++;
                 if (q.Ball_In_Court__c == 'Landlord') k.waitingLandlord++;
@@ -141,6 +144,7 @@ public with sharing class LeaseInquiryController {
         @AuraEnabled public String status;
         @AuraEnabled public Integer days;
         @AuraEnabled public Boolean closed;
+        @AuraEnabled public Datetime received;
     }
 
     private static InquiryRow toRow(Lease_Inquiry__c q) {
@@ -154,6 +158,7 @@ public with sharing class LeaseInquiryController {
         r.status = q.Status__c;
         r.closed = q.Status__c == 'Closed Won' || q.Status__c == 'Closed Lost';
         r.days = (!r.closed && q.Stage_Start_Date__c != null) ? q.Stage_Start_Date__c.daysBetween(Date.today()) : null;
+        r.received = q.CreatedDate;
         return r;
     }
 
@@ -161,7 +166,7 @@ public with sharing class LeaseInquiryController {
     public static List<InquiryRow> getRecentInquiries() {
         List<InquiryRow> rows = new List<InquiryRow>();
         for (Lease_Inquiry__c q : [
-            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c
+            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c, CreatedDate
             FROM Lease_Inquiry__c
             ORDER BY LastModifiedDate DESC
             LIMIT 6
@@ -182,8 +187,10 @@ public with sharing class LeaseInquiryController {
         for (String s : STAGES) {
             byStage.put(s, 0);
         }
+        // Mirror Portfolio Status: only inquiries from the last 5 years.
+        Datetime fiveYearsAgo = Datetime.now().addYears(-5);
         for (Lease_Inquiry__c q : [
-            SELECT Stage__c FROM Lease_Inquiry__c WHERE Status__c = 'Active'
+            SELECT Stage__c FROM Lease_Inquiry__c WHERE Status__c = 'Active' AND CreatedDate >= :fiveYearsAgo
         ]) {
             if (byStage.containsKey(q.Stage__c)) {
                 byStage.put(q.Stage__c, byStage.get(q.Stage__c) + 1);
@@ -206,7 +213,7 @@ public with sharing class LeaseInquiryController {
         List<InquiryRow> rows = new List<InquiryRow>();
         Date today = Date.today();
         for (Lease_Inquiry__c q : [
-            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c
+            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c, CreatedDate
             FROM Lease_Inquiry__c
             WHERE Status__c = 'Active'
             ORDER BY Stage_Start_Date__c ASC NULLS LAST
@@ -220,5 +227,59 @@ public with sharing class LeaseInquiryController {
             }
         }
         return rows;
+    }
+
+    // ───────────────── Lease status (legal team) for the record page ─────────────────
+
+    public class LeaseStageStep {
+        @AuraEnabled public String label;
+        @AuraEnabled public Boolean done;
+        @AuraEnabled public Boolean current;
+    }
+
+    public class LeaseSummary {
+        @AuraEnabled public Boolean exists = false;
+        @AuraEnabled public Id leaseId;
+        @AuraEnabled public String leaseName;
+        @AuraEnabled public String stage;
+        @AuraEnabled public String legalOwner;
+        @AuraEnabled public Date targetDate;
+        @AuraEnabled public Date executedDate;
+        @AuraEnabled public List<LeaseStageStep> steps = new List<LeaseStageStep>();
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static LeaseSummary getLeaseSummary(Id inquiryId) {
+        LeaseSummary s = new LeaseSummary();
+        if (inquiryId == null) {
+            return s;
+        }
+        List<Lease__c> leases = [
+            SELECT Id, Name, Stage__c, Legal_Owner__r.Name, Target_Execution_Date__c, Executed_Date__c
+            FROM Lease__c
+            WHERE Lease_Inquiry__c = :inquiryId
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+        if (leases.isEmpty()) {
+            return s;
+        }
+        Lease__c l = leases[0];
+        s.exists = true;
+        s.leaseId = l.Id;
+        s.leaseName = l.Name;
+        s.stage = l.Stage__c;
+        s.legalOwner = l.Legal_Owner__r != null ? l.Legal_Owner__r.Name : null;
+        s.targetDate = l.Target_Execution_Date__c;
+        s.executedDate = l.Executed_Date__c;
+        Integer idx = LEASE_STAGES.indexOf(l.Stage__c);
+        for (Integer i = 0; i < LEASE_STAGES.size(); i++) {
+            LeaseStageStep st = new LeaseStageStep();
+            st.label = LEASE_STAGES[i];
+            st.done = i < idx;
+            st.current = i == idx;
+            s.steps.add(st);
+        }
+        return s;
     }
 }
