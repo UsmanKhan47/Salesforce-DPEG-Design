@@ -7,6 +7,7 @@ const ACCENT = {
     'LOI Negotiation': '#C88010',
     'LOI Signed': '#1A3464',
     'Lease Drafting': '#A88020',
+    'Lease Ready': '#2E9E7B',
     'Lease Signed': '#198A40'
 };
 const CIRC = 2 * Math.PI * 50;

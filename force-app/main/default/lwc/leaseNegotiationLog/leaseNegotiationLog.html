@@ -28,6 +28,7 @@
                 <lightning-textarea
                     class="lnl-textarea"
                     label="New update"
+                    required
                     value={upDetails}
                     onchange={onDetails}
                     placeholder="Log the counter-offer, response, or status change…">
@@ -36,6 +37,8 @@
                 <div class="lnl-composer-row">
                     <lightning-combobox
                         label="Ball in court now"
+                        required
+                        placeholder="Select…"
                         value={upBall}
                         options={ballOptions}
                         onchange={onBall}

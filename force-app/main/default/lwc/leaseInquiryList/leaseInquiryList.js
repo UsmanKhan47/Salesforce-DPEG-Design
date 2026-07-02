@@ -4,7 +4,7 @@ import getRecentInquiries from '@salesforce/apex/LeaseInquiryController.getRecen
 
 const STAGE_ACCENT = {
     'Inquiry Received': '#4A71B8', 'LOI Received': '#4A71B8', 'LOI Negotiation': '#C88010',
-    'LOI Signed': '#1A3464', 'Lease Drafting': '#A88020', 'Lease Signed': '#198A40'
+    'LOI Signed': '#1A3464', 'Lease Drafting': '#A88020', 'Lease Ready': '#2E9E7B', 'Lease Signed': '#198A40'
 };
 const BALL = {
     'Landlord':     { bg: '#E8EFF7', fg: '#132850', dot: '#1A3464' },
@@ -20,6 +20,7 @@ const COLUMNS = [
     { label: 'Prospect / Tenant', fieldName: 'recordUrl', type: 'url', typeAttributes: { label: { fieldName: 'tenant' }, target: '_self' } },
     { label: 'Property', fieldName: 'property', type: 'text' },
     { label: 'Broker', fieldName: 'broker', type: 'text' },
+    { label: 'Received', fieldName: 'received', type: 'date', initialWidth: 115, typeAttributes: { year: 'numeric', month: 'short', day: '2-digit' } },
     { label: 'Stage', fieldName: 'stage', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: '' } },
     { label: 'Ball in Court', fieldName: 'ball', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'ballWrap' }, dotStyle: { fieldName: 'ballDot' } } },
     { label: 'Days in Stage', fieldName: 'daysText', type: 'pill', initialWidth: 130, typeAttributes: { wrapStyle: { fieldName: 'agingWrap' }, dotStyle: { fieldName: 'agingDot' } } }
@@ -53,6 +54,7 @@ export default class LeaseInquiryList extends NavigationMixin(LightningElement) 
                 tenant: q.tenant || '—',
                 property: q.property || '—',
                 broker: q.broker || '—',
+                received: q.received,
                 stage: q.stage,
                 stageWrap: `display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:${sc}18;color:${sc};border:1px solid ${sc}44;white-space:nowrap`,
                 ball: q.ball || '—',

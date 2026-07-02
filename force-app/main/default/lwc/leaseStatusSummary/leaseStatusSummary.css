@@ -1,0 +1,25 @@
+.lss-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; display:block; }
+
+.lss-hd { display:flex; align-items:center; gap:9px; margin-bottom:14px; }
+.lss-icon { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.lss-title { font-size:16px; font-weight:700; color:#1A1714; line-height:1.1; }
+.lss-sub { font-size:11px; color:#8A8680; margin-top:2px; }
+
+/* stage strip (done = navy, current = gold, future = grey) */
+.lss-steps { display:flex; gap:6px; margin-bottom:16px; }
+.lss-step { flex:1; text-align:center; font-size:11px; font-weight:600; padding:6px 4px; border-radius:6px; background:#F3F2F2; color:#8A8680; border:1px solid #E5E5E5; line-height:1.2; }
+.lss-step--done { background:#1A3464; color:#fff; border-color:#1A3464; }
+.lss-step--current { background:#C8A045; color:#fff; border-color:#C8A045; }
+
+/* key/value rows */
+.lss-rows { display:flex; flex-direction:column; }
+.lss-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #EDECEA; }
+.lss-row:last-child { border-bottom:none; }
+.lss-k { font-size:12px; color:#8A8680; flex-shrink:0; }
+.lss-v { font-size:13px; color:#1A1714; font-weight:600; text-align:right; }
+.lss-link { font-size:13px; font-weight:700; color:#1565C0; text-decoration:none; }
+.lss-link:hover { text-decoration:underline; }
+
+/* empty state */
+.lss-empty { display:flex; align-items:flex-start; gap:9px; font-size:13px; color:#524F4A; line-height:1.5; padding:6px 0; }
+.lss-empty-icon { flex-shrink:0; --slds-c-icon-color-foreground-default:#8A8680; --sds-c-icon-color-foreground-default:#8A8680; }

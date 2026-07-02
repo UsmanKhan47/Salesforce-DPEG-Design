@@ -58,7 +58,7 @@ export default class LeaseNegotiationLog extends LightningElement {
     openComposer() {
         this.adding = true;
         this.upDetails = '';
-        this.upBall = (this.view && this.view.ballInCourt) || 'Landlord';
+        this.upBall = '';
         this.error = '';
     }
     cancel() {
@@ -76,6 +76,10 @@ export default class LeaseNegotiationLog extends LightningElement {
     save() {
         if (!this.upDetails || !this.upDetails.trim()) {
             this.error = 'Enter what changed before saving.';
+            return;
+        }
+        if (!this.upBall) {
+            this.error = 'Choose who the ball is in court with.';
             return;
         }
         addUpdate({
