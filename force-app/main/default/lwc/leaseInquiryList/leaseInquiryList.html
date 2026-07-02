@@ -9,7 +9,6 @@
             <span class="hdr-title">Recent Inquiries ({count})</span>
         </div>
         <div slot="actions" class="hdr-actions">
-            <lightning-button label="View All" onclick={viewAll}></lightning-button>
             <lightning-button variant="brand" label="New Inquiry" icon-name="utility:add" onclick={newInquiry}></lightning-button>
         </div>
         <c-list-datatable
@@ -19,6 +18,8 @@
             column-widths-mode="fixed"
             hide-checkbox-column>
         </c-list-datatable>
-        <div slot="footer" class="note">The 6 most recently updated inquiries. Open the Lease Inquiries tab (switch to Kanban) for the full pipeline board.</div>
+        <div slot="footer" class="view-all-footer">
+            <a href={listUrl} onclick={viewAll}>View All</a>
+        </div>
     </lightning-card>
 </template>

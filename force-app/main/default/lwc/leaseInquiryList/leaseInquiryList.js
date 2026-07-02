@@ -29,7 +29,19 @@ const COLUMNS = [
 export default class LeaseInquiryList extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
     _data = [];
+    listUrl = '#';
     @wire(getRecentInquiries) wired({ data }) { if (data) this._data = data; }
+
+    connectedCallback() {
+        this[NavigationMixin.GenerateUrl](this.listPageRef).then((url) => { this.listUrl = url; });
+    }
+    get listPageRef() {
+        return {
+            type: 'standard__objectPage',
+            attributes: { objectApiName: 'Lease_Inquiry__c', actionName: 'list' },
+            state: { filterName: 'Active_Pipeline' }
+        };
+    }
 
     get rows() {
         return this._data.map((q) => {
@@ -74,11 +86,8 @@ export default class LeaseInquiryList extends NavigationMixin(LightningElement) 
             attributes: { objectApiName: 'Lease_Inquiry__c', actionName: 'new' }
         });
     }
-    viewAll() {
-        this[NavigationMixin.Navigate]({
-            type: 'standard__objectPage',
-            attributes: { objectApiName: 'Lease_Inquiry__c', actionName: 'list' },
-            state: { filterName: 'Active_Pipeline' }
-        });
+    viewAll(event) {
+        if (event) event.preventDefault();
+        this[NavigationMixin.Navigate](this.listPageRef);
     }
 }
