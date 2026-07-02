@@ -115,14 +115,14 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentName>leaseStatusSummary</componentName>
-                <identifier>leaseStatusSummaryComponent</identifier>
+                <componentName>force:detailPanel</componentName>
+                <identifier>recordDetail</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>
             <componentInstance>
-                <componentName>force:detailPanel</componentName>
-                <identifier>recordDetail</identifier>
+                <componentName>leaseStatusSummary</componentName>
+                <identifier>leaseStatusSummaryComponent</identifier>
             </componentInstance>
         </itemInstances>
         <name>sidebar</name>
