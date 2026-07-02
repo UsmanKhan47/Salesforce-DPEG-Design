@@ -1,0 +1,10 @@
+.ps-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; display:block; }
+.ps-hd { display:flex; align-items:center; gap:9px; margin-bottom:16px; }
+.ps-icon { width:26px; height:26px; border-radius:50%; background:#1A3464; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.ps-title { font-size:16px; font-weight:700; color:#1A1714; line-height:1.1; }
+.ps-sub { font-size:11px; color:#8A8680; margin-top:2px; }
+.ps-body { display:flex; flex-direction:column; gap:10px; }
+.ps-row { display:flex; align-items:center; gap:10px; }
+.ps-label { width:112px; flex-shrink:0; font-size:12px; color:#524F4A; text-align:right; }
+.ps-track { flex:1; height:22px; background:#F3F2F2; border-radius:5px; overflow:hidden; }
+.ps-count { width:22px; flex-shrink:0; font-size:14px; font-weight:700; color:#1A1714; text-align:right; font-variant-numeric:tabular-nums; }

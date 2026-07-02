@@ -103,4 +103,122 @@ public with sharing class LeaseInquiryController {
         }
         return inquiryId;
     }
+
+    // ───────────────── Home page (Lease Activity Tracker) ─────────────────
+
+    public class HomeKpis {
+        @AuraEnabled public Integer active = 0;
+        @AuraEnabled public Integer waitingLandlord = 0;
+        @AuraEnabled public Integer stalled = 0;
+        @AuraEnabled public Integer signed = 0;
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static HomeKpis getHomeKpis() {
+        HomeKpis k = new HomeKpis();
+        Date today = Date.today();
+        for (Lease_Inquiry__c q : [
+            SELECT Status__c, Ball_In_Court__c, Stage_Start_Date__c FROM Lease_Inquiry__c
+        ]) {
+            Boolean closed = q.Status__c == 'Closed Won' || q.Status__c == 'Closed Lost';
+            if (q.Status__c == 'Closed Won') k.signed++;
+            if (!closed) {
+                k.active++;
+                if (q.Ball_In_Court__c == 'Landlord') k.waitingLandlord++;
+                if (q.Stage_Start_Date__c != null && q.Stage_Start_Date__c.daysBetween(today) > 14) k.stalled++;
+            }
+        }
+        return k;
+    }
+
+    public class InquiryRow {
+        @AuraEnabled public Id id;
+        @AuraEnabled public String tenant;
+        @AuraEnabled public String property;
+        @AuraEnabled public String broker;
+        @AuraEnabled public String stage;
+        @AuraEnabled public String ball;
+        @AuraEnabled public String status;
+        @AuraEnabled public Integer days;
+        @AuraEnabled public Boolean closed;
+    }
+
+    private static InquiryRow toRow(Lease_Inquiry__c q) {
+        InquiryRow r = new InquiryRow();
+        r.id = q.Id;
+        r.tenant = q.Tenant_Name__c;
+        r.property = q.Property_Name__c;
+        r.broker = q.Broker_Name__c;
+        r.stage = q.Stage__c;
+        r.ball = q.Ball_In_Court__c;
+        r.status = q.Status__c;
+        r.closed = q.Status__c == 'Closed Won' || q.Status__c == 'Closed Lost';
+        r.days = (!r.closed && q.Stage_Start_Date__c != null) ? q.Stage_Start_Date__c.daysBetween(Date.today()) : null;
+        return r;
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static List<InquiryRow> getRecentInquiries() {
+        List<InquiryRow> rows = new List<InquiryRow>();
+        for (Lease_Inquiry__c q : [
+            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c
+            FROM Lease_Inquiry__c
+            ORDER BY LastModifiedDate DESC
+            LIMIT 6
+        ]) {
+            rows.add(toRow(q));
+        }
+        return rows;
+    }
+
+    public class StageCount {
+        @AuraEnabled public String stage;
+        @AuraEnabled public Integer count;
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static List<StageCount> getPipelineByStage() {
+        Map<String, Integer> byStage = new Map<String, Integer>();
+        for (String s : STAGES) {
+            byStage.put(s, 0);
+        }
+        for (Lease_Inquiry__c q : [
+            SELECT Stage__c FROM Lease_Inquiry__c WHERE Status__c = 'Active'
+        ]) {
+            if (byStage.containsKey(q.Stage__c)) {
+                byStage.put(q.Stage__c, byStage.get(q.Stage__c) + 1);
+            }
+        }
+        List<StageCount> out = new List<StageCount>();
+        for (String s : STAGES) {
+            StageCount sc = new StageCount();
+            sc.stage = s;
+            sc.count = byStage.get(s);
+            out.add(sc);
+        }
+        return out;
+    }
+
+    // Active deals needing attention: with the landlord, or aging (> 7 days in stage).
+    // Oldest-in-stage first; capped at 6.
+    @AuraEnabled(cacheable=true)
+    public static List<InquiryRow> getAttention() {
+        List<InquiryRow> rows = new List<InquiryRow>();
+        Date today = Date.today();
+        for (Lease_Inquiry__c q : [
+            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c
+            FROM Lease_Inquiry__c
+            WHERE Status__c = 'Active'
+            ORDER BY Stage_Start_Date__c ASC NULLS LAST
+        ]) {
+            Integer d = q.Stage_Start_Date__c != null ? q.Stage_Start_Date__c.daysBetween(today) : 0;
+            if (q.Ball_In_Court__c == 'Landlord' || d > 7) {
+                rows.add(toRow(q));
+                if (rows.size() == 6) {
+                    break;
+                }
+            }
+        }
+        return rows;
+    }
 }

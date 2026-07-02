@@ -1,0 +1,24 @@
+<template>
+    <article class="ps-card">
+        <div class="ps-hd">
+            <span class="ps-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>
+                </svg>
+            </span>
+            <div>
+                <div class="ps-title">Active Pipeline by Stage</div>
+                <div class="ps-sub">{total} active inquiries</div>
+            </div>
+        </div>
+        <div class="ps-body">
+            <template for:each={rows} for:item="r">
+                <div key={r.stage} class="ps-row">
+                    <span class="ps-label">{r.stage}</span>
+                    <div class="ps-track"><div style={r.barStyle}></div></div>
+                    <span class="ps-count">{r.count}</span>
+                </div>
+            </template>
+        </div>
+    </article>
+</template>

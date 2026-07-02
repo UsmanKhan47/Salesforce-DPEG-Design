@@ -108,4 +108,34 @@ private class LeaseInquiryControllerTest {
         LeaseInquiryController.LogView v = LeaseInquiryController.getLog(null);
         System.assertEquals(0, v.entries.size());
     }
+
+    @isTest static void homeKpis() {
+        LeaseInquiryController.HomeKpis k = LeaseInquiryController.getHomeKpis();
+        System.assertEquals(1, k.active, 'one active inquiry in setup');
+        System.assertEquals(1, k.waitingLandlord, 'ball defaults to Landlord');
+        System.assertEquals(0, k.stalled, 'stage started today, not stalled');
+        System.assertEquals(0, k.signed);
+    }
+
+    @isTest static void recentInquiries() {
+        List<LeaseInquiryController.InquiryRow> rows = LeaseInquiryController.getRecentInquiries();
+        System.assertEquals(1, rows.size());
+        System.assertEquals('Sunrise Cafe', rows[0].tenant);
+        System.assertEquals('Inquiry Received', rows[0].stage);
+        System.assertEquals(false, rows[0].closed);
+    }
+
+    @isTest static void pipelineByStage() {
+        List<LeaseInquiryController.StageCount> out = LeaseInquiryController.getPipelineByStage();
+        System.assertEquals(6, out.size(), 'one bucket per stage');
+        System.assertEquals('Inquiry Received', out[0].stage);
+        System.assertEquals(1, out[0].count, 'the one active inquiry sits in Inquiry Received');
+    }
+
+    @isTest static void attention() {
+        // The setup inquiry has the ball with the Landlord → surfaces in attention.
+        List<LeaseInquiryController.InquiryRow> rows = LeaseInquiryController.getAttention();
+        System.assertEquals(1, rows.size());
+        System.assertEquals('Sunrise Cafe', rows[0].tenant);
+    }
 }

@@ -1,0 +1,5 @@
+.hdr { display:flex; align-items:center; gap:9px; }
+.hdr-icon { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.hdr-title { font-size:16px; font-weight:700; color:#1A1714; }
+.hdr-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; }
+.note { font-size:12px; color:#8A8680; text-align:left; }
