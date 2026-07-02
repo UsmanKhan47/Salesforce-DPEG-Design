@@ -33,7 +33,7 @@ export default class LeaseStatusSummary extends NavigationMixin(LightningElement
     get meta() {
         if (!this.data) return '';
         const parts = [];
-        parts.push(this.data.legalOwner ? this.data.legalOwner : 'Unassigned');
+        if (this.data.legalOwner) parts.push(this.data.legalOwner);
         if (this.data.targetDate) parts.push(`Target ${this.fmtDate(this.data.targetDate)}`);
         if (this.data.executedDate) parts.push(`Executed ${this.fmtDate(this.data.executedDate)}`);
         return parts.join('  ·  ');
