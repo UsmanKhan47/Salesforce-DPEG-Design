@@ -13,8 +13,6 @@
 .lnl-composer { padding:16px 20px; background:#F3F6FB; border-bottom:1px solid #D6E0EE; }
 .lnl-textarea { display:block; }
 .lnl-composer-row { margin-top:10px; max-width:260px; }
-.lnl-check { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:13px; color:#1A1714; cursor:pointer; }
-.lnl-check input { width:15px; height:15px; accent-color:#1A3464; cursor:pointer; flex-shrink:0; }
 .lnl-error { margin-top:10px; font-size:12px; color:#8B1A1A; }
 .lnl-composer-actions { display:flex; gap:10px; margin-top:14px; }
 

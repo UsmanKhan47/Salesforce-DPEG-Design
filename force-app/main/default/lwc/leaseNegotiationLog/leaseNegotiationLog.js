@@ -17,7 +17,6 @@ export default class LeaseNegotiationLog extends LightningElement {
     adding = false;
     upDetails = '';
     upBall = '';
-    upAdvance = false;
     error = '';
 
     @wire(getLog, { inquiryId: '$recordId' })
@@ -36,15 +35,6 @@ export default class LeaseNegotiationLog extends LightningElement {
     }
     get canLog() {
         return this.view && !this.view.closed;
-    }
-    get canAdvance() {
-        return !!(this.view && this.view.canAdvance);
-    }
-    get nextStage() {
-        return this.view ? this.view.nextStage : '';
-    }
-    get advanceLabel() {
-        return `Advance to next stage → ${this.nextStage} (resets the days-in-stage timer)`;
     }
     get ballOptions() {
         return BALLS.map((b) => ({ label: b, value: b }));
@@ -69,7 +59,6 @@ export default class LeaseNegotiationLog extends LightningElement {
         this.adding = true;
         this.upDetails = '';
         this.upBall = (this.view && this.view.ballInCourt) || 'Landlord';
-        this.upAdvance = false;
         this.error = '';
     }
     cancel() {
@@ -83,9 +72,6 @@ export default class LeaseNegotiationLog extends LightningElement {
     onBall(e) {
         this.upBall = e.detail.value;
     }
-    onAdvance(e) {
-        this.upAdvance = e.target.checked;
-    }
 
     save() {
         if (!this.upDetails || !this.upDetails.trim()) {
@@ -96,7 +82,7 @@ export default class LeaseNegotiationLog extends LightningElement {
             inquiryId: this.recordId,
             details: this.upDetails,
             ball: this.upBall,
-            advance: this.upAdvance
+            advance: false
         })
             .then(() => {
                 this.adding = false;

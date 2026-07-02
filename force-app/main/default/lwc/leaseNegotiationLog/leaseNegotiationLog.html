@@ -43,13 +43,6 @@
                     </lightning-combobox>
                 </div>
 
-                <template if:true={canAdvance}>
-                    <label class="lnl-check">
-                        <input type="checkbox" checked={upAdvance} onchange={onAdvance} />
-                        <span>{advanceLabel}</span>
-                    </label>
-                </template>
-
                 <template if:true={error}>
                     <div class="lnl-error">{error}</div>
                 </template>
