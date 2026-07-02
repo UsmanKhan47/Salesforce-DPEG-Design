@@ -343,6 +343,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Lease_Inquiry__c.Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lease_Inquiry__c.Handling_Person__c</field>
         <readable>true</readable>
     </fieldPermissions>
