@@ -1,56 +1,34 @@
 <template>
-    <article class="lss-card">
-        <div class="lss-hd">
-            <span class="lss-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#132850" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/>
-                </svg>
-            </span>
-            <div>
-                <div class="lss-title">Lease Status</div>
-                <div class="lss-sub">Legal team · lease document</div>
+    <lightning-card icon-name="standard:contract">
+        <span slot="title" class="card-title">Lease Status</span>
+
+        <div class="body">
+            <div class="doc">
+                <div class="doc-head">
+                    <span class="doc-left">
+                        <span class="doc-icon doc-icon--lease">
+                            <lightning-icon icon-name="utility:contract" size="x-small"
+                                style="--slds-c-icon-color-foreground-default:#7E57C2;--sds-c-icon-color-foreground-default:#7E57C2">
+                            </lightning-icon>
+                        </span>
+                        <template if:true={hasLease}>
+                            <a class="doc-name" onclick={openLease} title="Open Lease">{leaseName}</a>
+                        </template>
+                        <template if:false={hasLease}>
+                            <span class="doc-name doc-name--muted">Lease</span>
+                        </template>
+                    </span>
+                    <template if:true={hasLease}>
+                        <span class={pillClass}>{stage}</span>
+                    </template>
+                </div>
+                <template if:true={hasLease}>
+                    <div class="doc-meta">{meta}</div>
+                </template>
+                <template if:false={hasLease}>
+                    <div class="doc-meta doc-meta--empty">Created for legal once the inquiry reaches Lease Drafting</div>
+                </template>
             </div>
         </div>
-
-        <template if:true={exists}>
-            <div class="lss-steps">
-                <template for:each={steps} for:item="s">
-                    <span key={s.key} class={s.cls}>{s.label}</span>
-                </template>
-            </div>
-            <div class="lss-rows">
-                <div class="lss-row">
-                    <span class="lss-k">Lease</span>
-                    <a href={leaseUrl} class="lss-link">{leaseName}</a>
-                </div>
-                <div class="lss-row">
-                    <span class="lss-k">Legal owner</span>
-                    <span class="lss-v">{legalOwner}</span>
-                </div>
-                <template if:true={targetDate}>
-                    <div class="lss-row">
-                        <span class="lss-k">Target execution</span>
-                        <span class="lss-v">
-                            <lightning-formatted-date-time value={targetDate} year="numeric" month="short" day="2-digit"></lightning-formatted-date-time>
-                        </span>
-                    </div>
-                </template>
-                <template if:true={executedDate}>
-                    <div class="lss-row">
-                        <span class="lss-k">Executed</span>
-                        <span class="lss-v">
-                            <lightning-formatted-date-time value={executedDate} year="numeric" month="short" day="2-digit"></lightning-formatted-date-time>
-                        </span>
-                    </div>
-                </template>
-            </div>
-        </template>
-
-        <template if:false={exists}>
-            <div class="lss-empty">
-                <lightning-icon icon-name="utility:clock" size="small" class="lss-empty-icon"></lightning-icon>
-                <div>A Lease record is created for the legal team once the inquiry reaches <b>Lease Drafting</b>.</div>
-            </div>
-        </template>
-    </article>
+    </lightning-card>
 </template>

@@ -1,33 +1,56 @@
 import { LightningElement, api, wire } from 'lwc';
+import { NavigationMixin } from 'lightning/navigation';
 import getLeaseSummary from '@salesforce/apex/LeaseInquiryController.getLeaseSummary';
 
-// Deal-Summary-style panel on the Lease Inquiry record page: shows the related
-// Lease (legal team) record's stage progression (Draft -> Prepare/Review ->
-// Completed) plus owner and dates, with a link to open the Lease record.
-export default class LeaseStatusSummary extends LightningElement {
+// Mirrors the Deal Summary (dealDocStatus) UI/UX: a document row with an icon
+// tile, a clickable record name, a status pill (the Lease stage) and a meta line.
+const STAGE_TONE = { Draft: 'grey', 'Prepare/Review': 'blue', Completed: 'green' };
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export default class LeaseStatusSummary extends NavigationMixin(LightningElement) {
     @api recordId;
-    s;
+    data;
 
     @wire(getLeaseSummary, { inquiryId: '$recordId' })
     wired({ data }) {
         if (data) {
-            this.s = data;
+            this.data = data;
         }
     }
 
-    get exists() { return !!(this.s && this.s.exists); }
-    get leaseUrl() { return this.s && this.s.leaseId ? `/lightning/r/Lease__c/${this.s.leaseId}/view` : '#'; }
-    get leaseName() { return (this.s && this.s.leaseName) || ''; }
-    get legalOwner() { return (this.s && this.s.legalOwner) || 'Unassigned'; }
-    get targetDate() { return this.s ? this.s.targetDate : null; }
-    get executedDate() { return this.s ? this.s.executedDate : null; }
+    get hasLease() {
+        return !!(this.data && this.data.exists);
+    }
+    get leaseName() {
+        return (this.data && this.data.leaseName) || 'Lease';
+    }
+    get stage() {
+        return (this.data && this.data.stage) || '—';
+    }
+    get pillClass() {
+        return `pill pill--${STAGE_TONE[this.data && this.data.stage] || 'grey'}`;
+    }
+    get meta() {
+        if (!this.data) return '';
+        const parts = [];
+        parts.push(this.data.legalOwner ? this.data.legalOwner : 'Unassigned');
+        if (this.data.targetDate) parts.push(`Target ${this.fmtDate(this.data.targetDate)}`);
+        if (this.data.executedDate) parts.push(`Executed ${this.fmtDate(this.data.executedDate)}`);
+        return parts.join('  ·  ');
+    }
 
-    get steps() {
-        const st = (this.s && this.s.steps) || [];
-        return st.map((x) => ({
-            key: x.label,
-            label: x.label,
-            cls: x.done ? 'lss-step lss-step--done' : (x.current ? 'lss-step lss-step--current' : 'lss-step')
-        }));
+    openLease() {
+        if (!this.data || !this.data.leaseId) return;
+        this[NavigationMixin.Navigate]({
+            type: 'standard__recordPage',
+            attributes: { recordId: this.data.leaseId, objectApiName: 'Lease__c', actionName: 'view' }
+        });
+    }
+
+    fmtDate(d) {
+        if (!d) return '';
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return '';
+        return `${MONTHS[dt.getUTCMonth()]} ${dt.getUTCDate()}, ${dt.getUTCFullYear()}`;
     }
 }
