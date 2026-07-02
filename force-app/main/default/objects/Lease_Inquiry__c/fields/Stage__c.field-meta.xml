@@ -12,6 +12,7 @@
             <value><fullName>LOI Negotiation</fullName><default>false</default><label>LOI Negotiation</label></value>
             <value><fullName>LOI Signed</fullName><default>false</default><label>LOI Signed</label></value>
             <value><fullName>Lease Drafting</fullName><default>false</default><label>Lease Drafting</label></value>
+            <value><fullName>Lease Ready</fullName><default>false</default><label>Lease Ready</label></value>
             <value><fullName>Lease Signed</fullName><default>false</default><label>Lease Signed</label></value>
         </valueSetDefinition>
     </valueSet>

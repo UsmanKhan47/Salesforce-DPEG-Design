@@ -27,6 +27,15 @@
         <type>Flexipage</type>
         <pageOrSobjectType>Lease_Inquiry__c</pageOrSobjectType>
     </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Lease Record Page</comment>
+        <content>Lease_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Lease__c</pageOrSobjectType>
+    </actionOverrides>
     <brand>
         <headerColor>#2E844A</headerColor>
         <logo>DPEG_Logo_Clear</logo>
@@ -50,5 +59,6 @@
     <tabs>Broker_Scorecard</tabs>
     <tabs>Lease_Activity_Tracker</tabs>
     <tabs>Lease_Inquiry__c</tabs>
+    <tabs>Lease__c</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>

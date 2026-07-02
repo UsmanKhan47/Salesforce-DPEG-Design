@@ -27,10 +27,15 @@
         <picklistValueName>LOI Signed</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Legal is drafting the lease. Track redlines and exhibits in the negotiation history.</info>
+        <info>Legal is drafting the lease. A Lease record is created for the legal team — track its Draft → Prepare/Review → Completed progress in the Lease Status panel.</info>
         <picklistValueName>Lease Drafting</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
+        <info>Legal has finished the lease document and it is ready for signature. Confirm the executed copy is in hand before closing.</info>
+        <picklistValueName>Lease Ready</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Signed_Date__c</fieldNames>
         <fieldNames>Status__c</fieldNames>
         <info>Deal done — the space is leased. Set Status to Closed Won to close the record out in history.</info>
         <picklistValueName>Lease Signed</picklistValueName>
