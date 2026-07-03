@@ -20,6 +20,10 @@
         <apexClass>OnboardingTaskRollupService</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <classAccesses>
+        <apexClass>LeaseRenewalController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <description>Object, field, tab and Apex access for the Property Management (Onboarding) app.</description>
     <fieldPermissions>
         <editable>true</editable>
