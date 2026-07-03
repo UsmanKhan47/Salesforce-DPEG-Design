@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/shadows.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/radii.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/motion.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/tokens/base.css">
+  <link rel="stylesheet" href="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/styles.css">
+  <script src="_ds/dpeg-design-system-bd6a8213-8551-4dcc-888d-0a1b0133c81c/_ds_bundle.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #f3f2ef; }
+    *::-webkit-scrollbar { width: 12px; height: 12px; }
+    *::-webkit-scrollbar-thumb { background: var(--color-neutral-200); border-radius: 8px; border: 3px solid #f3f2ef; }
+    *::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</helmet>
+
+<div style="display:flex; flex-direction:column; height:100vh; width:100%; font-family:var(--font-body); color:var(--text-primary); background:#f3f2ef; overflow:hidden;">
+
+  <!-- ===== GLOBAL HEADER BAR ===== -->
+  <div style="flex-shrink:0; height:54px; background:#fff; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; padding:0 16px; gap:16px;">
+    <div style="display:flex; align-items:center; gap:9px; flex-shrink:0;">
+      <svg width="38" height="32" viewBox="0 0 48 40"><path d="M24 3 L45 24 H35 L24 13 L13 24 H3 Z" fill="#57b277"></path><path d="M24 17 L41 34 H32 L24 26 L16 34 H7 Z" fill="#2f8a52"></path></svg>
+      <span style="font-family:var(--font-body); font-size:21px; font-weight:700; letter-spacing:0.04em; color:#2D2A26;">DHANANI</span>
+    </div>
+    <div style="flex:1; display:flex; justify-content:center;">
+      <div style="position:relative; width:100%; max-width:520px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A8680" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; left:13px; top:50%; transform:translateY(-50%);"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input placeholder="Search work orders, tenants, properties..." style="width:100%; height:34px; padding:0 12px 0 36px; border:1px solid var(--border-default); border-radius:6px; background:#fff; font-family:var(--font-body); font-size:14px; color:var(--text-primary); box-sizing:border-box;"/>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; flex-shrink:0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F3C38" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v8M8 12h8"></path></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F3C38" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+      <div style="position:relative;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F3C38" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+        <span style="position:absolute; top:-5px; right:-5px; background:var(--color-error-600); color:#fff; font-size:9px; font-weight:700; min-width:15px; height:15px; padding:0 3px; border-radius:9999px; display:flex; align-items:center; justify-content:center;">3</span>
+      </div>
+      <div style="width:32px; height:32px; border-radius:50%; background:var(--color-navy-800); display:flex; align-items:center; justify-content:center; color:var(--color-gold-300); font-size:12px; font-weight:700; flex-shrink:0;">IP</div>
+    </div>
+  </div>
+
+  <!-- ===== APP CONTEXT BAR ===== -->
+  <div style="flex-shrink:0; height:48px; background:#fff; border-bottom:1px solid var(--border-default); box-shadow:0 1px 2px rgba(7,20,40,0.05); display:flex; align-items:stretch; padding:0 16px; gap:18px;">
+    <div style="display:flex; align-items:center; gap:11px; flex-shrink:0;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5A5752" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+      <span style="font-size:17px; font-weight:700; color:var(--text-primary); letter-spacing:-0.01em;">Work Orders</span>
+    </div>
+    <nav style="display:flex; align-items:stretch; gap:4px; flex-shrink:0;">
+      <button onClick="{{ goList }}" style="{{ tabListStyle }}">My Work Orders</button>
+      <button onClick="{{ goDash }}" style="{{ tabDashStyle }}">Dashboard</button>
+      <button onClick="{{ goEsc }}" style="{{ tabEscStyle }}"><span style="display:inline-flex; align-items:center; gap:7px;">Escalations<sc-if value="{{ hasEsc }}" hint-placeholder-val="{{ true }}"><span style="background:var(--color-error-600); color:#fff; font-size:10px; font-weight:700; min-width:17px; height:17px; padding:0 4px; border-radius:9999px; display:inline-flex; align-items:center; justify-content:center;">{{ escCount }}</span></sc-if></span></button>
+    </nav>
+    <div style="flex:1;"></div>
+    <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+      <div style="display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 12px; border:1px solid var(--border-subtle); border-radius:9999px; background:var(--color-neutral-50); font-size:12px; color:var(--text-secondary);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5A5752" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        Read-only Â· managed in Yardi
+      </div>
+      <div style="display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 12px; border:1px solid var(--border-subtle); border-radius:9999px; background:var(--color-neutral-50); font-size:12px; color:var(--text-secondary);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1A7A6B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M3 21v-5h5"></path></svg>
+        Synced from Yardi Â· Today 6:00 AM
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CONTENT ===== -->
+  <div style="flex:1; overflow:auto; padding:18px 22px 40px;">
+
+    <!-- page header -->
+    <div style="display:flex; align-items:center; gap:13px; margin-bottom:18px;">
+      <div style="width:42px; height:42px; border-radius:8px; background:var(--color-gold-500); display:flex; align-items:center; justify-content:center; flex-shrink:0;">{{ headerIcon }}</div>
+      <div>
+        <h1 style="margin:0; font-family:var(--font-body); font-size:24px; font-weight:400; color:var(--color-neutral-700); line-height:1.2;">{{ screenTitle }}</h1>
+        <div style="font-size:13px; color:var(--text-tertiary); margin-top:2px;">{{ screenSub }}</div>
+      </div>
+    </div>
+
+    <!-- ========== SCREEN A: MY WORK ORDERS ========== -->
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="My Work Orders">
+      <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12px; color:var(--text-secondary);">
+        <div style="display:flex; align-items:center; gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:#D93636;"></span>SLA breached</div>
+        <div style="display:flex; align-items:center; gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:#C88010;"></span>Due soon (last {{ dueSoonPct }}% of SLA window)</div>
+        <div style="display:flex; align-items:center; gap:6px;"><span style="width:9px;height:9px;border-radius:50%;background:#22A652;"></span>On track / resolved</div>
+        <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-flex; align-items:center; gap:5px; background:#F3EEFB; color:#4A2A7A; border:1px solid #D9C9F0; font-size:10px; font-weight:700; padding:2px 8px; border-radius:9999px; text-transform:uppercase; letter-spacing:0.03em;">Untouched</span> nobody has acted on it yet</div>
+        <div style="flex:1;"></div>
+        <div style="display:flex; align-items:center; gap:6px; font-style:italic; color:var(--text-tertiary);">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+          Due-soon window is a working assumption â€” SLA tiers themselves are confirmed
+        </div>
+      </div>
+
+      <!-- KPI cards -->
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px;">
+        <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="4">
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:18px 20px; box-shadow:0 1px 2px rgba(7,20,40,0.06); display:flex; align-items:center; gap:15px; border-top:3px solid {{ k.accent }};">
+            <div style="width:40px; height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:{{ k.iconBg }};">{{ k.icon }}</div>
+            <div><div style="font-family:var(--font-mono); font-size:26px; font-weight:600; color:{{ k.valueColor }}; line-height:1;">{{ k.value }}</div><div style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-tertiary); margin-top:6px;">{{ k.label }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden;">
+        <div style="padding:14px 18px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; border-bottom:1px solid var(--border-subtle);">
+          <span style="font-size:16px; font-weight:700; color:var(--text-primary); flex-shrink:0;">Work orders ({{ rowCount }})</span>
+          <div style="flex:1;"></div>
+          <button onClick="{{ toggleOverdue }}" style="{{ overdueToggleStyle }}"><span style="width:7px;height:7px;border-radius:50%;background:#D42B2B;"></span>Breached only</button>
+          <sc-for list="{{ filterSelects }}" as="fs" hint-placeholder-count="4">
+            <select value="{{ fs.value }}" onChange="{{ fs.onChange }}" style="height:32px; padding:0 28px 0 11px; border:1px solid var(--border-default); border-radius:5px; font-family:var(--font-body); font-size:13px; color:var(--text-primary); background:#fff; cursor:pointer; appearance:none; background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2214%22 height=%2214%22 fill=%22none%22 stroke=%22%23524F4A%22 stroke-width=%222%22><path d=%22m3 5 4 4 4-4%22/></svg>'); background-repeat:no-repeat; background-position:right 9px center;">
+              <sc-for list="{{ fs.options }}" as="opt" hint-placeholder-count="5"><option value="{{ opt.value }}">{{ opt.label }}</option></sc-for>
+            </select>
+          </sc-for>
+          <button onClick="{{ clearFilters }}" style="height:32px; padding:0 12px; border:1px solid var(--border-default); border-radius:5px; background:#fff; font-family:var(--font-body); font-size:12px; font-weight:600; color:var(--text-secondary); cursor:pointer;" style-hover="background:var(--color-neutral-50);">Clear</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; min-width:1120px; border-collapse:collapse; font-family:var(--font-body);">
+            <thead>
+              <tr style="background:var(--color-neutral-50); border-bottom:1px solid var(--border-default);">
+                <th style="{{ thStyle }}">Work Order</th>
+                <th style="{{ thStyle }}">Property Â· Unit</th>
+                <th style="{{ thStyle }}">Category</th>
+                <th style="{{ thStyle }}">Priority</th>
+                <th style="{{ thStyle }}">Status</th>
+                <th onClick="{{ onToggleSort }}" style="{{ thSortStyle }}"><span style="display:inline-flex; align-items:center; gap:4px;">Days Open {{ sortArrow }}</span></th>
+                <th style="{{ thStyle }}">SLA</th>
+                <th style="{{ thStyle }}">Vendor</th>
+                <th style="{{ thStyle }}">Owner</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+                <tr onClick="{{ row.open }}" style="{{ row.rowStyle }}" style-hover="background:var(--color-navy-50);">
+                  <td style="{{ tdCell }}">
+                    <div style="display:flex; align-items:center; gap:8px;"><span style="color:var(--text-link); font-weight:700; cursor:pointer;" style-hover="text-decoration:underline;">{{ row.subject }}</span><sc-if value="{{ row.untouched }}" hint-placeholder-val="{{ false }}"><span style="background:#F3EEFB; color:#4A2A7A; border:1px solid #D9C9F0; font-size:9px; font-weight:700; padding:2px 7px; border-radius:9999px; text-transform:uppercase; letter-spacing:0.03em; flex-shrink:0;">Untouched</span></sc-if></div>
+                    <div style="font-size:11px; color:var(--text-tertiary); margin-top:1px; font-family:var(--font-mono);">{{ row.woId }}</div>
+                  </td>
+                  <td style="{{ tdCell }}"><div style="color:var(--text-secondary);">{{ row.property }}</div><div style="font-size:11px; color:var(--text-tertiary); margin-top:1px;">{{ row.unit }}</div></td>
+                  <td style="{{ tdCell }}"><span style="color:var(--text-secondary); font-size:12px;">{{ row.category }}</span></td>
+                  <td style="{{ tdCell }}"><span style="{{ row.priBadge }}"><span style="{{ row.priDot }}"></span>{{ row.priority }}</span></td>
+                  <td style="{{ tdCell }}"><span style="{{ row.statusBadge }}">{{ row.status }}</span></td>
+                  <td style="{{ tdCell }}"><span style="font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);">{{ row.ageDisp }}</span></td>
+                  <td style="{{ tdCell }}"><span style="{{ row.slaPill }}">{{ row.slaDisp }}</span></td>
+                  <td style="{{ tdCell }}"><span style="{{ row.vendorStyle }}">{{ row.vendor }}</span></td>
+                  <td style="{{ tdCell }}"><span style="color:var(--text-secondary); font-size:12px;">{{ row.owner }}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <sc-if value="{{ rowsEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:44px; text-align:center; color:var(--text-tertiary); font-size:14px;">No work orders match these filters.</div></sc-if>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--text-tertiary); display:flex; align-items:center; gap:6px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+        Work orders are created, dispatched, and closed in Yardi only. This view refreshes with the nightly sync â€” Salesforce never writes back.
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ========== SCREEN B: WORK ORDER DETAIL ========== -->
+    <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+    <div style="max-width:1220px;" data-screen-label="Work Order Detail">
+      <button onClick="{{ goBack }}" style="display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; color:var(--text-link); font-family:var(--font-body); font-size:13px; font-weight:600; padding:0; margin-bottom:16px;" style-hover="text-decoration:underline;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>{{ d.backLabel }}
+      </button>
+
+      <!-- header card -->
+      <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; margin-bottom:14px;">
+        <div style="display:flex; align-items:stretch; gap:0; flex-wrap:wrap;">
+          <div style="flex:1; min-width:360px; padding:20px 24px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+              <span style="{{ d.priBadge }}"><span style="{{ d.priDot }}"></span>{{ d.priority }}</span>
+              <span style="{{ d.statusBadge }}">{{ d.status }}</span>
+              <sc-if value="{{ d.untouched }}" hint-placeholder-val="{{ false }}"><span style="background:#F3EEFB; color:#4A2A7A; border:1px solid #D9C9F0; font-size:10px; font-weight:700; padding:2px 8px; border-radius:9999px; text-transform:uppercase; letter-spacing:0.03em;">Untouched</span></sc-if>
+              <span style="font-size:12px; color:var(--text-tertiary); font-family:var(--font-mono);">{{ d.woId }}</span>
+            </div>
+            <h2 style="margin:2px 0 0; font-family:var(--font-display); font-size:26px; font-weight:600; color:var(--text-primary);">{{ d.subject }}</h2>
+            <div style="display:flex; align-items:center; gap:16px; margin-top:8px; flex-wrap:wrap; font-size:13px; color:var(--text-secondary);">
+              <span style="display:inline-flex; align-items:center; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V7l8-4v18"></path><path d="M19 21V11l-6-4"></path></svg>{{ d.property }} Â· {{ d.unit }}</span>
+              <span style="display:inline-flex; align-items:center; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>{{ d.tenant }}</span>
+              <span style="display:inline-flex; align-items:center; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>{{ d.category }}</span>
+              <span style="display:inline-flex; align-items:center; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Owner: {{ d.owner }}</span>
+            </div>
+          </div>
+          <div style="width:284px; padding:20px 24px; background:{{ d.slaPanelBg }}; border-left:1px solid var(--border-subtle); display:flex; flex-direction:column; justify-content:center; gap:6px;">
+            <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:{{ d.slaPanelFg }}; opacity:0.75;">{{ d.slaPanelLabel }}</div>
+            <div style="display:flex; align-items:baseline; gap:9px;">
+              <span style="font-family:var(--font-mono); font-size:34px; font-weight:700; color:{{ d.slaPanelFg }}; line-height:1;">{{ d.slaBig }}</span>
+              <span style="font-size:13px; color:{{ d.slaPanelFg }}; opacity:0.85;">{{ d.slaBigUnit }}</span>
+            </div>
+            <div style="font-size:12px; color:{{ d.slaPanelFg }}; opacity:0.85;">{{ d.slaDueLine }}</div>
+          </div>
+        </div>
+        <div style="padding:14px 24px; border-top:1px solid var(--border-subtle); display:flex; align-items:center; gap:0; overflow-x:auto;">
+          <sc-for list="{{ d.stages }}" as="s" hint-placeholder-count="4"><div style="{{ s.style }}"><span style="display:inline-flex; align-items:center; gap:5px;"><sc-if value="{{ s.done }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>{{ s.label }}</span></div></sc-for>
+        </div>
+        <sc-if value="{{ d.showHold }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:12px 24px; border-top:1px solid var(--border-subtle); display:flex; align-items:center; gap:10px; background:#FBEFD9; color:#7A4A00; font-size:13px; font-weight:600;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="4" height="16" x="6" y="4" rx="1"></rect><rect width="4" height="16" x="14" y="4" rx="1"></rect></svg>
+          <span>{{ d.holdText }}</span>
+        </div>
+        </sc-if>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
+        <!-- LEFT: Yardi record + SLA -->
+        <div style="display:flex; flex-direction:column; gap:18px;">
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden;">
+            <div style="padding:14px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:9px;">
+              <div style="display:flex; align-items:center; gap:9px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--color-navy-600)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path></svg><span style="font-size:15px; font-weight:700;">Work order record</span></div>
+              <span style="display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-tertiary); background:var(--color-neutral-50); border:1px solid var(--border-subtle); padding:3px 8px; border-radius:9999px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Read-only Â· synced from Yardi</span>
+            </div>
+            <div style="padding:16px 20px 6px;">
+              <div style="font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-tertiary); margin-bottom:6px;">Description â€” tenant's words</div>
+              <div style="font-size:13px; color:var(--text-primary); line-height:1.6; padding:11px 13px; background:var(--color-neutral-50); border:1px solid var(--border-subtle); border-radius:6px;">{{ d.description }}</div>
+            </div>
+            <div style="padding:4px 20px 8px;">
+              <sc-for list="{{ d.fields }}" as="f" hint-placeholder-count="7">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px solid var(--border-subtle);">
+                  <span style="font-size:12px; color:var(--text-secondary); flex-shrink:0;">{{ f.label }}</span>
+                  <span style="{{ f.valStyle }}">{{ f.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:10px 20px 16px; font-size:11px; color:var(--text-tertiary); font-style:italic; display:flex; align-items:flex-start; gap:6px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+              Property / Unit is linked via a lookup field on the standard WorkOrder object â€” confirmed-pending with Endya (Yardi admin). Not a blocker.
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; border-top:3px solid {{ d.slaAccent }};">
+            <div style="padding:14px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:9px;">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold-600)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+              <span style="font-size:15px; font-weight:700;">SLA &amp; aging</span>
+            </div>
+            <div style="padding:6px 20px 8px;">
+              <sc-for list="{{ d.slaRows }}" as="r" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px solid var(--border-subtle);">
+                  <span style="font-size:12px; color:var(--text-secondary); flex-shrink:0;">{{ r.label }}</span>
+                  <span style="{{ r.valStyle }}">{{ r.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:10px 20px 16px; font-size:11px; color:var(--text-tertiary); font-style:italic; display:flex; align-items:flex-start; gap:6px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+              Timed with the standard Entitlement Process + Milestones â€” no custom timers or objects.
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: delay reason + status history -->
+        <div style="display:flex; flex-direction:column; gap:18px;">
+
+          <div style="{{ d.delayCardStyle }}">
+            <div style="padding:14px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+              <div style="display:flex; align-items:center; gap:9px;">
+                <div style="width:26px; height:26px; border-radius:50%; background:{{ d.delayIconBg }}; display:flex; align-items:center; justify-content:center;">{{ d.delayIcon }}</div>
+                <span style="font-size:15px; font-weight:700;">Reason for delay</span>
+              </div>
+              <span style="display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; color:#1A4880; background:#EBF3FC; border:1px solid #BFD7F2; padding:3px 8px; border-radius:9999px;">Salesforce-only field</span>
+            </div>
+            <div style="padding:16px 20px;">
+              <select value="{{ d.delayValue }}" onChange="{{ onDelayChange }}" style="width:100%; height:38px; padding:0 10px; border:1px solid var(--border-default); border-radius:5px; font-family:var(--font-body); font-size:13px; color:var(--text-primary); background:#fff; cursor:pointer;">
+                <sc-for list="{{ delayOptions }}" as="opt" hint-placeholder-count="4"><option value="{{ opt.value }}">{{ opt.label }}</option></sc-for>
+              </select>
+              <div style="margin-top:12px; font-size:12px; color:var(--text-tertiary); line-height:1.55;">Flag <em>why</em> this one is stuck â€” vendor delay vs. tenant not responding â€” so leadership sees the reason on the dashboard. Stored in Salesforce only; never written back to Yardi.</div>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; display:flex; flex-direction:column; max-height:calc(100vh - 210px);">
+            <div style="padding:14px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:9px; flex-shrink:0;">
+              <div style="width:26px; height:26px; border-radius:50%; background:var(--color-navy-700); display:flex; align-items:center; justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="10"></circle></svg></div>
+              <div><div style="font-size:15px; font-weight:700; line-height:1.1;">Activity &amp; status history</div><div style="font-size:11px; color:var(--text-tertiary);">{{ d.historyCount }} entries Â· from the nightly Yardi sync</div></div>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding:16px 20px;">
+              <sc-for list="{{ d.history }}" as="h" hint-placeholder-count="4">
+                <div style="display:flex; gap:12px; padding-bottom:18px;">
+                  <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0;">
+                    <div style="{{ h.markerStyle }}">{{ h.icon }}</div>
+                    <sc-if value="{{ h.showLine }}" hint-placeholder-val="{{ true }}"><div style="flex:1; width:2px; background:var(--border-subtle); margin-top:2px;"></div></sc-if>
+                  </div>
+                  <div style="flex:1; padding-bottom:2px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                      <span style="display:inline-flex; align-items:center; gap:7px;"><span style="font-size:12px; font-weight:700; color:var(--text-primary);">{{ h.by }}</span><span style="{{ h.kindBadge }}">{{ h.kind }}</span></span>
+                      <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary);">{{ h.date }}</span>
+                    </div>
+                    <div style="font-size:13px; color:var(--text-primary); line-height:1.55; margin-top:5px;">{{ h.text }}</div>
+                    <sc-if value="{{ h.isLatest }}" hint-placeholder-val="{{ false }}"><span style="display:inline-block; margin-top:8px; font-size:10px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--color-gold-700); background:var(--color-gold-50); padding:2px 7px; border-radius:9999px;">Latest</span></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="display:flex; align-items:center; gap:7px; padding:10px 0 4px; color:var(--text-tertiary); font-size:11px; border-top:1px dashed var(--border-subtle);">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                History arrives with the nightly sync. Assigning vendors and closing tickets happens in Yardi â€” never here.
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ========== SCREEN C: HEALTH DASHBOARD ========== -->
+    <sc-if value="{{ isDash }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="Work Order Health Dashboard">
+
+      <!-- filters -->
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+        <span style="font-size:12px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--text-tertiary);">Filter</span>
+        <sc-for list="{{ dashSelects }}" as="fs" hint-placeholder-count="3">
+          <select value="{{ fs.value }}" onChange="{{ fs.onChange }}" style="height:32px; padding:0 28px 0 11px; border:1px solid var(--border-default); border-radius:5px; font-family:var(--font-body); font-size:13px; color:var(--text-primary); background:#fff; cursor:pointer; appearance:none; background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2214%22 height=%2214%22 fill=%22none%22 stroke=%22%23524F4A%22 stroke-width=%222%22><path d=%22m3 5 4 4 4-4%22/></svg>'); background-repeat:no-repeat; background-position:right 9px center;">
+            <sc-for list="{{ fs.options }}" as="opt" hint-placeholder-count="5"><option value="{{ opt.value }}">{{ opt.label }}</option></sc-for>
+          </select>
+        </sc-for>
+        <button onClick="{{ clearDash }}" style="height:32px; padding:0 12px; border:1px solid var(--border-default); border-radius:5px; background:#fff; font-family:var(--font-body); font-size:12px; font-weight:600; color:var(--text-secondary); cursor:pointer;" style-hover="background:var(--color-neutral-50);">Clear</button>
+      </div>
+
+      <!-- KPI cards -->
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px;">
+        <sc-for list="{{ dkpis }}" as="k" hint-placeholder-count="4">
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:18px 20px; box-shadow:0 1px 2px rgba(7,20,40,0.06); display:flex; align-items:center; gap:15px; border-top:3px solid {{ k.accent }};">
+            <div style="width:40px; height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:{{ k.iconBg }};">{{ k.icon }}</div>
+            <div><div style="display:flex; align-items:baseline; gap:7px;"><span style="font-family:var(--font-mono); font-size:26px; font-weight:600; color:{{ k.valueColor }}; line-height:1;">{{ k.value }}</span><span style="font-size:12px; color:var(--text-tertiary);">{{ k.sub }}</span></div><div style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-tertiary); margin-top:6px;">{{ k.label }}</div></div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
+
+        <!-- SLA health by priority -->
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:20px 22px; grid-column:1 / -1;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:9px;"><div style="width:26px; height:26px; border-radius:50%; background:var(--color-navy-700); display:flex; align-items:center; justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18 17V9M13 17V5M8 17v-3"></path></svg></div><span style="font-size:16px; font-weight:700;">Open work orders â€” overdue vs. on track, by priority tier</span></div>
+            <div style="display:flex; align-items:center; gap:14px; font-size:11px; color:var(--text-secondary);">
+              <span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:9px;height:9px;border-radius:2px;background:#D93636;"></span>Breached</span>
+              <span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:9px;height:9px;border-radius:2px;background:#D4940A;"></span>Due soon</span>
+              <span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:9px;height:9px;border-radius:2px;background:#22A652;"></span>On track</span>
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <sc-for list="{{ tiers }}" as="t" hint-placeholder-count="4">
+              <div style="display:flex; align-items:center; gap:14px;">
+                <span style="width:140px; flex-shrink:0; display:flex; justify-content:flex-end;"><span style="{{ t.badge }}"><span style="{{ t.dot }}"></span>{{ t.label }}</span></span>
+                <span style="width:78px; flex-shrink:0; font-size:11px; color:var(--text-tertiary); text-align:right;">{{ t.slaLabel }}</span>
+                <div style="flex:1; height:26px; background:var(--color-neutral-50); border-radius:5px; overflow:hidden; display:flex;">
+                  <sc-for list="{{ t.segs }}" as="sg" hint-placeholder-count="3"><div title="{{ sg.title }}" style="{{ sg.style }}"></div></sc-for>
+                </div>
+                <span style="width:200px; flex-shrink:0; font-size:12px; color:var(--text-secondary);">{{ t.summary }}</span>
+                <span style="width:88px; flex-shrink:0; font-family:var(--font-mono); font-size:13px; font-weight:600; color:{{ t.pctColor }}; text-align:right;">{{ t.pct }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- avg resolution by category -->
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; border-top:3px solid var(--color-gold-500);">
+          <div style="padding:16px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:10px;">
+            <div style="width:30px; height:30px; border-radius:50%; background:var(--color-gold-500); display:flex; align-items:center; justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></div>
+            <div><div style="font-size:15px; font-weight:700;">Average time to fix, by category</div><div style="font-size:11px; color:var(--text-tertiary);">Completed work orders â€” each trade measured on its own</div></div>
+          </div>
+          <div style="padding:16px 20px; display:flex; flex-direction:column; gap:12px;">
+            <sc-for list="{{ catRows }}" as="c" hint-placeholder-count="4">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span style="width:110px; flex-shrink:0; font-size:13px; color:var(--text-secondary); text-align:right;">{{ c.name }}</span>
+                <div style="flex:1; height:22px; background:var(--color-neutral-50); border-radius:5px; overflow:hidden; position:relative;">
+                  <div style="{{ c.barStyle }}"></div>
+                </div>
+                <span style="width:64px; flex-shrink:0; font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--text-primary); text-align:right;">{{ c.avg }}</span>
+                <span style="width:52px; flex-shrink:0; font-size:11px; color:var(--text-tertiary);">{{ c.count }}</span>
+              </div>
+            </sc-for>
+            <sc-if value="{{ catEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:16px 0; text-align:center; color:var(--text-tertiary); font-size:13px;">No completed work orders in this range.</div></sc-if>
+          </div>
+          <div style="padding:0 20px 16px; font-size:11px; color:var(--text-tertiary); font-style:italic;">A roof repair and a light bulb should never share one average â€” categories are broken out on purpose.</div>
+        </div>
+
+        <!-- why stuck + untouched -->
+        <div style="display:flex; flex-direction:column; gap:18px;">
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; border-top:3px solid var(--color-navy-600);">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:10px;">
+              <div style="width:30px; height:30px; border-radius:50%; background:var(--color-navy-800); display:flex; align-items:center; justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><path d="M4 22v-7"></path></svg></div>
+              <div><div style="font-size:15px; font-weight:700;">Why things are stuck</div><div style="font-size:11px; color:var(--text-tertiary);">Delay reasons flagged in Salesforce on open work orders</div></div>
+            </div>
+            <div style="padding:8px 0;">
+              <sc-for list="{{ stuckRows }}" as="s" hint-placeholder-count="3">
+                <div style="padding:11px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border-subtle);">
+                  <span style="display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--text-primary);"><span style="width:9px;height:9px;border-radius:50%;background:{{ s.dot }};flex-shrink:0;"></span>{{ s.label }}</span>
+                  <span style="font-family:var(--font-mono); font-size:15px; font-weight:600; color:var(--text-primary);">{{ s.count }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ hasStuckWarn }}" hint-placeholder-val="{{ false }}">
+              <div style="margin:12px 20px; padding:10px 13px; background:#FDECEC; border:1px solid #F3B0B0; border-radius:6px; font-size:12px; color:#B01818; display:flex; align-items:center; gap:8px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4M12 17h.01"></path></svg>
+                {{ stuckWarn }}
+              </div>
+              </sc-if>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; border-top:3px solid #8A64C8;">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:10px;">
+              <div style="width:30px; height:30px; border-radius:50%; background:#4A2A7A; display:flex; align-items:center; justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><path d="m2 2 20 20"></path></svg></div>
+              <div><div style="font-size:15px; font-weight:700;">Untouched</div><div style="font-size:11px; color:var(--text-tertiary);">Nobody has looked at or acted on these yet</div></div>
+            </div>
+            <div style="padding:8px 0;">
+              <sc-for list="{{ untouchedList }}" as="u" hint-placeholder-count="2">
+                <div onClick="{{ u.open }}" style="padding:12px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; border-bottom:1px solid var(--border-subtle);" style-hover="background:#F8F5FC;">
+                  <div><div style="font-size:14px; font-weight:700; color:var(--text-link);">{{ u.subject }}</div><div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">{{ u.property }} Â· open {{ u.age }}</div></div>
+                  <span style="{{ u.slaPill }}">{{ u.slaDisp }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ untouchedEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:24px 20px; text-align:center; color:var(--text-tertiary); font-size:13px;">Everything has been picked up.</div></sc-if>
+            </div>
+          </div>
+        </div>
+
+        <!-- by owner -->
+        <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; grid-column:1 / -1;">
+          <div style="padding:16px 20px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:10px;">
+            <div style="width:30px; height:30px; border-radius:50%; background:var(--color-navy-700); display:flex; align-items:center; justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+            <div><div style="font-size:15px; font-weight:700;">Who is handling what</div><div style="font-size:11px; color:var(--text-tertiary);">Open load by property manager and maintenance â€” click a row to see their queue</div></div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; min-width:760px; border-collapse:collapse; font-family:var(--font-body);">
+              <thead>
+                <tr style="background:var(--color-neutral-50); border-bottom:1px solid var(--border-default);">
+                  <th style="{{ thStyle }}">Owner</th>
+                  <th style="{{ thStyle }}">Role</th>
+                  <th style="{{ thStyle }}">Open</th>
+                  <th style="{{ thStyle }}">Breached</th>
+                  <th style="{{ thStyle }}">Due soon</th>
+                  <th style="{{ thStyle }}">Untouched</th>
+                  <th style="{{ thStyle }}">Oldest open</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ ownerRows }}" as="o" hint-placeholder-count="3">
+                  <tr onClick="{{ o.open }}" style="cursor:pointer; border-bottom:1px solid var(--border-subtle);" style-hover="background:var(--color-navy-50);">
+                    <td style="{{ tdCellDash }}"><span style="display:inline-flex; align-items:center; gap:9px;"><span style="width:26px; height:26px; border-radius:50%; background:var(--color-navy-800); display:inline-flex; align-items:center; justify-content:center; color:var(--color-gold-300); font-size:10px; font-weight:700;">{{ o.initials }}</span><span style="color:var(--text-link); font-weight:700;">{{ o.name }}</span></span></td>
+                    <td style="{{ tdCellDash }}"><span style="color:var(--text-secondary);">{{ o.role }}</span></td>
+                    <td style="{{ tdCellDash }}"><span style="font-family:var(--font-mono); font-weight:600;">{{ o.openCount }}</span></td>
+                    <td style="{{ tdCellDash }}"><span style="{{ o.overStyle }}">{{ o.overdue }}</span></td>
+                    <td style="{{ tdCellDash }}"><span style="{{ o.soonStyle }}">{{ o.soon }}</span></td>
+                    <td style="{{ tdCellDash }}"><span style="{{ o.untStyle }}">{{ o.untouched }}</span></td>
+                    <td style="{{ tdCellDash }}"><span style="font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);">{{ o.oldest }}</span></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ========== SCREEN D: ESCALATIONS ========== -->
+    <sc-if value="{{ isEsc }}" hint-placeholder-val="{{ false }}">
+    <div style="max-width:1220px;" data-screen-label="Escalations">
+      <sc-if value="{{ hasEsc }}" hint-placeholder-val="{{ true }}">
+      <div style="background:#FDECEC; border:1px solid #F3B0B0; border-radius:8px; padding:16px 20px; display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+        <div style="width:38px; height:38px; border-radius:50%; background:var(--color-error-600); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4M12 17h.01"></path></svg></div>
+        <div>
+          <div style="font-size:16px; font-weight:700; color:#8B1A1A;">{{ escBannerTitle }}</div>
+          <div style="font-size:12px; color:#B01818; margin-top:2px;">{{ escBannerSub }}</div>
+        </div>
+      </div>
+      </sc-if>
+
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <sc-for list="{{ escList }}" as="e" hint-placeholder-count="3">
+          <div onClick="{{ e.open }}" style="background:#fff; border:1px solid #F3B0B0; border-radius:8px; box-shadow:inset 5px 0 0 #D42B2B, 0 1px 2px rgba(7,20,40,0.06); padding:16px 20px 16px 25px; display:flex; align-items:center; gap:20px; cursor:pointer; transition:all 150ms ease-out;" style-hover="box-shadow:inset 5px 0 0 #D42B2B, 0 4px 10px rgba(7,20,40,0.14);">
+            <div style="width:96px; flex-shrink:0; text-align:center;">
+              <div style="font-family:var(--font-mono); font-size:30px; font-weight:700; color:#B01818; line-height:1;">{{ e.overBig }}</div>
+              <div style="font-size:10px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#B01818; margin-top:4px;">past SLA</div>
+            </div>
+            <div style="width:1px; align-self:stretch; background:var(--border-subtle); flex-shrink:0;"></div>
+            <div style="flex:1; min-width:220px;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="{{ e.priBadge }}"><span style="{{ e.priDot }}"></span>{{ e.priority }}</span>
+                <span style="{{ e.statusBadge }}">{{ e.status }}</span>
+                <sc-if value="{{ e.untouched }}" hint-placeholder-val="{{ false }}"><span style="background:#F3EEFB; color:#4A2A7A; border:1px solid #D9C9F0; font-size:9px; font-weight:700; padding:2px 7px; border-radius:9999px; text-transform:uppercase; letter-spacing:0.03em;">Untouched</span></sc-if>
+                <span style="font-size:11px; color:var(--text-tertiary); font-family:var(--font-mono);">{{ e.woId }}</span>
+              </div>
+              <div style="font-size:17px; font-weight:700; color:var(--text-primary); margin-top:6px;">{{ e.subject }}</div>
+              <div style="font-size:12px; color:var(--text-secondary); margin-top:3px;">{{ e.property }} Â· {{ e.unit }} â€” {{ e.tenant }}</div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end; flex-shrink:0;">
+              <span style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>{{ e.owner }} Â· {{ e.vendor }}</span>
+              <span style="{{ e.delayStyle }}">{{ e.delayLabel }}</span>
+              <span style="font-size:11px; color:var(--text-tertiary);">Last activity {{ e.lastAct }}</span>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B01818" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="m9 18 6-6-6-6"></path></svg>
+          </div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ escEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#fff; border:1px solid var(--border-subtle); border-radius:8px; padding:48px; text-align:center;">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#22A652" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:10px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><path d="m9 11 3 3L22 4"></path></svg>
+        <div style="font-size:16px; font-weight:700; color:var(--text-primary);">Nothing is on fire</div>
+        <div style="font-size:13px; color:var(--text-tertiary); margin-top:4px;">No Critical or High work orders have breached their SLA.</div>
+      </div>
+      </sc-if>
+
+      <div style="margin-top:14px; font-size:12px; color:var(--text-tertiary); display:flex; align-items:center; gap:6px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+        Critical (24h) and High (48h) breaches only â€” Medium and Low never appear here, by design. Sorted by most overdue first.
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ showToast }}" hint-placeholder-val="{{ false }}"><div style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--color-navy-900); color:#fff; padding:12px 20px; border-radius:8px; box-shadow:0 8px 24px rgba(4,13,28,0.35); font-size:14px; font-weight:500; display:flex; align-items:center; gap:9px; z-index:50;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-gold-400)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>{{ toastMsg }}</div></sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:880},&quot;viewAs&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;Isha Patel&quot;,&quot;options&quot;:[&quot;Isha Patel&quot;,&quot;Fernando Ruiz&quot;,&quot;Rohan Mehta&quot;,&quot;All owners&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;My Work Orders&quot;},&quot;dueSoonWindowPct&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:30,&quot;min&quot;:10,&quot;max&quot;:50,&quot;step&quot;:5,&quot;unit&quot;:&quot;%&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Alert thresholds&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;comfortable&quot;,&quot;options&quot;:[&quot;comfortable&quot;,&quot;compact&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Table&quot;}}">
+class Component extends DCLogic {
+  SLA_H = { 'Critical': 24, 'High': 48, 'Medium': 168, 'Low': 360 };
+  SLA_LABEL = { 'Critical': '24 hours', 'High': '48 hours', 'Medium': '7 days', 'Low': '15 days' };
+  NOW = Date.UTC(2026, 6, 2, 15, 0);
+  MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  PATH = ['New','In Progress','Completed','Closed'];
+  OWNERS = [
+    { name: 'Isha Patel', role: 'Property Manager', initials: 'IP' },
+    { name: 'Rohan Mehta', role: 'Property Manager', initials: 'RM' },
+    { name: 'Fernando Ruiz', role: 'Maintenance', initials: 'FR' },
+  ];
+  PRI = {
+    'Critical': { bg: '#FDECEC', fg: '#B01818', bd: '#F3B0B0', dot: '#D42B2B' },
+    'High':     { bg: '#FDF2E7', fg: '#9A4B00', bd: '#F0C9A0', dot: '#D8720D' },
+    'Medium':   { bg: '#FBF6EB', fg: '#8B6800', bd: '#E8D48A', dot: '#C8A045' },
+    'Low':      { bg: '#EDEBE7', fg: '#5A5752', bd: '#D8D5CF', dot: '#A8A49E' },
+  };
+  STATUS_ACCENT = { 'New': '#4A71B8', 'In Progress': '#1A3464', 'On Hold': '#C88010', 'Completed': '#198A40', 'Closed': '#8A8680' };
+  DELAY = {
+    'Vendor delay': { dot: '#D8720D', bg: '#FDF2E7', fg: '#9A4B00', bd: '#F0C9A0' },
+    'Tenant unresponsive': { dot: '#D42B2B', bg: '#FDECEC', fg: '#B01818', bd: '#F3B0B0' },
+    'Other': { dot: '#8A8680', bg: '#EDEBE7', fg: '#5A5752', bd: '#D8D5CF' },
+  };
+
+  state = {
+    screen: 'list', selectedId: null, returnTo: 'list',
+    filters: { owner: null, status: 'open', priority: 'all', property: 'all' }, overdueOnly: false,
+    sortMode: 'sla',
+    dash: { property: 'all', priority: 'all', range: 'all' },
+    toast: null,
+    properties: [
+      { id: 'p1', name: 'Westgate Plaza' },
+      { id: 'p2', name: 'Sterling Crossing' },
+      { id: 'p3', name: 'Magnolia Commons' },
+      { id: 'p4', name: 'Bayou Bend Center' },
+      { id: 'p5', name: 'Katy Mills Strip' },
+      { id: 'p6', name: 'Heights Marketplace' },
+    ],
+    wos: [
+      {
+        id: 'WO-1041', subject: 'AC down â€” no cooling in suite', category: 'HVAC', priority: 'Critical', status: 'In Progress',
+        description: 'Our AC stopped working completely yesterday morning. The thermostat shows 84 and it keeps climbing â€” we have patients in the waiting room and can\u2019t keep operating like this.',
+        created: '2026-06-30T09:00', firstTouched: '2026-06-30T09:45', completed: null,
+        propertyId: 'p1', unit: 'Suite 120', tenant: 'Riverside Dental', vendor: 'Gulf Coast HVAC', assignee: 'Isha Patel', delayReason: 'Vendor delay',
+        history: [
+          { date: '2026-06-30T09:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant call â€” AC not cooling, suite reading 84\u00B0F.' },
+          { date: '2026-06-30T09:45', kind: 'Status', by: 'Yardi', text: 'Status changed: New \u2192 In Progress. Dispatched in Yardi.' },
+          { date: '2026-06-30T13:30', kind: 'Vendor', by: 'Yardi', text: 'Vendor assigned in Yardi: Gulf Coast HVAC. Site visit completed same day.' },
+          { date: '2026-07-01T16:10', kind: 'Note', by: 'Yardi', text: 'Vendor note: compressor start capacitor on backorder â€” ETA Jul 3.' },
+          { date: '2026-07-02T08:15', kind: 'Flag', by: 'Isha Patel', text: 'Reason for delay flagged in Salesforce: Vendor delay.' },
+        ],
+      },
+      {
+        id: 'WO-1057', subject: 'Active water leak under break-room sink', category: 'Plumbing', priority: 'Critical', status: 'In Progress',
+        description: 'Water is leaking steadily from under the break-room sink and starting to spread into the hallway. We put a bucket under it but it\u2019s filling fast.',
+        created: '2026-07-01T19:00', firstTouched: '2026-07-01T19:20', completed: null,
+        propertyId: 'p2', unit: 'Bay 4', tenant: 'Sunbelt Rentals', vendor: 'Rapid Rooter Plumbing', assignee: 'Isha Patel', delayReason: null,
+        history: [
+          { date: '2026-07-01T19:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant call â€” active leak under break-room sink, water spreading toward hallway.' },
+          { date: '2026-07-01T19:20', kind: 'Status', by: 'Yardi', text: 'Status changed: New \u2192 In Progress. Flagged as emergency in Yardi.' },
+          { date: '2026-07-01T20:05', kind: 'Vendor', by: 'Yardi', text: 'Vendor assigned in Yardi: Rapid Rooter Plumbing. Emergency dispatch â€” shutoff valve closed.' },
+        ],
+      },
+      {
+        id: 'WO-1049', subject: 'Parking lot lights out on north side', category: 'Electrical', priority: 'High', status: 'New',
+        description: 'The whole north row of parking lot lights has been out for two nights. Our staff close at 9pm and it\u2019s pitch dark walking to their cars.',
+        created: '2026-06-29T16:00', firstTouched: null, completed: null,
+        propertyId: 'p3', unit: 'Common area', tenant: 'Golden Wok', vendor: null, assignee: 'Fernando Ruiz', delayReason: null,
+        history: [
+          { date: '2026-06-29T16:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” north parking lot lights out, tenants closing after dark.' },
+        ],
+      },
+      {
+        id: 'WO-1050', subject: 'Thermostat dead â€” no cooling control', category: 'HVAC', priority: 'High', status: 'On Hold',
+        description: 'The thermostat screen is completely blank and we can\u2019t change the temperature at all. The unit runs sometimes and then stops on its own.',
+        created: '2026-06-28T11:00', firstTouched: '2026-06-28T12:10', completed: null,
+        propertyId: 'p6', unit: 'Suite 3', tenant: 'Pearl Nails', vendor: 'Gulf Coast HVAC', assignee: 'Fernando Ruiz', delayReason: 'Tenant unresponsive',
+        history: [
+          { date: '2026-06-28T11:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant call â€” thermostat unresponsive, no cooling control in suite.' },
+          { date: '2026-06-28T12:10', kind: 'Status', by: 'Yardi', text: 'Status changed: New \u2192 In Progress.' },
+          { date: '2026-06-29T09:30', kind: 'Vendor', by: 'Yardi', text: 'Vendor assigned in Yardi: Gulf Coast HVAC. Suite access required for replacement.' },
+          { date: '2026-06-30T14:00', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 On Hold. Two access attempts failed â€” tenant not answering calls.' },
+          { date: '2026-07-01T09:40', kind: 'Flag', by: 'Fernando Ruiz', text: 'Reason for delay flagged in Salesforce: Tenant unresponsive.' },
+        ],
+      },
+      {
+        id: 'WO-1061', subject: 'Walk-in cooler temperature rising', category: 'Refrigeration', priority: 'High', status: 'In Progress',
+        description: 'Our walk-in cooler is reading 48 degrees and climbing since early this morning. We\u2019ll lose all our inventory if this isn\u2019t fixed today.',
+        created: '2026-07-02T06:00', firstTouched: '2026-07-02T06:25', completed: null,
+        propertyId: 'p2', unit: 'Bay 1', tenant: 'Cafe Verde', vendor: 'ColdChain Services', assignee: 'Fernando Ruiz', delayReason: null,
+        history: [
+          { date: '2026-07-02T06:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant call â€” walk-in cooler at 48\u00B0F and climbing.' },
+          { date: '2026-07-02T06:25', kind: 'Status', by: 'Yardi', text: 'Status changed: New \u2192 In Progress.' },
+          { date: '2026-07-02T07:10', kind: 'Vendor', by: 'Yardi', text: 'Vendor assigned in Yardi: ColdChain Services. Technician en route.' },
+        ],
+      },
+      {
+        id: 'WO-1032', subject: 'Restroom faucet dripping constantly', category: 'Plumbing', priority: 'Medium', status: 'In Progress',
+        description: 'The faucet in the patient restroom drips non-stop, even when shut tight. It\u2019s been getting worse over the past week.',
+        created: '2026-06-27T10:00', firstTouched: '2026-06-28T09:15', completed: null,
+        propertyId: 'p4', unit: 'Suite 200', tenant: 'Metro Urgent Care', vendor: null, assignee: 'Fernando Ruiz', delayReason: null,
+        history: [
+          { date: '2026-06-27T10:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” restroom faucet dripping constantly.' },
+          { date: '2026-06-28T09:15', kind: 'Status', by: 'Yardi', text: 'Status changed: New \u2192 In Progress. Assigned to in-house maintenance.' },
+        ],
+      },
+      {
+        id: 'WO-1024', subject: 'Ceiling tile stained near entry', category: 'General', priority: 'Medium', status: 'On Hold',
+        description: 'There\u2019s a large brown water stain on the ceiling tile right at our entrance. It looks bad for members walking in â€” pretty sure it\u2019s from the roof leak last month.',
+        created: '2026-06-24T09:00', firstTouched: '2026-06-24T15:30', completed: null,
+        propertyId: 'p5', unit: 'Floor 2', tenant: 'TechHub Coworking', vendor: 'Summit Roofing', assignee: 'Isha Patel', delayReason: 'Other',
+        history: [
+          { date: '2026-06-24T09:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” ceiling tile stained near entry, likely from prior roof leak.' },
+          { date: '2026-06-24T15:30', kind: 'Status', by: 'Yardi', text: 'Status changed: New \u2192 In Progress.' },
+          { date: '2026-06-26T11:00', kind: 'Vendor', by: 'Yardi', text: 'Vendor assigned in Yardi: Summit Roofing â€” roof inspection required before tile replacement.' },
+          { date: '2026-06-30T10:20', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 On Hold. Waiting on roof inspection report.' },
+          { date: '2026-07-01T09:00', kind: 'Flag', by: 'Isha Patel', text: 'Reason for delay flagged in Salesforce: Other â€” pending roof inspection.' },
+        ],
+      },
+      {
+        id: 'WO-1066', subject: 'Rear exit door closer broken', category: 'Doors & Locks', priority: 'Medium', status: 'New',
+        description: 'The closer arm on our rear exit door snapped, so the door slams shut hard every time. Someone is going to get their fingers caught.',
+        created: '2026-07-01T14:00', firstTouched: null, completed: null,
+        propertyId: 'p3', unit: 'Anchor B', tenant: 'Anytime Fitness', vendor: null, assignee: 'Rohan Mehta', delayReason: null,
+        history: [
+          { date: '2026-07-01T14:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” rear exit door closer broken, door slamming.' },
+        ],
+      },
+      {
+        id: 'WO-1015', subject: 'Monument sign lamp out', category: 'Electrical', priority: 'Low', status: 'In Progress',
+        description: 'Our panel on the monument sign out front isn\u2019t lighting up at night anymore. The other tenants\u2019 panels are fine.',
+        created: '2026-06-22T08:00', firstTouched: '2026-06-25T10:00', completed: null,
+        propertyId: 'p1', unit: 'Suite 210', tenant: 'Bright Smiles Ortho', vendor: 'BrightSpark Electric', assignee: 'Rohan Mehta', delayReason: null,
+        history: [
+          { date: '2026-06-22T08:00', kind: 'Sync', by: 'Yardi', text: 'Work order created during property walk â€” monument sign lamp out for one tenant panel.' },
+          { date: '2026-06-25T10:00', kind: 'Status', by: 'Yardi', text: 'Status changed: New \u2192 In Progress.' },
+          { date: '2026-06-30T16:00', kind: 'Vendor', by: 'Yardi', text: 'Vendor assigned in Yardi: BrightSpark Electric â€” bundled with other electrical punch items.' },
+        ],
+      },
+      {
+        id: 'WO-1068', subject: 'Sprinkler head broken at entrance bed', category: 'Landscaping', priority: 'Low', status: 'New',
+        description: 'A sprinkler head near the entrance flower bed snapped off and water pools on the sidewalk every morning when the system runs.',
+        created: '2026-07-02T08:00', firstTouched: null, completed: null,
+        propertyId: 'p4', unit: 'Suite 150', tenant: 'Prime Insurance', vendor: null, assignee: 'Rohan Mehta', delayReason: null,
+        history: [
+          { date: '2026-07-02T08:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” sprinkler head broken at entrance bed, water pooling.' },
+        ],
+      },
+      {
+        id: 'WO-0991', subject: 'RTU-2 compressor failure â€” no AC', category: 'HVAC', priority: 'Critical', status: 'Closed',
+        description: 'The rooftop unit over our side went out completely â€” no air movement at all and it\u2019s getting hot fast.',
+        created: '2026-06-18T08:00', firstTouched: '2026-06-18T08:20', completed: '2026-06-19T02:00',
+        propertyId: 'p1', unit: 'Suite 120', tenant: 'Riverside Dental', vendor: 'Gulf Coast HVAC', assignee: 'Isha Patel', delayReason: null,
+        history: [
+          { date: '2026-06-18T08:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant call â€” RTU-2 compressor failure, no cooling.' },
+          { date: '2026-06-18T09:00', kind: 'Vendor', by: 'Yardi', text: 'Vendor assigned in Yardi: Gulf Coast HVAC. Emergency dispatch.' },
+          { date: '2026-06-19T02:00', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 Completed. Compressor replaced, cooling restored.' },
+          { date: '2026-06-20T06:00', kind: 'Status', by: 'Yardi', text: 'Status changed: Completed \u2192 Closed with nightly sync.' },
+        ],
+      },
+      {
+        id: 'WO-0987', subject: 'Sewer smell in corridor', category: 'Plumbing', priority: 'High', status: 'Closed',
+        description: 'There\u2019s a strong sewer smell in the corridor outside our bay. Customers are commenting on it.',
+        created: '2026-06-15T09:00', firstTouched: '2026-06-15T10:00', completed: '2026-06-16T15:00',
+        propertyId: 'p2', unit: 'Bay 4', tenant: 'Sunbelt Rentals', vendor: 'Rapid Rooter Plumbing', assignee: 'Isha Patel', delayReason: null,
+        history: [
+          { date: '2026-06-15T09:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant call â€” sewer odor in shared corridor.' },
+          { date: '2026-06-16T15:00', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 Completed. Dried P-trap refilled and sealed.' },
+          { date: '2026-06-17T06:00', kind: 'Status', by: 'Yardi', text: 'Status changed: Completed \u2192 Closed with nightly sync.' },
+        ],
+      },
+      {
+        id: 'WO-0998', subject: 'AC intermittent â€” cycling off', category: 'HVAC', priority: 'High', status: 'Closed',
+        description: 'The AC keeps shutting itself off every hour or so, then kicks back on. It never gets properly cool in here.',
+        created: '2026-06-21T10:00', firstTouched: '2026-06-21T11:30', completed: '2026-06-23T15:00',
+        propertyId: 'p5', unit: 'Unit 12', tenant: 'Dollar Depot', vendor: 'Gulf Coast HVAC', assignee: 'Fernando Ruiz', delayReason: null,
+        history: [
+          { date: '2026-06-21T10:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant call â€” AC cycling off intermittently.' },
+          { date: '2026-06-23T15:00', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 Completed. Failing condenser fan motor replaced.' },
+          { date: '2026-06-24T06:00', kind: 'Status', by: 'Yardi', text: 'Status changed: Completed \u2192 Closed with nightly sync.' },
+        ],
+      },
+      {
+        id: 'WO-0975', subject: 'Outlet dead in suite kitchen', category: 'Electrical', priority: 'Medium', status: 'Closed',
+        description: 'The outlet by our kitchen prep counter stopped working â€” nothing trips the breaker, it\u2019s just dead.',
+        created: '2026-06-10T09:00', firstTouched: '2026-06-11T08:30', completed: '2026-06-14T09:00',
+        propertyId: 'p3', unit: 'Unit 8', tenant: 'Golden Wok', vendor: 'BrightSpark Electric', assignee: 'Fernando Ruiz', delayReason: null,
+        history: [
+          { date: '2026-06-10T09:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” dead outlet in suite kitchen.' },
+          { date: '2026-06-14T09:00', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 Completed. GFCI receptacle replaced.' },
+          { date: '2026-06-15T06:00', kind: 'Status', by: 'Yardi', text: 'Status changed: Completed \u2192 Closed with nightly sync.' },
+        ],
+      },
+      {
+        id: 'WO-1002', subject: 'Vent noise and weak airflow', category: 'HVAC', priority: 'Medium', status: 'Closed',
+        description: 'The vents over the waiting area rattle loudly and barely push any air. Filter probably hasn\u2019t been changed in a while.',
+        created: '2026-06-20T09:00', firstTouched: '2026-06-21T10:00', completed: '2026-06-26T09:00',
+        propertyId: 'p4', unit: 'Suite 200', tenant: 'Metro Urgent Care', vendor: 'Gulf Coast HVAC', assignee: 'Rohan Mehta', delayReason: null,
+        history: [
+          { date: '2026-06-20T09:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” vent rattle and weak airflow in waiting area.' },
+          { date: '2026-06-26T09:00', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 Completed. Filters replaced, loose duct strap secured.' },
+          { date: '2026-06-27T06:00', kind: 'Status', by: 'Yardi', text: 'Status changed: Completed \u2192 Closed with nightly sync.' },
+        ],
+      },
+      {
+        id: 'WO-0964', subject: 'Touch-up paint in common hallway', category: 'General', priority: 'Low', status: 'Closed',
+        description: 'The hallway wall outside our suite has scuffs and a couple of dings from a delivery cart. Could use a touch-up.',
+        created: '2026-06-05T09:00', firstTouched: '2026-06-08T10:00', completed: '2026-06-16T09:00',
+        propertyId: 'p6', unit: 'Suite 7', tenant: 'Elite Barbers', vendor: 'HandyPro Services', assignee: 'Rohan Mehta', delayReason: null,
+        history: [
+          { date: '2026-06-05T09:00', kind: 'Sync', by: 'Yardi', text: 'Work order created from tenant portal â€” wall scuffs in common hallway.' },
+          { date: '2026-06-16T09:00', kind: 'Status', by: 'Yardi', text: 'Status changed: In Progress \u2192 Completed. Hallway wall patched and repainted.' },
+          { date: '2026-06-17T06:00', kind: 'Status', by: 'Yardi', text: 'Status changed: Completed \u2192 Closed with nightly sync.' },
+        ],
+      },
+    ],
+  };
+
+  // ---------- time helpers ----------
+  ms(iso) { const [d, t] = iso.split('T'); const p = d.split('-').map(Number); const q = (t || '00:00').split(':').map(Number); return Date.UTC(p[0], p[1] - 1, p[2], q[0], q[1]); }
+  hrs(v) { return v / 3600000; }
+  fmtDT(iso) {
+    const dt = new Date(this.ms(iso));
+    let h = dt.getUTCHours(); const m = dt.getUTCMinutes(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    return this.MONTHS[dt.getUTCMonth()] + ' ' + dt.getUTCDate() + ', ' + h + ':' + String(m).padStart(2, '0') + ' ' + ap;
+  }
+  fmtDur(h) { h = Math.round(h); if (h < 72) return h + 'h'; return Math.round(h / 24) + 'd'; }
+  pct() { return this.props.dueSoonWindowPct ?? 30; }
+
+  // ---------- domain helpers ----------
+  isOpen(w) { return w.status !== 'Completed' && w.status !== 'Closed'; }
+  isUntouched(w) { return w.status === 'New' && !w.firstTouched; }
+  propertyById(id) { return this.state.properties.find(p => p.id === id) || {}; }
+
+  slaOf(w) {
+    const slaH = this.SLA_H[w.priority];
+    const due = this.ms(w.created) + slaH * 3600000;
+    if (w.completed) {
+      const res = this.hrs(this.ms(w.completed) - this.ms(w.created));
+      return { state: 'done', slaH, due, res, breached: this.ms(w.completed) > due };
+    }
+    const rem = this.hrs(due - this.NOW);
+    if (rem < 0) return { state: 'overdue', slaH, due, over: -rem };
+    if (rem <= slaH * this.pct() / 100) return { state: 'soon', slaH, due, rem };
+    return { state: 'ok', slaH, due, rem };
+  }
+  slaDisp(s) {
+    if (s.state === 'done') return 'Resolved ' + this.fmtDur(s.res);
+    if (s.state === 'overdue') return this.fmtDur(s.over) + ' overdue';
+    return this.fmtDur(s.rem) + ' left';
+  }
+  slaPill(s) {
+    const m = s.state === 'overdue' ? { bg: '#FDF0F0', fg: '#8B1A1A' } : s.state === 'soon' ? { bg: '#FDF5E6', fg: '#7A4A00' } : { bg: '#EBF9F1', fg: '#146830' };
+    return `display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:11px;font-weight:700;padding:3px 9px;border-radius:9999px;background:${m.bg};color:${m.fg};white-space:nowrap;`;
+  }
+  ageH(w) { return this.hrs((w.completed ? this.ms(w.completed) : this.NOW) - this.ms(w.created)); }
+  ageDisp(w) { const h = this.ageH(w); return h < 24 ? Math.round(h) + 'h' : Math.floor(h / 24) + 'd'; }
+
+  priBadge(p) { const c = this.PRI[p]; return `display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;padding:3px 9px;border-radius:9999px;background:${c.bg};color:${c.fg};border:1px solid ${c.bd};white-space:nowrap;`; }
+  priDot(p) { return `width:6px;height:6px;border-radius:50%;background:${this.PRI[p].dot};flex-shrink:0;`; }
+  statusBadge(s) { const c = this.STATUS_ACCENT[s]; return `display:inline-flex;align-items:center;font-size:11px;font-weight:600;font-family:var(--font-body);padding:3px 9px;border-radius:6px;background:${c}18;color:${c};border:1px solid ${c}44;white-space:nowrap;`; }
+  delayChip(r) { const c = this.DELAY[r]; return `display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;padding:3px 9px;border-radius:9999px;background:${c.bg};color:${c.fg};border:1px solid ${c.bd};white-space:nowrap;`; }
+
+  kindMeta(k) {
+    const map = {
+      'Sync':   { c: '#5A5752', bg: '#EDEBE7', prims: [['path', { d: 'M12 8V4H8' }], ['rect', { width: 16, height: 12, x: 4, y: 8, rx: 2 }], ['path', { d: 'M2 14h2M20 14h2M15 13v2M9 13v2' }]] },
+      'Status': { c: '#1A4880', bg: '#EBF3FC', prims: [['path', { d: 'M5 12h14M13 6l6 6-6 6' }]] },
+      'Vendor': { c: '#4A2A7A', bg: '#F3EEFB', prims: [['path', { d: 'M10 17h4V5H2v12h3' }], ['path', { d: 'M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1' }], ['circle', { cx: 7.5, cy: 17.5, r: 2.5 }], ['circle', { cx: 17.5, cy: 17.5, r: 2.5 }]] },
+      'Note':   { c: '#132850', bg: '#E8EFF7', prims: [['path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z' }], ['path', { d: 'M14 2v6h6M9 15h6' }]] },
+      'Flag':   { c: '#B8651A', bg: '#FDF2E7', prims: [['path', { d: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z' }], ['path', { d: 'M4 22v-7' }]] },
+    };
+    return map[k] || map['Note'];
+  }
+  kindBadge(k) { const x = this.kindMeta(k); return `display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;padding:2px 7px;border-radius:9999px;background:${x.bg};color:${x.c};`; }
+
+  mkSvg(size, stroke, prims, sw) {
+    return React.createElement('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke, strokeWidth: sw || 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' },
+      prims.map((p, i) => React.createElement(p[0], { key: i, ...p[1] })));
+  }
+
+  effOwner() {
+    const f = this.state.filters.owner;
+    if (f) return f;
+    const v = this.props.viewAs ?? 'Isha Patel';
+    return v === 'All owners' ? 'all' : v;
+  }
+
+  openWo = (id) => { const from = this.state.screen === 'detail' ? this.state.returnTo : this.state.screen; this.setState({ screen: 'detail', selectedId: id, returnTo: from }); };
+  flash = (msg) => { this.setState({ toast: msg }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ toast: null }), 3200); };
+
+  onDelayChange = (e) => {
+    const v = e.target.value; const id = this.state.selectedId;
+    this.setState(s => ({
+      wos: s.wos.map(w => w.id !== id ? w : {
+        ...w,
+        delayReason: v === 'none' ? null : v,
+        history: v === 'none' ? w.history : [...w.history, { date: '2026-07-02T15:00', kind: 'Flag', by: 'Isha Patel', text: 'Reason for delay flagged in Salesforce: ' + v + '.' }],
+      }),
+    }));
+    this.flash('Delay reason saved in Salesforce â€” never written back to Yardi');
+  };
+
+  renderVals() {
+    const st = this.state;
+    const wos = st.wos;
+    const owner = this.effOwner();
+    const tabStyle = (on) => `display:flex;align-items:center;height:100%;padding:0 6px;background:none;border:none;white-space:nowrap;border-bottom:3px solid ${on ? 'var(--color-navy-700)' : 'transparent'};cursor:pointer;font-family:var(--font-body);font-size:14px;font-weight:${on ? 700 : 400};color:${on ? 'var(--color-navy-700)' : 'var(--text-secondary)'};transition:all 150ms ease-out;`;
+
+    // ---- escalations (global) ----
+    const escWos = wos.filter(w => this.isOpen(w) && (w.priority === 'Critical' || w.priority === 'High') && this.slaOf(w).state === 'overdue')
+      .sort((a, b) => this.slaOf(b).over - this.slaOf(a).over);
+    const escCount = escWos.length;
+
+    // ---- list: my work orders ----
+    const mine = (w) => owner === 'all' || w.assignee === owner;
+    const myOpen = wos.filter(w => mine(w) && this.isOpen(w));
+    const kpis = [
+      { value: myOpen.length, label: owner === 'all' ? 'Open work orders' : 'My open work orders', accent: 'var(--color-navy-600)', iconBg: '#E8EFF7', valueColor: 'var(--text-primary)',
+        icon: this.mkSvg(20, '#1A3464', [['rect', { width: 8, height: 4, x: 8, y: 2, rx: 1 }], ['path', { d: 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2' }], ['path', { d: 'M9 12h6M9 16h6' }]]) },
+      { value: myOpen.filter(w => this.slaOf(w).state === 'overdue').length, label: 'SLA breached', accent: 'var(--color-error-500)', iconBg: '#FDF0F0', valueColor: '#B01818',
+        icon: this.mkSvg(20, '#B52020', [['path', { d: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z' }], ['path', { d: 'M12 9v4M12 17h.01' }]]) },
+      { value: myOpen.filter(w => this.slaOf(w).state === 'soon').length, label: 'Due soon', accent: 'var(--color-gold-500)', iconBg: '#FBF6EB', valueColor: 'var(--text-primary)',
+        icon: this.mkSvg(20, '#8B6800', [['circle', { cx: 12, cy: 12, r: 10 }], ['path', { d: 'M12 6v6l4 2' }]]) },
+      { value: myOpen.filter(w => this.isUntouched(w)).length, label: 'Untouched', accent: '#8A64C8', iconBg: '#F3EEFB', valueColor: 'var(--text-primary)',
+        icon: this.mkSvg(20, '#4A2A7A', [['path', { d: 'M9.88 9.88a3 3 0 1 0 4.24 4.24' }], ['path', { d: 'M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68' }], ['path', { d: 'M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61' }], ['path', { d: 'm2 2 20 20' }]]) },
+    ];
+
+    let rows = wos.filter(w => {
+      if (!mine(w)) return false;
+      const f = st.filters;
+      if (f.status === 'open') { if (!this.isOpen(w)) return false; }
+      else if (f.status !== 'all' && w.status !== f.status) return false;
+      if (f.priority !== 'all' && w.priority !== f.priority) return false;
+      if (f.property !== 'all' && w.propertyId !== f.property) return false;
+      if (st.overdueOnly && this.slaOf(w).state !== 'overdue') return false;
+      return true;
+    }).map(w => {
+      const s = this.slaOf(w); const p = this.propertyById(w.propertyId); const closed = !this.isOpen(w);
+      const rank = s.state === 'overdue' ? 0 : s.state === 'soon' ? 1 : s.state === 'ok' ? 2 : 3;
+      const sub = s.state === 'overdue' ? -s.over : (s.state === 'done' ? 0 : s.rem);
+      return {
+        _rank: rank, _sub: sub, _age: this.ageH(w),
+        open: () => this.openWo(w.id),
+        subject: w.subject, woId: w.id, untouched: this.isUntouched(w),
+        property: p.name, unit: w.unit, category: w.category,
+        priority: w.priority, priBadge: this.priBadge(w.priority), priDot: this.priDot(w.priority),
+        status: w.status, statusBadge: this.statusBadge(w.status),
+        ageDisp: this.ageDisp(w),
+        slaDisp: this.slaDisp(s), slaPill: this.slaPill(s),
+        vendor: w.vendor || '\u2014', vendorStyle: `font-size:12px;color:${w.vendor ? 'var(--text-secondary)' : 'var(--text-tertiary)'};`,
+        owner: w.assignee,
+        rowStyle: `background:${s.state === 'overdue' ? '#FCF3F3' : (s.state === 'soon' ? '#FDF9EE' : (closed ? '#FAF9F6' : '#fff'))};${s.state === 'overdue' ? 'box-shadow:inset 3px 0 0 #D42B2B;' : (s.state === 'soon' ? 'box-shadow:inset 3px 0 0 #D4940A;' : '')}${closed ? 'opacity:0.75;' : ''}transition:background 150ms ease-out;cursor:pointer;`,
+      };
+    });
+    if (st.sortMode === 'ageDesc') rows.sort((a, b) => b._age - a._age);
+    else if (st.sortMode === 'ageAsc') rows.sort((a, b) => a._age - b._age);
+    else rows.sort((a, b) => a._rank - b._rank || a._sub - b._sub);
+
+    const setF = (k) => (e) => this.setState(s => ({ filters: { ...s.filters, [k]: e.target.value } }));
+    const propOpts = [{ value: 'all', label: 'All properties' }, ...st.properties.map(p => ({ value: p.id, label: p.name }))];
+    const filterSelects = [
+      { value: owner, onChange: setF('owner'), options: [{ value: 'all', label: 'All owners' }, ...this.OWNERS.map(o => ({ value: o.name, label: o.name }))] },
+      { value: st.filters.status, onChange: setF('status'), options: [{ value: 'open', label: 'Open (all)' }, { value: 'all', label: 'Any status' }, { value: 'New', label: 'New' }, { value: 'In Progress', label: 'In Progress' }, { value: 'On Hold', label: 'On Hold' }, { value: 'Completed', label: 'Completed' }, { value: 'Closed', label: 'Closed' }] },
+      { value: st.filters.priority, onChange: setF('priority'), options: [{ value: 'all', label: 'All priorities' }, { value: 'Critical', label: 'Critical' }, { value: 'High', label: 'High' }, { value: 'Medium', label: 'Medium' }, { value: 'Low', label: 'Low' }] },
+      { value: st.filters.property, onChange: setF('property'), options: propOpts },
+    ];
+    const overdueToggleStyle = `display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:5px;font-family:var(--font-body);font-size:12px;font-weight:600;cursor:pointer;transition:all 150ms ease-out;${st.overdueOnly ? 'background:#FDECEC;color:#B01818;border:1px solid #F3B0B0;' : 'background:#fff;color:var(--text-secondary);border:1px solid var(--border-default);'}`;
+
+    // ---- detail ----
+    let d = {};
+    if (st.screen === 'detail' && st.selectedId) {
+      const w = wos.find(x => x.id === st.selectedId);
+      if (w) {
+        const s = this.slaOf(w); const p = this.propertyById(w.propertyId); const closed = !this.isOpen(w);
+        let slaPanelBg, slaPanelFg, slaPanelLabel, slaBig, slaBigUnit, slaDueLine;
+        if (s.state === 'done') {
+          slaPanelBg = '#EBF9F1'; slaPanelFg = '#146830'; slaPanelLabel = 'Resolved'; slaBig = this.fmtDur(s.res); slaBigUnit = 'to resolution';
+          slaDueLine = s.breached ? 'Finished past the ' + this.SLA_LABEL[w.priority] + ' target' : 'Within the ' + this.SLA_LABEL[w.priority] + ' target';
+        } else if (s.state === 'overdue') {
+          slaPanelBg = '#FDF0F0'; slaPanelFg = '#8B1A1A'; slaPanelLabel = 'SLA breached'; slaBig = this.fmtDur(s.over); slaBigUnit = 'past target';
+          slaDueLine = 'Was due ' + this.fmtDTms(s.due);
+        } else {
+          slaPanelBg = s.state === 'soon' ? '#FDF5E6' : '#EBF9F1'; slaPanelFg = s.state === 'soon' ? '#7A4A00' : '#146830';
+          slaPanelLabel = 'SLA countdown'; slaBig = this.fmtDur(s.rem); slaBigUnit = 'remaining';
+          slaDueLine = 'Due ' + this.fmtDTms(s.due);
+        }
+
+        const pathIdx = w.status === 'On Hold' ? 1 : this.PATH.indexOf(w.status);
+        const stages = this.PATH.map((label, i) => {
+          const bg = i < pathIdx ? 'var(--color-navy-700)' : (i === pathIdx ? 'var(--color-gold-500)' : 'var(--color-neutral-100)');
+          const fg = i <= pathIdx ? '#fff' : 'var(--text-tertiary)';
+          const clip = i === 0 ? 'polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%)' : 'polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%)';
+          return { label, done: i < pathIdx, style: `position:relative;flex:1;min-width:86px;height:34px;display:flex;align-items:center;justify-content:center;padding:0 6px;font-family:var(--font-body);font-size:11px;font-weight:600;white-space:nowrap;clip-path:${clip};margin-right:-6px;background:${bg};color:${fg};` };
+        });
+
+        const mono = 'font-family:var(--font-mono);font-size:14px;color:var(--text-primary);text-align:right;';
+        const fields = [
+          { label: 'Category', value: w.category, valStyle: 'font-size:13px;color:var(--text-primary);text-align:right;' },
+          { label: 'Property / Unit', value: p.name + ' \u00B7 ' + w.unit, valStyle: 'font-size:13px;font-weight:600;color:var(--text-primary);text-align:right;' },
+          { label: 'Tenant contact', value: w.tenant, valStyle: 'font-size:13px;color:var(--text-primary);text-align:right;' },
+          { label: 'Vendor assigned', value: w.vendor || 'Not yet assigned', valStyle: w.vendor ? 'font-size:13px;color:var(--text-primary);text-align:right;' : 'font-size:13px;color:var(--text-tertiary);font-style:italic;text-align:right;' },
+          { label: 'Assigned owner', value: w.assignee, valStyle: 'font-size:13px;color:var(--text-primary);text-align:right;' },
+          { label: 'Requested', value: this.fmtDT(w.created), valStyle: mono },
+          ...(w.completed ? [{ label: 'Completed', value: this.fmtDT(w.completed), valStyle: mono + 'font-weight:600;' }] : []),
+        ];
+
+        const slaRows = [
+          { label: 'Priority tier', value: w.priority + ' \u2014 ' + this.SLA_LABEL[w.priority] + ' target', valStyle: 'font-size:13px;font-weight:600;color:var(--text-primary);text-align:right;' },
+          { label: 'Clock started', value: this.fmtDT(w.created), valStyle: mono },
+          { label: 'SLA due', value: this.fmtDTms(s.due), valStyle: mono + (s.state === 'overdue' ? 'font-weight:700;color:#8B1A1A;' : 'font-weight:600;') },
+          { label: 'Time open', value: this.fmtDur(this.ageH(w)), valStyle: mono },
+          { label: 'Standing', value: s.state === 'overdue' ? 'Breached by ' + this.fmtDur(s.over) : s.state === 'soon' ? 'Due in ' + this.fmtDur(s.rem) : s.state === 'ok' ? 'On track \u2014 ' + this.fmtDur(s.rem) + ' remaining' : (s.breached ? 'Resolved in ' + this.fmtDur(s.res) + ' (past target)' : 'Resolved in ' + this.fmtDur(s.res) + ' (within target)'),
+            valStyle: this.slaPill(s) },
+        ];
+
+        const hist = w.history.map((h, i) => {
+          const latest = i === w.history.length - 1; const mm = this.kindMeta(h.kind);
+          return {
+            by: h.by, date: this.fmtDT(h.date), text: h.text, kind: h.kind, kindBadge: this.kindBadge(h.kind),
+            icon: this.mkSvg(11, mm.c, mm.prims, 2), isLatest: latest, showLine: i < w.history.length - 1,
+            markerStyle: `width:24px;height:24px;border-radius:50%;background:${mm.bg};border:2px solid ${latest ? mm.c : '#fff'};box-shadow:0 0 0 2px ${latest ? mm.bg : 'var(--border-subtle)'};flex-shrink:0;display:flex;align-items:center;justify-content:center;`,
+          };
+        }).reverse();
+
+        const backLabels = { list: 'Back to work orders', dash: 'Back to dashboard', esc: 'Back to escalations' };
+        const flagged = !!w.delayReason;
+        d = {
+          backLabel: backLabels[st.returnTo] || 'Back to work orders',
+          woId: w.id, subject: w.subject, description: w.description,
+          property: p.name, unit: w.unit, tenant: w.tenant, category: w.category, owner: w.assignee,
+          priority: w.priority, priBadge: this.priBadge(w.priority), priDot: this.priDot(w.priority),
+          status: w.status, statusBadge: this.statusBadge(w.status), untouched: this.isUntouched(w),
+          slaPanelBg, slaPanelFg, slaPanelLabel, slaBig, slaBigUnit, slaDueLine,
+          slaAccent: s.state === 'overdue' ? 'var(--color-error-500)' : s.state === 'soon' ? 'var(--color-gold-500)' : 'var(--color-success-600)',
+          stages, showHold: w.status === 'On Hold',
+          holdText: 'On hold in Yardi' + (w.delayReason ? ' \u2014 ' + w.delayReason.toLowerCase() + '.' : ' \u2014 no reason flagged yet.'),
+          fields, slaRows,
+          delayValue: w.delayReason || 'none',
+          delayCardStyle: `background:#fff;border:1px solid ${flagged ? '#F0C9A0' : 'var(--border-subtle)'};border-top:3px solid ${flagged ? '#D8720D' : 'var(--border-default)'};border-radius:8px;box-shadow:0 1px 2px rgba(7,20,40,0.06);overflow:hidden;`,
+          delayIconBg: flagged ? '#D8720D' : 'var(--color-neutral-200)',
+          delayIcon: this.mkSvg(14, '#fff', [['path', { d: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z' }], ['path', { d: 'M4 22v-7' }]], 1.9),
+          history: hist, historyCount: w.history.length,
+        };
+      }
+    }
+    const delayOptions = [
+      { value: 'none', label: 'Not flagged' },
+      { value: 'Vendor delay', label: 'Vendor delay' },
+      { value: 'Tenant unresponsive', label: 'Tenant unresponsive' },
+      { value: 'Other', label: 'Other' },
+    ];
+
+    // ---- dashboard ----
+    const dsh = st.dash;
+    const inDash = (w) => (dsh.property === 'all' || w.propertyId === dsh.property) && (dsh.priority === 'all' || w.priority === dsh.priority);
+    const inRange = (iso) => dsh.range === 'all' || this.hrs(this.NOW - this.ms(iso)) <= Number(dsh.range) * 24;
+    const dOpen = wos.filter(w => this.isOpen(w) && inDash(w) && inRange(w.created));
+    const dDone = wos.filter(w => !this.isOpen(w) && inDash(w) && w.completed && inRange(w.completed));
+    const dOver = dOpen.filter(w => this.slaOf(w).state === 'overdue');
+    const dUnt = dOpen.filter(w => this.isUntouched(w));
+    const overPct = dOpen.length ? Math.round(dOver.length / dOpen.length * 100) : 0;
+    const dkpis = [
+      { value: dOpen.length, sub: '', label: 'Total open', accent: 'var(--color-navy-600)', iconBg: '#E8EFF7', valueColor: 'var(--text-primary)',
+        icon: this.mkSvg(20, '#1A3464', [['rect', { width: 8, height: 4, x: 8, y: 2, rx: 1 }], ['path', { d: 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2' }], ['path', { d: 'M9 12h6M9 16h6' }]]) },
+      { value: dOver.length, sub: overPct + '% of open', label: 'SLA breached', accent: 'var(--color-error-500)', iconBg: '#FDF0F0', valueColor: '#B01818',
+        icon: this.mkSvg(20, '#B52020', [['path', { d: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z' }], ['path', { d: 'M12 9v4M12 17h.01' }]]) },
+      { value: dUnt.length, sub: '', label: 'Untouched', accent: '#8A64C8', iconBg: '#F3EEFB', valueColor: 'var(--text-primary)',
+        icon: this.mkSvg(20, '#4A2A7A', [['path', { d: 'M9.88 9.88a3 3 0 1 0 4.24 4.24' }], ['path', { d: 'M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68' }], ['path', { d: 'M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61' }], ['path', { d: 'm2 2 20 20' }]]) },
+      { value: dDone.length, sub: dsh.range === 'all' ? 'all time' : 'last ' + dsh.range + 'd', label: 'Completed', accent: 'var(--color-success-600)', iconBg: '#EBF9F1', valueColor: 'var(--text-primary)',
+        icon: this.mkSvg(20, '#146830', [['path', { d: 'M22 11.08V12a10 10 0 1 1-5.93-9.14' }], ['path', { d: 'm9 11 3 3L22 4' }]]) },
+    ];
+
+    const tiers = ['Critical', 'High', 'Medium', 'Low'].map(pr => {
+      const list = dOpen.filter(w => w.priority === pr);
+      const o = list.filter(w => this.slaOf(w).state === 'overdue').length;
+      const so = list.filter(w => this.slaOf(w).state === 'soon').length;
+      const ok = list.length - o - so;
+      const total = list.length;
+      const seg = (n, color, label) => ({ title: n + ' ' + label, style: `width:${total ? (n / total) * 100 : 0}%;background:${color};height:100%;` });
+      return {
+        label: pr, badge: this.priBadge(pr), dot: this.priDot(pr), slaLabel: this.SLA_LABEL[pr] + ' SLA',
+        segs: total ? [seg(o, '#D93636', 'breached'), seg(so, '#D4940A', 'due soon'), seg(ok, '#22A652', 'on track')] : [],
+        summary: total ? `${o} breached \u00B7 ${so} due soon \u00B7 ${ok} on track` : 'No open work orders',
+        pct: total ? Math.round(o / total * 100) + '% over' : '\u2014',
+        pctColor: total && o ? '#B01818' : 'var(--text-tertiary)',
+      };
+    });
+
+    const cats = {};
+    dDone.forEach(w => { const s = this.slaOf(w); (cats[w.category] = cats[w.category] || []).push(s.res); });
+    const catList = Object.entries(cats).map(([name, arr]) => ({ name, count: arr.length, avgH: arr.reduce((a, b) => a + b, 0) / arr.length })).sort((a, b) => b.avgH - a.avgH);
+    const maxAvg = Math.max(1, ...catList.map(c => c.avgH));
+    const catRows = catList.map(c => ({
+      name: c.name, count: c.count + (c.count === 1 ? ' order' : ' orders'), avg: this.fmtDur(c.avgH),
+      barStyle: `position:absolute;left:0;top:0;height:100%;width:${(c.avgH / maxAvg) * 100}%;min-width:8px;background:var(--color-gold-500);border-radius:5px;transition:width 280ms ease-out;`,
+    }));
+
+    const stuckRows = ['Vendor delay', 'Tenant unresponsive', 'Other'].map(r => ({
+      label: r, dot: this.DELAY[r].dot, count: dOpen.filter(w => w.delayReason === r).length,
+    }));
+    const unflagged = dOpen.filter(w => this.slaOf(w).state === 'overdue' && !w.delayReason).length;
+    const stuckWarn = unflagged + ' breached work order' + (unflagged === 1 ? ' has' : 's have') + ' no delay reason flagged yet';
+
+    const untouchedList = dOpen.filter(w => this.isUntouched(w)).sort((a, b) => this.ms(a.created) - this.ms(b.created)).map(w => {
+      const s = this.slaOf(w); const p = this.propertyById(w.propertyId);
+      return { open: () => this.openWo(w.id), subject: w.subject, property: p.name, age: this.ageDisp(w), slaDisp: this.slaDisp(s), slaPill: this.slaPill(s) };
+    });
+
+    const num = (n, color) => `font-family:var(--font-mono);font-size:13px;font-weight:${n > 0 ? 700 : 400};color:${n > 0 ? color : 'var(--text-tertiary)'};`;
+    const ownerRows = this.OWNERS.map(o => {
+      const list = dOpen.filter(w => w.assignee === o.name);
+      const over = list.filter(w => this.slaOf(w).state === 'overdue').length;
+      const soon = list.filter(w => this.slaOf(w).state === 'soon').length;
+      const unt = list.filter(w => this.isUntouched(w)).length;
+      const oldest = list.length ? Math.max(...list.map(w => this.ageH(w))) : null;
+      return {
+        open: () => this.setState(s => ({ screen: 'list', filters: { ...s.filters, owner: o.name, status: 'open' } })),
+        name: o.name, role: o.role, initials: o.initials,
+        openCount: list.length, overdue: over, soon, untouched: unt,
+        overStyle: num(over, '#B01818'), soonStyle: num(soon, '#7A4A00'), untStyle: num(unt, '#4A2A7A'),
+        oldest: oldest === null ? '\u2014' : this.fmtDur(oldest),
+      };
+    });
+
+    const setD = (k) => (e) => this.setState(s => ({ dash: { ...s.dash, [k]: e.target.value } }));
+    const dashSelects = [
+      { value: dsh.property, onChange: setD('property'), options: propOpts },
+      { value: dsh.priority, onChange: setD('priority'), options: [{ value: 'all', label: 'All priorities' }, { value: 'Critical', label: 'Critical' }, { value: 'High', label: 'High' }, { value: 'Medium', label: 'Medium' }, { value: 'Low', label: 'Low' }] },
+      { value: dsh.range, onChange: setD('range'), options: [{ value: 'all', label: 'All time' }, { value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }] },
+    ];
+
+    // ---- escalation cards ----
+    const escList = escWos.map(w => {
+      const s = this.slaOf(w); const p = this.propertyById(w.propertyId);
+      const last = w.history[w.history.length - 1];
+      return {
+        open: () => this.openWo(w.id),
+        overBig: this.fmtDur(s.over), woId: w.id, subject: w.subject,
+        property: p.name, unit: w.unit, tenant: w.tenant,
+        priority: w.priority, priBadge: this.priBadge(w.priority), priDot: this.priDot(w.priority),
+        status: w.status, statusBadge: this.statusBadge(w.status), untouched: this.isUntouched(w),
+        owner: w.assignee, vendor: w.vendor || 'No vendor assigned',
+        delayLabel: w.delayReason || 'No delay reason flagged', delayStyle: w.delayReason ? this.delayChip(w.delayReason) : 'display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;padding:3px 9px;border-radius:9999px;background:#FDECEC;color:#B01818;border:1px dashed #F3B0B0;white-space:nowrap;',
+        lastAct: this.fmtDT(last.date),
+      };
+    });
+    const critN = escWos.filter(w => w.priority === 'Critical').length;
+    const highN = escWos.filter(w => w.priority === 'High').length;
+    const maxOver = escWos.length ? Math.max(...escWos.map(w => this.slaOf(w).over)) : 0;
+    const escBannerTitle = escCount + ' SLA breach' + (escCount === 1 ? '' : 'es') + ' need attention right now';
+    const escBannerSub = critN + ' Critical \u00B7 ' + highN + ' High \u2014 oldest is ' + this.fmtDur(maxOver) + ' past its SLA target.';
+
+    // ---- chrome ----
+    const thStyle = 'text-align:left;padding:11px 14px;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-secondary);white-space:nowrap;';
+    const tdPad = this.props.density === 'compact' ? 9 : 13;
+    const tdCell = `padding:${tdPad}px 14px;border-bottom:1px solid var(--border-subtle);font-size:13px;color:var(--text-primary);vertical-align:middle;cursor:pointer;`;
+    const tdCellDash = 'padding:11px 14px;border-bottom:1px solid var(--border-subtle);font-size:13px;color:var(--text-primary);vertical-align:middle;cursor:pointer;';
+
+    const headerIcons = {
+      list: this.mkSvg(22, '#fff', [['path', { d: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' }]], 1.8),
+      detail: this.mkSvg(22, '#fff', [['path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z' }], ['path', { d: 'M14 2v6h6' }]], 1.8),
+      dash: this.mkSvg(22, '#fff', [['rect', { width: 7, height: 9, x: 3, y: 3, rx: 1 }], ['rect', { width: 7, height: 5, x: 14, y: 3, rx: 1 }], ['rect', { width: 7, height: 9, x: 14, y: 12, rx: 1 }], ['rect', { width: 7, height: 5, x: 3, y: 16, rx: 1 }]], 1.8),
+      esc: this.mkSvg(22, '#fff', [['path', { d: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z' }], ['path', { d: 'M12 9v4M12 17h.01' }]], 1.8),
+    };
+    const titles = { list: 'My Work Orders', detail: 'Work Order Detail', dash: 'Work Order Health', esc: 'Escalations \u2014 SLA Breaches' };
+    const subs = {
+      list: 'Every maintenance ticket in your queue, sorted by what needs attention first \u2014 the color logic from Isha\u2019s spreadsheet, automated.',
+      detail: 'The full Yardi record with SLA countdown and status history. Read-only \u2014 the work itself happens in Yardi.',
+      dash: 'How many are pending, how many are in the red, how many haven\u2019t been touched, and why things are stuck.',
+      esc: 'Only Critical and High work orders past their SLA \u2014 the \u201Cwhat\u2019s on fire right now\u201D screen.',
+    };
+
+    return {
+      isList: st.screen === 'list', isDetail: st.screen === 'detail', isDash: st.screen === 'dash', isEsc: st.screen === 'esc',
+      screenTitle: titles[st.screen], screenSub: subs[st.screen], headerIcon: headerIcons[st.screen],
+      tabListStyle: tabStyle(st.screen === 'list' || (st.screen === 'detail' && st.returnTo === 'list')),
+      tabDashStyle: tabStyle(st.screen === 'dash' || (st.screen === 'detail' && st.returnTo === 'dash')),
+      tabEscStyle: tabStyle(st.screen === 'esc' || (st.screen === 'detail' && st.returnTo === 'esc')),
+      goList: () => this.setState({ screen: 'list' }), goDash: () => this.setState({ screen: 'dash' }), goEsc: () => this.setState({ screen: 'esc' }),
+      goBack: () => this.setState(s => ({ screen: s.returnTo })),
+      escCount, hasEsc: escCount > 0, dueSoonPct: this.pct(),
+      kpis, rows, rowCount: rows.length, rowsEmpty: rows.length === 0,
+      filterSelects, clearFilters: () => this.setState({ filters: { owner: 'all', status: 'open', priority: 'all', property: 'all' }, overdueOnly: false }),
+      toggleOverdue: () => this.setState(s => ({ overdueOnly: !s.overdueOnly })), overdueToggleStyle,
+      thStyle, thSortStyle: thStyle + 'cursor:pointer;user-select:none;', tdCell, tdCellDash,
+      sortArrow: st.sortMode === 'ageAsc' ? '\u2191' : st.sortMode === 'ageDesc' ? '\u2193' : '\u21C5',
+      onToggleSort: () => this.setState(s => ({ sortMode: s.sortMode === 'ageDesc' ? 'ageAsc' : 'ageDesc' })),
+      d, delayOptions, onDelayChange: this.onDelayChange,
+      dashSelects, clearDash: () => this.setState({ dash: { property: 'all', priority: 'all', range: 'all' } }),
+      dkpis, tiers, catRows, catEmpty: catRows.length === 0,
+      stuckRows, hasStuckWarn: unflagged > 0, stuckWarn,
+      untouchedList, untouchedEmpty: untouchedList.length === 0,
+      ownerRows,
+      escList, escEmpty: escCount === 0, escBannerTitle, escBannerSub,
+      showToast: !!st.toast, toastMsg: st.toast,
+    };
+  }
+
+  fmtDTms(msv) {
+    const dt = new Date(msv);
+    let h = dt.getUTCHours(); const m = dt.getUTCMinutes(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    return this.MONTHS[dt.getUTCMonth()] + ' ' + dt.getUTCDate() + ', ' + h + ':' + String(m).padStart(2, '0') + ' ' + ap;
+  }
+}
+</script>
+</body>
+</html>
