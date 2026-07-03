@@ -76,4 +76,24 @@ private class WorkOrderControllerTest {
             System.assertEquals(true, r.isOpen, 'recent list is open-only');
         }
     }
+    @isTest static void touchSyncStampsFirstTouchedThenCompleted() {
+        Property_Asset__c pa = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        Work_Order__c w = new Work_Order__c(Subject__c='Flow stamp', Property_Asset__c=pa.Id,
+            Priority__c='Low', Status__c='New', Reported_Date__c=Datetime.now().addHours(-2));
+        insert w;
+        w = [SELECT First_Touched_Date__c, Untouched__c FROM Work_Order__c WHERE Id = :w.Id];
+        System.assertEquals(null, w.First_Touched_Date__c, 'a New work order has not been touched');
+        System.assertEquals(true, w.Untouched__c);
+        Test.startTest();
+        update new Work_Order__c(Id=w.Id, Status__c='In Progress');
+        Work_Order__c touched = [SELECT First_Touched_Date__c, Untouched__c FROM Work_Order__c WHERE Id = :w.Id];
+        System.assertNotEquals(null, touched.First_Touched_Date__c, 'leaving New stamps First_Touched_Date');
+        System.assertEquals(false, touched.Untouched__c);
+        update new Work_Order__c(Id=w.Id, Status__c='Completed');
+        Work_Order__c done = [SELECT Completed_Date__c, First_Touched_Date__c, Is_Open__c FROM Work_Order__c WHERE Id = :w.Id];
+        System.assertNotEquals(null, done.Completed_Date__c, 'Completed stamps Completed_Date');
+        System.assertEquals(touched.First_Touched_Date__c, done.First_Touched_Date__c, 'first-touch is never overwritten');
+        System.assertEquals(false, done.Is_Open__c);
+        Test.stopTest();
+    }
 }

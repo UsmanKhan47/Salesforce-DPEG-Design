@@ -2523,3 +2523,11 @@ git add scripts/seed-work-orders.apex
 git commit -m "Work Order Tracker: idempotent seed script (15 work orders, offset datetimes)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 git push
 ```
+
+---
+
+## Promotion checklist (before deploying beyond this scratch org)
+
+- Dashboard `Work_Orders/Work_Order_Health` `owner`/`runningUser` are hardcoded to `test-3iuncy5c1je5@example.com` — repoint to the deploying admin.
+- Read-only is enforced at the record page (layout Readonly + Path) but NOT at the data layer: the perm set grants create/edit/delete + editable FLS on the mirror fields, and the object tab shows a standard New button. This is deliberate demo scope — the Path (hideUpdateButton=false) is how the admin plays the role of Yardi. To lock it down for production: set the mirror fields' FLS `editable=false` (the before-save touch-sync flow runs in system mode, so stamping still works), drop create/delete (or move to an admin-only perm set), and optionally add a validation rule allowing only `Delay_Reason__c` to change.
+- No Kanban / no manual UI step — the module is list + detail + dashboard only.
