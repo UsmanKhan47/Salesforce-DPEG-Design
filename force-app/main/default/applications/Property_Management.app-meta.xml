@@ -36,6 +36,15 @@
         <type>Flexipage</type>
         <pageOrSobjectType>Lease__c</pageOrSobjectType>
     </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Lease Renewal Record Page</comment>
+        <content>Lease_Renewal_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Lease_Renewal__c</pageOrSobjectType>
+    </actionOverrides>
     <brand>
         <headerColor>#2E844A</headerColor>
         <logo>DPEG_Logo_Clear</logo>
