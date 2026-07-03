@@ -1,0 +1,12 @@
+.na-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; display:block; }
+.na-hd { display:flex; align-items:center; gap:9px; margin-bottom:6px; }
+.na-icon { width:26px; height:26px; border-radius:50%; background:#E8EFF7; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.na-title { font-size:16px; font-weight:700; color:#1A1714; line-height:1.1; }
+.na-sub { font-size:11px; color:#8A8680; margin-top:2px; }
+.na-body { display:flex; flex-direction:column; }
+.na-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 4px; border-bottom:1px solid #EDECEA; text-decoration:none; }
+.na-row:last-child { border-bottom:none; }
+.na-row:hover { background:#F7FAFF; }
+.na-name { font-size:14px; font-weight:700; color:#1565C0; }
+.na-metasub { font-size:12px; color:#524F4A; margin-top:2px; }
+.na-empty { padding:20px 4px; text-align:center; color:#8A8680; font-size:13px; }
