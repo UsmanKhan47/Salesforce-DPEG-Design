@@ -114,4 +114,35 @@ private class BrokerAssignmentControllerTest {
     @isTest static void getBrokerOptionsReturnsBrokers() {
         System.assertEquals(2, BrokerAssignmentController.getBrokerOptions().size());
     }
+    @isTest static void notesAddAndList() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c LIMIT 1];
+        System.assertEquals(0, BrokerAssignmentController.getNotes(a.Id).size(), 'no notes initially');
+        Test.startTest();
+        BrokerAssignmentController.addNote(a.Id, 'Signage confirmed up; tour Friday.');
+        Test.stopTest();
+        List<BrokerAssignmentController.NoteRow> notes = BrokerAssignmentController.getNotes(a.Id);
+        System.assertEquals(1, notes.size(), 'one note after add');
+        System.assertEquals('Signage confirmed up; tour Friday.', notes[0].title, 'title derived from body under 50 chars');
+        System.assertNotEquals(null, notes[0].author, 'author populated from CreatedBy');
+        System.assertNotEquals(null, notes[0].createdDate);
+    }
+    @isTest static void addNoteBlankThrows() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c LIMIT 1];
+        Boolean threw = false;
+        Test.startTest();
+        try { BrokerAssignmentController.addNote(a.Id, '   '); } catch (AuraHandledException e) { threw = true; }
+        Test.stopTest();
+        System.assert(threw, 'blank note should throw');
+        System.assertEquals(0, BrokerAssignmentController.getNotes(a.Id).size(), 'nothing persisted on blank');
+    }
+    @isTest static void addNoteLongTitleTruncated() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c LIMIT 1];
+        String longBody = 'This is a very long note that certainly exceeds the fifty character title cap for sure.';
+        Test.startTest();
+        BrokerAssignmentController.addNote(a.Id, longBody);
+        Test.stopTest();
+        List<BrokerAssignmentController.NoteRow> notes = BrokerAssignmentController.getNotes(a.Id);
+        System.assertEquals(1, notes.size());
+        System.assertEquals(50, notes[0].title.length(), 'title capped at 50 chars');
+    }
 }

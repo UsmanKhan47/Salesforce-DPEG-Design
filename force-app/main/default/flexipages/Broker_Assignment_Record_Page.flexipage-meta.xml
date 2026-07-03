@@ -89,16 +89,8 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentInstanceProperties>
-                    <name>parentFieldApiName</name>
-                    <value>Broker_Assignment__c.Id</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>relatedListApiName</name>
-                    <value>AttachedContentNotes</value>
-                </componentInstanceProperties>
-                <componentName>force:relatedListSingleContainer</componentName>
-                <identifier>notesRelatedList</identifier>
+                <componentName>brokerAssignmentNotes</componentName>
+                <identifier>brokerAssignmentNotesComponent</identifier>
             </componentInstance>
         </itemInstances>
         <name>notesLogContent</name>

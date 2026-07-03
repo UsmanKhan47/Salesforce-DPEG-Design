@@ -204,6 +204,45 @@ public with sharing class BrokerAssignmentController {
         return out;
     }
 
+    // ===== Notes (native Salesforce Notes / ContentNote) =====
+    public class NoteRow {
+        @AuraEnabled public Id id; @AuraEnabled public String title; @AuraEnabled public String preview;
+        @AuraEnabled public String author; @AuraEnabled public Datetime createdDate;
+    }
+    // Notes attached to this record, newest first. ContentNote shares its Id with the
+    // underlying ContentDocument, so filtering ContentNote by the record's linked document
+    // Ids returns only notes (files are naturally excluded).
+    @AuraEnabled(cacheable=true)
+    public static List<NoteRow> getNotes(Id recordId) {
+        List<NoteRow> out = new List<NoteRow>();
+        Set<Id> docIds = new Set<Id>();
+        for (ContentDocumentLink l : [SELECT ContentDocumentId FROM ContentDocumentLink WHERE LinkedEntityId = :recordId]) {
+            docIds.add(l.ContentDocumentId);
+        }
+        if (docIds.isEmpty()) return out;
+        for (ContentNote n : [SELECT Id, Title, TextPreview, CreatedDate, CreatedBy.Name
+                              FROM ContentNote WHERE Id IN :docIds ORDER BY CreatedDate DESC]) {
+            NoteRow r = new NoteRow();
+            r.id = n.Id; r.title = n.Title; r.preview = String.isBlank(n.TextPreview) ? n.Title : n.TextPreview;
+            r.author = n.CreatedBy.Name; r.createdDate = n.CreatedDate;
+            out.add(r);
+        }
+        return out;
+    }
+    // Creates a native Note from free text and links it to the record. Title is derived
+    // from the first 50 chars so the note is identifiable in the standard Notes UI too.
+    @AuraEnabled
+    public static void addNote(Id recordId, String body) {
+        String text = body == null ? '' : body.trim();
+        if (String.isBlank(text)) throw new AuraHandledException('Note cannot be empty.');
+        String flat = text.replaceAll('\\s+', ' ');
+        String title = flat.length() > 50 ? flat.substring(0, 50) : flat;
+        String html = text.escapeHtml4().replace('\n', '<br>');
+        ContentNote n = new ContentNote(Title = title, Content = Blob.valueOf(html));
+        insert n;
+        insert new ContentDocumentLink(ContentDocumentId = n.Id, LinkedEntityId = recordId, ShareType = 'V', Visibility = 'AllUsers');
+    }
+
     @AuraEnabled
     public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate, String reason, String notes) {
         Date eff = effectiveDate == null ? Date.today() : effectiveDate;

@@ -1,0 +1,51 @@
+<template>
+    <lightning-card>
+        <div slot="title" class="ban-hdr">
+            <lightning-icon icon-name="utility:note" size="small" class="ban-hdr-icon"></lightning-icon>
+            <span class="ban-title">Notes ({count})</span>
+        </div>
+
+        <div class="ban-body">
+            <!-- Composer: always visible, even when there are no notes yet -->
+            <div class="ban-composer">
+                <lightning-textarea
+                    name="note"
+                    label="Add a note"
+                    variant="label-hidden"
+                    value={draft}
+                    placeholder="Add a note for the PM team…"
+                    onchange={onDraftChange}
+                    class="ban-textarea">
+                </lightning-textarea>
+                <div class="ban-composer-actions">
+                    <lightning-button
+                        label="Add Note"
+                        variant="brand"
+                        icon-name="utility:add"
+                        onclick={postNote}
+                        disabled={cannotPost}>
+                    </lightning-button>
+                </div>
+            </div>
+
+            <!-- History -->
+            <template if:true={hasNotes}>
+                <ul class="ban-list">
+                    <template for:each={notes} for:item="n">
+                        <li key={n.id} class="ban-item">
+                            <div class="ban-item-head">
+                                <span class="ban-dot"></span>
+                                <span class="ban-author">{n.author}</span>
+                                <span class="ban-date">{n.when}</span>
+                            </div>
+                            <div class="ban-text">{n.text}</div>
+                        </li>
+                    </template>
+                </ul>
+            </template>
+            <template if:false={hasNotes}>
+                <div class="ban-empty">No notes yet — add the first one above.</div>
+            </template>
+        </div>
+    </lightning-card>
+</template>
