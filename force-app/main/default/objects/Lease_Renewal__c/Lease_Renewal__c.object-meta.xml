@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <compactLayoutAssignment>Lease_Renewal_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>One lease renewal conversation, from Yardi-flagged expiry to signed amendment or lost tenant. Records are never deleted; closing changes Status.</description>
+    <enableActivities>false</enableActivities>
+    <enableHistory>true</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <label>Lease Renewal</label>
+    <pluralLabel>Lease Renewals</pluralLabel>
+    <nameField>
+        <displayFormat>LR-{0000}</displayFormat>
+        <label>Renewal Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <sharingModel>ReadWrite</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

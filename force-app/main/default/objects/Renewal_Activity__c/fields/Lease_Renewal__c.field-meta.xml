@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lease_Renewal__c</fullName>
+    <label>Lease Renewal</label>
+    <referenceTo>Lease_Renewal__c</referenceTo>
+    <relationshipLabel>Renewal Activities</relationshipLabel>
+    <relationshipName>Renewal_Activities</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

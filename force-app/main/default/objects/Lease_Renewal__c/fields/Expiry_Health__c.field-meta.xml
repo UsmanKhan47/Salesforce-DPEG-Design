@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Expiry_Health__c</fullName>
+    <description>Expiry urgency signal for Kanban cards and list views. Red at 30 days, amber at 90.</description>
+    <formula>IF(NOT(ISPICKVAL(Status__c, "Active")), "—", IF((Lease_End__c - TODAY()) &lt;= 30, "🔴 Critical", IF((Lease_End__c - TODAY()) &lt;= 90, "🟡 Approaching", "🟢 Comfortable")))</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Expiry Health</label>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>
