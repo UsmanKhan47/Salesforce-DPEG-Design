@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Owner_Role__c</fullName>
+    <label>Owner Role</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value><fullName>Property Manager</fullName><default>false</default><label>Property Manager</label></value>
+            <value><fullName>Maintenance</fullName><default>false</default><label>Maintenance</label></value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

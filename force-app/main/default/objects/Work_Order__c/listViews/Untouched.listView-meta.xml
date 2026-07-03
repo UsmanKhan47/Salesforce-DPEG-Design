@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Untouched</fullName>
+    <columns>NAME</columns>
+    <columns>Subject__c</columns>
+    <columns>Property_Display_Name__c</columns>
+    <columns>Priority__c</columns>
+    <columns>Reported_Date__c</columns>
+    <columns>SLA_Health__c</columns>
+    <filters>
+        <field>Untouched__c</field>
+        <operation>equals</operation>
+        <value>1</value>
+    </filters>
+    <filterScope>Everything</filterScope>
+    <label>Untouched</label>
+</ListView>

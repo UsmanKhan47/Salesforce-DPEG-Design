@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SLA_Breached__c</fullName>
+    <formula>AND(Is_Open__c, NOW() &gt; SLA_Due_Date__c)</formula>
+    <label>SLA Breached</label>
+    <type>Checkbox</type>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>

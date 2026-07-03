@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Escalation__c</fullName>
+    <description>A breached, still-open Critical or High work order — surfaces on the Escalations view.</description>
+    <formula>AND(SLA_Breached__c, OR(ISPICKVAL(Priority__c, "Critical"), ISPICKVAL(Priority__c, "High")))</formula>
+    <label>Is Escalation</label>
+    <type>Checkbox</type>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>

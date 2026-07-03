@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SLA_Health__c</fullName>
+    <description>Resolved when closed; else Breached past due; else Due Soon in the final 30% of the SLA window; else On Track. The 30% due-soon window is the one working assumption — change it here only.</description>
+    <formula>IF(NOT(Is_Open__c), "🟢 Resolved", IF(NOW() &gt; SLA_Due_Date__c, "🔴 Breached", IF((SLA_Due_Date__c - NOW()) * 24 &lt;= 0.30 * SLA_Target_Hours__c, "🟡 Due Soon", "🟢 On Track")))</formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+    <label>SLA Health</label>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>
