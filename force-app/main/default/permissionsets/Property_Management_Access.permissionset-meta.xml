@@ -691,4 +691,12 @@
         <tab>Lease__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
+    <tabSettings>
+        <tab>Lease_Renewals</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Lease_Renewal__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
 </PermissionSet>
