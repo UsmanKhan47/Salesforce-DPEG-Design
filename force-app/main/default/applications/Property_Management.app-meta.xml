@@ -77,5 +77,7 @@
     <tabs>Broker_Assignment__c</tabs>
     <tabs>Lease_Inquiry__c</tabs>
     <tabs>Lease_Renewal__c</tabs>
+    <tabs>Work_Orders</tabs>
+    <tabs>Work_Order__c</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>
