@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <columns><field>Work_Order__c.Subject__c</field></columns>
+    <columns><field>Work_Order__c.Property_Display_Name__c</field></columns>
+    <columns><field>Work_Order__c.Priority__c</field></columns>
+    <columns><field>Work_Order__c.Status__c</field></columns>
+    <columns><field>Work_Order__c.Hours_Open__c</field></columns>
+    <columns><field>Work_Order__c.Owner_User__c</field></columns>
+    <filter>
+        <criteriaItems>
+            <column>Work_Order__c.SLA_Breached__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>equals</operator>
+            <value>1</value>
+        </criteriaItems>
+    </filter>
+    <format>Tabular</format>
+    <name>SLA Breaches</name>
+    <reportType>CustomEntity$Work_Order__c</reportType>
+    <scope>organization</scope>
+    <showDetails>true</showDetails>
+    <showGrandTotal>true</showGrandTotal>
+    <showSubTotals>true</showSubTotals>
+    <sortColumn>Work_Order__c.Hours_Open__c</sortColumn>
+    <sortOrder>Desc</sortOrder>
+</Report>
