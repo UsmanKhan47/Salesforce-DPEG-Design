@@ -60,13 +60,13 @@
     <label>Property Management</label>
     <navType>Standard</navType>
     <tabs>Onboarding</tabs>
-    <tabs>Onboarding__c</tabs>
     <tabs>Broker_Assignments</tabs>
-    <tabs>Broker_Assignment__c</tabs>
     <tabs>Lease_Activity_Tracker</tabs>
-    <tabs>Lease_Inquiry__c</tabs>
-    <tabs>Lease__c</tabs>
     <tabs>Lease_Renewals</tabs>
+    <tabs>Lease__c</tabs>
+    <tabs>Onboarding__c</tabs>
+    <tabs>Broker_Assignment__c</tabs>
+    <tabs>Lease_Inquiry__c</tabs>
     <tabs>Lease_Renewal__c</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>
