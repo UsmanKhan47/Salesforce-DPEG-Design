@@ -45,7 +45,7 @@ export default class RenewalList extends NavigationMixin(LightningElement) {
             let daysWrap;
             let daysDot = '';
             if (q.closed) {
-                daysText = q.stage === 'Renewed' ? 'Renewed' : (q.stage === 'Vacating' ? 'Vacating' : 'Not renew');
+                daysText = q.stage === 'Renewed' ? 'Renewed' : (q.stage === 'Vacating' ? 'Vacating' : 'Not renewing');
                 daysWrap = q.stage === 'Renewed' ? pillWrap('#EBF9F1', '#146830') : pillWrap('#E2E0DB', '#3F3C38');
             } else if (d == null) {
                 daysText = '—'; daysWrap = pillWrap('#EDEBE7', '#5A5752');

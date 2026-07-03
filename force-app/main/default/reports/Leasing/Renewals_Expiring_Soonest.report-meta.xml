@@ -29,4 +29,6 @@
     <showDetails>true</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
+    <sortColumn>Lease_Renewal__c.Days_To_Expiry__c</sortColumn>
+    <sortOrder>Asc</sortOrder>
 </Report>

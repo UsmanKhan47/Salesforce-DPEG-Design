@@ -133,4 +133,17 @@ private class LeaseRenewalControllerTest {
         try { LeaseRenewalController.submitForApproval(byTenant('Anytime Fitness').Id); } catch (AuraHandledException e) { threw = true; }
         System.assert(threw, 'closed renewals fail the entry criteria');
     }
+    @isTest static void submitWithoutRateThrows() {
+        // Pearl Nails has no Proposed_Rate__c in setup
+        Boolean threw = false;
+        try { LeaseRenewalController.submitForApproval(byTenant('Pearl Nails').Id); } catch (AuraHandledException e) { threw = true; }
+        System.assert(threw, 'missing proposed rate blocks submission');
+    }
+    @isTest static void submitPastApprovalStageThrows() {
+        Lease_Renewal__c r = byTenant('Golden Wok');
+        r.Stage__c = 'Amendment Drafted'; update r;
+        Boolean threw = false;
+        try { LeaseRenewalController.submitForApproval(r.Id); } catch (AuraHandledException e) { threw = true; }
+        System.assert(threw, 'Amendment Drafted is past the approval step');
+    }
 }

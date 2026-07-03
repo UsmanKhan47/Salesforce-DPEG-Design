@@ -27,7 +27,7 @@ public with sharing class LeaseRenewalController {
                 if (r.Days_To_Expiry__c != null && r.Days_To_Expiry__c <= 90) k.expiring90++;
                 if (r.Non_Responsive__c) k.nonResponsive++;
             }
-            if (r.Renewed_Date__c != null && r.Renewed_Date__c >= yearStart) k.renewedYtd++;
+            if (r.Status__c == 'Closed Won' && r.Renewed_Date__c != null && r.Renewed_Date__c >= yearStart) k.renewedYtd++;
         }
         return k;
     }
@@ -137,12 +137,21 @@ public with sharing class LeaseRenewalController {
         if (![SELECT Id FROM ProcessInstance WHERE TargetObjectId = :recordId AND Status = 'Pending'].isEmpty()) {
             throw ahe('This renewal is already pending approval.');
         }
+        Lease_Renewal__c r = [SELECT Stage__c, Approval_Status__c, Proposed_Rate__c, Status__c
+                              FROM Lease_Renewal__c WHERE Id = :recordId LIMIT 1];
+        if (r.Status__c != 'Active') throw ahe('Only active renewals can be submitted for approval.');
+        if (r.Proposed_Rate__c == null) throw ahe('Enter a proposed rate before submitting for approval.');
+        if (r.Approval_Status__c == 'Approved') throw ahe('This rate is already approved.');
+        if (r.Stage__c == 'Amendment Drafted') throw ahe('This renewal is past the approval step.');
         try {
             Approval.ProcessSubmitRequest req = new Approval.ProcessSubmitRequest();
             req.setObjectId(recordId);
             Approval.process(req);
             return 'The renewal rate has been submitted for approval.';
         } catch (Exception e) {
+            if (e.getMessage().contains('NO_APPLICABLE_PROCESS')) {
+                throw ahe('This renewal isn\'t eligible for approval — it may be closed.');
+            }
             throw ahe(e.getMessage());
         }
     }

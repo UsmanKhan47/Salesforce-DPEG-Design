@@ -2968,3 +2968,11 @@ git add scripts/seed-lease-renewals.apex
 git commit -m "Lease Renewal Tracker: idempotent seed script (12 renewals, offset dates)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 git push
 ```
+
+---
+
+## Promotion checklist (repoint before deploying beyond this scratch org)
+
+- Approval process `Renewal_Rate_Approval` approver is hardcoded to `test-3iuncy5c1je5@example.com` — repoint to a real user/queue/role.
+- Dashboard `Leasing/Lease_Renewals` `owner`/`runningUser` are the scratch admin — repoint to the deploying admin.
+- The Renewal Pipeline list view's Kanban display mode is a per-user UI toggle (not metadata): object tab → Renewal Pipeline → Display As → Kanban.
