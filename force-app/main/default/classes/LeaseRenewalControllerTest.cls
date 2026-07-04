@@ -8,14 +8,14 @@ private class LeaseRenewalControllerTest {
         Date t = Date.today();
         // r1 non-responsive + expiring<=90; r2 fresh no contact; r3 critical <=30d;
         // r4 Renewed (flow -> Closed Won + Renewed_Date); r5 Vacating (flow -> Closed Lost);
-        // r6 pending approval, active.
+        // r6 negotiating, active.
         List<Lease_Renewal__c> rs = new List<Lease_Renewal__c>{
             new Lease_Renewal__c(Tenant_Name__c='Riverside Dental', Property_Asset__c=pa.Id, Unit__c='Suite 120', Lease_End__c=t.addDays(80), Stage__c='Awaiting Tenant Response', Last_Contact_Date__c=t.addDays(-20)),
             new Lease_Renewal__c(Tenant_Name__c='Pearl Nails', Property_Asset__c=pa.Id, Unit__c='Suite 3', Lease_End__c=t.addDays(150), Stage__c='Not Yet Started'),
             new Lease_Renewal__c(Tenant_Name__c='Golden Wok', Property_Asset__c=pa.Id, Unit__c='Unit 8', Lease_End__c=t.addDays(25), Stage__c='Negotiating', Last_Contact_Date__c=t.addDays(-3), Proposed_Rate__c=25.20),
             new Lease_Renewal__c(Tenant_Name__c='Anytime Fitness', Property_Asset__c=pa.Id, Unit__c='Anchor B', Lease_End__c=t.addDays(-2), Stage__c='Renewed'),
             new Lease_Renewal__c(Tenant_Name__c='Elite Barbers', Property_Asset__c=pa.Id, Unit__c='Suite 7', Lease_End__c=t.addDays(28), Stage__c='Vacating'),
-            new Lease_Renewal__c(Tenant_Name__c='TechHub Coworking', Property_Asset__c=pa.Id, Unit__c='Floor 2', Lease_End__c=t.addDays(40), Stage__c='Escalated for Approval', Approval_Status__c='Pending', Last_Contact_Date__c=t.addDays(-7), Proposed_Rate__c=24.00)
+            new Lease_Renewal__c(Tenant_Name__c='TechHub Coworking', Property_Asset__c=pa.Id, Unit__c='Floor 2', Lease_End__c=t.addDays(40), Stage__c='Negotiating', Last_Contact_Date__c=t.addDays(-7), Proposed_Rate__c=24.00)
         };
         insert rs;
         insert new List<Renewal_Activity__c>{
@@ -24,7 +24,7 @@ private class LeaseRenewalControllerTest {
         };
     }
     private static Lease_Renewal__c byTenant(String t) {
-        return [SELECT Id, Status__c, Stage__c, Approval_Status__c, Last_Contact_Date__c, Renewed_Date__c FROM Lease_Renewal__c WHERE Tenant_Name__c = :t LIMIT 1];
+        return [SELECT Id, Status__c, Stage__c, Last_Contact_Date__c, Renewed_Date__c FROM Lease_Renewal__c WHERE Tenant_Name__c = :t LIMIT 1];
     }
 
     @isTest static void homeKpis() {
@@ -44,12 +44,6 @@ private class LeaseRenewalControllerTest {
         List<LeaseRenewalController.Row> rows = LeaseRenewalController.getRecentRenewals();
         System.assertEquals(6, rows.size(), 'capped at 6');
         System.assertEquals('Westgate Plaza', rows[0].property, 'property name spans from the asset');
-    }
-    @isTest static void needsApproval() {
-        List<LeaseRenewalController.Row> rows = LeaseRenewalController.getNeedsApproval();
-        System.assertEquals(1, rows.size());
-        System.assertEquals('TechHub Coworking', rows[0].tenant);
-        System.assertEquals('Pending', rows[0].approvalStatus);
     }
     @isTest static void attentionListsNonRespAndCritical() {
         List<LeaseRenewalController.Row> rows = LeaseRenewalController.getAttention();
@@ -110,40 +104,5 @@ private class LeaseRenewalControllerTest {
         Lease_Renewal__c r = byTenant('Golden Wok');
         r.Stage__c = 'Not Renewing'; update r;
         System.assertEquals('Closed Lost', byTenant('Golden Wok').Status__c);
-    }
-    @isTest static void submitForApprovalEscalates() {
-        Id rid = byTenant('Golden Wok').Id;
-        Test.startTest();
-        String msg = LeaseRenewalController.submitForApproval(rid);
-        Test.stopTest();
-        System.assert(msg != null && msg.length() > 0);
-        Lease_Renewal__c r = byTenant('Golden Wok');
-        System.assertEquals('Escalated for Approval', r.Stage__c);
-        System.assertEquals('Pending', r.Approval_Status__c);
-    }
-    @isTest static void submitTwiceThrows() {
-        Id rid = byTenant('Golden Wok').Id;
-        LeaseRenewalController.submitForApproval(rid);
-        Boolean threw = false;
-        try { LeaseRenewalController.submitForApproval(rid); } catch (AuraHandledException e) { threw = true; }
-        System.assert(threw, 'second submit while pending is blocked');
-    }
-    @isTest static void submitClosedThrows() {
-        Boolean threw = false;
-        try { LeaseRenewalController.submitForApproval(byTenant('Anytime Fitness').Id); } catch (AuraHandledException e) { threw = true; }
-        System.assert(threw, 'closed renewals fail the entry criteria');
-    }
-    @isTest static void submitWithoutRateThrows() {
-        // Pearl Nails has no Proposed_Rate__c in setup
-        Boolean threw = false;
-        try { LeaseRenewalController.submitForApproval(byTenant('Pearl Nails').Id); } catch (AuraHandledException e) { threw = true; }
-        System.assert(threw, 'missing proposed rate blocks submission');
-    }
-    @isTest static void submitPastApprovalStageThrows() {
-        Lease_Renewal__c r = byTenant('Golden Wok');
-        r.Stage__c = 'Amendment Drafted'; update r;
-        Boolean threw = false;
-        try { LeaseRenewalController.submitForApproval(r.Id); } catch (AuraHandledException e) { threw = true; }
-        System.assert(threw, 'Amendment Drafted is past the approval step');
     }
 }

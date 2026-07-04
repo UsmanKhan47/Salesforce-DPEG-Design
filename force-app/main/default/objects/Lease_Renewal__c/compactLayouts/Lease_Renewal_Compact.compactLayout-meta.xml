@@ -5,6 +5,5 @@
     <fields>Stage__c</fields>
     <fields>Lease_End__c</fields>
     <fields>Days_To_Expiry__c</fields>
-    <fields>Approval_Status__c</fields>
     <label>Lease Renewal Compact</label>
 </CompactLayout>

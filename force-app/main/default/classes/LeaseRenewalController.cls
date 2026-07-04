@@ -1,13 +1,13 @@
 /**
- * Backs the Lease Renewal Tracker: home-page widgets, the record-page timeline,
- * and the Submit-for-Approval quick action. Timeline entries are append-only.
+ * Backs the Lease Renewal Tracker: home-page widgets and the record-page
+ * timeline. Timeline entries are append-only.
  */
 public with sharing class LeaseRenewalController {
 
     private static final Set<String> METHODS = new Set<String>{ 'Call', 'Email', 'Visit', 'Note', 'System' };
     private static final String ROW_QUERY =
         'SELECT Id, Tenant_Name__c, Property_Display_Name__c, Unit__c, Lease_End__c, Days_To_Expiry__c, ' +
-        'Stage__c, Status__c, Approval_Status__c, Last_Contact_Date__c, Days_Since_Contact__c, Non_Responsive__c ' +
+        'Stage__c, Status__c, Last_Contact_Date__c, Days_Since_Contact__c, Non_Responsive__c ' +
         'FROM Lease_Renewal__c ';
 
     public class HomeKpis {
@@ -42,7 +42,6 @@ public with sharing class LeaseRenewalController {
         @AuraEnabled public String stage;
         @AuraEnabled public String status;
         @AuraEnabled public Boolean closed;
-        @AuraEnabled public String approvalStatus;
         @AuraEnabled public Date lastContact;
         @AuraEnabled public Integer daysSinceContact;
         @AuraEnabled public Boolean nonResponsive;
@@ -53,7 +52,6 @@ public with sharing class LeaseRenewalController {
         w.leaseEnd = r.Lease_End__c;
         w.daysToExpiry = r.Days_To_Expiry__c == null ? null : (Integer) r.Days_To_Expiry__c;
         w.stage = r.Stage__c; w.status = r.Status__c; w.closed = r.Status__c != 'Active';
-        w.approvalStatus = r.Approval_Status__c;
         w.lastContact = r.Last_Contact_Date__c;
         w.daysSinceContact = r.Days_Since_Contact__c == null ? null : (Integer) r.Days_Since_Contact__c;
         w.nonResponsive = r.Non_Responsive__c == true;
@@ -68,11 +66,6 @@ public with sharing class LeaseRenewalController {
     @AuraEnabled(cacheable=true)
     public static List<Row> getRecentRenewals() {
         return toRows(Database.query(ROW_QUERY + 'ORDER BY CreatedDate DESC LIMIT 6'));
-    }
-    @AuraEnabled(cacheable=true)
-    public static List<Row> getNeedsApproval() {
-        return toRows(Database.query(ROW_QUERY +
-            'WHERE Approval_Status__c = \'Pending\' AND Status__c = \'Active\' ORDER BY Lease_End__c ASC NULLS LAST'));
     }
     @AuraEnabled(cacheable=true)
     public static List<Row> getAttention() {
@@ -128,31 +121,6 @@ public with sharing class LeaseRenewalController {
         // A Yardi/system note is not tenant contact — only human methods reset the clock.
         if (method != 'System') {
             update new Lease_Renewal__c(Id = renewalId, Last_Contact_Date__c = Date.today());
-        }
-    }
-
-    @AuraEnabled
-    public static String submitForApproval(Id recordId) {
-        if (recordId == null) throw ahe('No record was provided.');
-        if (![SELECT Id FROM ProcessInstance WHERE TargetObjectId = :recordId AND Status = 'Pending'].isEmpty()) {
-            throw ahe('This renewal is already pending approval.');
-        }
-        Lease_Renewal__c r = [SELECT Stage__c, Approval_Status__c, Proposed_Rate__c, Status__c
-                              FROM Lease_Renewal__c WHERE Id = :recordId LIMIT 1];
-        if (r.Status__c != 'Active') throw ahe('Only active renewals can be submitted for approval.');
-        if (r.Proposed_Rate__c == null) throw ahe('Enter a proposed rate before submitting for approval.');
-        if (r.Approval_Status__c == 'Approved') throw ahe('This rate is already approved.');
-        if (r.Stage__c == 'Amendment Drafted') throw ahe('This renewal is past the approval step.');
-        try {
-            Approval.ProcessSubmitRequest req = new Approval.ProcessSubmitRequest();
-            req.setObjectId(recordId);
-            Approval.process(req);
-            return 'The renewal rate has been submitted for approval.';
-        } catch (Exception e) {
-            if (e.getMessage().contains('NO_APPLICABLE_PROCESS')) {
-                throw ahe('This renewal isn\'t eligible for approval — it may be closed.');
-            }
-            throw ahe(e.getMessage());
         }
     }
 

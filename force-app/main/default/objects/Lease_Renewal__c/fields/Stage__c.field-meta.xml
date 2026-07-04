@@ -11,7 +11,6 @@
             <value><fullName>Notice Sent</fullName><default>false</default><label>Notice Sent</label></value>
             <value><fullName>Awaiting Tenant Response</fullName><default>false</default><label>Awaiting Tenant Response</label></value>
             <value><fullName>Negotiating</fullName><default>false</default><label>Negotiating</label></value>
-            <value><fullName>Escalated for Approval</fullName><default>false</default><label>Escalated for Approval</label></value>
             <value><fullName>Amendment Drafted</fullName><default>false</default><label>Amendment Drafted</label></value>
             <value><fullName>Renewed</fullName><default>false</default><label>Renewed</label></value>
             <value><fullName>Not Renewing</fullName><default>false</default><label>Not Renewing</label></value>

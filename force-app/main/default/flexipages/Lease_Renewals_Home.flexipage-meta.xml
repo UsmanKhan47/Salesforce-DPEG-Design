@@ -23,12 +23,6 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentName>renewalNeedsApproval</componentName>
-                <identifier>renewalNeedsApprovalComponent</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
                 <componentName>renewalAttention</componentName>
                 <identifier>renewalAttentionComponent</identifier>
             </componentInstance>

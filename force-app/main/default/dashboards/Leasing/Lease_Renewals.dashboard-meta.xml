@@ -5,7 +5,7 @@
     <backgroundStartColor>#FFFFFF</backgroundStartColor>
     <dashboardGridLayout>
         <dashboardGridComponents>
-            <colSpan>4</colSpan>
+            <colSpan>6</colSpan>
             <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
@@ -30,8 +30,8 @@
             <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>4</colSpan>
-            <columnIndex>4</columnIndex>
+            <colSpan>6</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartSummary>
@@ -49,31 +49,6 @@
                 <indicatorMiddleColor>#C23934</indicatorMiddleColor>
                 <metricLabel>Non-Responsive Tenants</metricLabel>
                 <report>Leasing/Non_Responsive_Renewals</report>
-                <showRange>false</showRange>
-            </dashboardComponent>
-            <rowIndex>0</rowIndex>
-            <rowSpan>4</rowSpan>
-        </dashboardGridComponents>
-        <dashboardGridComponents>
-            <colSpan>4</colSpan>
-            <columnIndex>8</columnIndex>
-            <dashboardComponent>
-                <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary>
-                    <column>RowCount</column>
-                </chartSummary>
-                <componentChartTheme>light</componentChartTheme>
-                <componentType>Metric</componentType>
-                <decimalPrecision>-1</decimalPrecision>
-                <displayUnits>Auto</displayUnits>
-                <groupingSortProperties/>
-                <indicatorBreakpoint1>1.0</indicatorBreakpoint1>
-                <indicatorBreakpoint2>2.0</indicatorBreakpoint2>
-                <indicatorHighColor>#132850</indicatorHighColor>
-                <indicatorLowColor>#132850</indicatorLowColor>
-                <indicatorMiddleColor>#132850</indicatorMiddleColor>
-                <metricLabel>Needs Approval</metricLabel>
-                <report>Leasing/Renewals_Needing_Approval</report>
                 <showRange>false</showRange>
             </dashboardComponent>
             <rowIndex>0</rowIndex>

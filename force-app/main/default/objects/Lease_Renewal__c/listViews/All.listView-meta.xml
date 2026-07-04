@@ -9,7 +9,6 @@
     <columns>Days_To_Expiry__c</columns>
     <columns>Expiry_Health__c</columns>
     <columns>Stage__c</columns>
-    <columns>Approval_Status__c</columns>
     <columns>Status__c</columns>
     <filterScope>Everything</filterScope>
     <label>All Renewals</label>

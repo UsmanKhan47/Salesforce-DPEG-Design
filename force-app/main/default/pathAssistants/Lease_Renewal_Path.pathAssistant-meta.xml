@@ -24,12 +24,6 @@
         <picklistValueName>Negotiating</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <fieldNames>Proposed_Rate__c</fieldNames>
-        <fieldNames>Approval_Status__c</fieldNames>
-        <info>No pre-set option — the proposed rate needs owner sign-off. Use Submit for Approval; the decision moves this back to Negotiating.</info>
-        <picklistValueName>Escalated for Approval</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
         <info>Both sides aligned — the amendment is being drafted and signed.</info>
         <picklistValueName>Amendment Drafted</picklistValueName>
     </pathAssistantSteps>
