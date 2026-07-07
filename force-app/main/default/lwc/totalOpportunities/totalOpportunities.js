@@ -10,7 +10,8 @@ const STAGE_META = [
     { key: 'Underwriting',        label: 'Underwriting',                 iconName: 'utility:money',     color: '#1E88E5' },
     { key: 'LOI Submitted',       label: 'LOI Submitted',                iconName: 'utility:upload',    color: '#42A5F5' },
     { key: 'LOI Signed',          label: 'LOI Signed',                   iconName: 'utility:check',     color: '#26C6DA' },
-    { key: 'Under Contract',      label: 'Under Contract (Last 90 Days)', iconName: 'utility:contract', color: '#FB8C00' },
+    { key: 'PSA Negotiation',     label: 'PSA Negotiation (Last 90 Days)', iconName: 'utility:contract', color: '#FB8C00' },
+    { key: 'PSA Executed',        label: 'PSA Executed (Last 90 Days)',   iconName: 'utility:approval', color: '#E8710A' },
     { key: 'Closed Won',          label: 'Closed Won (Last 90 Days)',    iconName: 'utility:favorite',  color: '#43A047' },
     { key: 'Dead/Pass',           label: 'Dead (Last 90 Days)',          iconName: 'utility:close',     color: '#E53935' }
 ];

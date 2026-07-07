@@ -11,7 +11,8 @@ const STAGE = {
     Underwriting:         ['#e8f1fc', '#1E88E5'],
     'LOI Submitted':      ['#e9f2fd', '#42A5F5'],
     'LOI Signed':         ['#e4f6f8', '#26C6DA'],
-    'Under Contract':     ['#fff1e0', '#FB8C00'],
+    'PSA Negotiation':    ['#fff1e0', '#FB8C00'],
+    'PSA Executed':       ['#fdefe3', '#E8710A'],
     'Closed Won':         ['#e8f5e9', '#43A047'],
     'Dead/Pass':          ['#fdeaea', '#E53935'],
     'Portfolio Deal':     ['#efe9e6', '#8D6E63']

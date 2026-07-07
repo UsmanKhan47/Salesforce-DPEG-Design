@@ -25,7 +25,8 @@ const OPP_META = [
     { key: 'Underwriting',        label: 'Underwriting',        suffix: '',               icon: 'utility:money',    color: '#2E86DE' },
     { key: 'LOI Submitted',       label: 'LOI Submitted',       suffix: '',               icon: 'utility:upload',   color: '#3E8FE0' },
     { key: 'LOI Signed',          label: 'LOI Signed',          suffix: '',               icon: 'utility:check',    color: '#17B5C9' },
-    { key: 'Under Contract',      label: 'Under Contract',      suffix: '(Last 90 Days)', icon: 'utility:contract', color: '#F08C00' },
+    { key: 'PSA Negotiation',     label: 'PSA Negotiation',     suffix: '(Last 90 Days)', icon: 'utility:contract', color: '#F08C00' },
+    { key: 'PSA Executed',        label: 'PSA Executed',        suffix: '(Last 90 Days)', icon: 'utility:approval', color: '#E8710A' },
     { key: 'Closed Won',          label: 'Closed Won',          suffix: '(Last 90 Days)', icon: 'utility:favorite', color: '#27AE60' },
     { key: 'Dead/Pass',           label: 'Dead',                suffix: '(Last 90 Days)', icon: 'utility:close',     color: '#E0463F' }
 ];

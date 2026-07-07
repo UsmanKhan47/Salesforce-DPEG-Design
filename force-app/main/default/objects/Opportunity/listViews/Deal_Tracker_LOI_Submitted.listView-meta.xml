@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Deal_Tracker_LOI_Submitted</fullName>
+    <columns>OPPORTUNITY.NAME</columns>
+    <columns>OPPORTUNITY.STAGE_NAME</columns>
+    <columns>Deal_Status__c</columns>
+    <columns>Deal_Type__c</columns>
+    <columns>Asset_Type__c</columns>
+    <columns>Asking_Price__c</columns>
+    <columns>OPPORTUNITY.CLOSE_DATE</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Deal_Bucket__c</field>
+        <operation>equals</operation>
+        <value>LOI Submitted</value>
+    </filters>
+    <label>Deal Tracker: LOI Submitted</label>
+</ListView>

@@ -92,6 +92,24 @@
         <won>false</won>
     </standardValue>
     <standardValue>
+        <fullName>PSA Negotiation</fullName>
+        <default>false</default>
+        <label>PSA Negotiation</label>
+        <closed>false</closed>
+        <forecastCategory>Forecast</forecastCategory>
+        <probability>85</probability>
+        <won>false</won>
+    </standardValue>
+    <standardValue>
+        <fullName>PSA Executed</fullName>
+        <default>false</default>
+        <label>PSA Executed</label>
+        <closed>false</closed>
+        <forecastCategory>Forecast</forecastCategory>
+        <probability>95</probability>
+        <won>false</won>
+    </standardValue>
+    <standardValue>
         <fullName>Closed Won</fullName>
         <default>false</default>
         <label>Closed Won</label>

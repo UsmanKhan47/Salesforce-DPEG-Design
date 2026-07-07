@@ -37,10 +37,16 @@
         <picklistValueName>Portfolio Deal</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
+        <fieldNames>Contract_Signed__c</fieldNames>
+        <fieldNames>Loan_Required__c</fieldNames>
+        <info>Seller issues the first PSA draft; a Contract Review opens automatically. Log every version and counter in the negotiation log - it tracks whose court the ball is in and notifies the team.</info>
+        <picklistValueName>PSA Negotiation</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
         <fieldNames>Contract_Executed_Date__c</fieldNames>
         <fieldNames>Loan_Required__c</fieldNames>
-        <info>DAY 0. Setting Contract Executed Date fires the 75-task fan-out, activates the Transaction (Conv 2), and creates the IR Offering (Conv 3).</info>
-        <picklistValueName>Under Contract</picklistValueName>
+        <info>DAY 0. PSA fully executed by both sides: the Transaction is created, the 75-task fan-out fires, and Transactions + IR + Due Diligence are notified.</info>
+        <picklistValueName>PSA Executed</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>My_Price__c</fieldNames>

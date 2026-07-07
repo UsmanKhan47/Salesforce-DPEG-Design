@@ -54,14 +54,14 @@ private class OpportunityReviewServiceTest {
         insert o;
 
         Test.startTest();
-        o.StageName = 'Under Contract';
+        o.StageName = 'PSA Negotiation';
         update o;
         Test.stopTest();
 
         List<Contract_Review__c> crs = [
             SELECT Stage__c FROM Contract_Review__c WHERE Opportunity__c = :o.Id
         ];
-        System.assertEquals(1, crs.size(), 'One Contract review should be created on Under Contract');
+        System.assertEquals(1, crs.size(), 'One Contract review should be created on PSA Negotiation');
         System.assertEquals('PSA Drafting', crs[0].Stage__c, 'Should start at PSA Drafting');
 
         // The new Contract Review is stamped back onto the Opportunity so the

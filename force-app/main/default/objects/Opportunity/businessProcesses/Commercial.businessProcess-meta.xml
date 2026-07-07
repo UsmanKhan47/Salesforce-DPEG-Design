@@ -35,7 +35,11 @@
         <default>false</default>
     </values>
     <values>
-        <fullName>Under Contract</fullName>
+        <fullName>PSA Executed</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>PSA Negotiation</fullName>
         <default>false</default>
     </values>
     <values>

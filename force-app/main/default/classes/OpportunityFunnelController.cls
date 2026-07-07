@@ -6,7 +6,7 @@ public with sharing class OpportunityFunnelController {
 
     private static final List<String> STAGE_ORDER = new List<String>{
         'New', 'Under Review', 'Development Review', 'Construction Review', 'Underwriting',
-        'LOI Submitted', 'LOI Signed', 'Under Contract', 'Closed Won', 'Dead/Pass', 'Portfolio Deal'
+        'LOI Submitted', 'LOI Signed', 'PSA Negotiation', 'PSA Executed', 'Closed Won', 'Dead/Pass', 'Portfolio Deal'
     };
 
     @AuraEnabled(cacheable=true)
@@ -23,8 +23,11 @@ public with sharing class OpportunityFunnelController {
         }
         // Outcome stages are scoped to the last 90 days by close date so the cards
         // reflect recent activity rather than an ever-growing all-time total.
-        counts.put('Under Contract', [
-            SELECT COUNT() FROM Opportunity WHERE StageName = 'Under Contract' AND CloseDate = LAST_N_DAYS:90
+        counts.put('PSA Negotiation', [
+            SELECT COUNT() FROM Opportunity WHERE StageName = 'PSA Negotiation' AND CloseDate = LAST_N_DAYS:90
+        ]);
+        counts.put('PSA Executed', [
+            SELECT COUNT() FROM Opportunity WHERE StageName = 'PSA Executed' AND CloseDate = LAST_N_DAYS:90
         ]);
         counts.put('Closed Won', [
             SELECT COUNT() FROM Opportunity WHERE StageName = 'Closed Won' AND CloseDate = LAST_N_DAYS:90

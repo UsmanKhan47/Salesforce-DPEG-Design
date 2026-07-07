@@ -7,15 +7,15 @@ private class OpportunityDocStatusControllerTest {
 
     @isTest
     static void returnsAllDealArtifacts() {
-        // Land deal that reaches Under Contract: the trigger spins off a
-        // Development review (at Development Review) and a Contract review (at Under Contract).
+        // Land deal that reaches PSA Negotiation: the trigger spins off a
+        // Development review (at Development Review) and a Contract review (at PSA Negotiation).
         Opportunity opp = new Opportunity(
             Name = 'Hwy 6 Tract',
             StageName = 'Development Review',
             CloseDate = Date.today().addDays(30)
         );
         insert opp;
-        opp.StageName = 'Under Contract';
+        opp.StageName = 'PSA Negotiation';
         update opp;
 
         insert new NDA__c(

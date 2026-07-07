@@ -9,7 +9,7 @@ public with sharing class OpportunityReviewService {
 
     @TestVisible private static final String DEV_STAGE = 'Development Review';
     @TestVisible private static final String CON_STAGE = 'Construction Review';
-    @TestVisible private static final String CONTRACT_STAGE = 'Under Contract';
+    @TestVisible private static final String CONTRACT_STAGE = 'PSA Negotiation';
 
     /**
      * Called from the Opportunity after-insert / after-update trigger.
