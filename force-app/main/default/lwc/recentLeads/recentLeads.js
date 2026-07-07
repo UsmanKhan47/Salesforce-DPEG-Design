@@ -16,6 +16,10 @@ const CONF = {
     low:    ['#fde8e8', '#c62828', 'Low'],
     na:     ['#eceff1', '#90a4ae', 'N/A']
 };
+const APPROVAL = {
+    approved: ['#e8f5e9', '#43A047', 'Approved'],
+    pending:  ['#eceff1', '#90A4AE', 'Pending']
+};
 const CHANNEL_ICON = {
     'Email-to-Lead': 'utility:file',
     'Broker Portal': 'utility:user',
@@ -31,6 +35,8 @@ const COLUMNS = [
     { label: 'Channel', fieldName: 'channel', type: 'text', cellAttributes: { iconName: { fieldName: 'channelIcon' }, iconPosition: 'left' } },
     { label: 'Data Completeness', fieldName: 'confidence', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'confWrap' }, dotStyle: { fieldName: 'confDot' } } },
     { label: 'Broker', fieldName: 'broker', type: 'text' },
+    { label: 'Underwrite', fieldName: 'approval', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'apprWrap' }, dotStyle: { fieldName: 'apprDot' } } },
+    { label: 'Approved By', fieldName: 'approvedBy', type: 'text' },
     { label: 'Age', fieldName: 'days', type: 'text' }
 ];
 
@@ -73,7 +79,9 @@ export default class RecentLeads extends NavigationMixin(LightningElement) {
             const [sBg, sDot] = STAGE[r.status] || FALLBACK;
             const confKey = r.confidence ? r.confidence.toLowerCase() : 'na';
             const [cBg, cDot, cLabel] = CONF[confKey] || CONF.na;
+            const [aBg, aDot, aLabel] = r.approved ? APPROVAL.approved : APPROVAL.pending;
             const known = r.broker && r.broker !== 'Unknown';
+            const brokerName = known ? r.broker : 'Unknown';
             return {
                 id: r.id,
                 recordUrl: `/lightning/r/Lead/${r.id}/view`,
@@ -86,7 +94,11 @@ export default class RecentLeads extends NavigationMixin(LightningElement) {
                 confidence: cLabel,
                 confWrap: pillWrap(cBg),
                 confDot: pillDot(cDot),
-                broker: known ? r.broker : 'Unknown',
+                broker: r.priority === 'High' ? `⭐ ${brokerName}` : brokerName,
+                approval: aLabel,
+                apprWrap: pillWrap(aBg),
+                apprDot: pillDot(aDot),
+                approvedBy: r.approvedBy || '—',
                 days: r.days + 'd'
             };
         });

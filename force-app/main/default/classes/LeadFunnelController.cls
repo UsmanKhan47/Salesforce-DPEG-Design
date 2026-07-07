@@ -61,12 +61,17 @@ public with sharing class LeadFunnelController {
         }
 
         // --- recent leads + review queue (LOW parse confidence) ---
-        data.recent = new List<LeadRow>();
+        // High-priority brokers surface first (Junior: prioritize by broker priority,
+        // then by first-received timestamp); within each priority tier the SOQL
+        // recency order is preserved, so the partition below is a stable sort.
+        List<LeadRow> highPriority = new List<LeadRow>();
+        List<LeadRow> standardPriority = new List<LeadRow>();
         Integer reviewQueue = 0;
         for (Lead l : [
             SELECT Id, Name, Status, LeadSource, Parse_Confidence__c, Guidance_Price__c,
                    Broker_First__c, Property_Address__c, Asset_Type__c,
-                   First_Seen_Date__c, CreatedDate
+                   First_Seen_Date__c, CreatedDate,
+                   Approved_for_UW__c, Approved_By__r.Name, Broker_Priority__c
             FROM Lead
             ORDER BY First_Seen_Date__c DESC NULLS LAST, CreatedDate DESC
             LIMIT 50
@@ -80,6 +85,9 @@ public with sharing class LeadFunnelController {
             r.price = l.Guidance_Price__c;
             r.broker = l.Broker_First__c;
             r.assetType = l.Asset_Type__c;
+            r.approved = l.Approved_for_UW__c == true;
+            r.approvedBy = l.Approved_By__r != null ? l.Approved_By__r.Name : null;
+            r.priority = l.Broker_Priority__c;
             // First Seen Date is the immutable intake stamp that starts the 90-day broker
             // protection window. Age and BP expiry both derive from it (fallback: CreatedDate).
             Date firstSeen = l.First_Seen_Date__c != null
@@ -89,11 +97,18 @@ public with sharing class LeadFunnelController {
             r.days = firstSeen.daysBetween(Date.today());
             r.bpExpiry = firstSeen.addDays(BP_WINDOW_DAYS);
             r.bpActive = r.bpExpiry >= Date.today();
-            data.recent.add(r);
+            if (r.priority == 'High') {
+                highPriority.add(r);
+            } else {
+                standardPriority.add(r);
+            }
             if (l.Parse_Confidence__c == 'LOW') {
                 reviewQueue++;
             }
         }
+        data.recent = new List<LeadRow>();
+        data.recent.addAll(highPriority);
+        data.recent.addAll(standardPriority);
         data.total = data.recent.size();
         data.reviewQueue = reviewQueue;
         return data;
@@ -129,5 +144,8 @@ public with sharing class LeadFunnelController {
         @AuraEnabled public Integer days;
         @AuraEnabled public Date bpExpiry;
         @AuraEnabled public Boolean bpActive;
+        @AuraEnabled public Boolean approved;
+        @AuraEnabled public String approvedBy;
+        @AuraEnabled public String priority;
     }
 }

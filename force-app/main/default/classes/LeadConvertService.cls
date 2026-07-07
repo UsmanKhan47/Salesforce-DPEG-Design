@@ -27,7 +27,18 @@ public with sharing class LeadConvertService {
         for (Lead l : newLeads) {
             Lead prior = (oldMap == null) ? null : oldMap.get(l.Id);
             Boolean justConverted = l.IsConverted && (prior == null || !prior.IsConverted);
-            if (justConverted && l.ConvertedOpportunityId != null) {
+            if (!justConverted) {
+                continue;
+            }
+            // Intake gate: a lead may only become a deal after it has been approved
+            // for underwriting. Enforced here (not only a validation rule) because
+            // validation rules do not reliably fire on lead conversion.
+            if (l.Approved_for_UW__c != true) {
+                l.addError('This lead has not been approved for underwriting. ' +
+                    'Check "Approved for Underwriting" before converting.');
+                continue;
+            }
+            if (l.ConvertedOpportunityId != null) {
                 oppToLead.put(l.ConvertedOpportunityId, l);
             }
         }

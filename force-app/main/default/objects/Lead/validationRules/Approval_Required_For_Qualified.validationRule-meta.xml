@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Approval_Required_For_Qualified</fullName>
+    <active>true</active>
+    <description>Intake gate: a lead cannot reach Qualified until it has been approved for underwriting (checkbox + auto-stamped approver). Conversion is separately guarded in LeadConvertService.</description>
+    <errorConditionFormula>AND(
+    ISPICKVAL(Status, 'Qualified'),
+    NOT(Approved_for_UW__c)
+)</errorConditionFormula>
+    <errorDisplayField>Status</errorDisplayField>
+    <errorMessage>This lead must be approved for underwriting (check "Approved for Underwriting") before it can be marked Qualified.</errorMessage>
+</ValidationRule>

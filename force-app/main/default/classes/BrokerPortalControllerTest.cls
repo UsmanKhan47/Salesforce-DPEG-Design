@@ -130,6 +130,28 @@ private class BrokerPortalControllerTest {
         System.Assert.areEqual(0, [SELECT COUNT() FROM Lead], 'Honeypot blocks the insert');
     }
 
+    // ---- Broker priority copy ----
+
+    @IsTest
+    static void submitDeal_knownHighPriorityBroker_copiesPriority() {
+        insert new Contact(FirstName = 'Jane', LastName = 'Broker', Email = 'jane@acme.com',
+            Is_Broker__c = true, Broker_Priority__c = 'High');
+        Test.startTest();
+        BrokerPortalController.submitDeal(validInput()); // same email as the broker contact
+        Test.stopTest();
+        Lead created = [SELECT Broker_Priority__c FROM Lead WHERE LeadSource = 'Broker Portal' LIMIT 1];
+        System.Assert.areEqual('High', created.Broker_Priority__c, 'Priority copied from the broker contact');
+    }
+
+    @IsTest
+    static void submitDeal_unknownBroker_defaultsToStandardPriority() {
+        Test.startTest();
+        BrokerPortalController.submitDeal(validInput());
+        Test.stopTest();
+        Lead created = [SELECT Broker_Priority__c FROM Lead WHERE LeadSource = 'Broker Portal' LIMIT 1];
+        System.Assert.areEqual('Standard', created.Broker_Priority__c, 'Unknown brokers default to Standard');
+    }
+
     // ---- Task 6: duplicate flagging ----
 
     @IsTest

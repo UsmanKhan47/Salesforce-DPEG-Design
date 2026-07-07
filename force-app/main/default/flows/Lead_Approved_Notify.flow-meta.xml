@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Notify_Acquisitions_Team</name>
+        <label>Notify Acquisitions Team</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value><stringValue>Acquisitions_Team</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value><stringValue>Lead approved for underwriting</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value><elementReference>fBody</elementReference></value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value><elementReference>$Record.Id</elementReference></value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <apiVersion>62.0</apiVersion>
+    <environments>Default</environments>
+    <formulas>
+        <name>fBody</name>
+        <dataType>String</dataType>
+        <expression>IF(ISBLANK({!$Record.Property_Address__c}), {!$Record.Company}, {!$Record.Property_Address__c})</expression>
+    </formulas>
+    <interviewLabel>Lead Approved Notify {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Lead Approved Notify</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector><targetReference>Notify_Acquisitions_Team</targetReference></connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Approved_for_UW__c</field>
+            <operator>EqualTo</operator>
+            <value><booleanValue>true</booleanValue></value>
+        </filters>
+        <object>Lead</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>
