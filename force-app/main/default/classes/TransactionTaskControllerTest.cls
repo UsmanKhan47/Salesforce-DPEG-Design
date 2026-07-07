@@ -49,13 +49,13 @@ private class TransactionTaskControllerTest {
         Test.startTest();
         Boolean threw = false;
         try {
-            TransactionTaskController.completeWireVerification(wire.Id, '', '');
+            TransactionTaskController.completeWireVerification(wire.Id, '', '', null);
         } catch (AuraHandledException e) {
             threw = true;
         }
         System.assertEquals(true, threw, 'Blank name/phone must block closure');
 
-        TransactionTaskController.completeWireVerification(wire.Id, 'Jane Doe', '713-555-0100');
+        TransactionTaskController.completeWireVerification(wire.Id, 'Jane Doe', '713-555-0100', null);
         Test.stopTest();
 
         Task r = [

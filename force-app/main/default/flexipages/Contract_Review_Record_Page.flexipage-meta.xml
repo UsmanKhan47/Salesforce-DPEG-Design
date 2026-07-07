@@ -197,6 +197,12 @@
                 <identifier>recordDetail</identifier>
             </componentInstance>
         </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>psaVersionLog</componentName>
+                <identifier>psaVersionLogCard</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>detailContent</name>
         <type>Facet</type>
     </flexiPageRegions>

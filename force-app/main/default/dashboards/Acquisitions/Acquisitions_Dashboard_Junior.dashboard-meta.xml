@@ -305,6 +305,49 @@
             <rowIndex>8</rowIndex>
             <rowSpan>8</rowSpan>
         </dashboardGridComponents>
+        <dashboardGridComponents>
+            <colSpan>3</colSpan>
+            <columnIndex>0</columnIndex>
+            <dashboardComponent>
+                <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
+                <chartSummary>
+                    <aggregate>Maximum</aggregate>
+                    <column>Opportunity.Asking_Price__c</column>
+                </chartSummary>
+                <componentChartTheme>light</componentChartTheme>
+                <componentType>Metric</componentType>
+                <decimalPrecision>-1</decimalPrecision>
+                <displayUnits>Millions</displayUnits>
+                <groupingSortProperties/>
+                <indicatorHighColor>#0B5394</indicatorHighColor>
+                <indicatorLowColor>#0B5394</indicatorLowColor>
+                <indicatorMiddleColor>#0B5394</indicatorMiddleColor>
+                <metricLabel>Largest Deal</metricLabel>
+                <report>Acquisitions/Largest_Deal</report>
+                <showRange>false</showRange>
+            </dashboardComponent>
+            <rowIndex>12</rowIndex>
+            <rowSpan>4</rowSpan>
+        </dashboardGridComponents>
+        <dashboardGridComponents>
+            <colSpan>12</colSpan>
+            <columnIndex>0</columnIndex>
+            <dashboardComponent>
+                <autoselectColumnsFromReport>true</autoselectColumnsFromReport>
+                <componentChartTheme>light</componentChartTheme>
+                <componentType>Table</componentType>
+                <displayUnits>Auto</displayUnits>
+                <groupingSortProperties/>
+                <indicatorHighColor>#0B5394</indicatorHighColor>
+                <indicatorLowColor>#0B5394</indicatorLowColor>
+                <indicatorMiddleColor>#0B5394</indicatorMiddleColor>
+                <report>Acquisitions/Underwriting_Summary</report>
+                <showPicturesOnTables>false</showPicturesOnTables>
+                <title>Underwriting Pipeline</title>
+            </dashboardComponent>
+            <rowIndex>16</rowIndex>
+            <rowSpan>6</rowSpan>
+        </dashboardGridComponents>
         <numberOfColumns>12</numberOfColumns>
         <rowHeight>36</rowHeight>
     </dashboardGridLayout>

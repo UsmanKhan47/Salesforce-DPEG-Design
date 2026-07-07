@@ -809,6 +809,18 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
+                <fieldItem>Record.Primary_Contract__r.Negotiation_Status__c</fieldItem>
+                <identifier>RecordPrimary_Contract_rNegotiation_Status_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Contract__r.Ball_In_Court__c</fieldItem>
+                <identifier>RecordPrimary_Contract_rBall_In_Court_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
                 <fieldItem>Record.Primary_Contract__r.PSA_Date__c</fieldItem>
                 <identifier>RecordPrimary_Contract_rPSA_Date_cField</identifier>
             </fieldInstance>
@@ -833,6 +845,12 @@
             <fieldInstance>
                 <fieldItem>Record.Primary_Contract__r.Summary__c</fieldItem>
                 <identifier>RecordPrimary_Contract_rSummary_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Contract__r.Latest_Version__c</fieldItem>
+                <identifier>RecordPrimary_Contract_rLatest_Version_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-contractCol2</name>
@@ -879,6 +897,12 @@
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>contractSection</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>psaVersionLog</componentName>
+                <identifier>psaVersionLogCard</identifier>
             </componentInstance>
         </itemInstances>
         <name>contractTabContent</name>
