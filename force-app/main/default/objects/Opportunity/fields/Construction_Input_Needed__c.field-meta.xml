@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Construction_Input_Needed__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Check when the construction lead's input is needed on this (retail) deal. Opens a Construction Condition Assessment at ANY stage - including before underwriting.</description>
+    <label>Construction Input Needed</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>

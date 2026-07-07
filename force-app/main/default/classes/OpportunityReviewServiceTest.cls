@@ -14,6 +14,50 @@ private class OpportunityReviewServiceTest {
     }
 
     @isTest
+    static void inputCheckboxesCreateReviewsAtAnyStage() {
+        Opportunity o = newOpp('New');
+        insert o;
+
+        Test.startTest();
+        // Both inputs requested while the deal is still at New - i.e. BEFORE
+        // underwriting, without touching the stage.
+        o.Development_Input_Needed__c = true;
+        o.Construction_Input_Needed__c = true;
+        update o;
+        Test.stopTest();
+
+        List<Development_Feasibility_Review__c> dfrs = [
+            SELECT Requested_By__c FROM Development_Feasibility_Review__c WHERE Opportunity__c = :o.Id
+        ];
+        System.assertEquals(1, dfrs.size(), 'Development review created from the input checkbox');
+        System.assertEquals(UserInfo.getUserId(), dfrs[0].Requested_By__c, 'Requester stamped');
+        System.assertEquals(1,
+            [SELECT COUNT() FROM Construction_Feasibility_Review__c WHERE Opportunity__c = :o.Id],
+            'Construction review created from the input checkbox');
+        System.assertEquals('New', [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'Stage untouched - reviews can open before underwriting');
+    }
+
+    @isTest
+    static void recheckedInputCheckboxIsIdempotent() {
+        Opportunity o = newOpp('New');
+        insert o;
+        o.Development_Input_Needed__c = true;
+        update o;
+
+        Test.startTest();
+        o.Development_Input_Needed__c = false;
+        update o;
+        o.Development_Input_Needed__c = true;
+        update o;
+        Test.stopTest();
+
+        System.assertEquals(1,
+            [SELECT COUNT() FROM Development_Feasibility_Review__c WHERE Opportunity__c = :o.Id],
+            'Re-flipping the checkbox must not create a second review');
+    }
+
+    @isTest
     static void developmentReviewCreatesOnInsert() {
         Test.startTest();
         Opportunity o = newOpp('Development Review');
@@ -77,7 +121,8 @@ private class OpportunityReviewServiceTest {
         insert o; // creates the first review
 
         Test.startTest();
-        o.StageName = 'Underwriting';
+        // Move away via Under Review (Underwriting is now gated on a signed NDA).
+        o.StageName = 'Under Review';
         update o; // moves away — no create
         o.StageName = 'Development Review';
         update o; // re-enters — must NOT create a second

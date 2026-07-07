@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Never_Expires__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Suppresses expiry tracking for this NDA (e.g. NDAs that must never expire for Nick). Filtered out of the expiring-NDA reports.</description>
+    <externalId>false</externalId>
+    <label>Never Expires</label>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

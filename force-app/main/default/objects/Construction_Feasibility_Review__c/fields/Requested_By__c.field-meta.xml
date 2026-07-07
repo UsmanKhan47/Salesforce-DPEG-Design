@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Requested_By__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Who asked for this assessment (stamped by OpportunityReviewService when the review is opened).</description>
+    <externalId>false</externalId>
+    <label>Requested By</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>Requested Construction Assessments</relationshipLabel>
+    <relationshipName>Requested_Construction_Reviews</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

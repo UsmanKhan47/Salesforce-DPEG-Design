@@ -137,6 +137,36 @@
                 <identifier>RecordPrimary_Underwriting_rPrincipal_Price_Decision_cField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Initiate_Underwriting__c</fieldItem>
+                <identifier>RecordInitiate_Underwriting_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Underwriting_Complete__c</fieldItem>
+                <identifier>RecordUnderwriting_Complete_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.UW_Approved__c</fieldItem>
+                <identifier>RecordUW_Approved_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-f85d0b42-32cd-459e-a3c8-d85e47aba82d</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -209,6 +239,36 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Equity_Multiple__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rEquity_Multiple_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.UW_Approved_By__c</fieldItem>
+                <identifier>RecordUW_Approved_By_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.UW_Approval_Date__c</fieldItem>
+                <identifier>RecordUW_Approval_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Underwriting_Notes__c</fieldItem>
+                <identifier>RecordUnderwriting_Notes_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-cae4e814-2481-4671-801d-3e02a4a306ba</name>
@@ -555,6 +615,16 @@
                 <identifier>RecordContract_Signed_cFieldDev</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Development_Input_Needed__c</fieldItem>
+                <identifier>RecordDevelopment_Input_Needed_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-devFields</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -633,6 +703,16 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Contract_Signed__c</fieldItem>
                 <identifier>RecordContract_Signed_cFieldCon</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Construction_Input_Needed__c</fieldItem>
+                <identifier>RecordConstruction_Input_Needed_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-conFields</name>

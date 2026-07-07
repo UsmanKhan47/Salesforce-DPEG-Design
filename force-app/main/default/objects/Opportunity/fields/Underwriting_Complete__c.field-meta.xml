@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Underwriting_Complete__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Section 12B: required checkbox confirming underwriting is complete. Gates entry into the Underwriting_Approval process (principals cannot be asked to approve an unfinished underwrite).</description>
+    <label>Underwriting Complete</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>

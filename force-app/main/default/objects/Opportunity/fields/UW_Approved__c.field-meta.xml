@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>UW_Approved__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Set by the Underwriting_Approval process final-approval action. Audit checkbox Junior asked for; approver/date stamped by ApprovalAuditService.</description>
+    <label>Underwriting Approved</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>

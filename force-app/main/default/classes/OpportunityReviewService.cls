@@ -1,9 +1,15 @@
 /**
- * When an Opportunity enters the "Development Review" (Land path) or
- * "Construction Review" (Commercial path) stage, create one feasibility-review
- * child record on the matching object. Idempotent: never creates a second review
- * for the same Opportunity if one of that type already exists, so re-entering or
- * re-saving the stage does not produce duplicates.
+ * Creates review child records for an Opportunity. Two triggers for a review:
+ *
+ *   1. Stage entry - "Development Review" (Land path) / "Construction Review"
+ *      (Commercial path) / "PSA Negotiation" (opens the Contract Review).
+ *   2. Input-needed checkboxes - Development_Input_Needed__c /
+ *      Construction_Input_Needed__c flipping true opens the matching review at
+ *      ANY stage, which is how Development/Construction engage BEFORE
+ *      underwriting without reordering the sales path.
+ *
+ * Idempotent: never creates a second review of the same type for one
+ * Opportunity, so re-entering a stage or re-flipping a checkbox is a no-op.
  */
 public with sharing class OpportunityReviewService {
 
@@ -24,15 +30,19 @@ public with sharing class OpportunityReviewService {
         for (Opportunity o : newOpps) {
             Opportunity prior = (oldMap == null) ? null : oldMap.get(o.Id);
             String priorStage = (prior == null) ? null : prior.StageName;
-            // Only act when the stage just became one of the trigger stages.
-            if (priorStage == o.StageName) {
-                continue;
-            }
-            if (o.StageName == DEV_STAGE) {
+            Boolean stageChanged = priorStage != o.StageName;
+            Boolean devFlip = o.Development_Input_Needed__c == true
+                && (prior == null || prior.Development_Input_Needed__c != true);
+            Boolean conFlip = o.Construction_Input_Needed__c == true
+                && (prior == null || prior.Construction_Input_Needed__c != true);
+
+            if ((stageChanged && o.StageName == DEV_STAGE) || devFlip) {
                 devOpps.add(o.Id);
-            } else if (o.StageName == CON_STAGE) {
+            }
+            if ((stageChanged && o.StageName == CON_STAGE) || conFlip) {
                 conOpps.add(o.Id);
-            } else if (o.StageName == CONTRACT_STAGE) {
+            }
+            if (stageChanged && o.StageName == CONTRACT_STAGE) {
                 contractOpps.add(o.Id);
             }
         }
@@ -63,12 +73,14 @@ public with sharing class OpportunityReviewService {
         List<Development_Feasibility_Review__c> devToInsert = new List<Development_Feasibility_Review__c>();
         for (Id oppId : devOpps) {
             devToInsert.add(new Development_Feasibility_Review__c(
-                Opportunity__c = oppId, Stage__c = 'Requested'));
+                Opportunity__c = oppId, Stage__c = 'Requested',
+                Requested_By__c = UserInfo.getUserId()));
         }
         List<Construction_Feasibility_Review__c> conToInsert = new List<Construction_Feasibility_Review__c>();
         for (Id oppId : conOpps) {
             conToInsert.add(new Construction_Feasibility_Review__c(
-                Opportunity__c = oppId, Stage__c = 'Requested'));
+                Opportunity__c = oppId, Stage__c = 'Requested',
+                Requested_By__c = UserInfo.getUserId()));
         }
         List<Contract_Review__c> contractToInsert = new List<Contract_Review__c>();
         for (Id oppId : contractOpps) {

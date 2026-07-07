@@ -20,4 +20,54 @@
         <protected>false</protected>
         <reevaluateOnChange>false</reevaluateOnChange>
     </fieldUpdates>
+    <fieldUpdates>
+        <fullName>UW_Set_Stage_Initiate_LOI</fullName>
+        <field>StageName</field>
+        <literalValue>Initiate LOI</literalValue>
+        <name>UW Set Stage Initiate LOI</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>UW_Set_Status_Approved</fullName>
+        <field>Underwriting_Status__c</field>
+        <literalValue>Approved by Principals</literalValue>
+        <name>UW Set Status Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>UW_Set_Approved_Flag</fullName>
+        <field>UW_Approved__c</field>
+        <literalValue>1</literalValue>
+        <name>UW Set Approved Flag</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>UW_Set_Stage_Dead</fullName>
+        <field>StageName</field>
+        <literalValue>Dead/Pass</literalValue>
+        <name>UW Set Stage Dead</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>UW_Set_Category_Dead</fullName>
+        <field>Deal_Category__c</field>
+        <literalValue>Dead</literalValue>
+        <name>UW Set Category Dead</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
 </Workflow>

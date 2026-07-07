@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Initiate_Underwriting__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Section 12B.I: check to kick the deal into the Underwriting stage (the Opportunity_Initiate_Underwriting flow advances the stage; the NDA-signed validation rule still applies).</description>
+    <label>Initiate Underwriting</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>
