@@ -37,9 +37,7 @@ const CONTRACT_TONE = {
 // Underwriting stages.
 const UW_TONE = {
     Requested: 'grey',
-    'Data Collection': 'blue',
-    Modeling: 'blue',
-    Review: 'amber',
+    'In Progress': 'blue',
     Complete: 'green'
 };
 

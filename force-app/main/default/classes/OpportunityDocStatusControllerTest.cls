@@ -33,7 +33,7 @@ private class OpportunityDocStatusControllerTest {
         );
         insert new Underwriting__c(
             Opportunity__c = opp.Id,
-            Stage__c = 'Modeling',
+            Stage__c = 'In Progress',
             My_Price__c = 17000000
         );
 
@@ -49,7 +49,7 @@ private class OpportunityDocStatusControllerTest {
         System.assertEquals(18000000, d.loiOfferPrice);
 
         System.assert(d.hasUnderwriting, 'Underwriting should be found');
-        System.assertEquals('Modeling', d.underwritingStage);
+        System.assertEquals('In Progress', d.underwritingStage);
         System.assertEquals(17000000, d.underwritingPrice);
 
         System.assert(d.hasDevelopment, 'Development review should be found');

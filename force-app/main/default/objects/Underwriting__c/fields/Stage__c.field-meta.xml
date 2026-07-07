@@ -17,19 +17,9 @@
                 <label>Requested</label>
             </value>
             <value>
-                <fullName>Data Collection</fullName>
+                <fullName>In Progress</fullName>
                 <default>false</default>
-                <label>Data Collection</label>
-            </value>
-            <value>
-                <fullName>Modeling</fullName>
-                <default>false</default>
-                <label>Modeling</label>
-            </value>
-            <value>
-                <fullName>Review</fullName>
-                <default>false</default>
-                <label>Review</label>
+                <label>In Progress</label>
             </value>
             <value>
                 <fullName>Complete</fullName>
