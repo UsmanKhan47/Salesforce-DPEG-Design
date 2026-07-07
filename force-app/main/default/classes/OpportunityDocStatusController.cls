@@ -14,7 +14,7 @@ public with sharing class OpportunityDocStatusController {
         }
 
         Opportunity opp = [
-            SELECT Id, Primary_NDA__c, Primary_LOI__c
+            SELECT Id, Primary_NDA__c, Primary_LOI__c, Primary_Underwriting__c
             FROM Opportunity
             WHERE Id = :opportunityId
             LIMIT 1
@@ -36,6 +36,24 @@ public with sharing class OpportunityDocStatusController {
             d.ndaSent = nda.Date_Sent__c;
             d.ndaExpiry = nda.NDA_Expiry_Date__c;
             d.ndaSigned = nda.NDA_Signed__c == true;
+        }
+
+        // --- Underwriting: primary, else latest related ---
+        Underwriting__c uw;
+        if (opp.Primary_Underwriting__c != null) {
+            uw = queryUnderwriting('Id = :pid', opp.Primary_Underwriting__c);
+        }
+        if (uw == null) {
+            uw = queryUnderwriting('Opportunity__c = :pid ORDER BY CreatedDate DESC', opportunityId);
+        }
+        if (uw != null) {
+            d.hasUnderwriting = true;
+            d.underwritingId = uw.Id;
+            d.underwritingName = uw.Name;
+            d.underwritingStage = uw.Stage__c;
+            d.underwritingPrice = uw.My_Price__c;
+            d.underwritingVerdict = uw.Verdict__c;
+            d.underwritingOpened = uw.CreatedDate.date();
         }
 
         // --- LOI: primary, else latest related ---
@@ -110,6 +128,14 @@ public with sharing class OpportunityDocStatusController {
         return rows.isEmpty() ? null : rows[0];
     }
 
+    private static Underwriting__c queryUnderwriting(String tail, Id pid) {
+        List<Underwriting__c> rows = Database.query(
+            'SELECT Id, Name, Stage__c, My_Price__c, Verdict__c, CreatedDate ' +
+            'FROM Underwriting__c WHERE ' + tail + ' LIMIT 1'
+        );
+        return rows.isEmpty() ? null : rows[0];
+    }
+
     private static LOI__c queryLoi(String tail, Id pid) {
         List<LOI__c> rows = Database.query(
             'SELECT Id, Name, LOI_Status__c, Offer_Price__c, Offer_Cap_Rate__c, Submitted_Date__c ' +
@@ -126,6 +152,14 @@ public with sharing class OpportunityDocStatusController {
         @AuraEnabled public Date ndaSent;
         @AuraEnabled public Date ndaExpiry;
         @AuraEnabled public Boolean ndaSigned = false;
+
+        @AuraEnabled public Boolean hasUnderwriting = false;
+        @AuraEnabled public Id underwritingId;
+        @AuraEnabled public String underwritingName;
+        @AuraEnabled public String underwritingStage;
+        @AuraEnabled public Decimal underwritingPrice;
+        @AuraEnabled public String underwritingVerdict;
+        @AuraEnabled public Date underwritingOpened;
 
         @AuraEnabled public Boolean hasLoi = false;
         @AuraEnabled public Id loiId;

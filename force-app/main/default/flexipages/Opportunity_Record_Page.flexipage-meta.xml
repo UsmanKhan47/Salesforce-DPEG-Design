@@ -73,47 +73,43 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.My_Price__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Stage__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rStage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.My_Price__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rMy_Price_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.My_Cap_Rate__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.My_Cap_Rate__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rMy_Cap_Rate_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Market_Cap_Rate__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Market_Cap_Rate__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rMarket_Cap_Rate_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Underwritten_NOI__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Underwritten_NOI__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rUnderwritten_NOI_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Target_Return__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Target_Return__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rTarget_Return_cField</identifier>
             </fieldInstance>
         </itemInstances>
@@ -129,11 +125,7 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Principal_Price_Decision__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Principal_Price_Decision__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rPrincipal_Price_Decision_cField</identifier>
             </fieldInstance>
         </itemInstances>
@@ -173,72 +165,56 @@
     <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Hold_Period__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Hold_Period__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rHold_Period_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Equity_Required__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Equity_Required__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rEquity_Required_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Projected_Loan__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Projected_Loan__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rProjected_Loan_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.GRM__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.GRM__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rGRM_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Underwriting_OneDrive_URL__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Underwriting_OneDrive_URL__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rUnderwriting_OneDrive_URL_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Cash_on_Cash_Return__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Cash_on_Cash_Return__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rCash_on_Cash_Return_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Equity_Multiple__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Equity_Multiple__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rEquity_Multiple_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Year_5_IRR__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rYear_5_IRR_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Verdict__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rVerdict_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>

@@ -31,6 +31,11 @@ private class OpportunityDocStatusControllerTest {
             Offer_Cap_Rate__c = 7,
             Submitted_Date__c = Date.today()
         );
+        insert new Underwriting__c(
+            Opportunity__c = opp.Id,
+            Stage__c = 'Modeling',
+            My_Price__c = 17000000
+        );
 
         Test.startTest();
         OpportunityDocStatusController.DocStatus d =
@@ -42,6 +47,10 @@ private class OpportunityDocStatusControllerTest {
         System.assert(d.hasLoi, 'LOI should be found');
         System.assertEquals('Submitted', d.loiStatus);
         System.assertEquals(18000000, d.loiOfferPrice);
+
+        System.assert(d.hasUnderwriting, 'Underwriting should be found');
+        System.assertEquals('Modeling', d.underwritingStage);
+        System.assertEquals(17000000, d.underwritingPrice);
 
         System.assert(d.hasDevelopment, 'Development review should be found');
         System.assertEquals('Requested', d.developmentStage);
@@ -58,7 +67,7 @@ private class OpportunityDocStatusControllerTest {
             OpportunityDocStatusController.getDocStatus(null);
         Test.stopTest();
 
-        System.assert(!d.hasNda && !d.hasLoi && !d.hasDevelopment
+        System.assert(!d.hasNda && !d.hasLoi && !d.hasUnderwriting && !d.hasDevelopment
             && !d.hasConstruction && !d.hasContract, 'Empty status for null opp');
     }
 }

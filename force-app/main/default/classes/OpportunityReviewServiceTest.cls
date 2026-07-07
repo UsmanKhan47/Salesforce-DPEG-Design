@@ -35,6 +35,13 @@ private class OpportunityReviewServiceTest {
         update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'touch');
         System.assertEquals(1, [SELECT COUNT() FROM Underwriting__c WHERE Opportunity__c = :o.Id],
             'No duplicate Underwriting on re-save');
+
+        // Numbers entered on the Underwriting record sync back to the Opp mirrors
+        // (Underwriting_Opp_Sync flow) so reports and the approval page stay current.
+        update new Underwriting__c(Id = uws[0].Id, My_Price__c = 17500000, Underwritten_NOI__c = 1200000);
+        stamped = [SELECT My_Price__c, Underwritten_NOI__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(17500000, stamped.My_Price__c, 'Opp mirrors the primary underwriting price');
+        System.assertEquals(1200000, stamped.Underwritten_NOI__c, 'Opp mirrors the underwritten NOI');
     }
 
     @isTest
