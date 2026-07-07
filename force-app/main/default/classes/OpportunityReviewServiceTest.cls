@@ -14,6 +14,30 @@ private class OpportunityReviewServiceTest {
     }
 
     @isTest
+    static void underwritingRecordCreatesOnStageEntry() {
+        Test.startTest();
+        Opportunity o = newOpp('Underwriting'); // insert = stage entry; NDA VR gates updates only
+        insert o;
+        Test.stopTest();
+
+        List<Underwriting__c> uws = [
+            SELECT Stage__c, Status__c FROM Underwriting__c WHERE Opportunity__c = :o.Id
+        ];
+        System.assertEquals(1, uws.size(), 'One Underwriting record opens on entering the stage');
+        System.assertEquals('Requested', uws[0].Stage__c, 'Underwriting path starts at Requested');
+        System.assertEquals('In Progress', uws[0].Status__c, 'Coarse status starts In Progress');
+
+        Opportunity stamped = [SELECT Primary_Underwriting__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(uws[0].Id, stamped.Primary_Underwriting__c,
+            'Primary_Underwriting__c stamped so the Opp tab can span to it');
+
+        // Idempotency: re-saving at the same stage must not open a second record.
+        update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'touch');
+        System.assertEquals(1, [SELECT COUNT() FROM Underwriting__c WHERE Opportunity__c = :o.Id],
+            'No duplicate Underwriting on re-save');
+    }
+
+    @isTest
     static void inputCheckboxesCreateReviewsAtAnyStage() {
         Opportunity o = newOpp('New');
         insert o;

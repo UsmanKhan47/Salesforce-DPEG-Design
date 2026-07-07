@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Underwriting__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Underwriting Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Underwriting opened for the deal. Confirm the guidance numbers carried over and assign the underwriter.</info>
+        <picklistValueName>Requested</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Underwriting_OneDrive_URL__c</fieldNames>
+        <info>Gather rent rolls, T-12s, and market data. Attach the Placer/CoStar links on the deal and drop the model link here.</info>
+        <picklistValueName>Data Collection</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>My_Price__c</fieldNames>
+        <fieldNames>My_Cap_Rate__c</fieldNames>
+        <info>Build the model: our price, cap rate, NOI, returns. Log every seller/broker exchange in the Messages tab.</info>
+        <picklistValueName>Modeling</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Underwritten_NOI__c</fieldNames>
+        <fieldNames>Year_5_IRR__c</fieldNames>
+        <info>Internal review of the numbers. Verdict compares Year-5 IRR against the target return.</info>
+        <picklistValueName>Review</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Principal_Price_Decision__c</fieldNames>
+        <info>Underwrite finished. Check Underwriting Complete on the deal and submit for principal approval (12B).</info>
+        <picklistValueName>Complete</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

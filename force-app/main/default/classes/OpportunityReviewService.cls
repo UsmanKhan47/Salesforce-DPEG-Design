@@ -16,6 +16,7 @@ public with sharing class OpportunityReviewService {
     @TestVisible private static final String DEV_STAGE = 'Development Review';
     @TestVisible private static final String CON_STAGE = 'Construction Review';
     @TestVisible private static final String CONTRACT_STAGE = 'PSA Negotiation';
+    @TestVisible private static final String UW_STAGE = 'Underwriting';
 
     /**
      * Called from the Opportunity after-insert / after-update trigger.
@@ -26,6 +27,7 @@ public with sharing class OpportunityReviewService {
         Set<Id> devOpps = new Set<Id>();
         Set<Id> conOpps = new Set<Id>();
         Set<Id> contractOpps = new Set<Id>();
+        Set<Id> uwOpps = new Set<Id>();
 
         for (Opportunity o : newOpps) {
             Opportunity prior = (oldMap == null) ? null : oldMap.get(o.Id);
@@ -45,8 +47,11 @@ public with sharing class OpportunityReviewService {
             if (stageChanged && o.StageName == CONTRACT_STAGE) {
                 contractOpps.add(o.Id);
             }
+            if (stageChanged && o.StageName == UW_STAGE) {
+                uwOpps.add(o.Id);
+            }
         }
-        if (devOpps.isEmpty() && conOpps.isEmpty() && contractOpps.isEmpty()) {
+        if (devOpps.isEmpty() && conOpps.isEmpty() && contractOpps.isEmpty() && uwOpps.isEmpty()) {
             return;
         }
 
@@ -68,6 +73,12 @@ public with sharing class OpportunityReviewService {
             WHERE Opportunity__c IN :contractOpps
         ]) {
             contractOpps.remove(cr.Opportunity__c);
+        }
+        for (Underwriting__c uw : [
+            SELECT Opportunity__c FROM Underwriting__c
+            WHERE Opportunity__c IN :uwOpps
+        ]) {
+            uwOpps.remove(uw.Opportunity__c);
         }
 
         List<Development_Feasibility_Review__c> devToInsert = new List<Development_Feasibility_Review__c>();
@@ -104,6 +115,22 @@ public with sharing class OpportunityReviewService {
                 oppsToStamp.add(new Opportunity(Id = cr.Opportunity__c, Primary_Contract__c = cr.Id));
             }
             update oppsToStamp;
+        }
+
+        // Entering Underwriting opens the Underwriting record (same primary-stamp
+        // pattern as the Contract Review at PSA Negotiation).
+        if (!uwOpps.isEmpty()) {
+            List<Underwriting__c> uwToInsert = new List<Underwriting__c>();
+            for (Id oppId : uwOpps) {
+                uwToInsert.add(new Underwriting__c(
+                    Opportunity__c = oppId, Stage__c = 'Requested', Status__c = 'In Progress'));
+            }
+            insert uwToInsert;
+            List<Opportunity> uwStamps = new List<Opportunity>();
+            for (Underwriting__c uw : uwToInsert) {
+                uwStamps.add(new Opportunity(Id = uw.Opportunity__c, Primary_Underwriting__c = uw.Id));
+            }
+            update uwStamps;
         }
     }
 }
