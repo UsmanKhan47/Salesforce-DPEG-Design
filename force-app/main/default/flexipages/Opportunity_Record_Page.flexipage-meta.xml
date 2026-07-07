@@ -465,6 +465,28 @@
                 <identifier>RecordPrimary_LOI_rFinal_Agreed_Price_cField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Ball_In_Court__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rBall_In_Court_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.NOI__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rNOI_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.LOI_Prep_Approved__c</fieldItem>
+                <identifier>RecordLOI_Prep_Approved_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-5a92c0c4-b84e-4408-9714-ca8018e83726</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -497,6 +519,30 @@
             <fieldInstance>
                 <fieldItem>Record.Primary_LOI__r.Due_Diligence_Days__c</fieldItem>
                 <identifier>RecordPrimary_LOI_rDue_Diligence_Days_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Square_Footage__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rSquare_Footage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.ARC__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rARC_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Title_Company__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rTitle_Company_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Approved_By__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rApproved_By_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-93a4879b-673f-48ac-bdf0-e1c34a293609</name>

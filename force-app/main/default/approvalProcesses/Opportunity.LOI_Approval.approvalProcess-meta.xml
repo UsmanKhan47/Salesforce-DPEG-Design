@@ -20,7 +20,11 @@
                 <name>test-3iuncy5c1je5@example.com</name>
                 <type>user</type>
             </approver>
-            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+            <approver>
+                <name>nikhil.principal@dpeg-acq.demo</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>Unanimous</whenMultipleApprovers>
         </assignedApprover>
         <label>LOI Approval</label>
         <name>LOI_Approval_Step</name>

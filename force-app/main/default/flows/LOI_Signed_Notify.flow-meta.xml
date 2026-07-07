@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Notify_Legal</name>
+        <label>Notify Legal</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <connector><targetReference>Notify_IR</targetReference></connector>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value><stringValue>Legal_Team</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value><stringValue>LOI fully executed</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value><stringValue>Both parties have signed. PSA negotiation begins - compare the seller draft against this LOI.</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value><elementReference>$Record.Id</elementReference></value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <actionCalls>
+        <name>Notify_IR</name>
+        <label>Notify IR</label>
+        <locationX>176</locationX>
+        <locationY>408</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value><stringValue>Investor_Relations</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value><stringValue>LOI executed - prepare Offering Memorandum</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value><stringValue>The LOI is signed by both sides. IR can begin the Offering Memorandum.</stringValue></value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value><elementReference>$Record.Id</elementReference></value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <apiVersion>62.0</apiVersion>
+    <environments>Default</environments>
+    <interviewLabel>LOI Signed Notify {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>LOI Signed Notify</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector><targetReference>Notify_Legal</targetReference></connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>LOI_Signed__c</field>
+            <operator>EqualTo</operator>
+            <value><booleanValue>true</booleanValue></value>
+        </filters>
+        <object>LOI__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

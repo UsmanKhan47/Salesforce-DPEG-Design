@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Ball_In_Court__c</fullName>
+    <description>Whose turn it is in the LOI negotiation. Flipped automatically by CounterOfferController when a counter is logged (seller counter -> Us; our counter -> Seller).</description>
+    <label>Ball In Court</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Us</fullName>
+                <default>false</default>
+                <label>Us</label>
+            </value>
+            <value>
+                <fullName>Seller</fullName>
+                <default>false</default>
+                <label>Seller</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

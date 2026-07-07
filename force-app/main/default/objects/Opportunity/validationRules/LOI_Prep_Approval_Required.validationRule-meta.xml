@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LOI_Prep_Approval_Required</fullName>
+    <active>true</active>
+    <description>Section 14: the Acquisitions team must approve starting the LOI before the deal can be submitted for principal LOI approval. Gates the transition into LOI Under Approval; approval-process field updates bypass this rule.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(StageName, 'LOI Under Approval'),
+    NOT(LOI_Prep_Approved__c)
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>The Acquisitions team must approve LOI preparation (check LOI Prep Approved) before this deal can move to LOI Under Approval.</errorMessage>
+</ValidationRule>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LOI_Prep_Approved__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Section 14: the Acquisitions team's go-ahead BEFORE the LOI process begins. Required (validation rule) before the deal can move to LOI Under Approval. Approver/date auto-stamped.</description>
+    <label>LOI Prep Approved</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>

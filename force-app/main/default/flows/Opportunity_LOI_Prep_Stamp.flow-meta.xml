@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <assignments>
+        <name>Stamp_Prep_Approval</name>
+        <label>Stamp Prep Approval</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.LOI_Prep_Approved_By__c</assignToReference>
+            <operator>Assign</operator>
+            <value><elementReference>$User.Id</elementReference></value>
+        </assignmentItems>
+        <assignmentItems>
+            <assignToReference>$Record.LOI_Prep_Approval_Date__c</assignToReference>
+            <operator>Assign</operator>
+            <value><elementReference>$Flow.CurrentDateTime</elementReference></value>
+        </assignmentItems>
+    </assignments>
+    <decisions>
+        <name>Needs_Prep_Stamp</name>
+        <label>Needs Prep Stamp?</label>
+        <locationX>176</locationX>
+        <locationY>180</locationY>
+        <defaultConnectorLabel>No</defaultConnectorLabel>
+        <rules>
+            <name>Approved_Without_Stamp</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.LOI_Prep_Approved__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue><booleanValue>true</booleanValue></rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>$Record.LOI_Prep_Approved_By__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue><booleanValue>true</booleanValue></rightValue>
+            </conditions>
+            <connector><targetReference>Stamp_Prep_Approval</targetReference></connector>
+            <label>Approved Without Stamp</label>
+        </rules>
+    </decisions>
+    <environments>Default</environments>
+    <interviewLabel>Opportunity LOI Prep Stamp {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Opportunity LOI Prep Stamp</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector><targetReference>Needs_Prep_Stamp</targetReference></connector>
+        <object>Opportunity</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordBeforeSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>
