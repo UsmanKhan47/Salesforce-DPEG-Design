@@ -31,7 +31,6 @@ const COLUMNS = [
     { label: 'Channel', fieldName: 'channel', type: 'text', cellAttributes: { iconName: { fieldName: 'channelIcon' }, iconPosition: 'left' } },
     { label: 'Data Completeness', fieldName: 'confidence', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'confWrap' }, dotStyle: { fieldName: 'confDot' } } },
     { label: 'Broker', fieldName: 'broker', type: 'text' },
-    { label: 'Approved By', fieldName: 'approvedBy', type: 'text' },
     { label: 'Age', fieldName: 'days', type: 'text' }
 ];
 
@@ -89,7 +88,6 @@ export default class RecentLeads extends NavigationMixin(LightningElement) {
                 confWrap: pillWrap(cBg),
                 confDot: pillDot(cDot),
                 broker: r.priority === 'High' ? `⭐ ${brokerName}` : brokerName,
-                approvedBy: r.approvedBy || '—',
                 days: r.days + 'd'
             };
         });
