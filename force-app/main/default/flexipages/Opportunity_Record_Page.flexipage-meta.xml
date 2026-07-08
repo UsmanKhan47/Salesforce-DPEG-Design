@@ -63,6 +63,12 @@
                 <identifier>dealPath</identifier>
             </componentInstance>
         </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>advanceDealStage</componentName>
+                <identifier>advanceDealStageComp</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>subheader</name>
         <type>Region</type>
     </flexiPageRegions>
