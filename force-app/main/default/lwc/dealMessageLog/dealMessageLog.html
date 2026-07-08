@@ -31,13 +31,15 @@
                         onchange={onDirection}
                         variant="label-stacked">
                     </lightning-combobox>
-                    <lightning-combobox
-                        label="Method"
-                        value={upMethod}
-                        options={methodOptions}
-                        onchange={onMethod}
-                        variant="label-stacked">
-                    </lightning-combobox>
+                    <template if:true={showMethod}>
+                        <lightning-combobox
+                            label="Method"
+                            value={upMethod}
+                            options={methodOptions}
+                            onchange={onMethod}
+                            variant="label-stacked">
+                        </lightning-combobox>
+                    </template>
                 </div>
                 <template if:true={showRevision}>
                     <lightning-input
@@ -96,10 +98,12 @@
                             </div>
                             <div class="dml-details">{e.details}</div>
                             <div class="dml-entry-foot">
-                                <span class="dml-method">
-                                    <lightning-icon icon-name={e.methodIcon} size="xx-small"></lightning-icon>
-                                    {e.method}
-                                </span>
+                                <template if:true={showMethod}>
+                                    <span class="dml-method">
+                                        <lightning-icon icon-name={e.methodIcon} size="xx-small"></lightning-icon>
+                                        {e.method}
+                                    </span>
+                                </template>
                                 <span class={e.directionClass}>{e.direction}</span>
                                 <template if:true={e.revision}>
                                     <span class="dml-rev">

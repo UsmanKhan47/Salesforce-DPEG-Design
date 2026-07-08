@@ -323,6 +323,10 @@
                     <name>showRevision</name>
                     <value>true</value>
                 </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>hideMethod</name>
+                    <value>true</value>
+                </componentInstanceProperties>
                 <componentName>dealMessageLog</componentName>
                 <identifier>counterHistoryCard</identifier>
             </componentInstance>

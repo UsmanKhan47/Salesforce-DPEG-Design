@@ -13,6 +13,8 @@
                 description="Heading shown at the top of the log card (e.g. Counter History)."/>
             <property name="showRevision" type="Boolean" label="Show Document Revision" default="false"
                 description="Adds a Document Revision input (for Legal to record the PSA version) and a revision badge on each entry. Use on Contract Review."/>
+            <property name="hideMethod" type="Boolean" label="Hide Method" default="false"
+                description="Hides the Method (Call/Email/Meeting/Note) picker in the composer and badge on each entry. Turn on for Contract Review."/>
         </targetConfig>
     </targetConfigs>
 </LightningComponentBundle>

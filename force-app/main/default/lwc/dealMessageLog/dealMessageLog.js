@@ -24,6 +24,10 @@ export default class DealMessageLog extends LightningElement {
     // Shows a Document Revision input in the composer (Legal records the PSA
     // version) and a revision badge on each entry. Enabled on Contract Review.
     @api showRevision = false;
+    // Hides the Method (Call/Email/Meeting/Note) picker in the composer and the
+    // method badge on each entry. Turned on for Contract Review. (Public boolean
+    // @api props must default to false, so this is expressed as "hide".)
+    @api hideMethod = false;
     _wired;
     messages;
     adding = false;
@@ -51,6 +55,10 @@ export default class DealMessageLog extends LightningElement {
         if (result.data) {
             this.messages = result.data;
         }
+    }
+
+    get showMethod() {
+        return !this.hideMethod;
     }
 
     get count() {
