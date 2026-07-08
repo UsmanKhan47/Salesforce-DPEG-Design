@@ -53,16 +53,6 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentName>dealMessageLog</componentName>
-                <identifier>dealMessageLogCard</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>messagesContent</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
                 <componentInstanceProperties>
                     <name>parentFieldApiName</name>
                     <value>Underwriting__c.Id</value>
@@ -91,20 +81,6 @@
                 </componentInstanceProperties>
                 <componentName>flexipage:tab</componentName>
                 <identifier>detailsTab</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>messagesContent</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>title</name>
-                    <value>Messages</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:tab</componentName>
-                <identifier>messagesTab</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>
@@ -142,47 +118,11 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
-                    <name>showLegacyActivityComposer</name>
-                    <value>false</value>
+                    <name>cardTitle</name>
+                    <value>Counter History</value>
                 </componentInstanceProperties>
-                <componentName>runtime_sales_activities:activityPanel</componentName>
-                <identifier>activityPanel</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-activityBody</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>active</name>
-                    <value>true</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-activityBody</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>title</name>
-                    <value>Standard.Tab.activity</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:tab</componentName>
-                <identifier>sidebarActivityTab</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-sidebarTabs</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>tabs</name>
-                    <value>Facet-sidebarTabs</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:tabset</componentName>
-                <identifier>sidebarTabset</identifier>
+                <componentName>dealMessageLog</componentName>
+                <identifier>counterHistoryCard</identifier>
             </componentInstance>
         </itemInstances>
         <name>sidebar</name>

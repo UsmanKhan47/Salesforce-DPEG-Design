@@ -7,4 +7,10 @@
     <targets>
         <target>lightning__RecordPage</target>
     </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <property name="cardTitle" type="String" label="Card Title" default="Messages"
+                description="Heading shown at the top of the log card (e.g. Counter History)."/>
+        </targetConfig>
+    </targetConfigs>
 </LightningComponentBundle>

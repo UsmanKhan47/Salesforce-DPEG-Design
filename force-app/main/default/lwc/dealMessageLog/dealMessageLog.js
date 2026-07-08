@@ -18,6 +18,9 @@ const METHOD_ICONS = {
 // derived server-side from the record Id.
 export default class DealMessageLog extends LightningElement {
     @api recordId;
+    // Card heading — configurable per page (e.g. "Counter History" on the LOI /
+    // Underwriting sidebar), defaults to "Messages" where not set.
+    @api cardTitle = 'Messages';
     _wired;
     messages;
     adding = false;
