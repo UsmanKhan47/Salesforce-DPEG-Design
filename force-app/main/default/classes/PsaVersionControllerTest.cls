@@ -50,7 +50,7 @@ private class PsaVersionControllerTest {
         System.assertEquals('Seller', cr.Ball_In_Court__c, 'Our redline puts the ball in the seller court');
         System.assertEquals('Buyer Counter', cr.Negotiation_Status__c, 'Our version = Buyer Counter');
         System.assertEquals(2, cr.Latest_Version__c, 'Two versions tracked');
-        System.assertEquals('Contract Negotiation', cr.Stage__c, 'Stage synced to negotiation');
+        System.assertEquals('Counter', cr.Stage__c, 'Buyer/Seller Counter status syncs to the Counter stage');
         System.assertEquals(2, PsaVersionController.getVersions(cr.Id).size(), 'Full history preserved');
     }
 

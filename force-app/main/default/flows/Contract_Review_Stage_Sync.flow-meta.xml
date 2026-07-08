@@ -14,13 +14,24 @@
     </assignments>
     <assignments>
         <name>Set_Stage_Negotiation</name>
-        <label>Set Stage Negotiation</label>
+        <label>Set Stage Prepare</label>
         <locationX>176</locationX>
         <locationY>288</locationY>
         <assignmentItems>
             <assignToReference>$Record.Stage__c</assignToReference>
             <operator>Assign</operator>
-            <value><stringValue>Contract Negotiation</stringValue></value>
+            <value><stringValue>Prepare</stringValue></value>
+        </assignmentItems>
+    </assignments>
+    <assignments>
+        <name>Set_Stage_Counter</name>
+        <label>Set Stage Counter</label>
+        <locationX>554</locationX>
+        <locationY>288</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Stage__c</assignToReference>
+            <operator>Assign</operator>
+            <value><stringValue>Counter</stringValue></value>
         </assignmentItems>
     </assignments>
     <assignments>
@@ -56,7 +67,7 @@
         <locationX>176</locationX>
         <locationY>180</locationY>
         <defaultConnector><targetReference>Set_Stage_Negotiation</targetReference></defaultConnector>
-        <defaultConnectorLabel>Negotiating</defaultConnectorLabel>
+        <defaultConnectorLabel>Preparing</defaultConnectorLabel>
         <rules>
             <name>Is_Initial_Draft</name>
             <conditionLogic>and</conditionLogic>
@@ -94,6 +105,22 @@
             </conditions>
             <connector><targetReference>Set_Stage_Executed_Only</targetReference></connector>
             <label>Executed - date kept</label>
+        </rules>
+        <rules>
+            <name>Is_Counter</name>
+            <conditionLogic>or</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Negotiation_Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue><stringValue>Seller Counter</stringValue></rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>$Record.Negotiation_Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue><stringValue>Buyer Counter</stringValue></rightValue>
+            </conditions>
+            <connector><targetReference>Set_Stage_Counter</targetReference></connector>
+            <label>Counter (seller or buyer)</label>
         </rules>
     </decisions>
     <environments>Default</environments>

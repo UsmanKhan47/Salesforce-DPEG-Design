@@ -31,7 +31,8 @@ const REVIEW_TONE = {
 // Contract-review stages.
 const CONTRACT_TONE = {
     'PSA Drafting': 'blue',
-    'Contract Negotiation': 'amber',
+    'Prepare': 'amber',
+    'Counter': 'red',
     'Contract Execution (Signed)': 'green'
 };
 // Underwriting stages.
