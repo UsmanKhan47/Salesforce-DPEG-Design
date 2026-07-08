@@ -19,10 +19,10 @@ private class DealMessageControllerTest {
         insert cr;
 
         Test.startTest();
-        DealMessageController.addMessage(loi.Id, 'Email', 'Sent', 'LOI draft sent to broker');
-        DealMessageController.addMessage(loi.Id, 'Call', 'Received', 'Broker called with feedback');
-        DealMessageController.addMessage(uw.Id, 'Note', 'Internal', 'Waiting on the T-12');
-        DealMessageController.addMessage(cr.Id, 'Email', 'Received', 'Seller counsel sent redline');
+        DealMessageController.addMessage(loi.Id, 'Email', 'Sent', 'LOI draft sent to broker', null);
+        DealMessageController.addMessage(loi.Id, 'Call', 'Received', 'Broker called with feedback', null);
+        DealMessageController.addMessage(uw.Id, 'Note', 'Internal', 'Waiting on the T-12', null);
+        DealMessageController.addMessage(cr.Id, 'Email', 'Received', 'Seller counsel sent redline', 'v3');
         Test.stopTest();
 
         List<DealMessageController.Entry> loiLog = DealMessageController.getMessages(loi.Id);
@@ -32,7 +32,9 @@ private class DealMessageControllerTest {
         System.assertNotEquals(null, loiLog[0].enteredBy, 'Author captured');
 
         System.assertEquals(1, DealMessageController.getMessages(uw.Id).size(), 'Underwriting history isolated');
-        System.assertEquals(1, DealMessageController.getMessages(cr.Id).size(), 'Contract history isolated');
+        List<DealMessageController.Entry> crLog = DealMessageController.getMessages(cr.Id);
+        System.assertEquals(1, crLog.size(), 'Contract history isolated');
+        System.assertEquals('v3', crLog[0].revision, 'Document revision captured on the Contract message');
     }
 
     @isTest
@@ -43,7 +45,7 @@ private class DealMessageControllerTest {
 
         Boolean threwObject = false;
         try {
-            DealMessageController.addMessage(o.Id, 'Note', 'Internal', 'not allowed here');
+            DealMessageController.addMessage(o.Id, 'Note', 'Internal', 'not allowed here', null);
         } catch (Exception e) {
             threwObject = true;
         }
@@ -53,7 +55,7 @@ private class DealMessageControllerTest {
         insert loi;
         Boolean threwBlank = false;
         try {
-            DealMessageController.addMessage(loi.Id, 'Note', 'Internal', '   ');
+            DealMessageController.addMessage(loi.Id, 'Note', 'Internal', '   ', null);
         } catch (Exception e) {
             threwBlank = true;
         }

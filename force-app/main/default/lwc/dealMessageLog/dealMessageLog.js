@@ -21,12 +21,16 @@ export default class DealMessageLog extends LightningElement {
     // Card heading — configurable per page (e.g. "Counter History" on the LOI /
     // Underwriting sidebar), defaults to "Messages" where not set.
     @api cardTitle = 'Messages';
+    // Shows a Document Revision input in the composer (Legal records the PSA
+    // version) and a revision badge on each entry. Enabled on Contract Review.
+    @api showRevision = false;
     _wired;
     messages;
     adding = false;
     upMethod = 'Note';
     upDirection = 'Internal';
     upDetails = '';
+    upRevision = '';
     error = '';
 
     methodOptions = [
@@ -61,6 +65,7 @@ export default class DealMessageLog extends LightningElement {
         return rows.map((m, i) => ({
             id: m.id,
             details: m.details,
+            revision: m.revision,
             enteredBy: m.enteredBy || '—',
             entryDate: m.entryDate,
             method: m.method || 'Note',
@@ -78,6 +83,7 @@ export default class DealMessageLog extends LightningElement {
         this.upMethod = 'Note';
         this.upDirection = 'Internal';
         this.upDetails = '';
+        this.upRevision = '';
         this.error = '';
     }
     cancel() {
@@ -94,6 +100,9 @@ export default class DealMessageLog extends LightningElement {
         this.upDetails = e.detail.value;
         this.error = '';
     }
+    onRevision(e) {
+        this.upRevision = e.detail.value;
+    }
 
     save() {
         if (!this.upDetails || !this.upDetails.trim()) {
@@ -104,7 +113,8 @@ export default class DealMessageLog extends LightningElement {
             recordId: this.recordId,
             method: this.upMethod,
             direction: this.upDirection,
-            details: this.upDetails
+            details: this.upDetails,
+            revision: this.upRevision
         })
             .then(() => {
                 this.adding = false;

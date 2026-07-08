@@ -39,6 +39,16 @@
                         variant="label-stacked">
                     </lightning-combobox>
                 </div>
+                <template if:true={showRevision}>
+                    <lightning-input
+                        class="dml-revision"
+                        label="Document Revision"
+                        value={upRevision}
+                        onchange={onRevision}
+                        placeholder="e.g. v3, Rev B"
+                        variant="label-stacked">
+                    </lightning-input>
+                </template>
                 <lightning-textarea
                     class="dml-textarea"
                     label="What was communicated"
@@ -91,6 +101,12 @@
                                     {e.method}
                                 </span>
                                 <span class={e.directionClass}>{e.direction}</span>
+                                <template if:true={e.revision}>
+                                    <span class="dml-rev">
+                                        <lightning-icon icon-name="utility:page" size="xx-small"></lightning-icon>
+                                        Rev {e.revision}
+                                    </span>
+                                </template>
                                 <template if:true={e.isLatest}><span class="dml-latest">Latest</span></template>
                             </div>
                         </div>

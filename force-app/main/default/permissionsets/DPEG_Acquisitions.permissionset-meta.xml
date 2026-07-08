@@ -1051,6 +1051,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Deal_Message__c.Revision__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Deal_Message__c.Entry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>

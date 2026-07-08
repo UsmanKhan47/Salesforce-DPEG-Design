@@ -11,6 +11,8 @@
         <targetConfig targets="lightning__RecordPage">
             <property name="cardTitle" type="String" label="Card Title" default="Messages"
                 description="Heading shown at the top of the log card (e.g. Counter History)."/>
+            <property name="showRevision" type="Boolean" label="Show Document Revision" default="false"
+                description="Adds a Document Revision input (for Legal to record the PSA version) and a revision badge on each entry. Use on Contract Review."/>
         </targetConfig>
     </targetConfigs>
 </LightningComponentBundle>

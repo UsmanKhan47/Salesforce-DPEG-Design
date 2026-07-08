@@ -18,6 +18,7 @@ public with sharing class DealMessageController {
         @AuraEnabled public String method;
         @AuraEnabled public String direction;
         @AuraEnabled public String details;
+        @AuraEnabled public String revision;
         @AuraEnabled public String enteredBy;
         @AuraEnabled public Datetime entryDate;
     }
@@ -30,7 +31,7 @@ public with sharing class DealMessageController {
         String parentField = parentFieldFor(recordId);
         List<Entry> entries = new List<Entry>();
         for (Deal_Message__c m : Database.query(
-            'SELECT Id, Method__c, Direction__c, Details__c, Entry_Date__c, CreatedDate, CreatedBy.Name ' +
+            'SELECT Id, Method__c, Direction__c, Details__c, Revision__c, Entry_Date__c, CreatedDate, CreatedBy.Name ' +
             'FROM Deal_Message__c WHERE ' + parentField + ' = :recordId ' +
             'ORDER BY Entry_Date__c DESC, CreatedDate DESC, Id DESC'
         )) {
@@ -39,6 +40,7 @@ public with sharing class DealMessageController {
             e.method = m.Method__c;
             e.direction = m.Direction__c;
             e.details = m.Details__c;
+            e.revision = m.Revision__c;
             e.enteredBy = m.CreatedBy.Name;
             e.entryDate = m.Entry_Date__c != null ? m.Entry_Date__c : m.CreatedDate;
             entries.add(e);
@@ -47,7 +49,7 @@ public with sharing class DealMessageController {
     }
 
     @AuraEnabled
-    public static void addMessage(Id recordId, String method, String direction, String details) {
+    public static void addMessage(Id recordId, String method, String direction, String details, String revision) {
         if (recordId == null) {
             throw new AuraHandledException('No record to log the message against.');
         }
@@ -59,6 +61,7 @@ public with sharing class DealMessageController {
             Method__c = String.isBlank(method) ? 'Note' : method,
             Direction__c = String.isBlank(direction) ? 'Internal' : direction,
             Details__c = details.trim(),
+            Revision__c = String.isBlank(revision) ? null : revision.trim(),
             Entry_Date__c = Datetime.now()
         );
         m.put(PARENT_FIELDS.get(parentField), recordId);
