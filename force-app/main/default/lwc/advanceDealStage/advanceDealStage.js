@@ -1,42 +1,19 @@
-import { LightningElement, api, wire } from 'lwc';
-import { getRecord, getFieldValue, getRecordNotifyChange } from 'lightning/uiRecordApi';
+import { LightningElement, api } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import STAGE_FIELD from '@salesforce/schema/Opportunity.StageName';
+import { getRecordNotifyChange } from 'lightning/uiRecordApi';
 import advance from '@salesforce/apex/StageAdvanceController.advance';
 
-// The "next step" button label per current stage. Stages not listed here
-// (Development/Construction Review, Portfolio Deal, Closed Won, Dead/Pass)
-// render no button, so the action only ever shows where it applies.
-const NEXT_LABEL = {
-    New: 'Begin Review',
-    'Under Review': 'Initiate Underwriting',
-    Underwriting: 'Initiate LOI',
-    LOI: 'Advance to PSA',
-    PSA: 'Close Deal'
-};
-
+/**
+ * Headless quick action shared by the per-stage "advance" buttons on the
+ * Opportunity (Begin Review, Initiate Underwriting, Initiate LOI, Advance to
+ * PSA, Close Deal). The Apex derives the action from the deal's current stage;
+ * each button is shown only on its stage via Dynamic Actions visibility on the
+ * Highlights Panel.
+ */
 export default class AdvanceDealStage extends LightningElement {
     @api recordId;
-    stage;
-    working = false;
 
-    @wire(getRecord, { recordId: '$recordId', fields: [STAGE_FIELD] })
-    wired({ data }) {
-        if (data) {
-            this.stage = getFieldValue(data, STAGE_FIELD);
-        }
-    }
-
-    get hasAction() {
-        return !!NEXT_LABEL[this.stage];
-    }
-
-    get label() {
-        return NEXT_LABEL[this.stage];
-    }
-
-    async handleClick() {
-        this.working = true;
+    @api async invoke() {
         try {
             const message = await advance({ recordId: this.recordId });
             this.dispatchEvent(
@@ -50,8 +27,6 @@ export default class AdvanceDealStage extends LightningElement {
             this.dispatchEvent(
                 new ShowToastEvent({ title: 'Cannot advance the deal', message, variant: 'error' })
             );
-        } finally {
-            this.working = false;
         }
     }
 }
