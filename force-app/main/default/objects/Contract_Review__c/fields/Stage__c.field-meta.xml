@@ -26,9 +26,9 @@
                 <label>Counter</label>
             </value>
             <value>
-                <fullName>Contract Execution (Signed)</fullName>
+                <fullName>Contract Execution</fullName>
                 <default>false</default>
-                <label>Contract Execution (Signed)</label>
+                <label>Contract Execution</label>
             </value>
         </valueSetDefinition>
     </valueSet>

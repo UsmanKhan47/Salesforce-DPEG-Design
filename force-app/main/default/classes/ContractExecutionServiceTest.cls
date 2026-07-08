@@ -51,7 +51,7 @@ private class ContractExecutionServiceTest {
 
         // Contract Review itself synced by the before-save flow.
         cr = [SELECT Stage__c, Execution_Date__c FROM Contract_Review__c WHERE Id = :cr.Id];
-        System.assertEquals('Contract Execution (Signed)', cr.Stage__c, 'CR stage synced');
+        System.assertEquals('Contract Execution', cr.Stage__c, 'CR stage synced');
         System.assertEquals(Date.today(), cr.Execution_Date__c, 'CR execution date stamped');
     }
 

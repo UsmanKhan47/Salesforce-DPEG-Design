@@ -42,7 +42,7 @@
         <assignmentItems>
             <assignToReference>$Record.Stage__c</assignToReference>
             <operator>Assign</operator>
-            <value><stringValue>Contract Execution (Signed)</stringValue></value>
+            <value><stringValue>Contract Execution</stringValue></value>
         </assignmentItems>
         <assignmentItems>
             <assignToReference>$Record.Execution_Date__c</assignToReference>
@@ -58,7 +58,7 @@
         <assignmentItems>
             <assignToReference>$Record.Stage__c</assignToReference>
             <operator>Assign</operator>
-            <value><stringValue>Contract Execution (Signed)</stringValue></value>
+            <value><stringValue>Contract Execution</stringValue></value>
         </assignmentItems>
     </assignments>
     <decisions>

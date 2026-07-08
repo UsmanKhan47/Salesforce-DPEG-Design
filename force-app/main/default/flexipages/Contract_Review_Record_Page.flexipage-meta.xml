@@ -181,7 +181,7 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>label</name>
-                    <value>Contract Execution (Signed)</value>
+                    <value>Contract Execution</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>execSection</identifier>
@@ -261,7 +261,7 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>title</name>
-                    <value>Contract Execution (Signed)</value>
+                    <value>Contract Execution</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:tab</componentName>
                 <identifier>execTab</identifier>

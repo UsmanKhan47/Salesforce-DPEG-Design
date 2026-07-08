@@ -33,7 +33,7 @@ const CONTRACT_TONE = {
     'PSA Drafting': 'blue',
     'Prepare': 'amber',
     'Counter': 'red',
-    'Contract Execution (Signed)': 'green'
+    'Contract Execution': 'green'
 };
 // Underwriting stages.
 const UW_TONE = {

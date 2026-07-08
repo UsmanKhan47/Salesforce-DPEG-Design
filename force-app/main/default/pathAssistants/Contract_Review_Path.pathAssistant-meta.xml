@@ -6,7 +6,7 @@
     <masterLabel>Contract Review Path</masterLabel>
     <pathAssistantSteps>
         <info>PSA fully executed. Record the execution date and hand off to the transaction team to open escrow.</info>
-        <picklistValueName>Contract Execution (Signed)</picklistValueName>
+        <picklistValueName>Contract Execution</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <info>Prepare and review the PSA internally. Validate terms, contingencies, and timelines, and route for any required sign-off before countering or executing.</info>
