@@ -3,7 +3,8 @@
  * Contract Review's Negotiation_Status__c just became 'Executed':
  *
  *   1. Stamps the parent Opportunity: Contract_Signed__c, Contract_Executed_Date__c
- *      (Day 0), Deal_Status__c = 'Contract Signed', Stage = 'PSA Executed'.
+ *      (Day 0), Deal_Status__c = 'Contract Signed'. The deal stays at the coarse
+ *      'PSA' stage; Deal_Status marks it executed / about to close.
  *   2. Creates the Transaction__c (idempotent - never a second one per deal) with
  *      Contract_Executed_Date__c set, which ARMS the existing Transaction_Task_Fanout
  *      flow -> TaskFanoutService 75-task Day-0 checklist untouched.
@@ -48,8 +49,7 @@ public with sharing class ContractExecutionService {
             Opportunity stamp = new Opportunity(
                 Id = o.Id,
                 Contract_Signed__c = true,
-                Deal_Status__c = 'Contract Signed',
-                StageName = 'PSA Executed'
+                Deal_Status__c = 'Contract Signed'
             );
             if (o.Contract_Executed_Date__c == null) {
                 stamp.Contract_Executed_Date__c = dayZero;

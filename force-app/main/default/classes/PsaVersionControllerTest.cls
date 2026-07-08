@@ -7,7 +7,7 @@ private class PsaVersionControllerTest {
 
     private static Contract_Review__c newContract() {
         Opportunity o = new Opportunity(
-            Name = 'PSA Test', StageName = 'LOI Signed', CloseDate = Date.today().addDays(30)
+            Name = 'PSA Test', StageName = 'LOI', CloseDate = Date.today().addDays(30)
         );
         insert o;
         Contract_Review__c cr = new Contract_Review__c(Opportunity__c = o.Id, Stage__c = 'PSA Drafting');

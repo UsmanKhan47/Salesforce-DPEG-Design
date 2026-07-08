@@ -2,7 +2,7 @@
  * Creates review child records for an Opportunity. Two triggers for a review:
  *
  *   1. Stage entry - "Development Review" (Land path) / "Construction Review"
- *      (Commercial path) / "PSA Negotiation" (opens the Contract Review).
+ *      (Commercial path) / "PSA" (opens the Contract Review).
  *   2. Input-needed checkboxes - Development_Input_Needed__c /
  *      Construction_Input_Needed__c flipping true opens the matching review at
  *      ANY stage, which is how Development/Construction engage BEFORE
@@ -15,7 +15,7 @@ public with sharing class OpportunityReviewService {
 
     @TestVisible private static final String DEV_STAGE = 'Development Review';
     @TestVisible private static final String CON_STAGE = 'Construction Review';
-    @TestVisible private static final String CONTRACT_STAGE = 'PSA Negotiation';
+    @TestVisible private static final String CONTRACT_STAGE = 'PSA';
     @TestVisible private static final String UW_STAGE = 'Underwriting';
 
     /**
@@ -118,7 +118,7 @@ public with sharing class OpportunityReviewService {
         }
 
         // Entering Underwriting opens the Underwriting record (same primary-stamp
-        // pattern as the Contract Review at PSA Negotiation).
+        // pattern as the Contract Review at PSA).
         if (!uwOpps.isEmpty()) {
             List<Underwriting__c> uwToInsert = new List<Underwriting__c>();
             for (Id oppId : uwOpps) {

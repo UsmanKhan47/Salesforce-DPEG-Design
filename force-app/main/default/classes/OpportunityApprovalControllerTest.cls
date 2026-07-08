@@ -1,5 +1,5 @@
 /**
- * Tests OpportunityApprovalController: an eligible Opp (Stage = LOI Under Approval)
+ * Tests OpportunityApprovalController: an eligible Opp (Stage = LOI)
  * submits into the LOI approval process, and a second submit is blocked.
  */
 @isTest
@@ -8,7 +8,7 @@ private class OpportunityApprovalControllerTest {
     private static Opportunity makeOpp() {
         Opportunity o = new Opportunity(
             Name = 'Approval Test',
-            StageName = 'LOI Under Approval',
+            StageName = 'LOI',
             CloseDate = Date.today().addDays(10)
         );
         insert o;
@@ -47,7 +47,7 @@ private class OpportunityApprovalControllerTest {
 
     @isTest
     static void ineligibleStageThrows() {
-        // A deal not at "LOI Under Approval" meets no entry criteria -> Approval.process
+        // A deal not at "LOI" meets no entry criteria -> Approval.process
         // throws -> the catch branch surfaces a friendly error.
         Opportunity o = new Opportunity(
             Name = 'Not Eligible',
@@ -88,7 +88,7 @@ private class OpportunityApprovalControllerTest {
 
     @isTest
     static void submitsFromLoiRecord() {
-        Opportunity o = makeOpp(); // Stage = LOI Under Approval
+        Opportunity o = makeOpp(); // Stage = LOI
         LOI__c loi = new LOI__c(Opportunity__c = o.Id, Offer_Price__c = 1000000);
         insert loi;
 

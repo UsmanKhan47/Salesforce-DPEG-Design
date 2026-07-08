@@ -9,10 +9,8 @@ const STAGE = {
     'Development Review':  ['#efe9f7', '#7E57C2'],
     'Construction Review': ['#e3f4f2', '#26A69A'],
     Underwriting:         ['#e8f1fc', '#1E88E5'],
-    'LOI Submitted':      ['#e9f2fd', '#42A5F5'],
-    'LOI Signed':         ['#e4f6f8', '#26C6DA'],
-    'PSA Negotiation':    ['#fff1e0', '#FB8C00'],
-    'PSA Executed':       ['#fdefe3', '#E8710A'],
+    LOI:                  ['#e9f2fd', '#42A5F5'],
+    PSA:                  ['#fff1e0', '#FB8C00'],
     'Closed Won':         ['#e8f5e9', '#43A047'],
     'Dead/Pass':          ['#fdeaea', '#E53935'],
     'Portfolio Deal':     ['#efe9e6', '#8D6E63']

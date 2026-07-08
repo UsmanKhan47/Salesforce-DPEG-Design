@@ -1,7 +1,7 @@
 /**
  * Tests the Phase-3 underwriting gate: the NDA-signed validation rule, the
  * Initiate Underwriting checkbox flow, and the Underwriting_Approval process
- * (approve -> Initiate LOI + audit stamps; reject -> Dead/Pass + Dead category).
+ * (approve -> LOI + audit stamps; reject -> Dead/Pass + Dead category).
  */
 @isTest
 private class UnderwritingGateTest {
@@ -62,7 +62,7 @@ private class UnderwritingGateTest {
     }
 
     @isTest
-    static void principalApprovalAdvancesToInitiateLoi() {
+    static void principalApprovalAdvancesToLoi() {
         Opportunity o = newOpp('Underwriting');
         o.Underwriting_Complete__c = true;
         insert o;
@@ -88,7 +88,7 @@ private class UnderwritingGateTest {
                    UW_Approved_By__c, UW_Approval_Date__c
             FROM Opportunity WHERE Id = :o.Id
         ];
-        System.assertEquals('Initiate LOI', o.StageName, 'Approval advances the deal to Initiate LOI');
+        System.assertEquals('LOI', o.StageName, 'Approval advances the deal to LOI');
         System.assert(o.UW_Approved__c, 'Approved checkbox set by the final-approval action');
         System.assertEquals('Approved by Principals', o.Underwriting_Status__c, 'Status stamped');
         System.assertEquals(UserInfo.getUserId(), o.UW_Approved_By__c,

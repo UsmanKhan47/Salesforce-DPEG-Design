@@ -2,7 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>LOI_Prep_Approved__c</fullName>
     <defaultValue>false</defaultValue>
-    <description>Section 14: the Acquisitions team's go-ahead BEFORE the LOI process begins. Required (validation rule) before the deal can move to LOI Under Approval. Approver/date auto-stamped.</description>
+    <description>Section 14: the Acquisitions team's go-ahead BEFORE the LOI process begins. Optional prep sign-off (approver/date auto-stamped by Opportunity_LOI_Prep_Stamp). No longer gates a stage transition after the LOI stages were collapsed to a single LOI stage.</description>
     <label>LOI Prep Approved</label>
     <trackFeedHistory>false</trackFeedHistory>
     <type>Checkbox</type>

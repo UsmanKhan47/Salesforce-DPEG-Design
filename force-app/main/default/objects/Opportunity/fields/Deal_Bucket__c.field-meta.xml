@@ -1,16 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Deal_Bucket__c</fullName>
-    <description>Junior's 8 deal-tracker buckets, derived from stage + deal category. Reporting-only projection - automation must branch on StageName/Deal_Category__c, never on this formula (before-save flows cannot read formula fields).</description>
+    <description>Deal-tracker buckets, derived from stage + deal category. Reporting-only projection - automation must branch on StageName/Deal_Category__c, never on this formula (before-save flows cannot read formula fields).</description>
     <externalId>false</externalId>
     <formula>IF(OR(ISPICKVAL(Deal_Category__c,'Dead'), ISPICKVAL(StageName,'Dead/Pass')), 'Dead',
 IF(ISPICKVAL(StageName,'Closed Won'), 'Bought/Closed',
-IF(OR(ISPICKVAL(StageName,'PSA Executed'), AND(ISPICKVAL(StageName,'Under Contract'), Contract_Signed__c)), 'PSA Executed/About to Close',
-IF(OR(ISPICKVAL(StageName,'PSA Negotiation'), ISPICKVAL(StageName,'Under Contract')), 'PSA Negotiation',
-IF(ISPICKVAL(StageName,'LOI Signed'), 'LOI Accepted',
-IF(ISPICKVAL(StageName,'LOI Submitted'), 'LOI Submitted',
-IF(OR(ISPICKVAL(StageName,'Initiate LOI'), ISPICKVAL(StageName,'LOI Under Approval')), 'LOI Pending',
-'Interested Deals')))))))</formula>
+IF(ISPICKVAL(StageName,'PSA'), 'PSA',
+IF(ISPICKVAL(StageName,'LOI'), 'LOI',
+'Interested Deals'))))</formula>
     <label>Deal Tracker Bucket</label>
     <required>false</required>
     <trackFeedHistory>false</trackFeedHistory>

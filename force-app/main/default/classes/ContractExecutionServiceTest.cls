@@ -1,25 +1,25 @@
 /**
- * Tests ContractExecutionService: marking the PSA Executed stamps the parent
+ * Tests ContractExecutionService: executing the PSA stamps the parent
  * Opportunity (Day 0), creates exactly ONE Transaction (arming the existing
  * Day-0 task fan-out), and never duplicates on re-execution.
  */
 @isTest
 private class ContractExecutionServiceTest {
 
-    private static Contract_Review__c dealAtPsaNegotiation() {
+    private static Contract_Review__c dealAtPsa() {
         Opportunity o = new Opportunity(
-            Name = 'Handoff Test', StageName = 'LOI Signed', CloseDate = Date.today().addDays(30)
+            Name = 'Handoff Test', StageName = 'LOI', CloseDate = Date.today().addDays(30)
         );
         insert o;
-        // Entering PSA Negotiation auto-creates the Contract Review + Primary_Contract__c stamp.
-        o.StageName = 'PSA Negotiation';
+        // Entering PSA auto-creates the Contract Review + Primary_Contract__c stamp.
+        o.StageName = 'PSA';
         update o;
         return [SELECT Id, Opportunity__c FROM Contract_Review__c WHERE Opportunity__c = :o.Id];
     }
 
     @isTest
     static void executionStampsOppAndOpensTransaction() {
-        Contract_Review__c cr = dealAtPsaNegotiation();
+        Contract_Review__c cr = dealAtPsa();
         cr.Contract_Value__c = 12000000;
         update cr;
 
@@ -32,11 +32,12 @@ private class ContractExecutionServiceTest {
             SELECT StageName, Contract_Signed__c, Contract_Executed_Date__c, Deal_Status__c, Deal_Bucket__c
             FROM Opportunity WHERE Id = :cr.Opportunity__c
         ];
-        System.assertEquals('PSA Executed', o.StageName, 'Deal advances to PSA Executed');
+        // The deal stays at the coarse PSA stage; Deal_Status marks it executed.
+        System.assertEquals('PSA', o.StageName, 'Deal stays at PSA on execution');
         System.assert(o.Contract_Signed__c, 'Contract Signed stamped');
         System.assertNotEquals(null, o.Contract_Executed_Date__c, 'Day 0 stamped');
         System.assertEquals('Contract Signed', o.Deal_Status__c, 'Deal status stamped');
-        System.assertEquals('PSA Executed/About to Close', o.Deal_Bucket__c, 'Tracker bucket follows');
+        System.assertEquals('PSA', o.Deal_Bucket__c, 'Tracker bucket follows');
 
         List<Transaction__c> txns = [
             SELECT Status__c, Stage__c, Contract_Value__c, Contract_Executed_Date__c
@@ -56,7 +57,7 @@ private class ContractExecutionServiceTest {
 
     @isTest
     static void reExecutionNeverDuplicatesTheTransaction() {
-        Contract_Review__c cr = dealAtPsaNegotiation();
+        Contract_Review__c cr = dealAtPsa();
         cr.Negotiation_Status__c = 'Executed';
         update cr;
 

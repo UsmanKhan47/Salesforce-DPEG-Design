@@ -34,12 +34,12 @@
         <criteriaItems>
             <field>Opportunity.StageName</field>
             <operation>equals</operation>
-            <value>LOI Under Approval</value>
+            <value>LOI</value>
         </criteriaItems>
     </entryCriteria>
     <finalApprovalActions>
         <action>
-            <name>Set_Stage_LOI_Submitted</name>
+            <name>Set_LOI_Approved_Flag</name>
             <type>FieldUpdate</type>
         </action>
     </finalApprovalActions>

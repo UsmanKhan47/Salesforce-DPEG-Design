@@ -84,9 +84,9 @@
         <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
         <filterLogic>and</filterLogic>
         <filters>
-            <field>StageName</field>
+            <field>LOI_Approved__c</field>
             <operator>EqualTo</operator>
-            <value><stringValue>LOI Submitted</stringValue></value>
+            <value><booleanValue>true</booleanValue></value>
         </filters>
         <object>Opportunity</object>
         <recordTriggerType>CreateAndUpdate</recordTriggerType>

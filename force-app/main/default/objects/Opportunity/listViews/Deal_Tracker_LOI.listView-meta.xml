@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ListView xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Deal_Tracker_LOI_Submitted</fullName>
+    <fullName>Deal_Tracker_LOI</fullName>
     <columns>OPPORTUNITY.NAME</columns>
     <columns>OPPORTUNITY.STAGE_NAME</columns>
     <columns>Deal_Status__c</columns>
@@ -12,7 +12,7 @@
     <filters>
         <field>Deal_Bucket__c</field>
         <operation>equals</operation>
-        <value>LOI Submitted</value>
+        <value>LOI</value>
     </filters>
-    <label>Deal Tracker: LOI Submitted</label>
+    <label>Deal Tracker: LOI</label>
 </ListView>

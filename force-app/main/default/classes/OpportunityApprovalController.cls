@@ -4,7 +4,7 @@
  * approval processes live on the Opportunity, so a submission from a child
  * record resolves its parent deal first, then submits it - the process whose
  * entry criteria the deal meets (Underwriting_Approval at Stage = Underwriting,
- * LOI_Approval at LOI Under Approval) picks it up. A custom action because
+ * LOI_Approval at Stage = LOI) picks it up. A custom action because
  * Lightning's dynamic native Submit-for-Approval doesn't render reliably.
  */
 public with sharing class OpportunityApprovalController {

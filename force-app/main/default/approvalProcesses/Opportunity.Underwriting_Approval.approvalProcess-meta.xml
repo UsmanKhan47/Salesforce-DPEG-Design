@@ -31,7 +31,7 @@
         <label>Principal Review</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal sign-off on a completed underwrite. Approve: deal advances to Initiate LOI. Reject: deal goes to Dead/Pass and is excluded from active tracking (data preserved). Entry requires Underwriting Complete = true (Section 12B).</description>
+    <description>Principal sign-off on a completed underwrite. Approve: deal advances to LOI. Reject: deal goes to Dead/Pass and is excluded from active tracking (data preserved). Entry requires Underwriting Complete = true (Section 12B).</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <criteriaItems>
