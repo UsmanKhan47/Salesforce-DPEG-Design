@@ -30,8 +30,23 @@ const COLUMNS = [
     { label: 'Stage', fieldName: 'stage', type: 'pill', initialWidth: 150, typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
     { label: 'Deal Type', fieldName: 'dealType', type: 'pill', initialWidth: 115, typeAttributes: { wrapStyle: { fieldName: 'dtWrap' }, dotStyle: { fieldName: 'dtDot' } } },
     { label: 'Asking Price', fieldName: 'priceLabel', type: 'text', initialWidth: 120 },
+    { label: 'NOI', fieldName: 'noiLabel', type: 'text', initialWidth: 110 },
     { label: 'Age', fieldName: 'age', type: 'text', initialWidth: 80 }
 ];
+
+// $1.2M / $850K / $0 — compact currency for the Asking Price and NOI columns.
+const money = (n) => {
+    if (n == null) {
+        return '—';
+    }
+    if (Math.abs(n) >= 1000000) {
+        return '$' + (n / 1000000).toFixed(1) + 'M';
+    }
+    if (Math.abs(n) >= 1000) {
+        return '$' + Math.round(n / 1000) + 'K';
+    }
+    return '$' + n;
+};
 
 export default class RecentOpportunities extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
@@ -68,7 +83,7 @@ export default class RecentOpportunities extends NavigationMixin(LightningElemen
         if (!this.data) {
             return [];
         }
-        return this.data.slice(0, 5).map((r) => {
+        return this.data.slice(0, 10).map((r) => {
             const [sBg, sDot] = STAGE[r.stage] || FALLBACK;
             const [dBg, dDot] = DEAL_TYPE[r.dealType] || FALLBACK;
             return {
@@ -81,7 +96,8 @@ export default class RecentOpportunities extends NavigationMixin(LightningElemen
                 dealType: r.dealType || '—',
                 dtWrap: pillWrap(dBg),
                 dtDot: pillDot(dDot),
-                priceLabel: r.price != null ? '$' + (r.price / 1000000).toFixed(1) + 'M' : '—',
+                priceLabel: money(r.price),
+                noiLabel: money(r.noi),
                 age: r.days + 'd'
             };
         });

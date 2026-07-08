@@ -45,11 +45,14 @@ public with sharing class OpportunityFunnelController {
     @AuraEnabled(cacheable=true)
     public static List<OppRow> getRecentOpportunities() {
         List<OppRow> rows = new List<OppRow>();
+        // Top 10 deals by asking price (largest first); deals without an asking
+        // price sort last so the list leads with the biggest opportunities.
         for (Opportunity o : [
-            SELECT Id, Name, StageName, Deal_Type__c, Asset_Type__c, Asking_Price__c, CreatedDate
+            SELECT Id, Name, StageName, Deal_Type__c, Asset_Type__c,
+                   Asking_Price__c, Underwritten_NOI__c, CreatedDate
             FROM Opportunity
-            ORDER BY CreatedDate DESC
-            LIMIT 50
+            ORDER BY Asking_Price__c DESC NULLS LAST, CreatedDate DESC
+            LIMIT 10
         ]) {
             OppRow r = new OppRow();
             r.id = o.Id;
@@ -58,6 +61,7 @@ public with sharing class OpportunityFunnelController {
             r.dealType = o.Deal_Type__c;
             r.assetType = o.Asset_Type__c;
             r.price = o.Asking_Price__c;
+            r.noi = o.Underwritten_NOI__c;
             r.days = o.CreatedDate.date().daysBetween(Date.today());
             rows.add(r);
         }
@@ -105,6 +109,7 @@ public with sharing class OpportunityFunnelController {
         @AuraEnabled public String dealType;
         @AuraEnabled public String assetType;
         @AuraEnabled public Decimal price;
+        @AuraEnabled public Decimal noi;
         @AuraEnabled public Integer days;
     }
 }

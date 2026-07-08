@@ -13,12 +13,6 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentName>recentLeads</componentName>
-                <identifier>recentLeadsComponent</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
                 <componentName>recentOpportunities</componentName>
                 <identifier>recentOpportunitiesComponent</identifier>
             </componentInstance>
