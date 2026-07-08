@@ -23,23 +23,6 @@
             <operator>Assign</operator>
             <value><elementReference>$Record.OwnerId</elementReference></value>
         </assignmentItems>
-        <connector><targetReference>Needs_Approval_Stamp</targetReference></connector>
-    </assignments>
-    <assignments>
-        <name>Assign_Approval</name>
-        <label>Stamp Approver</label>
-        <locationX>176</locationX>
-        <locationY>720</locationY>
-        <assignmentItems>
-            <assignToReference>$Record.Approved_By__c</assignToReference>
-            <operator>Assign</operator>
-            <value><elementReference>$User.Id</elementReference></value>
-        </assignmentItems>
-        <assignmentItems>
-            <assignToReference>$Record.Approval_Date__c</assignToReference>
-            <operator>Assign</operator>
-            <value><elementReference>$Flow.CurrentDateTime</elementReference></value>
-        </assignmentItems>
     </assignments>
     <decisions>
         <name>Needs_First_Seen</name>
@@ -66,7 +49,6 @@
         <locationX>176</locationX>
         <locationY>396</locationY>
         <defaultConnectorLabel>No</defaultConnectorLabel>
-        <defaultConnector><targetReference>Needs_Approval_Stamp</targetReference></defaultConnector>
         <rules>
             <name>DPEG_First_Blank_User_Owner</name>
             <conditionLogic>and</conditionLogic>
@@ -82,29 +64,6 @@
             </conditions>
             <connector><targetReference>Assign_DPEG_First</targetReference></connector>
             <label>DPEG First Blank + User Owner</label>
-        </rules>
-    </decisions>
-    <decisions>
-        <name>Needs_Approval_Stamp</name>
-        <label>Needs Approval Stamp?</label>
-        <locationX>176</locationX>
-        <locationY>612</locationY>
-        <defaultConnectorLabel>No</defaultConnectorLabel>
-        <rules>
-            <name>Approved_Without_Approver</name>
-            <conditionLogic>and</conditionLogic>
-            <conditions>
-                <leftValueReference>$Record.Approved_for_UW__c</leftValueReference>
-                <operator>EqualTo</operator>
-                <rightValue><booleanValue>true</booleanValue></rightValue>
-            </conditions>
-            <conditions>
-                <leftValueReference>$Record.Approved_By__c</leftValueReference>
-                <operator>IsNull</operator>
-                <rightValue><booleanValue>true</booleanValue></rightValue>
-            </conditions>
-            <connector><targetReference>Assign_Approval</targetReference></connector>
-            <label>Approved Without Approver</label>
         </rules>
     </decisions>
     <environments>Default</environments>

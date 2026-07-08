@@ -925,6 +925,16 @@
                 <identifier>RecordProperty_rCap_Rate_Asking_cField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Lead_Approved_By__c</fieldItem>
+                <identifier>RecordLead_Approved_By_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-d06d7c84-8864-47e1-b080-be6f68587424</name>
         <type>Facet</type>
     </flexiPageRegions>

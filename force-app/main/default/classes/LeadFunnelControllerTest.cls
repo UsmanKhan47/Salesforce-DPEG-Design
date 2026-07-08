@@ -18,7 +18,7 @@ private class LeadFunnelControllerTest {
             LeadSource = 'Manual Entry', Parse_Confidence__c = 'HIGH',
             Guidance_Price__c = 12500000, Broker_First__c = 'JLL',
             Property_Address__c = 'I-35 Strip Center', Asset_Type__c = 'Retail',
-            Broker_Priority__c = 'High', Approved_for_UW__c = true,
+            Broker_Priority__c = 'High',
             First_Seen_Date__c = Datetime.now().addDays(-20)));
         insert leads;
     }
@@ -38,14 +38,11 @@ private class LeadFunnelControllerTest {
         LeadFunnelController.LeadRow first = data.recent[0];
         System.assertEquals('I-35 Strip Center', first.name, 'High-priority broker lead surfaces first');
         System.assertEquals('High', first.priority, 'Priority carried to the row');
-        System.assertEquals(true, first.approved, 'Approval flag carried to the row');
-        System.assertNotEquals(null, first.approvedBy, 'Approver name carried to the row');
 
         // BP window: First Seen 10 days ago -> ~80 days remaining, expiry still active.
         LeadFunnelController.LeadRow row = data.recent[1];
         System.assertEquals(10, row.days, 'Age derived from First Seen Date');
         System.assertEquals(Date.today().addDays(80), row.bpExpiry, 'BP expiry = First Seen + 90');
         System.assertEquals(true, row.bpActive, 'BP window still active');
-        System.assertEquals(false, row.approved, 'Unapproved lead reports approved=false');
     }
 }

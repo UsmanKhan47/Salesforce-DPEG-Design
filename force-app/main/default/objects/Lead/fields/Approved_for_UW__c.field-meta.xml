@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Approved_for_UW__c</fullName>
-    <defaultValue>false</defaultValue>
-    <description>Lead intake gate - checked when the deal is approved to move into underwriting. Stamps Approved_By__c / Approval_Date__c via the Lead_Intake_Stamp flow.</description>
-    <label>Approved for Underwriting</label>
-    <trackFeedHistory>false</trackFeedHistory>
-    <type>Checkbox</type>
-</CustomField>

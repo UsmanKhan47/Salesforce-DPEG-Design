@@ -70,8 +70,7 @@ public with sharing class LeadFunnelController {
         for (Lead l : [
             SELECT Id, Name, Status, LeadSource, Parse_Confidence__c, Guidance_Price__c,
                    Broker_First__c, Property_Address__c, Asset_Type__c,
-                   First_Seen_Date__c, CreatedDate,
-                   Approved_for_UW__c, Approved_By__r.Name, Broker_Priority__c
+                   First_Seen_Date__c, CreatedDate, Broker_Priority__c
             FROM Lead
             ORDER BY First_Seen_Date__c DESC NULLS LAST, CreatedDate DESC
             LIMIT 50
@@ -85,8 +84,6 @@ public with sharing class LeadFunnelController {
             r.price = l.Guidance_Price__c;
             r.broker = l.Broker_First__c;
             r.assetType = l.Asset_Type__c;
-            r.approved = l.Approved_for_UW__c == true;
-            r.approvedBy = l.Approved_By__r != null ? l.Approved_By__r.Name : null;
             r.priority = l.Broker_Priority__c;
             // First Seen Date is the immutable intake stamp that starts the 90-day broker
             // protection window. Age and BP expiry both derive from it (fallback: CreatedDate).
@@ -144,8 +141,6 @@ public with sharing class LeadFunnelController {
         @AuraEnabled public Integer days;
         @AuraEnabled public Date bpExpiry;
         @AuraEnabled public Boolean bpActive;
-        @AuraEnabled public Boolean approved;
-        @AuraEnabled public String approvedBy;
         @AuraEnabled public String priority;
     }
 }

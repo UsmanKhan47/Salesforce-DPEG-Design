@@ -14,7 +14,7 @@
         </inputParameters>
         <inputParameters>
             <name>title</name>
-            <value><stringValue>Lead approved for underwriting</stringValue></value>
+            <value><stringValue>Lead converted — underwriting pending</stringValue></value>
         </inputParameters>
         <inputParameters>
             <name>body</name>
@@ -22,7 +22,7 @@
         </inputParameters>
         <inputParameters>
             <name>targetRecordId</name>
-            <value><elementReference>$Record.Id</elementReference></value>
+            <value><elementReference>$Record.ConvertedOpportunityId</elementReference></value>
         </inputParameters>
         <nameSegment>GroupNotifier</nameSegment>
     </actionCalls>
@@ -33,8 +33,8 @@
         <dataType>String</dataType>
         <expression>IF(ISBLANK({!$Record.Property_Address__c}), {!$Record.Company}, {!$Record.Property_Address__c})</expression>
     </formulas>
-    <interviewLabel>Lead Approved Notify {!$Flow.CurrentDateTime}</interviewLabel>
-    <label>Lead Approved Notify</label>
+    <interviewLabel>Lead Converted Notify {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Lead Converted Notify</label>
     <processType>AutoLaunchedFlow</processType>
     <start>
         <locationX>50</locationX>
@@ -43,12 +43,12 @@
         <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
         <filterLogic>and</filterLogic>
         <filters>
-            <field>Approved_for_UW__c</field>
+            <field>IsConverted</field>
             <operator>EqualTo</operator>
             <value><booleanValue>true</booleanValue></value>
         </filters>
         <object>Lead</object>
-        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <recordTriggerType>Update</recordTriggerType>
         <triggerType>RecordAfterSave</triggerType>
     </start>
     <status>Active</status>

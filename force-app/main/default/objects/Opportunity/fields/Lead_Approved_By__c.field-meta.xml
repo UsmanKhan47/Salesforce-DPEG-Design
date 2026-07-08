@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lead_Approved_By__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Who approved the lead for underwriting. Conversion is the approval, so LeadConvertService stamps the converting user here automatically (FSD Step 1: capture the approver and pass it to the Opportunity).</description>
+    <externalId>false</externalId>
+    <label>Lead Approved By</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>Lead-Approved Deals</relationshipLabel>
+    <relationshipName>Lead_Approved_Deals</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

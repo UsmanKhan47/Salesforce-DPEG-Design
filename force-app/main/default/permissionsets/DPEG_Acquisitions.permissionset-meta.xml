@@ -827,21 +827,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lead.Approved_for_UW__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Lead.Approved_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Lead.Approval_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Lead.Broker_Priority__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -878,6 +863,11 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.UW_Approved_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Lead_Approved_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

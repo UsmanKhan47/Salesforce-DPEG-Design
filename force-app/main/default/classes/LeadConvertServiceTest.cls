@@ -6,8 +6,7 @@ private class LeadConvertServiceTest {
     }
 
     private static Opportunity convertLeadOfType(String dealType, String company) {
-        Lead l = new Lead(LastName = 'Tester', Company = company, Status = 'New', Deal_Type__c = dealType,
-            Approved_for_UW__c = true);
+        Lead l = new Lead(LastName = 'Tester', Company = company, Status = 'New', Deal_Type__c = dealType);
         insert l;
 
         Database.LeadConvert lc = new Database.LeadConvert();
@@ -45,7 +44,7 @@ private class LeadConvertServiceTest {
     static void createsAndLinksPropertyFromLead() {
         Lead l = new Lead(
             LastName = 'Broker', Company = 'CBRE', Status = 'New',
-            Deal_Type__c = 'Commercial', Approved_for_UW__c = true,
+            Deal_Type__c = 'Commercial',
             Property_Address__c = '123 Main St, El Paso, TX',
             Asset_Type__c = 'Retail',
             Guidance_Price__c = 8200000,
@@ -80,48 +79,29 @@ private class LeadConvertServiceTest {
     }
 
     @isTest
-    static void blocksUnapprovedConversion() {
-        Lead l = new Lead(LastName = 'Eager', Company = 'Too Soon LLC', Status = 'New',
-            Deal_Type__c = 'Commercial');
-        insert l;
-
-        Database.LeadConvert lc = new Database.LeadConvert();
-        lc.setLeadId(l.Id);
-        lc.setConvertedStatus(convertedStatus());
-
+    static void stampsConvertingUserAsLeadApprover() {
+        // Conversion IS the approval to underwrite: no checkbox gate, and the
+        // converting user lands on the deal as Lead Approved By.
         Test.startTest();
-        Database.LeadConvertResult res = Database.convertLead(lc, false);
+        Opportunity o = convertLeadOfType('Commercial', 'Straight Through LLC');
         Test.stopTest();
 
-        System.assert(!res.isSuccess(), 'Unapproved lead must not convert');
-        System.assertEquals(0, [SELECT COUNT() FROM Opportunity], 'No Opportunity for a blocked conversion');
+        Opportunity fresh = [SELECT Lead_Approved_By__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(UserInfo.getUserId(), fresh.Lead_Approved_By__c,
+            'Converting user stamped on the Opportunity as the lead approver');
     }
 
     @isTest
-    static void qualifiedStatusRequiresApproval() {
+    static void qualifiedNeedsNoApprovalAndIntakeStampsApply() {
         Lead l = new Lead(LastName = 'Gatecheck', Company = 'Gate LLC', Status = 'New');
         insert l;
 
-        Boolean blocked = false;
-        try {
-            l.Status = 'Qualified';
-            update l;
-        } catch (DmlException e) {
-            blocked = true;
-        }
-        System.assert(blocked, 'Qualified without approval must be blocked by the validation rule');
-
-        // Approving in the same save passes: the before-save flow stamps the approver
-        // before validation rules evaluate.
-        l.Approved_for_UW__c = true;
+        // No approval gate: Qualified is reachable directly.
         l.Status = 'Qualified';
         update l;
 
-        l = [SELECT Status, Approved_By__c, Approval_Date__c, First_Seen_Date__c, DPEG_First__c
-             FROM Lead WHERE Id = :l.Id];
-        System.assertEquals('Qualified', l.Status, 'Approved lead reaches Qualified');
-        System.assertEquals(UserInfo.getUserId(), l.Approved_By__c, 'Approver auto-stamped');
-        System.assertNotEquals(null, l.Approval_Date__c, 'Approval date auto-stamped');
+        l = [SELECT Status, First_Seen_Date__c, DPEG_First__c FROM Lead WHERE Id = :l.Id];
+        System.assertEquals('Qualified', l.Status, 'Qualified requires no prior approval');
         System.assertNotEquals(null, l.First_Seen_Date__c, 'First Seen stamped on create for all channels');
         System.assertEquals(UserInfo.getUserId(), l.DPEG_First__c, 'DPEG First stamped from the owning user');
     }
