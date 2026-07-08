@@ -6,7 +6,7 @@ public with sharing class OpportunityFunnelController {
 
     private static final List<String> STAGE_ORDER = new List<String>{
         'New', 'Under Review', 'Development Review', 'Construction Review', 'Underwriting',
-        'LOI', 'PSA', 'Closed Won', 'Dead/Pass', 'Portfolio Deal'
+        'LOI', 'PSA', 'About to Close', 'Closed Won', 'Dead/Pass', 'Portfolio Deal'
     };
 
     @AuraEnabled(cacheable=true)

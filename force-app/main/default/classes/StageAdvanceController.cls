@@ -25,7 +25,8 @@ public with sharing class StageAdvanceController {
         'Development Review' => 'Underwriting',
         'Construction Review' => 'Underwriting',
         'LOI' => 'PSA',
-        'PSA' => 'Closed Won'
+        'PSA' => 'Closed Won',
+        'About to Close' => 'Closed Won'
     };
 
     @AuraEnabled

@@ -5,9 +5,10 @@
     <externalId>false</externalId>
     <formula>IF(OR(ISPICKVAL(Deal_Category__c,'Dead'), ISPICKVAL(StageName,'Dead/Pass')), 'Dead',
 IF(ISPICKVAL(StageName,'Closed Won'), 'Bought/Closed',
+IF(ISPICKVAL(StageName,'About to Close'), 'About to Close',
 IF(ISPICKVAL(StageName,'PSA'), 'PSA',
 IF(ISPICKVAL(StageName,'LOI'), 'LOI',
-'Interested Deals'))))</formula>
+'Interested Deals')))))</formula>
     <label>Deal Tracker Bucket</label>
     <required>false</required>
     <trackFeedHistory>false</trackFeedHistory>

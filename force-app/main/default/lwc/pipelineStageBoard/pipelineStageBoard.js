@@ -25,6 +25,7 @@ const OPP_META = [
     { key: 'Underwriting',        label: 'Underwriting',        suffix: '',               icon: 'utility:money',    color: '#2E86DE' },
     { key: 'LOI',                 label: 'LOI',                 suffix: '',               icon: 'utility:upload',   color: '#3E8FE0' },
     { key: 'PSA',                 label: 'PSA',                 suffix: '(Last 90 Days)', icon: 'utility:contract', color: '#F08C00' },
+    { key: 'About to Close',      label: 'About to Close',      suffix: '',               icon: 'utility:clock',    color: '#E8A33D' },
     { key: 'Closed Won',          label: 'Closed Won',          suffix: '(Last 90 Days)', icon: 'utility:favorite', color: '#27AE60' },
     { key: 'Dead/Pass',           label: 'Dead',                suffix: '(Last 90 Days)', icon: 'utility:close',     color: '#E0463F' }
 ];

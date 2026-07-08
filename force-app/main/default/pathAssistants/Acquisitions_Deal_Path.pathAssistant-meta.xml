@@ -39,6 +39,11 @@
         <picklistValueName>PSA</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
+        <fieldNames>Contract_Executed_Date__c</fieldNames>
+        <info>PSA executed and in closing/escrow - clear the remaining due-diligence and funding conditions. The deal moves to Closed Won when the closing wire confirms.</info>
+        <picklistValueName>About to Close</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
         <fieldNames>My_Price__c</fieldNames>
         <fieldNames>My_Cap_Rate__c</fieldNames>
         <info>NDA process: Pending then Sent then Signed. Validation blocks advancing to Underwriting until NDA Signed = TRUE.</info>

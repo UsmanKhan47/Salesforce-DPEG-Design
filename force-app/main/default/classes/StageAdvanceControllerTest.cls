@@ -94,6 +94,17 @@ private class StageAdvanceControllerTest {
     }
 
     @isTest
+    static void closeDealMovesAboutToCloseToClosedWon() {
+        Opportunity o = newOpp('About to Close');
+        Test.startTest();
+        StageAdvanceController.advance(o.Id);
+        Test.stopTest();
+        System.assertEquals('Closed Won',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'Close Deal moves About to Close -> Closed Won');
+    }
+
+    @isTest
     static void noNextStepFromTerminalStageThrows() {
         Opportunity o = newOpp('Closed Won');
         Boolean threw = false;
