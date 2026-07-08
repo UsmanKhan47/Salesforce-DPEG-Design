@@ -104,4 +104,37 @@ private class StageAdvanceControllerTest {
         }
         System.assert(threw, 'A terminal stage has no next step');
     }
+
+    @isTest
+    static void advanceToSendsLandDealToDevelopmentReview() {
+        Id landRt = [
+            SELECT Id FROM RecordType
+            WHERE SobjectType = 'Opportunity' AND DeveloperName = 'Land' LIMIT 1
+        ].Id;
+        Opportunity o = new Opportunity(
+            Name = 'Branch Test', StageName = 'Under Review',
+            CloseDate = Date.today().addDays(30), RecordTypeId = landRt
+        );
+        insert o;
+
+        Test.startTest();
+        StageAdvanceController.advanceTo(o.Id, 'Development Review');
+        Test.stopTest();
+
+        System.assertEquals('Development Review',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'Send to Development Review moves the deal to Development Review');
+    }
+
+    @isTest
+    static void advanceToBlankTargetThrows() {
+        Opportunity o = newOpp('Under Review');
+        Boolean threw = false;
+        try {
+            StageAdvanceController.advanceTo(o.Id, '');
+        } catch (Exception e) {
+            threw = true;
+        }
+        System.assert(threw, 'A blank target stage is rejected');
+    }
 }
