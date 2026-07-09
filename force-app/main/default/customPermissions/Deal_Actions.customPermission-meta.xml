@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <isLicensed>false</isLicensed>
+    <label>Deal Actions</label>
+    <description>Gates the deal-driving quick actions (stage advances on the Opportunity, Submit for Approval on Underwriting/LOI). Held by the acquisitions analyst ("Junior") who runs deals - not by approvers or other roles.</description>
+</CustomPermission>
