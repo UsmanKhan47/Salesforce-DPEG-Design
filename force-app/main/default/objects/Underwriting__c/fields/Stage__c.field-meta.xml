@@ -22,14 +22,14 @@
                 <label>In Progress</label>
             </value>
             <value>
-                <fullName>Completed</fullName>
-                <default>false</default>
-                <label>Completed</label>
-            </value>
-            <value>
                 <fullName>Approved</fullName>
                 <default>false</default>
                 <label>Approved</label>
+            </value>
+            <value>
+                <fullName>Completed</fullName>
+                <default>false</default>
+                <label>Completed</label>
             </value>
         </valueSetDefinition>
     </valueSet>
