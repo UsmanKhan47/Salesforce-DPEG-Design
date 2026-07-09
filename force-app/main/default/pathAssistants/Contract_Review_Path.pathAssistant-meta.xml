@@ -9,8 +9,8 @@
         <picklistValueName>Contract Execution</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Prepare and review the PSA internally. Validate terms, contingencies, and timelines, and route for any required sign-off before countering or executing.</info>
-        <picklistValueName>Prepare</picklistValueName>
+        <info>Review the PSA internally. Validate terms, contingencies, and timelines, and route for any required sign-off before countering or executing.</info>
+        <picklistValueName>Review</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <info>Redline and counter with the counterparty. Log each PSA version in the Counter History; the ball-in-court flips with every exchange until terms are locked.</info>

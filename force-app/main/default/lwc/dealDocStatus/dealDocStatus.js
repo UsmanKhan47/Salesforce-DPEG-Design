@@ -31,7 +31,7 @@ const REVIEW_TONE = {
 // Contract-review stages.
 const CONTRACT_TONE = {
     'PSA Drafting': 'blue',
-    'Prepare': 'amber',
+    'Review': 'amber',
     'Counter': 'red',
     'Contract Execution': 'green'
 };

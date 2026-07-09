@@ -14,13 +14,13 @@
     </assignments>
     <assignments>
         <name>Set_Stage_Negotiation</name>
-        <label>Set Stage Prepare</label>
+        <label>Set Stage Review</label>
         <locationX>176</locationX>
         <locationY>288</locationY>
         <assignmentItems>
             <assignToReference>$Record.Stage__c</assignToReference>
             <operator>Assign</operator>
-            <value><stringValue>Prepare</stringValue></value>
+            <value><stringValue>Review</stringValue></value>
         </assignmentItems>
     </assignments>
     <assignments>
@@ -67,7 +67,7 @@
         <locationX>176</locationX>
         <locationY>180</locationY>
         <defaultConnector><targetReference>Set_Stage_Negotiation</targetReference></defaultConnector>
-        <defaultConnectorLabel>Preparing</defaultConnectorLabel>
+        <defaultConnectorLabel>Reviewing</defaultConnectorLabel>
         <rules>
             <name>Is_Initial_Draft</name>
             <conditionLogic>and</conditionLogic>

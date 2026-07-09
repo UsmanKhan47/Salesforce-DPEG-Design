@@ -16,9 +16,9 @@
                 <label>PSA Drafting</label>
             </value>
             <value>
-                <fullName>Prepare</fullName>
+                <fullName>Review</fullName>
                 <default>false</default>
-                <label>Prepare</label>
+                <label>Review</label>
             </value>
             <value>
                 <fullName>Counter</fullName>
