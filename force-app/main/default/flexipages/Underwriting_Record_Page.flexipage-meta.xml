@@ -121,6 +121,10 @@
                     <name>cardTitle</name>
                     <value>Counter History</value>
                 </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>internalOnly</name>
+                    <value>true</value>
+                </componentInstanceProperties>
                 <componentName>dealMessageLog</componentName>
                 <identifier>counterHistoryCard</identifier>
             </componentInstance>

@@ -28,6 +28,9 @@ export default class DealMessageLog extends LightningElement {
     // method badge on each entry. Turned on for Contract Review. (Public boolean
     // @api props must default to false, so this is expressed as "hide".)
     @api hideMethod = false;
+    // Locks direction to Internal (hides the Direction picker + badge). Turned on
+    // for Underwriting, where every entry is an internal note.
+    @api internalOnly = false;
     _wired;
     messages;
     adding = false;
@@ -59,6 +62,9 @@ export default class DealMessageLog extends LightningElement {
 
     get showMethod() {
         return !this.hideMethod;
+    }
+    get showDirection() {
+        return !this.internalOnly;
     }
 
     get count() {

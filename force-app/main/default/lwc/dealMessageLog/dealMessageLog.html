@@ -24,13 +24,15 @@
         <template if:true={adding}>
             <div class="dml-composer">
                 <div class="dml-composer-row">
-                    <lightning-combobox
-                        label="Direction"
-                        value={upDirection}
-                        options={directionOptions}
-                        onchange={onDirection}
-                        variant="label-stacked">
-                    </lightning-combobox>
+                    <template if:true={showDirection}>
+                        <lightning-combobox
+                            label="Direction"
+                            value={upDirection}
+                            options={directionOptions}
+                            onchange={onDirection}
+                            variant="label-stacked">
+                        </lightning-combobox>
+                    </template>
                     <template if:true={showMethod}>
                         <lightning-combobox
                             label="Method"
@@ -104,7 +106,9 @@
                                         {e.method}
                                     </span>
                                 </template>
-                                <span class={e.directionClass}>{e.direction}</span>
+                                <template if:true={showDirection}>
+                                    <span class={e.directionClass}>{e.direction}</span>
+                                </template>
                                 <template if:true={e.revision}>
                                     <span class="dml-rev">
                                         <lightning-icon icon-name="utility:page" size="xx-small"></lightning-icon>
