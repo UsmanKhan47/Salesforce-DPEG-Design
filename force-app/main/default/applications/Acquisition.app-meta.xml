@@ -63,6 +63,15 @@
         <type>Flexipage</type>
         <pageOrSobjectType>Underwriting__c</pageOrSobjectType>
     </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>NDA Page</comment>
+        <content>NDA_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>NDA__c</pageOrSobjectType>
+    </actionOverrides>
     <brand>
         <headerColor>#0B5394</headerColor>
         <logo>DPEG_Logo_Clear</logo>

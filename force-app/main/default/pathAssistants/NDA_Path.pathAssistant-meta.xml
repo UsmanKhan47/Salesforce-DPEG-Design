@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>NDA__c</entityName>
+    <fieldName>Status__c</fieldName>
+    <masterLabel>NDA Path</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Counterparty_Name__c</fieldNames>
+        <fieldNames>Method__c</fieldNames>
+        <info>NDA opened for the deal. Confirm the counterparty and how it will be sent, then send it out.</info>
+        <picklistValueName>Pending</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Sent__c</fieldNames>
+        <fieldNames>OneDrive_URL__c</fieldNames>
+        <info>NDA sent to the counterparty. Track the days out and follow up until it comes back signed.</info>
+        <picklistValueName>Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Signed__c</fieldNames>
+        <fieldNames>NDA_Signed__c</fieldNames>
+        <info>NDA fully executed. NDA Signed = TRUE is what unlocks advancing the deal to Underwriting.</info>
+        <picklistValueName>Signed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>
