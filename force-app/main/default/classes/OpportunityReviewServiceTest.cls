@@ -45,6 +45,27 @@ private class OpportunityReviewServiceTest {
     }
 
     @isTest
+    static void ndaOpensOnNewOpportunity() {
+        Test.startTest();
+        Opportunity o = newOpp('New');
+        insert o;
+        Test.stopTest();
+
+        List<NDA__c> ndas = [SELECT Status__c FROM NDA__c WHERE Opportunity__c = :o.Id];
+        System.assertEquals(1, ndas.size(), 'A new Opportunity opens one NDA from the New stage');
+        System.assertEquals('Pending', ndas[0].Status__c, 'NDA starts Pending');
+
+        Opportunity stamped = [SELECT Primary_NDA__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(ndas[0].Id, stamped.Primary_NDA__c,
+            'Primary_NDA__c stamped so the NDA tab and the signed-NDA gate have a record');
+
+        // Idempotency: re-saving the Opp must not open a second NDA.
+        update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'touch');
+        System.assertEquals(1, [SELECT COUNT() FROM NDA__c WHERE Opportunity__c = :o.Id],
+            'No duplicate NDA on re-save');
+    }
+
+    @isTest
     static void inputCheckboxesCreateReviewsAtAnyStage() {
         Opportunity o = newOpp('New');
         insert o;

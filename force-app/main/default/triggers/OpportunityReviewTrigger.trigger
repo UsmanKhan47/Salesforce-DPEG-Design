@@ -8,4 +8,9 @@ trigger OpportunityReviewTrigger on Opportunity (after insert, after update) {
         Trigger.new,
         Trigger.isUpdate ? Trigger.oldMap : null
     );
+    // Open (and stamp) the deal's NDA the moment the Opportunity is created.
+    OpportunityReviewService.ensureNda(
+        Trigger.new,
+        Trigger.isUpdate ? Trigger.oldMap : null
+    );
 }

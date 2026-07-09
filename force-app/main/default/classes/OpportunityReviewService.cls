@@ -133,4 +133,43 @@ public with sharing class OpportunityReviewService {
             update uwStamps;
         }
     }
+
+    /**
+     * Every new Opportunity opens an NDA to track from the New stage, stamped
+     * onto Primary_NDA__c so the NDA tab has a record and the signed-NDA gate has
+     * something to check. Insert-only and idempotent - a deal never opens a second
+     * NDA. Stamping Primary_NDA__c leaves StageName unchanged, so the
+     * NDA_Signed_Before_Underwriting rule (ISCHANGED-gated) never fires here.
+     */
+    public static void ensureNda(List<Opportunity> newOpps, Map<Id, Opportunity> oldMap) {
+        if (oldMap != null) {
+            return; // only on insert
+        }
+        Set<Id> oppIds = new Set<Id>();
+        for (Opportunity o : newOpps) {
+            if (o.Primary_NDA__c == null) {
+                oppIds.add(o.Id);
+            }
+        }
+        if (oppIds.isEmpty()) {
+            return;
+        }
+        // Idempotency: skip any deal that already has an NDA.
+        for (NDA__c existing : [SELECT Opportunity__c FROM NDA__c WHERE Opportunity__c IN :oppIds]) {
+            oppIds.remove(existing.Opportunity__c);
+        }
+        if (oppIds.isEmpty()) {
+            return;
+        }
+        List<NDA__c> ndaToInsert = new List<NDA__c>();
+        for (Id oppId : oppIds) {
+            ndaToInsert.add(new NDA__c(Opportunity__c = oppId, Status__c = 'Pending'));
+        }
+        insert ndaToInsert;
+        List<Opportunity> ndaStamps = new List<Opportunity>();
+        for (NDA__c nda : ndaToInsert) {
+            ndaStamps.add(new Opportunity(Id = nda.Opportunity__c, Primary_NDA__c = nda.Id));
+        }
+        update ndaStamps;
+    }
 }
