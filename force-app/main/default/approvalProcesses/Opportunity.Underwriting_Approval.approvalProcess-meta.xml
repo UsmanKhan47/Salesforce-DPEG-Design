@@ -31,18 +31,13 @@
         <label>Principal Review</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal sign-off on a completed underwrite. Both principals (Ali + Nikhil) must approve - unanimous; a single rejection ends the approval. Approve: deal advances to LOI. Reject: deal stays at Underwriting with Underwriting Complete cleared, so the underwriter can rework the numbers and resubmit. Entry requires Underwriting Complete = true (Section 12B).</description>
+    <description>Principal sign-off on a completed underwrite. Both principals (Ali + Nikhil) must approve - unanimous; a single rejection ends the approval. Approve: deal advances to LOI. Reject: deal stays at Underwriting with Underwriting Complete cleared, so the underwriter can rework the numbers and resubmit. Entry: deal is at the Underwriting stage. (Underwriting Complete / Section 12B is tracked on the deal but no longer gates submission.)</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <criteriaItems>
             <field>Opportunity.StageName</field>
             <operation>equals</operation>
             <value>Underwriting</value>
-        </criteriaItems>
-        <criteriaItems>
-            <field>Opportunity.Underwriting_Complete__c</field>
-            <operation>equals</operation>
-            <value>True</value>
         </criteriaItems>
     </entryCriteria>
     <finalApprovalActions>

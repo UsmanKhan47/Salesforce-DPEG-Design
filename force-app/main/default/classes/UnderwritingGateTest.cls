@@ -130,18 +130,18 @@ private class UnderwritingGateTest {
     }
 
     @isTest
-    static void incompleteUnderwriteCannotSubmit() {
+    static void underwritingStageSubmitsWithoutCompleteFlag() {
+        // Entry criteria is Stage = Underwriting only; the Underwriting Complete
+        // (12B) checkbox is tracked on the deal but no longer gates submission.
         Opportunity o = newOpp('Underwriting');
         insert o; // Underwriting_Complete__c = false
 
-        Boolean threw = false;
-        try {
-            Approval.ProcessSubmitRequest req = new Approval.ProcessSubmitRequest();
-            req.setObjectId(o.Id);
-            Approval.process(req);
-        } catch (Exception e) {
-            threw = true;
-        }
-        System.assert(threw, 'Section 12B: an incomplete underwrite meets no entry criteria');
+        Test.startTest();
+        OpportunityApprovalController.submitForApproval(o.Id);
+        Test.stopTest();
+
+        System.assertEquals(1,
+            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id AND Status = 'Pending'],
+            'A deal at Underwriting submits even with Underwriting Complete unchecked');
     }
 }

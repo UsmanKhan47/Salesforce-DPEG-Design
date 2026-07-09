@@ -30,15 +30,9 @@ public with sharing class OpportunityApprovalController {
             return 'The deal has been submitted for approval.';
         } catch (Exception e) {
             // Turn the raw NO_APPLICABLE_PROCESS into a reason the submitter can act
-            // on. The two processes need Underwriting (with Underwriting Complete =
-            // true) or the LOI stage; anything else meets no entry criteria.
-            Opportunity deal = [
-                SELECT StageName, Underwriting_Complete__c
-                FROM Opportunity WHERE Id = :dealId
-            ];
-            if (deal.StageName == 'Underwriting' && deal.Underwriting_Complete__c != true) {
-                throw ahe('Check "Underwriting Complete" on the deal before submitting for principal approval.');
-            }
+            // on. The two processes run at the Underwriting and LOI stages; anything
+            // else meets no entry criteria.
+            Opportunity deal = [SELECT StageName FROM Opportunity WHERE Id = :dealId];
             if (deal.StageName != 'Underwriting' && deal.StageName != 'LOI') {
                 throw ahe('No approval applies at the ' + deal.StageName +
                     ' stage - principal approval runs at Underwriting, LOI approval at LOI.');

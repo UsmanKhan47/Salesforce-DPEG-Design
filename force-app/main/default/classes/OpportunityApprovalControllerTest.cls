@@ -47,11 +47,11 @@ private class OpportunityApprovalControllerTest {
 
     @isTest
     static void ineligibleStageThrows() {
-        // A deal not at "LOI" meets no entry criteria -> Approval.process
-        // throws -> the catch branch surfaces a friendly error.
+        // A deal at neither Underwriting nor LOI meets no entry criteria ->
+        // Approval.process throws -> the catch branch surfaces a friendly error.
         Opportunity o = new Opportunity(
             Name = 'Not Eligible',
-            StageName = 'Underwriting',
+            StageName = 'Under Review',
             CloseDate = Date.today().addDays(10)
         );
         insert o;
