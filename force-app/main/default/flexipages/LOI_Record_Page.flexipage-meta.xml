@@ -103,12 +103,8 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentInstanceProperties>
-                    <name>tabs</name>
-                    <value>tabs</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:tabset</componentName>
-                <identifier>mainTabset</identifier>
+                <componentName>loiCounterOffer</componentName>
+                <identifier>loiCounterOfferCard</identifier>
             </componentInstance>
         </itemInstances>
         <name>main</name>
@@ -118,11 +114,11 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
-                    <name>cardTitle</name>
-                    <value>Counter History</value>
+                    <name>tabs</name>
+                    <value>tabs</value>
                 </componentInstanceProperties>
-                <componentName>dealMessageLog</componentName>
-                <identifier>counterHistoryCard</identifier>
+                <componentName>flexipage:tabset</componentName>
+                <identifier>mainTabset</identifier>
             </componentInstance>
         </itemInstances>
         <name>sidebar</name>

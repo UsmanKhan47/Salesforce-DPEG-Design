@@ -69,11 +69,13 @@ const COLUMNS = [
     }
 ];
 
-// Counter Offer card on the Opportunity LOI tab: records the full negotiation
-// history against the deal's Primary LOI (who countered, price, cap rate, date),
-// stamps the latest terms back onto the LOI, and flips its Ball In Court.
+// Counter Offer card: records the full LOI negotiation history (who countered,
+// price, cap rate, date), stamps the latest terms back onto the LOI, and flips
+// its Ball In Court. Works on the Opportunity LOI tab (via Primary_LOI__c) and
+// directly on the LOI record page.
 export default class LoiCounterOffer extends LightningElement {
-    @api recordId; // Opportunity Id
+    @api recordId;
+    @api objectApiName;
     columns = COLUMNS;
     sortedBy = 'counterDate';
     sortedDirection = 'desc';
@@ -83,7 +85,7 @@ export default class LoiCounterOffer extends LightningElement {
     counterCapRate;
     counterDate;
     counterResponse;
-    primaryLoiId;
+    primaryLoiFromOpp;
     ballInCourt;
     offers = [];
     _wiredOffers;
@@ -93,15 +95,27 @@ export default class LoiCounterOffer extends LightningElement {
         { label: 'Our counter to seller', value: 'Ours' }
     ];
 
-    @wire(getRecord, { recordId: '$recordId', fields: [PRIMARY_LOI], optionalFields: [LOI_BALL] })
+    get isOnOpportunity() {
+        return this.objectApiName === 'Opportunity';
+    }
+    // Only wires when mounted on an Opportunity page.
+    get oppRecordId() {
+        return this.isOnOpportunity ? this.recordId : undefined;
+    }
+    // The LOI to track: the Opp's Primary LOI, or the record itself on an LOI page.
+    get loiId() {
+        return this.isOnOpportunity ? this.primaryLoiFromOpp : this.recordId;
+    }
+
+    @wire(getRecord, { recordId: '$oppRecordId', fields: [PRIMARY_LOI], optionalFields: [LOI_BALL] })
     wiredOpp({ data }) {
         if (data) {
-            this.primaryLoiId = getFieldValue(data, PRIMARY_LOI);
+            this.primaryLoiFromOpp = getFieldValue(data, PRIMARY_LOI);
             this.ballInCourt = getFieldValue(data, LOI_BALL);
         }
     }
 
-    @wire(getCounterOffers, { loiId: '$primaryLoiId' })
+    @wire(getCounterOffers, { loiId: '$loiId' })
     wiredOffers(result) {
         this._wiredOffers = result;
         if (result.data) {
@@ -118,7 +132,7 @@ export default class LoiCounterOffer extends LightningElement {
     }
 
     get hasPrimaryLoi() {
-        return !!this.primaryLoiId;
+        return !!this.loiId;
     }
     get hasOffers() {
         return this.offers && this.offers.length > 0;
@@ -128,7 +142,7 @@ export default class LoiCounterOffer extends LightningElement {
     }
 
     get hasBall() {
-        return !!this.ballInCourt;
+        return this.isOnOpportunity && !!this.ballInCourt;
     }
     get ballBadgeClass() {
         return this.ballInCourt === 'Us'
@@ -200,7 +214,7 @@ export default class LoiCounterOffer extends LightningElement {
 
     handleSave() {
         saveCounterOffer({
-            loiId: this.primaryLoiId,
+            loiId: this.loiId,
             direction: this.direction,
             counterPrice: this.counterPrice,
             counterCapRate: this.counterCapRate,
