@@ -13,7 +13,7 @@ private class CounterOfferControllerTest {
 
         Test.startTest();
         CounterOfferController.saveCounterOffer(loi.Id, 'Seller', 1000000, 6.25,
-            Date.today().addDays(-1), 'Seller came back higher');
+            Date.today().addDays(-1), 'Seller came back higher', 'R2', 'v3');
         Test.stopTest();
 
         List<Counter_Offer__c> offers = CounterOfferController.getCounterOffers(loi.Id);
@@ -21,6 +21,8 @@ private class CounterOfferControllerTest {
         System.assertEquals('Seller', offers[0].Direction__c, 'Direction captured');
         System.assertEquals(6.25, offers[0].Counter_Cap_Rate__c, 'Cap rate captured');
         System.assertEquals(Date.today().addDays(-1), offers[0].Counter_Date__c, 'Date captured');
+        System.assertEquals('R2', offers[0].Revision_Number__c, 'Revision number captured');
+        System.assertEquals('v3', offers[0].Subsequent_Version__c, 'Subsequent version captured');
 
         LOI__c refreshed = [
             SELECT Counter_Price__c, Counter_Cap_Rate__c, Counter_Received_Date__c,
@@ -41,8 +43,8 @@ private class CounterOfferControllerTest {
         insert loi;
 
         Test.startTest();
-        CounterOfferController.saveCounterOffer(loi.Id, 'Seller', 1000000, null, null, 'theirs');
-        CounterOfferController.saveCounterOffer(loi.Id, 'Ours', 950000, null, null, 'ours back');
+        CounterOfferController.saveCounterOffer(loi.Id, 'Seller', 1000000, null, null, 'theirs', null, null);
+        CounterOfferController.saveCounterOffer(loi.Id, 'Ours', 950000, null, null, 'ours back', null, null);
         Test.stopTest();
 
         System.assertEquals(2, CounterOfferController.getCounterOffers(loi.Id).size(),
@@ -59,7 +61,7 @@ private class CounterOfferControllerTest {
 
         Boolean threwNull = false;
         try {
-            CounterOfferController.saveCounterOffer(null, 'Seller', 500000, null, null, 'x');
+            CounterOfferController.saveCounterOffer(null, 'Seller', 500000, null, null, 'x', null, null);
         } catch (Exception e) {
             threwNull = true;
         }
@@ -69,7 +71,7 @@ private class CounterOfferControllerTest {
         insert loi;
         Boolean threwDir = false;
         try {
-            CounterOfferController.saveCounterOffer(loi.Id, 'Nobody', 500000, null, null, 'x');
+            CounterOfferController.saveCounterOffer(loi.Id, 'Nobody', 500000, null, null, 'x', null, null);
         } catch (Exception e) {
             threwDir = true;
         }

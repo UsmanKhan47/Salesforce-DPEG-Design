@@ -14,7 +14,8 @@ public with sharing class CounterOfferController {
         }
         return [
             SELECT Id, Name, Direction__c, Counter_Price__c, Counter_Cap_Rate__c,
-                   Counter_Date__c, Counter_Response__c, CreatedDate
+                   Counter_Date__c, Counter_Response__c, Revision_Number__c,
+                   Subsequent_Version__c, CreatedDate
             FROM Counter_Offer__c
             WHERE LOI__c = :loiId
             ORDER BY CreatedDate DESC, Name DESC
@@ -23,7 +24,8 @@ public with sharing class CounterOfferController {
 
     @AuraEnabled
     public static void saveCounterOffer(Id loiId, String direction, Decimal counterPrice,
-                                        Decimal counterCapRate, Date counterDate, String counterResponse) {
+                                        Decimal counterCapRate, Date counterDate, String counterResponse,
+                                        String revisionNumber, String subsequentVersion) {
         if (loiId == null) {
             throw new AuraHandledException('No primary LOI is set on this deal.');
         }
@@ -37,7 +39,9 @@ public with sharing class CounterOfferController {
             Counter_Price__c = counterPrice,
             Counter_Cap_Rate__c = counterCapRate,
             Counter_Date__c = effectiveDate,
-            Counter_Response__c = counterResponse
+            Counter_Response__c = counterResponse,
+            Revision_Number__c = String.isBlank(revisionNumber) ? null : revisionNumber.trim(),
+            Subsequent_Version__c = String.isBlank(subsequentVersion) ? null : subsequentVersion.trim()
         );
 
         // Reflect the latest counter on the parent LOI and flip whose turn it is.

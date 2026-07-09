@@ -17,6 +17,10 @@
         <picklistValueName>Prepare/Review</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
+        <info>LOI sent to the seller/broker. Awaiting their response - a counter moves it to the Counter stage.</info>
+        <picklistValueName>Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
         <info>Counter-offer stage. Track the back-and-forth with the seller - log each counter in the Counter History and update the offer terms until both sides align.</info>
         <picklistValueName>Counter</picklistValueName>
     </pathAssistantSteps>

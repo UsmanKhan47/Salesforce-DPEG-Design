@@ -27,11 +27,11 @@ const COLUMNS = [
         typeAttributes: { label: { fieldName: 'name' }, target: '_self' }
     },
     {
-        label: 'From',
+        label: 'Countered By',
         fieldName: 'direction',
         type: 'pill',
         sortable: true,
-        initialWidth: 100,
+        initialWidth: 130,
         typeAttributes: { wrapStyle: { fieldName: 'dirWrap' }, dotStyle: { fieldName: 'dirDot' } }
     },
     {
@@ -50,6 +50,20 @@ const COLUMNS = [
         initialWidth: 90,
         cellAttributes: LEFT,
         typeAttributes: { minimumFractionDigits: 2 }
+    },
+    {
+        label: 'Revision #',
+        fieldName: 'revisionNumber',
+        type: 'text',
+        initialWidth: 100,
+        cellAttributes: LEFT
+    },
+    {
+        label: 'Subseq. Version',
+        fieldName: 'subsequentVersion',
+        type: 'text',
+        initialWidth: 120,
+        cellAttributes: LEFT
     },
     {
         // No initialWidth: this column absorbs the remaining width (fixed mode).
@@ -85,6 +99,8 @@ export default class LoiCounterOffer extends LightningElement {
     counterCapRate;
     counterDate;
     counterResponse;
+    revisionNumber;
+    subsequentVersion;
     primaryLoiFromOpp;
     ballInCourt;
     offers = [];
@@ -126,6 +142,8 @@ export default class LoiCounterOffer extends LightningElement {
                 price: o.Counter_Price__c,
                 capRate: o.Counter_Cap_Rate__c == null ? null : o.Counter_Cap_Rate__c / 100,
                 response: o.Counter_Response__c,
+                revisionNumber: o.Revision_Number__c,
+                subsequentVersion: o.Subsequent_Version__c,
                 counterDate: o.Counter_Date__c || o.CreatedDate
             }));
         }
@@ -165,6 +183,8 @@ export default class LoiCounterOffer extends LightningElement {
                 dirDot: pillDot(dDot),
                 price: o.price,
                 capRate: o.capRate,
+                revisionNumber: o.revisionNumber,
+                subsequentVersion: o.subsequentVersion,
                 response: o.response,
                 counterDate: o.counterDate
             };
@@ -191,6 +211,8 @@ export default class LoiCounterOffer extends LightningElement {
         this.counterCapRate = null;
         this.counterDate = null;
         this.counterResponse = null;
+        this.revisionNumber = null;
+        this.subsequentVersion = null;
         this.editing = true;
     }
     handleCancel() {
@@ -211,6 +233,12 @@ export default class LoiCounterOffer extends LightningElement {
     handleResponseChange(e) {
         this.counterResponse = e.target.value;
     }
+    handleRevisionNumberChange(e) {
+        this.revisionNumber = e.target.value;
+    }
+    handleSubsequentVersionChange(e) {
+        this.subsequentVersion = e.target.value;
+    }
 
     handleSave() {
         saveCounterOffer({
@@ -219,7 +247,9 @@ export default class LoiCounterOffer extends LightningElement {
             counterPrice: this.counterPrice,
             counterCapRate: this.counterCapRate,
             counterDate: this.counterDate,
-            counterResponse: this.counterResponse
+            counterResponse: this.counterResponse,
+            revisionNumber: this.revisionNumber,
+            subsequentVersion: this.subsequentVersion
         })
             .then(() => {
                 this.editing = false;

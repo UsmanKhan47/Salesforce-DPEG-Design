@@ -22,6 +22,11 @@
                 <label>Prepare/Review</label>
             </value>
             <value>
+                <fullName>Sent</fullName>
+                <default>false</default>
+                <label>Sent</label>
+            </value>
+            <value>
                 <fullName>Counter</fullName>
                 <default>false</default>
                 <label>Counter</label>

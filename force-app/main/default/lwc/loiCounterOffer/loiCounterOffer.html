@@ -58,6 +58,24 @@
                                 </lightning-input>
                             </div>
                         </div>
+                        <div class="slds-grid slds-gutters slds-m-top_x-small">
+                            <div class="slds-col slds-size_1-of-2">
+                                <lightning-input
+                                    label="Revision Number"
+                                    value={revisionNumber}
+                                    onchange={handleRevisionNumberChange}
+                                    placeholder="e.g. v3, Rev B">
+                                </lightning-input>
+                            </div>
+                            <div class="slds-col slds-size_1-of-2">
+                                <lightning-input
+                                    label="Subsequent Version"
+                                    value={subsequentVersion}
+                                    onchange={handleSubsequentVersionChange}
+                                    placeholder="e.g. v4">
+                                </lightning-input>
+                            </div>
+                        </div>
                         <lightning-textarea
                             class="slds-m-top_x-small"
                             label="Counter Response"
