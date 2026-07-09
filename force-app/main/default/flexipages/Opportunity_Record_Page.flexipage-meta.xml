@@ -698,6 +698,10 @@
                 <identifier>RecordAcres_cFieldDev</identifier>
             </fieldInstance>
         </itemInstances>
+        <name>Facet-devCol1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
@@ -728,7 +732,7 @@
                 <identifier>RecordDevelopment_Input_Needed_cField</identifier>
             </fieldInstance>
         </itemInstances>
-        <name>Facet-devFields</name>
+        <name>Facet-devCol2</name>
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
@@ -736,10 +740,20 @@
             <componentInstance>
                 <componentInstanceProperties>
                     <name>body</name>
-                    <value>Facet-devFields</value>
+                    <value>Facet-devCol1</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:column</componentName>
-                <identifier>devColumn</identifier>
+                <identifier>devColumn1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-devCol2</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>devColumn2</identifier>
             </componentInstance>
         </itemInstances>
         <name>Facet-devCols</name>
