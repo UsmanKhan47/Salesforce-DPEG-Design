@@ -29,8 +29,20 @@ public with sharing class OpportunityApprovalController {
             Approval.process(req);
             return 'The deal has been submitted for approval.';
         } catch (Exception e) {
-            // Most common: "No applicable approval process was found" when the deal
-            // is at a stage no active process covers.
+            // Turn the raw NO_APPLICABLE_PROCESS into a reason the submitter can act
+            // on. The two processes need Underwriting (with Underwriting Complete =
+            // true) or the LOI stage; anything else meets no entry criteria.
+            Opportunity deal = [
+                SELECT StageName, Underwriting_Complete__c
+                FROM Opportunity WHERE Id = :dealId
+            ];
+            if (deal.StageName == 'Underwriting' && deal.Underwriting_Complete__c != true) {
+                throw ahe('Check "Underwriting Complete" on the deal before submitting for principal approval.');
+            }
+            if (deal.StageName != 'Underwriting' && deal.StageName != 'LOI') {
+                throw ahe('No approval applies at the ' + deal.StageName +
+                    ' stage - principal approval runs at Underwriting, LOI approval at LOI.');
+            }
             throw ahe(e.getMessage());
         }
     }
