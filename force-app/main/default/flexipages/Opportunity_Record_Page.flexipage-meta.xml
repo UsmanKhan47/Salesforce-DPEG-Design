@@ -798,6 +798,10 @@
                 <identifier>RecordGuidance_Cap_Rate_cFieldCon</identifier>
             </fieldInstance>
         </itemInstances>
+        <name>Facet-conCol1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
@@ -818,7 +822,7 @@
                 <identifier>RecordConstruction_Input_Needed_cField</identifier>
             </fieldInstance>
         </itemInstances>
-        <name>Facet-conFields</name>
+        <name>Facet-conCol2</name>
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
@@ -826,10 +830,20 @@
             <componentInstance>
                 <componentInstanceProperties>
                     <name>body</name>
-                    <value>Facet-conFields</value>
+                    <value>Facet-conCol1</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:column</componentName>
-                <identifier>conColumn</identifier>
+                <identifier>conColumn1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-conCol2</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>conColumn2</identifier>
             </componentInstance>
         </itemInstances>
         <name>Facet-conCols</name>
