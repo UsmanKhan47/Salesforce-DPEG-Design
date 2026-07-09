@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
     <label>Acquisition Deal Driver</label>
-    <description>Grants the Deal Actions custom permission, which reveals the deal-driving quick actions (stage advances on the Opportunity, Submit for Approval on Underwriting/LOI). Assign to the acquisitions analyst ("Junior") who runs deals - not to approvers.</description>
+    <description>Marks the "Junior" deal-driver: grants read on User.Deal_Driver__c so the deal-driving quick actions (stage advances; Submit for Approval) show only for holders whose Deal_Driver__c = true. Not assigned to approvers.</description>
     <hasActivationRequired>false</hasActivationRequired>
-    <customPermissions>
-        <enabled>true</enabled>
-        <name>Deal_Actions</name>
-    </customPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>User.Deal_Driver__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
 </PermissionSet>
