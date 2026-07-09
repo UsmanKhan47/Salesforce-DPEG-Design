@@ -42,14 +42,14 @@ public with sharing class OpportunityFunnelController {
     @AuraEnabled(cacheable=true)
     public static List<OppRow> getRecentOpportunities() {
         List<OppRow> rows = new List<OppRow>();
-        // Top 10 deals by asking price (largest first); deals without an asking
+        // Top 5 deals by asking price (largest first); deals without an asking
         // price sort last so the list leads with the biggest opportunities.
         for (Opportunity o : [
             SELECT Id, Name, StageName, Deal_Type__c, Asset_Type__c,
                    Asking_Price__c, Underwritten_NOI__c, CreatedDate
             FROM Opportunity
             ORDER BY Asking_Price__c DESC NULLS LAST, CreatedDate DESC
-            LIMIT 10
+            LIMIT 5
         ]) {
             OppRow r = new OppRow();
             r.id = o.Id;

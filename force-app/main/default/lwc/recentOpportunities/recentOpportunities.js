@@ -81,7 +81,7 @@ export default class RecentOpportunities extends NavigationMixin(LightningElemen
         if (!this.data) {
             return [];
         }
-        return this.data.slice(0, 10).map((r) => {
+        return this.data.slice(0, 5).map((r) => {
             const [sBg, sDot] = STAGE[r.stage] || FALLBACK;
             const [dBg, dDot] = DEAL_TYPE[r.dealType] || FALLBACK;
             return {

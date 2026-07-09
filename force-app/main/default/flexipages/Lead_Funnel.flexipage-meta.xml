@@ -17,6 +17,12 @@
                 <identifier>recentOpportunitiesComponent</identifier>
             </componentInstance>
         </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>recentLeads</componentName>
+                <identifier>recentLeadsComponent</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>region2</name>
         <type>Region</type>
     </flexiPageRegions>
