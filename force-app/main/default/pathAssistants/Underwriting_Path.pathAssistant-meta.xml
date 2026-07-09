@@ -18,7 +18,11 @@
     <pathAssistantSteps>
         <fieldNames>Principal_Price_Decision__c</fieldNames>
         <info>Underwrite finished. Check Underwriting Complete on the deal and submit for principal approval (12B).</info>
-        <picklistValueName>Complete</picklistValueName>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Principal approved the underwrite (12B sign-off). The deal advances to LOI.</info>
+        <picklistValueName>Approved</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>__MASTER__</recordTypeName>
 </PathAssistant>

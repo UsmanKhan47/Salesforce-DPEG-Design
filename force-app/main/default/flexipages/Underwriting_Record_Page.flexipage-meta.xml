@@ -119,7 +119,7 @@
             <componentInstance>
                 <componentInstanceProperties>
                     <name>cardTitle</name>
-                    <value>Counter History</value>
+                    <value>Underwriting Discussion</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>internalOnly</name>
