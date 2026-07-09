@@ -1,7 +1,8 @@
 /**
  * Tests the Phase-3 underwriting gate: the NDA-signed validation rule, the
  * Initiate Underwriting checkbox flow, and the Underwriting_Approval process
- * (approve -> LOI + audit stamps; reject -> Dead/Pass + Dead category).
+ * (unanimous - both principals approve -> LOI + audit stamps; one reject ends
+ * it -> deal stays at Underwriting with Underwriting Complete cleared to rework).
  */
 @isTest
 private class UnderwritingGateTest {
@@ -72,15 +73,17 @@ private class UnderwritingGateTest {
         Approval.ProcessResult submitted = Approval.process(req);
         System.assert(submitted.isSuccess(), 'Completed underwrite should enter Underwriting_Approval');
 
+        // Unanimous: every assigned principal must approve before the deal advances.
         Test.startTest();
-        ProcessInstanceWorkitem wi = [
-            SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id LIMIT 1
-        ];
-        Approval.ProcessWorkitemRequest wr = new Approval.ProcessWorkitemRequest();
-        wr.setWorkitemId(wi.Id);
-        wr.setAction('Approve');
-        wr.setComments('Numbers work.');
-        Approval.process(wr);
+        for (ProcessInstanceWorkitem wi : [
+            SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id
+        ]) {
+            Approval.ProcessWorkitemRequest wr = new Approval.ProcessWorkitemRequest();
+            wr.setWorkitemId(wi.Id);
+            wr.setAction('Approve');
+            wr.setComments('Numbers work.');
+            Approval.process(wr);
+        }
         Test.stopTest();
 
         o = [
@@ -97,7 +100,7 @@ private class UnderwritingGateTest {
     }
 
     @isTest
-    static void principalRejectionKillsDeal() {
+    static void principalRejectionSendsBackForRevision() {
         Opportunity o = newOpp('Underwriting');
         o.Underwriting_Complete__c = true;
         insert o;
@@ -106,6 +109,8 @@ private class UnderwritingGateTest {
         req.setObjectId(o.Id);
         Approval.process(req);
 
+        // Unanimous: a single rejection ends the approval immediately - the other
+        // principal's pending item is withdrawn.
         Test.startTest();
         ProcessInstanceWorkitem wi = [
             SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id LIMIT 1
@@ -117,10 +122,11 @@ private class UnderwritingGateTest {
         Approval.process(wr);
         Test.stopTest();
 
-        o = [SELECT StageName, Deal_Category__c, Deal_Bucket__c FROM Opportunity WHERE Id = :o.Id];
-        System.assertEquals('Dead/Pass', o.StageName, 'Rejection sends the deal to Dead/Pass');
-        System.assertEquals('Dead', o.Deal_Category__c, 'Rejection marks the deal category Dead');
-        System.assertEquals('Dead', o.Deal_Bucket__c, 'Dead deals leave the active tracker buckets');
+        o = [SELECT StageName, Deal_Category__c, Underwriting_Complete__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals('Underwriting', o.StageName, 'Rejection keeps the deal at Underwriting to rework');
+        System.assertEquals(false, o.Underwriting_Complete__c,
+            'Rejection clears Underwriting Complete so the 12B gate re-opens for resubmission');
+        System.assertNotEquals('Dead', o.Deal_Category__c, 'Rejection no longer kills the deal');
     }
 
     @isTest

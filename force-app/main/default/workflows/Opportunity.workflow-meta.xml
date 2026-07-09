@@ -51,20 +51,10 @@
         <reevaluateOnChange>false</reevaluateOnChange>
     </fieldUpdates>
     <fieldUpdates>
-        <fullName>UW_Set_Stage_Dead</fullName>
-        <field>StageName</field>
-        <literalValue>Dead/Pass</literalValue>
-        <name>UW Set Stage Dead</name>
-        <notifyAssignee>false</notifyAssignee>
-        <operation>Literal</operation>
-        <protected>false</protected>
-        <reevaluateOnChange>false</reevaluateOnChange>
-    </fieldUpdates>
-    <fieldUpdates>
-        <fullName>UW_Set_Category_Dead</fullName>
-        <field>Deal_Category__c</field>
-        <literalValue>Dead</literalValue>
-        <name>UW Set Category Dead</name>
+        <fullName>UW_Reopen_For_Revision</fullName>
+        <field>Underwriting_Complete__c</field>
+        <literalValue>0</literalValue>
+        <name>UW Reopen For Revision</name>
         <notifyAssignee>false</notifyAssignee>
         <operation>Literal</operation>
         <protected>false</protected>
