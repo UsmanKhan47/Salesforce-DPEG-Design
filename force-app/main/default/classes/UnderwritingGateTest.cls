@@ -97,6 +97,14 @@ private class UnderwritingGateTest {
         System.assertEquals(UserInfo.getUserId(), o.UW_Approved_By__c,
             'ApprovalAuditService stamps the actual approver from approval history');
         System.assertNotEquals(null, o.UW_Approval_Date__c, 'Approval date stamped');
+
+        Underwriting__c uw = [
+            SELECT Stage__c, Status__c FROM Underwriting__c WHERE Opportunity__c = :o.Id LIMIT 1
+        ];
+        System.assertEquals('Approved', uw.Stage__c,
+            'Approval advances the underwriting record to the Approved stage');
+        System.assertEquals('Approved by Principals', uw.Status__c,
+            'Approval stamps the underwriting record status');
     }
 
     @isTest

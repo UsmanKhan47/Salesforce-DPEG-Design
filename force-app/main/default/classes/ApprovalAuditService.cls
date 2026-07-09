@@ -46,6 +46,7 @@ public without sharing class ApprovalAuditService {
         Map<Id, ProcessInstanceStep> latestApproval = latestApprovedStepByTarget(allIds);
 
         List<Opportunity> oppUpdates = new List<Opportunity>();
+        Set<Id> approvedUwOpps = new Set<Id>();
         for (Id oppId : uwOpps) {
             ProcessInstanceStep step = latestApproval.get(oppId);
             if (step != null) {
@@ -53,6 +54,22 @@ public without sharing class ApprovalAuditService {
                     Id = oppId,
                     UW_Approved_By__c = step.ActorId,
                     UW_Approval_Date__c = step.CreatedDate
+                ));
+                approvedUwOpps.add(oppId);
+            }
+        }
+
+        // On principal sign-off, advance the deal's underwriting record(s) to
+        // Approved so the Underwriting Path and Status reflect the decision.
+        List<Underwriting__c> uwUpdates = new List<Underwriting__c>();
+        if (!approvedUwOpps.isEmpty()) {
+            for (Underwriting__c uw : [
+                SELECT Id FROM Underwriting__c WHERE Opportunity__c IN :approvedUwOpps
+            ]) {
+                uwUpdates.add(new Underwriting__c(
+                    Id = uw.Id,
+                    Stage__c = 'Approved',
+                    Status__c = 'Approved by Principals'
                 ));
             }
         }
@@ -79,6 +96,9 @@ public without sharing class ApprovalAuditService {
         try {
             if (!oppUpdates.isEmpty()) {
                 update oppUpdates;
+            }
+            if (!uwUpdates.isEmpty()) {
+                update uwUpdates;
             }
             if (!loiUpdates.isEmpty()) {
                 update loiUpdates;
