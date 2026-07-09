@@ -43,18 +43,12 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentName>loiCounterOffer</componentName>
-                <identifier>loiCounterOfferCard</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
                 <componentName>force:detailPanel</componentName>
                 <identifier>recordDetail</identifier>
             </componentInstance>
         </itemInstances>
-        <name>main</name>
-        <type>Region</type>
+        <name>detailContent</name>
+        <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
@@ -69,6 +63,62 @@
                 </componentInstanceProperties>
                 <componentName>force:relatedListSingleContainer</componentName>
                 <identifier>notesAttachmentsList</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>notesContent</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>detailContent</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Details</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>detailsTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>notesContent</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Notes &amp; Attachments</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>notesTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>tabs</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentName>loiCounterOffer</componentName>
+                <identifier>loiCounterOfferCard</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>main</name>
+        <type>Region</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>tabs</name>
+                    <value>tabs</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tabset</componentName>
+                <identifier>mainTabset</identifier>
             </componentInstance>
         </itemInstances>
         <name>sidebar</name>
