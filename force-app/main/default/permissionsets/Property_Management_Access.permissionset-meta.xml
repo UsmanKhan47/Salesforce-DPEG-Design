@@ -22,7 +22,7 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Property_Asset__c</object>
-        <viewAllRecords>true</viewAllRecords>
+        <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
         <allowCreate>false</allowCreate>
@@ -78,6 +78,7 @@
     <fieldPermissions><editable>true</editable><field>Task.Onboarding_Status__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>true</editable><field>Task.Blocked_Reason__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>true</editable><field>Task.Task_Owner_Label__c</field><readable>true</readable></fieldPermissions>
+    <!-- Rent roll fields (Yardi mirror, read-only): -->
     <fieldPermissions><editable>false</editable><field>Unit__c.Suite_Number__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>false</editable><field>Unit__c.Tenant_Name__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>false</editable><field>Unit__c.Square_Feet__c</field><readable>true</readable></fieldPermissions>
