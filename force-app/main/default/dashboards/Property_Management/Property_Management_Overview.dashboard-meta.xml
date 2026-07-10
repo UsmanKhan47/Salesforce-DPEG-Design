@@ -251,7 +251,7 @@
                 </flexComponentProperties>
                 <groupingSortProperties/>
                 <header>Insurance Expiry Alerts</header>
-                <report>Property_Management/Insurance_Expiring</report>
+                <report>Property_Management/Insurance_Alerts</report>
             </dashboardComponent>
         </dashboardGridComponents>
         <numberOfColumns>12</numberOfColumns>
