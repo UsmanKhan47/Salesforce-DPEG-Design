@@ -9,6 +9,8 @@ List<Lease_Inquiry__c> oldInq = new List<Lease_Inquiry__c>();
 for (Lease_Inquiry__c li : [SELECT Id, Initial_Notes__c FROM Lease_Inquiry__c]) {
     if (li.Initial_Notes__c != null && li.Initial_Notes__c.startsWith('LEASESEED')) oldInq.add(li);
 }
+Set<Id> oldInqIds = new Map<Id,Lease_Inquiry__c>(oldInq).keySet();
+delete [SELECT Id FROM Lease__c WHERE Lease_Inquiry__c IN :oldInqIds];
 delete oldInq;
 delete [SELECT Id FROM Lease_Renewal__c WHERE Tenant_Name__c LIKE 'LSEED-%'];
 
@@ -41,18 +43,20 @@ for (Integer i = 1; i <= 10; i++) {
 Integer[] gaps = new Integer[]{45, 47, 49};
 for (Integer i = 0; i < 3; i++) {
     Date signed = today.addDays(-i*2);           // all within this month (i in 0..2)
+    if (signed < today.toStartOfMonth()) signed = today.toStartOfMonth();
     inq.add(new Lease_Inquiry__c(Tenant_Name__c='Signed MTD ' + (i+1), Property_Asset__c=props.get('Oak Street Center'),
-        Space_Required__c=2000, Stage__c='Lease Signed', Status__c='Active',
+        Space_Required__c=2000, Stage__c='Lease Signed', Status__c='Closed Won',
         Inquiry_Date__c=signed.addDays(-gaps[i]), Signed_Date__c=signed, Initial_Notes__c='LEASESEED'));
 }
 // 4 signed in prior months (velocity chart trend): last month, 2mo, 3mo, 4mo ago
 for (Integer m = 1; m <= 4; m++) {
     Date signed = today.addMonths(-m).toStartOfMonth().addDays(9);
     inq.add(new Lease_Inquiry__c(Tenant_Name__c='Signed M-' + m, Property_Asset__c=props.get('Sunset Mixed-Use'),
-        Space_Required__c=1800, Stage__c='Lease Signed', Status__c='Active',
+        Space_Required__c=1800, Stage__c='Lease Signed', Status__c='Closed Won',
         Inquiry_Date__c=signed.addDays(-47), Signed_Date__c=signed, Initial_Notes__c='LEASESEED'));
 }
 insert inq;
+update inq; // re-apply the in-memory Stage_Start_Date__c values (flow only stamps on insert / stage change)
 
 // Renewals: 6 confirmed (Renewed) + 4 active negotiations with a proposed rate
 // Lease_End__c is required (not in the original brief draft) — Renewed rows get a post-renewal
@@ -60,7 +64,7 @@ insert inq;
 List<Lease_Renewal__c> ren = new List<Lease_Renewal__c>();
 for (Integer i = 1; i <= 6; i++) {
     ren.add(new Lease_Renewal__c(Tenant_Name__c='LSEED-Renewed ' + i, Property_Asset__c=props.get('Park North Retail'),
-        Stage__c='Renewed', Status__c='Active', Proposed_Rate__c=25 + i, Lease_End__c=today.addMonths(24)));
+        Stage__c='Renewed', Status__c='Closed Won', Proposed_Rate__c=25 + i, Lease_End__c=today.addMonths(24)));
 }
 String[] negStages = new String[]{'Notice Sent','Awaiting Tenant Response','Negotiating','Notice Sent'};
 for (Integer i = 0; i < 4; i++) {
