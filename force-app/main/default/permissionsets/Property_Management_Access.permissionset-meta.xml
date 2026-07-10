@@ -2,6 +2,7 @@
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
     <classAccesses><apexClass>OnboardingController</apexClass><enabled>true</enabled></classAccesses>
     <classAccesses><apexClass>OnboardingTaskRollupService</apexClass><enabled>true</enabled></classAccesses>
+    <classAccesses><apexClass>RentRollController</apexClass><enabled>true</enabled></classAccesses>
     <description>Object, field, tab and Apex access for the Property Management (Onboarding) app.</description>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Property Management Access</label>
@@ -13,6 +14,33 @@
         <modifyAllRecords>false</modifyAllRecords>
         <object>Onboarding__c</object>
         <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property_Asset__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Unit__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Rent_Step__c</object>
+        <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <!-- One block per writable field (editable=true): -->
     <fieldPermissions><editable>true</editable><field>Onboarding__c.Stage__c</field><readable>true</readable></fieldPermissions>
@@ -50,6 +78,30 @@
     <fieldPermissions><editable>true</editable><field>Task.Onboarding_Status__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>true</editable><field>Task.Blocked_Reason__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>true</editable><field>Task.Task_Owner_Label__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Suite_Number__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Tenant_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Square_Feet__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Status__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Lease_Start__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Lease_End__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Current_Monthly_Rent__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Current_Rent_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Asking_Rent_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Estimated_NNN_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_Property_Tax__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_Insurance__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_CAM__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_Monthly_Total__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Yardi_Unit_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Period_Start__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Period_End__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Period_Label__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Monthly_Rent__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Rent_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Type__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Note__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Sort_Order__c</field><readable>true</readable></fieldPermissions>
     <tabSettings><tab>Onboarding</tab><visibility>Visible</visibility></tabSettings>
     <tabSettings><tab>Onboarding__c</tab><visibility>Visible</visibility></tabSettings>
     <tabSettings><tab>standard-Task</tab><visibility>Visible</visibility></tabSettings>
