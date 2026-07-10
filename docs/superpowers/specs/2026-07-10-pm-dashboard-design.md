@@ -15,7 +15,7 @@ Each dashboard component is backed by its own saved report (native dashboard req
 
 - **In scope:** 3 new read-only objects (Delinquency, CAM Reconciliation, Insurance Policy), one helper formula field on `Unit__c`, 8 reports (some reused), one dashboard, a seed script, and read-only perm-set access.
 - **Out of scope:** the Leasing and Maintenance dashboards (their own later specs); the mockup's colored header, "Phase 2" badge, and caption (HTML chrome, not native dashboard features); the "+2% vs last quarter" occupancy trend (no historical data exists); any write-back or workflow on the new objects.
-- **Reuse:** the org already has a `Leasing` report folder (incl. `Renewals_Expiring_Soonest`) and a `Work Orders` folder from sibling branches. This dashboard reuses `Renewals_Expiring_Soonest` for the "Renewals Due 90d" KPI and adds the rest.
+- **Reuse:** the org already has a `Leasing` report folder and a `Work Orders` folder from sibling branches. For this PM dashboard, all 8 reports are new (native Metric components require Summary/Matrix reports, and the existing renewal report is Tabular). Report reuse applies to the later Leasing/Maintenance dashboards.
 
 ## Cross-branch note
 
@@ -59,22 +59,22 @@ Yardi-mirror pattern (same philosophy as `Work_Order__c`): standalone **Lookup**
 
 ## Helper field on `Unit__c`
 
-`Occupied_Flag__c` — Formula (Number, 0 dp): `IF(ISPICKVAL(Status__c,'Occupied'), 1, 0)`. Occupancy in the mockup is **unit-count based** (Park North 23/24 ≈ 96%, Riverside 23/26 ≈ 88%, Oak 20/22 ≈ 91%, Sunset 14/18 ≈ 78%), so a report summary formula `SUM(Occupied_Flag)/RowCount` (formatted percent) yields both the portfolio metric (grand total) and per-property occupancy (per group). Deployed to the org's existing `Unit__c`; carried as a lone field file on this branch.
+`Occupied_Flag__c` — Formula (Number, 0 dp): `IF(ISPICKVAL(Status__c,'Occupied'), 100, 0)`. Occupancy in the mockup is **unit-count based** (Park North 23/24 ≈ 96%, Riverside 23/26 ≈ 88%, Oak 20/22 ≈ 91%, Sunset 14/18 ≈ 78%). Using 100/0 means a report's **AVERAGE** of this field equals occupancy as a percentage number (89 = 89%) — no custom summary formula needed. The grand-total average is the portfolio metric; the per-property average is the chart. Deployed to the org's existing `Unit__c`; carried as a lone field file on this branch.
 
 ## Reports — folder `Property Management` (new report folder)
 
 | # | Report API name | Source | Format / grouping | Serves |
 |---|---|---|---|---|
 | 1 | `Managed_Properties` | `Property_Asset__c` | Summary, record count | KPI "Properties" |
-| 2 | `Occupancy_by_Property` | `Unit__c` | Matrix grouped by `Property_Asset__c` (Property_Name), summary formula `Occ_Pct = SUM(Occupied_Flag__c)/RowCount` (percent) | KPI "Portfolio Occupancy" (grand-total `Occ_Pct`) **and** "Occupancy by Property" bar |
-| 3 | `Renewals_Expiring_Soonest` (**reuse existing**, Leasing folder) | `Lease_Renewal__c`, Status=Active, Days_To_Expiry ≤90 | Tabular, record count | KPI "Renewals Due 90d" |
+| 2 | `Occupancy_by_Property` | `Unit__c` | Summary grouped by `Property_Asset__c`, AVERAGE of `Occupied_Flag__c` | KPI "Portfolio Occupancy" (grand-total avg) **and** "Occupancy by Property" bar |
+| 3 | `Renewals_Due_90d` | `Lease_Renewal__c`, Status=Active, Days_To_Expiry ≤90 | Summary, record count | KPI "Renewals Due 90d" |
 | 4 | `Renewal_Pipeline_Buckets` | `Lease_Renewal__c`, Status=Active | Summary grouped by a **bucket column** on `Days_To_Expiry__c`: `<0 → Expired–M2M`, `0–30`, `31–60`, `61–90`, `91–180` | "Lease Renewal Pipeline" column chart |
 | 5 | `Delinquency_Aging` | `Delinquency__c` | Summary grouped by `Aging_Bucket__c`, `SUM(Balance__c)` + record count | KPI "Delinquent Tenants" (grand-total record count) **and** "Delinquency Aging" |
 | 6 | `CAM_Pending` | `CAM_Reconciliation__c`, Status ≠ Approved | Summary, record count | KPI "CAM Recon Pending" |
-| 7 | `CAM_Reconciliation_Status` | `CAM_Reconciliation__c`, all rows | Tabular (Property, Year, Status) | "CAM Reconciliation" table |
-| 8 | `Insurance_Expiring` | `Insurance_Policy__c`, Days_To_Expiry ≤60 | Tabular (Policy, Days_To_Expiry) + record count | KPI "Insurance Expiring" **and** "Insurance Expiry Alerts" table |
+| 7 | `CAM_Reconciliation_Status` | `CAM_Reconciliation__c`, all rows | Summary grouped by property (Property, Year, Status shown) | "CAM Reconciliation" table |
+| 8 | `Insurance_Expiring` | `Insurance_Policy__c`, Days_To_Expiry ≤60 | Summary, record count (Policy, Days_To_Expiry shown) | KPI "Insurance Expiring" **and** "Insurance Expiry Alerts" list |
 
-Reports #1, #2, #4, #5, #6, #7, #8 are new (7 new); #3 is reused.
+All 8 reports are new. (Planning refinement: the existing tabular `Renewals_Expiring_Soonest` cannot source a native Metric component — those require Summary/Matrix — so a dedicated Summary report `Renewals_Due_90d` is added instead of reusing it. Report reuse will apply more to the later Leasing/Maintenance dashboards, which have matching summary reports.)
 
 ## Dashboard — `Property_Management` (new dashboard folder `Property Management`)
 
