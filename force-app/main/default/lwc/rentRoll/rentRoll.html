@@ -1,75 +1,53 @@
 <template>
     <template lwc:if={error}>
-        <div class="card summary rr-error">Rent roll could not be loaded: {errorMessage}</div>
+        <div class="state-card state-card--error">Rent roll could not be loaded: {errorMessage}</div>
     </template>
 
     <template lwc:if={isLoading}>
-        <div class="card summary rr-loading"><lightning-spinner alternative-text="Loading rent roll" size="small"></lightning-spinner></div>
+        <div class="state-card state-card--center"><lightning-spinner alternative-text="Loading rent roll" size="small"></lightning-spinner></div>
     </template>
 
     <template lwc:if={data}>
-        <!-- Summary bar -->
-        <div class="card summary">
-            <div class="sum-flex">
-                <div>
-                    <div class="kpi-label">Total sq ft</div>
-                    <div class="kpi-value">{summary.totalSqFt}</div>
-                </div>
-                <div>
-                    <div class="kpi-label">Occupied</div>
-                    <div class="kpi-line">
-                        <span class="kpi-value occ">{summary.occupiedSqFt}</span>
-                        <span class="kpi-pct occ">{summary.occupiedPct}</span>
-                    </div>
-                </div>
-                <div>
-                    <div class="kpi-label">Vacant</div>
-                    <div class="kpi-line">
-                        <span class="kpi-value vac">{summary.vacantSqFt}</span>
-                        <span class="kpi-pct vac">{summary.vacantPct}</span>
-                    </div>
-                </div>
-                <div>
-                    <div class="kpi-label">Current monthly rent</div>
-                    <div class="kpi-line">
-                        <span class="kpi-value">{summary.monthlyRent}</span>
-                        <span class="kpi-sub">{summary.occupiedLabel}</span>
-                    </div>
-                </div>
-                <div class="sum-spacer"></div>
-                <div class="sum-right">
-                    <div class="pill">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5A5752" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                        Read-only — mirrored from Yardi Voyager 7S
-                    </div>
-                    <div class="sync">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1A7A6B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M3 21v-5h5"></path></svg>
-                        {summary.lastSynced}
-                    </div>
-                </div>
-            </div>
-            <div class="bar">
-                <div class="bar-occ" style={summary.occBarStyle}></div>
-                <div class="bar-vac" style={summary.vacBarStyle}></div>
-            </div>
+        <!-- Summary KPIs (shared stat-card idiom) -->
+        <div class="kpi-row">
+            <template for:each={statMetrics} for:item="m">
+                <c-stat-card key={m.key} value={m.displayValue} label={m.label} icon-name={m.iconName} icon-color={m.iconColor}></c-stat-card>
+            </template>
         </div>
 
-        <!-- Units table -->
         <template lwc:if={isEmpty}>
-            <div class="card summary rr-empty">No rent roll data yet — units sync from Yardi.</div>
+            <div class="state-card">No rent roll data yet — units sync from Yardi.</div>
         </template>
+
         <template lwc:if={hasUnits}>
-            <div class="card">
-                <div class="tbl-head">
-                    <span class="tbl-title">Units ({unitCount})</span>
-                    <span class="tbl-hint">Click a row to see its full rent step schedule</span>
-                    <div class="tbl-spacer"></div>
-                    <div class="legend">
-                        <span class="lg"><span class="dot dot-green"></span>Lease ends &gt;12 mo</span>
-                        <span class="lg"><span class="dot dot-amber"></span>6–12 mo</span>
-                        <span class="lg"><span class="dot dot-red"></span>&lt;6 mo</span>
+            <lightning-card icon-name="standard:asset_object">
+                <span slot="title">Units <span class="sub">({unitCount}) — click a row for its rent step schedule</span></span>
+                <span slot="actions" class="readonly-badge">
+                    <lightning-icon icon-name="utility:lock" size="xx-small"></lightning-icon>
+                    Read-only — mirrored from Yardi Voyager 7S
+                </span>
+
+                <div class="meta-strip">
+                    <div class="bar">
+                        <div class="bar-occ" style={summary.occBarStyle}></div>
+                        <div class="bar-vac" style={summary.vacBarStyle}></div>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-item"><span class="dot dot-green"></span>{summary.occupiedSqFt} sq ft occupied · {summary.occupiedPct}</span>
+                        <span class="meta-item"><span class="dot dot-amber"></span>{summary.vacantSqFt} sq ft vacant · {summary.vacantPct}</span>
+                        <span class="meta-spacer"></span>
+                        <span class="legend">
+                            <span class="lg"><span class="dot dot-green"></span>Lease ends &gt;12 mo</span>
+                            <span class="lg"><span class="dot dot-amber"></span>6–12 mo</span>
+                            <span class="lg"><span class="dot dot-red"></span>&lt;6 mo</span>
+                        </span>
+                        <span class="sync">
+                            <lightning-icon icon-name="utility:sync" size="xx-small"></lightning-icon>
+                            {summary.lastSynced}
+                        </span>
                     </div>
                 </div>
+
                 <div class="scroll">
                     <table>
                         <thead>
@@ -90,7 +68,7 @@
                                     <td><span class="suite">{row.suiteDisp}</span></td>
                                     <td><span class={row.tenantClass}>{row.tenantDisp}</span></td>
                                     <td class="num">{row.sqftDisp}</td>
-                                    <td class="num">{row.rentDisp}</td>
+                                    <td class="num strong">{row.rentDisp}</td>
                                     <td class="num"><span class={row.psfClass}>{row.psfDisp}</span></td>
                                     <td>
                                         <span class="term">
@@ -105,7 +83,7 @@
                                     </td>
                                     <td class="chev-col">
                                         <template lwc:if={row.occupied}>
-                                            <svg class="chev" style={row.chevStyle} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A8680" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+                                            <svg class="chev" style={row.chevStyle} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#706e6b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
                                         </template>
                                     </td>
                                 </tr>
@@ -115,7 +93,7 @@
                                             <div class="panel">
                                                 <div class="chips">
                                                     <span class="panel-title">Rent step schedule — {row.panelTitle}</span>
-                                                    <div class="tbl-spacer"></div>
+                                                    <span class="meta-spacer"></span>
                                                     <span class="chips-label">NNN breakdown:</span>
                                                     <span class="chip">Property Tax <b>{row.nnnTaxDisp}</b></span>
                                                     <span class="chip">Insurance <b>{row.nnnInsDisp}</b></span>
@@ -137,11 +115,11 @@
                                                                 <tr key={s.key} class={s.rowClass}>
                                                                     <td class="speriod">
                                                                         {s.period}
-                                                                        <template lwc:if={s.active}><span class="badge">Active now</span></template>
+                                                                        <template lwc:if={s.active}><span class="badge"><span class="pill__dot"></span>Active now</span></template>
                                                                     </td>
                                                                     <td class="num"><span class={s.rentClass}>{s.rentDisp}</span></td>
                                                                     <td class="num spsf">{s.psfDisp}</td>
-                                                                    <td class="type-col"><span class={s.tagClass}>{s.typeLabel}</span></td>
+                                                                    <td class="type-col"><span class={s.tagClass}><span class="pill__dot"></span>{s.typeLabel}</span></td>
                                                                 </tr>
                                                             </template>
                                                         </tbody>
@@ -162,7 +140,7 @@
                                     <div class="foot-tiny">{totals.sqftSplit}</div>
                                 </td>
                                 <td class="num foot-strong">{summary.monthlyRent}</td>
-                                <td class="num"><span class="foot-mono">{totals.blendedPsf}</span> <span class="foot-tiny">blended</span></td>
+                                <td class="num"><span class="foot-val">{totals.blendedPsf}</span> <span class="foot-tiny">blended</span></td>
                                 <td></td>
                                 <td class="num foot-strong">{totals.nnnTotal}</td>
                                 <td></td>
@@ -170,9 +148,9 @@
                         </tfoot>
                     </table>
                 </div>
-            </div>
+            </lightning-card>
             <div class="note">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+                <lightning-icon icon-name="utility:info" size="xx-small"></lightning-icon>
                 Rent roll data is created and maintained in Yardi only. This view refreshes with the nightly sync — Salesforce never writes back.
             </div>
         </template>
@@ -182,10 +160,10 @@
     <template lwc:if={tip}>
         <div class="tooltip" style={tip.style}>
             <div class="tip-head">NNN breakdown — {tip.suite}</div>
-            <div class="trow"><span>Property Tax</span><span class="tmono">{tip.tax}</span></div>
-            <div class="trow"><span>Insurance</span><span class="tmono">{tip.ins}</span></div>
-            <div class="trow"><span>CAM</span><span class="tmono">{tip.cam}</span></div>
-            <div class="trow ttotal"><span>Total · {tip.psf}/SF</span><span class="tmono">{tip.total}</span></div>
+            <div class="trow"><span>Property Tax</span><span class="tval">{tip.tax}</span></div>
+            <div class="trow"><span>Insurance</span><span class="tval">{tip.ins}</span></div>
+            <div class="trow"><span>CAM</span><span class="tval">{tip.cam}</span></div>
+            <div class="trow ttotal"><span>Total · {tip.psf}/SF</span><span class="tval">{tip.total}</span></div>
         </div>
     </template>
 </template>

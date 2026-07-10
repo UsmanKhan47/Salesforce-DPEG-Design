@@ -2,9 +2,9 @@ import { LightningElement, api, wire } from 'lwc';
 import getRentRoll from '@salesforce/apex/RentRollController.getRentRoll';
 
 const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.44;
-const DOT_GREEN = '#1A7A6B';
-const DOT_AMBER = '#D4940A';
-const DOT_RED = '#C0392B';
+const DOT_GREEN = '#3fae5e';
+const DOT_AMBER = '#c98a33';
+const DOT_RED = '#e0556b';
 
 const money = (n) =>
     '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -63,7 +63,6 @@ export default class RentRoll extends LightningElement {
             occupiedPct: s.occupiedPct == null ? '' : s.occupiedPct + '%',
             vacantPct: s.vacantPct == null ? '' : s.vacantPct + '%',
             monthlyRent: money(s.monthlyRent || 0),
-            occupiedLabel: s.occupiedCount + ' occupied unit' + (s.occupiedCount === 1 ? '' : 's'),
             occBarStyle: 'width:' + (s.occupiedPct || 0) + '%',
             vacBarStyle: 'width:' + (s.vacantPct || 0) + '%',
             lastSynced: s.lastSynced
@@ -73,6 +72,19 @@ export default class RentRoll extends LightningElement {
                   })
                 : 'Not yet synced'
         };
+    }
+
+    // Summary KPI cards, same shape the dashboard KPI components feed c-stat-card.
+    get statMetrics() {
+        const s = this.data.summary;
+        const num = (n) => Number(n || 0).toLocaleString('en-US');
+        const pct = (p) => (p == null ? '' : ' · ' + p + '%');
+        return [
+            { key: 'total', label: 'Total Sq Ft', iconName: 'utility:metrics', iconColor: '#1B3A6B', displayValue: num(s.totalSqFt) },
+            { key: 'occ', label: 'Occupied Sq Ft', iconName: 'utility:home', iconColor: '#1A7A6B', displayValue: num(s.occupiedSqFt) + pct(s.occupiedPct) },
+            { key: 'vac', label: 'Vacant Sq Ft', iconName: 'utility:warning', iconColor: '#D4940A', displayValue: num(s.vacantSqFt) + pct(s.vacantPct) },
+            { key: 'rent', label: 'Current Monthly Rent', iconName: 'utility:moneybag', iconColor: '#1B3A6B', displayValue: money(s.monthlyRent || 0) }
+        ];
     }
 
     get headers() {
@@ -143,23 +155,23 @@ export default class RentRoll extends LightningElement {
             }
 
             let psfDisp = '—';
-            let psfClass = 'mono';
+            let psfClass = '';
             if (u.currentRentPsf != null) {
                 psfDisp = psf(u.currentRentPsf);
             } else if (u.askingRentPsf != null) {
                 psfDisp = psf(u.askingRentPsf) + ' asking';
-                psfClass = 'mono asking';
+                psfClass = 'asking';
             }
 
             const hasNnn = u.nnnMonthlyTotal != null;
             let nnnDisp = '—';
-            let nnnClass = 'mono';
+            let nnnClass = '';
             if (hasNnn) {
                 nnnDisp = money(u.nnnMonthlyTotal);
-                nnnClass = 'mono nnn-val';
+                nnnClass = 'nnn-val';
             } else if (u.estimatedNnnPsf != null) {
                 nnnDisp = psf(u.estimatedNnnPsf) + '/SF est.';
-                nnnClass = 'mono nnn-est';
+                nnnClass = 'nnn-est';
             }
 
             return {
