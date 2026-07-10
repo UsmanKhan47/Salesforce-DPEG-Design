@@ -152,7 +152,6 @@
     <enableSearch>true</enableSearch>
     <enableSharing>false</enableSharing>
     <enableStreamingApi>false</enableStreamingApi>
-    <externalSharingModel>ControlledByParent</externalSharingModel>
     <label>Rent Step</label>
     <nameField>
         <displayFormat>RS-{0000}</displayFormat>
