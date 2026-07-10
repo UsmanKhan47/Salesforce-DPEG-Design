@@ -67,8 +67,9 @@ tr.vac:hover { background: rgba(201, 138, 51, 0.16); }
 .chip b { font-weight: 700; color: #181818; }
 .chip.total { background: rgba(1, 118, 211, 0.08); border-color: rgba(1, 118, 211, 0.25); color: #014486; }
 .chip.total b { color: #014486; }
-.sched { background: #fff; border: 1px solid #e5e5e5; border-radius: 0.5rem; overflow: hidden; }
+.sched { background: #fff; border: 1px solid #e5e5e5; border-radius: 0.5rem; overflow: hidden; max-width: 820px; }
 .sched table { min-width: 0; }
+.sched th:first-child, .sched td:first-child { width: 42%; }
 .sched th { padding: 10px 14px; font-size: 11px; }
 .sched td { padding: 10px 14px; font-size: 12px; }
 .speriod { color: #1565c0; }
