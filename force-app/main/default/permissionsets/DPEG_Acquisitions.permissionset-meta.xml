@@ -53,6 +53,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>RentRollController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>SellMeterController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -1430,6 +1434,31 @@
         <field>Wire__c.Wire_Instructions_Source__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Rent roll fields (Yardi mirror, read-only): -->
+    <fieldPermissions><editable>false</editable><field>Unit__c.Suite_Number__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Tenant_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Square_Feet__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Status__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Lease_Start__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Lease_End__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Current_Monthly_Rent__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Current_Rent_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Asking_Rent_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Estimated_NNN_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_Property_Tax__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_Insurance__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_CAM__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_Monthly_Total__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.NNN_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Yardi_Unit_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Period_Start__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Period_End__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Period_Label__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Monthly_Rent__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Rent_PSF__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Type__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Note__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Rent_Step__c.Sort_Order__c</field><readable>true</readable></fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Acquisitions</label>
     <objectPermissions>
@@ -1550,6 +1579,15 @@
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Rent_Step__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
         <allowEdit>true</allowEdit>
@@ -1565,6 +1603,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>true</modifyAllRecords>
         <object>Underwriting__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Unit__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

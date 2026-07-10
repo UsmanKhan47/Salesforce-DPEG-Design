@@ -113,6 +113,7 @@ public with sharing class RentRollController {
                 if (u.Current_Monthly_Rent__c != null) {
                     dto.summary.monthlyRent += u.Current_Monthly_Rent__c;
                 }
+                // NNN total is occupied-only by design: vacant units carry only Estimated_NNN_PSF__c.
                 if (u.NNN_Monthly_Total__c != null) {
                     dto.summary.nnnMonthlyTotal += u.NNN_Monthly_Total__c;
                 }

@@ -99,7 +99,10 @@ export default class RentRoll extends LightningElement {
 
     sortValue(u) {
         const k = this.sortKey;
-        if (k === 'suite') return u.suite ? parseInt(u.suite, 10) : Infinity;
+        if (k === 'suite') {
+            const n = parseInt(u.suite, 10);
+            return Number.isNaN(n) ? Infinity : n;
+        }
         if (k === 'sqft') return u.squareFeet == null ? Infinity : u.squareFeet;
         if (k === 'rent') return u.currentRent == null ? Infinity : u.currentRent;
         if (k === 'end') {
@@ -122,6 +125,7 @@ export default class RentRoll extends LightningElement {
             });
         }
         const today = new Date();
+        today.setHours(0, 0, 0, 0); // date-pure compare: steps stay Active through their final day
         return units.map((u) => {
             const occupied = u.status === 'Occupied';
             const isExpanded = occupied && !!this.expanded[u.unitId];
