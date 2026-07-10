@@ -95,6 +95,8 @@
     <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Expiry_Date__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Days_To_Expiry__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Yardi_Policy_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Lease_Inquiry__c.Inquiry_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Lease_Inquiry__c.Days_To_Sign__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>false</editable><field>Unit__c.Occupied_Flag__c</field><readable>true</readable></fieldPermissions>
     <tabSettings><tab>Onboarding</tab><visibility>Visible</visibility></tabSettings>
     <tabSettings><tab>Onboarding__c</tab><visibility>Visible</visibility></tabSettings>
