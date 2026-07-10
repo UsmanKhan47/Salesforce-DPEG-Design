@@ -14,6 +14,33 @@
         <object>Onboarding__c</object>
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Delinquency__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>CAM_Reconciliation__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Insurance_Policy__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
     <!-- One block per writable field (editable=true): -->
     <fieldPermissions><editable>true</editable><field>Onboarding__c.Stage__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>true</editable><field>Onboarding__c.Status__c</field><readable>true</readable></fieldPermissions>
@@ -50,6 +77,28 @@
     <fieldPermissions><editable>true</editable><field>Task.Onboarding_Status__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>true</editable><field>Task.Blocked_Reason__c</field><readable>true</readable></fieldPermissions>
     <fieldPermissions><editable>true</editable><field>Task.Task_Owner_Label__c</field><readable>true</readable></fieldPermissions>
+    <!-- PM dashboard fields (Yardi mirror, read-only): -->
+    <fieldPermissions><editable>false</editable><field>Delinquency__c.Property_Asset__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Delinquency__c.Tenant_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Delinquency__c.Unit_Suite__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Delinquency__c.Balance__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Delinquency__c.Aging_Bucket__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Delinquency__c.Yardi_AR_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>CAM_Reconciliation__c.Property_Asset__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>CAM_Reconciliation__c.Reconciliation_Year__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>CAM_Reconciliation__c.Status__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>CAM_Reconciliation__c.Amount__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>CAM_Reconciliation__c.Yardi_CAM_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Policy_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Property_Asset__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Carrier__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Expiry_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Days_To_Expiry__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Insurance_Policy__c.Yardi_Policy_Id__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Lease_Inquiry__c.Inquiry_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Lease_Inquiry__c.Days_To_Sign__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Unit__c.Occupied_Flag__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>false</editable><field>Work_Order__c.Resolution_Days__c</field><readable>true</readable></fieldPermissions>
     <tabSettings><tab>Onboarding</tab><visibility>Visible</visibility></tabSettings>
     <tabSettings><tab>Onboarding__c</tab><visibility>Visible</visibility></tabSettings>
     <tabSettings><tab>standard-Task</tab><visibility>Visible</visibility></tabSettings>
