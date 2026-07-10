@@ -112,7 +112,7 @@
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartAxisRange>Auto</chartAxisRange>
                 <chartSummary><axisBinding>y</axisBinding><column>RowCount</column></chartSummary>
-                <componentType>Bar</componentType>
+                <componentType>Column</componentType>
                 <decimalPrecision>0</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <drillEnabled>true</drillEnabled>
@@ -182,36 +182,76 @@
             <colSpan>6</colSpan><columnIndex>0</columnIndex><rowIndex>12</rowIndex><rowSpan>6</rowSpan>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <componentType>Table</componentType>
+                <componentType>FlexTable</componentType>
                 <drillEnabled>false</drillEnabled>
                 <drillToDetailEnabled>true</drillToDetailEnabled>
+                <flexComponentProperties>
+                    <decimalPrecision>-1</decimalPrecision>
+                    <flexTableColumn>
+                        <reportColumn>CAM_Reconciliation__c.Property_Asset__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>CAM_Reconciliation__c.Reconciliation_Year__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>CAM_Reconciliation__c.Status__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableSortInfo>
+                        <sortColumn>CAM_Reconciliation__c.Property_Asset__c</sortColumn>
+                        <sortOrder>1</sortOrder>
+                    </flexTableSortInfo>
+                    <hideChatterPhotos>true</hideChatterPhotos>
+                </flexComponentProperties>
                 <groupingSortProperties/>
-                <indicatorHighColor>#1B7A4B</indicatorHighColor>
-                <indicatorLowColor>#1B7A4B</indicatorLowColor>
-                <indicatorMiddleColor>#1B7A4B</indicatorMiddleColor>
-                <maxValuesDisplayed>20</maxValuesDisplayed>
+                <header>CAM Reconciliation</header>
                 <report>Property_Management/CAM_Reconciliation_Status</report>
-                <showPicturesOnTables>true</showPicturesOnTables>
-                <sortBy>RowLabelAscending</sortBy>
-                <title>CAM Reconciliation</title>
             </dashboardComponent>
         </dashboardGridComponents>
         <dashboardGridComponents>
             <colSpan>6</colSpan><columnIndex>6</columnIndex><rowIndex>12</rowIndex><rowSpan>6</rowSpan>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <componentType>Table</componentType>
+                <componentType>FlexTable</componentType>
                 <drillEnabled>false</drillEnabled>
                 <drillToDetailEnabled>true</drillToDetailEnabled>
+                <flexComponentProperties>
+                    <decimalPrecision>-1</decimalPrecision>
+                    <flexTableColumn>
+                        <reportColumn>Insurance_Policy__c.Policy_Name__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>Insurance_Policy__c.Carrier__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>Insurance_Policy__c.Days_To_Expiry__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableSortInfo>
+                        <sortColumn>Insurance_Policy__c.Days_To_Expiry__c</sortColumn>
+                        <sortOrder>1</sortOrder>
+                    </flexTableSortInfo>
+                    <hideChatterPhotos>true</hideChatterPhotos>
+                </flexComponentProperties>
                 <groupingSortProperties/>
-                <indicatorHighColor>#C23934</indicatorHighColor>
-                <indicatorLowColor>#C23934</indicatorLowColor>
-                <indicatorMiddleColor>#C23934</indicatorMiddleColor>
-                <maxValuesDisplayed>20</maxValuesDisplayed>
+                <header>Insurance Expiry Alerts</header>
                 <report>Property_Management/Insurance_Expiring</report>
-                <showPicturesOnTables>true</showPicturesOnTables>
-                <sortBy>RowLabelAscending</sortBy>
-                <title>Insurance Expiry Alerts</title>
             </dashboardComponent>
         </dashboardGridComponents>
         <numberOfColumns>12</numberOfColumns>

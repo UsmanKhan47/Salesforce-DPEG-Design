@@ -3,7 +3,7 @@
     <fullName>Days_To_Expiry__c</fullName>
     <label>Days To Expiry</label>
     <formula>Expiry_Date__c - TODAY()</formula>
-    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
     <precision>18</precision>
     <required>false</required>
     <scale>0</scale>

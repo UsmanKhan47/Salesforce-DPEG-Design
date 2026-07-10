@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <columns><field>Insurance_Policy__c.Policy_Name__c</field></columns>
     <columns><field>Insurance_Policy__c.Carrier__c</field></columns>
     <columns><field>Insurance_Policy__c.Days_To_Expiry__c</field></columns>
     <filter>
@@ -11,12 +12,7 @@
             <value>60</value>
         </criteriaItems>
     </filter>
-    <format>Summary</format>
-    <groupingsDown>
-        <dateGranularity>Day</dateGranularity>
-        <field>Insurance_Policy__c.Policy_Name__c</field>
-        <sortOrder>Asc</sortOrder>
-    </groupingsDown>
+    <format>Tabular</format>
     <name>Insurance Expiring</name>
     <reportType>CustomEntity$Insurance_Policy__c</reportType>
     <scope>organization</scope>
