@@ -12,6 +12,13 @@
             <operator>equals</operator>
             <value>Lease Signed</value>
         </criteriaItems>
+        <criteriaItems>
+            <column>Lease_Inquiry__c.Days_To_Sign__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>greaterOrEqual</operator>
+            <value>1</value>
+        </criteriaItems>
     </filter>
     <format>Summary</format>
     <groupingsDown>
