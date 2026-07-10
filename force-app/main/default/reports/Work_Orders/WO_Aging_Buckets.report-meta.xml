@@ -9,8 +9,8 @@
         <useOther>false</useOther>
         <values><sourceValues><to>72</to></sourceValues><value>0-3 days</value></values>
         <values><sourceValues><from>72</from><to>168</to></sourceValues><value>4-7 days</value></values>
-        <values><sourceValues><from>168</from><to>336</to></sourceValues><value>8-14 days</value></values>
-        <values><sourceValues><from>336</from></sourceValues><value>&gt;15 days</value></values>
+        <values><sourceValues><from>168</from><to>360</to></sourceValues><value>8-15 days</value></values>
+        <values><sourceValues><from>360</from></sourceValues><value>&gt;15 days</value></values>
     </buckets>
     <columns><field>Work_Order__c.Subject__c</field></columns>
     <filter>

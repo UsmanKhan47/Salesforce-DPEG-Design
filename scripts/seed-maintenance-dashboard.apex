@@ -36,7 +36,7 @@ for (Integer i = 0; i < 3; i++) {
 }
 
 // ---- RESOLVED this month (~40): Completed_Date this month, Reported a few days earlier -> Resolution_Days ----
-// Per-vendor average resolution days differ: AirPro 3.2, TopShield 5.8, ProPlumb 8.1, Elec 12.0 (approx)
+// Per-vendor average resolution days differ: AirPro 3, TopShield 6, ProPlumb 8, Elec 12 (approx)
 Decimal[] vAvg = new Decimal[]{3, 6, 8, 12};
 Date monthStart = Date.today().toStartOfMonth();
 for (Integer i = 0; i < 40; i++) {
@@ -60,8 +60,9 @@ for (Property_Asset__c p : [SELECT Id FROM Property_Asset__c
         WHERE Name IN ('Park North Retail','Riverside Commons','Oak Street Center','Sunset Mixed-Use') ORDER BY Name]) {
     propIds.add(p.Id);
 }
-if (!propIds.isEmpty()) {
-    for (Integer i = 0; i < wos.size(); i++) wos[i].Property_Asset__c = propIds[Math.mod(i, propIds.size())];
+for (Integer i = 0; i < wos.size(); i++) {
+    if (!propIds.isEmpty()) wos[i].Property_Asset__c = propIds[Math.mod(i, propIds.size())];
+    wos[i].Owner_User__c = UserInfo.getUserId();
 }
 insert wos;
 

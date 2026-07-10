@@ -50,7 +50,7 @@
                 <indicatorHighColor>#C23934</indicatorHighColor>
                 <indicatorLowColor>#C23934</indicatorLowColor>
                 <indicatorMiddleColor>#C23934</indicatorMiddleColor>
-                <metricLabel>Overdue &gt;15d</metricLabel>
+                <metricLabel>Escalation Required</metricLabel>
                 <report>Work_Orders/Escalated_Overdue</report>
                 <showRange>false</showRange>
             </dashboardComponent>
@@ -169,7 +169,7 @@
                 <report>Work_Orders/SLA_Tiers_by_Priority</report>
                 <showPercentage>false</showPercentage>
                 <showValues>true</showValues>
-                <sortBy>RowValueDescending</sortBy>
+                <sortBy>RowValueAscending</sortBy>
                 <title>SLA Target Hours by Priority</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
