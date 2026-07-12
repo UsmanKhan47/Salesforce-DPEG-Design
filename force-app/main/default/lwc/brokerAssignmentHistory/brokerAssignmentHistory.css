@@ -1,0 +1,29 @@
+:host { display:block; }
+
+/* shared card chrome */
+.ba-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); }
+.ba-mono { font-variant-numeric:tabular-nums; }
+
+/* ===== history ===== */
+.ba-histcard { overflow:hidden; }
+.ba-histbody { padding:10px 24px 18px; }
+.ba-histintro { font-size:12px; color:#524F4A; margin:6px 0 2px; }
+.ba-histrow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 16px; margin-top:10px; border:1px solid #E2E0DB; background:#fff; border-radius:8px; }
+.ba-histrow--active { border-color:#22A652; background:#E9F8EF; }
+.ba-histleft { display:flex; align-items:flex-start; gap:12px; }
+.ba-histnamerow { display:flex; align-items:center; gap:8px; }
+.ba-histname { font-weight:600; font-size:14px; color:#1A1714; }
+.ba-histbadge { display:inline-flex; align-items:center; font-size:10px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#146830; background:#D6F0E0; border:1px solid #22A652; border-radius:9999px; padding:1px 8px; }
+.ba-histfirm { font-size:12px; color:#8A8680; margin-top:1px; }
+.ba-histnotes { display:flex; align-items:baseline; gap:6px; font-size:12px; color:#524F4A; margin-top:5px; }
+.ba-histnotes--clip { max-width:50%; }
+.ba-histnotes-lbl { font-weight:600; color:#3E3B37; flex-shrink:0; }
+.ba-histnotes-txt { min-width:0; }
+.ba-histnotes--clip .ba-histnotes-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ba-histnotes-view { flex-shrink:0; border:none; background:none; color:#1565C0; font-size:12px; font-weight:600; cursor:pointer; padding:0; }
+.ba-histnotes-view:hover { text-decoration:underline; }
+.ba-note-sub { font-size:13px; color:#8A8680; margin-top:4px; }
+.ba-note-full { font-size:14px; color:#1A1714; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.ba-histright { text-align:right; flex-shrink:0; }
+.ba-histrange { font-size:12px; color:#524F4A; }
+.ba-histreason { font-size:11px; color:#8A8680; margin-top:3px; }

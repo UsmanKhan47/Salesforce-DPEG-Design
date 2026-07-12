@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Lease_Renewal__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Lease Renewal Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Both sides aligned — the amendment is being drafted and signed.</info>
+        <picklistValueName>Amendment Drafted</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Last_Contact_Date__c</fieldNames>
+        <info>Waiting on the tenant. Log every follow-up in the Timeline — after 14 quiet days the renewal flags as non-responsive.</info>
+        <picklistValueName>Awaiting Tenant Response</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Proposed_Rate__c</fieldNames>
+        <info>Terms under discussion. Record the proposed rate; log each round in the Timeline.</info>
+        <picklistValueName>Negotiating</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Tenant declined to renew. Status flips to Closed Lost; the unit returns to market.</info>
+        <picklistValueName>Not Renewing</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Expiry is approaching but outreach has not begun. Start within 180 days of lease end.</info>
+        <picklistValueName>Not Yet Started</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Last_Contact_Date__c</fieldNames>
+        <info>Renewal notice delivered to the tenant. Log the touch so the contact clock starts.</info>
+        <picklistValueName>Notice Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Renewed_Date__c</fieldNames>
+        <info>Amendment executed and entered into Yardi. Status flips to Closed Won automatically.</info>
+        <picklistValueName>Renewed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Tenant is vacating at lease end. Status flips to Closed Lost; coordinate move-out and turnover.</info>
+        <picklistValueName>Vacating</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

@@ -9,12 +9,20 @@
         <picklistValueName>Completed</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
+        <info>Counter-offer stage. Track the back-and-forth with the seller - log each counter in the Counter History and update the offer terms until both sides align.</info>
+        <picklistValueName>Counter</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
         <info>Draft the letter of intent - capture the offer price, cap rate and key terms. Keep it here until the draft is ready for internal review.</info>
         <picklistValueName>Draft</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <info>Prepare and review the LOI internally. Validate the terms, route it for any required approval, and refine based on feedback before finalizing.</info>
         <picklistValueName>Prepare/Review</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>LOI sent to the seller/broker. Awaiting their response - a counter moves it to the Counter stage.</info>
+        <picklistValueName>Sent</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>__MASTER__</recordTypeName>
 </PathAssistant>

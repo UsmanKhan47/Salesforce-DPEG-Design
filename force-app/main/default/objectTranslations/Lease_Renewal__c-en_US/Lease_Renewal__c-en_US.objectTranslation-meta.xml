@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObjectTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <caseValues>
+        <plural>false</plural>
+        <value>Lease Renewal</value>
+    </caseValues>
+    <caseValues>
+        <plural>true</plural>
+        <value>Lease Renewals</value>
+    </caseValues>
+    <layouts>
+        <layout>Lease Renewal Layout</layout>
+        <sections>
+            <label><!-- Lease Snapshot --></label>
+            <section>Lease Snapshot</section>
+        </sections>
+        <sections>
+            <label><!-- Renewal --></label>
+            <section>Renewal</section>
+        </sections>
+        <sections>
+            <label><!-- Renewal Terms --></label>
+            <section>Renewal Terms</section>
+        </sections>
+        <sections>
+            <label><!-- System Information --></label>
+            <section>System Information</section>
+        </sections>
+    </layouts>
+    <startsWith>Consonant</startsWith>
+</CustomObjectTranslation>

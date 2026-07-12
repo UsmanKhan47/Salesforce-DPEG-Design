@@ -7,15 +7,15 @@ private class OpportunityDocStatusControllerTest {
 
     @isTest
     static void returnsAllDealArtifacts() {
-        // Land deal that reaches Under Contract: the trigger spins off a
-        // Development review (at Development Review) and a Contract review (at Under Contract).
+        // Land deal that reaches PSA: the trigger spins off a
+        // Development review (at Development Review) and a Contract review (at PSA).
         Opportunity opp = new Opportunity(
             Name = 'Hwy 6 Tract',
             StageName = 'Development Review',
             CloseDate = Date.today().addDays(30)
         );
         insert opp;
-        opp.StageName = 'Under Contract';
+        opp.StageName = 'PSA';
         update opp;
 
         insert new NDA__c(
@@ -31,6 +31,11 @@ private class OpportunityDocStatusControllerTest {
             Offer_Cap_Rate__c = 7,
             Submitted_Date__c = Date.today()
         );
+        insert new Underwriting__c(
+            Opportunity__c = opp.Id,
+            Stage__c = 'In Progress',
+            My_Price__c = 17000000
+        );
 
         Test.startTest();
         OpportunityDocStatusController.DocStatus d =
@@ -42,6 +47,10 @@ private class OpportunityDocStatusControllerTest {
         System.assert(d.hasLoi, 'LOI should be found');
         System.assertEquals('Submitted', d.loiStatus);
         System.assertEquals(18000000, d.loiOfferPrice);
+
+        System.assert(d.hasUnderwriting, 'Underwriting should be found');
+        System.assertEquals('In Progress', d.underwritingStage);
+        System.assertEquals(17000000, d.underwritingPrice);
 
         System.assert(d.hasDevelopment, 'Development review should be found');
         System.assertEquals('Requested', d.developmentStage);
@@ -58,7 +67,7 @@ private class OpportunityDocStatusControllerTest {
             OpportunityDocStatusController.getDocStatus(null);
         Test.stopTest();
 
-        System.assert(!d.hasNda && !d.hasLoi && !d.hasDevelopment
+        System.assert(!d.hasNda && !d.hasLoi && !d.hasUnderwriting && !d.hasDevelopment
             && !d.hasConstruction && !d.hasContract, 'Empty status for null opp');
     }
 }

@@ -44,7 +44,7 @@ private class OnboardingControllerTest {
     @isTest static void riskAndSla() {
         OnboardingController.RiskAlerts a = OnboardingController.getRiskAlerts();
         System.assertEquals(14, a.overdue);
-        System.assertEquals(5, a.blocked);
+        System.assertEquals(1, a.pastTarget, 'one active onboarding is past target');
         OnboardingController.TimeSla t = OnboardingController.getTimeSla();
         System.assertEquals(1, t.pastTarget);
         System.assertEquals(41, t.oldestOpen);
@@ -68,5 +68,22 @@ private class OnboardingControllerTest {
         OnboardingController.ChecklistGroup leasing = groups[6];
         System.assertEquals('Leasing', leasing.category);
         System.assertEquals(true, leasing.items[0].overdue, 'open & past due');
+    }
+    @isTest static void completeTaskMarksCompleteAndRollsUp() {
+        Onboarding__c o = new Onboarding__c(Stage__c='Property Set up', Status__c='In Progress');
+        insert o;
+        Task t = new Task(Onboarding__c=o.Id, Subject='Open task', Onboarding_Category__c='Property Set up',
+            Onboarding_Status__c='Not Started', Status='Open', Source_System__c='Yardi',
+            Task_Owner_Label__c='Isha Patel', ActivityDate=Date.today().addDays(3));
+        insert t;
+        Test.startTest();
+        OnboardingController.completeTask(t.Id, 'Done via checkbox');
+        Test.stopTest();
+        Task after = [SELECT Onboarding_Status__c, Status, Description FROM Task WHERE Id = :t.Id];
+        System.assertEquals('Complete', after.Onboarding_Status__c, 'status flips to Complete');
+        System.assertEquals('Completed', after.Status, 'std status closed');
+        System.assert(after.Description != null && after.Description.contains('Done via checkbox'), 'note appended');
+        Onboarding__c rolled = [SELECT Tasks_Complete__c FROM Onboarding__c WHERE Id = :o.Id];
+        System.assertEquals(1, rolled.Tasks_Complete__c, 'rollup sees the completed task');
     }
 }

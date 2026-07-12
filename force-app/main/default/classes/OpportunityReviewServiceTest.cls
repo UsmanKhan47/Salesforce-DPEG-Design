@@ -14,6 +14,102 @@ private class OpportunityReviewServiceTest {
     }
 
     @isTest
+    static void underwritingRecordCreatesOnStageEntry() {
+        Test.startTest();
+        Opportunity o = newOpp('Underwriting'); // insert = stage entry; NDA VR gates updates only
+        insert o;
+        Test.stopTest();
+
+        List<Underwriting__c> uws = [
+            SELECT Stage__c, Status__c FROM Underwriting__c WHERE Opportunity__c = :o.Id
+        ];
+        System.assertEquals(1, uws.size(), 'One Underwriting record opens on entering the stage');
+        System.assertEquals('Requested', uws[0].Stage__c, 'Underwriting path starts at Requested');
+        System.assertEquals('In Progress', uws[0].Status__c, 'Coarse status starts In Progress');
+
+        Opportunity stamped = [SELECT Primary_Underwriting__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(uws[0].Id, stamped.Primary_Underwriting__c,
+            'Primary_Underwriting__c stamped so the Opp tab can span to it');
+
+        // Idempotency: re-saving at the same stage must not open a second record.
+        update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'touch');
+        System.assertEquals(1, [SELECT COUNT() FROM Underwriting__c WHERE Opportunity__c = :o.Id],
+            'No duplicate Underwriting on re-save');
+
+        // Numbers entered on the Underwriting record sync back to the Opp mirrors
+        // (Underwriting_Opp_Sync flow) so reports and the approval page stay current.
+        update new Underwriting__c(Id = uws[0].Id, My_Price__c = 17500000, Underwritten_NOI__c = 1200000);
+        stamped = [SELECT My_Price__c, Underwritten_NOI__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(17500000, stamped.My_Price__c, 'Opp mirrors the primary underwriting price');
+        System.assertEquals(1200000, stamped.Underwritten_NOI__c, 'Opp mirrors the underwritten NOI');
+    }
+
+    @isTest
+    static void ndaOpensOnNewOpportunity() {
+        Test.startTest();
+        Opportunity o = newOpp('New');
+        insert o;
+        Test.stopTest();
+
+        List<NDA__c> ndas = [SELECT Status__c FROM NDA__c WHERE Opportunity__c = :o.Id];
+        System.assertEquals(1, ndas.size(), 'A new Opportunity opens one NDA from the New stage');
+        System.assertEquals('Pending', ndas[0].Status__c, 'NDA starts Pending');
+
+        Opportunity stamped = [SELECT Primary_NDA__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(ndas[0].Id, stamped.Primary_NDA__c,
+            'Primary_NDA__c stamped so the NDA tab and the signed-NDA gate have a record');
+
+        // Idempotency: re-saving the Opp must not open a second NDA.
+        update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'touch');
+        System.assertEquals(1, [SELECT COUNT() FROM NDA__c WHERE Opportunity__c = :o.Id],
+            'No duplicate NDA on re-save');
+    }
+
+    @isTest
+    static void inputCheckboxesCreateReviewsAtAnyStage() {
+        Opportunity o = newOpp('New');
+        insert o;
+
+        Test.startTest();
+        // Both inputs requested while the deal is still at New - i.e. BEFORE
+        // underwriting, without touching the stage.
+        o.Development_Input_Needed__c = true;
+        o.Construction_Input_Needed__c = true;
+        update o;
+        Test.stopTest();
+
+        List<Development_Feasibility_Review__c> dfrs = [
+            SELECT Requested_By__c FROM Development_Feasibility_Review__c WHERE Opportunity__c = :o.Id
+        ];
+        System.assertEquals(1, dfrs.size(), 'Development review created from the input checkbox');
+        System.assertEquals(UserInfo.getUserId(), dfrs[0].Requested_By__c, 'Requester stamped');
+        System.assertEquals(1,
+            [SELECT COUNT() FROM Construction_Feasibility_Review__c WHERE Opportunity__c = :o.Id],
+            'Construction review created from the input checkbox');
+        System.assertEquals('New', [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'Stage untouched - reviews can open before underwriting');
+    }
+
+    @isTest
+    static void recheckedInputCheckboxIsIdempotent() {
+        Opportunity o = newOpp('New');
+        insert o;
+        o.Development_Input_Needed__c = true;
+        update o;
+
+        Test.startTest();
+        o.Development_Input_Needed__c = false;
+        update o;
+        o.Development_Input_Needed__c = true;
+        update o;
+        Test.stopTest();
+
+        System.assertEquals(1,
+            [SELECT COUNT() FROM Development_Feasibility_Review__c WHERE Opportunity__c = :o.Id],
+            'Re-flipping the checkbox must not create a second review');
+    }
+
+    @isTest
     static void developmentReviewCreatesOnInsert() {
         Test.startTest();
         Opportunity o = newOpp('Development Review');
@@ -54,14 +150,14 @@ private class OpportunityReviewServiceTest {
         insert o;
 
         Test.startTest();
-        o.StageName = 'Under Contract';
+        o.StageName = 'PSA';
         update o;
         Test.stopTest();
 
         List<Contract_Review__c> crs = [
             SELECT Stage__c FROM Contract_Review__c WHERE Opportunity__c = :o.Id
         ];
-        System.assertEquals(1, crs.size(), 'One Contract review should be created on Under Contract');
+        System.assertEquals(1, crs.size(), 'One Contract review should be created on PSA');
         System.assertEquals('PSA Drafting', crs[0].Stage__c, 'Should start at PSA Drafting');
 
         // The new Contract Review is stamped back onto the Opportunity so the
@@ -77,7 +173,8 @@ private class OpportunityReviewServiceTest {
         insert o; // creates the first review
 
         Test.startTest();
-        o.StageName = 'Underwriting';
+        // Move away via Under Review (Underwriting is now gated on a signed NDA).
+        o.StageName = 'Under Review';
         update o; // moves away — no create
         o.StageName = 'Development Review';
         update o; // re-enters — must NOT create a second

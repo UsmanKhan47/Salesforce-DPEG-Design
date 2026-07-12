@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Sell Decision Trigger --></label>
+    <name>Sell_Decision_Trigger__c</name>
+    <picklistValues>
+        <masterLabel>Fund Maturity</masterLabel>
+        <translation><!-- Fund Maturity --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Market Opportunity</masterLabel>
+        <translation><!-- Market Opportunity --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Principal Decision</masterLabel>
+        <translation><!-- Principal Decision --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Sell Meter Green</masterLabel>
+        <translation><!-- Sell Meter Green --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

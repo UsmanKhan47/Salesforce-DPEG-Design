@@ -1,0 +1,31 @@
+<template>
+    <article class="at-card">
+        <div class="at-hd">
+            <span class="at-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#E58A8A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>
+                </svg>
+            </span>
+            <div>
+                <div class="at-title">Needs Attention</div>
+                <div class="at-sub">With the landlord, or aging over 7 days</div>
+            </div>
+        </div>
+        <template if:true={hasRows}>
+            <div class="at-body">
+                <template for:each={rows} for:item="r">
+                    <a key={r.id} href={r.recordUrl} class="at-row">
+                        <div class="at-main">
+                            <div class="at-name">{r.tenant}</div>
+                            <div class="at-metasub">{r.sub}</div>
+                        </div>
+                        <span style={r.daysWrap}><span style={r.daysDot}></span>{r.daysText}</span>
+                    </a>
+                </template>
+            </div>
+        </template>
+        <template if:false={hasRows}>
+            <div class="at-empty">Nothing needs a nudge right now.</div>
+        </template>
+    </article>
+</template>

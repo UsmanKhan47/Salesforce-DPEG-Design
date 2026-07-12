@@ -4,20 +4,135 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
+                    <name>actionNames</name>
+                    <valueList>
+                        <valueListItems>
+                            <value>Opportunity.Begin_Review</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>New</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Opportunity.Send_to_Construction_Review</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Under Review</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Deal_Type__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Commercial</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Opportunity.Initiate_Underwriting</value>
+                            <visibilityRule>
+                                <booleanFilter>(1 OR 2) AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Construction Review</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Under Review</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Opportunity.Initiate_LOI</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Underwriting</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Opportunity.Advance_to_PSA</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>LOI</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Opportunity.Close_Deal</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>PSA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                    </valueList>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
                     <name>collapsed</name>
                     <value>false</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>enableActionsConfiguration</name>
-                    <value>false</value>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>enableActionsInNative</name>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideChatterActions</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideSlackAction</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentName>force:highlightsPanel</componentName>
                 <identifier>highlightsPanel</identifier>
@@ -73,47 +188,43 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.My_Price__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Stage__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rStage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.My_Price__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rMy_Price_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.My_Cap_Rate__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.My_Cap_Rate__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rMy_Cap_Rate_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Market_Cap_Rate__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Market_Cap_Rate__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rMarket_Cap_Rate_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Underwritten_NOI__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Underwritten_NOI__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rUnderwritten_NOI_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Target_Return__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Target_Return__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rTarget_Return_cField</identifier>
             </fieldInstance>
         </itemInstances>
@@ -129,12 +240,38 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Principal_Price_Decision__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rPrincipal_Price_Decision_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Principal_Price_Decision__c</fieldItem>
-                <identifier>RecordPrimary_Underwriting_rPrincipal_Price_Decision_cField</identifier>
+                <fieldItem>Record.Initiate_Underwriting__c</fieldItem>
+                <identifier>RecordInitiate_Underwriting_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Underwriting_Complete__c</fieldItem>
+                <identifier>RecordUnderwriting_Complete_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.UW_Approved__c</fieldItem>
+                <identifier>RecordUW_Approved_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-f85d0b42-32cd-459e-a3c8-d85e47aba82d</name>
@@ -143,62 +280,76 @@
     <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Hold_Period__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Hold_Period__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rHold_Period_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Equity_Required__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Equity_Required__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rEquity_Required_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Projected_Loan__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Projected_Loan__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rProjected_Loan_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.GRM__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.GRM__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rGRM_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Underwriting_OneDrive_URL__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Underwriting_OneDrive_URL__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rUnderwriting_OneDrive_URL_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
             <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Cash_on_Cash_Return__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rCash_on_Cash_Return_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Equity_Multiple__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rEquity_Multiple_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Year_5_IRR__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rYear_5_IRR_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Underwriting__r.Verdict__c</fieldItem>
+                <identifier>RecordPrimary_Underwriting_rVerdict_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
-                    <value>none</value>
+                    <value>readonly</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Cash_on_Cash_Return__c</fieldItem>
-                <identifier>RecordPrimary_Underwriting_rCash_on_Cash_Return_cField</identifier>
+                <fieldItem>Record.UW_Approved_By__c</fieldItem>
+                <identifier>RecordUW_Approved_By_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.UW_Approval_Date__c</fieldItem>
+                <identifier>RecordUW_Approval_Date_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -207,8 +358,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Equity_Multiple__c</fieldItem>
-                <identifier>RecordPrimary_Underwriting_rEquity_Multiple_cField</identifier>
+                <fieldItem>Record.Underwriting_Notes__c</fieldItem>
+                <identifier>RecordUnderwriting_Notes_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-cae4e814-2481-4671-801d-3e02a4a306ba</name>
@@ -405,6 +556,28 @@
                 <identifier>RecordPrimary_LOI_rFinal_Agreed_Price_cField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Ball_In_Court__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rBall_In_Court_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.NOI__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rNOI_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.LOI_Prep_Approved__c</fieldItem>
+                <identifier>RecordLOI_Prep_Approved_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-5a92c0c4-b84e-4408-9714-ca8018e83726</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -437,6 +610,30 @@
             <fieldInstance>
                 <fieldItem>Record.Primary_LOI__r.Due_Diligence_Days__c</fieldItem>
                 <identifier>RecordPrimary_LOI_rDue_Diligence_Days_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Square_Footage__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rSquare_Footage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.ARC__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rARC_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Title_Company__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rTitle_Company_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_LOI__r.Approved_By__c</fieldItem>
+                <identifier>RecordPrimary_LOI_rApproved_By_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-93a4879b-673f-48ac-bdf0-e1c34a293609</name>
@@ -535,6 +732,10 @@
                 <identifier>RecordAcres_cFieldDev</identifier>
             </fieldInstance>
         </itemInstances>
+        <name>Facet-devCol1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
@@ -555,7 +756,17 @@
                 <identifier>RecordContract_Signed_cFieldDev</identifier>
             </fieldInstance>
         </itemInstances>
-        <name>Facet-devFields</name>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Development_Input_Needed__c</fieldItem>
+                <identifier>RecordDevelopment_Input_Needed_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-devCol2</name>
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
@@ -563,10 +774,20 @@
             <componentInstance>
                 <componentInstanceProperties>
                     <name>body</name>
-                    <value>Facet-devFields</value>
+                    <value>Facet-devCol1</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:column</componentName>
-                <identifier>devColumn</identifier>
+                <identifier>devColumn1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-devCol2</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>devColumn2</identifier>
             </componentInstance>
         </itemInstances>
         <name>Facet-devCols</name>
@@ -625,6 +846,10 @@
                 <identifier>RecordGuidance_Cap_Rate_cFieldCon</identifier>
             </fieldInstance>
         </itemInstances>
+        <name>Facet-conCol1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
@@ -635,7 +860,17 @@
                 <identifier>RecordContract_Signed_cFieldCon</identifier>
             </fieldInstance>
         </itemInstances>
-        <name>Facet-conFields</name>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Construction_Input_Needed__c</fieldItem>
+                <identifier>RecordConstruction_Input_Needed_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-conCol2</name>
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
@@ -643,10 +878,20 @@
             <componentInstance>
                 <componentInstanceProperties>
                     <name>body</name>
-                    <value>Facet-conFields</value>
+                    <value>Facet-conCol1</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:column</componentName>
-                <identifier>conColumn</identifier>
+                <identifier>conColumn1</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-conCol2</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>conColumn2</identifier>
             </componentInstance>
         </itemInstances>
         <name>Facet-conCols</name>
@@ -683,6 +928,18 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
+                <fieldItem>Record.Primary_Contract__r.Negotiation_Status__c</fieldItem>
+                <identifier>RecordPrimary_Contract_rNegotiation_Status_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Contract__r.Ball_In_Court__c</fieldItem>
+                <identifier>RecordPrimary_Contract_rBall_In_Court_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
                 <fieldItem>Record.Primary_Contract__r.PSA_Date__c</fieldItem>
                 <identifier>RecordPrimary_Contract_rPSA_Date_cField</identifier>
             </fieldInstance>
@@ -707,6 +964,12 @@
             <fieldInstance>
                 <fieldItem>Record.Primary_Contract__r.Summary__c</fieldItem>
                 <identifier>RecordPrimary_Contract_rSummary_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Primary_Contract__r.Latest_Version__c</fieldItem>
+                <identifier>RecordPrimary_Contract_rLatest_Version_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-contractCol2</name>
@@ -755,7 +1018,113 @@
                 <identifier>contractSection</identifier>
             </componentInstance>
         </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>psaVersionLog</componentName>
+                <identifier>psaVersionLogCard</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>contractTabContent</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Name</fieldItem>
+                <identifier>RecordProperty_rNameField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Address__c</fieldItem>
+                <identifier>RecordProperty_rAddress_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Asking_Price__c</fieldItem>
+                <identifier>RecordProperty_rAsking_Price_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-dc2cc896-1e61-4d9a-ae6a-c56342861e9a</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Square_Footage__c</fieldItem>
+                <identifier>RecordProperty_rSquare_Footage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.State__c</fieldItem>
+                <identifier>RecordProperty_rState_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Cap_Rate_Asking__c</fieldItem>
+                <identifier>RecordProperty_rCap_Rate_Asking_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Lead_Approved_By__c</fieldItem>
+                <identifier>RecordLead_Approved_By_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-d06d7c84-8864-47e1-b080-be6f68587424</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-dc2cc896-1e61-4d9a-ae6a-c56342861e9a</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column7</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-d06d7c84-8864-47e1-b080-be6f68587424</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column8</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-90ceed3f-cfab-47ae-95d8-ccb007a2ce22</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-90ceed3f-cfab-47ae-95d8-ccb007a2ce22</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Details</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection4</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-6a2bd79c-7e86-4c4f-9536-643a00bbfb32</name>
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
@@ -783,16 +1152,26 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
+                <componentName>force:detailPanel</componentName>
+                <identifier>oppRecordDetail</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>detailContent</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
                 <componentInstanceProperties>
                     <name>body</name>
-                    <value>Facet-8ee7afbf-af0b-4c4a-9c4e-07e49256f916</value>
+                    <value>detailContent</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>title</name>
-                    <value>Underwriting</value>
+                    <value>Detail</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:tab</componentName>
-                <identifier>flexipage_tab</identifier>
+                <identifier>detailTab</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>
@@ -807,6 +1186,20 @@
                 </componentInstanceProperties>
                 <componentName>flexipage:tab</componentName>
                 <identifier>flexipage_tab2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-8ee7afbf-af0b-4c4a-9c4e-07e49256f916</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Underwriting</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>flexipage_tab</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>
@@ -877,6 +1270,20 @@
                 </componentInstanceProperties>
                 <componentName>flexipage:tab</componentName>
                 <identifier>contractTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-6a2bd79c-7e86-4c4f-9536-643a00bbfb32</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Property</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>flexipage_tab5</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

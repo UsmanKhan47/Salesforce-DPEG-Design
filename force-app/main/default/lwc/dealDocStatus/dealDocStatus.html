@@ -31,6 +31,34 @@
 
             <div class="divider"></div>
 
+            <!-- Underwriting -->
+            <div class="doc">
+                <div class="doc-head">
+                    <span class="doc-left">
+                        <span class="doc-icon doc-icon--uw">
+                            <lightning-icon icon-name="utility:money" size="x-small"
+                                style="--slds-c-icon-color-foreground-default:#0B5394;--sds-c-icon-color-foreground-default:#0B5394">
+                            </lightning-icon>
+                        </span>
+                        <template if:true={hasUnderwriting}>
+                            <a class="doc-name" onclick={openUnderwriting} title="Open Underwriting">Underwriting</a>
+                        </template>
+                        <template if:false={hasUnderwriting}>
+                            <span class="doc-name doc-name--muted">Underwriting</span>
+                        </template>
+                    </span>
+                    <span class={underwritingPillClass}>{underwritingStage}</span>
+                </div>
+                <template if:true={hasUnderwriting}>
+                    <div class="doc-meta">{underwritingMeta}</div>
+                </template>
+                <template if:false={hasUnderwriting}>
+                    <div class="doc-meta doc-meta--empty">Opens when the deal enters Underwriting</div>
+                </template>
+            </div>
+
+            <div class="divider"></div>
+
             <!-- LOI -->
             <div class="doc">
                 <div class="doc-head">

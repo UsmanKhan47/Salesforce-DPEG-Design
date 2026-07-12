@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObjectTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <caseValues>
+        <plural>false</plural>
+        <value>Work Order</value>
+    </caseValues>
+    <caseValues>
+        <plural>true</plural>
+        <value>Work Orders</value>
+    </caseValues>
+    <layouts>
+        <layout>Work Order Layout</layout>
+        <sections>
+            <label><!-- Reason for Delay (Salesforce-only) --></label>
+            <section>Reason for Delay (Salesforce-only)</section>
+        </sections>
+        <sections>
+            <label><!-- SLA &amp; Aging --></label>
+            <section>SLA &amp; Aging</section>
+        </sections>
+        <sections>
+            <label><!-- System Information --></label>
+            <section>System Information</section>
+        </sections>
+        <sections>
+            <label><!-- Work Order --></label>
+            <section>Work Order</section>
+        </sections>
+    </layouts>
+    <startsWith>Consonant</startsWith>
+</CustomObjectTranslation>

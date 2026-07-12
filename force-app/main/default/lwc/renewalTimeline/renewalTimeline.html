@@ -1,0 +1,95 @@
+<template>
+    <div class="rt-card">
+        <div class="rt-head">
+            <div class="rt-head-left">
+                <span class="rt-head-icon">
+                    <lightning-icon icon-name="utility:clock" size="x-small" variant="inverse"></lightning-icon>
+                </span>
+                <div>
+                    <div class="rt-title">Timeline</div>
+                    <div class="rt-sub">{count} entries · append-only, never overwritten</div>
+                </div>
+                <template if:true={nonResponsive}>
+                    <span class="rt-nonresp"><span class="rt-nonresp-dot"></span>{silentText}</span>
+                </template>
+            </div>
+            <template if:true={canLog}>
+                <lightning-button
+                    variant="brand"
+                    label="Log Follow-Up"
+                    icon-name="utility:add"
+                    onclick={openComposer}
+                    disabled={adding}>
+                </lightning-button>
+            </template>
+        </div>
+
+        <template if:true={adding}>
+            <div class="rt-composer">
+                <div class="rt-composer-row">
+                    <lightning-combobox
+                        label="Method"
+                        required
+                        placeholder="Select…"
+                        value={upMethod}
+                        options={methodOptions}
+                        onchange={onMethod}
+                        variant="label-stacked">
+                    </lightning-combobox>
+                </div>
+                <lightning-textarea
+                    class="rt-textarea"
+                    label="Outcome"
+                    required
+                    value={upDetails}
+                    onchange={onDetails}
+                    placeholder="Left voicemail, tenant confirmed interest, sent counter…">
+                </lightning-textarea>
+                <template if:true={error}>
+                    <div class="rt-error">{error}</div>
+                </template>
+                <div class="rt-composer-actions">
+                    <lightning-button
+                        class="slds-m-right_x-small"
+                        variant="brand"
+                        label="Save to timeline"
+                        icon-name="utility:check"
+                        onclick={save}>
+                    </lightning-button>
+                    <lightning-button variant="neutral" label="Cancel" onclick={cancel}></lightning-button>
+                </div>
+            </div>
+        </template>
+
+        <div class="rt-body">
+            <template for:each={entries} for:item="e">
+                <div key={e.id} class="rt-entry">
+                    <div class="rt-rail">
+                        <span class={e.markerClass}></span>
+                        <template if:true={e.showLine}><span class="rt-line"></span></template>
+                    </div>
+                    <div class="rt-content">
+                        <div class="rt-entry-head">
+                            <span class="rt-entry-left">
+                                <span class="rt-by">{e.enteredBy}</span>
+                                <span style={e.methodStyle}>{e.method}</span>
+                            </span>
+                            <lightning-formatted-date-time
+                                class="rt-date"
+                                value={e.entryDate}
+                                year="numeric" month="short" day="2-digit"
+                                hour="2-digit" minute="2-digit">
+                            </lightning-formatted-date-time>
+                        </div>
+                        <div class="rt-details">{e.details}</div>
+                        <template if:true={e.isLatest}><span class="rt-latest">Latest</span></template>
+                    </div>
+                </div>
+            </template>
+            <div class="rt-foot-note">
+                <lightning-icon icon-name="utility:lock" size="xx-small"></lightning-icon>
+                Entries are permanent. Logging a follow-up never erases what came before.
+            </div>
+        </div>
+    </div>
+</template>

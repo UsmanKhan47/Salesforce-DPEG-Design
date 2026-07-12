@@ -16,14 +16,37 @@
                 <label>PSA Drafting</label>
             </value>
             <value>
-                <fullName>Contract Negotiation</fullName>
+                <fullName>Review</fullName>
                 <default>false</default>
-                <label>Contract Negotiation</label>
+                <label>Review</label>
+            </value>
+            <value>
+                <fullName>Counter</fullName>
+                <default>false</default>
+                <label>Counter</label>
+            </value>
+            <value>
+                <fullName>Contract Execution</fullName>
+                <default>false</default>
+                <label>Contract Execution</label>
             </value>
             <value>
                 <fullName>Contract Execution (Signed)</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Contract Execution (Signed)</label>
+            </value>
+            <value>
+                <fullName>Contract Negotiation</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Contract Negotiation</label>
+            </value>
+            <value>
+                <fullName>Prepare</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Prepare</label>
             </value>
         </valueSetDefinition>
     </valueSet>

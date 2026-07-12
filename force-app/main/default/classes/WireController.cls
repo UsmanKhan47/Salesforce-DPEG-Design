@@ -19,7 +19,7 @@ public with sharing class WireController {
                    Confirmed_Wire_Amount__c
             FROM Wire__c
             WHERE Disposition__c = :dispositionId
-            ORDER BY CreatedDate DESC
+            ORDER BY CreatedDate DESC, Id DESC
             LIMIT 1
         ];
         if (wires.isEmpty()) return null;

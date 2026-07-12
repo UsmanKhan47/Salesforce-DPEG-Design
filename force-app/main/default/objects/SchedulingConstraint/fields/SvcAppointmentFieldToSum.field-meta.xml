@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SvcAppointmentFieldToSum</fullName>
+    <inlineHelpText>Determines which numeric field on the Service Appointment to include in the sum, for example, the duration. Relevant only if the Calculation Mode is Sum.</inlineHelpText>
+</CustomField>

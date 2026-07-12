@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Stage --></label>
+    <name>Stage__c</name>
+    <picklistValues>
+        <masterLabel>Amendment Drafted</masterLabel>
+        <translation><!-- Amendment Drafted --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Awaiting Tenant Response</masterLabel>
+        <translation><!-- Awaiting Tenant Response --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Negotiating</masterLabel>
+        <translation><!-- Negotiating --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Not Renewing</masterLabel>
+        <translation><!-- Not Renewing --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Not Yet Started</masterLabel>
+        <translation><!-- Not Yet Started --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Notice Sent</masterLabel>
+        <translation><!-- Notice Sent --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Renewed</masterLabel>
+        <translation><!-- Renewed --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Vacating</masterLabel>
+        <translation><!-- Vacating --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

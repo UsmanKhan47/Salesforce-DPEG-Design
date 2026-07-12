@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Final Agreed Price --></label>
+    <name>Final_Agreed_Price__c</name>
+</CustomFieldTranslation>

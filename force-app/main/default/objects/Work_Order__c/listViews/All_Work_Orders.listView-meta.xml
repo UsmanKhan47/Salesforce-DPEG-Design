@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>All_Work_Orders</fullName>
+    <columns>NAME</columns>
+    <columns>Subject__c</columns>
+    <columns>Property_Display_Name__c</columns>
+    <columns>Category__c</columns>
+    <columns>Priority__c</columns>
+    <columns>Status__c</columns>
+    <columns>SLA_Health__c</columns>
+    <columns>Owner_User__c</columns>
+    <filterScope>Everything</filterScope>
+    <label>All Work Orders</label>
+</ListView>

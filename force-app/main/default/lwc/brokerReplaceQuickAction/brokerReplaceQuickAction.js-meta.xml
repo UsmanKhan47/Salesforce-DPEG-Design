@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Replace Broker</masterLabel>
+    <description>Screen-action quick action to replace the broker on an active assignment: closes the current listing as Disposed and opens a new Active listing.</description>
+    <targets>
+        <target>lightning__RecordAction</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordAction">
+            <actionType>ScreenAction</actionType>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

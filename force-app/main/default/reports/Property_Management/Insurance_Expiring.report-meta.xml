@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <columns>
+        <field>Insurance_Policy__c.Days_To_Expiry__c</field>
+    </columns>
+    <filter>
+        <criteriaItems>
+            <column>Insurance_Policy__c.Days_To_Expiry__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>lessOrEqual</operator>
+            <value>60</value>
+        </criteriaItems>
+    </filter>
+    <format>Summary</format>
+    <groupingsDown>
+        <dateGranularity>Day</dateGranularity>
+        <field>Insurance_Policy__c.Policy_Name__c</field>
+        <sortOrder>Asc</sortOrder>
+    </groupingsDown>
+    <name>Insurance Expiring</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
+    <reportType>CustomEntity$Insurance_Policy__c</reportType>
+    <scope>organization</scope>
+    <showDetails>false</showDetails>
+    <showGrandTotal>true</showGrandTotal>
+    <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>Insurance_Policy__c.Expiry_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
+</Report>

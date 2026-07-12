@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Property Type --></label>
+    <name>Property_Type__c</name>
+    <picklistValues>
+        <masterLabel>Industrial</masterLabel>
+        <translation><!-- Industrial --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Mixed-Use</masterLabel>
+        <translation><!-- Mixed-Use --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Multifamily</masterLabel>
+        <translation><!-- Multifamily --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Office</masterLabel>
+        <translation><!-- Office --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Retail</masterLabel>
+        <translation><!-- Retail --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

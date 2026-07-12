@@ -1,0 +1,54 @@
+<template>
+    <div class="wot-card">
+        <div class="wot-head">
+            <div class="wot-head-left">
+                <span class="wot-head-icon">
+                    <lightning-icon icon-name="utility:clock" size="x-small" variant="inverse"></lightning-icon>
+                </span>
+                <div>
+                    <div class="wot-title">Activity &amp; Status History</div>
+                    <div class="wot-sub">{count} entries · from the nightly Yardi sync</div>
+                </div>
+                <template if:true={untouched}>
+                    <span class="wot-untouched">Untouched</span>
+                </template>
+            </div>
+        </div>
+
+        <div class="wot-body">
+            <template if:true={hasEntries}>
+                <template for:each={entries} for:item="e">
+                    <div key={e.id} class="wot-entry">
+                        <div class="wot-rail">
+                            <span class={e.markerClass}></span>
+                            <template if:true={e.showLine}><span class="wot-line"></span></template>
+                        </div>
+                        <div class="wot-content">
+                            <div class="wot-entry-head">
+                                <span class="wot-entry-left">
+                                    <span class="wot-by">{e.actor}</span>
+                                    <span style={e.kindStyle}>{e.kind}</span>
+                                </span>
+                                <lightning-formatted-date-time
+                                    class="wot-date"
+                                    value={e.entryDate}
+                                    year="numeric" month="short" day="2-digit"
+                                    hour="2-digit" minute="2-digit">
+                                </lightning-formatted-date-time>
+                            </div>
+                            <div class="wot-detail">{e.detail}</div>
+                            <template if:true={e.isLatest}><span class="wot-latest">Latest</span></template>
+                        </div>
+                    </div>
+                </template>
+            </template>
+            <template if:false={hasEntries}>
+                <div class="wot-empty">No activity yet — nothing has synced for this work order.</div>
+            </template>
+            <div class="wot-foot-note">
+                <lightning-icon icon-name="utility:lock" size="xx-small"></lightning-icon>
+                History arrives with the nightly sync. Assigning vendors and closing tickets happens in Yardi — never here.
+            </div>
+        </div>
+    </div>
+</template>

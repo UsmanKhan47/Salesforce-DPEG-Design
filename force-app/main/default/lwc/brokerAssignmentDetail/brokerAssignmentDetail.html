@@ -1,0 +1,128 @@
+<template>
+    <template if:true={hasData}>
+        <!-- ===== action toolbar ===== -->
+        <template if:true={canReplace}>
+            <div class="ba-toolbar">
+                <button class="ba-btn ba-btn--ghost" onclick={handleLogCheckIn}>
+                    <lightning-icon icon-name="utility:check" size="xx-small"></lightning-icon>Log Check-in
+                </button>
+                <button class="ba-btn ba-btn--ghost" onclick={openReplace}>
+                    <lightning-icon icon-name="utility:change_owner" size="xx-small"></lightning-icon>Replace Broker
+                </button>
+            </div>
+        </template>
+
+        <!-- ===== tabbed card ===== -->
+        <div class="ba-card ba-tabcard">
+            <div class="ba-tabstrip">
+                <button class={tabDetailsClass} onclick={selectDetails}>Details</button>
+                <button class={tabHistoryClass} onclick={selectHistory}>History</button>
+                <button class={tabNotesClass} onclick={selectNotes}>Notes &amp; Attachments</button>
+            </div>
+
+            <!-- Details tab -->
+            <template if:true={showDetails}>
+                <div class="ba-tabbody">
+                    <div class="ba-section">
+                        <lightning-icon icon-name="utility:chevrondown" size="xx-small"></lightning-icon>Property
+                    </div>
+                    <div class="ba-grid">
+                        <div class="ba-field"><div class="ba-flbl">Property Asset</div><span class="ba-link">{propertyName}</span></div>
+                        <div class="ba-field"><div class="ba-flbl">Property Type</div><div class="ba-fval">{propertyType}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Gross Sq Ft</div><div class="ba-fval ba-mono">{grossSqFtDisp}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Vacant Area</div><div class="ba-fval ba-mono">{vacantAreaDisp}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Address</div><div class="ba-fval">{propertyAddr}</div></div>
+                    </div>
+
+                    <div class="ba-section">
+                        <lightning-icon icon-name="utility:chevrondown" size="xx-small"></lightning-icon>Listing
+                    </div>
+                    <div class="ba-grid">
+                        <div class="ba-field"><div class="ba-flbl">Status</div><span style={statusBadgeStyle}><span style={statusDotStyle}></span>{statusLabel}</span></div>
+                        <div class="ba-field"><div class="ba-flbl">Days Since Check-In</div><div style={daysHlStyle}>{daysDisp}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Leased Area</div><div class="ba-fval ba-mono">{leasedAreaDisp}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Listing Start</div><div class="ba-fval ba-mono">{startDisp}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Listing End</div><div class="ba-fval ba-mono">{endDisp}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Reason Ended</div><div class="ba-fval ba-muted">{reasonDisp}</div></div>
+                    </div>
+
+                    <div class="ba-section">
+                        <lightning-icon icon-name="utility:chevrondown" size="xx-small"></lightning-icon>Broker
+                    </div>
+                    <div class="ba-grid">
+                        <div class="ba-field"><div class="ba-flbl">Broker</div><span class="ba-link">{brokerName}</span></div>
+                        <div class="ba-field"><div class="ba-flbl">Firm / Company</div><div class="ba-fval">{brokerFirm}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Email</div><div class="ba-fval">{brokerEmail}</div></div>
+                        <div class="ba-field"><div class="ba-flbl">Phone</div><div class="ba-fval ba-mono">{brokerPhone}</div></div>
+                    </div>
+
+                    <template if:true={showFlag}>
+                        <div style={flagBannerStyle}>
+                            <lightning-icon icon-name="utility:warning" size="xx-small"></lightning-icon>
+                            <span>{flagBanner}</span>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- History tab -->
+            <template if:true={showHistory}>
+                <div class="ba-tabbody ba-histbody">
+                    <div class="ba-histintro">{historyIntro}</div>
+                    <template for:each={historyRows} for:item="h">
+                        <div key={h.id} style={h.rowStyle}>
+                            <div class="ba-histleft">
+                                <span style={h.wrapStyle}><span style={h.dotStyle}></span>{h.statusLabel}</span>
+                                <div>
+                                    <div class="ba-histname">{h.brokerName}</div>
+                                    <div class="ba-histfirm">{h.brokerFirm}</div>
+                                </div>
+                            </div>
+                            <div class="ba-histright">
+                                <div class="ba-mono ba-histrange">{h.rangeDisp}</div>
+                                <div class="ba-histreason">{h.reasonDisp}</div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Notes tab -->
+            <template if:true={showNotes}>
+                <div class="ba-empty">No notes or attachments yet.</div>
+            </template>
+        </div>
+    </template>
+
+    <!-- ===== Replace modal ===== -->
+    <template if:true={replacing}>
+        <section role="dialog" aria-modal="true" aria-label="Replace broker" class="ba-overlay">
+            <div class="ba-modal ba-modal--wide">
+                <div class="ba-modalhd">
+                    <div class="ba-modalicon">
+                        <lightning-icon icon-name="utility:change_owner" size="xx-small" variant="inverse"></lightning-icon>
+                    </div>
+                    <div>
+                        <div class="ba-modaltitle">Replace broker</div>
+                        <div class="ba-modalsub">{propertyName}</div>
+                    </div>
+                </div>
+                <div class="ba-modalbody">
+                    <div class="ba-infobox">
+                        <lightning-icon icon-name="utility:info" size="xx-small"></lightning-icon>
+                        <span>{replaceNote}</span>
+                    </div>
+                    <lightning-combobox label="Incoming broker" value={repBrokerId} placeholder="Select a broker" options={brokerOptionList} onchange={onRepBroker}></lightning-combobox>
+                    <div class="ba-modalrow">
+                        <lightning-combobox label="Reason previous broker ended" value={repReason} options={reasonOptions} onchange={onRepReason}></lightning-combobox>
+                        <lightning-input type="date" label="Effective date" value={repDate} onchange={onRepDate}></lightning-input>
+                    </div>
+                </div>
+                <div class="ba-modalfoot">
+                    <button class="ba-btn ba-btn--primary ba-btn--block" onclick={confirmReplace}>Confirm replacement</button>
+                    <button class="ba-btn ba-btn--ghost" onclick={closeReplace}>Cancel</button>
+                </div>
+            </div>
+        </section>
+    </template>
+</template>

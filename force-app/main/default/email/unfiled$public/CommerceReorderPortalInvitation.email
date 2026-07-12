@@ -1,0 +1,12 @@
+<html>
+            Dear {!Receiving_User.FirstName},
+            <p>
+            Check out this reorder portal for a simpler way to place repeat orders with {!Organization.Name}. You can view your past orders, modify quantities, place new orders, and view order statuses.
+            </p>
+            <p>
+            Click the link for access: <a href={!Community_URL}>{!Community_Name}</a>
+            Username: {!Receiving_User.Username}
+            </p>
+            Regards,<br>
+            {!User.Name}
+            </html>

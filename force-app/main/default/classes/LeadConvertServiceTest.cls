@@ -77,4 +77,32 @@ private class LeadConvertServiceTest {
         System.assertEquals('https://placer.ai/abc', p.Placer_URL__c, 'Placer URL copied from lead');
         System.assertEquals('https://costar.com/xyz', p.CoStar_URL__c, 'CoStar URL copied from lead');
     }
+
+    @isTest
+    static void stampsConvertingUserAsLeadApprover() {
+        // Conversion IS the approval to underwrite: no checkbox gate, and the
+        // converting user lands on the deal as Lead Approved By.
+        Test.startTest();
+        Opportunity o = convertLeadOfType('Commercial', 'Straight Through LLC');
+        Test.stopTest();
+
+        Opportunity fresh = [SELECT Lead_Approved_By__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(UserInfo.getUserId(), fresh.Lead_Approved_By__c,
+            'Converting user stamped on the Opportunity as the lead approver');
+    }
+
+    @isTest
+    static void qualifiedNeedsNoApprovalAndIntakeStampsApply() {
+        Lead l = new Lead(LastName = 'Gatecheck', Company = 'Gate LLC', Status = 'New');
+        insert l;
+
+        // No approval gate: Qualified is reachable directly.
+        l.Status = 'Qualified';
+        update l;
+
+        l = [SELECT Status, First_Seen_Date__c, DPEG_First__c FROM Lead WHERE Id = :l.Id];
+        System.assertEquals('Qualified', l.Status, 'Qualified requires no prior approval');
+        System.assertNotEquals(null, l.First_Seen_Date__c, 'First Seen stamped on create for all channels');
+        System.assertEquals(UserInfo.getUserId(), l.DPEG_First__c, 'DPEG First stamped from the owning user');
+    }
 }

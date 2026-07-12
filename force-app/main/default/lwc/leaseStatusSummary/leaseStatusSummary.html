@@ -1,0 +1,34 @@
+<template>
+    <lightning-card icon-name="standard:contract">
+        <span slot="title" class="card-title">Lease Status</span>
+
+        <div class="body">
+            <div class="doc">
+                <div class="doc-head">
+                    <span class="doc-left">
+                        <span class="doc-icon doc-icon--lease">
+                            <lightning-icon icon-name="utility:contract" size="x-small"
+                                style="--slds-c-icon-color-foreground-default:#7E57C2;--sds-c-icon-color-foreground-default:#7E57C2">
+                            </lightning-icon>
+                        </span>
+                        <template if:true={hasLease}>
+                            <a class="doc-name" onclick={openLease} title="Open Lease">{leaseName}</a>
+                        </template>
+                        <template if:false={hasLease}>
+                            <span class="doc-name doc-name--muted">Lease</span>
+                        </template>
+                    </span>
+                    <template if:true={hasLease}>
+                        <span class={pillClass}>{stage}</span>
+                    </template>
+                </div>
+                <template if:true={hasLease}>
+                    <div class="doc-meta">{meta}</div>
+                </template>
+                <template if:false={hasLease}>
+                    <div class="doc-meta doc-meta--empty">Created for legal once the inquiry reaches Lease Drafting</div>
+                </template>
+            </div>
+        </div>
+    </lightning-card>
+</template>

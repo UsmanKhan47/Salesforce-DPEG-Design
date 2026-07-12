@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Negotiation_Status__c</fullName>
+    <description>Junior&apos;s Section 15 PSA lifecycle: Initial Draft (seller drafts first) -&gt; Seller Counter / Buyer Counter -&gt; Revised -&gt; Ready for Execution -&gt; Executed. Synced to the coarse Stage__c by the Contract_Review_Stage_Sync flow; Executed triggers the transaction handoff.</description>
+    <label>Negotiation Status</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Initial Draft</fullName>
+                <default>true</default>
+                <label>Initial Draft</label>
+            </value>
+            <value>
+                <fullName>Seller Counter</fullName>
+                <default>false</default>
+                <label>Seller Counter</label>
+            </value>
+            <value>
+                <fullName>Buyer Counter</fullName>
+                <default>false</default>
+                <label>Buyer Counter</label>
+            </value>
+            <value>
+                <fullName>Revised</fullName>
+                <default>false</default>
+                <label>Revised</label>
+            </value>
+            <value>
+                <fullName>Ready for Execution</fullName>
+                <default>false</default>
+                <label>Ready for Execution</label>
+            </value>
+            <value>
+                <fullName>Executed</fullName>
+                <default>false</default>
+                <label>Executed</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

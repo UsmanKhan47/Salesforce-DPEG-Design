@@ -18,6 +18,13 @@
             <operator>equals</operator>
             <value>THIS_MONTH</value>
         </criteriaItems>
+        <criteriaItems>
+            <column>NDA__c.Never_Expires__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>equals</operator>
+            <value>0</value>
+        </criteriaItems>
     </filter>
     <format>Summary</format>
     <groupingsDown>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Offer Financing Type --></label>
+    <name>Offer_Financing_Type__c</name>
+    <picklistValues>
+        <masterLabel>All Cash</masterLabel>
+        <translation><!-- All Cash --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Financed (no contingency)</masterLabel>
+        <translation><!-- Financed (no contingency) --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Financed (with contingency)</masterLabel>
+        <translation><!-- Financed (with contingency) --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

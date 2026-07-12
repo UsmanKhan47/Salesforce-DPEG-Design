@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObjectTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <caseValues>
+        <plural>false</plural>
+        <value>Offering</value>
+    </caseValues>
+    <caseValues>
+        <plural>true</plural>
+        <value>Offerings</value>
+    </caseValues>
+    <layouts>
+        <layout>Offering Layout</layout>
+        <sections>
+            <label><!-- Offering Information --></label>
+            <section>Offering Information</section>
+        </sections>
+    </layouts>
+    <startsWith>Consonant</startsWith>
+</CustomObjectTranslation>

@@ -1,5 +1,7 @@
 /**
- * Runs on lead conversion (from LeadConvertTrigger). Two jobs, in one transaction:
+ * Runs on lead conversion (from LeadConvertTrigger). Conversion is the approval to
+ * underwrite (no separate lead-approval gate), so the converting user is stamped on
+ * the Opportunity as Lead Approved By. Beyond that, two jobs in one transaction:
  *
  *   1. Deal type / record type — carries the lead's Deal Type onto the new
  *      Opportunity and sets the matching Opportunity record type (Land or
@@ -27,7 +29,10 @@ public with sharing class LeadConvertService {
         for (Lead l : newLeads) {
             Lead prior = (oldMap == null) ? null : oldMap.get(l.Id);
             Boolean justConverted = l.IsConverted && (prior == null || !prior.IsConverted);
-            if (justConverted && l.ConvertedOpportunityId != null) {
+            if (!justConverted) {
+                continue;
+            }
+            if (l.ConvertedOpportunityId != null) {
                 oppToLead.put(l.ConvertedOpportunityId, l);
             }
         }
@@ -67,6 +72,8 @@ public with sharing class LeadConvertService {
         for (Id oppId : oppToLead.keySet()) {
             Lead l = oppToLead.get(oppId);
             Opportunity o = new Opportunity(Id = oppId);
+            // Conversion IS the approval to underwrite: the converting user is the approver.
+            o.Lead_Approved_By__c = UserInfo.getUserId();
             if (oppToPropertyId.containsKey(oppId)) {
                 o.Property__c = oppToPropertyId.get(oppId);
             }

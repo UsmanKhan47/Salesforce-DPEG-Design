@@ -126,6 +126,96 @@
     </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Name</fieldItem>
+                <identifier>RecordProperty_rNameField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Address__c</fieldItem>
+                <identifier>RecordProperty_rAddress_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Asking_Price__c</fieldItem>
+                <identifier>RecordProperty_rAsking_Price_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-19b62b45-fa30-45bc-a797-7266611a7d47</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Square_Footage__c</fieldItem>
+                <identifier>RecordProperty_rSquare_Footage_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.State__c</fieldItem>
+                <identifier>RecordProperty_rState_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Cap_Rate_Asking__c</fieldItem>
+                <identifier>RecordProperty_rCap_Rate_Asking_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-1948578d-d02e-4374-abbf-f4763f55e551</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-19b62b45-fa30-45bc-a797-7266611a7d47</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-1948578d-d02e-4374-abbf-f4763f55e551</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-e1651792-916e-41f4-b362-c2c3090070d2</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-e1651792-916e-41f4-b362-c2c3090070d2</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Section</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-6b0d5530-cdbe-4432-85ba-599ccdf9e830</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
                     <name>body</name>
@@ -207,6 +297,20 @@
                 </componentInstanceProperties>
                 <componentName>flexipage:tab</componentName>
                 <identifier>notesTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-6b0d5530-cdbe-4432-85ba-599ccdf9e830</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Property</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>flexipage_tab2</identifier>
             </componentInstance>
         </itemInstances>
         <name>tabs</name>

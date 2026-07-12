@@ -33,12 +33,6 @@
                 <identifier>onboardingRiskAlertsComponent</identifier>
             </componentInstance>
         </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentName>onboardingTimeSla</componentName>
-                <identifier>onboardingTimeSlaComponent</identifier>
-            </componentInstance>
-        </itemInstances>
         <name>region3</name>
         <type>Region</type>
     </flexiPageRegions>

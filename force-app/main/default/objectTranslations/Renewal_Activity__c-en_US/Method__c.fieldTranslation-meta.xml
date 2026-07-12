@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Method --></label>
+    <name>Method__c</name>
+    <picklistValues>
+        <masterLabel>Call</masterLabel>
+        <translation><!-- Call --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Email</masterLabel>
+        <translation><!-- Email --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Note</masterLabel>
+        <translation><!-- Note --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>System</masterLabel>
+        <translation><!-- System --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Visit</masterLabel>
+        <translation><!-- Visit --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

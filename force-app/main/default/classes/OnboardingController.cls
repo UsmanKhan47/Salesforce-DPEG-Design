@@ -99,7 +99,7 @@ public with sharing class OnboardingController {
 
     public class RiskAlerts {
         @AuraEnabled public Integer overdue;
-        @AuraEnabled public Integer blocked;
+        @AuraEnabled public Integer pastTarget;
         @AuraEnabled public Integer stalled;
         @AuraEnabled public Integer due7d;
     }
@@ -107,10 +107,10 @@ public with sharing class OnboardingController {
     @AuraEnabled(cacheable=true)
     public static RiskAlerts getRiskAlerts() {
         RiskAlerts a = new RiskAlerts();
-        a.overdue = 0; a.blocked = 0; a.stalled = 0; a.due7d = 0;
+        a.overdue = 0; a.pastTarget = 0; a.stalled = 0; a.due7d = 0;
         for (Onboarding__c o : activeOnboardings()) {
             a.overdue += (Integer) nz(o.Tasks_Overdue__c);
-            a.blocked += (Integer) nz(o.Tasks_Blocked_Now__c);
+            if (o.Past_Target__c == true) a.pastTarget += 1;
             a.stalled += (Integer) nz(o.Tasks_Stalled__c);
             a.due7d += (Integer) nz(o.Tasks_Due_7d__c);
         }
@@ -200,5 +200,25 @@ public with sharing class OnboardingController {
         List<ChecklistGroup> out = new List<ChecklistGroup>();
         for (String c : CATEGORY_ORDER) out.add(byCat.get(c));
         return out;
+    }
+
+    // Mark a checklist task complete (from the interactive checkbox), append any note, and
+    // roll the change up onto the parent Onboarding so the rings/bars/KPIs reflect it.
+    @AuraEnabled
+    public static void completeTask(Id taskId, String notes) {
+        Task t = [
+            SELECT Id, Onboarding__c, Onboarding_Status__c, Status, Description
+            FROM Task WHERE Id = :taskId LIMIT 1
+        ];
+        t.Onboarding_Status__c = 'Complete';
+        t.Status = 'Completed';
+        t.ActivityDate = Date.today();
+        if (String.isNotBlank(notes)) {
+            t.Description = String.isBlank(t.Description) ? notes : (t.Description + '\n\n' + notes);
+        }
+        update t;
+        if (t.Onboarding__c != null) {
+            OnboardingTaskRollupService.recalc(new Set<Id>{ t.Onboarding__c });
+        }
     }
 }

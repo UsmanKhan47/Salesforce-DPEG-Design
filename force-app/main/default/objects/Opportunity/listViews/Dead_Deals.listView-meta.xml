@@ -8,7 +8,7 @@
     <columns>Asset_Type__c</columns>
     <columns>Rejection_Reason__c</columns>
     <columns>Asking_Price__c</columns>
-    <filterScope>Mine</filterScope>
+    <filterScope>Everything</filterScope>
     <filters>
         <field>Deal_Category__c</field>
         <operation>equals</operation>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TravelTimeScalingFactor</fullName>
+    <inlineHelpText>Enter a value between 0.1 and 10 that represents a percentage of the regular travel time. Applies only if you&apos;re using the light truck or heavy truck travel modes. For example, a factor of 1.0 means 100% of the regular travel time (default), a factor of 1.2 means travel time is slower by 20%, and a factor of 0.9 means travel time is faster by 10%.</inlineHelpText>
+</CustomField>

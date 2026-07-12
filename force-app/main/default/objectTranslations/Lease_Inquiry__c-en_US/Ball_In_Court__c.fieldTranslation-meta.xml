@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Ball in Court --></label>
+    <name>Ball_In_Court__c</name>
+    <picklistValues>
+        <masterLabel>Broker</masterLabel>
+        <translation><!-- Broker --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Construction</masterLabel>
+        <translation><!-- Construction --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Landlord</masterLabel>
+        <translation><!-- Landlord --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Legal</masterLabel>
+        <translation><!-- Legal --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Tenant</masterLabel>
+        <translation><!-- Tenant --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

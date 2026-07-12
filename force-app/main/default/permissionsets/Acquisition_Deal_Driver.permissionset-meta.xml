@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Marks the &quot;Junior&quot; deal-driver: grants read on User.Deal_Driver__c so the deal-driving quick actions (stage advances; Submit for Approval) show only for holders whose Deal_Driver__c = true. Not assigned to approvers.</description>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>User.Deal_Driver__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Acquisition Deal Driver</label>
+</PermissionSet>

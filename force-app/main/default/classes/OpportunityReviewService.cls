@@ -1,15 +1,22 @@
 /**
- * When an Opportunity enters the "Development Review" (Land path) or
- * "Construction Review" (Commercial path) stage, create one feasibility-review
- * child record on the matching object. Idempotent: never creates a second review
- * for the same Opportunity if one of that type already exists, so re-entering or
- * re-saving the stage does not produce duplicates.
+ * Creates review child records for an Opportunity. Two triggers for a review:
+ *
+ *   1. Stage entry - "Development Review" (Land path) / "Construction Review"
+ *      (Commercial path) / "PSA" (opens the Contract Review).
+ *   2. Input-needed checkboxes - Development_Input_Needed__c /
+ *      Construction_Input_Needed__c flipping true opens the matching review at
+ *      ANY stage, which is how Development/Construction engage BEFORE
+ *      underwriting without reordering the sales path.
+ *
+ * Idempotent: never creates a second review of the same type for one
+ * Opportunity, so re-entering a stage or re-flipping a checkbox is a no-op.
  */
 public with sharing class OpportunityReviewService {
 
     @TestVisible private static final String DEV_STAGE = 'Development Review';
     @TestVisible private static final String CON_STAGE = 'Construction Review';
-    @TestVisible private static final String CONTRACT_STAGE = 'Under Contract';
+    @TestVisible private static final String CONTRACT_STAGE = 'PSA';
+    @TestVisible private static final String UW_STAGE = 'Underwriting';
 
     /**
      * Called from the Opportunity after-insert / after-update trigger.
@@ -20,23 +27,31 @@ public with sharing class OpportunityReviewService {
         Set<Id> devOpps = new Set<Id>();
         Set<Id> conOpps = new Set<Id>();
         Set<Id> contractOpps = new Set<Id>();
+        Set<Id> uwOpps = new Set<Id>();
 
         for (Opportunity o : newOpps) {
             Opportunity prior = (oldMap == null) ? null : oldMap.get(o.Id);
             String priorStage = (prior == null) ? null : prior.StageName;
-            // Only act when the stage just became one of the trigger stages.
-            if (priorStage == o.StageName) {
-                continue;
-            }
-            if (o.StageName == DEV_STAGE) {
+            Boolean stageChanged = priorStage != o.StageName;
+            Boolean devFlip = o.Development_Input_Needed__c == true
+                && (prior == null || prior.Development_Input_Needed__c != true);
+            Boolean conFlip = o.Construction_Input_Needed__c == true
+                && (prior == null || prior.Construction_Input_Needed__c != true);
+
+            if ((stageChanged && o.StageName == DEV_STAGE) || devFlip) {
                 devOpps.add(o.Id);
-            } else if (o.StageName == CON_STAGE) {
+            }
+            if ((stageChanged && o.StageName == CON_STAGE) || conFlip) {
                 conOpps.add(o.Id);
-            } else if (o.StageName == CONTRACT_STAGE) {
+            }
+            if (stageChanged && o.StageName == CONTRACT_STAGE) {
                 contractOpps.add(o.Id);
             }
+            if (stageChanged && o.StageName == UW_STAGE) {
+                uwOpps.add(o.Id);
+            }
         }
-        if (devOpps.isEmpty() && conOpps.isEmpty() && contractOpps.isEmpty()) {
+        if (devOpps.isEmpty() && conOpps.isEmpty() && contractOpps.isEmpty() && uwOpps.isEmpty()) {
             return;
         }
 
@@ -59,16 +74,24 @@ public with sharing class OpportunityReviewService {
         ]) {
             contractOpps.remove(cr.Opportunity__c);
         }
+        for (Underwriting__c uw : [
+            SELECT Opportunity__c FROM Underwriting__c
+            WHERE Opportunity__c IN :uwOpps
+        ]) {
+            uwOpps.remove(uw.Opportunity__c);
+        }
 
         List<Development_Feasibility_Review__c> devToInsert = new List<Development_Feasibility_Review__c>();
         for (Id oppId : devOpps) {
             devToInsert.add(new Development_Feasibility_Review__c(
-                Opportunity__c = oppId, Stage__c = 'Requested'));
+                Opportunity__c = oppId, Stage__c = 'Requested',
+                Requested_By__c = UserInfo.getUserId()));
         }
         List<Construction_Feasibility_Review__c> conToInsert = new List<Construction_Feasibility_Review__c>();
         for (Id oppId : conOpps) {
             conToInsert.add(new Construction_Feasibility_Review__c(
-                Opportunity__c = oppId, Stage__c = 'Requested'));
+                Opportunity__c = oppId, Stage__c = 'Requested',
+                Requested_By__c = UserInfo.getUserId()));
         }
         List<Contract_Review__c> contractToInsert = new List<Contract_Review__c>();
         for (Id oppId : contractOpps) {
@@ -93,5 +116,60 @@ public with sharing class OpportunityReviewService {
             }
             update oppsToStamp;
         }
+
+        // Entering Underwriting opens the Underwriting record (same primary-stamp
+        // pattern as the Contract Review at PSA).
+        if (!uwOpps.isEmpty()) {
+            List<Underwriting__c> uwToInsert = new List<Underwriting__c>();
+            for (Id oppId : uwOpps) {
+                uwToInsert.add(new Underwriting__c(
+                    Opportunity__c = oppId, Stage__c = 'Requested', Status__c = 'In Progress'));
+            }
+            insert uwToInsert;
+            List<Opportunity> uwStamps = new List<Opportunity>();
+            for (Underwriting__c uw : uwToInsert) {
+                uwStamps.add(new Opportunity(Id = uw.Opportunity__c, Primary_Underwriting__c = uw.Id));
+            }
+            update uwStamps;
+        }
+    }
+
+    /**
+     * Every new Opportunity opens an NDA to track from the New stage, stamped
+     * onto Primary_NDA__c so the NDA tab has a record and the signed-NDA gate has
+     * something to check. Insert-only and idempotent - a deal never opens a second
+     * NDA. Stamping Primary_NDA__c leaves StageName unchanged, so the
+     * NDA_Signed_Before_Underwriting rule (ISCHANGED-gated) never fires here.
+     */
+    public static void ensureNda(List<Opportunity> newOpps, Map<Id, Opportunity> oldMap) {
+        if (oldMap != null) {
+            return; // only on insert
+        }
+        Set<Id> oppIds = new Set<Id>();
+        for (Opportunity o : newOpps) {
+            if (o.Primary_NDA__c == null) {
+                oppIds.add(o.Id);
+            }
+        }
+        if (oppIds.isEmpty()) {
+            return;
+        }
+        // Idempotency: skip any deal that already has an NDA.
+        for (NDA__c existing : [SELECT Opportunity__c FROM NDA__c WHERE Opportunity__c IN :oppIds]) {
+            oppIds.remove(existing.Opportunity__c);
+        }
+        if (oppIds.isEmpty()) {
+            return;
+        }
+        List<NDA__c> ndaToInsert = new List<NDA__c>();
+        for (Id oppId : oppIds) {
+            ndaToInsert.add(new NDA__c(Opportunity__c = oppId, Status__c = 'Pending'));
+        }
+        insert ndaToInsert;
+        List<Opportunity> ndaStamps = new List<Opportunity>();
+        for (NDA__c nda : ndaToInsert) {
+            ndaStamps.add(new Opportunity(Id = nda.Opportunity__c, Primary_NDA__c = nda.Id));
+        }
+        update ndaStamps;
     }
 }

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Notify_Opinion_Received</name>
+        <label>Notify Opinion Received</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value>
+                <stringValue>Acquisitions_Team</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value>
+                <stringValue>Development opinion received</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value>
+                <elementReference>fBody</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <apiVersion>62.0</apiVersion>
+    <environments>Default</environments>
+    <formulas>
+        <name>fBody</name>
+        <dataType>String</dataType>
+        <expression>&apos;Recommendation: &apos; &amp; TEXT({!$Record.Recommendation__c})</expression>
+    </formulas>
+    <interviewLabel>Dev Review Opinion Notify {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Dev Review Opinion Notify</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Notify_Opinion_Received</targetReference>
+        </connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Recommendation__c</field>
+            <operator>IsNull</operator>
+            <value>
+                <booleanValue>false</booleanValue>
+            </value>
+        </filters>
+        <object>Development_Feasibility_Review__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lease_Inquiry__c</fullName>
+    <label>Lease Inquiry</label>
+    <referenceTo>Lease_Inquiry__c</referenceTo>
+    <relationshipLabel>Lease Activities</relationshipLabel>
+    <relationshipName>Lease_Activities</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

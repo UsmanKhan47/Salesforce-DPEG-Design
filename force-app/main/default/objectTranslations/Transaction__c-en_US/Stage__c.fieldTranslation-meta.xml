@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Stage --></label>
+    <name>Stage__c</name>
+    <picklistValues>
+        <masterLabel>Closed Won</masterLabel>
+        <translation><!-- Closed Won --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Closing Prep</masterLabel>
+        <translation><!-- Closing Prep --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Due Diligence</masterLabel>
+        <translation><!-- Due Diligence --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Open Contract</masterLabel>
+        <translation><!-- Open Contract --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Post-Closing</masterLabel>
+        <translation><!-- Post-Closing --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

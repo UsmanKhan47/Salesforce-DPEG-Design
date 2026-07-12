@@ -74,6 +74,7 @@ export default class RecentLeads extends NavigationMixin(LightningElement) {
             const confKey = r.confidence ? r.confidence.toLowerCase() : 'na';
             const [cBg, cDot, cLabel] = CONF[confKey] || CONF.na;
             const known = r.broker && r.broker !== 'Unknown';
+            const brokerName = known ? r.broker : 'Unknown';
             return {
                 id: r.id,
                 recordUrl: `/lightning/r/Lead/${r.id}/view`,
@@ -86,7 +87,7 @@ export default class RecentLeads extends NavigationMixin(LightningElement) {
                 confidence: cLabel,
                 confWrap: pillWrap(cBg),
                 confDot: pillDot(cDot),
-                broker: known ? r.broker : 'Unknown',
+                broker: r.priority === 'High' ? `⭐ ${brokerName}` : brokerName,
                 days: r.days + 'd'
             };
         });

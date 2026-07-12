@@ -1,0 +1,7 @@
+<template>
+    <div class="kpi-grid">
+        <template for:each={cards} for:item="c">
+            <c-stat-card key={c.key} value={c.value} label={c.label} icon-name={c.iconName} icon-color={c.iconColor}></c-stat-card>
+        </template>
+    </div>
+</template>

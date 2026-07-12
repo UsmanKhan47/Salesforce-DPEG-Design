@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <columns>
+        <field>Lease_Inquiry__c.Property_Name__c</field>
+    </columns>
+    <columns>
+        <field>Lease_Inquiry__c.Space_Required__c</field>
+    </columns>
+    <columns>
+        <field>Lease_Inquiry__c.Tenant_Name__c</field>
+    </columns>
+    <columns>
+        <field>Lease_Inquiry__c.Stage__c</field>
+    </columns>
+    <columns>
+        <field>Lease_Inquiry__c.Days_In_Stage__c</field>
+    </columns>
+    <filter>
+        <criteriaItems>
+            <column>Lease_Inquiry__c.Status__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>false</isUnlocked>
+            <operator>equals</operator>
+            <value>Active</value>
+        </criteriaItems>
+    </filter>
+    <format>Tabular</format>
+    <name>Vacancy Pipeline</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
+    <reportType>CustomEntity$Lease_Inquiry__c</reportType>
+    <scope>organization</scope>
+    <showDetails>true</showDetails>
+    <showGrandTotal>true</showGrandTotal>
+    <showSubTotals>true</showSubTotals>
+    <sortColumn>Lease_Inquiry__c.Days_In_Stage__c</sortColumn>
+    <sortOrder>Desc</sortOrder>
+    <timeFrameFilter>
+        <dateColumn>Lease_Inquiry__c.Commencement_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
+</Report>

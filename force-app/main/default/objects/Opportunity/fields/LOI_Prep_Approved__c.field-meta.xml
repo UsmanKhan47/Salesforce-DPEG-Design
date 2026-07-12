@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LOI_Prep_Approved__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Section 14: the Acquisitions team&apos;s go-ahead BEFORE the LOI process begins. Optional prep sign-off (approver/date auto-stamped by Opportunity_LOI_Prep_Stamp). No longer gates a stage transition after the LOI stages were collapsed to a single LOI stage.</description>
+    <label>LOI Prep Approved</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

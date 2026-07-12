@@ -31,8 +31,15 @@ const REVIEW_TONE = {
 // Contract-review stages.
 const CONTRACT_TONE = {
     'PSA Drafting': 'blue',
-    'Contract Negotiation': 'amber',
-    'Contract Execution (Signed)': 'green'
+    'Review': 'amber',
+    'Counter': 'red',
+    'Contract Execution': 'green'
+};
+// Underwriting stages.
+const UW_TONE = {
+    Requested: 'grey',
+    'In Progress': 'blue',
+    Complete: 'green'
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -63,6 +70,27 @@ export default class DealDocStatus extends NavigationMixin(LightningElement) {
         const parts = [];
         if (this.data.ndaSent) parts.push(`Received ${this.fmtDate(this.data.ndaSent)}`);
         if (this.data.ndaExpiry) parts.push(`Expires ${this.fmtDate(this.data.ndaExpiry)}`);
+        return parts.join('  ·  ');
+    }
+
+    // ---- Underwriting ----
+    get hasUnderwriting() {
+        return this.data && this.data.hasUnderwriting;
+    }
+    get underwritingStage() {
+        return (this.data && this.data.underwritingStage) || '—';
+    }
+    get underwritingPillClass() {
+        return `pill pill--${UW_TONE[this.data && this.data.underwritingStage] || 'grey'}`;
+    }
+    get underwritingMeta() {
+        if (!this.data) return '';
+        const parts = [];
+        if (this.data.underwritingPrice != null) parts.push(this.fmtMoney(this.data.underwritingPrice));
+        if (this.data.underwritingVerdict && this.data.underwritingVerdict !== '—') {
+            parts.push(`Verdict: ${this.data.underwritingVerdict}`);
+        }
+        if (this.data.underwritingOpened) parts.push(`Opened ${this.fmtDate(this.data.underwritingOpened)}`);
         return parts.join('  ·  ');
     }
 
@@ -139,6 +167,9 @@ export default class DealDocStatus extends NavigationMixin(LightningElement) {
     }
     openLoi() {
         this.openRecord(this.data && this.data.loiId, 'LOI__c');
+    }
+    openUnderwriting() {
+        this.openRecord(this.data && this.data.underwritingId, 'Underwriting__c');
     }
     openDevelopment() {
         this.openRecord(this.data && this.data.developmentId, 'Development_Feasibility_Review__c');

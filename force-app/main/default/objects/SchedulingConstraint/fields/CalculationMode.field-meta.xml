@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CalculationMode</fullName>
+    <inlineHelpText>Calculates the total number of service appointments or the sum of numeric fields included in the pay period.</inlineHelpText>
+</CustomField>

@@ -1,0 +1,31 @@
+<template>
+    <article class="ra-card">
+        <div class="ra-hd">
+            <span class="ra-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#E58A8A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>
+                </svg>
+            </span>
+            <div>
+                <div class="ra-title">Needs Attention</div>
+                <div class="ra-sub">Gone quiet, or expiring within 30 days</div>
+            </div>
+        </div>
+        <template if:true={hasRows}>
+            <div class="ra-body">
+                <template for:each={rows} for:item="r">
+                    <a key={r.id} href={r.recordUrl} class="ra-row">
+                        <div class="ra-main">
+                            <div class="ra-name">{r.tenant}</div>
+                            <div class="ra-metasub">{r.sub}</div>
+                        </div>
+                        <span style={r.pillWrap}><span style={r.pillDot}></span>{r.pillText}</span>
+                    </a>
+                </template>
+            </div>
+        </template>
+        <template if:false={hasRows}>
+            <div class="ra-empty">Every renewal is on track.</div>
+        </template>
+    </article>
+</template>
