@@ -8,7 +8,16 @@ This document is the source of truth for **how the DPEG application is shaped**:
 
 **Audience:** Human contributors + Claude subagents (auto-loaded into `CLAUDE.md` via `@ARCHITECTURE.md`).
 
-**API Version:** 66.0 (authoritative: `sfdx-project.json` → `sourceApiVersion`).
+**API Version:** 67.0 (authoritative: `sfdx-project.json` → `sourceApiVersion`, which matches the org's own API version — verify with `sf org display`).
+
+> ⚠️ **The repo is deliberately mixed-version. This is not an oversight — do not "fix" it.**
+>
+> | Metadata | Version | Status |
+> | --- | --- | --- |
+> | Apex classes, triggers, Flows, VF pages/components | **67.0** | Uplifted. Matches the org. |
+> | **LWC (`.js-meta.xml`)** | **62.0 / 59.0** | ⚠️ **Intentionally held back.** |
+>
+> LWC `apiVersion` gates rendering behaviour (shadow DOM). This repo has **no Jest suite** — it is stood up from zero in Phase 8 — and `RunLocalTests` covers Apex only, so bumping the 82 LWC bundles today would ship a rendering-behaviour change with **zero automated verification** (10 of them span seven releases, 59.0 → 67.0). The LWC uplift is therefore split into its own PR, gated on Phase 8 delivering the Jest net. Until then, **leave LWC `apiVersion` values alone.**
 
 **Reference document:** `docs/DPEG_Technical_Solution_Design_v1.3.docx`
 
@@ -22,24 +31,159 @@ DPEG's Salesforce platform follows a **hub-and-spoke integration model**. Salesf
 
 ## 1. Domain / Data Model
 
+> ### ⚠️ §1 was amended 2026-07-15 — a deliberate, evidenced reversal. Read this before citing §1.
+>
+> **This program's standing rule is "code bends to the doc." §1 is a scoped exception to that rule.** An audit of all 463 custom fields across the 33 custom objects found that several rules below were not merely *unmet* — they were **self-contradictory or unfalsifiable as written**, and could not be conformed to at any price.
+>
+> **The decisive evidence:** conformance across the 463 fields measured **19.0% or 92.7% depending only on how the field-naming rule was read.** The schema was identical under both readings. The literal reading condemned 369 of 463 fields, and satisfying it would have cost roughly 2,300 file edits to produce names like `NOI_Amount__c` and `Rent_PSF_Amount__c`. Meanwhile §1's own eight examples were counter-examples to the rule they illustrated — the doc broke its own rule in the same table that stated it. Fixing the sentence retired ~341 of 375 "violations" at a cost of zero org changes.
+>
+> **Amended:** object naming, field naming, boolean, currency, relationship, status. **Added:** rule 9, type-suffix discipline. **Replaced:** examples referencing `Investment__c` / `Investor__c` / `ACH_Status__c` — the IR module was never built, so §1 illustrated a data model nobody could find. Examples are now real fields in this org unless marked _(proposed)_; see the note under _Naming Conventions_.
+>
+> **Not amended — a rule that was merely unmet stays unmet.** The following remain **live violations scheduled for repair, not blessed**:
+>
+> - **Rule 2** — `Disposition__c.Days_on_Market__c`, `Property_Asset__c.Projected_Value_at_Peak__c`, `Underwriting__c.Cash_on_Cash_Return__c` (lowercase segments).
+> - **Rule 6** — 8 of 9 DateTime fields are suffixed `_Date`: `Work_Order__c.Reported_Date__c`, `.SLA_Due_Date__c`, `.Completed_Date__c`, `.First_Touched_Date__c`, and `Entry_Date__c` on `Deal_Message__c` / `Lease_Activity__c` / `Renewal_Activity__c` / `Work_Order_Activity__c`. Only `Wire__c.Verified_DateTime__c` is correct. **To be fixed as a single bundle** — half-renamed is worse than either state, because the org would then carry both conventions *and* look deliberate.
+> - **Rule 4** — 7 checkboxes are neither `Is_`/`Has_` nor a past-participle state flag: `Untouched__c`, `Past_Target__c`, `Non_Responsive__c`, `Never_Expires__c`, `Renewal_Option__c`, `Earnest_At_Risk__c`, `Wire_Approval_Due__c`.
+> - **Rule 9** — `Lease_Renewal__c.Unit__c` and `Work_Order__c.Unit__c` are **Text** while `Rent_Step__c.Unit__c` is a real MasterDetail to `Unit__c`. Scheduled → `Unit_Label__c`.
+> - **Rule 9** — `Property_Asset__c.Is_Ready__c` (Number) → `Readiness_Score__c`; `Unit__c.Occupied_Flag__c` (Number) → `Occupied_Count__c`.
+>
+> **Known-good exceptions, deliberately not "fixed":** `Lease_Inquiry__c.Base_Rent__c` / `.TI_Allowance__c` and `Lease_Renewal__c.Current_Rent__c` are **Text on purpose** — they hold quoted deal terms like `'$34.00 / sq ft NNN'`. Currency cannot carry the NNN qualifier, and NNN-vs-gross changes the economics entirely. Do not "correct" these to Currency. `Lease_Renewal__c` already pairs `Current_Rent__c` (Text display term) with `Proposed_Rate__c` (Number, computable) — that split is the intended pattern.
+
 ### Naming Conventions
 
-| Element                                      | Convention                                   | Example                                                      |
-| -------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------ |
-| Custom object API name                       | PascalCase, no prefix                        | `Investment__c`, `Transaction__c`                            |
-| Custom field API name                        | PascalCase, descriptive                      | `ApplicationStatus__c`, `SubmittedDate__c`                   |
-| Relationship fields (Lookup / Master-Detail) | Suffix with related object (singular)        | `Investment__c` (lookup to Investment)                       |
-| Boolean fields                               | Prefix with `Is`, `Has`, or verb             | `IsActive__c`, `HasAttachments__c`, `Transfers_Permitted__c` |
-| Currency / Amount fields                     | Suffix with `Amount`                         | `Transfer_Amount__c`, `Committed_Amount__c`                  |
-| Date fields                                  | Suffix with `Date` (date only) or `DateTime` | `Transfer_Date__c`, `Onboarding_Date__c`                     |
-| Status fields                                | Suffix with `Status__c` or `__c` picklist    | `ACH_Status__c`, `Approval_Status__c`                        |
-| Masked display formula fields                | Suffix with `_Masked__c`                     | `SSN_Masked__c`, `Tax_ID_Masked__c`                          |
+Every example below is a **real field or object in this org** — verified against the metadata 2026-07-15 — unless it is marked _(proposed)_, meaning a name scheduled as a fix target, or is explicitly shown as a counter-example of what **not** to do. The old §1 failed this test: it illustrated its rules with `Investment__c` / `Investor__c` / `ACH_Status__c`, none of which exist. An example nobody can find teaches nothing.
 
-## **No team-wide field prefix in use.** Field API names are unprefixed past `__c`.
+| Element                                      | Convention                                                                                                                                                                                | Example                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **1.** Custom object API name                | `Title_Case_With_Underscores`, no prefix. Single-word objects carry no underscore.                                                                                                         | `Lease_Inquiry__c`, `Work_Order__c`, `Transaction__c`                                 |
+| **2.** Custom field API name                 | `Title_Case_With_Underscores`, descriptive. Every underscore-separated segment begins with an uppercase letter or a digit. Acronyms stay fully uppercase.                                  | `Offer_Price__c`, `Ball_In_Court__c`, `LOI_Status__c`, `NOI__c`                       |
+| **3.** Relationship fields (Lookup / MD)     | Suffix with the related object, singular — for a single lookup the field name **is** the target object's name. **Exception:** role-named lookups to `User` / `Contact` take the role name.  | `Property__c`, `Lease_Inquiry__c`; roles: `Requested_By__c`, `Approved_By__c`, `Handling_Person__c`, `Broker__c` |
+| **4.** Boolean fields                        | Prefix `Is_` or `Has_`, **or** `<Subject>_<PastParticiple>`. No other form is permitted.                                                                                                   | `Is_Open__c`, `Is_Escalation__c`, `LOI_Signed__c`, `PSA_Executed__c`, `SLA_Breached__c` |
+| **5.** Currency fields                       | The name must make the **unit** unambiguous. See rule 5 below.                                                                                                                             | `Offer_Amount__c`, `Rent_PSF__c`, `Monthly_Rent__c`, `Annual_NOI__c`                  |
+| **6.** Date fields                           | Suffix `Date` for date-only, `DateTime` for date+time. **Never** suffix a DateTime field with `Date`.                                                                                      | `Closing_Date__c`, `Verified_DateTime__c`                                             |
+| **7.** Status fields                         | A field expressing a record's current state → suffix `Status__c`. A lifecycle field that drives a Path → `Stage__c`. Other picklists are **not** status fields.                            | `LOI_Status__c`, `Offer_Status__c`, `Stage__c`                                        |
+| **8.** Masked display formula fields         | Suffix `_Masked__c`.                                                                                                                                                                      | `SSN_Masked__c` _(proposed)_ — **dormant rule**: zero masked fields exist; IR module unbuilt |
+| **9.** Type-suffix discipline                | A field's name must not imply a type it does not have. See rule 9 below.                                                                                                                   | `Verified_DateTime__c`; `Unit_Label__c` _(proposed)_, `Readiness_Score__c` _(proposed)_ |
+
+**No team-wide field prefix in use.** Field API names are unprefixed past `__c`.
+
+#### Rule 3 — why role-named lookups are exempt
+
+The base rule ("the field name is the target object name") is **impossible to follow** for any object needing two lookups to the same target: API names must be unique on an object, so a second `User__c` cannot exist. It also produces worse names — `Requested_By_User__c` says less than `Requested_By__c`, because *who did this* is the useful fact, not *which object it points at*. All 10 relationship fields that "violated" the old rule were role-named lookups to `User` / `Contact`; they are correct and are now the documented convention.
+
+#### Rule 5 — Currency naming (unit must be explicit)
+
+The old rule ("suffix with `Amount`") was applied to the Currency **type**, which demanded `NOI_Amount__c`, `Rent_PSF_Amount__c`, `NNN_Property_Tax_Amount__c` — 46 of 50 Currency fields "violated" it, and complying would have made every name worse. The intent was *amount fields* (a semantic class), not *all Currency fields*. The real failure mode is an ambiguous **unit**, so that is what this rule now governs:
+
+| Money field is… | Name it | Example |
+| --- | --- | --- |
+| a total sum with no established domain term | suffix `Amount` | `Offer_Amount__c`, `Confirmed_Wire_Amount__c`, `BOV_Amount__c` |
+| a per-unit rate | suffix the unit | `Rent_PSF__c`, `Market_Rent_PSF__c` |
+| a periodic amount | name the period | `Monthly_Rent__c`, `Annual_NOI__c` |
+| an established CRE / finance term | keep the industry name | `NOI__c`, `Balance__c`, `Earnest_Money__c`, `*_Price__c`, `*_Cost__c` |
+
+**Prohibited:** a bare money noun with no unit and no period — `Rent__c`, `Cost__c`, `Fee__c`. A renamed `NOI_Amount__c` is *less* legible to a CRE analyst than `NOI__c`; industry terms win over the suffix.
+
+#### Rule 9 — Type-suffix discipline (new)
+
+**This is the only rule in §1 that prevents future defects rather than reclassifying past ones.** Every type-vs-name trap found in the 2026-07-15 audit came from the *absence* of this rule, not from breaking an existing one.
+
+Where a name is ambiguous about its type, the suffix resolves it:
+
+| Suffix | Required for | Example |
+| --- | --- | --- |
+| `_DateTime__c` | DateTime fields | `Verified_DateTime__c` |
+| `_Date__c` | Date (date-only) fields | `Closing_Date__c` |
+| `_Label__c` / `_Name__c` | Text carrying a human label for something that also exists as a record | `Property_Name__c`; `Unit_Label__c` _(proposed)_ |
+| `_Score__c` / `_Count__c` / `_Pct__c` | Number fields whose name would otherwise read Boolean or categorical | `Tasks_Open__c`, `Completion_Pct__c`; `Readiness_Score__c` _(proposed)_ |
+| `_Masked__c` | masked display formula | `SSN_Masked__c` _(proposed)_ |
+
+**Hard prohibitions:**
+
+1. **A Text or Number field must never be named identically to a custom object.** Rule 3 reserves that exact name for a lookup to that object, so such a field is camouflaged as a relationship by the convention itself. This produced the worst defect in the audit: `Unit__c` is a **MasterDetail** on `Rent_Step__c` but **Text** on `Lease_Renewal__c` and `Work_Order__c` — `Unit__r.Name` fails to compile, and `Unit__c = unitId` silently stores an Id in a string.
+2. **A field name must not assert a type the field does not have.** `Is_Ready__c` typed Number wears rule 4's own Boolean marker. `Package_Sent__c` is a Date; `Wire_Approval_Due__c` is a Checkbox.
+3. **A scalar quantity must not be stored as Text.** Text with no validation drifts: `Lease_Term__c` already holds both `'7 years'` (seed scripts) and `'60'` (TestDataFactory) — two incompatible unit conventions in one field, in this repo, today. This is not a hypothetical.
+
+Exception to (3): a field holding a **quoted deal term** whose qualifier a typed field cannot carry (`'$34.00 / sq ft NNN'`) is legitimately Text — but it must say so in its `<description>`, and any computable counterpart belongs in a separate typed field (see `Current_Rent__c` / `Proposed_Rate__c`).
+
+### Current objects
+
+33 custom objects. Grouped by the module that owns them. `Parent (lookup)` is the object's own relationship graph and is authoritative. Per §6, **add a row here whenever a custom object is created.**
+
+A `—` in _Purpose_ means the object's `<description>` in its `.object-meta.xml` is unset. **22 of 33 are unset** — verified against the filesystem 2026-07-15; the previous count of 21 was wrong against every measure. Where a description exists it is the authoritative source and is condensed here.
+
+**†** marks a row that carries _Purpose_ prose despite the object having **no `<description>`**. That text is **authored inference, not condensed source** — do not cite it as authoritative; write the `<description>` and then condense it here. The arithmetic reconciles: 20 dashed rows + 2 inferred rows (†) = the 22 unset.
+
+**Acquisitions** — the deal tree, rooted on `Opportunity` / `Property__c`
+
+| Object                               | Parent (lookup)                                   | Purpose                                                                                             |
+| ------------------------------------ | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `Property__c` **†**                  | — (graph root)                                    | The acquisition target. Created on lead conversion by `LeadConvertService`.                          |
+| `LOI__c`                             | `Opportunity`, `Property__c`                      | —                                                                                                     |
+| `Counter_Offer__c`                   | `LOI__c`                                          | —                                                                                                     |
+| `Underwriting__c`                    | `Opportunity`                                     | —                                                                                                     |
+| `Development_Feasibility_Review__c`  | `Opportunity`, `Property__c`                      | —                                                                                                     |
+| `Construction_Feasibility_Review__c` | `Opportunity`, `Property__c`                      | —                                                                                                     |
+| `Contract_Review__c`                 | `Opportunity`                                     | —                                                                                                     |
+| `PSA_Version__c`                     | `Contract_Review__c`                              | One PSA draft/counter exchanged during negotiation; the full set is the version history.             |
+| `Deal_Message__c`                    | `LOI__c`, `Underwriting__c`, `Contract_Review__c` | Append-only logged communication in a deal negotiation. Child of exactly one of the three parents.   |
+| `Offering__c`                        | `Opportunity`                                     | —                                                                                                     |
+| `NDA__c` **†**                       | `Opportunity`, `Disposition__c`                   | Spans Acquisitions **and** Disposition.                                                              |
+
+**Transactions**
+
+| Object            | Parent (lookup)              | Purpose                                                                                                                 |
+| ----------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `Transaction__c`  | `Opportunity`, `Property__c` | —                                                                                                                        |
+| `Critical_Date__c`| `Transaction__c`             | One upcoming critical deadline (Closing, Feasibility End, Insurance Binding, Loan Commitment, Earnest Money).            |
+
+**Disposition**
+
+| Object                 | Parent (lookup)     | Purpose |
+| ---------------------- | ------------------- | ------- |
+| `Disposition__c`       | `Property_Asset__c` | —       |
+| `Disposition_Offer__c` | `Disposition__c`    | —       |
+| `BOV_Submission__c`    | `Disposition__c`    | —       |
+| `Broker_Listing__c`    | `Disposition__c`    | —       |
+| `Wire__c`              | `Disposition__c`    | —       |
+
+**Property Management** — rooted on `Property__c` → `Property_Asset__c`
+
+| Object                   | Parent (lookup)                   | Purpose                                                                                                     |
+| ------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `Property_Asset__c`      | `Property__c`                     | —                                                                                                            |
+| `Unit__c`                | `Property_Asset__c`               | —                                                                                                            |
+| `Rent_Step__c`           | `Unit__c`                         | —                                                                                                            |
+| `Onboarding__c`          | `Property_Asset__c`               | —                                                                                                            |
+| `CAM_Reconciliation__c`  | `Property_Asset__c`               | —                                                                                                            |
+| `Delinquency__c`         | `Property_Asset__c`               | —                                                                                                            |
+| `Insurance_Policy__c`    | `Property_Asset__c`               | —                                                                                                            |
+| `Broker_Assignment__c`   | `Property_Asset__c`, `Contact`    | One broker-to-property listing assignment. Never deleted; closing a listing changes Status.                  |
+| `Lease_Inquiry__c`       | `Property_Asset__c`, `Contact`    | One leasing inquiry from a broker-introduced prospect, inquiry → signed lease. Never deleted.                |
+| `Lease_Activity__c`      | `Lease_Inquiry__c`                | Append-only negotiation log entry. Never edited or deleted.                                                  |
+| `Lease__c`               | `Lease_Inquiry__c`                | The lease document worked by legal, created from a Lease Inquiry once drafting begins.                       |
+| `Lease_Renewal__c`       | `Property_Asset__c`               | One renewal conversation, Yardi-flagged expiry → signed amendment or lost tenant. Never deleted.             |
+| `Renewal_Activity__c`    | `Lease_Renewal__c`                | Append-only timeline entry. Never edited or deleted.                                                         |
+| `Work_Order__c`          | `Property_Asset__c`               | Maintenance work order mirrored **read-only** from Yardi. No write-back except the Delay Reason flag.        |
+| `Work_Order_Activity__c` | `Work_Order__c`                   | Read-only status/activity history from the Yardi sync. Never edited in Salesforce.                           |
 
 ## 2. Apex Layering
 
 DPEG follows the **Service / Selector / Domain / Trigger-handler** separation. Canonical templates exist in `.claude/skills/sf-apex/assets/` — reuse them rather than hand-rolling.
+
+### Scope: team-owned classes only
+
+The layering contract and the **90%+ coverage target apply to team-owned classes only.** Salesforce-generated Site/Communities boilerplate is **exempt**.
+
+**The 10 exempt classes** (and their generated `*Test` counterparts):
+
+`MicrobatchSelfRegController`, `ForgotPasswordController`, `ChangePasswordController`, `SiteRegisterController`, `SiteLoginController`, `CommunitiesSelfRegConfirmController`, `CommunitiesSelfRegController`, `CommunitiesLandingController`, `CommunitiesLoginController`, `MyProfilePageController`
+
+**Rationale:** the platform generates these classes and **may regenerate them at any time — the team does not own them.** Refactoring them into Selector/Domain, or writing tests to reach 90% on Salesforce's own code, churns code the platform can overwrite.
+
+This is observable, not theoretical: the platform generated these classes at **the org's** API version, not the project's — they were already at 67.0 while the rest of the codebase was still at 62.0. Expect them to be silently rewritten at the org's version again.
+
+**Scope of the exemption:** it covers **layering and coverage only.** It is *not* a carve-out from project-wide settings such as `apiVersion` — these classes sit at 67.0 like all other Apex, and are deployed and versioned normally.
 
 ### Layer Responsibilities
 
@@ -60,15 +204,29 @@ DPEG follows the **Service / Selector / Domain / Trigger-handler** separation. C
 - **Bulkification:** every public method accepts collections, not single records. No SOQL/DML inside loops. Bulk tests insert 251+ records.
 - **Callouts:** all ASB/Plaid callouts wrapped in a dedicated service class (`PlaidCalloutService`) so they can be mocked via `HttpCalloutMock`. all other callouts will use ASB.
 - **Error handling at LWC boundary:** `@AuraEnabled` methods throw `AuraHandledException` with user-safe messages.
-- **Test data:** always use `TestDataFactory` (`force-app/main/default/classes/TestDataFactory.cls`). Never `@isTest(SeeAllData=true)`.
-- **Coverage target:** 90%+ per class.
+- **Test data:** always use `TestDataFactory` — ⚠️ **this class does not exist yet; it is created in Phase 1 of the conformance program.** Until it lands, do not stand up a competing per-feature factory. Never `@isTest(SeeAllData=true)`.
+- **Coverage target:** 90%+ per class, **team-owned classes only** (see _Scope_ above).
+
+### Key Apex Services
+
+The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a row here whenever a new Apex service is introduced.**
+
+| Service                       | Invoked from                                       | Responsibility                                                                                                                                          |
+| ----------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LeadConvertService`          | `LeadConvertTrigger`                               | Lead conversion: carries Deal Type onto the Opportunity and sets the matching record type (Land/Commercial); stamps Lead Approved By; creates the `Property__c` and links it to the Opportunity. |
+| `OpportunityReviewService`    | `OpportunityReviewTrigger`                         | Creates review children (Development / Construction / Contract Review) on stage entry or an Input-Needed flip. Idempotent — never a second review of one type. |
+| `ContractExecutionService`    | `ContractReviewTrigger`                            | PSA execution handoff: stamps the Opportunity (Contract Signed, Day 0), creates the `Transaction__c` (idempotent), notifies Transactions / IR / Due Diligence. |
+| `TaskFanoutService`           | `Transaction_Task_Fanout` Flow (`@InvocableMethod`) | Day-0 fan-out: creates the ~75-task Transaction checklist from `Task_Group_Def__mdt` + `Transaction_Task_Def__mdt`.                                      |
+| `TaskRollupService`           | `TaskRollupTrigger`                                | Rolls completed/overdue Task counts up to `Transaction__c` — drives the "N / 75" highlights tile.                                                        |
+| `OnboardingTaskRollupService` | Onboarding checklist Tasks                         | Recomputes `Onboarding__c` checklist rollups (total / complete / overdue / stalled / completion %).                                                      |
+| `ApprovalAuditService`        | after-save Flow (`@InvocableMethod`)               | Stamps approver identity and date from `ProcessInstanceStep` onto the Underwriting / LOI gates. `without sharing`.                                       |
 
 ### Reference Implementations
 
 - Selector pattern: `.claude/skills/sf-apex/references/AccountSelector.cls`
 - Service pattern: `.claude/skills/sf-apex/references/AccountService.cls`
 - Batch pattern: `.claude/skills/sf-apex/references/AccountDeduplicationBatch.cls`
-- Test factory: `force-app/main/default/classes/TestDataFactory.cls`
+- Test factory: `force-app/main/default/classes/TestDataFactory.cls` — ⚠️ **pending Phase 1; does not exist yet.** Listed here as the mandated target, not as an available reference.
 - Test guidance: `.claude/skills/sf-apex-test/references/{assertion-patterns,mocking-patterns,async-testing,test-data-factory}.md`
 
 **Referenced skills:** `.claude/skills/sf-apex/`, `.claude/skills/sf-apex-test/`, `.claude/skills/trigger-refactor-pipeline/`.
@@ -110,6 +268,8 @@ All external API credentials stored in Named Credentials (or ASB secrets vault f
 
 ## 5. LWC / UI Architecture
 
+> ⚠️ **LWC `apiVersion` is intentionally behind the rest of the repo (62.0 / 59.0 vs 67.0).** Do not bump it as a drive-by cleanup — see the mixed-version table at the top of this document. The uplift is its own PR, gated on the Phase 8 Jest net, because LWC `apiVersion` gates rendering behaviour and there is currently no automated test that would catch a regression.
+
 ### Component Hierarchy
 
 - **Pages** (FlexiPages) assemble features; minimal markup.
@@ -145,7 +305,7 @@ All external API credentials stored in Named Credentials (or ASB secrets vault f
 ## 6. Keeping This Document Current
 
 - When a subagent (design / developer / admin) establishes a new convention, update the relevant section here **in the same PR**.
-- When a custom object is added, populate its entry under **§1 Current objects**.
-- When an external integration is wired, document it under **§4 Integration Architecture**.
-- When a new Apex service is introduced, add it to the **§2 Key Apex Services** table.
+- When a custom object is added, populate its entry under **§1 → _Current objects_**.
+- When an external integration is wired, document it under **§3 Integration Architecture**.
+- When a new Apex service is introduced, add it to the **§2 → _Key Apex Services_** table.
 - Breaking changes to these conventions require updating `.claude/agents/*.md` to match.

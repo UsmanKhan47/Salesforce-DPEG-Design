@@ -66,8 +66,8 @@ List<Lease_Renewal__c> rs = new List<Lease_Renewal__c>{
     new Lease_Renewal__c(Tenant_Name__c='Bella Vista Grill', Property_Asset__c=pick.get('Bayou Bend Center'), Unit__c='Pad C', Space_Sq_Ft__c=4500, Lease_Start__c=t.addDays(-1825), Lease_End__c=t.addDays(200), Current_Rent__c='$29.00 / sq ft NNN', Renewal_Option__c=false, Proposed_Rate__c=30.00, Stage__c='Awaiting Tenant Response', Last_Contact_Date__c=t.addDays(-18)),
     // Negotiating, contacted 2d ago
     new Lease_Renewal__c(Tenant_Name__c='QuickPrint Services', Property_Asset__c=pick.get('Katy Mills Strip'), Unit__c='Unit 9', Space_Sq_Ft__c=1500, Lease_Start__c=t.addDays(-1200), Lease_End__c=t.addDays(330), Current_Rent__c='$20.00 / sq ft NNN', Renewal_Option__c=true, Preset_Terms__c='2.5% annual escalation, 5-yr option', Proposed_Rate__c=20.50, Option_Honored__c=true, Stage__c='Negotiating', Last_Contact_Date__c=t.addDays(-2)),
-    // Escalated for Approval, contacted 12d ago
-    new Lease_Renewal__c(Tenant_Name__c='Harbor Financial', Property_Asset__c=pick.get('Heights Marketplace'), Unit__c='Suite 240', Space_Sq_Ft__c=2800, Lease_Start__c=t.addDays(-1825), Lease_End__c=t.addDays(260), Current_Rent__c='$26.00 / sq ft NNN', Renewal_Option__c=false, Proposed_Rate__c=30.00, Stage__c='Escalated for Approval', Last_Contact_Date__c=t.addDays(-12))
+    // Amendment Drafted (rate negotiated; the old 'Escalated for Approval' gate was removed 2026-07-15), contacted 12d ago
+    new Lease_Renewal__c(Tenant_Name__c='Harbor Financial', Property_Asset__c=pick.get('Heights Marketplace'), Unit__c='Suite 240', Space_Sq_Ft__c=2800, Lease_Start__c=t.addDays(-1825), Lease_End__c=t.addDays(260), Current_Rent__c='$26.00 / sq ft NNN', Renewal_Option__c=false, Proposed_Rate__c=30.00, Stage__c='Amendment Drafted', Last_Contact_Date__c=t.addDays(-12))
 };
 insert rs;
 System.debug('Seeded ' + rs.size() + ' recent active renewals (newest -> top of Recent Renewals list).');

@@ -7,14 +7,14 @@ private class LeaseRenewalControllerTest {
         insert pa;
         Date t = Date.today();
         // r1 non-responsive + expiring<=90; r2 fresh no contact; r3 critical <=30d;
-        // r4 Renewed (flow -> Closed Won + Renewed_Date); r5 Vacating (flow -> Closed Lost);
+        // r4 Renewed (flow -> Closed Won + Renewed_Date); r5 Not Renewing (flow -> Closed Lost);
         // r6 negotiating, active.
         List<Lease_Renewal__c> rs = new List<Lease_Renewal__c>{
             new Lease_Renewal__c(Tenant_Name__c='Riverside Dental', Property_Asset__c=pa.Id, Unit__c='Suite 120', Lease_End__c=t.addDays(80), Stage__c='Awaiting Tenant Response', Last_Contact_Date__c=t.addDays(-20)),
             new Lease_Renewal__c(Tenant_Name__c='Pearl Nails', Property_Asset__c=pa.Id, Unit__c='Suite 3', Lease_End__c=t.addDays(150), Stage__c='Not Yet Started'),
             new Lease_Renewal__c(Tenant_Name__c='Golden Wok', Property_Asset__c=pa.Id, Unit__c='Unit 8', Lease_End__c=t.addDays(25), Stage__c='Negotiating', Last_Contact_Date__c=t.addDays(-3), Proposed_Rate__c=25.20),
             new Lease_Renewal__c(Tenant_Name__c='Anytime Fitness', Property_Asset__c=pa.Id, Unit__c='Anchor B', Lease_End__c=t.addDays(-2), Stage__c='Renewed'),
-            new Lease_Renewal__c(Tenant_Name__c='Elite Barbers', Property_Asset__c=pa.Id, Unit__c='Suite 7', Lease_End__c=t.addDays(28), Stage__c='Vacating'),
+            new Lease_Renewal__c(Tenant_Name__c='Elite Barbers', Property_Asset__c=pa.Id, Unit__c='Suite 7', Lease_End__c=t.addDays(28), Stage__c='Not Renewing'),
             new Lease_Renewal__c(Tenant_Name__c='TechHub Coworking', Property_Asset__c=pa.Id, Unit__c='Floor 2', Lease_End__c=t.addDays(40), Stage__c='Negotiating', Last_Contact_Date__c=t.addDays(-7), Proposed_Rate__c=24.00)
         };
         insert rs;

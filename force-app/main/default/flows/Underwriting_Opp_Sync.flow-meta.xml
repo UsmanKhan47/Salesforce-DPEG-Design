@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>62.0</apiVersion>
+    <apiVersion>67.0</apiVersion>
     <decisions>
         <name>Is_Primary</name>
         <label>Is the deal&apos;s primary underwriting?</label>

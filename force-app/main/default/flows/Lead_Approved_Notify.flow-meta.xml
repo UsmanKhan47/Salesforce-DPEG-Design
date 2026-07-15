@@ -34,7 +34,7 @@
         </inputParameters>
         <nameSegment>GroupNotifier</nameSegment>
     </actionCalls>
-    <apiVersion>62.0</apiVersion>
+    <apiVersion>67.0</apiVersion>
     <environments>Default</environments>
     <formulas>
         <name>fBody</name>

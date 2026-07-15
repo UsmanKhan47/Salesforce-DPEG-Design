@@ -16,7 +16,7 @@
         </inputParameters>
         <nameSegment>BrokerPortalNotifier</nameSegment>
     </actionCalls>
-    <apiVersion>62.0</apiVersion>
+    <apiVersion>67.0</apiVersion>
     <environments>Default</environments>
     <interviewLabel>Broker Portal New Lead Notify {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Broker Portal New Lead Notify</label>

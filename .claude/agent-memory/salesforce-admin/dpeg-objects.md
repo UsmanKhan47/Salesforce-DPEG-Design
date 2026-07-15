@@ -7,7 +7,7 @@
 
 ## API Version
 
-**66.0** — all generated metadata XML must use `<apiVersion>66.0</apiVersion>`.
+**67.0** — all generated metadata XML must use `<apiVersion>67.0</apiVersion>`.
 
 ---
 

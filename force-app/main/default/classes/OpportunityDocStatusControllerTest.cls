@@ -18,12 +18,14 @@ private class OpportunityDocStatusControllerTest {
         opp.StageName = 'PSA';
         update opp;
 
-        insert new NDA__c(
-            Opportunity__c = opp.Id,
-            Status__c = 'Signed',
-            Date_Sent__c = Date.today(),
-            NDA_Expiry_Date__c = Date.today().addDays(365)
-        );
+        // OpportunityReviewService.ensureNda() already auto-created a Pending NDA on
+        // insert and stamped it onto Opportunity.Primary_NDA__c. The controller reads
+        // the primary, so sign that record rather than inserting a rival NDA.
+        NDA__c nda = [SELECT Id FROM NDA__c WHERE Opportunity__c = :opp.Id LIMIT 1];
+        nda.Status__c = 'Signed';
+        nda.Date_Sent__c = Date.today();
+        nda.NDA_Expiry_Date__c = Date.today().addDays(365);
+        update nda;
         insert new LOI__c(
             Opportunity__c = opp.Id,
             LOI_Status__c = 'Submitted',

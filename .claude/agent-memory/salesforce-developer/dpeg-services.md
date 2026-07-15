@@ -7,7 +7,7 @@
 
 ## API Version
 
-**66.0** — all generated Apex must use `@apiVersion` 66.0 in `-meta.xml` files.
+**67.0** — all generated Apex must use `@apiVersion` 67.0 in `-meta.xml` files.
 
 ---
 

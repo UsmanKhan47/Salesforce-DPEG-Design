@@ -5,7 +5,7 @@ import getRecentRenewals from '@salesforce/apex/LeaseRenewalController.getRecent
 const STAGE_ACCENT = {
     'Not Yet Started': '#7A9ED4', 'Notice Sent': '#4A71B8', 'Awaiting Tenant Response': '#C88010',
     'Negotiating': '#B8651A', 'Amendment Drafted': '#A88020',
-    'Renewed': '#198A40', 'Not Renewing': '#8A8680', 'Vacating': '#6B6862'
+    'Renewed': '#198A40', 'Not Renewing': '#8A8680'
 };
 const pillWrap = (bg, fg) => `display:inline-flex;align-items:center;gap:6px;background:${bg};color:${fg};font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;line-height:1.4;white-space:nowrap`;
 const dot = (c) => `width:6px;height:6px;border-radius:50%;background:${c};flex-shrink:0`;
@@ -45,7 +45,7 @@ export default class RenewalList extends NavigationMixin(LightningElement) {
             let daysWrap;
             let daysDot = '';
             if (q.closed) {
-                daysText = q.stage === 'Renewed' ? 'Renewed' : (q.stage === 'Vacating' ? 'Vacating' : 'Not renewing');
+                daysText = q.stage === 'Renewed' ? 'Renewed' : 'Not renewing';
                 daysWrap = q.stage === 'Renewed' ? pillWrap('#EBF9F1', '#146830') : pillWrap('#E2E0DB', '#3F3C38');
             } else if (d == null) {
                 daysText = '—'; daysWrap = pillWrap('#EDEBE7', '#5A5752');

@@ -34,7 +34,7 @@
         </inputParameters>
         <nameSegment>GroupNotifier</nameSegment>
     </actionCalls>
-    <apiVersion>62.0</apiVersion>
+    <apiVersion>67.0</apiVersion>
     <environments>Default</environments>
     <interviewLabel>Transaction Complete Close {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Transaction Complete Close</label>

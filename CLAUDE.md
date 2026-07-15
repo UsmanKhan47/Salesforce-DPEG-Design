@@ -472,7 +472,8 @@ Use the salesforce-documentation subagent to create documentation
 
 This is a Salesforce DX project named **DPEG**.
 
-**API Version:** 66.0 (`sfdx-project.json` `sourceApiVersion`)
+**API Version:** 67.0 (`sfdx-project.json` `sourceApiVersion`) — matches the org.
+⚠️ **Exception:** LWC (`.js-meta.xml`) is intentionally held at 62.0 / 59.0 pending the Phase 8 Jest net. Do not "align" it. See `ARCHITECTURE.md` → *API Version*.
 **Package Directory:** `force-app/main/default`
 **Documentation:** `docs/`
 **No namespace** configured.

@@ -11,7 +11,7 @@
 - **Always show components list and ask for user confirmation** before deploying.
 - **Validate-only first** (`checkOnly = true`) when deploying to Production or UAT. Deploy for scratch orgs.
 - **RunLocalTests** test level required for all Production deploys.
-- **API Version:** 66.0 — confirm metadata XML uses `<apiVersion>66.0</apiVersion>`.
+- **API Version:** 67.0 — confirm metadata XML uses `<apiVersion>67.0</apiVersion>`. ⚠️ **Exception — do NOT flag as drift:** the 82 LWC `.js-meta.xml` are deliberately held at 62.0/59.0 until Phase 8 (Jest) provides a safety net. `RunLocalTests` is Apex-only and cannot verify them. Aligning them is the change that was consciously deferred.
 
 ---
 

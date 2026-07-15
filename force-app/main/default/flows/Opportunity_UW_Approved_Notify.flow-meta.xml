@@ -53,7 +53,7 @@
         </inputParameters>
         <nameSegment>ApprovalAuditService</nameSegment>
     </actionCalls>
-    <apiVersion>62.0</apiVersion>
+    <apiVersion>67.0</apiVersion>
     <environments>Default</environments>
     <interviewLabel>Opportunity UW Approved Notify {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Opportunity UW Approved Notify</label>

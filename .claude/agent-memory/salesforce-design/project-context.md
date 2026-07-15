@@ -94,7 +94,7 @@ Lead (IR investor form — Web-to-Lead)
 
 ## Known Constraints
 
-- **API version:** 66.0 (pinned in `sfdx-project.json`). Do not propose features requiring a higher API.
+- **API version:** 67.0 (pinned in `sfdx-project.json`, matching the org). Do not propose features requiring a higher API.
 - **No team-wide field prefix** in use. API names are unprefixed beyond `__c`.
 - **Deployment:** only via `salesforce-devops` subagent (Salesforce MCP). Never propose direct `sf deploy` CLI calls from main agent.
 - **No Salesforce Shield.** All data protection via native FLS, OWD, masked formula fields, Named Credentials, platform AES-256.
