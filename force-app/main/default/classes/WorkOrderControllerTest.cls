@@ -12,11 +12,11 @@ private class WorkOrderControllerTest {
         // w4 Low resolved (Completed)
         // w5 Critical resolved (Closed)
         List<Work_Order__c> ws = new List<Work_Order__c>{
-            new Work_Order__c(Subject__c='AC down', Property_Asset__c=pa.Id, Unit__c='Suite 120', Category__c='HVAC', Priority__c='Critical', Status__c='In Progress', Reported_Date__c=n.addHours(-30), First_Touched_Date__c=n.addHours(-29), Delay_Reason__c='Vendor delay'),
-            new Work_Order__c(Subject__c='Lot lights out', Property_Asset__c=pa.Id, Unit__c='Common', Category__c='Electrical', Priority__c='High', Status__c='New', Reported_Date__c=n.addHours(-2)),
-            new Work_Order__c(Subject__c='Faucet drip', Property_Asset__c=pa.Id, Unit__c='Suite 200', Category__c='Plumbing', Priority__c='Medium', Status__c='In Progress', Reported_Date__c=n.addHours(-160), First_Touched_Date__c=n.addHours(-150)),
-            new Work_Order__c(Subject__c='Outlet dead', Property_Asset__c=pa.Id, Unit__c='Unit 8', Category__c='Electrical', Priority__c='Low', Status__c='Completed', Reported_Date__c=n.addHours(-100), First_Touched_Date__c=n.addHours(-90), Completed_Date__c=n.addHours(-20)),
-            new Work_Order__c(Subject__c='RTU failure', Property_Asset__c=pa.Id, Unit__c='Suite 120', Category__c='HVAC', Priority__c='Critical', Status__c='Closed', Reported_Date__c=n.addHours(-300), First_Touched_Date__c=n.addHours(-299), Completed_Date__c=n.addHours(-280))
+            new Work_Order__c(Subject__c='AC down', Property_Asset__c=pa.Id, Unit_Label__c='Suite 120', Category__c='HVAC', Priority__c='Critical', Status__c='In Progress', Reported_Date__c=n.addHours(-30), First_Touched_Date__c=n.addHours(-29), Delay_Reason__c='Vendor delay'),
+            new Work_Order__c(Subject__c='Lot lights out', Property_Asset__c=pa.Id, Unit_Label__c='Common', Category__c='Electrical', Priority__c='High', Status__c='New', Reported_Date__c=n.addHours(-2)),
+            new Work_Order__c(Subject__c='Faucet drip', Property_Asset__c=pa.Id, Unit_Label__c='Suite 200', Category__c='Plumbing', Priority__c='Medium', Status__c='In Progress', Reported_Date__c=n.addHours(-160), First_Touched_Date__c=n.addHours(-150)),
+            new Work_Order__c(Subject__c='Outlet dead', Property_Asset__c=pa.Id, Unit_Label__c='Unit 8', Category__c='Electrical', Priority__c='Low', Status__c='Completed', Reported_Date__c=n.addHours(-100), First_Touched_Date__c=n.addHours(-90), Completed_Date__c=n.addHours(-20)),
+            new Work_Order__c(Subject__c='RTU failure', Property_Asset__c=pa.Id, Unit_Label__c='Suite 120', Category__c='HVAC', Priority__c='Critical', Status__c='Closed', Reported_Date__c=n.addHours(-300), First_Touched_Date__c=n.addHours(-299), Completed_Date__c=n.addHours(-280))
         };
         insert ws;
         insert new List<Work_Order_Activity__c>{

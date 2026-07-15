@@ -1703,7 +1703,7 @@ public with sharing class TestDataFactory {
 
     /**
      * Lease renewals. BOTH Tenant_Name__c and Lease_End__c are schema-required.
-     * Unit__c on this object is a TEXT field, not a lookup to Unit__c.
+     * Unit_Label__c on this object is a TEXT field, not a lookup to Unit__c.
      * @param count           Number of Lease Renewals.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
      * @param doInsert        Insert when true.
@@ -1720,7 +1720,7 @@ public with sharing class TestDataFactory {
                 Lease_Start__c = Date.today().addYears(-3),
                 Stage__c = 'Not Yet Started',
                 Handling_Person__c = UserInfo.getUserId(),
-                Unit__c = 'Suite ' + (100 + i),
+                Unit_Label__c = 'Suite ' + (100 + i),
                 Current_Rent__c = String.valueOf(5000 + (i * 10)), // TEXT, not Currency
                 Proposed_Rate__c = 5250 + (i * 10),
                 Space_Sq_Ft__c = 1000 + (i * 10),
@@ -1783,7 +1783,8 @@ public with sharing class TestDataFactory {
      * Work orders. BOTH Subject__c and Reported_Date__c are schema-required;
      * Reported_Date__c anchors every SLA formula, so it is set deterministically
      * rather than relying on CreatedDate. Ownership uses Owner_User__c (a lookup),
-     * NOT the standard OwnerId. Unit__c here is a TEXT field.
+     * NOT the standard OwnerId. Unit_Label__c here is a TEXT field (may hold
+     * non-unit values such as 'Common' - it was never a unit reference).
      * @param count           Number of Work Orders.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
      * @param doInsert        Insert when true.
@@ -1803,7 +1804,7 @@ public with sharing class TestDataFactory {
                 Owner_User__c = UserInfo.getUserId(),
                 Owner_Role__c = 'Maintenance',
                 Tenant_Name__c = 'Test Tenant ' + i,
-                Unit__c = 'Suite ' + (100 + i),
+                Unit_Label__c = 'Suite ' + (100 + i),
                 Vendor__c = 'Test Vendor ' + i,
                 Description__c = 'Test work order description ' + i
             ));

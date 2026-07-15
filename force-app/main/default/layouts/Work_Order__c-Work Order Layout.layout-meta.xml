@@ -30,7 +30,7 @@
         <layoutColumns>
             <layoutItems>
                 <behavior>Readonly</behavior>
-                <field>Unit__c</field>
+                <field>Unit_Label__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>

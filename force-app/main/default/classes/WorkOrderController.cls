@@ -5,7 +5,7 @@
 public with sharing class WorkOrderController {
 
     private static final String ROW_QUERY =
-        'SELECT Id, Subject__c, Property_Display_Name__c, Unit__c, Priority__c, Status__c, ' +
+        'SELECT Id, Subject__c, Property_Display_Name__c, Unit_Label__c, Priority__c, Status__c, ' +
         'SLA_Health__c, Hours_Open__c, SLA_Breached__c, Untouched__c, Is_Open__c ' +
         'FROM Work_Order__c ';
 
@@ -47,7 +47,7 @@ public with sharing class WorkOrderController {
         List<Row> out = new List<Row>();
         for (Work_Order__c w : recs) {
             Row r = new Row();
-            r.id = w.Id; r.subject = w.Subject__c; r.property = w.Property_Display_Name__c; r.unit = w.Unit__c;
+            r.id = w.Id; r.subject = w.Subject__c; r.property = w.Property_Display_Name__c; r.unit = w.Unit_Label__c;
             r.priority = w.Priority__c; r.status = w.Status__c; r.slaHealth = w.SLA_Health__c;
             r.hoursOpen = w.Hours_Open__c == null ? null : (Integer) w.Hours_Open__c;
             r.breached = w.SLA_Breached__c == true; r.untouched = w.Untouched__c == true; r.isOpen = w.Is_Open__c == true;

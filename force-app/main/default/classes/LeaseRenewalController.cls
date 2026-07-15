@@ -6,7 +6,7 @@ public with sharing class LeaseRenewalController {
 
     private static final Set<String> METHODS = new Set<String>{ 'Call', 'Email', 'Visit', 'Note', 'System' };
     private static final String ROW_QUERY =
-        'SELECT Id, Tenant_Name__c, Property_Display_Name__c, Unit__c, Lease_End__c, Days_To_Expiry__c, ' +
+        'SELECT Id, Tenant_Name__c, Property_Display_Name__c, Unit_Label__c, Lease_End__c, Days_To_Expiry__c, ' +
         'Stage__c, Status__c, Last_Contact_Date__c, Days_Since_Contact__c, Non_Responsive__c ' +
         'FROM Lease_Renewal__c ';
 
@@ -48,7 +48,7 @@ public with sharing class LeaseRenewalController {
     }
     private static Row toRow(Lease_Renewal__c r) {
         Row w = new Row();
-        w.id = r.Id; w.tenant = r.Tenant_Name__c; w.property = r.Property_Display_Name__c; w.unit = r.Unit__c;
+        w.id = r.Id; w.tenant = r.Tenant_Name__c; w.property = r.Property_Display_Name__c; w.unit = r.Unit_Label__c;
         w.leaseEnd = r.Lease_End__c;
         w.daysToExpiry = r.Days_To_Expiry__c == null ? null : (Integer) r.Days_To_Expiry__c;
         w.stage = r.Stage__c; w.status = r.Status__c; w.closed = r.Status__c != 'Active';

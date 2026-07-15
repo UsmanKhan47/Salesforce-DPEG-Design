@@ -519,6 +519,7 @@
         <members>Lease_Renewal__c.Stage__c</members>
         <members>Lease_Renewal__c.Status__c</members>
         <members>Lease_Renewal__c.Tenant_Name__c</members>
+        <members>Lease_Renewal__c.Unit_Label__c</members>
         <members>Lease_Renewal__c.Unit__c</members>
         <members>Lease__c.Executed_Date__c</members>
         <members>Lease__c.Lease_Inquiry__c</members>
@@ -793,6 +794,7 @@
         <members>Work_Order__c.Status__c</members>
         <members>Work_Order__c.Subject__c</members>
         <members>Work_Order__c.Tenant_Name__c</members>
+        <members>Work_Order__c.Unit_Label__c</members>
         <members>Work_Order__c.Unit__c</members>
         <members>Work_Order__c.Untouched__c</members>
         <members>Work_Order__c.Vendor__c</members>

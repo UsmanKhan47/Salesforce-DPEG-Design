@@ -7,7 +7,7 @@
         <field>Lease_Renewal__c.Property_Display_Name__c</field>
     </columns>
     <columns>
-        <field>Lease_Renewal__c.Unit__c</field>
+        <field>Lease_Renewal__c.Unit_Label__c</field>
     </columns>
     <columns>
         <field>Lease_Renewal__c.Lease_End__c</field>

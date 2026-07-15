@@ -4,7 +4,7 @@
     <columns>NAME</columns>
     <columns>Tenant_Name__c</columns>
     <columns>Property_Display_Name__c</columns>
-    <columns>Unit__c</columns>
+    <columns>Unit_Label__c</columns>
     <columns>Lease_End__c</columns>
     <columns>Days_To_Expiry__c</columns>
     <columns>Expiry_Health__c</columns>
