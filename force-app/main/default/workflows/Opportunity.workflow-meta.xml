@@ -11,16 +11,6 @@
         <reevaluateOnChange>false</reevaluateOnChange>
     </fieldUpdates>
     <fieldUpdates>
-        <fullName>Set_Stage_LOI_Submitted</fullName>
-        <field>StageName</field>
-        <literalValue>LOI Submitted</literalValue>
-        <name>Set Stage LOI Submitted</name>
-        <notifyAssignee>false</notifyAssignee>
-        <operation>Literal</operation>
-        <protected>false</protected>
-        <reevaluateOnChange>false</reevaluateOnChange>
-    </fieldUpdates>
-    <fieldUpdates>
         <fullName>Set_Stage_Underwriting</fullName>
         <field>StageName</field>
         <literalValue>Underwriting</literalValue>

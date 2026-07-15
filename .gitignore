@@ -26,3 +26,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Subagent local memory (machine-specific, per agent definition: memory: local)
+.claude/agent-memory-local/

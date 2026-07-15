@@ -1,13 +1,20 @@
 {
   "orgName": "DPEG Acquisition Scratch",
   "edition": "Developer",
-  "features": [],
+  "features": ["Communities"],
   "settings": {
     "lightningExperienceSettings": {
       "enableS1DesktopEnabled": true
     },
     "mobileSettings": {
       "enableS1EncryptedStoragePref2": false
+    },
+    "enhancedNotesSettings": {
+      "enableEnhancedNotes": true,
+      "enableTasksOnEnhancedNotes": true
+    },
+    "communitiesSettings": {
+      "enableNetworksEnabled": true
     }
   }
 }

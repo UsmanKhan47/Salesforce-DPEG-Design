@@ -19,23 +19,7 @@
         <default>false</default>
     </values>
     <values>
-        <fullName>Initiate LOI</fullName>
-        <default>false</default>
-    </values>
-    <values>
         <fullName>LOI</fullName>
-        <default>false</default>
-    </values>
-    <values>
-        <fullName>LOI Signed</fullName>
-        <default>false</default>
-    </values>
-    <values>
-        <fullName>LOI Submitted</fullName>
-        <default>false</default>
-    </values>
-    <values>
-        <fullName>LOI Under Approval</fullName>
         <default>false</default>
     </values>
     <values>
@@ -44,14 +28,6 @@
     </values>
     <values>
         <fullName>PSA</fullName>
-        <default>false</default>
-    </values>
-    <values>
-        <fullName>PSA Executed</fullName>
-        <default>false</default>
-    </values>
-    <values>
-        <fullName>PSA Negotiation</fullName>
         <default>false</default>
     </values>
     <values>
