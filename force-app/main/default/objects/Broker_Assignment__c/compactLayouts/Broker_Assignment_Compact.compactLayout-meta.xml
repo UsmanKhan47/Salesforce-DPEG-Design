@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Broker_Assignment_Compact</fullName>
+    <fields>Property_Display_Name__c</fields>
+    <fields>Broker_Name__c</fields>
+    <fields>Listing_Start_Date__c</fields>
+    <fields>Last_Check_In_Date__c</fields>
+    <fields>Days_Since_Check_In__c</fields>
+    <label>Broker Assignment Compact</label>
+</CompactLayout>

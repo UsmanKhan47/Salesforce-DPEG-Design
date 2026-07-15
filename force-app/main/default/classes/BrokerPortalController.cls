@@ -90,6 +90,7 @@ public without sharing class BrokerPortalController {
         }
         l.OwnerId = queueId;
         l.Duplicate_Flag__c = isDuplicate(l.Property_Address__c);
+        l.Broker_Priority__c = brokerPriorityFor(l.Email);
         try {
             insert l;
         } catch (DmlException e) {
@@ -116,6 +117,25 @@ public without sharing class BrokerPortalController {
 
     private static String trimToNull(String value) {
         return String.isBlank(value) ? null : value.trim();
+    }
+
+    /**
+     * Broker priority lives on the broker's Contact (source of truth) and is copied
+     * onto each lead they submit, so intake can be worked priority-first. Unknown
+     * brokers default to Standard.
+     */
+    private static String brokerPriorityFor(String email) {
+        if (String.isNotBlank(email)) {
+            List<Contact> brokers = [
+                SELECT Broker_Priority__c FROM Contact
+                WHERE Email = :email.trim() AND Is_Broker__c = true
+                LIMIT 1
+            ];
+            if (!brokers.isEmpty() && String.isNotBlank(brokers[0].Broker_Priority__c)) {
+                return brokers[0].Broker_Priority__c;
+            }
+        }
+        return 'Standard';
     }
 
     // ---- Helpers: validation ----

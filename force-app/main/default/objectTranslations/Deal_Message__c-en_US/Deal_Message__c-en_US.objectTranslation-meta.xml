@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObjectTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <caseValues>
+        <plural>false</plural>
+        <value>Deal Message</value>
+    </caseValues>
+    <caseValues>
+        <plural>true</plural>
+        <value>Deal Messages</value>
+    </caseValues>
+    <startsWith>Consonant</startsWith>
+    <validationRules>
+        <errorMessage><!-- Link this message to exactly one record: an LOI, an Underwriting, or a Contract Review. --></errorMessage>
+        <name>Exactly_One_Parent</name>
+    </validationRules>
+</CustomObjectTranslation>

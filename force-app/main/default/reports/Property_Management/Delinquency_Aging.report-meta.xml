@@ -11,9 +11,17 @@
         <sortOrder>Asc</sortOrder>
     </groupingsDown>
     <name>Delinquency Aging</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
     <reportType>CustomEntity$Delinquency__c</reportType>
     <scope>organization</scope>
     <showDetails>false</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>CUST_CREATED_DATE</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
 </Report>

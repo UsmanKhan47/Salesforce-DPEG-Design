@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LOI_Prep_Approved_By__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Who on the Acquisitions team approved starting the LOI (auto-stamped when LOI Prep Approved is checked).</description>
+    <label>LOI Prep Approved By</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>LOI Prep Approved Opportunities</relationshipLabel>
+    <relationshipName>LOI_Prep_Approved_Opportunities</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

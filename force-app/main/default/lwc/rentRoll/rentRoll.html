@@ -1,0 +1,169 @@
+<template>
+    <template lwc:if={error}>
+        <div class="state-card state-card--error">Rent roll could not be loaded: {errorMessage}</div>
+    </template>
+
+    <template lwc:if={isLoading}>
+        <div class="state-card state-card--center"><lightning-spinner alternative-text="Loading rent roll" size="small"></lightning-spinner></div>
+    </template>
+
+    <template lwc:if={data}>
+        <!-- Summary KPIs (shared stat-card idiom) -->
+        <div class="kpi-row">
+            <template for:each={statMetrics} for:item="m">
+                <c-stat-card key={m.key} value={m.displayValue} label={m.label} icon-name={m.iconName} icon-color={m.iconColor}></c-stat-card>
+            </template>
+        </div>
+
+        <template lwc:if={isEmpty}>
+            <div class="state-card">No rent roll data yet — units sync from Yardi.</div>
+        </template>
+
+        <template lwc:if={hasUnits}>
+            <lightning-card icon-name="standard:asset_object">
+                <span slot="title">Units <span class="sub">({unitCount}) — click a row for its rent step schedule</span></span>
+                <span slot="actions" class="readonly-badge">
+                    <lightning-icon icon-name="utility:lock" size="xx-small"></lightning-icon>
+                    Read-only — mirrored from Yardi Voyager 7S
+                </span>
+
+                <div class="meta-strip">
+                    <div class="bar">
+                        <div class="bar-occ" style={summary.occBarStyle}></div>
+                        <div class="bar-vac" style={summary.vacBarStyle}></div>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-item"><span class="dot dot-green"></span>{summary.occupiedSqFt} sq ft occupied · {summary.occupiedPct}</span>
+                        <span class="meta-item"><span class="dot dot-amber"></span>{summary.vacantSqFt} sq ft vacant · {summary.vacantPct}</span>
+                        <span class="meta-spacer"></span>
+                        <span class="legend">
+                            <span class="lg"><span class="dot dot-green"></span>Lease ends &gt;12 mo</span>
+                            <span class="lg"><span class="dot dot-amber"></span>6–12 mo</span>
+                            <span class="lg"><span class="dot dot-red"></span>&lt;6 mo</span>
+                        </span>
+                        <span class="sync">
+                            <lightning-icon icon-name="utility:sync" size="xx-small"></lightning-icon>
+                            {summary.lastSynced}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="sort" data-key="suite" onclick={sortBy}>{headers.suite}</th>
+                                <th>Tenant</th>
+                                <th class="num sort" data-key="sqft" onclick={sortBy}>{headers.sqft}</th>
+                                <th class="num sort" data-key="rent" onclick={sortBy}>{headers.rent}</th>
+                                <th class="num">Rent / Sq Ft</th>
+                                <th class="sort" data-key="end" onclick={sortBy}>{headers.end}</th>
+                                <th class="num">NNN Monthly</th>
+                                <th class="chev-col"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={rows} for:item="row">
+                                <tr key={row.id} class={row.rowClass} data-id={row.id} onclick={toggleRow}>
+                                    <td><span class="suite">{row.suiteDisp}</span></td>
+                                    <td><span class={row.tenantClass}>{row.tenantDisp}</span></td>
+                                    <td class="num">{row.sqftDisp}</td>
+                                    <td class="num strong">{row.rentDisp}</td>
+                                    <td class="num"><span class={row.psfClass}>{row.psfDisp}</span></td>
+                                    <td>
+                                        <span class="term">
+                                            {row.termDisp}
+                                            <template lwc:if={row.dot}>
+                                                <span class="dot" style={row.dot.style} title={row.dot.title}></span>
+                                            </template>
+                                        </span>
+                                    </td>
+                                    <td class="num">
+                                        <span class={row.nnnClass} data-id={row.id} onmouseenter={tipEnter} onmouseleave={tipLeave}>{row.nnnDisp}</span>
+                                    </td>
+                                    <td class="chev-col">
+                                        <template lwc:if={row.occupied}>
+                                            <svg class="chev" style={row.chevStyle} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#706e6b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+                                        </template>
+                                    </td>
+                                </tr>
+                                <template lwc:if={row.isExpanded}>
+                                    <tr key={row.panelKey}>
+                                        <td colspan="8" class="panel-cell">
+                                            <div class="panel">
+                                                <div class="chips">
+                                                    <span class="panel-title">Rent step schedule — {row.panelTitle}</span>
+                                                    <span class="meta-spacer"></span>
+                                                    <span class="chips-label">NNN breakdown:</span>
+                                                    <span class="chip">Property Tax <b>{row.nnnTaxDisp}</b></span>
+                                                    <span class="chip">Insurance <b>{row.nnnInsDisp}</b></span>
+                                                    <span class="chip">CAM <b>{row.nnnCamDisp}</b></span>
+                                                    <span class="chip total">Total <b>{row.nnnTotDisp}</b> · {row.nnnPsfDisp}/SF</span>
+                                                </div>
+                                                <div class="sched">
+                                                    <table>
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Period</th>
+                                                                <th class="num">Monthly Rent</th>
+                                                                <th class="num">$ / Sq Ft</th>
+                                                                <th class="type-col">Type</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <template for:each={row.steps} for:item="s">
+                                                                <tr key={s.key} class={s.rowClass}>
+                                                                    <td class="speriod">
+                                                                        {s.period}
+                                                                        <template lwc:if={s.active}><span class="badge"><span class="pill__dot"></span>Active now</span></template>
+                                                                    </td>
+                                                                    <td class="num"><span class={s.rentClass}>{s.rentDisp}</span></td>
+                                                                    <td class="num spsf">{s.psfDisp}</td>
+                                                                    <td class="type-col"><span class={s.tagClass}><span class="pill__dot"></span>{s.typeLabel}</span></td>
+                                                                </tr>
+                                                            </template>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </template>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td class="foot-label">Totals</td>
+                                <td class="foot-sub">{totals.occLabel}</td>
+                                <td class="num">
+                                    <div class="foot-strong">{summary.totalSqFt}</div>
+                                    <div class="foot-tiny">{totals.sqftSplit}</div>
+                                </td>
+                                <td class="num foot-strong">{summary.monthlyRent}</td>
+                                <td class="num"><span class="foot-val">{totals.blendedPsf}</span> <span class="foot-tiny">blended</span></td>
+                                <td></td>
+                                <td class="num foot-strong">{totals.nnnTotal}</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </lightning-card>
+            <div class="note">
+                <lightning-icon icon-name="utility:info" size="xx-small"></lightning-icon>
+                Rent roll data is created and maintained in Yardi only. This view refreshes with the nightly sync — Salesforce never writes back.
+            </div>
+        </template>
+    </template>
+
+    <!-- NNN hover tooltip (fixed, escapes table clipping) -->
+    <template lwc:if={tip}>
+        <div class="tooltip" style={tip.style}>
+            <div class="tip-head">NNN breakdown — {tip.suite}</div>
+            <div class="trow"><span>Property Tax</span><span class="tval">{tip.tax}</span></div>
+            <div class="trow"><span>Insurance</span><span class="tval">{tip.ins}</span></div>
+            <div class="trow"><span>CAM</span><span class="tval">{tip.cam}</span></div>
+            <div class="trow ttotal"><span>Total · {tip.psf}/SF</span><span class="tval">{tip.total}</span></div>
+        </div>
+    </template>
+</template>

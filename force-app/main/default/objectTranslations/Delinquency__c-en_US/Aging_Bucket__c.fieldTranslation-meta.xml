@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Aging Bucket --></label>
+    <name>Aging_Bucket__c</name>
+    <picklistValues>
+        <masterLabel>1-30 Days</masterLabel>
+        <translation><!-- 1-30 Days --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>31-60 Days</masterLabel>
+        <translation><!-- 31-60 Days --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>61-90 Days</masterLabel>
+        <translation><!-- 61-90 Days --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>90+ Days</masterLabel>
+        <translation><!-- 90+ Days --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

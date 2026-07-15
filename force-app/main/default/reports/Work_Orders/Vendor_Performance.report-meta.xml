@@ -20,9 +20,17 @@
         <sortOrder>Asc</sortOrder>
     </groupingsDown>
     <name>Vendor Performance</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
     <reportType>CustomEntity$Work_Order__c</reportType>
     <scope>organization</scope>
     <showDetails>false</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>Work_Order__c.Completed_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
 </Report>

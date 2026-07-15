@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Exactly_One_Parent</fullName>
+    <active>true</active>
+    <description>A deal message belongs to exactly one negotiation record: an LOI, an Underwriting, or a Contract Review.</description>
+    <errorConditionFormula>(IF(ISBLANK(LOI__c), 0, 1) + IF(ISBLANK(Underwriting__c), 0, 1) + IF(ISBLANK(Contract_Review__c), 0, 1)) &lt;&gt; 1</errorConditionFormula>
+    <errorMessage>Link this message to exactly one record: an LOI, an Underwriting, or a Contract Review.</errorMessage>
+</ValidationRule>

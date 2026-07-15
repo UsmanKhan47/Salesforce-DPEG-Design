@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Deal_Bucket__c</fullName>
+    <description>Deal-tracker buckets, derived from stage + deal category. Reporting-only projection - automation must branch on StageName/Deal_Category__c, never on this formula (before-save flows cannot read formula fields).</description>
+    <externalId>false</externalId>
+    <formula>IF(OR(ISPICKVAL(Deal_Category__c,&apos;Dead&apos;), ISPICKVAL(StageName,&apos;Dead/Pass&apos;)), &apos;Dead&apos;,
+IF(ISPICKVAL(StageName,&apos;Closed Won&apos;), &apos;Bought/Closed&apos;,
+IF(ISPICKVAL(StageName,&apos;About to Close&apos;), &apos;About to Close&apos;,
+IF(ISPICKVAL(StageName,&apos;PSA&apos;), &apos;PSA&apos;,
+IF(ISPICKVAL(StageName,&apos;LOI&apos;), &apos;LOI&apos;,
+&apos;Interested Deals&apos;)))))</formula>
+    <label>Deal Tracker Bucket</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

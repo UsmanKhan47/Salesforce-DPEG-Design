@@ -277,6 +277,16 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
+                <fieldItem>Record.Broker_Priority__c</fieldItem>
+                <identifier>RecordBroker_Priority_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
                 <fieldItem>Record.CoStar_Link__c</fieldItem>
                 <identifier>RecordCoStar_Link_cField</identifier>
             </fieldInstance>

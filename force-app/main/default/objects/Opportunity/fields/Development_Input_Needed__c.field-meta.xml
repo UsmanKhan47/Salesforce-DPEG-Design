@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Development_Input_Needed__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Check when the development team&apos;s input is needed on this (land) deal. Opens a Development Feasibility Review at ANY stage - including before underwriting.</description>
+    <label>Development Input Needed</label>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

@@ -10,11 +10,31 @@
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
-            <value><fullName>On Track</fullName><default>false</default><label>On Track</label></value>
-            <value><fullName>In Progress</fullName><default>true</default><label>In Progress</label></value>
-            <value><fullName>At Risk</fullName><default>false</default><label>At Risk</label></value>
-            <value><fullName>Blocked</fullName><default>false</default><label>Blocked</label></value>
-            <value><fullName>Complete</fullName><default>false</default><label>Complete</label></value>
+            <value>
+                <fullName>On Track</fullName>
+                <default>false</default>
+                <label>On Track</label>
+            </value>
+            <value>
+                <fullName>In Progress</fullName>
+                <default>true</default>
+                <label>In Progress</label>
+            </value>
+            <value>
+                <fullName>At Risk</fullName>
+                <default>false</default>
+                <label>At Risk</label>
+            </value>
+            <value>
+                <fullName>Blocked</fullName>
+                <default>false</default>
+                <label>Blocked</label>
+            </value>
+            <value>
+                <fullName>Complete</fullName>
+                <default>false</default>
+                <label>Complete</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

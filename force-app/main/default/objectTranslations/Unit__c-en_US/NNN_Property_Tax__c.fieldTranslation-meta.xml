@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- NNN Property Tax (Monthly) --></label>
+    <name>NNN_Property_Tax__c</name>
+</CustomFieldTranslation>

@@ -1,0 +1,28 @@
+<template>
+    <article class="tb-card">
+        <div class="tb-hd">
+            <span class="tb-icon">
+                <lightning-icon icon-name="utility:user" size="x-small" variant="inverse"></lightning-icon>
+            </span>
+            <span class="tb-title">Properties per Broker</span>
+            <span class="tb-cap">By total properties</span>
+        </div>
+        <template if:true={hasRows}>
+            <ul class="tb-list">
+                <template for:each={rows} for:item="r">
+                    <li key={r.brokerId} class={r.rowClass}>
+                        <span class="tb-rank">{r.rank}</span>
+                        <span class="tb-name">
+                            <span class="tb-n">{r.name}</span>
+                            <span class="tb-f">{r.firm}</span>
+                        </span>
+                        <span class="tb-count">{r.total}</span>
+                    </li>
+                </template>
+            </ul>
+        </template>
+        <template if:false={hasRows}>
+            <div class="tb-empty">No brokers assigned yet.</div>
+        </template>
+    </article>
+</template>

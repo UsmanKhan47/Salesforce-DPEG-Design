@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <environments>Default</environments>
+    <formulas>
+        <name>OpenLogText</name>
+        <dataType>String</dataType>
+        <expression>IF(ISBLANK({!$Record.Initial_Notes__c}), &quot;New inquiry logged for &quot; &amp; {!$Record.Tenant_Name__c} &amp; &quot;. Awaiting the landlord&apos;s first response.&quot;, {!$Record.Initial_Notes__c})</expression>
+    </formulas>
+    <interviewLabel>Lease Inquiry Open Log {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Lease Inquiry Open Log</label>
+    <processType>AutoLaunchedFlow</processType>
+    <recordCreates>
+        <name>Create_Opening_Entry</name>
+        <label>Create Opening Entry</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <inputAssignments>
+            <field>Ball_In_Court__c</field>
+            <value>
+                <elementReference>$Record.Ball_In_Court__c</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Details__c</field>
+            <value>
+                <elementReference>OpenLogText</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Entry_Date__c</field>
+            <value>
+                <elementReference>$Flow.CurrentDateTime</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Lease_Inquiry__c</field>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Logged_By__c</field>
+            <value>
+                <elementReference>$Record.CreatedById</elementReference>
+            </value>
+        </inputAssignments>
+        <object>Lease_Activity__c</object>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </recordCreates>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Create_Opening_Entry</targetReference>
+        </connector>
+        <object>Lease_Inquiry__c</object>
+        <recordTriggerType>Create</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

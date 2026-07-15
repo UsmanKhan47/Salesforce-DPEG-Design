@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Argus Signal --></label>
+    <name>Argus_Signal__c</name>
+    <picklistValues>
+        <masterLabel>12 mo</masterLabel>
+        <translation><!-- 12 mo --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Hold</masterLabel>
+        <translation><!-- Hold --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Sell Now</masterLabel>
+        <translation><!-- Sell Now --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

@@ -23,9 +23,9 @@ const OPP_META = [
     { key: 'Development Review',  label: 'Development Review',   suffix: '',               icon: 'utility:task',     color: '#7E57C2' },
     { key: 'Construction Review', label: 'Construction Review', suffix: '',               icon: 'utility:setup',    color: '#1FA7A0' },
     { key: 'Underwriting',        label: 'Underwriting',        suffix: '',               icon: 'utility:money',    color: '#2E86DE' },
-    { key: 'LOI Submitted',       label: 'LOI Submitted',       suffix: '',               icon: 'utility:upload',   color: '#3E8FE0' },
-    { key: 'LOI Signed',          label: 'LOI Signed',          suffix: '',               icon: 'utility:check',    color: '#17B5C9' },
-    { key: 'Under Contract',      label: 'Under Contract',      suffix: '(Last 90 Days)', icon: 'utility:contract', color: '#F08C00' },
+    { key: 'LOI',                 label: 'LOI',                 suffix: '',               icon: 'utility:upload',   color: '#3E8FE0' },
+    { key: 'PSA',                 label: 'PSA',                 suffix: '(Last 90 Days)', icon: 'utility:contract', color: '#F08C00' },
+    { key: 'About to Close',      label: 'About to Close',      suffix: '',               icon: 'utility:clock',    color: '#E8A33D' },
     { key: 'Closed Won',          label: 'Closed Won',          suffix: '(Last 90 Days)', icon: 'utility:favorite', color: '#27AE60' },
     { key: 'Dead/Pass',           label: 'Dead',                suffix: '(Last 90 Days)', icon: 'utility:close',     color: '#E0463F' }
 ];

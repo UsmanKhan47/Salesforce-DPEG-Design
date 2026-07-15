@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Ball In Court --></label>
+    <name>Ball_In_Court__c</name>
+    <picklistValues>
+        <masterLabel>Seller</masterLabel>
+        <translation><!-- Seller --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Us</masterLabel>
+        <translation><!-- Us --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

@@ -5,6 +5,11 @@
     <fieldName>StageName</fieldName>
     <masterLabel>Acquisitions Deal Path</masterLabel>
     <pathAssistantSteps>
+        <fieldNames>Contract_Executed_Date__c</fieldNames>
+        <info>PSA executed and in closing/escrow - clear the remaining due-diligence and funding conditions. The deal moves to Closed Won when the closing wire confirms.</info>
+        <picklistValueName>About to Close</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
         <fieldNames>Asking_Price__c</fieldNames>
         <info>Closing wire confirmed. Property Asset (AUM) created (Conv 4). Offering goes Active. Broker fully credited.</info>
         <picklistValueName>Closed Won</picklistValueName>
@@ -15,14 +20,10 @@
         <picklistValueName>Dead/Pass</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <fieldNames>OneDrive_Folder_URL__c</fieldNames>
-        <info>Both parties signed the LOI. PSA negotiation begins with Rahila. Give Faiz (IR) a soft heads-up that a deal is coming.</info>
-        <picklistValueName>LOI Signed</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
         <fieldNames>Deal_Status__c</fieldNames>
-        <info>Submit the LOI for Nick&amp;#39;s approval (the only formal approval in Phase 1). After it is sent: Working, then Countered (3-day window), or Killed.</info>
-        <picklistValueName>LOI Submitted</picklistValueName>
+        <fieldNames>OneDrive_Folder_URL__c</fieldNames>
+        <info>Prep the LOI, then submit for principal approval. Once approved it is sent to the broker; track every counter and version on the LOI record&amp;#39;s Messages tab. On full execution, Legal + IR are notified.</info>
+        <picklistValueName>LOI</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Property__c</fieldNames>
@@ -31,16 +32,16 @@
         <picklistValueName>New</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
+        <fieldNames>Contract_Signed__c</fieldNames>
+        <fieldNames>Contract_Executed_Date__c</fieldNames>
+        <info>Seller issues the first PSA draft; a Contract Review opens automatically. Log every version and counter in the negotiation log. On full execution (Negotiation Status = Executed) the Transaction is created, the 75-task fan-out fires, and Transactions + IR + Due Diligence are notified.</info>
+        <picklistValueName>PSA</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
         <fieldNames>Is_Portfolio_Parent__c</fieldNames>
         <fieldNames>Bundle_LOI__c</fieldNames>
         <info>One seller selling multiple properties, bundled for a single LOI. Each child deal tracks its own broker protection independently.</info>
         <picklistValueName>Portfolio Deal</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <fieldNames>Contract_Executed_Date__c</fieldNames>
-        <fieldNames>Loan_Required__c</fieldNames>
-        <info>DAY 0. Setting Contract Executed Date fires the 75-task fan-out, activates the Transaction (Conv 2), and creates the IR Offering (Conv 3).</info>
-        <picklistValueName>Under Contract</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>My_Price__c</fieldNames>

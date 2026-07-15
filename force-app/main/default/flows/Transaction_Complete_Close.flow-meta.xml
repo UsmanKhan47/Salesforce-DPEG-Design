@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Congratulate</name>
+        <label>Congratulate</label>
+        <locationX>176</locationX>
+        <locationY>408</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value>
+                <stringValue>Acquisitions_Team</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value>
+                <stringValue>Deal closed - congratulations! 🎉</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value>
+                <stringValue>The transaction is complete. The deal moves to Bought/Closed.</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value>
+                <elementReference>$Record.Opportunity__c</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <apiVersion>62.0</apiVersion>
+    <environments>Default</environments>
+    <interviewLabel>Transaction Complete Close {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Transaction Complete Close</label>
+    <processType>AutoLaunchedFlow</processType>
+    <recordUpdates>
+        <name>Close_Opportunity</name>
+        <label>Close Opportunity</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <connector>
+            <targetReference>Congratulate</targetReference>
+        </connector>
+        <inputAssignments>
+            <field>Deal_Category__c</field>
+            <value>
+                <stringValue>Closed</stringValue>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Deal_Status__c</field>
+            <value>
+                <stringValue>Asset Under Management</stringValue>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>StageName</field>
+            <value>
+                <stringValue>Closed Won</stringValue>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record.Opportunity__r</inputReference>
+    </recordUpdates>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Close_Opportunity</targetReference>
+        </connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Status__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <stringValue>Closed</stringValue>
+            </value>
+        </filters>
+        <filters>
+            <field>Opportunity__c</field>
+            <operator>IsNull</operator>
+            <value>
+                <booleanValue>false</booleanValue>
+            </value>
+        </filters>
+        <object>Transaction__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

@@ -1,0 +1,13 @@
+.qa-body { min-height: 90px; }
+.qa-loading { display: flex; align-items: center; justify-content: center; min-height: 90px; }
+.qa-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    background: #f3f3f2;
+    border: 1px solid #e5e5e5;
+    border-radius: 0.25rem;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #444;
+}

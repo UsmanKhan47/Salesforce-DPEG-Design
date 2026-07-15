@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Report xmlns="http://soap.sforce.com/2006/04/metadata">
-    <columns><field>Work_Order__c.Subject__c</field></columns>
+    <columns>
+        <field>Work_Order__c.Subject__c</field>
+    </columns>
     <filter>
         <criteriaItems>
             <column>Work_Order__c.Is_Open__c</column>
@@ -24,9 +26,17 @@
         <sortOrder>Asc</sortOrder>
     </groupingsDown>
     <name>Critical / High Open</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
     <reportType>CustomEntity$Work_Order__c</reportType>
     <scope>organization</scope>
     <showDetails>false</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>Work_Order__c.Completed_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
 </Report>

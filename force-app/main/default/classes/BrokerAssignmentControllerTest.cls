@@ -1,0 +1,148 @@
+@isTest
+private class BrokerAssignmentControllerTest {
+    @testSetup static void setup() {
+        Property__c pr = new Property__c(Name='Westgate Plaza', Address__c='8420 Westheimer Rd', City__c='Houston', State__c='TX', Square_Footage__c=42000, Asset_Type__c='Retail');
+        insert pr;
+        Property_Asset__c pa = new Property_Asset__c(Name='Westgate Plaza', Property__c=pr.Id, Property_Type__c='Retail', Status__c='Active', Vacant_Area__c=8000);
+        insert pa;
+        List<Contact> bk = new List<Contact>{
+            new Contact(LastName='Webb', Email='mw@x.com', Phone='1', Is_Broker__c=true, Broker_Firm__c='Lee'),
+            new Contact(LastName='Nair', Email='pn@x.com', Phone='2', Is_Broker__c=true, Broker_Firm__c='CBRE')
+        };
+        insert bk;
+        Date t = Date.today();
+        insert new List<Broker_Assignment__c>{
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-40), Last_Check_In_Date__c=t.addDays(-30)), // overdue
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-25), Last_Check_In_Date__c=t.addDays(-17)), // dueSoon
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-10), Last_Check_In_Date__c=t.addDays(-3)),  // onTrack
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Fully Leased', Listing_Start_Date__c=t.addDays(-300), Listing_End_Date__c=t.addDays(-120), Reason_Ended__c='Leased Up', Last_Check_In_Date__c=t.addDays(-125)),
+            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Disposed', Listing_Start_Date__c=t.addDays(-400), Listing_End_Date__c=t.addDays(-250), Reason_Ended__c='Performance Issue', Last_Check_In_Date__c=t.addDays(-255))
+        };
+    }
+    @isTest static void kpis() {
+        BrokerAssignmentController.Kpis k = BrokerAssignmentController.getKpis();
+        System.assertEquals(5, k.total);
+        System.assertEquals(3, k.active);
+        System.assertEquals(2, k.stale, 'active listings idle >= 7 days (30 and 17)');
+        System.assertEquals(1, k.leased);
+    }
+    @isTest static void alerts() {
+        // Active check-in ages in setup: 30, 17, 3 days. stale7 (>=7): 30,17 -> 2. stale30 (>=30): 30 -> 1.
+        BrokerAssignmentController.Alerts a = BrokerAssignmentController.getAlerts();
+        System.assertEquals(2, a.stale7, 'active listings idle >= 7 days');
+        System.assertEquals(1, a.stale30, 'active listings idle >= 30 days');
+    }
+    @isTest static void portfolio() {
+        BrokerAssignmentController.Portfolio p = BrokerAssignmentController.getPortfolio();
+        System.assertEquals(5, p.total);
+        System.assertEquals(3, p.active);
+        System.assertEquals(1, p.leased);
+        System.assertEquals(1, p.disposed);
+    }
+    @isTest static void rowsAndDetailAndHistory() {
+        List<BrokerAssignmentController.Row> rows = BrokerAssignmentController.getAssignments();
+        System.assertEquals(5, rows.size());
+        Id anId = rows[0].id;
+        BrokerAssignmentController.Detail d = BrokerAssignmentController.getDetail(anId);
+        System.assertEquals('Westgate Plaza', d.propertyName);
+        System.assertEquals(5, d.history.size(), 'all 5 share one Property Asset');
+        System.assertEquals(42000, d.grossSqFt);
+        System.assertEquals(8000, d.vacantArea, 'vacancy spans from the Property Asset');
+        System.assertEquals(34000, d.leasedArea, 'leased = gross 42000 − vacant 8000 (formula)');
+        System.assertNotEquals(null, d.activeDays);
+    }
+    @isTest static void scorecard() {
+        List<BrokerAssignmentController.BrokerCard> cards = BrokerAssignmentController.getScorecard();
+        System.assertEquals(2, cards.size());
+        Integer totals = 0; for (BrokerAssignmentController.BrokerCard c : cards) totals += c.total;
+        System.assertEquals(5, totals);
+    }
+    @isTest static void brokerTotals() {
+        List<BrokerAssignmentController.BrokerTotal> t = BrokerAssignmentController.getBrokerTotals();
+        System.assertEquals(2, t.size());
+        for (BrokerAssignmentController.BrokerTotal bt : t) System.assertEquals(1, bt.totalProperties, 'all assignments share one Property Asset');
+    }
+    @isTest static void logCheckInUpdates() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c WHERE Status__c='Active' LIMIT 1];
+        Test.startTest(); BrokerAssignmentController.logCheckIn(a.Id); Test.stopTest();
+        Broker_Assignment__c after = [SELECT Last_Check_In_Date__c FROM Broker_Assignment__c WHERE Id=:a.Id];
+        System.assertEquals(Date.today(), after.Last_Check_In_Date__c);
+    }
+    @isTest static void closeOutChangesStatus() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c WHERE Status__c='Active' LIMIT 1];
+        Test.startTest(); BrokerAssignmentController.closeOut(a.Id, 'Fully Leased', Date.today(), 'Leased Up'); Test.stopTest();
+        Broker_Assignment__c after = [SELECT Status__c, Listing_End_Date__c, Reason_Ended__c FROM Broker_Assignment__c WHERE Id=:a.Id];
+        System.assertEquals('Fully Leased', after.Status__c);
+        System.assertEquals('Leased Up', after.Reason_Ended__c);
+        System.assertEquals(Date.today(), after.Listing_End_Date__c);
+    }
+    @isTest static void replaceBrokerSnapshotsOldAndStaysActive() {
+        Broker_Assignment__c a = [SELECT Id, Property_Asset__c, Broker__c FROM Broker_Assignment__c WHERE Status__c='Active' LIMIT 1];
+        Id oldBroker = a.Broker__c;
+        Contact nb = [SELECT Id FROM Contact WHERE Is_Broker__c=true AND Email='pn@x.com' LIMIT 1];
+        Map<Id, Broker_Assignment__c> beforeMap = new Map<Id, Broker_Assignment__c>([SELECT Id FROM Broker_Assignment__c]);
+        Integer before = beforeMap.size();
+        Test.startTest();
+        Id sameId = BrokerAssignmentController.replaceBroker(a.Id, nb.Id, Date.today(), 'Performance Issue', 'Handover complete');
+        Test.stopTest();
+        Integer after = [SELECT COUNT() FROM Broker_Assignment__c];
+        // Current listing stays Active with the incoming broker; its own reason/notes are clear.
+        Broker_Assignment__c rec = [SELECT Status__c, Broker__c, Listing_Start_Date__c, Last_Check_In_Date__c, Listing_End_Date__c, Reason_Ended__c, Replacement_Notes__c
+                                    FROM Broker_Assignment__c WHERE Id=:a.Id];
+        System.assertEquals(a.Id, sameId, 'Replace returns the same record');
+        System.assertEquals(before + 1, after, 'Replace snapshots the outgoing broker as one new record');
+        System.assertEquals('Active', rec.Status__c, 'Listing stays Active after replacement');
+        System.assertEquals(nb.Id, rec.Broker__c, 'Broker is swapped to the incoming broker');
+        System.assertEquals(Date.today(), rec.Listing_Start_Date__c);
+        System.assertEquals(Date.today(), rec.Last_Check_In_Date__c);
+        System.assertEquals(null, rec.Listing_End_Date__c);
+        System.assertEquals(null, rec.Reason_Ended__c);
+        System.assertEquals(null, rec.Replacement_Notes__c);
+        // Outgoing broker preserved as a Disposed history snapshot carrying reason + notes.
+        // Identify it as the one record that did not exist before the replace.
+        List<Broker_Assignment__c> newRecs = [SELECT Status__c, Broker__c, Property_Asset__c, Listing_End_Date__c, Reason_Ended__c, Replacement_Notes__c
+                                              FROM Broker_Assignment__c WHERE Id NOT IN :beforeMap.keySet()];
+        System.assertEquals(1, newRecs.size(), 'Exactly one snapshot record is created');
+        Broker_Assignment__c snap = newRecs[0];
+        System.assertEquals('Disposed', snap.Status__c, 'Snapshot is Disposed');
+        System.assertEquals(a.Property_Asset__c, snap.Property_Asset__c, 'Snapshot keeps the same property');
+        System.assertEquals(oldBroker, snap.Broker__c, 'Snapshot keeps the outgoing broker');
+        System.assertEquals(Date.today(), snap.Listing_End_Date__c);
+        System.assertEquals('Performance Issue', snap.Reason_Ended__c);
+        System.assertEquals('Handover complete', snap.Replacement_Notes__c);
+    }
+    @isTest static void getBrokerOptionsReturnsBrokers() {
+        System.assertEquals(2, BrokerAssignmentController.getBrokerOptions().size());
+    }
+    @isTest static void notesAddAndList() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c LIMIT 1];
+        System.assertEquals(0, BrokerAssignmentController.getNotes(a.Id).size(), 'no notes initially');
+        Test.startTest();
+        BrokerAssignmentController.addNote(a.Id, 'Signage confirmed up; tour Friday.');
+        Test.stopTest();
+        List<BrokerAssignmentController.NoteRow> notes = BrokerAssignmentController.getNotes(a.Id);
+        System.assertEquals(1, notes.size(), 'one note after add');
+        System.assertEquals('Signage confirmed up; tour Friday.', notes[0].title, 'title derived from body under 50 chars');
+        System.assertNotEquals(null, notes[0].author, 'author populated from CreatedBy');
+        System.assertNotEquals(null, notes[0].createdDate);
+    }
+    @isTest static void addNoteBlankThrows() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c LIMIT 1];
+        Boolean threw = false;
+        Test.startTest();
+        try { BrokerAssignmentController.addNote(a.Id, '   '); } catch (AuraHandledException e) { threw = true; }
+        Test.stopTest();
+        System.assert(threw, 'blank note should throw');
+        System.assertEquals(0, BrokerAssignmentController.getNotes(a.Id).size(), 'nothing persisted on blank');
+    }
+    @isTest static void addNoteLongTitleTruncated() {
+        Broker_Assignment__c a = [SELECT Id FROM Broker_Assignment__c LIMIT 1];
+        String longBody = 'This is a very long note that certainly exceeds the fifty character title cap for sure.';
+        Test.startTest();
+        BrokerAssignmentController.addNote(a.Id, longBody);
+        Test.stopTest();
+        List<BrokerAssignmentController.NoteRow> notes = BrokerAssignmentController.getNotes(a.Id);
+        System.assertEquals(1, notes.size());
+        System.assertEquals(50, notes[0].title.length(), 'title capped at 50 chars');
+    }
+}

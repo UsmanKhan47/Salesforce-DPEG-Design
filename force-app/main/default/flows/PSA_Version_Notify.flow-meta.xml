@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Notify_Acquisitions</name>
+        <label>Notify Acquisitions</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <connector>
+            <targetReference>Notify_Legal</targetReference>
+        </connector>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value>
+                <stringValue>Acquisitions_Team</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value>
+                <elementReference>fTitle</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value>
+                <elementReference>fBody</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value>
+                <elementReference>$Record.Contract_Review__c</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <actionCalls>
+        <name>Notify_Legal</name>
+        <label>Notify Legal</label>
+        <locationX>176</locationX>
+        <locationY>408</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value>
+                <stringValue>Legal_Team</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value>
+                <stringValue>New PSA version logged</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value>
+                <stringValue>Compare this version against the executed LOI and prior redlines.</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value>
+                <elementReference>$Record.Contract_Review__c</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <apiVersion>62.0</apiVersion>
+    <environments>Default</environments>
+    <formulas>
+        <name>fBody</name>
+        <dataType>String</dataType>
+        <expression>{!$Record.Name} &amp; IF(ISBLANK({!$Record.Summary__c}), &apos;&apos;, &apos;: &apos; &amp; LEFT({!$Record.Summary__c}, 200))</expression>
+    </formulas>
+    <formulas>
+        <name>fTitle</name>
+        <dataType>String</dataType>
+        <expression>IF(ISPICKVAL({!$Record.Direction__c}, &apos;Seller&apos;),
+&apos;PSA version received - ball in our court&apos;,
+&apos;PSA version sent to seller&apos;)</expression>
+    </formulas>
+    <interviewLabel>PSA Version Notify {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>PSA Version Notify</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Notify_Acquisitions</targetReference>
+        </connector>
+        <object>PSA_Version__c</object>
+        <recordTriggerType>Create</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

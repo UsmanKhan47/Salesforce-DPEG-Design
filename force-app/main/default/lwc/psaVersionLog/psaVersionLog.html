@@ -1,0 +1,97 @@
+<template>
+    <lightning-card icon-name="standard:contract">
+        <span slot="title">
+            PSA Versions ({count})
+            <template lwc:if={hasBall}>
+                <span class={ballBadgeClass} style="margin-left:8px">{ballBadgeLabel}</span>
+            </template>
+        </span>
+
+        <template lwc:if={hasContract}>
+            <lightning-button
+                slot="actions"
+                label="Log Version"
+                icon-name="utility:add"
+                onclick={handleAdd}
+                disabled={editing}>
+            </lightning-button>
+        </template>
+
+        <div class="slds-p-horizontal_small slds-p-bottom_small">
+            <template lwc:if={hasContract}>
+                <!-- Entry form -->
+                <template lwc:if={editing}>
+                    <div class="slds-box slds-box_x-small slds-m-bottom_small">
+                        <lightning-radio-group
+                            name="direction"
+                            label="Who sent this version?"
+                            options={directionOptions}
+                            value={direction}
+                            type="button"
+                            onchange={handleDirectionChange}>
+                        </lightning-radio-group>
+                        <div class="slds-grid slds-gutters slds-m-top_x-small">
+                            <div class="slds-col slds-size_1-of-2">
+                                <lightning-input
+                                    type="date"
+                                    label="Version Date"
+                                    value={versionDate}
+                                    onchange={handleDateChange}>
+                                </lightning-input>
+                            </div>
+                            <div class="slds-col slds-size_1-of-2">
+                                <lightning-input
+                                    type="url"
+                                    label="Document URL"
+                                    value={documentUrl}
+                                    onchange={handleUrlChange}>
+                                </lightning-input>
+                            </div>
+                        </div>
+                        <lightning-textarea
+                            class="slds-m-top_x-small"
+                            label="What changed (summary)"
+                            value={summary}
+                            onchange={handleSummaryChange}>
+                        </lightning-textarea>
+                        <div class="slds-m-top_small">
+                            <lightning-button
+                                class="slds-m-right_x-small"
+                                variant="brand"
+                                label="Save"
+                                onclick={handleSave}>
+                            </lightning-button>
+                            <lightning-button
+                                variant="neutral"
+                                label="Cancel"
+                                onclick={handleCancel}>
+                            </lightning-button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Version history, newest first -->
+                <template lwc:if={hasVersions}>
+                    <c-list-datatable
+                        key-field="id"
+                        data={rows}
+                        columns={columns}
+                        sorted-by={sortedBy}
+                        sorted-direction={sortedDirection}
+                        onsort={handleSort}
+                        show-row-number-column
+                        hide-checkbox-column>
+                    </c-list-datatable>
+                </template>
+                <template lwc:else>
+                    <p class="slds-text-color_weak slds-p-vertical_x-small">No PSA versions logged yet. The seller sends the first draft.</p>
+                </template>
+            </template>
+            <template lwc:else>
+                <p class="slds-text-color_weak">
+                    A Contract Review opens automatically when the deal reaches PSA.
+                </p>
+            </template>
+        </div>
+    </lightning-card>
+</template>

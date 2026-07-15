@@ -3,36 +3,28 @@ import { NavigationMixin } from 'lightning/navigation';
 import getOnboardings from '@salesforce/apex/OnboardingController.getOnboardings';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const STATUS = {
-    'On Track':    ['#E2F0EC', '#1A7A6B'],
-    'In Progress': ['#FBF1DA', '#D4940A'],
-    'At Risk':     ['#FAE6E2', '#C0392B'],
-    'Blocked':     ['#FAE6E2', '#C0392B'],
-    'Complete':    ['#E2F0EC', '#1A7A6B']
-};
-const FALLBACK = ['#EEF1F4', '#94a3b8'];
 const pillWrap = (bg) => `display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:9999px;font-weight:600;color:#3e3e3e;background:${bg}`;
 const pillDot = (c) => `width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0`;
 const pctColor = (p) => (p >= 80 ? '#1A7A6B' : p >= 50 ? '#D4940A' : '#C0392B');
 
 const COLUMNS = [
+    // Property + Stage have no initialWidth: in fixed mode they flex to fill the
+    // leftover width, so the table fills the card and stays responsive.
     { label: 'Property', fieldName: 'recordUrl', type: 'url', typeAttributes: { label: { fieldName: 'propertyName' }, target: '_self' } },
-    { label: 'Start', fieldName: 'startLabel', type: 'text' },
-    { label: 'Target', fieldName: 'targetLabel', type: 'text' },
+    { label: 'Start', fieldName: 'startLabel', type: 'text', initialWidth: 120 },
+    { label: 'Target', fieldName: 'targetLabel', type: 'text', initialWidth: 120 },
     { label: 'Stage', fieldName: 'stage', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
     {
-        label: '% Complete', fieldName: 'pctText', type: 'progress',
+        label: '% Complete', fieldName: 'pctText', type: 'progress', initialWidth: 150,
         typeAttributes: {
-            wrapStyle: 'display:flex;align-items:center;gap:10px;min-width:150px',
-            trackStyle: 'width:96px;height:8px;background:#ECEBEA;border-radius:9999px;overflow:hidden',
+            wrapStyle: 'display:flex;align-items:center;gap:8px;min-width:120px',
+            trackStyle: 'width:90px;height:8px;background:#ECEBEA;border-radius:9999px;overflow:hidden',
             barStyle: { fieldName: 'pctBar' },
             numStyle: 'color:#3B3B3B;font-weight:700;white-space:nowrap;font-size:12px;font-variant-numeric:tabular-nums',
             text: { fieldName: 'pctText' }
         }
     },
-    { label: 'Open', fieldName: 'openTasks', type: 'number', cellAttributes: { alignment: 'center' } },
-    { label: 'Status', fieldName: 'status', type: 'pill', typeAttributes: { wrapStyle: { fieldName: 'statusWrap' }, dotStyle: { fieldName: 'statusDot' } } },
-    { label: 'Owner', fieldName: 'owner', type: 'text' }
+    { label: 'Open', fieldName: 'openTasks', type: 'number', initialWidth: 90, cellAttributes: { alignment: 'center' } }
 ];
 
 export default class OnboardingPropertyList extends NavigationMixin(LightningElement) {
@@ -53,7 +45,6 @@ export default class OnboardingPropertyList extends NavigationMixin(LightningEle
         if (!this._data) return [];
         return this._data.map((o) => {
             const pct = o.completionPct || 0;
-            const [sBg, sDot] = STATUS[o.status] || FALLBACK;
             return {
                 id: o.id,
                 propertyName: o.propertyName || o.name,
@@ -65,11 +56,7 @@ export default class OnboardingPropertyList extends NavigationMixin(LightningEle
                 stageDot: pillDot('#1B3A6B'),
                 pctText: `${pct}%`,
                 pctBar: `width:${pct}%;height:100%;background:${pctColor(pct)};border-radius:9999px`,
-                openTasks: o.openTasks,
-                status: o.status || '—',
-                statusWrap: pillWrap(sBg),
-                statusDot: pillDot(sDot),
-                owner: o.owner || '—'
+                openTasks: o.openTasks
             };
         });
     }

@@ -1,0 +1,23 @@
+<template>
+    <lightning-card>
+        <div slot="title" class="hdr">
+            <span class="hdr-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#132850" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/>
+                </svg>
+            </span>
+            <span class="hdr-title">Broker Tracker ({count})</span>
+        </div>
+        <div slot="actions" class="hdr-actions">
+            <div class="tabs">
+                <template for:each={statusTabs} for:item="t">
+                    <button key={t.key} data-key={t.key} class={t.cls} onclick={handleStatus}>{t.label}<span class="tab-count">{t.count}</span></button>
+                </template>
+            </div>
+            <lightning-button variant="brand" label="New Assignment" icon-name="utility:add" onclick={newAssignment}></lightning-button>
+        </div>
+        <c-list-datatable key-field="id" data={rows} columns={columns} column-widths-mode="fixed" hide-checkbox-column
+            sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}></c-list-datatable>
+        <div slot="footer" class="note">Records are never deleted — closed listings stay visible by changing status. Click any row to open it.</div>
+    </lightning-card>
+</template>

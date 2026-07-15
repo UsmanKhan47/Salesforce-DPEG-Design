@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <decisions>
+        <name>Is_Primary</name>
+        <label>Is the deal&apos;s primary underwriting?</label>
+        <locationX>176</locationX>
+        <locationY>180</locationY>
+        <defaultConnectorLabel>Not primary</defaultConnectorLabel>
+        <rules>
+            <name>Primary_For_Parent</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Opportunity__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>false</booleanValue>
+                </rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>$Record.Opportunity__r.Primary_Underwriting__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <elementReference>$Record.Id</elementReference>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Sync_Opp_Mirrors</targetReference>
+            </connector>
+            <label>Primary for parent</label>
+        </rules>
+    </decisions>
+    <description>The Opportunity keeps mirror copies of the key underwriting numbers (used by reports, the dashboard table, and the approval page). The Underwriting record is the system of record for entry (the Opp Underwriting tab spans to it); this flow copies the primary underwriting&apos;s numbers back onto the deal. Opp.Underwriting_Status__c is deliberately NOT synced - the approval process owns it.</description>
+    <environments>Default</environments>
+    <interviewLabel>Underwriting Opp Sync {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Underwriting Opp Sync</label>
+    <processType>AutoLaunchedFlow</processType>
+    <recordUpdates>
+        <name>Sync_Opp_Mirrors</name>
+        <label>Sync Opp Mirrors</label>
+        <locationX>176</locationX>
+        <locationY>300</locationY>
+        <inputAssignments>
+            <field>Market_Cap_Rate__c</field>
+            <value>
+                <elementReference>$Record.Market_Cap_Rate__c</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>My_Cap_Rate__c</field>
+            <value>
+                <elementReference>$Record.My_Cap_Rate__c</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>My_Price__c</field>
+            <value>
+                <elementReference>$Record.My_Price__c</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Underwritten_NOI__c</field>
+            <value>
+                <elementReference>$Record.Underwritten_NOI__c</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record.Opportunity__r</inputReference>
+    </recordUpdates>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Is_Primary</targetReference>
+        </connector>
+        <object>Underwriting__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

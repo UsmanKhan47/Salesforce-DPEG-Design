@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Type --></label>
+    <name>Type__c</name>
+    <picklistValues>
+        <masterLabel>Closing Date</masterLabel>
+        <translation><!-- Closing Date --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Earnest Money Due</masterLabel>
+        <translation><!-- Earnest Money Due --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Feasibility End</masterLabel>
+        <translation><!-- Feasibility End --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Insurance Binding</masterLabel>
+        <translation><!-- Insurance Binding --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Loan Commitment</masterLabel>
+        <translation><!-- Loan Commitment --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

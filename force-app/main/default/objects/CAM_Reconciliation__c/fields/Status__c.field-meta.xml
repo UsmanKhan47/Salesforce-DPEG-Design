@@ -9,9 +9,21 @@
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
-            <value><fullName>Pending</fullName><default>true</default><label>Pending</label></value>
-            <value><fullName>In Review</fullName><default>false</default><label>In Review</label></value>
-            <value><fullName>Approved</fullName><default>false</default><label>Approved</label></value>
+            <value>
+                <fullName>Pending</fullName>
+                <default>true</default>
+                <label>Pending</label>
+            </value>
+            <value>
+                <fullName>In Review</fullName>
+                <default>false</default>
+                <label>In Review</label>
+            </value>
+            <value>
+                <fullName>Approved</fullName>
+                <default>false</default>
+                <label>Approved</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

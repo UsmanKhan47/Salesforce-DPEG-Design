@@ -11,9 +11,17 @@
         <sortOrder>Asc</sortOrder>
     </groupingsDown>
     <name>Occupancy by Property</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
     <reportType>CustomEntityCustomEntity$Property_Asset__c$Unit__c</reportType>
     <scope>organization</scope>
     <showDetails>false</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>Property_Asset__c.Closing_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
 </Report>

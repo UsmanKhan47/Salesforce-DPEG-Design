@@ -9,6 +9,60 @@
         <type>Flexipage</type>
         <pageOrSobjectType>Onboarding__c</pageOrSobjectType>
     </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Broker Assignment Record Page</comment>
+        <content>Broker_Assignment_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Broker_Assignment__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Lease Inquiry Record Page</comment>
+        <content>Lease_Inquiry_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Lease_Inquiry__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Lease Record Page</comment>
+        <content>Lease_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Lease__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Lease Renewal Record Page</comment>
+        <content>Lease_Renewal_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Lease_Renewal__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Work Order Record Page</comment>
+        <content>Work_Order_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Work_Order__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Property Asset Record Page</comment>
+        <content>Property_Asset_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Property_Asset__c</pageOrSobjectType>
+    </actionOverrides>
     <brand>
         <headerColor>#2E844A</headerColor>
         <logo>DPEG_Logo_Clear</logo>
@@ -20,10 +74,21 @@
     <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
     <isNavPersonalizationDisabled>true</isNavPersonalizationDisabled>
     <isNavTabPersistenceDisabled>true</isNavTabPersistenceDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
     <label>Property Management</label>
     <navType>Standard</navType>
     <tabs>Onboarding</tabs>
+    <tabs>Broker_Assignments</tabs>
+    <tabs>Lease_Activity_Tracker</tabs>
+    <tabs>Lease_Renewals</tabs>
+    <tabs>Work_Orders</tabs>
     <tabs>Onboarding__c</tabs>
-    <tabs>standard-report</tabs>
+    <tabs>Broker_Assignment__c</tabs>
+    <tabs>Lease_Inquiry__c</tabs>
+    <tabs>Lease_Renewal__c</tabs>
+    <tabs>Work_Order__c</tabs>
+    <tabs>Property_Management_Dashboard</tabs>
+    <tabs>Leasing_Dashboard</tabs>
+    <tabs>Work_Order_Dashboard</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>

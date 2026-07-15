@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Disposition Stage --></label>
+    <name>Disposition_Stage__c</name>
+    <picklistValues>
+        <masterLabel>Active Listing</masterLabel>
+        <translation><!-- Active Listing --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>BOV Outreach</masterLabel>
+        <translation><!-- BOV Outreach --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Closing</masterLabel>
+        <translation><!-- Closing --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Completed</masterLabel>
+        <translation><!-- Completed --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Disposition Readiness</masterLabel>
+        <translation><!-- Disposition Readiness --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

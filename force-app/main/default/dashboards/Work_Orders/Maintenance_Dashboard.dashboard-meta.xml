@@ -5,10 +5,13 @@
     <backgroundStartColor>#FFFFFF</backgroundStartColor>
     <dashboardGridLayout>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>0</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -20,12 +23,17 @@
                 <report>Work_Orders/Open_Work_Orders_by_Priority</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>2</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>2</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -37,12 +45,17 @@
                 <report>Work_Orders/Critical_High_Open</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>4</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>4</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -54,12 +67,17 @@
                 <report>Work_Orders/Escalated_Overdue</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>6</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -71,12 +89,17 @@
                 <report>Work_Orders/In_Progress_WOs</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>8</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>8</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -88,12 +111,17 @@
                 <report>Work_Orders/Resolved_MTD</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>10</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>10</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -105,18 +133,24 @@
                 <report>Work_Orders/On_Hold_WOs</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>6</colSpan><columnIndex>0</columnIndex><rowIndex>4</rowIndex><rowSpan>8</rowSpan>
+            <colSpan>6</colSpan>
+            <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartAxisRange>Auto</chartAxisRange>
-                <chartSummary><axisBinding>y</axisBinding><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <axisBinding>y</axisBinding>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Bar</componentType>
                 <decimalPrecision>0</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <drillEnabled>true</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
+                <drillToDetailEnabled>false</drillToDetailEnabled>
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>BucketField_Aging</groupingColumn>
@@ -124,43 +158,82 @@
                 <legendPosition>Bottom</legendPosition>
                 <report>Work_Orders/WO_Aging_Buckets</report>
                 <showPercentage>false</showPercentage>
+                <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowLabelAscending</sortBy>
                 <title>Work Order Aging</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
+            <rowIndex>4</rowIndex>
+            <rowSpan>8</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>6</colSpan><columnIndex>6</columnIndex><rowIndex>4</rowIndex><rowSpan>8</rowSpan>
+            <colSpan>6</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <componentType>FlexTable</componentType>
                 <flexComponentProperties>
                     <decimalPrecision>-1</decimalPrecision>
-                    <flexTableColumn><reportColumn>Work_Order__c.Property_Display_Name__c</reportColumn><showSubTotal>false</showSubTotal><showTotal>false</showTotal><type>detail</type></flexTableColumn>
-                    <flexTableColumn><reportColumn>Work_Order__c.Subject__c</reportColumn><showSubTotal>false</showSubTotal><showTotal>false</showTotal><type>detail</type></flexTableColumn>
-                    <flexTableColumn><reportColumn>Work_Order__c.Priority__c</reportColumn><showSubTotal>false</showSubTotal><showTotal>false</showTotal><type>detail</type></flexTableColumn>
-                    <flexTableColumn><reportColumn>Work_Order__c.Vendor__c</reportColumn><showSubTotal>false</showSubTotal><showTotal>false</showTotal><type>detail</type></flexTableColumn>
-                    <flexTableColumn><reportColumn>Work_Order__c.Hours_Open__c</reportColumn><showSubTotal>false</showSubTotal><showTotal>false</showTotal><type>detail</type></flexTableColumn>
-                    <flexTableSortInfo><sortColumn>Work_Order__c.Hours_Open__c</sortColumn><sortOrder>2</sortOrder></flexTableSortInfo>
+                    <flexTableColumn>
+                        <reportColumn>Work_Order__c.Property_Display_Name__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>Work_Order__c.Subject__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>Work_Order__c.Priority__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>Work_Order__c.Vendor__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableColumn>
+                        <reportColumn>Work_Order__c.Hours_Open__c</reportColumn>
+                        <showSubTotal>false</showSubTotal>
+                        <showTotal>false</showTotal>
+                        <type>detail</type>
+                    </flexTableColumn>
+                    <flexTableSortInfo>
+                        <sortColumn>Work_Order__c.Hours_Open__c</sortColumn>
+                        <sortOrder>2</sortOrder>
+                    </flexTableSortInfo>
                     <hideChatterPhotos>true</hideChatterPhotos>
                 </flexComponentProperties>
                 <groupingSortProperties/>
                 <header>Active Work Orders — Priority View</header>
                 <report>Work_Orders/Active_WO_Priority</report>
             </dashboardComponent>
+            <rowIndex>4</rowIndex>
+            <rowSpan>8</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>6</colSpan><columnIndex>0</columnIndex><rowIndex>12</rowIndex><rowSpan>6</rowSpan>
+            <colSpan>6</colSpan>
+            <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartAxisRange>Auto</chartAxisRange>
-                <chartSummary><aggregate>Maximum</aggregate><axisBinding>y</axisBinding><column>Work_Order__c.SLA_Target_Hours__c</column></chartSummary>
+                <chartSummary>
+                    <aggregate>Maximum</aggregate>
+                    <axisBinding>y</axisBinding>
+                    <column>Work_Order__c.SLA_Target_Hours__c</column>
+                </chartSummary>
                 <componentType>Bar</componentType>
                 <decimalPrecision>0</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <drillEnabled>true</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
+                <drillToDetailEnabled>false</drillToDetailEnabled>
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>Work_Order__c.Priority__c</groupingColumn>
@@ -168,23 +241,31 @@
                 <legendPosition>Bottom</legendPosition>
                 <report>Work_Orders/SLA_Tiers_by_Priority</report>
                 <showPercentage>false</showPercentage>
+                <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowValueAscending</sortBy>
                 <title>SLA Target Hours by Priority</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
+            <rowIndex>12</rowIndex>
+            <rowSpan>6</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>6</colSpan><columnIndex>6</columnIndex><rowIndex>12</rowIndex><rowSpan>6</rowSpan>
+            <colSpan>6</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartAxisRange>Auto</chartAxisRange>
-                <chartSummary><aggregate>Average</aggregate><axisBinding>y</axisBinding><column>Work_Order__c.Resolution_Days__c</column></chartSummary>
+                <chartSummary>
+                    <aggregate>Average</aggregate>
+                    <axisBinding>y</axisBinding>
+                    <column>Work_Order__c.Resolution_Days__c</column>
+                </chartSummary>
                 <componentType>Bar</componentType>
                 <decimalPrecision>1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <drillEnabled>true</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
+                <drillToDetailEnabled>false</drillToDetailEnabled>
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>Work_Order__c.Vendor__c</groupingColumn>
@@ -192,11 +273,14 @@
                 <legendPosition>Bottom</legendPosition>
                 <report>Work_Orders/Vendor_Performance</report>
                 <showPercentage>false</showPercentage>
+                <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowValueAscending</sortBy>
                 <title>Vendor Performance — Avg Resolution Days</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
+            <rowIndex>12</rowIndex>
+            <rowSpan>6</rowSpan>
         </dashboardGridComponents>
         <numberOfColumns>12</numberOfColumns>
         <rowHeight>36</rowHeight>

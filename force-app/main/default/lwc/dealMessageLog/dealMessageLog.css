@@ -1,0 +1,47 @@
+:host { display:block; font-family:'Salesforce Sans', Arial, sans-serif; color:#181818; }
+
+.dml-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); overflow:hidden; }
+
+/* header */
+.dml-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px; border-bottom:1px solid #E2E0DB; }
+.dml-head-left { display:flex; align-items:center; gap:10px; }
+.dml-head-icon { width:26px; height:26px; border-radius:50%; background:#0B5394; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.dml-title { font-size:15px; font-weight:700; line-height:1.1; color:#1A1714; }
+.dml-sub { font-size:11px; color:#8A8680; margin-top:2px; }
+
+/* composer */
+.dml-composer { padding:16px 20px; background:#F3F6FB; border-bottom:1px solid #D6E0EE; }
+.dml-composer-row { display:flex; gap:14px; margin-bottom:10px; }
+.dml-composer-row > * { flex:1; max-width:260px; }
+.dml-revision { display:block; max-width:260px; margin-bottom:10px; }
+.dml-textarea { display:block; }
+.dml-error { margin-top:10px; font-size:12px; color:#8B1A1A; }
+.dml-composer-actions { display:flex; gap:10px; margin-top:14px; }
+
+/* timeline */
+.dml-body { padding:16px 20px; }
+.dml-entry { display:flex; gap:12px; padding-bottom:18px; }
+.dml-rail { display:flex; flex-direction:column; align-items:center; flex-shrink:0; }
+.dml-marker { width:12px; height:12px; border-radius:50%; background:#B0AEA8; border:2px solid #fff; box-shadow:0 0 0 2px #E2E0DB; margin-top:3px; flex-shrink:0; }
+.dml-marker--latest { background:#0B5394; box-shadow:0 0 0 2px #D6E0EE; }
+.dml-line { flex:1; width:2px; background:#E2E0DB; margin-top:2px; }
+.dml-content { flex:1; padding-bottom:2px; min-width:0; }
+.dml-entry-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.dml-by { font-size:12px; font-weight:700; color:#1A1714; }
+.dml-date { font-size:11px; color:#8A8680; }
+.dml-details { font-size:13px; color:#1A1714; line-height:1.55; margin-top:5px; white-space:pre-wrap; word-break:break-word; }
+.dml-entry-foot { margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dml-method { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#5B5750; font-weight:600; }
+.dml-latest { font-size:10px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#7A5A00; background:#FBF2DA; padding:2px 7px; border-radius:9999px; }
+.dml-empty { font-size:12px; color:#8A8680; padding:6px 0 12px; }
+
+/* direction badges */
+.dml-dir { display:inline-flex; align-items:center; font-size:11px; font-weight:600; padding:3px 10px; border-radius:9999px; line-height:1.4; white-space:nowrap; }
+.dml-dir--received { background:#FFF1E0; color:#8A4B00; }
+.dml-dir--sent { background:#EBF3FC; color:#1A4880; }
+.dml-dir--internal { background:#EDEBE7; color:#3F3C38; }
+
+/* document-revision badge (Contract Review) */
+.dml-rev { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:3px 10px; border-radius:9999px; line-height:1.4; white-space:nowrap; background:#EAF6EC; color:#1B5E20; }
+
+.dml-foot-note { display:flex; align-items:center; gap:7px; padding:10px 0 2px; color:#8A8680; font-size:11px; border-top:1px dashed #E2E0DB; }

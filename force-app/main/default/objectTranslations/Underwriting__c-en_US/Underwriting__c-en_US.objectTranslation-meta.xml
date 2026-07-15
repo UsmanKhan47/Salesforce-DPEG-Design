@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObjectTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <caseValues>
+        <plural>false</plural>
+        <value>Underwriting</value>
+    </caseValues>
+    <caseValues>
+        <plural>true</plural>
+        <value>Underwritings</value>
+    </caseValues>
+    <layouts>
+        <layout>Underwriting Layout</layout>
+        <sections>
+            <label><!-- Underwriting Information --></label>
+            <section>Underwriting Information</section>
+        </sections>
+    </layouts>
+    <quickActions>
+        <label><!-- Edit Underwriting --></label>
+        <name>Edit_Underwriting</name>
+    </quickActions>
+    <quickActions>
+        <label><!-- Submit for Approval --></label>
+        <name>Submit_for_Approval</name>
+    </quickActions>
+    <startsWith>Consonant</startsWith>
+</CustomObjectTranslation>

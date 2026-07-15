@@ -9,9 +9,8 @@ const STAGE = {
     'Development Review':  ['#efe9f7', '#7E57C2'],
     'Construction Review': ['#e3f4f2', '#26A69A'],
     Underwriting:         ['#e8f1fc', '#1E88E5'],
-    'LOI Submitted':      ['#e9f2fd', '#42A5F5'],
-    'LOI Signed':         ['#e4f6f8', '#26C6DA'],
-    'Under Contract':     ['#fff1e0', '#FB8C00'],
+    LOI:                  ['#e9f2fd', '#42A5F5'],
+    PSA:                  ['#fff1e0', '#FB8C00'],
     'Closed Won':         ['#e8f5e9', '#43A047'],
     'Dead/Pass':          ['#fdeaea', '#E53935'],
     'Portfolio Deal':     ['#efe9e6', '#8D6E63']
@@ -29,8 +28,23 @@ const COLUMNS = [
     { label: 'Stage', fieldName: 'stage', type: 'pill', initialWidth: 150, typeAttributes: { wrapStyle: { fieldName: 'stageWrap' }, dotStyle: { fieldName: 'stageDot' } } },
     { label: 'Deal Type', fieldName: 'dealType', type: 'pill', initialWidth: 115, typeAttributes: { wrapStyle: { fieldName: 'dtWrap' }, dotStyle: { fieldName: 'dtDot' } } },
     { label: 'Asking Price', fieldName: 'priceLabel', type: 'text', initialWidth: 120 },
+    { label: 'NOI', fieldName: 'noiLabel', type: 'text', initialWidth: 110 },
     { label: 'Age', fieldName: 'age', type: 'text', initialWidth: 80 }
 ];
+
+// $1.2M / $850K / $0 — compact currency for the Asking Price and NOI columns.
+const money = (n) => {
+    if (n == null) {
+        return '—';
+    }
+    if (Math.abs(n) >= 1000000) {
+        return '$' + (n / 1000000).toFixed(1) + 'M';
+    }
+    if (Math.abs(n) >= 1000) {
+        return '$' + Math.round(n / 1000) + 'K';
+    }
+    return '$' + n;
+};
 
 export default class RecentOpportunities extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
@@ -80,7 +94,8 @@ export default class RecentOpportunities extends NavigationMixin(LightningElemen
                 dealType: r.dealType || '—',
                 dtWrap: pillWrap(dBg),
                 dtDot: pillDot(dDot),
-                priceLabel: r.price != null ? '$' + (r.price / 1000000).toFixed(1) + 'M' : '—',
+                priceLabel: money(r.price),
+                noiLabel: money(r.noi),
                 age: r.days + 'd'
             };
         });

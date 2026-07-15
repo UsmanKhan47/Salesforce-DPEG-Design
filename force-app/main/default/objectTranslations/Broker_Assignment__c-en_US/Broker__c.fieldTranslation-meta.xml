@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Broker --></label>
+    <lookupFilter>
+        <errorMessage><!-- The selected Contact is not flagged as a broker (Is_Broker__c). --></errorMessage>
+    </lookupFilter>
+    <name>Broker__c</name>
+    <relationshipLabel><!-- Broker Assignments --></relationshipLabel>
+</CustomFieldTranslation>

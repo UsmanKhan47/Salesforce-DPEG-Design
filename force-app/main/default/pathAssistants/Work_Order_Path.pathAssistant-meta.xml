@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Work_Order__c</entityName>
+    <fieldName>Status__c</fieldName>
+    <masterLabel>Work Order Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Closed with the nightly Yardi sync. No further action.</info>
+        <picklistValueName>Closed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Completed_Date__c</fieldNames>
+        <info>Work finished. Completed date is stamped automatically.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Vendor__c</fieldNames>
+        <info>Someone picked it up — dispatched and/or a vendor assigned. Watch the SLA due time.</info>
+        <picklistValueName>In Progress</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Reported and synced from Yardi. SLA clock is running — nobody has acted yet.</info>
+        <picklistValueName>New</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Delay_Reason__c</fieldNames>
+        <info>Stuck waiting on something. Flag the Reason for Delay so leadership sees why on the dashboard.</info>
+        <picklistValueName>On Hold</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

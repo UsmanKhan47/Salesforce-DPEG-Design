@@ -2,11 +2,8 @@ import { LightningElement, wire } from 'lwc';
 import getPortfolio from '@salesforce/apex/OnboardingController.getPortfolio';
 
 const SEG = [
-    { key: 'complete',   label: 'Complete',    color: '#1A7A6B' },
-    { key: 'inProgress', label: 'In Progress', color: '#D4940A' },
-    { key: 'notStarted', label: 'Not Started', color: '#6B7280' },
-    { key: 'blocked',    label: 'Blocked',     color: '#C0392B' },
-    { key: 'na',         label: 'N/A',         color: '#9CA3AF' }
+    { key: 'complete',   label: 'Completed',   color: '#1A7A6B' },
+    { key: 'notStarted', label: 'Not Started', color: '#6B7280' }
 ];
 
 export default class OnboardingPortfolioProgress extends LightningElement {

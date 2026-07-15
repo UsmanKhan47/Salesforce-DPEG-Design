@@ -7,12 +7,36 @@
         <nullTreatment>n</nullTreatment>
         <sourceColumnName>Work_Order__c.Hours_Open__c</sourceColumnName>
         <useOther>false</useOther>
-        <values><sourceValues><to>72</to></sourceValues><value>0-3 days</value></values>
-        <values><sourceValues><from>72</from><to>168</to></sourceValues><value>4-7 days</value></values>
-        <values><sourceValues><from>168</from><to>360</to></sourceValues><value>8-15 days</value></values>
-        <values><sourceValues><from>360</from></sourceValues><value>&gt;15 days</value></values>
+        <values>
+            <sourceValues>
+                <to>72</to>
+            </sourceValues>
+            <value>0-3 days</value>
+        </values>
+        <values>
+            <sourceValues>
+                <from>72</from>
+                <to>168</to>
+            </sourceValues>
+            <value>4-7 days</value>
+        </values>
+        <values>
+            <sourceValues>
+                <from>168</from>
+                <to>360</to>
+            </sourceValues>
+            <value>8-15 days</value>
+        </values>
+        <values>
+            <sourceValues>
+                <from>360</from>
+            </sourceValues>
+            <value>&gt;15 days</value>
+        </values>
     </buckets>
-    <columns><field>Work_Order__c.Subject__c</field></columns>
+    <columns>
+        <field>Work_Order__c.Subject__c</field>
+    </columns>
     <filter>
         <criteriaItems>
             <column>Work_Order__c.Is_Open__c</column>
@@ -29,9 +53,17 @@
         <sortOrder>Asc</sortOrder>
     </groupingsDown>
     <name>Work Order Aging</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
     <reportType>CustomEntity$Work_Order__c</reportType>
     <scope>organization</scope>
     <showDetails>false</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>Work_Order__c.Completed_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
 </Report>

@@ -47,45 +47,27 @@
         <won>false</won>
     </standardValue>
     <standardValue>
-        <fullName>Initiate LOI</fullName>
+        <fullName>LOI</fullName>
         <default>false</default>
-        <label>Initiate LOI</label>
-        <closed>false</closed>
-        <forecastCategory>Pipeline</forecastCategory>
-        <probability>40</probability>
-        <won>false</won>
-    </standardValue>
-    <standardValue>
-        <fullName>LOI Under Approval</fullName>
-        <default>false</default>
-        <label>LOI Under Approval</label>
-        <closed>false</closed>
-        <forecastCategory>Pipeline</forecastCategory>
-        <probability>45</probability>
-        <won>false</won>
-    </standardValue>
-    <standardValue>
-        <fullName>LOI Submitted</fullName>
-        <default>false</default>
-        <label>LOI Submitted</label>
+        <label>LOI</label>
         <closed>false</closed>
         <forecastCategory>BestCase</forecastCategory>
         <probability>50</probability>
         <won>false</won>
     </standardValue>
     <standardValue>
-        <fullName>LOI Signed</fullName>
+        <fullName>PSA</fullName>
         <default>false</default>
-        <label>LOI Signed</label>
+        <label>PSA</label>
         <closed>false</closed>
-        <forecastCategory>BestCase</forecastCategory>
-        <probability>70</probability>
+        <forecastCategory>Forecast</forecastCategory>
+        <probability>85</probability>
         <won>false</won>
     </standardValue>
     <standardValue>
-        <fullName>Under Contract</fullName>
+        <fullName>About to Close</fullName>
         <default>false</default>
-        <label>Under Contract</label>
+        <label>About to Close</label>
         <closed>false</closed>
         <forecastCategory>Forecast</forecastCategory>
         <probability>90</probability>

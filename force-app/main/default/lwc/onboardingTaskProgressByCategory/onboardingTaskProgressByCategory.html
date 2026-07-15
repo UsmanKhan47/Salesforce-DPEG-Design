@@ -1,13 +1,20 @@
 <template>
-    <lightning-card icon-name="standard:checklist">
-        <span slot="title">Task Progress by Category</span>
-        <div class="grid">
-            <template for:each={tiles} for:item="t">
-                <div key={t.key} class="tile" style={t.tileStyle}>
-                    <div class="count">{t.count}</div>
-                    <div class="name">{t.name}</div>
-                </div>
+    <div class="card">
+        <div class="hd">
+            <lightning-icon icon-name="standard:task" size="small" class="hd__icon"></lightning-icon>
+            <span class="hd__title">Task Progress by Category</span>
+        </div>
+        <div class="cards-grid">
+            <template for:each={cards} for:item="c">
+                <c-onboarding-card-child
+                    key={c.key}
+                    value={c.value}
+                    label={c.label}
+                    icon-name={c.iconName}
+                    icon-color={c.iconColor}
+                    done={c.done}>
+                </c-onboarding-card-child>
             </template>
         </div>
-    </lightning-card>
+    </div>
 </template>

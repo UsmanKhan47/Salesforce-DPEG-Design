@@ -9,10 +9,26 @@
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
-            <value><fullName>1-30 Days</fullName><default>false</default><label>1-30 Days</label></value>
-            <value><fullName>31-60 Days</fullName><default>false</default><label>31-60 Days</label></value>
-            <value><fullName>61-90 Days</fullName><default>false</default><label>61-90 Days</label></value>
-            <value><fullName>90+ Days</fullName><default>false</default><label>90+ Days</label></value>
+            <value>
+                <fullName>1-30 Days</fullName>
+                <default>false</default>
+                <label>1-30 Days</label>
+            </value>
+            <value>
+                <fullName>31-60 Days</fullName>
+                <default>false</default>
+                <label>31-60 Days</label>
+            </value>
+            <value>
+                <fullName>61-90 Days</fullName>
+                <default>false</default>
+                <label>61-90 Days</label>
+            </value>
+            <value>
+                <fullName>90+ Days</fullName>
+                <default>false</default>
+                <label>90+ Days</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

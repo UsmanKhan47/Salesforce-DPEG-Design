@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SLA_Target_Hours__c</fullName>
+    <description>SLA window in hours by priority: Critical 24, High 48, Medium 168, Low 360.</description>
+    <externalId>false</externalId>
+    <formula>CASE(TEXT(Priority__c), &quot;Critical&quot;, 24, &quot;High&quot;, 48, &quot;Medium&quot;, 168, &quot;Low&quot;, 360, 168)</formula>
+    <label>SLA Target (Hours)</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Aging__c</fullName>
+    <description>Colour-coded aging signal so the days-in-stage health shows on native Kanban cards and list views. Thresholds: over 14 days Overdue, over 7 days Aging.</description>
+    <externalId>false</externalId>
+    <formula>IF(OR(ISPICKVAL(Status__c, &quot;Closed Won&quot;), ISPICKVAL(Status__c, &quot;Closed Lost&quot;)), &quot;🟢 Signed&quot;, IF(ISBLANK(Stage_Start_Date__c), &quot;🟢 On track&quot;, IF((TODAY() - Stage_Start_Date__c) &gt; 14, &quot;🔴 Overdue&quot;, IF((TODAY() - Stage_Start_Date__c) &gt; 7, &quot;🟡 Aging&quot;, &quot;🟢 On track&quot;))))</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Aging</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

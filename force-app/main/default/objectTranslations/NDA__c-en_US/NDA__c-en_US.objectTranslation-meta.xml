@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObjectTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <caseValues>
+        <plural>false</plural>
+        <value>NDA</value>
+    </caseValues>
+    <caseValues>
+        <plural>true</plural>
+        <value>NDAs</value>
+    </caseValues>
+    <layouts>
+        <layout>NDA Layout</layout>
+        <sections>
+            <label><!-- NDA Information --></label>
+            <section>NDA Information</section>
+        </sections>
+    </layouts>
+    <quickActions>
+        <label><!-- Edit NDA --></label>
+        <name>Edit_NDA</name>
+    </quickActions>
+    <startsWith>Consonant</startsWith>
+</CustomObjectTranslation>

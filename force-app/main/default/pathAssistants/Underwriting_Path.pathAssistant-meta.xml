@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <entityName>Underwriting__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>Underwriting Path</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Principal_Price_Decision__c</fieldNames>
+        <info>Underwrite finished - check Underwriting Complete on the deal and submit for principal approval (12B). The principal signs off here.</info>
+        <picklistValueName>Approved</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Underwriting signed off and closed out. The deal has advanced to LOI.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>My_Price__c</fieldNames>
+        <fieldNames>My_Cap_Rate__c</fieldNames>
+        <fieldNames>Underwritten_NOI__c</fieldNames>
+        <info>Gather the data and build the model: our price, cap rate, NOI, returns. Log every seller/broker exchange in the Messages tab.</info>
+        <picklistValueName>In Progress</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Underwriting opened for the deal. Confirm the guidance numbers carried over and assign the underwriter.</info>
+        <picklistValueName>Requested</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>

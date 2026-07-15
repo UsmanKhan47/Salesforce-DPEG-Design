@@ -1,0 +1,56 @@
+<template>
+    <article class="ps-card">
+        <!-- Header -->
+        <div class="ps-hd">
+            <span class="ps-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7A9ED4"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>
+                </svg>
+            </span>
+            <span class="ps-title">Active Pipeline by Stage (last 5 years)</span>
+        </div>
+
+        <!-- Donut + readout -->
+        <div class="ps-top">
+            <div class="ps-donut-wrap">
+                <svg width="112" height="112" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="#EBEBEB" stroke-width="13"/>
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="#1A3464" stroke-width="13"
+                            stroke-linecap="round"
+                            stroke-dasharray={dash}
+                            transform="rotate(-90 60 60)"/>
+                </svg>
+                <div class="ps-center">
+                    <span class="ps-pct">{pct}%</span>
+                    <span class="ps-act-lbl">Reached LOI</span>
+                </div>
+            </div>
+            <div class="ps-readout">
+                <div class="ps-rd-label">Active inquiries</div>
+                <div class="ps-rd-nums">
+                    <span class="ps-rd-active">{total}</span>
+                </div>
+                <div class="ps-rd-sub">across the pipeline</div>
+            </div>
+        </div>
+
+        <!-- Stacked stage bar -->
+        <div class="ps-bar">
+            <template for:each={segments} for:item="s">
+                <div key={s.key} style={s.barStyle}></div>
+            </template>
+        </div>
+
+        <!-- Legend -->
+        <div class="ps-legend">
+            <template for:each={segments} for:item="s">
+                <div key={s.key} class="ps-leg-row">
+                    <span style={s.dotStyle}></span>
+                    <span class="ps-leg-lbl">{s.label}</span>
+                    <span class="ps-leg-cnt">{s.count}</span>
+                </div>
+            </template>
+        </div>
+    </article>
+</template>

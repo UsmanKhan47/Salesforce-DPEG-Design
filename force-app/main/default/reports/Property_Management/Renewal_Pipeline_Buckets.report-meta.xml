@@ -7,13 +7,43 @@
         <nullTreatment>n</nullTreatment>
         <sourceColumnName>Lease_Renewal__c.Days_To_Expiry__c</sourceColumnName>
         <useOther>false</useOther>
-        <values><sourceValues><to>0</to></sourceValues><value>Expired - M2M</value></values>
-        <values><sourceValues><from>0</from><to>30</to></sourceValues><value>0-30d</value></values>
-        <values><sourceValues><from>30</from><to>60</to></sourceValues><value>31-60d</value></values>
-        <values><sourceValues><from>60</from><to>90</to></sourceValues><value>61-90d</value></values>
-        <values><sourceValues><from>90</from></sourceValues><value>91-180d</value></values>
+        <values>
+            <sourceValues>
+                <to>0</to>
+            </sourceValues>
+            <value>Expired - M2M</value>
+        </values>
+        <values>
+            <sourceValues>
+                <from>0</from>
+                <to>30</to>
+            </sourceValues>
+            <value>0-30d</value>
+        </values>
+        <values>
+            <sourceValues>
+                <from>30</from>
+                <to>60</to>
+            </sourceValues>
+            <value>31-60d</value>
+        </values>
+        <values>
+            <sourceValues>
+                <from>60</from>
+                <to>90</to>
+            </sourceValues>
+            <value>61-90d</value>
+        </values>
+        <values>
+            <sourceValues>
+                <from>90</from>
+            </sourceValues>
+            <value>91-180d</value>
+        </values>
     </buckets>
-    <columns><field>Lease_Renewal__c.Tenant_Name__c</field></columns>
+    <columns>
+        <field>Lease_Renewal__c.Tenant_Name__c</field>
+    </columns>
     <filter>
         <criteriaItems>
             <column>Lease_Renewal__c.Status__c</column>
@@ -37,9 +67,17 @@
         <sortOrder>Asc</sortOrder>
     </groupingsDown>
     <name>Renewal Pipeline Buckets</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
     <reportType>CustomEntity$Lease_Renewal__c</reportType>
     <scope>organization</scope>
     <showDetails>false</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
+    <timeFrameFilter>
+        <dateColumn>Lease_Renewal__c.Last_Contact_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
 </Report>

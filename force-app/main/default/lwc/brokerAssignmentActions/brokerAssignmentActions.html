@@ -1,0 +1,48 @@
+<template>
+    <template if:true={hasData}>
+        <template if:true={canReplace}>
+            <div class="ba-card ba-actioncard">
+                <div class="ba-actionhd">Actions</div>
+                <div class="ba-toolbar">
+                    <button class="ba-btn ba-btn--ghost" onclick={handleLogCheckIn}>
+                        <lightning-icon icon-name="utility:check" size="xx-small"></lightning-icon>Log Check-in
+                    </button>
+                    <button class="ba-btn ba-btn--ghost" onclick={openReplace}>
+                        <lightning-icon icon-name="utility:change_owner" size="xx-small"></lightning-icon>Replace Broker
+                    </button>
+                </div>
+            </div>
+        </template>
+    </template>
+
+    <!-- ===== Replace modal ===== -->
+    <template if:true={replacing}>
+        <section role="dialog" aria-modal="true" aria-label="Replace broker" class="ba-overlay">
+            <div class="ba-modal ba-modal--wide">
+                <div class="ba-modalhd">
+                    <div class="ba-modalicon">
+                        <lightning-icon icon-name="utility:change_owner" size="xx-small" variant="inverse"></lightning-icon>
+                    </div>
+                    <div>
+                        <div class="ba-modaltitle">Replace broker</div>
+                        <div class="ba-modalsub">{propertyName}</div>
+                    </div>
+                </div>
+                <div class="ba-modalbody">
+                    <div class="ba-infobox">
+                        <lightning-icon icon-name="utility:info" size="xx-small"></lightning-icon>
+                        <span>{replaceNote}</span>
+                    </div>
+                    <lightning-combobox label="Incoming broker" value={repBrokerId} placeholder="Select a broker" options={brokerOptionList} onchange={onRepBroker}></lightning-combobox>
+                    <div class="ba-modalrow">
+                        <lightning-input type="date" label="Effective date" value={repDate} onchange={onRepDate}></lightning-input>
+                    </div>
+                </div>
+                <div class="ba-modalfoot">
+                    <button class="ba-btn ba-btn--primary ba-btn--block" onclick={confirmReplace}>Confirm replacement</button>
+                    <button class="ba-btn ba-btn--ghost" onclick={closeReplace}>Cancel</button>
+                </div>
+            </div>
+        </section>
+    </template>
+</template>

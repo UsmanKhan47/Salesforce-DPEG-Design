@@ -1,0 +1,31 @@
+<template>
+    <article class="es-card">
+        <div class="es-hd">
+            <span class="es-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B01818" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>
+                </svg>
+            </span>
+            <div>
+                <div class="es-title">Escalations</div>
+                <div class="es-sub">Critical / High that breached SLA</div>
+            </div>
+        </div>
+        <template if:true={hasRows}>
+            <div class="es-body">
+                <template for:each={rows} for:item="r">
+                    <a key={r.id} href={r.recordUrl} class="es-row">
+                        <div class="es-main">
+                            <div class="es-name">{r.subject}</div>
+                            <div class="es-metasub">{r.sub}</div>
+                        </div>
+                        <span style={r.priorityWrap}><span style={r.priorityDot}></span>{r.priority}</span>
+                    </a>
+                </template>
+            </div>
+        </template>
+        <template if:false={hasRows}>
+            <div class="es-empty">Nothing is on fire.</div>
+        </template>
+    </article>
+</template>

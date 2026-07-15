@@ -4,12 +4,27 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
+                    <name>actionNames</name>
+                    <valueList>
+                        <valueListItems>
+                            <value>LOI__c.Submit_for_Approval</value>
+                            <visibilityRule>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                    </valueList>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
                     <name>collapsed</name>
                     <value>false</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>enableActionsConfiguration</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideChatterActions</name>
@@ -103,12 +118,8 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentInstanceProperties>
-                    <name>tabs</name>
-                    <value>tabs</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:tabset</componentName>
-                <identifier>mainTabset</identifier>
+                <componentName>loiCounterOffer</componentName>
+                <identifier>loiCounterOfferCard</identifier>
             </componentInstance>
         </itemInstances>
         <name>main</name>
@@ -118,47 +129,11 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
-                    <name>showLegacyActivityComposer</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentName>runtime_sales_activities:activityPanel</componentName>
-                <identifier>activityPanel</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-089cfc0e-6e87-4e1f-901d-b7f377589c9d</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>active</name>
-                    <value>true</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-089cfc0e-6e87-4e1f-901d-b7f377589c9d</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>title</name>
-                    <value>Standard.Tab.activity</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:tab</componentName>
-                <identifier>flexipage_tab</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-f87dedfa-815c-40e2-8c10-b0a7d7b68cc5</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
                     <name>tabs</name>
-                    <value>Facet-f87dedfa-815c-40e2-8c10-b0a7d7b68cc5</value>
+                    <value>tabs</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:tabset</componentName>
-                <identifier>flexipage_tabset</identifier>
+                <identifier>mainTabset</identifier>
             </componentInstance>
         </itemInstances>
         <name>sidebar</name>

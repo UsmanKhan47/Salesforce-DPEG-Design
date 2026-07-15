@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Stage --></label>
+    <name>Stage__c</name>
+    <picklistValues>
+        <masterLabel>Inquiry Received</masterLabel>
+        <translation><!-- Inquiry Received --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>LOI Negotiation</masterLabel>
+        <translation><!-- LOI Negotiation --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>LOI Received</masterLabel>
+        <translation><!-- LOI Received --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>LOI Signed</masterLabel>
+        <translation><!-- LOI Signed --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Lease Drafting</masterLabel>
+        <translation><!-- Lease Drafting --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Lease Ready</masterLabel>
+        <translation><!-- Lease Ready --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Lease Signed</masterLabel>
+        <translation><!-- Lease Signed --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

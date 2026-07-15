@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Method --></label>
+    <name>Method__c</name>
+    <picklistValues>
+        <masterLabel>DocuSign</masterLabel>
+        <translation><!-- DocuSign --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Wet Sign</masterLabel>
+        <translation><!-- Wet Sign --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

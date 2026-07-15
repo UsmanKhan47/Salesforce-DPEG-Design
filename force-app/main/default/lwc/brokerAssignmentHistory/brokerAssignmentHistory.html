@@ -1,0 +1,61 @@
+<template>
+    <template if:true={hasData}>
+        <div class="ba-card ba-histcard">
+            <div class="ba-histbody">
+                <div class="ba-histintro">{historyIntro}</div>
+                <template for:each={historyRows} for:item="h">
+                    <div key={h.id} class={h.rowClass}>
+                        <div class="ba-histleft">
+                            <div>
+                                <div class="ba-histnamerow">
+                                    <span class="ba-histname">{h.brokerName}</span>
+                                    <template if:true={h.isActive}>
+                                        <span class="ba-histbadge">Active</span>
+                                    </template>
+                                </div>
+                                <div class="ba-histfirm">{h.brokerFirm}</div>
+                                <template if:true={h.hasNotes}>
+                                    <div class={h.notesClass}>
+                                        <span class="ba-histnotes-lbl">Notes:</span>
+                                        <span class="ba-histnotes-txt">{h.notesPreview}</span>
+                                        <template if:true={h.notesLong}>
+                                            <button class="ba-histnotes-view" data-id={h.id} onclick={openNote} title="View full note">View</button>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="ba-histright">
+                            <div class="ba-mono ba-histrange">{h.rangeDisp}</div>
+                            <template if:true={h.hasReason}>
+                                <div class="ba-histreason">{h.reasonDisp}</div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- Full-note popup -->
+    <template if:true={showNoteModal}>
+        <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="ba-note-heading" class="slds-modal slds-fade-in-open">
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeNote}>
+                        <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
+                    </button>
+                    <h2 id="ba-note-heading" class="slds-modal__title slds-hyphenate">Notes</h2>
+                    <p class="ba-note-sub">{noteBroker}</p>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <p class="ba-note-full">{noteText}</p>
+                </div>
+                <footer class="slds-modal__footer">
+                    <button class="slds-button slds-button_brand" onclick={closeNote}>Close</button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
+</template>

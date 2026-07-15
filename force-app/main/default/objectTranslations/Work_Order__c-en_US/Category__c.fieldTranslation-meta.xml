@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label><!-- Category --></label>
+    <name>Category__c</name>
+    <picklistValues>
+        <masterLabel>Doors &amp; Locks</masterLabel>
+        <translation><!-- Doors &amp; Locks --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Electrical</masterLabel>
+        <translation><!-- Electrical --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>General</masterLabel>
+        <translation><!-- General --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>HVAC</masterLabel>
+        <translation><!-- HVAC --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Landscaping</masterLabel>
+        <translation><!-- Landscaping --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Plumbing</masterLabel>
+        <translation><!-- Plumbing --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Refrigeration</masterLabel>
+        <translation><!-- Refrigeration --></translation>
+    </picklistValues>
+</CustomFieldTranslation>

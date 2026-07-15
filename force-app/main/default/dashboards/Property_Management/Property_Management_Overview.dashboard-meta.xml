@@ -5,10 +5,13 @@
     <backgroundStartColor>#FFFFFF</backgroundStartColor>
     <dashboardGridLayout>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>0</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -20,12 +23,18 @@
                 <report>Property_Management/Managed_Properties</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>2</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>2</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><aggregate>Average</aggregate><column>Unit__c.Occupied_Flag__c</column></chartSummary>
+                <chartSummary>
+                    <aggregate>Average</aggregate>
+                    <column>Unit__c.Occupied_Flag__c</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>0</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -37,12 +46,17 @@
                 <report>Property_Management/Occupancy_by_Property</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>4</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>4</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -54,12 +68,17 @@
                 <report>Property_Management/Renewals_Due_90d</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>6</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -71,12 +90,17 @@
                 <report>Property_Management/Delinquency_Aging</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>8</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>8</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -88,12 +112,17 @@
                 <report>Property_Management/CAM_Pending</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>2</colSpan><columnIndex>10</columnIndex><rowIndex>0</rowIndex><rowSpan>4</rowSpan>
+            <colSpan>2</colSpan>
+            <columnIndex>10</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
-                <chartSummary><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>-1</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
@@ -105,18 +134,24 @@
                 <report>Property_Management/Insurance_Expiring</report>
                 <showRange>false</showRange>
             </dashboardComponent>
+            <rowIndex>0</rowIndex>
+            <rowSpan>4</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>4</colSpan><columnIndex>0</columnIndex><rowIndex>4</rowIndex><rowSpan>8</rowSpan>
+            <colSpan>4</colSpan>
+            <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartAxisRange>Auto</chartAxisRange>
-                <chartSummary><axisBinding>y</axisBinding><column>RowCount</column></chartSummary>
+                <chartSummary>
+                    <axisBinding>y</axisBinding>
+                    <column>RowCount</column>
+                </chartSummary>
                 <componentType>Column</componentType>
                 <decimalPrecision>0</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <drillEnabled>true</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
+                <drillToDetailEnabled>false</drillToDetailEnabled>
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>BucketField_RenewalBucket</groupingColumn>
@@ -129,18 +164,25 @@
                 <title>Lease Renewal Pipeline</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
+            <rowIndex>4</rowIndex>
+            <rowSpan>8</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>4</colSpan><columnIndex>4</columnIndex><rowIndex>4</rowIndex><rowSpan>8</rowSpan>
+            <colSpan>4</colSpan>
+            <columnIndex>4</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartAxisRange>Auto</chartAxisRange>
-                <chartSummary><aggregate>Average</aggregate><axisBinding>y</axisBinding><column>Unit__c.Occupied_Flag__c</column></chartSummary>
+                <chartSummary>
+                    <aggregate>Average</aggregate>
+                    <axisBinding>y</axisBinding>
+                    <column>Unit__c.Occupied_Flag__c</column>
+                </chartSummary>
                 <componentType>Bar</componentType>
                 <decimalPrecision>0</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <drillEnabled>true</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
+                <drillToDetailEnabled>false</drillToDetailEnabled>
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>Property_Asset__c.Property_Name__c</groupingColumn>
@@ -148,23 +190,31 @@
                 <legendPosition>Bottom</legendPosition>
                 <report>Property_Management/Occupancy_by_Property</report>
                 <showPercentage>false</showPercentage>
+                <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowValueDescending</sortBy>
                 <title>Occupancy by Property</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
+            <rowIndex>4</rowIndex>
+            <rowSpan>8</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>4</colSpan><columnIndex>8</columnIndex><rowIndex>4</rowIndex><rowSpan>8</rowSpan>
+            <colSpan>4</colSpan>
+            <columnIndex>8</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartAxisRange>Auto</chartAxisRange>
-                <chartSummary><aggregate>Sum</aggregate><axisBinding>y</axisBinding><column>Delinquency__c.Balance__c</column></chartSummary>
+                <chartSummary>
+                    <aggregate>Sum</aggregate>
+                    <axisBinding>y</axisBinding>
+                    <column>Delinquency__c.Balance__c</column>
+                </chartSummary>
                 <componentType>Bar</componentType>
                 <decimalPrecision>0</decimalPrecision>
                 <displayUnits>Auto</displayUnits>
                 <drillEnabled>true</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
+                <drillToDetailEnabled>false</drillToDetailEnabled>
                 <enableHover>true</enableHover>
                 <expandOthers>false</expandOthers>
                 <groupingColumn>Delinquency__c.Aging_Bucket__c</groupingColumn>
@@ -172,19 +222,21 @@
                 <legendPosition>Bottom</legendPosition>
                 <report>Property_Management/Delinquency_Aging</report>
                 <showPercentage>false</showPercentage>
+                <showPicturesOnCharts>false</showPicturesOnCharts>
                 <showValues>true</showValues>
                 <sortBy>RowLabelAscending</sortBy>
                 <title>Delinquency Aging ($ balance)</title>
                 <useReportChart>false</useReportChart>
             </dashboardComponent>
+            <rowIndex>4</rowIndex>
+            <rowSpan>8</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>6</colSpan><columnIndex>0</columnIndex><rowIndex>12</rowIndex><rowSpan>6</rowSpan>
+            <colSpan>6</colSpan>
+            <columnIndex>0</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <componentType>FlexTable</componentType>
-                <drillEnabled>false</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
                 <flexComponentProperties>
                     <decimalPrecision>-1</decimalPrecision>
                     <flexTableColumn>
@@ -215,14 +267,15 @@
                 <header>CAM Reconciliation</header>
                 <report>Property_Management/CAM_Reconciliation_Status</report>
             </dashboardComponent>
+            <rowIndex>12</rowIndex>
+            <rowSpan>6</rowSpan>
         </dashboardGridComponents>
         <dashboardGridComponents>
-            <colSpan>6</colSpan><columnIndex>6</columnIndex><rowIndex>12</rowIndex><rowSpan>6</rowSpan>
+            <colSpan>6</colSpan>
+            <columnIndex>6</columnIndex>
             <dashboardComponent>
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <componentType>FlexTable</componentType>
-                <drillEnabled>false</drillEnabled>
-                <drillToDetailEnabled>true</drillToDetailEnabled>
                 <flexComponentProperties>
                     <decimalPrecision>-1</decimalPrecision>
                     <flexTableColumn>
@@ -253,6 +306,8 @@
                 <header>Insurance Expiry Alerts</header>
                 <report>Property_Management/Insurance_Alerts</report>
             </dashboardComponent>
+            <rowIndex>12</rowIndex>
+            <rowSpan>6</rowSpan>
         </dashboardGridComponents>
         <numberOfColumns>12</numberOfColumns>
         <rowHeight>36</rowHeight>

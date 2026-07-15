@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Direction__c</fullName>
+    <description>Who sent this PSA version: Seller (their draft/counter to us) or Ours (our redline back). Drives the ball-in-court flip and the negotiation-status derivation.</description>
+    <label>Direction</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Seller</fullName>
+                <default>false</default>
+                <label>Seller</label>
+            </value>
+            <value>
+                <fullName>Ours</fullName>
+                <default>false</default>
+                <label>Ours</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

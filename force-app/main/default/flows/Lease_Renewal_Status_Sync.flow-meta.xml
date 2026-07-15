@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <assignments>
+        <name>Set_Closed_Lost</name>
+        <label>Set Closed Lost</label>
+        <locationX>314</locationX>
+        <locationY>288</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Status__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>Closed Lost</stringValue>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <assignments>
+        <name>Set_Closed_Won</name>
+        <label>Set Closed Won</label>
+        <locationX>50</locationX>
+        <locationY>288</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Status__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>Closed Won</stringValue>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>Needs_Renewed_Date</targetReference>
+        </connector>
+    </assignments>
+    <assignments>
+        <name>Stamp_Renewed_Date</name>
+        <label>Stamp Renewed Date</label>
+        <locationX>50</locationX>
+        <locationY>504</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Renewed_Date__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.CurrentDate</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <decisions>
+        <name>Needs_Renewed_Date</name>
+        <label>Needs Renewed Date?</label>
+        <locationX>50</locationX>
+        <locationY>396</locationY>
+        <defaultConnectorLabel>Already stamped</defaultConnectorLabel>
+        <rules>
+            <name>Stamp</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Renewed_Date__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Stamp_Renewed_Date</targetReference>
+            </connector>
+            <label>Stamp</label>
+        </rules>
+    </decisions>
+    <decisions>
+        <name>Terminal_Stage</name>
+        <label>Terminal Stage?</label>
+        <locationX>182</locationX>
+        <locationY>180</locationY>
+        <defaultConnectorLabel>Still in flight</defaultConnectorLabel>
+        <rules>
+            <name>Is_Renewed</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Stage__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Renewed</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Set_Closed_Won</targetReference>
+            </connector>
+            <label>Renewed</label>
+        </rules>
+        <rules>
+            <name>Is_Lost</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Stage__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Not Renewing</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Set_Closed_Lost</targetReference>
+            </connector>
+            <label>Not Renewing</label>
+        </rules>
+    </decisions>
+    <environments>Default</environments>
+    <interviewLabel>Lease Renewal Status Sync {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Lease Renewal Status Sync</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>56</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Terminal_Stage</targetReference>
+        </connector>
+        <object>Lease_Renewal__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordBeforeSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

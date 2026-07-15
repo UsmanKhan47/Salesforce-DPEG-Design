@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Report xmlns="http://soap.sforce.com/2006/04/metadata">
-    <columns><field>Insurance_Policy__c.Policy_Name__c</field></columns>
-    <columns><field>Insurance_Policy__c.Carrier__c</field></columns>
-    <columns><field>Insurance_Policy__c.Days_To_Expiry__c</field></columns>
+    <columns>
+        <field>Insurance_Policy__c.Policy_Name__c</field>
+    </columns>
+    <columns>
+        <field>Insurance_Policy__c.Carrier__c</field>
+    </columns>
+    <columns>
+        <field>Insurance_Policy__c.Days_To_Expiry__c</field>
+    </columns>
     <filter>
         <criteriaItems>
             <column>Insurance_Policy__c.Days_To_Expiry__c</column>
@@ -14,6 +20,10 @@
     </filter>
     <format>Tabular</format>
     <name>Insurance Alerts</name>
+    <params>
+        <name>co</name>
+        <value>1</value>
+    </params>
     <reportType>CustomEntity$Insurance_Policy__c</reportType>
     <scope>organization</scope>
     <showDetails>true</showDetails>
@@ -21,4 +31,8 @@
     <showSubTotals>true</showSubTotals>
     <sortColumn>Insurance_Policy__c.Days_To_Expiry__c</sortColumn>
     <sortOrder>Asc</sortOrder>
+    <timeFrameFilter>
+        <dateColumn>Insurance_Policy__c.Expiry_Date__c</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
 </Report>

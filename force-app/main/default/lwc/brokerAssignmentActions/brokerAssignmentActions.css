@@ -1,0 +1,30 @@
+:host { display:block; }
+
+/* shared card chrome */
+.ba-card { background:#fff; border:1px solid #E2E0DB; border-radius:8px; box-shadow:0 1px 2px rgba(7,20,40,0.06); }
+
+/* ===== action card ===== */
+.ba-actioncard { padding:14px 16px; margin-bottom:14px; }
+.ba-actionhd { font-size:13px; font-weight:600; color:#1A1714; margin-bottom:10px; }
+.ba-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+/* ===== buttons ===== */
+.ba-btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 14px; border-radius:5px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.ba-btn--ghost { border:1px solid #D6D3CE; background:#fff; color:#1B5FBF; }
+.ba-btn--ghost:hover { background:#FAFAF8; }
+.ba-btn--primary { height:36px; padding:0 16px; border:none; background:#198A40; color:#fff; gap:7px; }
+.ba-btn--primary:hover { background:#146830; }
+.ba-btn--block { flex:1; height:44px; justify-content:center; }
+
+/* ===== modals ===== */
+.ba-overlay { position:fixed; inset:0; background:rgba(4,13,28,0.55); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+.ba-modal { background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(4,13,28,0.4); width:440px; max-width:100%; overflow:hidden; }
+.ba-modal--wide { width:480px; }
+.ba-modalhd { padding:18px 22px; border-bottom:1px solid #E2E0DB; display:flex; align-items:center; gap:10px; }
+.ba-modalicon { width:30px; height:30px; border-radius:50%; background:#132850; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.ba-modaltitle { font-size:17px; font-weight:600; color:#1A1714; }
+.ba-modalsub { font-size:12px; color:#524F4A; }
+.ba-modalbody { padding:20px 22px; display:flex; flex-direction:column; gap:16px; }
+.ba-infobox { display:flex; gap:9px; padding:11px 13px; background:#EEF3FB; border:1px solid #D3E0F5; border-radius:6px; font-size:12px; color:#1B3A66; line-height:1.5; }
+.ba-modalrow { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.ba-modalfoot { padding:0 22px 20px; display:flex; gap:12px; }

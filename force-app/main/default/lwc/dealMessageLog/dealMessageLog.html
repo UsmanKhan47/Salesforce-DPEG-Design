@@ -1,0 +1,132 @@
+<template>
+    <div class="dml-card">
+        <!-- header -->
+        <div class="dml-head">
+            <div class="dml-head-left">
+                <span class="dml-head-icon">
+                    <lightning-icon icon-name="utility:comments" size="x-small" variant="inverse"></lightning-icon>
+                </span>
+                <div>
+                    <div class="dml-title">{cardTitle}</div>
+                </div>
+            </div>
+            <lightning-button
+                variant="brand"
+                label="Log Message"
+                icon-name="utility:add"
+                onclick={openComposer}
+                disabled={adding}>
+            </lightning-button>
+        </div>
+
+        <!-- composer -->
+        <template if:true={adding}>
+            <div class="dml-composer">
+                <div class="dml-composer-row">
+                    <template if:true={showDirection}>
+                        <lightning-combobox
+                            label="Direction"
+                            value={upDirection}
+                            options={directionOptions}
+                            onchange={onDirection}
+                            variant="label-stacked">
+                        </lightning-combobox>
+                    </template>
+                    <template if:true={showMethod}>
+                        <lightning-combobox
+                            label="Method"
+                            value={upMethod}
+                            options={methodOptions}
+                            onchange={onMethod}
+                            variant="label-stacked">
+                        </lightning-combobox>
+                    </template>
+                </div>
+                <template if:true={showRevision}>
+                    <lightning-input
+                        class="dml-revision"
+                        label="Document Revision"
+                        value={upRevision}
+                        onchange={onRevision}
+                        placeholder="e.g. v3, Rev B"
+                        variant="label-stacked">
+                    </lightning-input>
+                </template>
+                <lightning-textarea
+                    class="dml-textarea"
+                    label="What was communicated"
+                    required
+                    value={upDetails}
+                    onchange={onDetails}
+                    placeholder="Log the call, email, or note — terms discussed, what was asked, what comes next…">
+                </lightning-textarea>
+
+                <template if:true={error}>
+                    <div class="dml-error">{error}</div>
+                </template>
+
+                <div class="dml-composer-actions">
+                    <lightning-button
+                        class="slds-m-right_x-small"
+                        variant="brand"
+                        label="Save to log"
+                        icon-name="utility:check"
+                        onclick={save}>
+                    </lightning-button>
+                    <lightning-button variant="neutral" label="Cancel" onclick={cancel}></lightning-button>
+                </div>
+            </div>
+        </template>
+
+        <!-- timeline -->
+        <div class="dml-body">
+            <template if:true={hasMessages}>
+                <template for:each={entries} for:item="e">
+                    <div key={e.id} class="dml-entry">
+                        <div class="dml-rail">
+                            <span class={e.markerClass}></span>
+                            <template if:true={e.showLine}><span class="dml-line"></span></template>
+                        </div>
+                        <div class="dml-content">
+                            <div class="dml-entry-head">
+                                <span class="dml-by">{e.enteredBy}</span>
+                                <lightning-formatted-date-time
+                                    class="dml-date"
+                                    value={e.entryDate}
+                                    year="numeric" month="short" day="2-digit"
+                                    hour="2-digit" minute="2-digit">
+                                </lightning-formatted-date-time>
+                            </div>
+                            <div class="dml-details">{e.details}</div>
+                            <div class="dml-entry-foot">
+                                <template if:true={showMethod}>
+                                    <span class="dml-method">
+                                        <lightning-icon icon-name={e.methodIcon} size="xx-small"></lightning-icon>
+                                        {e.method}
+                                    </span>
+                                </template>
+                                <template if:true={showDirection}>
+                                    <span class={e.directionClass}>{e.direction}</span>
+                                </template>
+                                <template if:true={e.revision}>
+                                    <span class="dml-rev">
+                                        <lightning-icon icon-name="utility:page" size="xx-small"></lightning-icon>
+                                        Rev {e.revision}
+                                    </span>
+                                </template>
+                                <template if:true={e.isLatest}><span class="dml-latest">Latest</span></template>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </template>
+            <template if:false={hasMessages}>
+                <p class="dml-empty">No messages logged yet. Use Log Message to start the communication history.</p>
+            </template>
+            <div class="dml-foot-note">
+                <lightning-icon icon-name="utility:lock" size="xx-small"></lightning-icon>
+                Entries are permanent. Adding a message never edits or erases what came before.
+            </div>
+        </div>
+    </div>
+</template>

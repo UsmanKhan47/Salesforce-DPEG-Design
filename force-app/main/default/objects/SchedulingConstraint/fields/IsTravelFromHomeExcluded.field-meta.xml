@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>IsTravelFromHomeExcluded</fullName>
+    <inlineHelpText>Determines whether to include the first travel of the day from home base in the sum. Relevant only if the Calculation Mode is Sum.</inlineHelpText>
+</CustomField>

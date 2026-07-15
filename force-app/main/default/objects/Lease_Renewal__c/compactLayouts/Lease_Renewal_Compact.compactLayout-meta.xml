@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lease_Renewal_Compact</fullName>
+    <fields>Tenant_Name__c</fields>
+    <fields>Stage__c</fields>
+    <fields>Lease_End__c</fields>
+    <fields>Days_To_Expiry__c</fields>
+    <label>Lease Renewal Compact</label>
+</CompactLayout>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>IsTravelFromHomeBase</fullName>
+    <inlineHelpText>Determines whether the resource&apos;s travel to the service appointment starts from their home base. The default is false.</inlineHelpText>
+    <trackHistory>false</trackHistory>
+</CustomField>

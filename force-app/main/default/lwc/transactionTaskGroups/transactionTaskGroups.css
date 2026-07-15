@@ -145,11 +145,14 @@
     gap: 12px;
 }
 
-/* ---- Group tabs (horizontal, with conic progress ring) ---- */
+/* ---- Group tabs (equal-width grid, max 4 per row, equal height per row) ---- */
 .tg-groups {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 10px;
+}
+@media (max-width: 1024px) {
+    .tg-groups { grid-template-columns: repeat(2, 1fr); }
 }
 .tg-gchip {
     display: flex;
@@ -207,10 +210,11 @@
     font-size: 13px;
     font-weight: 600;
     color: #16325c;
-    white-space: nowrap;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 220px;
 }
 .tg-gchip-sub {
     display: flex;
