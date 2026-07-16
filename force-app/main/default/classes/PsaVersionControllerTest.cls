@@ -6,13 +6,10 @@
 private class PsaVersionControllerTest {
 
     private static Contract_Review__c newContract() {
-        Opportunity o = new Opportunity(
-            Name = 'PSA Test', StageName = 'LOI', CloseDate = Date.today().addDays(30)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = 'LOI';
         insert o;
-        Contract_Review__c cr = new Contract_Review__c(Opportunity__c = o.Id, Stage__c = 'PSA Drafting');
-        insert cr;
-        return cr;
+        return TestDataFactory.createContractReview(o.Id, true); // Stage__c 'PSA Drafting'
     }
 
     @isTest

@@ -27,7 +27,7 @@ private class TaskFanoutServiceTest {
 
         TaskFanoutService.bypassDedupe = true;
         Test.startTest();
-        TaskFanoutService.fanOut(new List<Id>{ withLoan.Id, noLoan.Id });
+        TaskFanoutService.fanOutNow(new List<Id>{ withLoan.Id, noLoan.Id });
         Test.stopTest();
         TaskFanoutService.bypassDedupe = false;
 
@@ -51,14 +51,14 @@ private class TaskFanoutServiceTest {
         System.assertEquals(3, reloaded.Tasks_Total__c, 'Tasks_Total set to count created for this deal');
 
         // Re-run is a no-op (already fanned out).
-        TaskFanoutService.fanOut(new List<Id>{ withLoan.Id });
+        TaskFanoutService.fanOutNow(new List<Id>{ withLoan.Id });
         System.assertEquals(3, [SELECT COUNT() FROM Task WHERE Transaction_Deal__c = :withLoan.Id], 'No duplicate fan-out');
     }
 
     @isTest
     static void testEmptyInput() {
-        TaskFanoutService.fanOut(new List<Id>());
-        TaskFanoutService.fanOut(null);
+        TaskFanoutService.fanOutNow(new List<Id>());
+        TaskFanoutService.fanOutNow(null);
         System.assertEquals(0, [SELECT COUNT() FROM Task], 'No tasks created for empty input');
     }
 }

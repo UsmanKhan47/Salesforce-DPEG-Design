@@ -6,7 +6,10 @@ private class LeadConvertServiceTest {
     }
 
     private static Opportunity convertLeadOfType(String dealType, String company) {
-        Lead l = new Lead(LastName = 'Tester', Company = company, Status = 'New', Deal_Type__c = dealType);
+        Lead l = TestDataFactory.createLead(false);
+        l.LastName = 'Tester';
+        l.Company = company;
+        l.Deal_Type__c = dealType;
         insert l;
 
         Database.LeadConvert lc = new Database.LeadConvert();
@@ -42,16 +45,15 @@ private class LeadConvertServiceTest {
 
     @isTest
     static void createsAndLinksPropertyFromLead() {
-        Lead l = new Lead(
-            LastName = 'Broker', Company = 'CBRE', Status = 'New',
-            Deal_Type__c = 'Commercial',
-            Property_Address__c = '123 Main St, El Paso, TX',
-            Asset_Type__c = 'Retail',
-            Guidance_Price__c = 8200000,
-            Guidance_Cap_Rate__c = 6.25,
-            Placer_AI_Link__c = 'https://placer.ai/abc',
-            CoStar_Link__c = 'https://costar.com/xyz'
-        );
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = 'CBRE';
+        l.Deal_Type__c = 'Commercial';
+        l.Property_Address__c = '123 Main St, El Paso, TX';
+        l.Asset_Type__c = 'Retail';
+        l.Guidance_Price__c = 8200000;
+        l.Guidance_Cap_Rate__c = 6.25;
+        l.Placer_AI_Link__c = 'https://placer.ai/abc';
+        l.CoStar_Link__c = 'https://costar.com/xyz';
         insert l;
 
         Database.LeadConvert lc = new Database.LeadConvert();
@@ -93,7 +95,8 @@ private class LeadConvertServiceTest {
 
     @isTest
     static void qualifiedNeedsNoApprovalAndIntakeStampsApply() {
-        Lead l = new Lead(LastName = 'Gatecheck', Company = 'Gate LLC', Status = 'New');
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = 'Gate LLC';
         insert l;
 
         // No approval gate: Qualified is reachable directly.
@@ -104,5 +107,63 @@ private class LeadConvertServiceTest {
         System.assertEquals('Qualified', l.Status, 'Qualified requires no prior approval');
         System.assertNotEquals(null, l.First_Seen_Date__c, 'First Seen stamped on create for all channels');
         System.assertEquals(UserInfo.getUserId(), l.DPEG_First__c, 'DPEG First stamped from the owning user');
+    }
+
+    /**
+     * Bulk-safety per .claude/rules/bulk-test-rule.md: 251 lead conversions in
+     * one transaction. Database.convertLead caps a single call's LeadConvert
+     * list, so 251 is split across two calls (200 + 51) - itself a stronger
+     * bulk-safety exercise than a single 251-record DML, since
+     * LeadConvertService.stampConvertedOpportunities (and the downstream
+     * OpportunityReviewTrigger cascade it feeds) fires twice in one transaction.
+     */
+    @isTest
+    static void bulkConversion251LeadsCreatesPropertiesAndStampsOpportunities() {
+        List<Lead> leads = TestDataFactory.createLeads(251, false);
+        for (Integer i = 0; i < leads.size(); i++) {
+            leads[i].Deal_Type__c = Math.mod(i, 2) == 0 ? 'Land' : 'Commercial';
+        }
+        insert leads;
+
+        String status = convertedStatus();
+        Test.startTest();
+        convertChunk(leads, 0, 200, status);
+        convertChunk(leads, 200, 251, status);
+        Test.stopTest();
+
+        List<Lead> convertedLeads = [
+            SELECT Id, ConvertedOpportunityId FROM Lead WHERE Id IN :leads AND IsConverted = true
+        ];
+        System.assertEquals(251, convertedLeads.size(), 'All 251 leads convert');
+
+        Set<Id> oppIds = new Set<Id>();
+        for (Lead l : convertedLeads) {
+            oppIds.add(l.ConvertedOpportunityId);
+        }
+        List<Opportunity> converted = [
+            SELECT Id, Property__c, RecordType.DeveloperName, Lead_Approved_By__c
+            FROM Opportunity WHERE Id IN :oppIds
+        ];
+        System.assertEquals(251, converted.size(), 'Every converted lead produced its own Opportunity');
+        for (Opportunity o : converted) {
+            System.assertNotEquals(null, o.Property__c, 'Every converted deal gets a linked Property');
+            System.assertNotEquals(null, o.RecordType.DeveloperName, 'Record type resolved for every deal');
+            System.assertEquals(UserInfo.getUserId(), o.Lead_Approved_By__c,
+                'Converting user stamped on every deal');
+        }
+    }
+
+    private static void convertChunk(List<Lead> leads, Integer fromIndex, Integer toIndex, String status) {
+        List<Database.LeadConvert> converts = new List<Database.LeadConvert>();
+        for (Integer i = fromIndex; i < toIndex; i++) {
+            Database.LeadConvert lc = new Database.LeadConvert();
+            lc.setLeadId(leads[i].Id);
+            lc.setConvertedStatus(status);
+            converts.add(lc);
+        }
+        List<Database.LeadConvertResult> results = Database.convertLead(converts, false);
+        for (Database.LeadConvertResult r : results) {
+            System.assert(r.isSuccess(), 'Each lead in the bulk chunk should convert successfully');
+        }
     }
 }

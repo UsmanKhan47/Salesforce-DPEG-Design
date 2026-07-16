@@ -3,10 +3,12 @@ private class BrokerPortalNotifierTest {
 
     @IsTest
     static void notify_runsForNewLead_withoutError() {
-        Lead l = new Lead(
-            FirstName = 'Jane', LastName = 'Broker', Company = 'Acme Realty',
-            Property_Address__c = '123 Main St', LeadSource = 'Broker Portal', Status = 'New'
-        );
+        Lead l = TestDataFactory.createLead(false);
+        l.FirstName = 'Jane';
+        l.LastName = 'Broker';
+        l.Company = 'Acme Realty';
+        l.Property_Address__c = '123 Main St';
+        l.LeadSource = 'Broker Portal';
         insert l;
 
         Test.startTest();

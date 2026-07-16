@@ -6,11 +6,8 @@
 private class OpportunityApprovalControllerTest {
 
     private static Opportunity makeOpp() {
-        Opportunity o = new Opportunity(
-            Name = 'Approval Test',
-            StageName = 'LOI',
-            CloseDate = Date.today().addDays(10)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = 'LOI';
         insert o;
         return o;
     }
@@ -49,11 +46,8 @@ private class OpportunityApprovalControllerTest {
     static void ineligibleStageThrows() {
         // A deal at neither Underwriting nor LOI meets no entry criteria ->
         // Approval.process throws -> the catch branch surfaces a friendly error.
-        Opportunity o = new Opportunity(
-            Name = 'Not Eligible',
-            StageName = 'Under Review',
-            CloseDate = Date.today().addDays(10)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = 'Under Review';
         insert o;
 
         Test.startTest();
@@ -69,10 +63,9 @@ private class OpportunityApprovalControllerTest {
 
     @isTest
     static void submitsFromUnderwritingRecord() {
-        Opportunity o = new Opportunity(
-            Name = 'UW Child Submit', StageName = 'Underwriting',
-            Underwriting_Complete__c = true, CloseDate = Date.today().addDays(10)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = 'Underwriting';
+        o.Underwriting_Complete__c = true;
         insert o; // stage entry auto-creates the Underwriting record
         Underwriting__c uw = [SELECT Id FROM Underwriting__c WHERE Opportunity__c = :o.Id];
 
@@ -89,8 +82,7 @@ private class OpportunityApprovalControllerTest {
     @isTest
     static void submitsFromLoiRecord() {
         Opportunity o = makeOpp(); // Stage = LOI
-        LOI__c loi = new LOI__c(Opportunity__c = o.Id, Offer_Price__c = 1000000);
-        insert loi;
+        LOI__c loi = TestDataFactory.createLoi(o.Id, true);
 
         Test.startTest();
         OpportunityApprovalController.submitForApproval(loi.Id);
@@ -103,7 +95,8 @@ private class OpportunityApprovalControllerTest {
 
     @isTest
     static void unlinkedChildThrows() {
-        LOI__c orphan = new LOI__c(Offer_Price__c = 500000);
+        LOI__c orphan = TestDataFactory.createLoi(null, false);
+        orphan.Offer_Price__c = 500000;
         insert orphan;
 
         Test.startTest();

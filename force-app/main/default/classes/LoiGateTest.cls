@@ -8,19 +8,18 @@
 private class LoiGateTest {
 
     private static Opportunity newOpp(String stage) {
-        return new Opportunity(
-            Name = 'LOI Gate Test',
-            StageName = stage,
-            CloseDate = Date.today().addDays(30)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = stage;
+        return o;
     }
 
     @isTest
     static void unanimousApprovalStampsLoiAuditTrail() {
         Opportunity o = newOpp('LOI');
         insert o;
-        LOI__c loi = new LOI__c(Opportunity__c = o.Id, Offer_Price__c = 9000000,
-            LOI_Status__c = 'Pending Approval');
+        LOI__c loi = TestDataFactory.createLoi(o.Id, false);
+        loi.Offer_Price__c = 9000000;
+        loi.LOI_Status__c = 'Pending Approval';
         insert loi;
         o.Primary_LOI__c = loi.Id;
         update o;

@@ -134,8 +134,13 @@ private class BrokerPortalControllerTest {
 
     @IsTest
     static void submitDeal_knownHighPriorityBroker_copiesPriority() {
-        insert new Contact(FirstName = 'Jane', LastName = 'Broker', Email = 'jane@acme.com',
-            Is_Broker__c = true, Broker_Priority__c = 'High');
+        Contact broker = TestDataFactory.createBrokerContact(null, false);
+        broker.FirstName = 'Jane';
+        broker.LastName = 'Broker';
+        broker.Email = 'jane@acme.com';
+        broker.Broker_Priority__c = 'High';
+        insert broker;
+
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // same email as the broker contact
         Test.stopTest();
@@ -156,11 +161,14 @@ private class BrokerPortalControllerTest {
 
     @IsTest
     static void submitDeal_openDuplicate_setsFlag() {
-        insert new Lead(
-            LastName = 'Existing', Company = 'Other Firm',
-            Property_Address__c = '123 Main St, Dallas TX',
-            Status = 'New', LeadSource = 'Manual Entry'
-        );
+        Lead existing = TestDataFactory.createLead(false);
+        existing.LastName = 'Existing';
+        existing.Company = 'Other Firm';
+        existing.Property_Address__c = '123 Main St, Dallas TX';
+        existing.Status = 'New';
+        existing.LeadSource = 'Manual Entry';
+        insert existing;
+
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // same address
         Test.stopTest();
@@ -170,11 +178,14 @@ private class BrokerPortalControllerTest {
 
     @IsTest
     static void submitDeal_closedDuplicate_doesNotSetFlag() {
-        insert new Lead(
-            LastName = 'Old', Company = 'Other Firm',
-            Property_Address__c = '123 Main St, Dallas TX',
-            Status = 'Disqualified', LeadSource = 'Manual Entry'
-        );
+        Lead existing = TestDataFactory.createLead(false);
+        existing.LastName = 'Old';
+        existing.Company = 'Other Firm';
+        existing.Property_Address__c = '123 Main St, Dallas TX';
+        existing.Status = 'Disqualified';
+        existing.LeadSource = 'Manual Entry';
+        insert existing;
+
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // same address, but existing is closed
         Test.stopTest();
@@ -184,11 +195,14 @@ private class BrokerPortalControllerTest {
 
     @IsTest
     static void submitDeal_differentAddress_doesNotSetFlag() {
-        insert new Lead(
-            LastName = 'Existing', Company = 'Other Firm',
-            Property_Address__c = '999 Elsewhere Ave',
-            Status = 'New', LeadSource = 'Manual Entry'
-        );
+        Lead existing = TestDataFactory.createLead(false);
+        existing.LastName = 'Existing';
+        existing.Company = 'Other Firm';
+        existing.Property_Address__c = '999 Elsewhere Ave';
+        existing.Status = 'New';
+        existing.LeadSource = 'Manual Entry';
+        insert existing;
+
         Test.startTest();
         BrokerPortalController.submitDeal(validInput()); // different address
         Test.stopTest();

@@ -2,24 +2,34 @@
 private class LeadFunnelControllerTest {
     @testSetup
     static void setup() {
-        List<Lead> leads = new List<Lead>();
-        leads.add(new Lead(LastName = 'Chen', Company = 'CBRE', Status = 'New',
-            LeadSource = 'Email-to-Lead', Parse_Confidence__c = 'HIGH',
-            Guidance_Price__c = 18800000, Broker_First__c = 'CBRE',
-            Property_Address__c = 'Hwy 290 Retail', Asset_Type__c = 'Retail',
-            First_Seen_Date__c = Datetime.now().addDays(-10)));
-        leads.add(new Lead(LastName = 'Rivera', Company = 'Marcus & Millichap', Status = 'Under Review',
-            LeadSource = 'Broker Portal', Parse_Confidence__c = 'LOW',
-            Guidance_Price__c = 9400000, Broker_First__c = 'Marcus & Millichap',
-            Property_Address__c = 'Mills Outparcel', Asset_Type__c = 'Retail',
-            First_Seen_Date__c = Datetime.now().addDays(-10)));
+        List<Lead> leads = TestDataFactory.createLeads(3, false);
+
+        leads[0].LeadSource = 'Email-to-Lead';
+        leads[0].Parse_Confidence__c = 'HIGH';
+        leads[0].Guidance_Price__c = 18800000;
+        leads[0].Broker_First__c = 'CBRE';
+        leads[0].Property_Address__c = 'Hwy 290 Retail';
+        leads[0].Asset_Type__c = 'Retail';
+        leads[0].First_Seen_Date__c = Datetime.now().addDays(-10);
+
+        leads[1].LeadSource = 'Broker Portal';
+        leads[1].Parse_Confidence__c = 'LOW';
+        leads[1].Guidance_Price__c = 9400000;
+        leads[1].Broker_First__c = 'Marcus & Millichap';
+        leads[1].Property_Address__c = 'Mills Outparcel';
+        leads[1].Asset_Type__c = 'Retail';
+        leads[1].First_Seen_Date__c = Datetime.now().addDays(-10);
+
         // Older lead from a high-priority broker: must surface FIRST despite its age.
-        leads.add(new Lead(LastName = 'Patel', Company = 'JLL', Status = 'Under Review',
-            LeadSource = 'Manual Entry', Parse_Confidence__c = 'HIGH',
-            Guidance_Price__c = 12500000, Broker_First__c = 'JLL',
-            Property_Address__c = 'I-35 Strip Center', Asset_Type__c = 'Retail',
-            Broker_Priority__c = 'High',
-            First_Seen_Date__c = Datetime.now().addDays(-20)));
+        leads[2].LeadSource = 'Manual Entry';
+        leads[2].Parse_Confidence__c = 'HIGH';
+        leads[2].Guidance_Price__c = 12500000;
+        leads[2].Broker_First__c = 'JLL';
+        leads[2].Property_Address__c = 'I-35 Strip Center';
+        leads[2].Asset_Type__c = 'Retail';
+        leads[2].Broker_Priority__c = 'High';
+        leads[2].First_Seen_Date__c = Datetime.now().addDays(-20);
+
         insert leads;
     }
 

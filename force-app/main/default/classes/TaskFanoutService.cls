@@ -11,9 +11,55 @@ public with sharing class TaskFanoutService {
     @TestVisible static List<Transaction_Task_Def__mdt> taskDefsOverride;
     @TestVisible static Boolean bypassDedupe = false;
 
+    /**
+     * Flow entry point. Does NOT fan out inline - it hands the work to a chunked
+     * Queueable chain and returns.
+     *
+     * WHY ASYNC (measured, not theoretical): the checklist is 82 Tasks per
+     * Transaction. A 200-record trigger chunk therefore attempts 200 x 82 =
+     * 16,400 Task rows against the 10,000 DML-row limit, and blows
+     * `Too many DML rows: 10001` before anything else in the cascade runs. The
+     * synchronous ceiling is ~116 Transactions per transaction - that is
+     * arithmetic, not inefficiency, so no amount of query tuning moves it. Any
+     * fix that kept this inline would just relocate the break.
+     *
+     * @param requests One request per Transaction to fan out.
+     */
     @InvocableMethod(label='Fan Out Transaction Tasks'
-        description='Creates the standard task checklist for a Transaction when its contract is executed.')
-    public static void fanOut(List<Id> transactionIds) {
+        description='Queues creation of the standard task checklist for a Transaction when its contract is executed.')
+    public static void fanOut(List<InputDTO> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return;
+        }
+        List<Id> transactionIds = new List<Id>();
+        Set<Id> seen = new Set<Id>();
+        for (InputDTO request : requests) {
+            if (request != null && request.transactionId != null && seen.add(request.transactionId)) {
+                transactionIds.add(request.transactionId);
+            }
+        }
+        if (transactionIds.isEmpty()) {
+            return;
+        }
+        // Exactly ONE enqueue per transaction; the Queueable chains the rest.
+        System.enqueueJob(new TaskFanoutQueueable(transactionIds, 0));
+    }
+
+    /** Flow input: one Transaction to fan out. */
+    public class InputDTO {
+        @InvocableVariable(required=true label='Transaction Id'
+            description='The Transaction whose Day-0 checklist should be created.')
+        public Id transactionId;
+    }
+
+    /**
+     * The synchronous worker. Called by TaskFanoutQueueable per chunk (and
+     * directly by tests that assert checklist content). Callers are responsible
+     * for keeping the chunk small enough to fit the DML-row limit.
+     *
+     * @param transactionIds Transactions to fan out (chunked by the caller).
+     */
+    public static void fanOutNow(List<Id> transactionIds) {
         if (transactionIds == null || transactionIds.isEmpty()) {
             return;
         }

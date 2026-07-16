@@ -6,11 +6,9 @@
 private class OpportunityReviewServiceTest {
 
     private static Opportunity newOpp(String stage) {
-        return new Opportunity(
-            Name = 'Test Deal',
-            StageName = stage,
-            CloseDate = Date.today().addDays(30)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = stage;
+        return o;
     }
 
     @isTest
@@ -185,20 +183,30 @@ private class OpportunityReviewServiceTest {
             'Re-entering the stage must not create a duplicate review');
     }
 
+    /**
+     * Bulk-safety per .claude/rules/bulk-test-rule.md: 251 records forces a
+     * second 200-record trigger batch, exposing SOQL/DML-in-loop bugs that a
+     * 200-record test would hide. Note OpportunityReviewTrigger.ensureNda also
+     * fires on every insert here (251 NDA inserts + 251 Opp stamp updates), on
+     * top of the feasibility-review cascade this test targets.
+     */
     @isTest
     static void bulkCreate() {
-        List<Opportunity> opps = new List<Opportunity>();
-        for (Integer i = 0; i < 50; i++) {
-            opps.add(newOpp(Math.mod(i, 2) == 0 ? 'Development Review' : 'Construction Review'));
+        List<Opportunity> opps = TestDataFactory.createOpportunities(251, false);
+        for (Integer i = 0; i < opps.size(); i++) {
+            opps[i].StageName = Math.mod(i, 2) == 0 ? 'Development Review' : 'Construction Review';
         }
 
         Test.startTest();
         insert opps;
         Test.stopTest();
 
-        System.assertEquals(25, [SELECT COUNT() FROM Development_Feasibility_Review__c],
-            '25 Development reviews from 50 alternating opps');
-        System.assertEquals(25, [SELECT COUNT() FROM Construction_Feasibility_Review__c],
-            '25 Construction reviews from 50 alternating opps');
+        // 251 alternating starting at index 0 (Development): 126 even indices, 125 odd.
+        System.assertEquals(126, [SELECT COUNT() FROM Development_Feasibility_Review__c],
+            '126 Development reviews from 251 alternating opps');
+        System.assertEquals(125, [SELECT COUNT() FROM Construction_Feasibility_Review__c],
+            '125 Construction reviews from 251 alternating opps');
+        System.assertEquals(251, [SELECT COUNT() FROM NDA__c WHERE Opportunity__c IN :opps],
+            'ensureNda still opens one NDA per Opportunity across the full bulk batch');
     }
 }

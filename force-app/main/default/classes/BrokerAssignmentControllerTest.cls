@@ -1,23 +1,36 @@
 @isTest
 private class BrokerAssignmentControllerTest {
     @testSetup static void setup() {
-        Property__c pr = new Property__c(Name='Westgate Plaza', Address__c='8420 Westheimer Rd', City__c='Houston', State__c='TX', Square_Footage__c=42000, Asset_Type__c='Retail');
+        Property__c pr = TestDataFactory.createProperty(false);
+        pr.Square_Footage__c = 42000;
         insert pr;
-        Property_Asset__c pa = new Property_Asset__c(Name='Westgate Plaza', Property__c=pr.Id, Property_Type__c='Retail', Status__c='Active', Vacant_Area__c=8000);
+        Property_Asset__c pa = TestDataFactory.createPropertyAsset(pr.Id, false);
+        pa.Name = 'Westgate Plaza';
+        pa.Vacant_Area__c = 8000;
         insert pa;
-        List<Contact> bk = new List<Contact>{
-            new Contact(LastName='Webb', Email='mw@x.com', Phone='1', Is_Broker__c=true, Broker_Firm__c='Lee'),
-            new Contact(LastName='Nair', Email='pn@x.com', Phone='2', Is_Broker__c=true, Broker_Firm__c='CBRE')
-        };
+        List<Contact> bk = TestDataFactory.createBrokerContacts(2, null, false);
+        bk[0].LastName = 'Webb'; bk[0].Email = 'mw@x.com'; bk[0].Phone = '1'; bk[0].Broker_Firm__c = 'Lee';
+        bk[1].LastName = 'Nair'; bk[1].Email = 'pn@x.com'; bk[1].Phone = '2'; bk[1].Broker_Firm__c = 'CBRE';
         insert bk;
         Date t = Date.today();
-        insert new List<Broker_Assignment__c>{
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-40), Last_Check_In_Date__c=t.addDays(-30)), // overdue
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-25), Last_Check_In_Date__c=t.addDays(-17)), // dueSoon
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Active', Listing_Start_Date__c=t.addDays(-10), Last_Check_In_Date__c=t.addDays(-3)),  // onTrack
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[1].Id, Status__c='Fully Leased', Listing_Start_Date__c=t.addDays(-300), Listing_End_Date__c=t.addDays(-120), Reason_Ended__c='Leased Up', Last_Check_In_Date__c=t.addDays(-125)),
-            new Broker_Assignment__c(Property_Asset__c=pa.Id, Broker__c=bk[0].Id, Status__c='Disposed', Listing_Start_Date__c=t.addDays(-400), Listing_End_Date__c=t.addDays(-250), Reason_Ended__c='Performance Issue', Last_Check_In_Date__c=t.addDays(-255))
-        };
+        List<Broker_Assignment__c> assignments = TestDataFactory.createBrokerAssignments(5, pa.Id, bk[0].Id, false);
+        assignments[0].Broker__c = bk[0].Id; assignments[0].Status__c = 'Active';
+        assignments[0].Listing_Start_Date__c = t.addDays(-40); assignments[0].Listing_End_Date__c = null; assignments[0].Last_Check_In_Date__c = t.addDays(-30); // overdue
+
+        assignments[1].Broker__c = bk[1].Id; assignments[1].Status__c = 'Active';
+        assignments[1].Listing_Start_Date__c = t.addDays(-25); assignments[1].Listing_End_Date__c = null; assignments[1].Last_Check_In_Date__c = t.addDays(-17); // dueSoon
+
+        assignments[2].Broker__c = bk[0].Id; assignments[2].Status__c = 'Active';
+        assignments[2].Listing_Start_Date__c = t.addDays(-10); assignments[2].Listing_End_Date__c = null; assignments[2].Last_Check_In_Date__c = t.addDays(-3); // onTrack
+
+        assignments[3].Broker__c = bk[1].Id; assignments[3].Status__c = 'Fully Leased';
+        assignments[3].Listing_Start_Date__c = t.addDays(-300); assignments[3].Listing_End_Date__c = t.addDays(-120);
+        assignments[3].Reason_Ended__c = 'Leased Up'; assignments[3].Last_Check_In_Date__c = t.addDays(-125);
+
+        assignments[4].Broker__c = bk[0].Id; assignments[4].Status__c = 'Disposed';
+        assignments[4].Listing_Start_Date__c = t.addDays(-400); assignments[4].Listing_End_Date__c = t.addDays(-250);
+        assignments[4].Reason_Ended__c = 'Performance Issue'; assignments[4].Last_Check_In_Date__c = t.addDays(-255);
+        insert assignments;
     }
     @isTest static void kpis() {
         BrokerAssignmentController.Kpis k = BrokerAssignmentController.getKpis();

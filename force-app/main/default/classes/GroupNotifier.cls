@@ -17,6 +17,16 @@ public without sharing class GroupNotifier {
     // assert against the number of successful sends instead.
     @TestVisible private static Integer sentCount = 0;
 
+    // Transaction-scoped caches. notify() is already O(1) in queries for any one
+    // call, but a caller that loops send() re-enters it once per record and pays
+    // 3 fresh queries every time (measured: 9 queries per Opportunity in
+    // ContractExecutionService, 1,800 for a 200-record trigger chunk). Callers
+    // should batch into a single notify() - these caches are the guardrail that
+    // keeps a looping caller from silently reintroducing a governor break.
+    private static Id cachedNotificationTypeId;
+    private static Boolean notificationTypeResolved = false;
+    private static final Map<String, Set<String>> RECIPIENTS_CACHE = new Map<String, Set<String>>();
+
     public class Request {
         @InvocableVariable(label='Group or Queue DeveloperName' required=true)
         public String recipientGroup;
@@ -46,10 +56,8 @@ public without sharing class GroupNotifier {
         if (requests == null || requests.isEmpty()) {
             return;
         }
-        List<CustomNotificationType> types = [
-            SELECT Id FROM CustomNotificationType WHERE DeveloperName = :NOTIF_TYPE_DEV_NAME LIMIT 1
-        ];
-        if (types.isEmpty()) {
+        Id notificationTypeId = resolveNotificationTypeId();
+        if (notificationTypeId == null) {
             System.debug(LoggingLevel.WARN, 'GroupNotifier: notification type missing: ' + NOTIF_TYPE_DEV_NAME);
             return;
         }
@@ -72,7 +80,7 @@ public without sharing class GroupNotifier {
                 continue;
             }
             Messaging.CustomNotification n = new Messaging.CustomNotification();
-            n.setNotificationTypeId(types[0].Id);
+            n.setNotificationTypeId(notificationTypeId);
             n.setTargetId(r.targetRecordId);
             n.setTitle(r.title);
             n.setBody(r.body);
@@ -86,15 +94,53 @@ public without sharing class GroupNotifier {
     }
 
     /**
+     * Resolves the notification type Id once per transaction. Cached because a
+     * looping caller would otherwise re-query it per send.
+     * @return The Acquisitions_Deal_Update notification type Id, or null when absent.
+     */
+    private static Id resolveNotificationTypeId() {
+        if (!notificationTypeResolved) {
+            notificationTypeResolved = true;
+            List<CustomNotificationType> types = [
+                SELECT Id FROM CustomNotificationType WHERE DeveloperName = :NOTIF_TYPE_DEV_NAME LIMIT 1
+            ];
+            cachedNotificationTypeId = types.isEmpty() ? null : types[0].Id;
+        }
+        return cachedNotificationTypeId;
+    }
+
+    /**
      * Maps each group DeveloperName to its recipient Ids: direct user members,
      * falling back to the group Id itself when the group has no user members
      * (queues accept their own Id as a notification recipient).
+     *
+     * Results are cached for the transaction. A group that does not exist caches
+     * an EMPTY set - distinct from an existing-but-empty group, which caches the
+     * group's own Id. That distinction is load-bearing: the caller warns on the
+     * former and sends on the latter.
      */
     private static Map<String, Set<String>> resolveRecipients(Set<String> groupNames) {
         Map<String, Set<String>> result = new Map<String, Set<String>>();
         if (groupNames.isEmpty()) {
             return result;
         }
+
+        Set<String> uncachedNames = new Set<String>();
+        for (String name : groupNames) {
+            if (RECIPIENTS_CACHE.containsKey(name)) {
+                Set<String> cached = RECIPIENTS_CACHE.get(name);
+                if (!cached.isEmpty()) {
+                    result.put(name, cached);
+                }
+            } else {
+                uncachedNames.add(name);
+            }
+        }
+        if (uncachedNames.isEmpty()) {
+            return result;
+        }
+        groupNames = uncachedNames;
+
         Map<Id, String> groupIdToName = new Map<Id, String>();
         for (Group g : [
             SELECT Id, DeveloperName FROM Group
@@ -116,6 +162,11 @@ public without sharing class GroupNotifier {
             if (result.get(name).isEmpty()) {
                 result.get(name).add(gId);
             }
+        }
+        // Cache what we resolved, including negatives (name queried, no group found).
+        for (String name : groupNames) {
+            Set<String> resolved = result.containsKey(name) ? result.get(name) : new Set<String>();
+            RECIPIENTS_CACHE.put(name, resolved);
         }
         return result;
     }

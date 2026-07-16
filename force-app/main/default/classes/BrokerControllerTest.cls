@@ -3,30 +3,29 @@ private class BrokerControllerTest {
 
     @testSetup
     static void setup() {
-        List<Contact> brokers = new List<Contact>();
         // 3 active brokers with varied listings + 1 inactive + 1 non-broker contact.
-        brokers.add(newBroker('Pierce', 'CBRE', 'Retail', 'Active', 8, 12, 24000000, 95));
-        brokers.add(newBroker('Nguyen', 'JLL', 'Office', 'Active', 5, 7, 18000000, 110));
-        brokers.add(newBroker('Alvarez', 'Newmark', 'Industrial', 'Active', 2, 3, 6000000, 60));
-        Contact inactive = newBroker('Cole', 'Colliers', 'Land', 'Inactive', 0, 0, 0, 0);
-        brokers.add(inactive);
-        brokers.add(new Contact(LastName = 'NotABroker', Is_Broker__c = false));
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(4, null, false);
+        applyBroker(brokers[0], 'Pierce', 'CBRE', 'Retail', 'Active', 8, 12, 24000000, 95);
+        applyBroker(brokers[1], 'Nguyen', 'JLL', 'Office', 'Active', 5, 7, 18000000, 110);
+        applyBroker(brokers[2], 'Alvarez', 'Newmark', 'Industrial', 'Active', 2, 3, 6000000, 60);
+        applyBroker(brokers[3], 'Cole', 'Colliers', 'Land', 'Inactive', 0, 0, 0, 0);
+        Contact nonBroker = TestDataFactory.createContact(null, false);
+        nonBroker.LastName = 'NotABroker';
+        nonBroker.Is_Broker__c = false;
+        brokers.add(nonBroker);
         insert brokers;
     }
 
-    private static Contact newBroker(String last, String firm, String specialty,
+    private static void applyBroker(Contact c, String last, String firm, String specialty,
             String status, Integer listings, Integer offers, Decimal volume, Integer dom) {
-        return new Contact(
-            LastName = last,
-            Is_Broker__c = true,
-            Broker_Firm__c = firm,
-            Broker_Specialty__c = specialty,
-            Broker_Status__c = status,
-            Active_Listings__c = listings,
-            Offers_Received__c = offers,
-            Closed_Volume__c = volume,
-            Avg_Days_On_Market__c = dom
-        );
+        c.LastName = last;
+        c.Broker_Firm__c = firm;
+        c.Broker_Specialty__c = specialty;
+        c.Broker_Status__c = status;
+        c.Active_Listings__c = listings;
+        c.Offers_Received__c = offers;
+        c.Closed_Volume__c = volume;
+        c.Avg_Days_On_Market__c = dom;
     }
 
     @isTest

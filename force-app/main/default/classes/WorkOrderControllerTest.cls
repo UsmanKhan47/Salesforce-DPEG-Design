@@ -1,9 +1,9 @@
 @isTest
 private class WorkOrderControllerTest {
     @testSetup static void setup() {
-        Property__c pr = new Property__c(Name='Westgate Plaza', Address__c='8420 Westheimer Rd', City__c='Houston', State__c='TX', Square_Footage__c=42000, Asset_Type__c='Retail');
-        insert pr;
-        Property_Asset__c pa = new Property_Asset__c(Name='Westgate Plaza', Property__c=pr.Id, Property_Type__c='Retail', Status__c='Active');
+        Property__c pr = TestDataFactory.createProperty(true);
+        Property_Asset__c pa = TestDataFactory.createPropertyAsset(pr.Id, false);
+        pa.Name = 'Westgate Plaza';
         insert pa;
         Datetime n = Datetime.now();
         // w1 Critical breached+escalation (30h ago, 24h SLA), In Progress
@@ -11,18 +11,35 @@ private class WorkOrderControllerTest {
         // w3 Medium due-soon (160h ago on 168h SLA) In Progress
         // w4 Low resolved (Completed)
         // w5 Critical resolved (Closed)
-        List<Work_Order__c> ws = new List<Work_Order__c>{
-            new Work_Order__c(Subject__c='AC down', Property_Asset__c=pa.Id, Unit_Label__c='Suite 120', Category__c='HVAC', Priority__c='Critical', Status__c='In Progress', Reported_Date__c=n.addHours(-30), First_Touched_Date__c=n.addHours(-29), Delay_Reason__c='Vendor delay'),
-            new Work_Order__c(Subject__c='Lot lights out', Property_Asset__c=pa.Id, Unit_Label__c='Common', Category__c='Electrical', Priority__c='High', Status__c='New', Reported_Date__c=n.addHours(-2)),
-            new Work_Order__c(Subject__c='Faucet drip', Property_Asset__c=pa.Id, Unit_Label__c='Suite 200', Category__c='Plumbing', Priority__c='Medium', Status__c='In Progress', Reported_Date__c=n.addHours(-160), First_Touched_Date__c=n.addHours(-150)),
-            new Work_Order__c(Subject__c='Outlet dead', Property_Asset__c=pa.Id, Unit_Label__c='Unit 8', Category__c='Electrical', Priority__c='Low', Status__c='Completed', Reported_Date__c=n.addHours(-100), First_Touched_Date__c=n.addHours(-90), Completed_Date__c=n.addHours(-20)),
-            new Work_Order__c(Subject__c='RTU failure', Property_Asset__c=pa.Id, Unit_Label__c='Suite 120', Category__c='HVAC', Priority__c='Critical', Status__c='Closed', Reported_Date__c=n.addHours(-300), First_Touched_Date__c=n.addHours(-299), Completed_Date__c=n.addHours(-280))
-        };
+        List<Work_Order__c> ws = TestDataFactory.createWorkOrders(5, pa.Id, false);
+        ws[0].Subject__c = 'AC down'; ws[0].Unit_Label__c = 'Suite 120'; ws[0].Category__c = 'HVAC';
+        ws[0].Priority__c = 'Critical'; ws[0].Status__c = 'In Progress';
+        ws[0].Reported_Date__c = n.addHours(-30); ws[0].First_Touched_Date__c = n.addHours(-29);
+        ws[0].Delay_Reason__c = 'Vendor delay';
+
+        ws[1].Subject__c = 'Lot lights out'; ws[1].Unit_Label__c = 'Common'; ws[1].Category__c = 'Electrical';
+        ws[1].Priority__c = 'High'; ws[1].Status__c = 'New'; ws[1].Reported_Date__c = n.addHours(-2);
+        ws[1].First_Touched_Date__c = null;
+
+        ws[2].Subject__c = 'Faucet drip'; ws[2].Unit_Label__c = 'Suite 200'; ws[2].Category__c = 'Plumbing';
+        ws[2].Priority__c = 'Medium'; ws[2].Status__c = 'In Progress';
+        ws[2].Reported_Date__c = n.addHours(-160); ws[2].First_Touched_Date__c = n.addHours(-150);
+
+        ws[3].Subject__c = 'Outlet dead'; ws[3].Unit_Label__c = 'Unit 8'; ws[3].Category__c = 'Electrical';
+        ws[3].Priority__c = 'Low'; ws[3].Status__c = 'Completed';
+        ws[3].Reported_Date__c = n.addHours(-100); ws[3].First_Touched_Date__c = n.addHours(-90);
+        ws[3].Completed_Date__c = n.addHours(-20);
+
+        ws[4].Subject__c = 'RTU failure'; ws[4].Unit_Label__c = 'Suite 120'; ws[4].Category__c = 'HVAC';
+        ws[4].Priority__c = 'Critical'; ws[4].Status__c = 'Closed';
+        ws[4].Reported_Date__c = n.addHours(-300); ws[4].First_Touched_Date__c = n.addHours(-299);
+        ws[4].Completed_Date__c = n.addHours(-280);
         insert ws;
-        insert new List<Work_Order_Activity__c>{
-            new Work_Order_Activity__c(Work_Order__c=ws[0].Id, Kind__c='Sync', Actor__c='Yardi', Detail__c='Created from tenant call.', Entry_Date__c=n.addHours(-30)),
-            new Work_Order_Activity__c(Work_Order__c=ws[0].Id, Kind__c='Vendor', Actor__c='Yardi', Detail__c='Vendor assigned: Gulf Coast HVAC.', Entry_Date__c=n.addHours(-28))
-        };
+
+        List<Work_Order_Activity__c> acts = TestDataFactory.createWorkOrderActivities(2, ws[0].Id, false);
+        acts[0].Kind__c = 'Sync'; acts[0].Actor__c = 'Yardi'; acts[0].Detail__c = 'Created from tenant call.'; acts[0].Entry_Date__c = n.addHours(-30);
+        acts[1].Kind__c = 'Vendor'; acts[1].Actor__c = 'Yardi'; acts[1].Detail__c = 'Vendor assigned: Gulf Coast HVAC.'; acts[1].Entry_Date__c = n.addHours(-28);
+        insert acts;
     }
     private static Work_Order__c bySubject(String s) {
         return [SELECT Id, Status__c, First_Touched_Date__c, Completed_Date__c FROM Work_Order__c WHERE Subject__c = :s LIMIT 1];
@@ -37,9 +54,12 @@ private class WorkOrderControllerTest {
     }
     @isTest static void recentCapsAtSix() {
         Property_Asset__c pa = [SELECT Id FROM Property_Asset__c LIMIT 1];
-        List<Work_Order__c> extra = new List<Work_Order__c>();
+        List<Work_Order__c> extra = TestDataFactory.createWorkOrders(4, pa.Id, false);
         for (Integer i = 0; i < 4; i++) {
-            extra.add(new Work_Order__c(Subject__c='Extra ' + i, Property_Asset__c=pa.Id, Priority__c='Low', Status__c='New', Reported_Date__c=Datetime.now().addHours(-i)));
+            extra[i].Subject__c = 'Extra ' + i;
+            extra[i].Priority__c = 'Low';
+            extra[i].Status__c = 'New';
+            extra[i].Reported_Date__c = Datetime.now().addHours(-i);
         }
         insert extra;
         List<WorkOrderController.Row> rows = WorkOrderController.getRecentWorkOrders();
@@ -78,8 +98,9 @@ private class WorkOrderControllerTest {
     }
     @isTest static void touchSyncStampsFirstTouchedThenCompleted() {
         Property_Asset__c pa = [SELECT Id FROM Property_Asset__c LIMIT 1];
-        Work_Order__c w = new Work_Order__c(Subject__c='Flow stamp', Property_Asset__c=pa.Id,
-            Priority__c='Low', Status__c='New', Reported_Date__c=Datetime.now().addHours(-2));
+        Work_Order__c w = TestDataFactory.createWorkOrder(pa.Id, false);
+        w.Subject__c = 'Flow stamp'; w.Priority__c = 'Low'; w.Status__c = 'New';
+        w.Reported_Date__c = Datetime.now().addHours(-2);
         insert w;
         w = [SELECT First_Touched_Date__c, Untouched__c FROM Work_Order__c WHERE Id = :w.Id];
         System.assertEquals(null, w.First_Touched_Date__c, 'a New work order has not been touched');

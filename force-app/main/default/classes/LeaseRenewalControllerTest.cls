@@ -1,27 +1,38 @@
 @isTest
 private class LeaseRenewalControllerTest {
     @testSetup static void setup() {
-        Property__c pr = new Property__c(Name='Westgate Plaza', Address__c='8420 Westheimer Rd', City__c='Houston', State__c='TX', Square_Footage__c=42000, Asset_Type__c='Retail');
-        insert pr;
-        Property_Asset__c pa = new Property_Asset__c(Name='Westgate Plaza', Property__c=pr.Id, Property_Type__c='Retail', Status__c='Active');
+        Property__c pr = TestDataFactory.createProperty(true);
+        Property_Asset__c pa = TestDataFactory.createPropertyAsset(pr.Id, false);
+        pa.Name = 'Westgate Plaza';
         insert pa;
         Date t = Date.today();
         // r1 non-responsive + expiring<=90; r2 fresh no contact; r3 critical <=30d;
         // r4 Renewed (flow -> Closed Won + Renewed_Date); r5 Not Renewing (flow -> Closed Lost);
         // r6 negotiating, active.
-        List<Lease_Renewal__c> rs = new List<Lease_Renewal__c>{
-            new Lease_Renewal__c(Tenant_Name__c='Riverside Dental', Property_Asset__c=pa.Id, Unit_Label__c='Suite 120', Lease_End__c=t.addDays(80), Stage__c='Awaiting Tenant Response', Last_Contact_Date__c=t.addDays(-20)),
-            new Lease_Renewal__c(Tenant_Name__c='Pearl Nails', Property_Asset__c=pa.Id, Unit_Label__c='Suite 3', Lease_End__c=t.addDays(150), Stage__c='Not Yet Started'),
-            new Lease_Renewal__c(Tenant_Name__c='Golden Wok', Property_Asset__c=pa.Id, Unit_Label__c='Unit 8', Lease_End__c=t.addDays(25), Stage__c='Negotiating', Last_Contact_Date__c=t.addDays(-3), Proposed_Rate__c=25.20),
-            new Lease_Renewal__c(Tenant_Name__c='Anytime Fitness', Property_Asset__c=pa.Id, Unit_Label__c='Anchor B', Lease_End__c=t.addDays(-2), Stage__c='Renewed'),
-            new Lease_Renewal__c(Tenant_Name__c='Elite Barbers', Property_Asset__c=pa.Id, Unit_Label__c='Suite 7', Lease_End__c=t.addDays(28), Stage__c='Not Renewing'),
-            new Lease_Renewal__c(Tenant_Name__c='TechHub Coworking', Property_Asset__c=pa.Id, Unit_Label__c='Floor 2', Lease_End__c=t.addDays(40), Stage__c='Negotiating', Last_Contact_Date__c=t.addDays(-7), Proposed_Rate__c=24.00)
-        };
+        List<Lease_Renewal__c> rs = TestDataFactory.createLeaseRenewals(6, pa.Id, false);
+        rs[0].Tenant_Name__c = 'Riverside Dental'; rs[0].Unit_Label__c = 'Suite 120';
+        rs[0].Lease_End__c = t.addDays(80); rs[0].Stage__c = 'Awaiting Tenant Response'; rs[0].Last_Contact_Date__c = t.addDays(-20);
+
+        rs[1].Tenant_Name__c = 'Pearl Nails'; rs[1].Unit_Label__c = 'Suite 3';
+        rs[1].Lease_End__c = t.addDays(150); rs[1].Stage__c = 'Not Yet Started'; rs[1].Last_Contact_Date__c = null;
+
+        rs[2].Tenant_Name__c = 'Golden Wok'; rs[2].Unit_Label__c = 'Unit 8';
+        rs[2].Lease_End__c = t.addDays(25); rs[2].Stage__c = 'Negotiating'; rs[2].Last_Contact_Date__c = t.addDays(-3); rs[2].Proposed_Rate__c = 25.20;
+
+        rs[3].Tenant_Name__c = 'Anytime Fitness'; rs[3].Unit_Label__c = 'Anchor B';
+        rs[3].Lease_End__c = t.addDays(-2); rs[3].Stage__c = 'Renewed'; rs[3].Last_Contact_Date__c = null;
+
+        rs[4].Tenant_Name__c = 'Elite Barbers'; rs[4].Unit_Label__c = 'Suite 7';
+        rs[4].Lease_End__c = t.addDays(28); rs[4].Stage__c = 'Not Renewing'; rs[4].Last_Contact_Date__c = null;
+
+        rs[5].Tenant_Name__c = 'TechHub Coworking'; rs[5].Unit_Label__c = 'Floor 2';
+        rs[5].Lease_End__c = t.addDays(40); rs[5].Stage__c = 'Negotiating'; rs[5].Last_Contact_Date__c = t.addDays(-7); rs[5].Proposed_Rate__c = 24.00;
         insert rs;
-        insert new List<Renewal_Activity__c>{
-            new Renewal_Activity__c(Lease_Renewal__c=rs[0].Id, Method__c='System', Details__c='Lease flagged for renewal.', Entry_Date__c=Datetime.now().addDays(-30)),
-            new Renewal_Activity__c(Lease_Renewal__c=rs[0].Id, Method__c='Email', Details__c='Sent renewal notice to tenant.', Entry_Date__c=Datetime.now().addDays(-20))
-        };
+
+        List<Renewal_Activity__c> acts = TestDataFactory.createRenewalActivities(2, rs[0].Id, false);
+        acts[0].Method__c = 'System'; acts[0].Details__c = 'Lease flagged for renewal.'; acts[0].Entry_Date__c = Datetime.now().addDays(-30);
+        acts[1].Method__c = 'Email'; acts[1].Details__c = 'Sent renewal notice to tenant.'; acts[1].Entry_Date__c = Datetime.now().addDays(-20);
+        insert acts;
     }
     private static Lease_Renewal__c byTenant(String t) {
         return [SELECT Id, Status__c, Stage__c, Last_Contact_Date__c, Renewed_Date__c FROM Lease_Renewal__c WHERE Tenant_Name__c = :t LIMIT 1];
@@ -36,9 +47,10 @@ private class LeaseRenewalControllerTest {
     }
     @isTest static void recentRenewalsCapsAtSix() {
         Property_Asset__c pa = [SELECT Id FROM Property_Asset__c LIMIT 1];
-        List<Lease_Renewal__c> extra = new List<Lease_Renewal__c>();
+        List<Lease_Renewal__c> extra = TestDataFactory.createLeaseRenewals(3, pa.Id, false);
         for (Integer i = 0; i < 3; i++) {
-            extra.add(new Lease_Renewal__c(Tenant_Name__c='Extra ' + i, Property_Asset__c=pa.Id, Lease_End__c=Date.today().addDays(100 + i)));
+            extra[i].Tenant_Name__c = 'Extra ' + i;
+            extra[i].Lease_End__c = Date.today().addDays(100 + i);
         }
         insert extra;
         List<LeaseRenewalController.Row> rows = LeaseRenewalController.getRecentRenewals();
@@ -93,7 +105,8 @@ private class LeaseRenewalControllerTest {
     }
     @isTest static void statusSyncSetsClosedWonAndStampsOnce() {
         Property_Asset__c pa = [SELECT Id FROM Property_Asset__c LIMIT 1];
-        Lease_Renewal__c r = new Lease_Renewal__c(Tenant_Name__c='Stamp Once', Property_Asset__c=pa.Id, Lease_End__c=Date.today().addDays(10), Renewed_Date__c=Date.today().addDays(-30));
+        Lease_Renewal__c r = TestDataFactory.createLeaseRenewal(pa.Id, false);
+        r.Tenant_Name__c = 'Stamp Once'; r.Lease_End__c = Date.today().addDays(10); r.Renewed_Date__c = Date.today().addDays(-30);
         insert r;
         r.Stage__c = 'Renewed'; update r;
         r = [SELECT Status__c, Renewed_Date__c FROM Lease_Renewal__c WHERE Id = :r.Id];

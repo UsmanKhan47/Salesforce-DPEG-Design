@@ -8,8 +8,7 @@ private class CounterOfferControllerTest {
 
     @isTest
     static void saveCreatesHistoryStampsLoiAndFlipsBall() {
-        LOI__c loi = new LOI__c();
-        insert loi;
+        LOI__c loi = TestDataFactory.createLoi(null, true);
 
         Test.startTest();
         CounterOfferController.saveCounterOffer(loi.Id, 'Seller', 1000000, 6.25,
@@ -39,8 +38,7 @@ private class CounterOfferControllerTest {
 
     @isTest
     static void ourCounterFlipsBallToSeller() {
-        LOI__c loi = new LOI__c();
-        insert loi;
+        LOI__c loi = TestDataFactory.createLoi(null, true);
 
         Test.startTest();
         CounterOfferController.saveCounterOffer(loi.Id, 'Seller', 1000000, null, null, 'theirs', null, null);
@@ -67,8 +65,7 @@ private class CounterOfferControllerTest {
         }
         System.assert(threwNull, 'Saving with no LOI should throw');
 
-        LOI__c loi = new LOI__c();
-        insert loi;
+        LOI__c loi = TestDataFactory.createLoi(null, true);
         Boolean threwDir = false;
         try {
             CounterOfferController.saveCounterOffer(loi.Id, 'Nobody', 500000, null, null, 'x', null, null);

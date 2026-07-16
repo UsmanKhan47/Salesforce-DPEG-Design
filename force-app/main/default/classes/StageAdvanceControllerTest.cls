@@ -7,19 +7,14 @@
 private class StageAdvanceControllerTest {
 
     private static Opportunity newOpp(String stage) {
-        Opportunity o = new Opportunity(
-            Name = 'Advance Test', StageName = stage, CloseDate = Date.today().addDays(30)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = stage;
         insert o;
         return o;
     }
 
     private static void linkSignedNda(Opportunity o) {
-        NDA__c nda = new NDA__c(
-            Opportunity__c = o.Id, Status__c = 'Signed', NDA_Signed__c = true,
-            Counterparty_Name__c = 'Seller LLC'
-        );
-        insert nda;
+        NDA__c nda = TestDataFactory.createSignedNdas(1, o.Id, true)[0];
         o.Primary_NDA__c = nda.Id;
         update o;
     }
@@ -118,14 +113,8 @@ private class StageAdvanceControllerTest {
 
     @isTest
     static void advanceToSendsLandDealToDevelopmentReview() {
-        Id landRt = [
-            SELECT Id FROM RecordType
-            WHERE SobjectType = 'Opportunity' AND DeveloperName = 'Land' LIMIT 1
-        ].Id;
-        Opportunity o = new Opportunity(
-            Name = 'Branch Test', StageName = 'Under Review',
-            CloseDate = Date.today().addDays(30), RecordTypeId = landRt
-        );
+        Opportunity o = TestDataFactory.createOpportunitiesByRecordType(1, 'Land', null, false)[0];
+        o.StageName = 'Under Review';
         insert o;
 
         Test.startTest();

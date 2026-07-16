@@ -8,19 +8,13 @@
 private class UnderwritingGateTest {
 
     private static Opportunity newOpp(String stage) {
-        return new Opportunity(
-            Name = 'Gate Test',
-            StageName = stage,
-            CloseDate = Date.today().addDays(30)
-        );
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = stage;
+        return o;
     }
 
     private static void linkSignedNda(Opportunity o) {
-        NDA__c nda = new NDA__c(
-            Opportunity__c = o.Id, Status__c = 'Signed', NDA_Signed__c = true,
-            Counterparty_Name__c = 'Seller LLC'
-        );
-        insert nda;
+        NDA__c nda = TestDataFactory.createSignedNdas(1, o.Id, true)[0];
         o.Primary_NDA__c = nda.Id;
     }
 

@@ -9,11 +9,8 @@ private class OpportunityDocStatusControllerTest {
     static void returnsAllDealArtifacts() {
         // Land deal that reaches PSA: the trigger spins off a
         // Development review (at Development Review) and a Contract review (at PSA).
-        Opportunity opp = new Opportunity(
-            Name = 'Hwy 6 Tract',
-            StageName = 'Development Review',
-            CloseDate = Date.today().addDays(30)
-        );
+        Opportunity opp = TestDataFactory.createOpportunity(null, false);
+        opp.StageName = 'Development Review';
         insert opp;
         opp.StageName = 'PSA';
         update opp;
@@ -26,18 +23,17 @@ private class OpportunityDocStatusControllerTest {
         nda.Date_Sent__c = Date.today();
         nda.NDA_Expiry_Date__c = Date.today().addDays(365);
         update nda;
-        insert new LOI__c(
-            Opportunity__c = opp.Id,
-            LOI_Status__c = 'Submitted',
-            Offer_Price__c = 18000000,
-            Offer_Cap_Rate__c = 7,
-            Submitted_Date__c = Date.today()
-        );
-        insert new Underwriting__c(
-            Opportunity__c = opp.Id,
-            Stage__c = 'In Progress',
-            My_Price__c = 17000000
-        );
+
+        LOI__c loi = TestDataFactory.createLoi(opp.Id, false);
+        loi.LOI_Status__c = 'Submitted';
+        loi.Offer_Price__c = 18000000;
+        loi.Offer_Cap_Rate__c = 7;
+        insert loi;
+
+        Underwriting__c uw = TestDataFactory.createUnderwriting(opp.Id, false);
+        uw.Stage__c = 'In Progress';
+        uw.My_Price__c = 17000000;
+        insert uw;
 
         Test.startTest();
         OpportunityDocStatusController.DocStatus d =

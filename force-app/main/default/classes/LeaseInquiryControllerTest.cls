@@ -2,17 +2,19 @@
 private class LeaseInquiryControllerTest {
 
     @testSetup static void setup() {
-        Property__c pr = new Property__c(Name='Westgate Plaza', Address__c='8420 Westheimer Rd', City__c='Houston', State__c='TX', Square_Footage__c=42000, Asset_Type__c='Retail');
-        insert pr;
-        Property_Asset__c pa = new Property_Asset__c(Name='Westgate Plaza', Property__c=pr.Id, Property_Type__c='Retail', Status__c='Active', Vacant_Area__c=8000);
+        Property__c pr = TestDataFactory.createProperty(true);
+        Property_Asset__c pa = TestDataFactory.createPropertyAsset(pr.Id, false);
+        pa.Name = 'Westgate Plaza';
+        pa.Vacant_Area__c = 8000;
         insert pa;
-        Contact bk = new Contact(LastName='Webb', Email='mw@x.com', Phone='1', Is_Broker__c=true, Broker_Firm__c='Lee & Associates');
+        Contact bk = TestDataFactory.createBrokerContact(null, false);
+        bk.LastName = 'Webb'; bk.Email = 'mw@x.com'; bk.Phone = '1'; bk.Broker_Firm__c = 'Lee & Associates';
         insert bk;
         // Insert fires the Stage Timer (sets Stage_Start_Date) and Open Log (creates 1 activity) flows.
-        insert new Lease_Inquiry__c(
-            Tenant_Name__c='Sunrise Cafe', Broker__c=bk.Id, Property_Asset__c=pa.Id,
-            Space_Required__c=1800, Initial_Notes__c='Toured the end-cap; wants to move fast.'
-        );
+        Lease_Inquiry__c inq = TestDataFactory.createLeaseInquiry(pa.Id, false);
+        inq.Tenant_Name__c = 'Sunrise Cafe'; inq.Broker__c = bk.Id; inq.Space_Required__c = 1800;
+        inq.Initial_Notes__c = 'Toured the end-cap; wants to move fast.';
+        insert inq;
     }
 
     private static Lease_Inquiry__c theInquiry() {

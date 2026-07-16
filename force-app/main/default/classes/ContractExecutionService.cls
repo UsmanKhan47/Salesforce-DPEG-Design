@@ -74,13 +74,43 @@ public with sharing class ContractExecutionService {
             insert transToInsert;
         }
 
+        // Build every notification first, then hand the whole batch to
+        // GroupNotifier.notify() ONCE. GroupNotifier.send() is a single-request
+        // wrapper around notify(); calling it inside this loop re-entered an
+        // already-bulkified method once per record and cost 3 fresh queries each
+        // time - 9 per Opportunity, 1,800 for a 200-record trigger chunk against
+        // a 100-query limit. Batched, the identical 600 notifications cost 3
+        // queries: notify() is O(1) in queries regardless of request count.
+        List<GroupNotifier.Request> notifications = new List<GroupNotifier.Request>();
         for (Opportunity o : opps) {
-            GroupNotifier.send('Transactions_Team', 'PSA executed - transaction opened',
-                o.Name + ': Day 0. The closing checklist has been fanned out.', o.Id);
-            GroupNotifier.send('Investor_Relations', 'PSA executed',
-                o.Name + ': contract signed - IR phase begins.', o.Id);
-            GroupNotifier.send('Due_Diligence', 'Due diligence materials available',
-                o.Name + ': the contract is signed - DD materials are ready for review.', o.Id);
+            notifications.add(buildNotification('Transactions_Team',
+                'PSA executed - transaction opened',
+                o.Name + ': Day 0. The closing checklist has been fanned out.', o.Id));
+            notifications.add(buildNotification('Investor_Relations',
+                'PSA executed',
+                o.Name + ': contract signed - IR phase begins.', o.Id));
+            notifications.add(buildNotification('Due_Diligence',
+                'Due diligence materials available',
+                o.Name + ': the contract is signed - DD materials are ready for review.', o.Id));
         }
+        GroupNotifier.notify(notifications);
+    }
+
+    /**
+     * @param groupDevName Public group / queue DeveloperName.
+     * @param title        Notification title.
+     * @param body         Notification body.
+     * @param targetId     Record the notification points at.
+     * @return A populated notification request (not yet sent).
+     */
+    private static GroupNotifier.Request buildNotification(
+        String groupDevName, String title, String body, Id targetId
+    ) {
+        GroupNotifier.Request r = new GroupNotifier.Request();
+        r.recipientGroup = groupDevName;
+        r.title = title;
+        r.body = body;
+        r.targetRecordId = targetId;
+        return r;
     }
 }

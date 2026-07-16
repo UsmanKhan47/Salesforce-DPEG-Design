@@ -8,15 +8,10 @@ private class DealMessageControllerTest {
 
     @isTest
     static void logsAndReadsOnAllThreeParents() {
-        Opportunity o = new Opportunity(Name = 'Msg Test', StageName = 'New',
-            CloseDate = Date.today().addDays(30));
-        insert o;
-        LOI__c loi = new LOI__c(Opportunity__c = o.Id);
-        insert loi;
-        Underwriting__c uw = new Underwriting__c(Opportunity__c = o.Id, Stage__c = 'Requested');
-        insert uw;
-        Contract_Review__c cr = new Contract_Review__c(Opportunity__c = o.Id, Stage__c = 'PSA Drafting');
-        insert cr;
+        Opportunity o = TestDataFactory.createOpportunity(null, true); // StageName 'New'
+        LOI__c loi = TestDataFactory.createLoi(o.Id, true);
+        Underwriting__c uw = TestDataFactory.createUnderwriting(o.Id, true);
+        Contract_Review__c cr = TestDataFactory.createContractReview(o.Id, true);
 
         Test.startTest();
         DealMessageController.addMessage(loi.Id, 'Email', 'Sent', 'LOI draft sent to broker', null);
@@ -39,9 +34,7 @@ private class DealMessageControllerTest {
 
     @isTest
     static void rejectsUnsupportedObjectsAndBlankDetails() {
-        Opportunity o = new Opportunity(Name = 'Msg Reject', StageName = 'New',
-            CloseDate = Date.today().addDays(30));
-        insert o;
+        Opportunity o = TestDataFactory.createOpportunity(null, true); // StageName 'New'
 
         Boolean threwObject = false;
         try {
@@ -51,8 +44,7 @@ private class DealMessageControllerTest {
         }
         System.assert(threwObject, 'Opportunity is not a message-tracker parent');
 
-        LOI__c loi = new LOI__c(Opportunity__c = o.Id);
-        insert loi;
+        LOI__c loi = TestDataFactory.createLoi(o.Id, true);
         Boolean threwBlank = false;
         try {
             DealMessageController.addMessage(loi.Id, 'Note', 'Internal', '   ', null);
@@ -66,13 +58,9 @@ private class DealMessageControllerTest {
 
     @isTest
     static void exactlyOneParentEnforced() {
-        Opportunity o = new Opportunity(Name = 'Msg VR', StageName = 'New',
-            CloseDate = Date.today().addDays(30));
-        insert o;
-        LOI__c loi = new LOI__c(Opportunity__c = o.Id);
-        insert loi;
-        Underwriting__c uw = new Underwriting__c(Opportunity__c = o.Id);
-        insert uw;
+        Opportunity o = TestDataFactory.createOpportunity(null, true); // StageName 'New'
+        LOI__c loi = TestDataFactory.createLoi(o.Id, true);
+        Underwriting__c uw = TestDataFactory.createUnderwriting(o.Id, true);
 
         Boolean blockedNone = false;
         try {
