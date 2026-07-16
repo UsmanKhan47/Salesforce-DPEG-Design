@@ -57,12 +57,19 @@ public with sharing class DealMessageController {
             throw new AuraHandledException('Enter what was communicated before saving.');
         }
         String parentField = parentFieldFor(recordId);
+        // MIGRATION (D1) — dual-write. Entry_Date__c is a DateTime whose _Date suffix
+        // breaks ARCHITECTURE.md §1 rule 9; Entry_DateTime__c replaces it. Both are
+        // written from ONE stamp so the two fields can never disagree by a millisecond,
+        // which keeps the D2 backfill's old-vs-new equality check clean. Readers stay
+        // on Entry_Date__c until D3; drop Entry_Date__c at D4.
+        Datetime entryStamp = Datetime.now();
         Deal_Message__c m = new Deal_Message__c(
             Method__c = String.isBlank(method) ? 'Note' : method,
             Direction__c = String.isBlank(direction) ? 'Internal' : direction,
             Details__c = details.trim(),
             Revision__c = String.isBlank(revision) ? null : revision.trim(),
-            Entry_Date__c = Datetime.now()
+            Entry_Date__c = entryStamp,
+            Entry_DateTime__c = entryStamp
         );
         m.put(PARENT_FIELDS.get(parentField), recordId);
         insert m;

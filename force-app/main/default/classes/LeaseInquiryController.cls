@@ -78,12 +78,17 @@ public with sharing class LeaseInquiryController {
         ];
         Boolean closed = inq.Status__c == 'Closed Won' || inq.Status__c == 'Closed Lost';
 
+        // MIGRATION (D1) — dual-write Entry_Date__c (legacy, rule-9 violating _Date
+        // suffix on a DateTime) and its replacement Entry_DateTime__c from ONE stamp,
+        // so the pair can never disagree. Readers stay on Entry_Date__c until D3.
+        Datetime entryStamp = System.now();
         insert new Lease_Activity__c(
             Lease_Inquiry__c = inquiryId,
             Details__c = details.trim(),
             Ball_In_Court__c = ball,
             Logged_By__c = UserInfo.getUserId(),
-            Entry_Date__c = System.now()
+            Entry_Date__c = entryStamp,
+            Entry_DateTime__c = entryStamp
         );
 
         Lease_Inquiry__c upd = new Lease_Inquiry__c(Id = inquiryId);

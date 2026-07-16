@@ -82,11 +82,13 @@ if (![SELECT Id FROM Lease_Renewal__c LIMIT 1].isEmpty()) {
         new List<Object>{ 11, 1,  'Call',   'Confirmed the adjacent suite frees up next month. Negotiating combined terms.' }
     };
     for (List<Object> e : entries) {
+        Datetime entryStamp = now.addDays(-(Integer) e[1]);
         acts.add(new Renewal_Activity__c(
             Lease_Renewal__c = rs[(Integer) e[0]].Id,
             Method__c = (String) e[2],
             Details__c = (String) e[3],
-            Entry_Date__c = now.addDays(-(Integer) e[1])
+            Entry_Date__c = entryStamp,     // legacy, retired at D4
+            Entry_DateTime__c = entryStamp  // MIGRATION (D1): rule-9 replacement
         ));
     }
     insert acts;

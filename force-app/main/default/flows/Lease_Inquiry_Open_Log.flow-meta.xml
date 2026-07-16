@@ -28,6 +28,12 @@
             </value>
         </inputAssignments>
         <inputAssignments>
+            <field>Entry_DateTime__c</field>
+            <value>
+                <elementReference>$Flow.CurrentDateTime</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
             <field>Entry_Date__c</field>
             <value>
                 <elementReference>$Flow.CurrentDateTime</elementReference>

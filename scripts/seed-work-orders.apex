@@ -49,6 +49,14 @@ if (![SELECT Id FROM Work_Order__c LIMIT 1].isEmpty()) {
         // 14 High CLOSED (resolved) — Refrigeration
         new Work_Order__c(Subject__c='AC intermittent — cycling off', Category__c='HVAC', Priority__c='High', Status__c='Closed', Description__c='AC shuts off every hour, never gets cool.', Property_Asset__c=assets.get('Katy Mills Strip').Id, Unit_Label__c='Unit 12', Tenant_Name__c='Dollar Depot', Vendor__c='Gulf Coast HVAC', Owner_Role__c='Maintenance', Reported_Date__c=n.addHours(-460), First_Touched_Date__c=n.addHours(-450), Completed_Date__c=n.addHours(-410))
     };
+    // MIGRATION (D1): mirror the legacy _Date fields onto their §1 rule-9 _DateTime
+    // replacements. Done in one pass before the single insert so none of the 15
+    // constructors above can drift. Null-safe — an unset legacy field mirrors as null.
+    for (Work_Order__c w : ws) {
+        w.Reported_DateTime__c = w.Reported_Date__c;
+        w.First_Touched_DateTime__c = w.First_Touched_Date__c;
+        w.Completed_DateTime__c = w.Completed_Date__c;
+    }
     insert ws;
 
     List<Work_Order_Activity__c> acts = new List<Work_Order_Activity__c>();
@@ -84,12 +92,14 @@ if (![SELECT Id FROM Work_Order__c LIMIT 1].isEmpty()) {
         new List<Object>{ 14,460,'Sync',   'Yardi', 'Work order created from tenant call — AC cycling off intermittently.' }
     };
     for (List<Object> e : entries) {
+        Datetime entryStamp = n.addHours(-(Integer) e[1]);
         acts.add(new Work_Order_Activity__c(
             Work_Order__c = ws[(Integer) e[0]].Id,
             Kind__c = (String) e[2],
             Actor__c = (String) e[3],
             Detail__c = (String) e[4],
-            Entry_Date__c = n.addHours(-(Integer) e[1])
+            Entry_Date__c = entryStamp,     // legacy, retired at D4
+            Entry_DateTime__c = entryStamp  // MIGRATION (D1): rule-9 replacement
         ));
     }
     insert acts;

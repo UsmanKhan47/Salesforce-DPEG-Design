@@ -91,7 +91,9 @@ update inqs;
 Datetime dt(Integer y, Integer mo, Integer d, Integer h, Integer mi) { return Datetime.newInstance(y, mo, d, h, mi, 0); }
 List<Lease_Activity__c> log = new List<Lease_Activity__c>();
 void entry(Id inq, Datetime at, String ball, String txt) {
-    log.add(new Lease_Activity__c(Lease_Inquiry__c=inq, Entry_Date__c=at, Ball_In_Court__c=ball, Logged_By__c=ME, Details__c=txt));
+    // MIGRATION (D1): Entry_DateTime__c is the §1 rule-9 replacement for Entry_Date__c;
+    // both are written from the same `at` until readers repoint at D3.
+    log.add(new Lease_Activity__c(Lease_Inquiry__c=inq, Entry_Date__c=at, Entry_DateTime__c=at, Ball_In_Court__c=ball, Logged_By__c=ME, Details__c=txt));
 }
 entry(i1.Id, dt(2026,6,3,9,12),  'Landlord', 'Marcus Webb (Lee & Associates) introduced Sunrise Cafe. Toured the 1,800 sq ft end-cap at Westgate Plaza — patio frontage, wants a full-service cafe.');
 entry(i1.Id, dt(2026,6,8,15,40), 'Landlord', 'LOI received: $28.00/sq ft NNN, 5-year term, 3 months free rent, $40/sq ft TI. Forwarded to the landlord for response.');

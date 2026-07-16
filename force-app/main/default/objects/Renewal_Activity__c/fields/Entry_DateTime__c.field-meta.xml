@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Entry_DateTime__c</fullName>
+    <description>When this renewal-timeline entry happened. Orders the append-only Renewal Activity timeline; same-transaction rows share a timestamp and tie-break on Name. Replaces Entry_Date__c, whose _Date suffix asserted a date-only type it never had - this field stores date AND time, per ARCHITECTURE.md §1 rule 9.</description>
+    <inlineHelpText>Date AND time this renewal activity actually happened - not when it was logged. Backdate it if you are recording an earlier conversation; the timeline is ordered newest-first by this value.</inlineHelpText>
+    <label>Entry DateTime</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

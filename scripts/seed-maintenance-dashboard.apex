@@ -63,6 +63,12 @@ for (Property_Asset__c p : [SELECT Id FROM Property_Asset__c
 for (Integer i = 0; i < wos.size(); i++) {
     if (!propIds.isEmpty()) wos[i].Property_Asset__c = propIds[Math.mod(i, propIds.size())];
     wos[i].Owner_User__c = UserInfo.getUserId();
+    // MIGRATION (D1): mirror the legacy _Date fields onto their §1 rule-9 _DateTime
+    // replacements. Done here, at the single point every record passes through before
+    // the one insert, so no construction site above can drift out of sync. Null-safe:
+    // Completed_Date__c is null on open work orders and the mirror keeps it null.
+    wos[i].Reported_DateTime__c = wos[i].Reported_Date__c;
+    wos[i].Completed_DateTime__c = wos[i].Completed_Date__c;
 }
 insert wos;
 

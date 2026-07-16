@@ -29,9 +29,12 @@ private class LeaseRenewalControllerTest {
         rs[5].Lease_End__c = t.addDays(40); rs[5].Stage__c = 'Negotiating'; rs[5].Last_Contact_Date__c = t.addDays(-7); rs[5].Proposed_Rate__c = 24.00;
         insert rs;
 
+        // MIGRATION (D1): set Entry_DateTime__c alongside every Entry_Date__c override so
+        // the factory's dual-written pair does not end up disagreeing on these records.
+        // Assertions still read Entry_Date__c - readers repoint at D3.
         List<Renewal_Activity__c> acts = TestDataFactory.createRenewalActivities(2, rs[0].Id, false);
-        acts[0].Method__c = 'System'; acts[0].Details__c = 'Lease flagged for renewal.'; acts[0].Entry_Date__c = Datetime.now().addDays(-30);
-        acts[1].Method__c = 'Email'; acts[1].Details__c = 'Sent renewal notice to tenant.'; acts[1].Entry_Date__c = Datetime.now().addDays(-20);
+        acts[0].Method__c = 'System'; acts[0].Details__c = 'Lease flagged for renewal.'; acts[0].Entry_Date__c = Datetime.now().addDays(-30); acts[0].Entry_DateTime__c = acts[0].Entry_Date__c;
+        acts[1].Method__c = 'Email'; acts[1].Details__c = 'Sent renewal notice to tenant.'; acts[1].Entry_Date__c = Datetime.now().addDays(-20); acts[1].Entry_DateTime__c = acts[1].Entry_Date__c;
         insert acts;
     }
     private static Lease_Renewal__c byTenant(String t) {

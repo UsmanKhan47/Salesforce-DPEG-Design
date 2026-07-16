@@ -1096,12 +1096,14 @@ public with sharing class TestDataFactory {
 
     private static List<Deal_Message__c> buildDealMessages(Integer count) {
         requirePositive(count);
+        Datetime entryStamp = System.now(); // MIGRATION (D1): one stamp, both fields
         List<Deal_Message__c> messages = new List<Deal_Message__c>();
         for (Integer i = 0; i < count; i++) {
             messages.add(new Deal_Message__c(
                 Direction__c = 'Internal',
                 Method__c = 'Note',
-                Entry_Date__c = System.now(), // DateTime, not Date
+                Entry_Date__c = entryStamp,     // DateTime, not Date — legacy, retired at D4
+                Entry_DateTime__c = entryStamp, // MIGRATION (D1): rule-9 replacement
                 Details__c = 'Test deal message ' + i,
                 Revision__c = String.valueOf(i + 1) // TEXT, not Number
             ));
@@ -1593,12 +1595,14 @@ public with sharing class TestDataFactory {
     public static List<Lease_Activity__c> createLeaseActivities(Integer count, Id leaseInquiryId, Boolean doInsert) {
         requirePositive(count);
         requireId(leaseInquiryId, 'leaseInquiryId (Lease_Activity__c.Lease_Inquiry__c is Master-Detail)');
+        Datetime entryStamp = System.now(); // MIGRATION (D1): one stamp, both fields
         List<Lease_Activity__c> activities = new List<Lease_Activity__c>();
         for (Integer i = 0; i < count; i++) {
             activities.add(new Lease_Activity__c(
                 Lease_Inquiry__c = leaseInquiryId,
                 Ball_In_Court__c = 'Landlord',
-                Entry_Date__c = System.now(), // DateTime, not Date
+                Entry_Date__c = entryStamp,     // DateTime, not Date — legacy, retired at D4
+                Entry_DateTime__c = entryStamp, // MIGRATION (D1): rule-9 replacement
                 Logged_By__c = UserInfo.getUserId(),
                 Details__c = 'Test lease activity ' + i
             ));
@@ -1752,12 +1756,14 @@ public with sharing class TestDataFactory {
     public static List<Renewal_Activity__c> createRenewalActivities(Integer count, Id leaseRenewalId, Boolean doInsert) {
         requirePositive(count);
         requireId(leaseRenewalId, 'leaseRenewalId (Renewal_Activity__c.Lease_Renewal__c is Master-Detail)');
+        Datetime entryStamp = System.now(); // MIGRATION (D1): one stamp, both fields
         List<Renewal_Activity__c> activities = new List<Renewal_Activity__c>();
         for (Integer i = 0; i < count; i++) {
             activities.add(new Renewal_Activity__c(
                 Lease_Renewal__c = leaseRenewalId,
                 Method__c = 'Call',
-                Entry_Date__c = System.now(), // DateTime, not Date
+                Entry_Date__c = entryStamp,     // DateTime, not Date — legacy, retired at D4
+                Entry_DateTime__c = entryStamp, // MIGRATION (D1): rule-9 replacement
                 Details__c = 'Test renewal activity ' + i
             ));
         }
@@ -1785,6 +1791,12 @@ public with sharing class TestDataFactory {
      * rather than relying on CreatedDate. Ownership uses Owner_User__c (a lookup),
      * NOT the standard OwnerId. Unit_Label__c here is a TEXT field (may hold
      * non-unit values such as 'Common' - it was never a unit reference).
+     *
+     * MIGRATION (D1): Reported_Date__c is dual-written with Reported_DateTime__c,
+     * its ARCHITECTURE.md §1 rule-9 replacement, from ONE stamp. Reported_Date__c
+     * stays the required field and the SLA anchor (SLA_Due_Date__c's formula still
+     * reads it) until readers repoint at D3. If you override Reported_Date__c on a
+     * returned record, OVERRIDE BOTH - see createWorkOrdersReportedAt.
      * @param count           Number of Work Orders.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
      * @param doInsert        Insert when true.
@@ -1792,12 +1804,14 @@ public with sharing class TestDataFactory {
      */
     public static List<Work_Order__c> createWorkOrders(Integer count, Id propertyAssetId, Boolean doInsert) {
         requirePositive(count);
+        Datetime reportedStamp = System.now().addHours(-1); // MIGRATION (D1): one stamp, both fields
         List<Work_Order__c> workOrders = new List<Work_Order__c>();
         for (Integer i = 0; i < count; i++) {
             workOrders.add(new Work_Order__c(
                 Property_Asset__c = propertyAssetId,
                 Subject__c = 'Test Work Order ' + i,
-                Reported_Date__c = System.now().addHours(-1),
+                Reported_Date__c = reportedStamp,     // legacy, retired at D4
+                Reported_DateTime__c = reportedStamp, // MIGRATION (D1): rule-9 replacement
                 Status__c = 'New',
                 Priority__c = 'Medium',
                 Category__c = 'General',
@@ -1826,9 +1840,14 @@ public with sharing class TestDataFactory {
     /**
      * Work orders with an explicit reported timestamp — use this to drive the SLA
      * formula tiers (24/48/168/360h) deterministically instead of sleeping.
+     *
+     * MIGRATION (D1): sets BOTH Reported_Date__c and Reported_DateTime__c to
+     * reportedDate. Prefer this over hand-setting Reported_Date__c on a record from
+     * createWorkOrders - overriding only the legacy field would leave the pair
+     * disagreeing, which surfaces as a phantom failure when readers repoint at D3.
      * @param count           Number of Work Orders.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
-     * @param reportedDate    Value for Reported_Date__c (SLA anchor).
+     * @param reportedDate    Value for BOTH Reported_Date__c and Reported_DateTime__c (SLA anchor).
      * @param doInsert        Insert when true.
      * @return Work Orders.
      */
@@ -1843,7 +1862,8 @@ public with sharing class TestDataFactory {
         }
         List<Work_Order__c> workOrders = createWorkOrders(count, propertyAssetId, false);
         for (Work_Order__c workOrder : workOrders) {
-            workOrder.Reported_Date__c = reportedDate;
+            workOrder.Reported_Date__c = reportedDate;     // legacy, retired at D4
+            workOrder.Reported_DateTime__c = reportedDate; // MIGRATION (D1): rule-9 replacement
         }
         insertIf(doInsert, workOrders);
         return workOrders;
@@ -1863,12 +1883,14 @@ public with sharing class TestDataFactory {
     ) {
         requirePositive(count);
         requireId(workOrderId, 'workOrderId (Work_Order_Activity__c.Work_Order__c is Master-Detail)');
+        Datetime entryStamp = System.now(); // MIGRATION (D1): one stamp, both fields
         List<Work_Order_Activity__c> activities = new List<Work_Order_Activity__c>();
         for (Integer i = 0; i < count; i++) {
             activities.add(new Work_Order_Activity__c(
                 Work_Order__c = workOrderId,
                 Kind__c = 'Sync',
-                Entry_Date__c = System.now(),
+                Entry_Date__c = entryStamp,     // legacy, retired at D4
+                Entry_DateTime__c = entryStamp, // MIGRATION (D1): rule-9 replacement
                 Actor__c = 'Test Actor ' + i,
                 Detail__c = 'Test work order activity ' + i
             ));

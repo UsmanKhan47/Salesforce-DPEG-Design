@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Entry_DateTime__c</fullName>
+    <defaultValue>NOW()</defaultValue>
+    <description>When this negotiation-log entry happened. Defaults to now on create. Orders the append-only Lease Activity timeline. Replaces Entry_Date__c, whose _Date suffix asserted a date-only type it never had - this field stores date AND time, per ARCHITECTURE.md §1 rule 9.</description>
+    <inlineHelpText>Date AND time this activity actually happened - not when it was logged. Defaults to now; backdate it if you are recording an earlier conversation. The timeline is ordered newest-first by this value.</inlineHelpText>
+    <label>Entry DateTime</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>
