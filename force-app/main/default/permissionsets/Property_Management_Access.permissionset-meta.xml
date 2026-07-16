@@ -480,11 +480,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lease_Renewal__c.Unit__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Lease__c.Executed_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -971,11 +966,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Work_Order__c.Unit_Label__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Work_Order__c.Unit__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

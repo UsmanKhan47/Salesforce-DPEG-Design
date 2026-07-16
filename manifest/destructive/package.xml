@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Companion manifest for manifest/destructive/destructiveChangesPost.xml.
+
+    The Metadata API requires a package.xml alongside any destructive manifest.
+    This one is intentionally EMPTY of <types>: Phase 4 deploys no new metadata,
+    it only retires the two legacy Unit__c Text fields.
+
+    NOT AUTHORISED - see destructiveChangesPost.xml.
+    -->
+    <version>67.0</version>
+</Package>

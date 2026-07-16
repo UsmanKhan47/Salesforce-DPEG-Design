@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Phase 4 of the Unit__c -> Unit_Label__c migration (ARCHITECTURE.md §1 rule 9).
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+
+    Retires the two legacy Text fields whose name falsely implied a lookup to the
+    Unit__c object. Every reader was repointed to Unit_Label__c in Phase 3
+    (commit 8469cb5); a full sweep confirms zero remaining Apex, LWC, layout,
+    list-view or report references.
+
+    POST-destructive (not pre-): the readers are already repointed, so the fields
+    must be dropped AFTER the remaining metadata in the same deploy settles.
+
+    DELETES EXACTLY TWO FIELDS. Explicitly NOT in scope:
+      - Rent_Step__c.Unit__c   -> MasterDetail to the Unit__c object. CORRECT. MUST SURVIVE.
+      - Unit__c (the object)   -> untouched.
+      - Lease_Renewal__c.Unit_Label__c / Work_Order__c.Unit_Label__c -> the replacements. MUST SURVIVE.
+
+    The whole defect was one name meaning three things. Do not collapse them back.
+
+    Deploy (only once authorised by the user):
+      sf project deploy start \
+        --manifest manifest/destructive/package.xml \
+        --post-destructive-changes manifest/destructive/destructiveChangesPost.xml \
+        --target-org DPEG-Acq-5 \
+        --test-level RunLocalTests --wait 30
+
+    Rollback: deleted custom fields are recoverable from the org's field recycle
+    bin for 15 days; the metadata is also recoverable from git history.
+    -->
+    <types>
+        <members>Lease_Renewal__c.Unit__c</members>
+        <members>Work_Order__c.Unit__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>
