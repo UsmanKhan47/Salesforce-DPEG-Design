@@ -15,7 +15,7 @@ public with sharing class OpportunityFunnelController {
         for (String s : STAGE_ORDER) {
             counts.put(s, 0);
         }
-        for (AggregateResult ar : [SELECT StageName st, COUNT(Id) c FROM Opportunity GROUP BY StageName]) {
+        for (AggregateResult ar : OpportunitySelector.countByStage()) {
             String st = (String) ar.get('st');
             if (st != null && counts.containsKey(st)) {
                 counts.put(st, (Integer) ar.get('c'));
@@ -23,15 +23,9 @@ public with sharing class OpportunityFunnelController {
         }
         // Outcome stages are scoped to the last 90 days by close date so the cards
         // reflect recent activity rather than an ever-growing all-time total.
-        counts.put('PSA', [
-            SELECT COUNT() FROM Opportunity WHERE StageName = 'PSA' AND CloseDate = LAST_N_DAYS:90
-        ]);
-        counts.put('Closed Won', [
-            SELECT COUNT() FROM Opportunity WHERE StageName = 'Closed Won' AND CloseDate = LAST_N_DAYS:90
-        ]);
-        counts.put('Dead/Pass', [
-            SELECT COUNT() FROM Opportunity WHERE StageName = 'Dead/Pass' AND CloseDate = LAST_N_DAYS:90
-        ]);
+        counts.put('PSA', OpportunitySelector.countByStageInLastNDays('PSA', 90));
+        counts.put('Closed Won', OpportunitySelector.countByStageInLastNDays('Closed Won', 90));
+        counts.put('Dead/Pass', OpportunitySelector.countByStageInLastNDays('Dead/Pass', 90));
         List<StageCount> result = new List<StageCount>();
         for (String s : STAGE_ORDER) {
             result.add(new StageCount(s, counts.get(s)));
@@ -44,13 +38,7 @@ public with sharing class OpportunityFunnelController {
         List<OppRow> rows = new List<OppRow>();
         // Top 5 deals by asking price (largest first); deals without an asking
         // price sort last so the list leads with the biggest opportunities.
-        for (Opportunity o : [
-            SELECT Id, Name, StageName, Deal_Type__c, Asset_Type__c,
-                   Asking_Price__c, Underwritten_NOI__c, CreatedDate
-            FROM Opportunity
-            ORDER BY Asking_Price__c DESC NULLS LAST, CreatedDate DESC
-            LIMIT 5
-        ]) {
+        for (Opportunity o : OpportunitySelector.selectTopByAskingPrice(5)) {
             OppRow r = new OppRow();
             r.id = o.Id;
             r.name = o.Name;
@@ -69,17 +57,13 @@ public with sharing class OpportunityFunnelController {
     public static PipelineSnapshot getPipelineSnapshot() {
         PipelineSnapshot s = new PipelineSnapshot();
         Set<String> closedStages = new Set<String>{ 'Closed Won', 'Dead/Pass' };
-        for (AggregateResult ar : [
-            SELECT COUNT(Id) c, SUM(Asking_Price__c) v
-            FROM Opportunity
-            WHERE StageName NOT IN :closedStages
-        ]) {
+        for (AggregateResult ar : OpportunitySelector.aggregateOpenPipeline(closedStages)) {
             s.openDeals = (Integer) ar.get('c');
             Decimal v = (Decimal) ar.get('v');
             s.pipelineValue = (v == null) ? 0 : v;
         }
-        s.landDeals = [SELECT COUNT() FROM Opportunity WHERE Deal_Type__c = 'Land'];
-        s.commercialDeals = [SELECT COUNT() FROM Opportunity WHERE Deal_Type__c = 'Commercial'];
+        s.landDeals = OpportunitySelector.countByDealType('Land');
+        s.commercialDeals = OpportunitySelector.countByDealType('Commercial');
         return s;
     }
 

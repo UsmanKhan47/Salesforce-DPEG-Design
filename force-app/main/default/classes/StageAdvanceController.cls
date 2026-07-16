@@ -55,7 +55,8 @@ public with sharing class StageAdvanceController {
         if (recordId == null) {
             throw ahe('No record was provided.');
         }
-        return [SELECT Id, StageName FROM Opportunity WHERE Id = :recordId LIMIT 1];
+        // Fetch-for-use: a missing Id throws System.QueryException (unchanged).
+        return OpportunitySelector.selectStageRequiredById(recordId);
     }
 
     private static String setStage(Opportunity o, String target) {

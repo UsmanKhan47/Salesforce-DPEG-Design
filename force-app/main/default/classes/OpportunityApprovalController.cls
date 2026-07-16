@@ -19,8 +19,7 @@ public with sharing class OpportunityApprovalController {
             throw ahe('This record is not linked to a deal (Opportunity) yet.');
         }
         // Block a duplicate submission while one is already pending.
-        if (![SELECT Id FROM ProcessInstance
-              WHERE TargetObjectId = :dealId AND Status = 'Pending'].isEmpty()) {
+        if (!ProcessInstanceSelector.selectPendingByTargetId(dealId).isEmpty()) {
             throw ahe('This deal is already pending approval.');
         }
         try {
@@ -32,7 +31,7 @@ public with sharing class OpportunityApprovalController {
             // Turn the raw NO_APPLICABLE_PROCESS into a reason the submitter can act
             // on. The two processes run at the Underwriting and LOI stages; anything
             // else meets no entry criteria.
-            Opportunity deal = [SELECT StageName FROM Opportunity WHERE Id = :dealId];
+            Opportunity deal = OpportunitySelector.selectStageRequiredById(dealId);
             if (deal.StageName != 'Underwriting' && deal.StageName != 'LOI') {
                 throw ahe('No approval applies at the ' + deal.StageName +
                     ' stage - principal approval runs at Underwriting, LOI approval at LOI.');
@@ -48,13 +47,13 @@ public with sharing class OpportunityApprovalController {
             return recordId;
         }
         if (objectName == 'LOI__c') {
-            return [SELECT Opportunity__c FROM LOI__c WHERE Id = :recordId LIMIT 1].Opportunity__c;
+            return LoiSelector.selectOpportunityIdRequiredById(recordId).Opportunity__c;
         }
         if (objectName == 'Underwriting__c') {
-            return [SELECT Opportunity__c FROM Underwriting__c WHERE Id = :recordId LIMIT 1].Opportunity__c;
+            return UnderwritingSelector.selectOpportunityIdRequiredById(recordId).Opportunity__c;
         }
         if (objectName == 'Contract_Review__c') {
-            return [SELECT Opportunity__c FROM Contract_Review__c WHERE Id = :recordId LIMIT 1].Opportunity__c;
+            return ContractReviewSelector.selectOpportunityIdRequiredById(recordId).Opportunity__c;
         }
         throw ahe('Submit for Approval is not available on ' + objectName + '.');
     }

@@ -35,25 +35,18 @@ public with sharing class TransactionTaskController {
     @AuraEnabled(cacheable=true)
     public static List<GroupRow> getTaskGroups(Id transactionId) {
         // Ordered group definitions (drives stage order + name/owner/conditional).
+        // CMDT read via provider (getAll), not SOQL — WITH USER_MODE is inert on __mdt.
         List<String> orderedKeys = new List<String>();
         Map<String, Task_Group_Def__mdt> defByKey = new Map<String, Task_Group_Def__mdt>();
-        for (Task_Group_Def__mdt d : [
-            SELECT Letter__c, Group_Name__c, Owner_Label__c, Conditional__c, Sequence__c
-            FROM Task_Group_Def__mdt ORDER BY Sequence__c
-        ]) {
+        for (Task_Group_Def__mdt d : TaskGroupDefProvider.getAllOrderedBySequence()) {
             String key = d.Letter__c + '. ' + d.Group_Name__c;
             orderedKeys.add(key);
             defByKey.put(key, d);
         }
 
+        // Task SOQL relocated to TaskSelector (bulk Set<Id> shape; single Transaction here).
         Map<String, List<TaskRow>> tasksByGroup = new Map<String, List<TaskRow>>();
-        for (Task t : [
-            SELECT Id, Subject, Task_Group__c, Task_Owner_Label__c, Status, IsClosed, ActivityDate, Task_Sequence__c,
-                   Verbal_Verification_Completed__c, Verified_By__c, Verified_At__c, Verification_Phone__c, Description, LastModifiedDate
-            FROM Task
-            WHERE Transaction_Deal__c = :transactionId AND Task_Group__c != null
-            ORDER BY Task_Sequence__c
-        ]) {
+        for (Task t : TaskSelector.selectChecklistByTransactionDealIds(new Set<Id>{ transactionId })) {
             TaskRow r = new TaskRow();
             r.id = t.Id;
             r.subject = t.Subject;
@@ -132,7 +125,7 @@ public with sharing class TransactionTaskController {
             throw new AuraHandledException(
                 'Confirmed-by name and phone number are required before this wire-verification task can close.');
         }
-        Task t = [SELECT Id, Description FROM Task WHERE Id = :taskId LIMIT 1];
+        Task t = TaskSelector.selectRequiredById(taskId);
         Datetime now = Datetime.now();
         String note = 'Verified by phone with ' + verifiedBy.trim() + ' at ' + phone.trim()
             + ' on ' + now.format('MMM d, yyyy h:mm a') + '.';

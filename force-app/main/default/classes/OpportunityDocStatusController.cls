@@ -13,20 +13,15 @@ public with sharing class OpportunityDocStatusController {
             return d;
         }
 
-        Opportunity opp = [
-            SELECT Id, Primary_NDA__c, Primary_LOI__c, Primary_Underwriting__c
-            FROM Opportunity
-            WHERE Id = :opportunityId
-            LIMIT 1
-        ];
+        Opportunity opp = OpportunitySelector.selectPrimaryRefsById(opportunityId);
 
         // --- NDA: primary, else latest related ---
         NDA__c nda;
         if (opp.Primary_NDA__c != null) {
-            nda = queryNda('Id = :pid', opp.Primary_NDA__c);
+            nda = NdaSelector.selectById(opp.Primary_NDA__c);
         }
         if (nda == null) {
-            nda = queryNda('Opportunity__c = :pid ORDER BY CreatedDate DESC', opportunityId);
+            nda = NdaSelector.selectLatestByOpportunityId(opportunityId);
         }
         if (nda != null) {
             d.hasNda = true;
@@ -41,10 +36,10 @@ public with sharing class OpportunityDocStatusController {
         // --- Underwriting: primary, else latest related ---
         Underwriting__c uw;
         if (opp.Primary_Underwriting__c != null) {
-            uw = queryUnderwriting('Id = :pid', opp.Primary_Underwriting__c);
+            uw = UnderwritingSelector.selectById(opp.Primary_Underwriting__c);
         }
         if (uw == null) {
-            uw = queryUnderwriting('Opportunity__c = :pid ORDER BY CreatedDate DESC', opportunityId);
+            uw = UnderwritingSelector.selectLatestByOpportunityId(opportunityId);
         }
         if (uw != null) {
             d.hasUnderwriting = true;
@@ -59,10 +54,10 @@ public with sharing class OpportunityDocStatusController {
         // --- LOI: primary, else latest related ---
         LOI__c loi;
         if (opp.Primary_LOI__c != null) {
-            loi = queryLoi('Id = :pid', opp.Primary_LOI__c);
+            loi = LoiSelector.selectById(opp.Primary_LOI__c);
         }
         if (loi == null) {
-            loi = queryLoi('Opportunity__c = :pid ORDER BY CreatedDate DESC', opportunityId);
+            loi = LoiSelector.selectLatestByOpportunityId(opportunityId);
         }
         if (loi != null) {
             d.hasLoi = true;
@@ -75,13 +70,8 @@ public with sharing class OpportunityDocStatusController {
         }
 
         // --- Development feasibility review: latest related ---
-        for (Development_Feasibility_Review__c dev : [
-            SELECT Id, Stage__c, CreatedDate
-            FROM Development_Feasibility_Review__c
-            WHERE Opportunity__c = :opportunityId
-            ORDER BY CreatedDate DESC
-            LIMIT 1
-        ]) {
+        for (Development_Feasibility_Review__c dev :
+                DevelopmentFeasibilityReviewSelector.selectLatestByOpportunityId(opportunityId)) {
             d.hasDevelopment = true;
             d.developmentId = dev.Id;
             d.developmentStage = dev.Stage__c;
@@ -89,13 +79,8 @@ public with sharing class OpportunityDocStatusController {
         }
 
         // --- Construction feasibility review: latest related ---
-        for (Construction_Feasibility_Review__c con : [
-            SELECT Id, Stage__c, CreatedDate
-            FROM Construction_Feasibility_Review__c
-            WHERE Opportunity__c = :opportunityId
-            ORDER BY CreatedDate DESC
-            LIMIT 1
-        ]) {
+        for (Construction_Feasibility_Review__c con :
+                ConstructionFeasibilityReviewSelector.selectLatestByOpportunityId(opportunityId)) {
             d.hasConstruction = true;
             d.constructionId = con.Id;
             d.constructionStage = con.Stage__c;
@@ -103,13 +88,8 @@ public with sharing class OpportunityDocStatusController {
         }
 
         // --- Contract review: latest related ---
-        for (Contract_Review__c cr : [
-            SELECT Id, Stage__c, Contract_Value__c, PSA_Date__c, Execution_Date__c
-            FROM Contract_Review__c
-            WHERE Opportunity__c = :opportunityId
-            ORDER BY CreatedDate DESC
-            LIMIT 1
-        ]) {
+        for (Contract_Review__c cr :
+                ContractReviewSelector.selectLatestByOpportunityId(opportunityId)) {
             d.hasContract = true;
             d.contractId = cr.Id;
             d.contractStage = cr.Stage__c;
@@ -118,30 +98,6 @@ public with sharing class OpportunityDocStatusController {
         }
 
         return d;
-    }
-
-    private static NDA__c queryNda(String tail, Id pid) {
-        List<NDA__c> rows = Database.query(
-            'SELECT Id, Name, Status__c, Date_Sent__c, NDA_Expiry_Date__c, NDA_Signed__c ' +
-            'FROM NDA__c WHERE ' + tail + ' LIMIT 1'
-        );
-        return rows.isEmpty() ? null : rows[0];
-    }
-
-    private static Underwriting__c queryUnderwriting(String tail, Id pid) {
-        List<Underwriting__c> rows = Database.query(
-            'SELECT Id, Name, Stage__c, My_Price__c, Verdict__c, CreatedDate ' +
-            'FROM Underwriting__c WHERE ' + tail + ' LIMIT 1'
-        );
-        return rows.isEmpty() ? null : rows[0];
-    }
-
-    private static LOI__c queryLoi(String tail, Id pid) {
-        List<LOI__c> rows = Database.query(
-            'SELECT Id, Name, LOI_Status__c, Offer_Price__c, Offer_Cap_Rate__c, Submitted_Date__c ' +
-            'FROM LOI__c WHERE ' + tail + ' LIMIT 1'
-        );
-        return rows.isEmpty() ? null : rows[0];
     }
 
     public class DocStatus {

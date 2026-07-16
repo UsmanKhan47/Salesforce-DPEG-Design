@@ -64,10 +64,10 @@ public with sharing class TaskFanoutService {
             return;
         }
 
-        List<Task_Group_Def__mdt> groupDefs = groupDefsOverride != null ? groupDefsOverride : [
-            SELECT Letter__c, Group_Name__c, Owner_Label__c, Conditional__c, Condition_Field__c
-            FROM Task_Group_Def__mdt
-        ];
+        // CMDT reads relocated to providers (getAll); @TestVisible overrides still win in tests.
+        List<Task_Group_Def__mdt> groupDefs = groupDefsOverride != null
+            ? groupDefsOverride
+            : TaskGroupDefProvider.getAllOrderedBySequence();
         Map<String, Task_Group_Def__mdt> groupByLetter = new Map<String, Task_Group_Def__mdt>();
         Set<String> condFields = new Set<String>();
         for (Task_Group_Def__mdt g : groupDefs) {
@@ -77,20 +77,15 @@ public with sharing class TaskFanoutService {
             }
         }
 
-        List<Transaction_Task_Def__mdt> taskDefs = taskDefsOverride != null ? taskDefsOverride : [
-            SELECT Group_Letter__c, Sequence__c, Subject__c, Owner_Label__c, Due_Day_Offset__c, Default_Status__c
-            FROM Transaction_Task_Def__mdt
-            ORDER BY Group_Letter__c, Sequence__c
-        ];
+        List<Transaction_Task_Def__mdt> taskDefs = taskDefsOverride != null
+            ? taskDefsOverride
+            : TransactionTaskDefProvider.getAllOrderedByGroupAndSequence();
 
-        // Dynamic query so arbitrary conditional gating fields (e.g. Loan_Required__c) can be read.
-        String fieldList = 'Id, OwnerId, Contract_Executed_Date__c, Tasks_Fanned_Out__c';
-        for (String cf : condFields) {
-            fieldList += ', ' + cf;
-        }
-        Map<Id, Transaction__c> txns = new Map<Id, Transaction__c>(
-            (List<Transaction__c>) Database.query(
-                'SELECT ' + fieldList + ' FROM Transaction__c WHERE Id IN :transactionIds'));
+        // SOQL relocated to TransactionSelector. The selector builds the same base
+        // field set plus the describe-validated conditional gating fields (e.g.
+        // Loan_Required__c) that each returned Transaction is read for below.
+        Map<Id, Transaction__c> txns = TransactionSelector.selectByIdsWithConditionFields(
+            new Set<Id>(transactionIds), condFields);
 
         List<Task> toInsert = new List<Task>();
         List<Transaction__c> toFlag = new List<Transaction__c>();

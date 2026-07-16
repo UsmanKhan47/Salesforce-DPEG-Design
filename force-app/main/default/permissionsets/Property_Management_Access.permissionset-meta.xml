@@ -924,11 +924,6 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
-        <field>Work_Order__c.Reported_DateTime__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
         <editable>false</editable>
         <field>Work_Order__c.Resolution_Days__c</field>
         <readable>true</readable>
