@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Reported_DateTime__c</fullName>
-    <description>When the work order was reported/synced from Yardi. Anchors all SLA math (used instead of CreatedDate so seed offsets are deterministic). Replaces Reported_Date__c, whose _Date suffix asserted a date-only type it never had - this field stores date AND time, per ARCHITECTURE.md §1 rule 9. MIGRATION: optional only while Reported_Date__c still exists; both are written in parallel until the backfill completes, after which this field becomes required and Reported_Date__c is retired.</description>
+    <description>When the work order was reported/synced from Yardi. Anchors all SLA math (used instead of CreatedDate so seed offsets are deterministic). Replaced Reported_Date__c, whose _Date suffix asserted a date-only type it never had - this field stores date AND time, per ARCHITECTURE.md §1 rule 9. Required: the legacy Reported_Date__c was retired in the 8-DateTime migration (D4) and this field took over as the required SLA anchor (D5).</description>
     <inlineHelpText>Date AND time the work order was reported in Yardi. Every SLA calculation counts forward from this moment, so a wrong value silently re-tiers the work order's SLA health.</inlineHelpText>
     <label>Reported DateTime</label>
-    <required>false</required>
+    <required>true</required>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
     <type>DateTime</type>
