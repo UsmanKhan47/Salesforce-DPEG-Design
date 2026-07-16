@@ -30,7 +30,7 @@
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
     <timeFrameFilter>
-        <dateColumn>Work_Order__c.Completed_Date__c</dateColumn>
+        <dateColumn>Work_Order__c.Completed_DateTime__c</dateColumn>
         <interval>INTERVAL_CUSTOM</interval>
     </timeFrameFilter>
 </Report>

@@ -100,12 +100,12 @@ public with sharing class LeaseRenewalController {
         v.canLog = !v.closed;
         v.entries = new List<Entry>();
         // Frozen-clock gotcha: same-transaction rows share timestamps, so tie-break on Name DESC.
-        for (Renewal_Activity__c a : [SELECT Id, Method__c, Details__c, Entry_Date__c, CreatedBy.Name
+        for (Renewal_Activity__c a : [SELECT Id, Method__c, Details__c, Entry_DateTime__c, CreatedBy.Name
                                       FROM Renewal_Activity__c WHERE Lease_Renewal__c = :renewalId
-                                      ORDER BY Entry_Date__c DESC NULLS LAST, Name DESC]) {
+                                      ORDER BY Entry_DateTime__c DESC NULLS LAST, Name DESC]) {
             Entry e = new Entry();
             e.id = a.Id; e.method = a.Method__c; e.details = a.Details__c;
-            e.enteredBy = a.CreatedBy.Name; e.entryDate = a.Entry_Date__c;
+            e.enteredBy = a.CreatedBy.Name; e.entryDate = a.Entry_DateTime__c;
             v.entries.add(e);
         }
         return v;

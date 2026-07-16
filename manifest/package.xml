@@ -794,6 +794,7 @@
         <members>Work_Order__c.Reported_Date__c</members>
         <members>Work_Order__c.Resolution_Days__c</members>
         <members>Work_Order__c.SLA_Breached__c</members>
+        <members>Work_Order__c.SLA_Due_DateTime__c</members>
         <members>Work_Order__c.SLA_Due_Date__c</members>
         <members>Work_Order__c.SLA_Health__c</members>
         <members>Work_Order__c.SLA_Target_Hours__c</members>

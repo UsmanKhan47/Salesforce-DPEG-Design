@@ -54,7 +54,7 @@
             <name>Stamp</name>
             <conditionLogic>and</conditionLogic>
             <conditions>
-                <leftValueReference>$Record.Completed_Date__c</leftValueReference>
+                <leftValueReference>$Record.Completed_DateTime__c</leftValueReference>
                 <operator>IsNull</operator>
                 <rightValue>
                     <booleanValue>true</booleanValue>
@@ -76,7 +76,7 @@
             <name>Stamp_Closed</name>
             <conditionLogic>and</conditionLogic>
             <conditions>
-                <leftValueReference>$Record.Completed_Date__c</leftValueReference>
+                <leftValueReference>$Record.Completed_DateTime__c</leftValueReference>
                 <operator>IsNull</operator>
                 <rightValue>
                     <booleanValue>true</booleanValue>
@@ -115,7 +115,7 @@
                 </rightValue>
             </conditions>
             <conditions>
-                <leftValueReference>$Record.First_Touched_Date__c</leftValueReference>
+                <leftValueReference>$Record.First_Touched_DateTime__c</leftValueReference>
                 <operator>IsNull</operator>
                 <rightValue>
                     <booleanValue>true</booleanValue>

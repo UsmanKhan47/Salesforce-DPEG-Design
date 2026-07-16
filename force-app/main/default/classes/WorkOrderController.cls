@@ -58,15 +58,15 @@ public with sharing class WorkOrderController {
 
     @AuraEnabled(cacheable=true)
     public static List<Row> getRecentWorkOrders() {
-        return toRows(Database.query(ROW_QUERY + 'WHERE Is_Open__c = true ORDER BY Reported_Date__c DESC LIMIT 6'));
+        return toRows(Database.query(ROW_QUERY + 'WHERE Is_Open__c = true ORDER BY Reported_DateTime__c DESC LIMIT 6'));
     }
     @AuraEnabled(cacheable=true)
     public static List<Row> getEscalations() {
-        return toRows(Database.query(ROW_QUERY + 'WHERE Is_Escalation__c = true ORDER BY SLA_Due_Date__c ASC NULLS LAST'));
+        return toRows(Database.query(ROW_QUERY + 'WHERE Is_Escalation__c = true ORDER BY SLA_Due_DateTime__c ASC NULLS LAST'));
     }
     @AuraEnabled(cacheable=true)
     public static List<Row> getUntouched() {
-        return toRows(Database.query(ROW_QUERY + 'WHERE Untouched__c = true ORDER BY Reported_Date__c ASC NULLS LAST'));
+        return toRows(Database.query(ROW_QUERY + 'WHERE Untouched__c = true ORDER BY Reported_DateTime__c ASC NULLS LAST'));
     }
 
     public class Entry {
@@ -87,11 +87,11 @@ public with sharing class WorkOrderController {
         v.untouched = w.Untouched__c == true;
         v.entries = new List<Entry>();
         // Frozen-clock gotcha: same-transaction rows share timestamps, so tie-break on Name DESC.
-        for (Work_Order_Activity__c a : [SELECT Id, Kind__c, Detail__c, Actor__c, Entry_Date__c
+        for (Work_Order_Activity__c a : [SELECT Id, Kind__c, Detail__c, Actor__c, Entry_DateTime__c
                                          FROM Work_Order_Activity__c WHERE Work_Order__c = :workOrderId
-                                         ORDER BY Entry_Date__c DESC NULLS LAST, Name DESC]) {
+                                         ORDER BY Entry_DateTime__c DESC NULLS LAST, Name DESC]) {
             Entry e = new Entry();
-            e.id = a.Id; e.kind = a.Kind__c; e.detail = a.Detail__c; e.actor = a.Actor__c; e.entryDate = a.Entry_Date__c;
+            e.id = a.Id; e.kind = a.Kind__c; e.detail = a.Detail__c; e.actor = a.Actor__c; e.entryDate = a.Entry_DateTime__c;
             v.entries.add(e);
         }
         return v;

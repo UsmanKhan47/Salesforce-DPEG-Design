@@ -10,7 +10,7 @@
         <field>Work_Order__c.Priority__c</field>
     </columns>
     <columns>
-        <field>Work_Order__c.Reported_Date__c</field>
+        <field>Work_Order__c.Reported_DateTime__c</field>
     </columns>
     <columns>
         <field>Work_Order__c.SLA_Health__c</field>
@@ -35,10 +35,10 @@
     <showDetails>true</showDetails>
     <showGrandTotal>true</showGrandTotal>
     <showSubTotals>true</showSubTotals>
-    <sortColumn>Work_Order__c.Reported_Date__c</sortColumn>
+    <sortColumn>Work_Order__c.Reported_DateTime__c</sortColumn>
     <sortOrder>Asc</sortOrder>
     <timeFrameFilter>
-        <dateColumn>Work_Order__c.Completed_Date__c</dateColumn>
+        <dateColumn>Work_Order__c.Completed_DateTime__c</dateColumn>
         <interval>INTERVAL_CUSTOM</interval>
     </timeFrameFilter>
 </Report>

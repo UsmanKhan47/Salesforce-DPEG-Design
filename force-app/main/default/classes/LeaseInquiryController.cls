@@ -47,17 +47,17 @@ public with sharing class LeaseInquiryController {
         v.canAdvance = !v.closed && idx >= 0 && idx < STAGES.size() - 1;
         v.nextStage = v.canAdvance ? STAGES[idx + 1] : null;
         for (Lease_Activity__c a : [
-            SELECT Id, Details__c, Ball_In_Court__c, Entry_Date__c, Logged_By__r.Name
+            SELECT Id, Details__c, Ball_In_Court__c, Entry_DateTime__c, Logged_By__r.Name
             FROM Lease_Activity__c
             WHERE Lease_Inquiry__c = :inquiryId
-            ORDER BY Entry_Date__c DESC NULLS LAST, Name DESC
+            ORDER BY Entry_DateTime__c DESC NULLS LAST, Name DESC
         ]) {
             Entry e = new Entry();
             e.id = a.Id;
             e.details = a.Details__c;
             e.ball = a.Ball_In_Court__c;
             e.enteredBy = a.Logged_By__r != null ? a.Logged_By__r.Name : null;
-            e.entryDate = a.Entry_Date__c;
+            e.entryDate = a.Entry_DateTime__c;
             v.entries.add(e);
         }
         return v;

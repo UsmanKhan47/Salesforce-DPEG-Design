@@ -59,19 +59,19 @@
         <layoutColumns>
             <layoutItems>
                 <behavior>Required</behavior>
-                <field>Reported_Date__c</field>
+                <field>Reported_DateTime__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>
-                <field>First_Touched_Date__c</field>
+                <field>First_Touched_DateTime__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>
-                <field>Completed_Date__c</field>
+                <field>Completed_DateTime__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>
-                <field>SLA_Due_Date__c</field>
+                <field>SLA_Due_DateTime__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>

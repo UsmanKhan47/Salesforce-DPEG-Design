@@ -31,9 +31,9 @@ public with sharing class DealMessageController {
         String parentField = parentFieldFor(recordId);
         List<Entry> entries = new List<Entry>();
         for (Deal_Message__c m : Database.query(
-            'SELECT Id, Method__c, Direction__c, Details__c, Revision__c, Entry_Date__c, CreatedDate, CreatedBy.Name ' +
+            'SELECT Id, Method__c, Direction__c, Details__c, Revision__c, Entry_DateTime__c, CreatedDate, CreatedBy.Name ' +
             'FROM Deal_Message__c WHERE ' + parentField + ' = :recordId ' +
-            'ORDER BY Entry_Date__c DESC, CreatedDate DESC, Id DESC'
+            'ORDER BY Entry_DateTime__c DESC, CreatedDate DESC, Id DESC'
         )) {
             Entry e = new Entry();
             e.id = m.Id;
@@ -42,7 +42,7 @@ public with sharing class DealMessageController {
             e.details = m.Details__c;
             e.revision = m.Revision__c;
             e.enteredBy = m.CreatedBy.Name;
-            e.entryDate = m.Entry_Date__c != null ? m.Entry_Date__c : m.CreatedDate;
+            e.entryDate = m.Entry_DateTime__c != null ? m.Entry_DateTime__c : m.CreatedDate;
             entries.add(e);
         }
         return entries;

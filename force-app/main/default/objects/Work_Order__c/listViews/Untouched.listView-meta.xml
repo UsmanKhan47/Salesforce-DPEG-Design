@@ -5,7 +5,7 @@
     <columns>Subject__c</columns>
     <columns>Property_Display_Name__c</columns>
     <columns>Priority__c</columns>
-    <columns>Reported_Date__c</columns>
+    <columns>Reported_DateTime__c</columns>
     <columns>SLA_Health__c</columns>
     <filterScope>Everything</filterScope>
     <filters>

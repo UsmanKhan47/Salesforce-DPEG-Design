@@ -5,6 +5,6 @@
     <fields>Priority__c</fields>
     <fields>Status__c</fields>
     <fields>SLA_Health__c</fields>
-    <fields>SLA_Due_Date__c</fields>
+    <fields>SLA_Due_DateTime__c</fields>
     <label>Work Order Compact</label>
 </CompactLayout>

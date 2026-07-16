@@ -38,7 +38,7 @@
     <sortColumn>Work_Order__c.Hours_Open__c</sortColumn>
     <sortOrder>Desc</sortOrder>
     <timeFrameFilter>
-        <dateColumn>Work_Order__c.Completed_Date__c</dateColumn>
+        <dateColumn>Work_Order__c.Completed_DateTime__c</dateColumn>
         <interval>INTERVAL_CUSTOM</interval>
     </timeFrameFilter>
 </Report>

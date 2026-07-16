@@ -9,7 +9,7 @@
         <picklistValueName>Closed</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <fieldNames>Completed_Date__c</fieldNames>
+        <fieldNames>Completed_DateTime__c</fieldNames>
         <info>Work finished. Completed date is stamped automatically.</info>
         <picklistValueName>Completed</picklistValueName>
     </pathAssistantSteps>

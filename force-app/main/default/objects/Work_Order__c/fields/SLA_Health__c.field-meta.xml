@@ -3,7 +3,7 @@
     <fullName>SLA_Health__c</fullName>
     <description>Resolved when closed; else Breached past due; else Due Soon in the final 30% of the SLA window; else On Track. The 30% due-soon window is the one working assumption — change it here only.</description>
     <externalId>false</externalId>
-    <formula>IF(NOT(Is_Open__c), &quot;🟢 Resolved&quot;, IF(NOW() &gt; SLA_Due_Date__c, &quot;🔴 Breached&quot;, IF((SLA_Due_Date__c - NOW()) * 24 &lt;= 0.30 * SLA_Target_Hours__c, &quot;🟡 Due Soon&quot;, &quot;🟢 On Track&quot;)))</formula>
+    <formula>IF(NOT(Is_Open__c), &quot;🟢 Resolved&quot;, IF(NOW() &gt; SLA_Due_DateTime__c, &quot;🔴 Breached&quot;, IF((SLA_Due_DateTime__c - NOW()) * 24 &lt;= 0.30 * SLA_Target_Hours__c, &quot;🟡 Due Soon&quot;, &quot;🟢 On Track&quot;)))</formula>
     <label>SLA Health</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
