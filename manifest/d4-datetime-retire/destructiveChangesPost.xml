@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  POST-destructive (processed AFTER component adds/updates).
+  The 7 DATA fields. Deleted last, after the component deploy removes every writer
+  (flow assignments -> new-only, controller/TestDataFactory/seed dual-writes -> new-only,
+  DateTimeBackfillBatch(+Test) deleted by the parallel Apex work). If any writer still
+  referenced these at delete time the delete would fail, which is why they are POST.
+  Reported_Date__c is required=true; that does not block deletion, and its only formula
+  reader (SLA_Due_Date__c) is already gone via the PRE wave.
+  None of these 7 reference each other, so intra-file order here is irrelevant.
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Work_Order__c.Reported_Date__c</members>
+        <members>Work_Order__c.Completed_Date__c</members>
+        <members>Work_Order__c.First_Touched_Date__c</members>
+        <members>Deal_Message__c.Entry_Date__c</members>
+        <members>Lease_Activity__c.Entry_Date__c</members>
+        <members>Renewal_Activity__c.Entry_Date__c</members>
+        <members>Work_Order_Activity__c.Entry_Date__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

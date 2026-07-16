@@ -34,12 +34,6 @@
             </value>
         </inputAssignments>
         <inputAssignments>
-            <field>Entry_Date__c</field>
-            <value>
-                <elementReference>$Flow.CurrentDateTime</elementReference>
-            </value>
-        </inputAssignments>
-        <inputAssignments>
             <field>Lease_Inquiry__c</field>
             <value>
                 <elementReference>$Record.Id</elementReference>

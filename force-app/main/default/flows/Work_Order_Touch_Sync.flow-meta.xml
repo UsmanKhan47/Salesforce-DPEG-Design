@@ -7,13 +7,6 @@
         <locationX>132</locationX>
         <locationY>504</locationY>
         <assignmentItems>
-            <assignToReference>$Record.Completed_Date__c</assignToReference>
-            <operator>Assign</operator>
-            <value>
-                <elementReference>$Flow.CurrentDateTime</elementReference>
-            </value>
-        </assignmentItems>
-        <assignmentItems>
             <assignToReference>$Record.Completed_DateTime__c</assignToReference>
             <operator>Assign</operator>
             <value>
@@ -26,13 +19,6 @@
         <label>Stamp First Touched</label>
         <locationX>176</locationX>
         <locationY>288</locationY>
-        <assignmentItems>
-            <assignToReference>$Record.First_Touched_Date__c</assignToReference>
-            <operator>Assign</operator>
-            <value>
-                <elementReference>$Flow.CurrentDateTime</elementReference>
-            </value>
-        </assignmentItems>
         <assignmentItems>
             <assignToReference>$Record.First_Touched_DateTime__c</assignToReference>
             <operator>Assign</operator>

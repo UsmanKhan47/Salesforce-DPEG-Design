@@ -522,13 +522,7 @@
         <editable>true</editable>
         <field>Deal_Message__c.Entry_DateTime__c</field>
         <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Deal_Message__c.Entry_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
+    </fieldPermissions>    <fieldPermissions>
         <editable>true</editable>
         <field>Deal_Message__c.LOI__c</field>
         <readable>true</readable>

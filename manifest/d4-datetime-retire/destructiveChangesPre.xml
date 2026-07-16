@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PRE-destructive (processed BEFORE component adds/updates).
+  Contains ONLY the formula field SLA_Due_Date__c. It must be deleted before its input
+  Reported_Date__c (in the POST wave) because Salesforce blocks deleting a field while a
+  formula references it, and deletion order WITHIN a single destructiveChanges file is
+  unspecified (verified: MetadataAPI "Deleting Components" doc). Splitting the formula
+  into PRE and the data field into POST makes the ordering deterministic.
+  Safe to delete first: after D3, nothing reads SLA_Due_Date__c (readers moved to
+  SLA_Due_DateTime__c); only a stale comment in TestDataFactory names it, cleaned by the
+  parallel Apex work.
+
+  Also PRE: the two DateTimeBackfillBatch classes. They read the old data fields as their
+  whole purpose (D2's backfill engine), so they must be deleted BEFORE the POST wave drops
+  those fields — otherwise the drop fails "field referenced by DateTimeBackfillBatch". They
+  have no job once the migration completes.
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Work_Order__c.SLA_Due_Date__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>DateTimeBackfillBatch</members>
+        <members>DateTimeBackfillBatchTest</members>
+        <name>ApexClass</name>
+    </types>
+    <version>67.0</version>
+</Package>

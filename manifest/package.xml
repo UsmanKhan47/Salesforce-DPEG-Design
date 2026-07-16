@@ -355,9 +355,7 @@
         <members>Deal_Message__c.Contract_Review__c</members>
         <members>Deal_Message__c.Details__c</members>
         <members>Deal_Message__c.Direction__c</members>
-        <members>Deal_Message__c.Entry_DateTime__c</members>
-        <members>Deal_Message__c.Entry_Date__c</members>
-        <members>Deal_Message__c.LOI__c</members>
+        <members>Deal_Message__c.Entry_DateTime__c</members>        <members>Deal_Message__c.LOI__c</members>
         <members>Deal_Message__c.Method__c</members>
         <members>Deal_Message__c.Revision__c</members>
         <members>Deal_Message__c.Underwriting__c</members>
@@ -472,9 +470,7 @@
         <members>Lead.Property_Address__c</members>
         <members>Lease_Activity__c.Ball_In_Court__c</members>
         <members>Lease_Activity__c.Details__c</members>
-        <members>Lease_Activity__c.Entry_DateTime__c</members>
-        <members>Lease_Activity__c.Entry_Date__c</members>
-        <members>Lease_Activity__c.Lease_Inquiry__c</members>
+        <members>Lease_Activity__c.Entry_DateTime__c</members>        <members>Lease_Activity__c.Lease_Inquiry__c</members>
         <members>Lease_Activity__c.Logged_By__c</members>
         <members>Lease_Inquiry__c.Aging__c</members>
         <members>Lease_Inquiry__c.Ball_In_Court__c</members>
@@ -674,9 +670,7 @@
         <members>Property__c.YoY_Growth__c</members>
         <members>Property__c.Zip__c</members>
         <members>Renewal_Activity__c.Details__c</members>
-        <members>Renewal_Activity__c.Entry_DateTime__c</members>
-        <members>Renewal_Activity__c.Entry_Date__c</members>
-        <members>Renewal_Activity__c.Lease_Renewal__c</members>
+        <members>Renewal_Activity__c.Entry_DateTime__c</members>        <members>Renewal_Activity__c.Lease_Renewal__c</members>
         <members>Renewal_Activity__c.Method__c</members>
         <members>Rent_Step__c.Monthly_Rent__c</members>
         <members>Rent_Step__c.Note__c</members>
@@ -771,18 +765,12 @@
         <members>Wire__c.Wire_Instructions_Source__c</members>
         <members>Work_Order_Activity__c.Actor__c</members>
         <members>Work_Order_Activity__c.Detail__c</members>
-        <members>Work_Order_Activity__c.Entry_DateTime__c</members>
-        <members>Work_Order_Activity__c.Entry_Date__c</members>
-        <members>Work_Order_Activity__c.Kind__c</members>
+        <members>Work_Order_Activity__c.Entry_DateTime__c</members>        <members>Work_Order_Activity__c.Kind__c</members>
         <members>Work_Order_Activity__c.Work_Order__c</members>
         <members>Work_Order__c.Category__c</members>
-        <members>Work_Order__c.Completed_DateTime__c</members>
-        <members>Work_Order__c.Completed_Date__c</members>
-        <members>Work_Order__c.Delay_Reason__c</members>
+        <members>Work_Order__c.Completed_DateTime__c</members>        <members>Work_Order__c.Delay_Reason__c</members>
         <members>Work_Order__c.Description__c</members>
-        <members>Work_Order__c.First_Touched_DateTime__c</members>
-        <members>Work_Order__c.First_Touched_Date__c</members>
-        <members>Work_Order__c.Hours_Open__c</members>
+        <members>Work_Order__c.First_Touched_DateTime__c</members>        <members>Work_Order__c.Hours_Open__c</members>
         <members>Work_Order__c.Is_Escalation__c</members>
         <members>Work_Order__c.Is_Open__c</members>
         <members>Work_Order__c.Owner_Role__c</members>
@@ -790,13 +778,9 @@
         <members>Work_Order__c.Priority__c</members>
         <members>Work_Order__c.Property_Asset__c</members>
         <members>Work_Order__c.Property_Display_Name__c</members>
-        <members>Work_Order__c.Reported_DateTime__c</members>
-        <members>Work_Order__c.Reported_Date__c</members>
-        <members>Work_Order__c.Resolution_Days__c</members>
+        <members>Work_Order__c.Reported_DateTime__c</members>        <members>Work_Order__c.Resolution_Days__c</members>
         <members>Work_Order__c.SLA_Breached__c</members>
-        <members>Work_Order__c.SLA_Due_DateTime__c</members>
-        <members>Work_Order__c.SLA_Due_Date__c</members>
-        <members>Work_Order__c.SLA_Health__c</members>
+        <members>Work_Order__c.SLA_Due_DateTime__c</members>        <members>Work_Order__c.SLA_Health__c</members>
         <members>Work_Order__c.SLA_Target_Hours__c</members>
         <members>Work_Order__c.Status__c</members>
         <members>Work_Order__c.Subject__c</members>

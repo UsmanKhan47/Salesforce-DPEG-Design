@@ -1,5 +1,5 @@
 // Seeds Maintenance dashboard demo data. Idempotent: work orders marked Subject__c starting 'WOSEED-'.
-// Required fields: Subject__c, Reported_Date__c. Vendor__c is text; Property_Asset__c optional (Property_Display_Name is a formula).
+// Required fields: Subject__c, Reported_DateTime__c. Vendor__c is text; Property_Asset__c optional (Property_Display_Name is a formula).
 delete [SELECT Id FROM Work_Order__c WHERE Subject__c LIKE 'WOSEED-%'];
 
 Datetime now = Datetime.now();
@@ -11,7 +11,7 @@ List<Work_Order__c> wos = new List<Work_Order__c>();
 // 6 escalated (>15d old, Critical/High) — reported 16-26 days ago
 for (Integer i = 0; i < 6; i++) {
     wos.add(new Work_Order__c(Subject__c='WOSEED- Escalated ' + i,
-        Reported_Date__c=now.addDays(-(16 + i*2)), Priority__c=(Math.mod(i,2)==0?'Critical':'High'),
+        Reported_DateTime__c=now.addDays(-(16 + i*2)), Priority__c=(Math.mod(i,2)==0?'Critical':'High'),
         Status__c=(Math.mod(i,2)==0?'In Progress':'New'), Category__c=cats[Math.mod(i,cats.size())],
         Vendor__c=vendors[Math.mod(i,vendors.size())]));
 }
@@ -19,23 +19,23 @@ for (Integer i = 0; i < 6; i++) {
 for (Integer i = 0; i < 20; i++) {
     Integer ageDays = new Integer[]{1,2,3,5,6,9,11,13}[Math.mod(i,8)];
     wos.add(new Work_Order__c(Subject__c='WOSEED- InProg ' + i,
-        Reported_Date__c=now.addDays(-ageDays), Priority__c=new String[]{'Medium','High','Low','Medium'}[Math.mod(i,4)],
+        Reported_DateTime__c=now.addDays(-ageDays), Priority__c=new String[]{'Medium','High','Low','Medium'}[Math.mod(i,4)],
         Status__c='In Progress', Category__c=cats[Math.mod(i,cats.size())], Vendor__c=vendors[Math.mod(i,vendors.size())]));
 }
 // 8 On Hold
 for (Integer i = 0; i < 8; i++) {
     wos.add(new Work_Order__c(Subject__c='WOSEED- OnHold ' + i,
-        Reported_Date__c=now.addDays(-(4 + i)), Priority__c=new String[]{'Low','Medium'}[Math.mod(i,2)],
+        Reported_DateTime__c=now.addDays(-(4 + i)), Priority__c=new String[]{'Low','Medium'}[Math.mod(i,2)],
         Status__c='On Hold', Category__c=cats[Math.mod(i,cats.size())], Vendor__c=vendors[Math.mod(i,vendors.size())]));
 }
 // 3 New (to round open toward ~37)
 for (Integer i = 0; i < 3; i++) {
     wos.add(new Work_Order__c(Subject__c='WOSEED- New ' + i,
-        Reported_Date__c=now.addDays(-i), Priority__c='Medium', Status__c='New',
+        Reported_DateTime__c=now.addDays(-i), Priority__c='Medium', Status__c='New',
         Category__c=cats[Math.mod(i,cats.size())], Vendor__c=vendors[Math.mod(i,vendors.size())]));
 }
 
-// ---- RESOLVED this month (~40): Completed_Date this month, Reported a few days earlier -> Resolution_Days ----
+// ---- RESOLVED this month (~40): Completed_DateTime this month, Reported a few days earlier -> Resolution_Days ----
 // Per-vendor average resolution days differ: AirPro 3, TopShield 6, ProPlumb 8, Elec 12 (approx)
 Decimal[] vAvg = new Decimal[]{3, 6, 8, 12};
 Date monthStart = Date.today().toStartOfMonth();
@@ -47,7 +47,7 @@ for (Integer i = 0; i < 40; i++) {
     Integer maxDay = Math.min(Date.today().day(), 28);
     Datetime completed = Datetime.newInstance(monthStart.addDays(Math.mod(i, maxDay)), Time.newInstance(12,0,0,0));
     wos.add(new Work_Order__c(Subject__c='WOSEED- Resolved ' + i,
-        Reported_Date__c=completed.addDays(-resDays), Completed_Date__c=completed,
+        Reported_DateTime__c=completed.addDays(-resDays), Completed_DateTime__c=completed,
         Priority__c=new String[]{'Medium','High','Low'}[Math.mod(i,3)],
         Status__c=(Math.mod(i,4)==0?'Closed':'Completed'), Category__c=cats[Math.mod(i,cats.size())],
         Vendor__c=vendors[v]));
@@ -63,12 +63,6 @@ for (Property_Asset__c p : [SELECT Id FROM Property_Asset__c
 for (Integer i = 0; i < wos.size(); i++) {
     if (!propIds.isEmpty()) wos[i].Property_Asset__c = propIds[Math.mod(i, propIds.size())];
     wos[i].Owner_User__c = UserInfo.getUserId();
-    // MIGRATION (D1): mirror the legacy _Date fields onto their §1 rule-9 _DateTime
-    // replacements. Done here, at the single point every record passes through before
-    // the one insert, so no construction site above can drift out of sync. Null-safe:
-    // Completed_Date__c is null on open work orders and the mirror keeps it null.
-    wos[i].Reported_DateTime__c = wos[i].Reported_Date__c;
-    wos[i].Completed_DateTime__c = wos[i].Completed_Date__c;
 }
 insert wos;
 
@@ -76,5 +70,5 @@ System.debug('Maintenance seed: ' + wos.size() + ' work orders. '
     + [SELECT COUNT() FROM Work_Order__c WHERE Subject__c LIKE 'WOSEED-%' AND Is_Open__c=true] + ' open, '
     + [SELECT COUNT() FROM Work_Order__c WHERE Subject__c LIKE 'WOSEED-%' AND Status__c='In Progress'] + ' in progress, '
     + [SELECT COUNT() FROM Work_Order__c WHERE Subject__c LIKE 'WOSEED-%' AND Status__c='On Hold'] + ' on hold, '
-    + [SELECT COUNT() FROM Work_Order__c WHERE Subject__c LIKE 'WOSEED-%' AND Completed_Date__c = THIS_MONTH] + ' resolved MTD, '
+    + [SELECT COUNT() FROM Work_Order__c WHERE Subject__c LIKE 'WOSEED-%' AND Completed_DateTime__c = THIS_MONTH] + ' resolved MTD, '
     + [SELECT COUNT() FROM Work_Order__c WHERE Subject__c LIKE 'WOSEED-%' AND Is_Escalation__c=true] + ' escalated.');

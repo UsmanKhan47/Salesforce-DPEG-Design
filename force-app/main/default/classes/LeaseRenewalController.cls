@@ -115,13 +115,11 @@ public with sharing class LeaseRenewalController {
     public static void addUpdate(Id renewalId, String method, String details) {
         if (String.isBlank(details)) throw ahe('Enter the outcome before saving.');
         if (String.isBlank(method) || !METHODS.contains(method)) throw ahe('Choose a valid contact method.');
-        // MIGRATION (D1) — dual-write Entry_Date__c (legacy, rule-9 violating _Date
-        // suffix on a DateTime) and its replacement Entry_DateTime__c from ONE stamp,
-        // so the pair can never disagree. Readers stay on Entry_Date__c until D3.
+        // Entry_DateTime__c is the ARCHITECTURE.md §1 rule-9 stamp for this log entry.
         Datetime entryStamp = Datetime.now();
         insert new Renewal_Activity__c(
             Lease_Renewal__c = renewalId, Method__c = method,
-            Details__c = details.trim(), Entry_Date__c = entryStamp,
+            Details__c = details.trim(),
             Entry_DateTime__c = entryStamp);
         // A Yardi/system note is not tenant contact — only human methods reset the clock.
         if (method != 'System') {

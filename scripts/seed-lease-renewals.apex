@@ -87,8 +87,7 @@ if (![SELECT Id FROM Lease_Renewal__c LIMIT 1].isEmpty()) {
             Lease_Renewal__c = rs[(Integer) e[0]].Id,
             Method__c = (String) e[2],
             Details__c = (String) e[3],
-            Entry_Date__c = entryStamp,     // legacy, retired at D4
-            Entry_DateTime__c = entryStamp  // MIGRATION (D1): rule-9 replacement
+            Entry_DateTime__c = entryStamp  // ARCHITECTURE.md §1 rule-9 stamp
         ));
     }
     insert acts;

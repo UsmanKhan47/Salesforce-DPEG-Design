@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  D4 destructive deploy — component adds/updates (the coexistence-code going new-only).
+  These deploy BETWEEN the Pre and Post destructive waves:
+    sf project deploy start \
+      --manifest manifest/d4-datetime-retire/package.xml \
+      --pre-destructive-changes  manifest/d4-datetime-retire/destructiveChangesPre.xml \
+      --post-destructive-changes manifest/d4-datetime-retire/destructiveChangesPost.xml \
+      --test-level RunLocalTests
+  Manifest mode (not --source-dir) is deliberate: it ignores source-tracking, so the
+  local field-def/translation deletions and phantom conflicts do not interfere; org
+  field deletion is driven solely by the destructive pair. Each listed component is a
+  full-file replace whose new-only version removes the last old-field reference, so the
+  Post wave can drop the 7 data fields with nothing referencing them.
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>DealMessageController</members>
+        <members>LeaseInquiryController</members>
+        <members>LeaseRenewalController</members>
+        <members>LeaseRenewalControllerTest</members>
+        <members>TestDataFactory</members>
+        <members>WorkOrderControllerTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>Lease_Inquiry_Open_Log</members>
+        <members>Work_Order_Touch_Sync</members>
+        <name>Flow</name>
+    </types>
+    <types>
+        <members>Lease_Activity__c-Lease Activity Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>DPEG_Acquisitions</members>
+        <members>Property_Management_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

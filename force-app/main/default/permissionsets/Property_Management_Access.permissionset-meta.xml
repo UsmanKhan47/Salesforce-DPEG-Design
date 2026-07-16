@@ -262,13 +262,7 @@
         <editable>true</editable>
         <field>Lease_Activity__c.Entry_DateTime__c</field>
         <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lease_Activity__c.Entry_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
+    </fieldPermissions>    <fieldPermissions>
         <editable>true</editable>
         <field>Lease_Activity__c.Logged_By__c</field>
         <readable>true</readable>
@@ -687,13 +681,7 @@
         <editable>true</editable>
         <field>Renewal_Activity__c.Entry_DateTime__c</field>
         <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Renewal_Activity__c.Entry_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
+    </fieldPermissions>    <fieldPermissions>
         <editable>true</editable>
         <field>Renewal_Activity__c.Method__c</field>
         <readable>true</readable>
@@ -867,13 +855,7 @@
         <editable>true</editable>
         <field>Work_Order_Activity__c.Entry_DateTime__c</field>
         <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Work_Order_Activity__c.Entry_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
+    </fieldPermissions>    <fieldPermissions>
         <editable>true</editable>
         <field>Work_Order_Activity__c.Kind__c</field>
         <readable>true</readable>
@@ -887,13 +869,7 @@
         <editable>true</editable>
         <field>Work_Order__c.Completed_DateTime__c</field>
         <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Work_Order__c.Completed_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
+    </fieldPermissions>    <fieldPermissions>
         <editable>true</editable>
         <field>Work_Order__c.Delay_Reason__c</field>
         <readable>true</readable>
@@ -907,13 +883,7 @@
         <editable>true</editable>
         <field>Work_Order__c.First_Touched_DateTime__c</field>
         <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Work_Order__c.First_Touched_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
+    </fieldPermissions>    <fieldPermissions>
         <editable>false</editable>
         <field>Work_Order__c.Hours_Open__c</field>
         <readable>true</readable>
@@ -972,13 +942,7 @@
         <editable>false</editable>
         <field>Work_Order__c.SLA_Due_DateTime__c</field>
         <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Work_Order__c.SLA_Due_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
+    </fieldPermissions>    <fieldPermissions>
         <editable>false</editable>
         <field>Work_Order__c.SLA_Health__c</field>
         <readable>true</readable>
