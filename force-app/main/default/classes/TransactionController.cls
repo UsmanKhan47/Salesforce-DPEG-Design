@@ -24,12 +24,7 @@ public with sharing class TransactionController {
         Integer ttcCount = 0;
         Integer currentYear = Date.today().year();
 
-        for (Transaction__c t : [
-            SELECT Status__c, Contract_Value__c, Earnest_Money__c, Earnest_At_Risk__c,
-                   Contract_Executed_Date__c, Target_Close_Date__c, Wire_Approval_Due__c,
-                   Feasibility_Missed__c, Feasibility_Deadline__c
-            FROM Transaction__c
-        ]) {
+        for (Transaction__c t : TransactionSelector.selectForKpis()) {
             Boolean isActive = (t.Status__c == 'Active');
 
             if (isActive) {
@@ -91,11 +86,7 @@ public with sharing class TransactionController {
         s.overdueTasks = 0;
         s.wireTasks = 0;
 
-        for (Transaction__c t : [
-            SELECT Tasks_Total__c, Tasks_Complete__c, Tasks_Overdue__c, Wire_Open_Risks__c
-            FROM Transaction__c
-            WHERE Status__c = 'Active'
-        ]) {
+        for (Transaction__c t : TransactionSelector.selectActiveForTaskSummary()) {
             Integer tot  = t.Tasks_Total__c    != null ? Integer.valueOf(t.Tasks_Total__c)    : 0;
             Integer comp = t.Tasks_Complete__c != null ? Integer.valueOf(t.Tasks_Complete__c) : 0;
             s.totalTasks   += tot;
@@ -116,9 +107,7 @@ public with sharing class TransactionController {
     @AuraEnabled(cacheable=true)
     public static List<StageSlice> getStageBreakdown() {
         Map<String, Integer> counts = new Map<String, Integer>();
-        for (Transaction__c t : [
-            SELECT Stage__c FROM Transaction__c WHERE Status__c = 'Active'
-        ]) {
+        for (Transaction__c t : TransactionSelector.selectActiveStages()) {
             String st = String.isBlank(t.Stage__c) ? 'Unspecified' : t.Stage__c;
             counts.put(st, (counts.containsKey(st) ? counts.get(st) : 0) + 1);
         }
@@ -135,13 +124,7 @@ public with sharing class TransactionController {
     @AuraEnabled(cacheable=true)
     public static List<TxnRow> getActiveTransactions() {
         List<TxnRow> rows = new List<TxnRow>();
-        for (Transaction__c t : [
-            SELECT Id, Name, Property_Name__c, Stage__c, Contract_Value__c,
-                   Target_Close_Date__c, Tasks_Complete__c, Risk__c, Owner_Name__c
-            FROM Transaction__c
-            WHERE Status__c = 'Active'
-            ORDER BY Name
-        ]) {
+        for (Transaction__c t : TransactionSelector.selectActiveRows()) {
             TxnRow r = new TxnRow();
             r.id = t.Id;
             r.name = t.Name;

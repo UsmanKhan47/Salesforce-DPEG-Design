@@ -159,6 +159,43 @@ private class OpportunitySelectorTest {
         Test.stopTest();
     }
 
+    @isTest
+    static void selectExecutionHandoffByIds_returnsRecordsWithHeaderFields() {
+        List<Opportunity> existing = [SELECT Id FROM Opportunity LIMIT 5];
+        Set<Id> ids = (new Map<Id, Opportunity>(existing)).keySet();
+
+        Test.startTest();
+        List<Opportunity> result = OpportunitySelector.selectExecutionHandoffByIds(ids);
+        Test.stopTest();
+
+        Assert.areEqual(5, result.size(), 'Every requested Opportunity is returned as a bulk list');
+        Assert.isNotNull(result[0].Name, 'Name must be selected — ContractExecutionService reads o.Name in the notification loop');
+        Assert.isNotNull(result[0].Id, 'Id must be selected for the Opportunity stamp and Transaction parenting');
+    }
+
+    @isTest
+    static void selectExecutionHandoffByIds_nullOrEmpty_returnsEmptyList() {
+        Test.startTest();
+        List<Opportunity> forNull = OpportunitySelector.selectExecutionHandoffByIds(null);
+        List<Opportunity> forEmpty = OpportunitySelector.selectExecutionHandoffByIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'Null ids short-circuit to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'Empty ids short-circuit to an empty list, not null');
+    }
+
+    @isTest
+    static void selectExecutionHandoffByIds_bulk251_readsAll() {
+        Set<Id> allOppIds = (new Map<Id, Opportunity>([SELECT Id FROM Opportunity])).keySet();
+
+        Test.startTest();
+        List<Opportunity> result = OpportunitySelector.selectExecutionHandoffByIds(allOppIds);
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(),
+            'All 251 setup Opportunities are read by their Ids in a single bulk Set<Id> query');
+    }
+
     /** A syntactically valid Opportunity Id that resolves to no row (create then delete). */
     private static Id ghostOpportunityId() {
         Opportunity ghost = TestDataFactory.createOpportunity(null, true);

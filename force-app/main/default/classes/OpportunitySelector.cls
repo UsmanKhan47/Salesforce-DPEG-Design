@@ -9,6 +9,9 @@
  *   - OpportunityDocStatusController (Primary_* reference read for the deal card)
  *   - OpportunityApprovalController (stage read inside the no-applicable-process branch)
  *   - StageAdvanceController (stage read for the advance quick actions)
+ *   - ContractExecutionService.handleExecution (PSA-execution handoff: the deal
+ *     header + primary contract/LOI figures used to stamp the Opportunity and
+ *     seed the Transaction — selectExecutionHandoffByIds)
  *
  * MODE — every query is `WITH USER_MODE` (API 67). Opportunity is the only
  * standard-object selector in A1; per the P4 design §5 every standard field
@@ -166,6 +169,39 @@ public with sharing class OpportunitySelector {
             WHERE Id = :recordId
             WITH USER_MODE
             LIMIT 1
+        ];
+    }
+
+    /**
+     * Loads the fields ContractExecutionService needs when a Contract Review is
+     * executed: the deal header (Name, Property) plus the primary-contract value
+     * and primary-LOI earnest money it copies onto the new Transaction, and the
+     * existing Contract_Executed_Date__c it only stamps when still blank.
+     *
+     * BULK read (Set<Id>): the caller processes a whole trigger chunk of executed
+     * deals at once, so this returns a List — never a single row. The two
+     * relationship fields (Primary_Contract__r.Contract_Value__c,
+     * Primary_LOI__r.Earnest_Money__c) are null when the deal has no primary
+     * contract/LOI, which the caller already null-guards; the row is still
+     * returned.
+     *
+     * @param opportunityIds Executed-deal Opportunity Ids to load (bound with IN).
+     * @return Opportunities with the handoff field set populated; an empty list
+     *         when opportunityIds is null/empty.
+     * @example
+     * List<Opportunity> opps =
+     *     OpportunitySelector.selectExecutionHandoffByIds(executedOppIds);
+     */
+    public static List<Opportunity> selectExecutionHandoffByIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Opportunity>();
+        }
+        return [
+            SELECT Id, Name, Property__c, Contract_Executed_Date__c,
+                   Primary_Contract__r.Contract_Value__c, Primary_LOI__r.Earnest_Money__c
+            FROM Opportunity
+            WHERE Id IN :opportunityIds
+            WITH USER_MODE
         ];
     }
 }

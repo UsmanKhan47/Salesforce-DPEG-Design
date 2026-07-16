@@ -1,6 +1,9 @@
 /**
  * Read-only data provider for the Lead Funnel Lightning page (Acquisitions).
  * Aggregates Leads by stage and intake channel and returns recent leads.
+ *
+ * All SOQL against Lead lives in LeadSelector per ARCHITECTURE.md §2 and
+ * .claude/rules/apex-layering-rule.md — this controller holds zero inline SOQL.
  */
 public with sharing class LeadFunnelController {
 
@@ -12,6 +15,10 @@ public with sharing class LeadFunnelController {
     };
     // Broker protection window (days) measured from First Seen Date.
     private static final Integer BP_WINDOW_DAYS = 90;
+    // Trailing window (days) for the recency-scoped Converted / Disqualified counts.
+    private static final Integer OUTCOME_WINDOW_DAYS = 90;
+    // Row cap for the recent-leads / review-queue list.
+    private static final Integer RECENT_LIMIT = 50;
 
     @AuraEnabled(cacheable=true)
     public static FunnelData getFunnel() {
@@ -22,7 +29,7 @@ public with sharing class LeadFunnelController {
         for (String s : STAGE_ORDER) {
             stageCounts.put(s, 0);
         }
-        for (AggregateResult ar : [SELECT Status st, COUNT(Id) c FROM Lead GROUP BY Status]) {
+        for (AggregateResult ar : LeadSelector.countByStatus()) {
             String st = (String) ar.get('st');
             if (st != null && stageCounts.containsKey(st)) {
                 stageCounts.put(st, (Integer) ar.get('c'));
@@ -31,12 +38,8 @@ public with sharing class LeadFunnelController {
         // Converted/Disqualified widgets show only the last 90 days of activity.
         // ConvertedDate marks conversions; LastModifiedDate is the best available
         // proxy for when a lead was disqualified (no dedicated disqualified timestamp).
-        stageCounts.put('Converted', [
-            SELECT COUNT() FROM Lead WHERE Status = 'Converted' AND ConvertedDate = LAST_N_DAYS:90
-        ]);
-        stageCounts.put('Disqualified', [
-            SELECT COUNT() FROM Lead WHERE Status = 'Disqualified' AND LastModifiedDate = LAST_N_DAYS:90
-        ]);
+        stageCounts.put('Converted', LeadSelector.countConvertedInLastNDays(OUTCOME_WINDOW_DAYS));
+        stageCounts.put('Disqualified', LeadSelector.countDisqualifiedInLastNDays(OUTCOME_WINDOW_DAYS));
         data.stages = new List<NameCount>();
         for (String s : STAGE_ORDER) {
             data.stages.add(new NameCount(s, stageCounts.get(s)));
@@ -47,9 +50,7 @@ public with sharing class LeadFunnelController {
         for (String c : CHANNEL_ORDER) {
             channelCounts.put(c, 0);
         }
-        for (AggregateResult ar : [
-            SELECT LeadSource ls, COUNT(Id) c FROM Lead WHERE LeadSource != null GROUP BY LeadSource
-        ]) {
+        for (AggregateResult ar : LeadSelector.countByLeadSource()) {
             String ls = (String) ar.get('ls');
             if (ls != null && channelCounts.containsKey(ls)) {
                 channelCounts.put(ls, (Integer) ar.get('c'));
@@ -67,14 +68,7 @@ public with sharing class LeadFunnelController {
         List<LeadRow> highPriority = new List<LeadRow>();
         List<LeadRow> standardPriority = new List<LeadRow>();
         Integer reviewQueue = 0;
-        for (Lead l : [
-            SELECT Id, Name, Status, LeadSource, Parse_Confidence__c, Guidance_Price__c,
-                   Broker_First__c, Property_Address__c, Asset_Type__c,
-                   First_Seen_Date__c, CreatedDate, Broker_Priority__c
-            FROM Lead
-            ORDER BY First_Seen_Date__c DESC NULLS LAST, CreatedDate DESC
-            LIMIT 50
-        ]) {
+        for (Lead l : LeadSelector.selectRecent(RECENT_LIMIT)) {
             LeadRow r = new LeadRow();
             r.id = l.Id;
             r.name = String.isNotBlank(l.Property_Address__c) ? l.Property_Address__c : l.Name;

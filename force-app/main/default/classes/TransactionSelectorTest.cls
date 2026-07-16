@@ -21,6 +21,8 @@
 @isTest
 private class TransactionSelectorTest {
 
+    private static final Integer BULK_N = 251;
+
     private static Transaction__c insertSuppressedTransaction(Boolean loanRequired) {
         Transaction__c t = TestDataFactory.createTransaction(null, null, false);
         TestDataFactory.applyOverrides(t, new Map<String, Object>{
@@ -30,6 +32,21 @@ private class TransactionSelectorTest {
         });
         insert t;
         return t;
+    }
+
+    /**
+     * Inserts `count` Transactions at the given Status__c with the Day-0 fan-out
+     * suppressed (Contract_Executed_Date__c = null). Status__c is a restricted
+     * picklist — only 'Draft' / 'Active' / 'Closed' are valid.
+     */
+    private static List<Transaction__c> insertSuppressed(Integer count, String status) {
+        List<Transaction__c> txns = TestDataFactory.createTransactions(count, false);
+        TestDataFactory.applyOverrides(txns, new Map<String, Object>{
+            'Contract_Executed_Date__c' => null,
+            'Status__c' => status
+        });
+        insert txns;
+        return txns;
     }
 
     @isTest
@@ -110,5 +127,118 @@ private class TransactionSelectorTest {
         Test.stopTest();
 
         Assert.areEqual(251, result.size(), 'All 251 Transactions are read in a single bulk Set<Id> query');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Dashboard reads relocated from TransactionController (P4 cleanup wave)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectForKpis_returnsAllRowsRegardlessOfStatus() {
+        insertSuppressed(2, 'Active');
+        insertSuppressed(1, 'Closed');
+
+        Test.startTest();
+        List<Transaction__c> rows = TransactionSelector.selectForKpis();
+        Test.stopTest();
+
+        Assert.areEqual(3, rows.size(),
+            'selectForKpis is unfiltered: the YTD missed-feasibility tile counts every Transaction, not just Active');
+        for (Transaction__c t : rows) {
+            Assert.isNotNull(t.Status__c, 'Status__c must be selected for the active-vs-all KPI branch');
+            Assert.isNotNull(t.Contract_Value__c, 'Contract_Value__c must be selected for the in-contract-value tile');
+        }
+    }
+
+    @isTest
+    static void selectActiveForTaskSummary_returnsOnlyActive() {
+        insertSuppressed(3, 'Active');
+        insertSuppressed(2, 'Closed');
+
+        Test.startTest();
+        List<Transaction__c> rows = TransactionSelector.selectActiveForTaskSummary();
+        Test.stopTest();
+
+        Assert.areEqual(3, rows.size(),
+            'Only the 3 Active Transactions are returned; the 2 Closed ones are filtered out');
+    }
+
+    @isTest
+    static void selectActiveStages_returnsOnlyActiveWithStage() {
+        insertSuppressed(3, 'Active');
+        insertSuppressed(1, 'Closed');
+
+        Test.startTest();
+        List<Transaction__c> rows = TransactionSelector.selectActiveStages();
+        Test.stopTest();
+
+        Assert.areEqual(3, rows.size(), 'Only Active Transactions contribute to the stage donut');
+        Assert.areEqual('Open Contract', rows[0].Stage__c, 'Stage__c must be selected for the donut count');
+    }
+
+    @isTest
+    static void selectActiveRows_onlyActiveOrderedByName() {
+        insertSuppressed(4, 'Active');
+        insertSuppressed(2, 'Closed');
+
+        Test.startTest();
+        List<Transaction__c> rows = TransactionSelector.selectActiveRows();
+        Test.stopTest();
+
+        Assert.areEqual(4, rows.size(), 'Only Active Transactions appear in the row table');
+        for (Integer i = 1; i < rows.size(); i++) {
+            Assert.isTrue(rows[i - 1].Name <= rows[i].Name,
+                'Rows must be ordered by Name ascending (ORDER BY Name)');
+        }
+        Assert.isNotNull(rows[0].Contract_Value__c, 'Contract_Value__c must be selected for the price column');
+    }
+
+    @isTest
+    static void selectByOpportunityIds_returnsOnlyMatchingTransactions() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        Transaction__c linked = TestDataFactory.createTransaction(opp.Id, null, false);
+        Transaction__c unlinked = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(new List<Transaction__c>{ linked, unlinked },
+            new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
+        insert new List<Transaction__c>{ linked, unlinked };
+
+        Test.startTest();
+        List<Transaction__c> rows =
+            TransactionSelector.selectByOpportunityIds(new Set<Id>{ opp.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'Only the Transaction on the supplied Opportunity is returned');
+        Assert.areEqual(opp.Id, rows[0].Opportunity__c, 'Opportunity__c must be selected for the idempotency de-dup');
+    }
+
+    @isTest
+    static void selectByOpportunityIds_nullOrEmpty_returnsEmptyList() {
+        Test.startTest();
+        List<Transaction__c> forNull = TransactionSelector.selectByOpportunityIds(null);
+        List<Transaction__c> forEmpty = TransactionSelector.selectByOpportunityIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'Null opportunityIds short-circuit to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'Empty opportunityIds short-circuit to an empty list, not null');
+    }
+
+    @isTest
+    static void selectByOpportunityIds_bulk251_readsAllViaSetId() {
+        List<Opportunity> opps = TestDataFactory.createOpportunities(BULK_N, true);
+        List<Transaction__c> txns = new List<Transaction__c>();
+        for (Opportunity o : opps) {
+            txns.add(TestDataFactory.createTransaction(o.Id, null, false));
+        }
+        TestDataFactory.applyOverrides(txns, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
+        insert txns;
+
+        Set<Id> oppIds = (new Map<Id, Opportunity>(opps)).keySet();
+
+        Test.startTest();
+        List<Transaction__c> rows = TransactionSelector.selectByOpportunityIds(oppIds);
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, rows.size(),
+            'All 251 Transactions are read by their parent Opportunity in a single bulk Set<Id> query');
     }
 }

@@ -31,20 +31,14 @@ public with sharing class ContractExecutionService {
 
         // Idempotency: a deal that already has a Transaction is not handed off twice.
         Set<Id> alreadyHandedOff = new Set<Id>();
-        for (Transaction__c t : [
-            SELECT Opportunity__c FROM Transaction__c WHERE Opportunity__c IN :executedOppIds
-        ]) {
+        for (Transaction__c t : TransactionSelector.selectByOpportunityIds(executedOppIds)) {
             alreadyHandedOff.add(t.Opportunity__c);
         }
 
         Datetime dayZero = Datetime.now();
         List<Opportunity> oppUpdates = new List<Opportunity>();
         List<Transaction__c> transToInsert = new List<Transaction__c>();
-        List<Opportunity> opps = [
-            SELECT Id, Name, Property__c, Contract_Executed_Date__c,
-                   Primary_Contract__r.Contract_Value__c, Primary_LOI__r.Earnest_Money__c
-            FROM Opportunity WHERE Id IN :executedOppIds
-        ];
+        List<Opportunity> opps = OpportunitySelector.selectExecutionHandoffByIds(executedOppIds);
         for (Opportunity o : opps) {
             Opportunity stamp = new Opportunity(
                 Id = o.Id,

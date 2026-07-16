@@ -3,7 +3,13 @@
  * ARCHITECTURE.md §2 and .claude/rules/apex-layering-rule.md
  * ("All SOQL must live in Selector classes. Nothing else queries that object.").
  *
- * Consumer: TaskFanoutService.fanOutNow (the Day-0 checklist fan-out).
+ * Consumers:
+ *   - TaskFanoutService.fanOutNow (the Day-0 checklist fan-out; dynamic
+ *     condition-field read below).
+ *   - TransactionController (Active-Transactions dashboard: KPI header, task
+ *     summary, stage donut, and the row table — the four static reads below).
+ *   - ContractExecutionService.handleExecution (idempotency guard: which
+ *     executed deals already own a Transaction — selectByOpportunityIds).
  *
  * WHY A DYNAMIC QUERY LIVES HERE (design §6): the fan-out reads a fixed base
  * field set PLUS an arbitrary set of conditional-gating fields whose API names
@@ -38,6 +44,13 @@ public with sharing class TransactionSelector {
     private static final List<String> BASE_FIELDS = new List<String>{
         'Id', 'OwnerId', 'Contract_Executed_Date__c', 'Tasks_Fanned_Out__c'
     };
+
+    /**
+     * The Status__c value that marks a live deal on the Active-Transactions
+     * dashboard. Extracted to a constant because it drives the WHERE clause of
+     * three of the dashboard reads below (task summary, stage donut, row table).
+     */
+    private static final String STATUS_ACTIVE = 'Active';
 
     /**
      * Loads Transactions by Id, selecting the fan-out base fields plus any valid
@@ -97,5 +110,104 @@ public with sharing class TransactionSelector {
             AccessLevel.USER_MODE
         );
         return new Map<Id, Transaction__c>(rows);
+    }
+
+    /**
+     * All Transactions with the fields the dashboard KPI header aggregates in
+     * memory — backs TransactionController.getKpis. Intentionally UNFILTERED:
+     * the active-count / in-contract-value / earnest-at-risk / wire-approvals /
+     * time-to-close tiles count only Active rows, but the missed-feasibility
+     * tile is a year-to-date count ACROSS every Transaction, so the caller must
+     * see all rows and branch in Apex.
+     *
+     * @return Every Transaction with the KPI field set populated; empty when
+     *         there are no Transactions.
+     * @example
+     * for (Transaction__c t : TransactionSelector.selectForKpis()) { ... }
+     */
+    public static List<Transaction__c> selectForKpis() {
+        return [
+            SELECT Status__c, Contract_Value__c, Earnest_Money__c, Earnest_At_Risk__c,
+                   Contract_Executed_Date__c, Target_Close_Date__c, Wire_Approval_Due__c,
+                   Feasibility_Missed__c, Feasibility_Deadline__c
+            FROM Transaction__c
+            WITH USER_MODE
+        ];
+    }
+
+    /**
+     * Active Transactions with their task-rollup fields — backs
+     * TransactionController.getTaskSummary (the sidebar task posture cards).
+     *
+     * @return Active Transactions with Tasks_Total__c / Tasks_Complete__c /
+     *         Tasks_Overdue__c / Wire_Open_Risks__c populated; empty when none
+     *         are Active.
+     */
+    public static List<Transaction__c> selectActiveForTaskSummary() {
+        return [
+            SELECT Tasks_Total__c, Tasks_Complete__c, Tasks_Overdue__c, Wire_Open_Risks__c
+            FROM Transaction__c
+            WHERE Status__c = :STATUS_ACTIVE
+            WITH USER_MODE
+        ];
+    }
+
+    /**
+     * Stage of every Active Transaction — backs TransactionController
+     * .getStageBreakdown (the sidebar donut), which counts by Stage__c in memory.
+     *
+     * @return Active Transactions with Stage__c populated; empty when none are
+     *         Active.
+     */
+    public static List<Transaction__c> selectActiveStages() {
+        return [
+            SELECT Stage__c
+            FROM Transaction__c
+            WHERE Status__c = :STATUS_ACTIVE
+            WITH USER_MODE
+        ];
+    }
+
+    /**
+     * Active Transactions, name-ordered, with the columns the Active-Transactions
+     * table renders — backs TransactionController.getActiveTransactions.
+     *
+     * @return Active Transactions ordered by Name with the row field set
+     *         populated; empty when none are Active.
+     */
+    public static List<Transaction__c> selectActiveRows() {
+        return [
+            SELECT Id, Name, Property_Name__c, Stage__c, Contract_Value__c,
+                   Target_Close_Date__c, Tasks_Complete__c, Risk__c, Owner_Name__c
+            FROM Transaction__c
+            WHERE Status__c = :STATUS_ACTIVE
+            WITH USER_MODE
+            ORDER BY Name
+        ];
+    }
+
+    /**
+     * Transactions that belong to any of the supplied Opportunities — backs the
+     * idempotency guard in ContractExecutionService.handleExecution (a deal that
+     * already owns a Transaction is not handed off a second time). Only
+     * Opportunity__c is selected because that is all the caller de-duplicates on.
+     *
+     * @param opportunityIds Parent Opportunity Ids to match (bound with IN).
+     * @return Transactions whose Opportunity__c is in the set (Opportunity__c
+     *         populated); an empty list when opportunityIds is null/empty.
+     * @example
+     * List<Transaction__c> existing =
+     *     TransactionSelector.selectByOpportunityIds(executedOppIds);
+     */
+    public static List<Transaction__c> selectByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Transaction__c>();
+        }
+        return [
+            SELECT Opportunity__c
+            FROM Transaction__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH USER_MODE
+        ];
     }
 }
