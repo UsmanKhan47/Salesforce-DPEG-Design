@@ -5,10 +5,6 @@
 public with sharing class LeaseRenewalController {
 
     private static final Set<String> METHODS = new Set<String>{ 'Call', 'Email', 'Visit', 'Note', 'System' };
-    private static final String ROW_QUERY =
-        'SELECT Id, Tenant_Name__c, Property_Display_Name__c, Unit_Label__c, Lease_End__c, Days_To_Expiry__c, ' +
-        'Stage__c, Status__c, Last_Contact_Date__c, Days_Since_Contact__c, Non_Responsive__c ' +
-        'FROM Lease_Renewal__c ';
 
     public class HomeKpis {
         @AuraEnabled public Integer active;
@@ -21,7 +17,7 @@ public with sharing class LeaseRenewalController {
         HomeKpis k = new HomeKpis();
         k.active = 0; k.expiring90 = 0; k.nonResponsive = 0; k.renewedYtd = 0;
         Date yearStart = Date.newInstance(Date.today().year(), 1, 1);
-        for (Lease_Renewal__c r : [SELECT Status__c, Days_To_Expiry__c, Non_Responsive__c, Renewed_Date__c FROM Lease_Renewal__c]) {
+        for (Lease_Renewal__c r : LeaseRenewalSelector.selectForKpis()) {
             if (r.Status__c == 'Active') {
                 k.active++;
                 if (r.Days_To_Expiry__c != null && r.Days_To_Expiry__c <= 90) k.expiring90++;
@@ -65,12 +61,11 @@ public with sharing class LeaseRenewalController {
 
     @AuraEnabled(cacheable=true)
     public static List<Row> getRecentRenewals() {
-        return toRows(Database.query(ROW_QUERY + 'ORDER BY CreatedDate DESC LIMIT 6'));
+        return toRows(LeaseRenewalSelector.selectRecent());
     }
     @AuraEnabled(cacheable=true)
     public static List<Row> getAttention() {
-        return toRows(Database.query(ROW_QUERY +
-            'WHERE Status__c = \'Active\' AND (Non_Responsive__c = true OR Days_To_Expiry__c <= 30) ORDER BY Lease_End__c ASC NULLS LAST'));
+        return toRows(LeaseRenewalSelector.selectAttention());
     }
 
     public class Entry {
@@ -91,18 +86,16 @@ public with sharing class LeaseRenewalController {
     }
     @AuraEnabled(cacheable=true)
     public static TimelineView getTimeline(Id renewalId) {
-        Lease_Renewal__c r = [SELECT Stage__c, Status__c, Non_Responsive__c, Days_Since_Contact__c
-                              FROM Lease_Renewal__c WHERE Id = :renewalId LIMIT 1];
+        Lease_Renewal__c r = LeaseRenewalSelector.selectRequiredById(renewalId);
         TimelineView v = new TimelineView();
         v.stage = r.Stage__c; v.status = r.Status__c; v.closed = r.Status__c != 'Active';
         v.nonResponsive = r.Non_Responsive__c == true;
         v.daysSinceContact = r.Days_Since_Contact__c == null ? null : (Integer) r.Days_Since_Contact__c;
         v.canLog = !v.closed;
         v.entries = new List<Entry>();
-        // Frozen-clock gotcha: same-transaction rows share timestamps, so tie-break on Name DESC.
-        for (Renewal_Activity__c a : [SELECT Id, Method__c, Details__c, Entry_DateTime__c, CreatedBy.Name
-                                      FROM Renewal_Activity__c WHERE Lease_Renewal__c = :renewalId
-                                      ORDER BY Entry_DateTime__c DESC NULLS LAST, Name DESC]) {
+        // Frozen-clock gotcha: same-transaction rows share timestamps, so the
+        // selector tie-breaks on Name DESC (see RenewalActivitySelector).
+        for (Renewal_Activity__c a : RenewalActivitySelector.selectByLeaseRenewalId(renewalId)) {
             Entry e = new Entry();
             e.id = a.Id; e.method = a.Method__c; e.details = a.Details__c;
             e.enteredBy = a.CreatedBy.Name; e.entryDate = a.Entry_DateTime__c;

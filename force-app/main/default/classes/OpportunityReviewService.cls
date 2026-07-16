@@ -56,28 +56,17 @@ public with sharing class OpportunityReviewService {
         }
 
         // Idempotency: drop opps that already have a review of the matching type.
-        for (Development_Feasibility_Review__c d : [
-            SELECT Opportunity__c FROM Development_Feasibility_Review__c
-            WHERE Opportunity__c IN :devOpps
-        ]) {
+        // SOQL relocated to the per-object selectors (Module A2) per ARCHITECTURE.md §2.
+        for (Development_Feasibility_Review__c d : DevelopmentFeasibilityReviewSelector.selectByOpportunityIds(devOpps)) {
             devOpps.remove(d.Opportunity__c);
         }
-        for (Construction_Feasibility_Review__c c : [
-            SELECT Opportunity__c FROM Construction_Feasibility_Review__c
-            WHERE Opportunity__c IN :conOpps
-        ]) {
+        for (Construction_Feasibility_Review__c c : ConstructionFeasibilityReviewSelector.selectByOpportunityIds(conOpps)) {
             conOpps.remove(c.Opportunity__c);
         }
-        for (Contract_Review__c cr : [
-            SELECT Opportunity__c FROM Contract_Review__c
-            WHERE Opportunity__c IN :contractOpps
-        ]) {
+        for (Contract_Review__c cr : ContractReviewSelector.selectByOpportunityIds(contractOpps)) {
             contractOpps.remove(cr.Opportunity__c);
         }
-        for (Underwriting__c uw : [
-            SELECT Opportunity__c FROM Underwriting__c
-            WHERE Opportunity__c IN :uwOpps
-        ]) {
+        for (Underwriting__c uw : UnderwritingSelector.selectByOpportunityIds(uwOpps)) {
             uwOpps.remove(uw.Opportunity__c);
         }
 
@@ -155,7 +144,8 @@ public with sharing class OpportunityReviewService {
             return;
         }
         // Idempotency: skip any deal that already has an NDA.
-        for (NDA__c existing : [SELECT Opportunity__c FROM NDA__c WHERE Opportunity__c IN :oppIds]) {
+        // SOQL relocated to NdaSelector (Module A2) per ARCHITECTURE.md §2.
+        for (NDA__c existing : NdaSelector.selectByOpportunityIds(oppIds)) {
             oppIds.remove(existing.Opportunity__c);
         }
         if (oppIds.isEmpty()) {

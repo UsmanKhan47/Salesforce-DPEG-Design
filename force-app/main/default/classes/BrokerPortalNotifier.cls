@@ -11,19 +11,19 @@ public without sharing class BrokerPortalNotifier {
         if (leadIds == null || leadIds.isEmpty()) {
             return;
         }
-        List<CustomNotificationType> types = [
-            SELECT Id FROM CustomNotificationType WHERE DeveloperName = :NOTIF_TYPE_DEV_NAME LIMIT 1
-        ];
-        List<Group> queues = [
-            SELECT Id FROM Group WHERE Type = 'Queue' AND DeveloperName = :QUEUE_DEV_NAME LIMIT 1
-        ];
-        if (types.isEmpty() || queues.isEmpty()) {
+        // SOQL relocated to per-object selectors (Module A2) per ARCHITECTURE.md §2.
+        // All three run WITH SYSTEM_MODE: this is the guest/automation Broker-Portal
+        // path (setup-object + Lead lookups). See each selector's header for the
+        // SYSTEM_MODE justification.
+        CustomNotificationType notifType = NotificationTypeSelector.selectByDeveloperName(NOTIF_TYPE_DEV_NAME);
+        Group queue = QueueGroupSelector.selectQueueByDeveloperName(QUEUE_DEV_NAME);
+        if (notifType == null || queue == null) {
             return;
         }
-        Id typeId = types[0].Id;
-        Set<String> recipients = new Set<String>{ queues[0].Id };
+        Id typeId = notifType.Id;
+        Set<String> recipients = new Set<String>{ queue.Id };
 
-        for (Lead l : [SELECT Id, Name, Company, Property_Address__c FROM Lead WHERE Id IN :leadIds]) {
+        for (Lead l : LeadSelector.selectByIdsSystem(new Set<Id>(leadIds))) {
             String addr = String.isBlank(l.Property_Address__c) ? l.Name : l.Property_Address__c;
             Messaging.CustomNotification n = new Messaging.CustomNotification();
             n.setNotificationTypeId(typeId);

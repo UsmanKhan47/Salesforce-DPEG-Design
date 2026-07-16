@@ -2,17 +2,10 @@ public with sharing class BrokerAssignmentController {
     public static final Integer WARN_DAYS = 14;
     public static final Integer OVERDUE_DAYS = 21;
 
+    // SOQL relocated to BrokerAssignmentSelector (ARCHITECTURE.md §2). This stays as
+    // a thin delegate so the six dashboard reads that buffer it keep one call-site.
     private static List<Broker_Assignment__c> queryAll() {
-        return [
-            SELECT Id, Status__c, Listing_Start_Date__c, Listing_End_Date__c, Reason_Ended__c, Replacement_Notes__c,
-                   Last_Check_In_Date__c, Days_Since_Check_In__c, Listing_Active_Days__c,
-                   Leased_Area__c, Vacant_Area__c,
-                   Property_Asset__c, Property_Display_Name__c, Property_Type_Display__c,
-                   Address_Display__c, Gross_Sq_Ft__c,
-                   Broker__c, Broker_Name__c, Broker_Firm__c, Broker_Email__c, Broker_Phone__c
-            FROM Broker_Assignment__c
-            ORDER BY CreatedDate DESC
-        ];
+        return BrokerAssignmentSelector.selectAllOrderedByCreatedDateDesc();
     }
     private static Integer idle(Broker_Assignment__c a) {
         return a.Days_Since_Check_In__c == null ? null : (Integer) a.Days_Since_Check_In__c;
@@ -198,7 +191,7 @@ public with sharing class BrokerAssignmentController {
     @AuraEnabled(cacheable=true)
     public static List<BrokerOption> getBrokerOptions() {
         List<BrokerOption> out = new List<BrokerOption>();
-        for (Contact c : [SELECT Id, Name, Broker_Firm__c FROM Contact WHERE Is_Broker__c = true ORDER BY Name]) {
+        for (Contact c : ContactSelector.selectBrokersOrderedByName()) {
             BrokerOption o = new BrokerOption(); o.id=c.Id; o.label = c.Broker_Firm__c == null ? c.Name : (c.Name + ' · ' + c.Broker_Firm__c); out.add(o);
         }
         return out;
@@ -216,12 +209,11 @@ public with sharing class BrokerAssignmentController {
     public static List<NoteRow> getNotes(Id recordId) {
         List<NoteRow> out = new List<NoteRow>();
         Set<Id> docIds = new Set<Id>();
-        for (ContentDocumentLink l : [SELECT ContentDocumentId FROM ContentDocumentLink WHERE LinkedEntityId = :recordId]) {
+        for (ContentDocumentLink l : ContentDocumentLinkSelector.selectByLinkedEntityId(recordId)) {
             docIds.add(l.ContentDocumentId);
         }
         if (docIds.isEmpty()) return out;
-        for (ContentNote n : [SELECT Id, Title, TextPreview, CreatedDate, CreatedBy.Name
-                              FROM ContentNote WHERE Id IN :docIds ORDER BY CreatedDate DESC]) {
+        for (ContentNote n : ContentNoteSelector.selectByIdsOrderedByCreatedDateDesc(docIds)) {
             NoteRow r = new NoteRow();
             r.id = n.Id; r.title = n.Title; r.preview = String.isBlank(n.TextPreview) ? n.Title : n.TextPreview;
             r.author = n.CreatedBy.Name; r.createdDate = n.CreatedDate;
@@ -246,8 +238,7 @@ public with sharing class BrokerAssignmentController {
     @AuraEnabled
     public static Id replaceBroker(Id assignmentId, Id newBrokerId, Date effectiveDate, String reason, String notes) {
         Date eff = effectiveDate == null ? Date.today() : effectiveDate;
-        Broker_Assignment__c cur = [SELECT Id, Property_Asset__c, Broker__c, Listing_Start_Date__c, Last_Check_In_Date__c
-                                    FROM Broker_Assignment__c WHERE Id=:assignmentId LIMIT 1];
+        Broker_Assignment__c cur = BrokerAssignmentSelector.selectRequiredById(assignmentId);
         // Snapshot the outgoing broker's stint as a closed (Disposed) history record,
         // carrying the reason and notes for the replacement.
         if (cur.Broker__c != null) {

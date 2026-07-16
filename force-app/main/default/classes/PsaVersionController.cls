@@ -10,15 +10,9 @@ public with sharing class PsaVersionController {
 
     @AuraEnabled(cacheable=true)
     public static List<PSA_Version__c> getVersions(Id contractReviewId) {
-        if (contractReviewId == null) {
-            return new List<PSA_Version__c>();
-        }
-        return [
-            SELECT Id, Name, Direction__c, Version_Date__c, Summary__c, Document_URL__c, CreatedDate
-            FROM PSA_Version__c
-            WHERE Contract_Review__c = :contractReviewId
-            ORDER BY CreatedDate DESC, Name DESC
-        ];
+        // SOQL relocated to PsaVersionSelector per ARCHITECTURE.md §2; the selector's
+        // null guard preserves the empty-list-on-null contract.
+        return PsaVersionSelector.selectByContractReviewId(contractReviewId);
     }
 
     @AuraEnabled
@@ -30,7 +24,7 @@ public with sharing class PsaVersionController {
         if (direction != 'Seller' && direction != 'Ours') {
             throw new AuraHandledException('Pick who sent this version (Seller or Ours).');
         }
-        Integer priorCount = [SELECT COUNT() FROM PSA_Version__c WHERE Contract_Review__c = :contractReviewId];
+        Integer priorCount = PsaVersionSelector.countByContractReviewId(contractReviewId);
 
         insert new PSA_Version__c(
             Contract_Review__c = contractReviewId,

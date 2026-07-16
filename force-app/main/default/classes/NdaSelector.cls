@@ -66,4 +66,27 @@ public with sharing class NdaSelector {
         ];
         return rows.isEmpty() ? null : rows[0];
     }
+
+    /**
+     * NDAs related to a set of Opportunities — backs OpportunityReviewService.ensureNda
+     * idempotency (drop any deal that already has an NDA so a second is never opened).
+     * Added by Module A2: the A2 OpportunityReviewService repoint needs a bulk,
+     * set-based existence read that A1's single-record methods do not provide.
+     * Bulk-safe (one query for the whole set).
+     *
+     * @param opportunityIds Parent Opportunity Ids; null/empty-safe.
+     * @return NDAs with Id and Opportunity__c populated; empty when the input is
+     *         null or empty.
+     */
+    public static List<NDA__c> selectByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<NDA__c>();
+        }
+        return [
+            SELECT Id, Opportunity__c
+            FROM NDA__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH USER_MODE
+        ];
+    }
 }

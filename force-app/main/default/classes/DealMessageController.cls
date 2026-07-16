@@ -30,11 +30,11 @@ public with sharing class DealMessageController {
         }
         String parentField = parentFieldFor(recordId);
         List<Entry> entries = new List<Entry>();
-        for (Deal_Message__c m : Database.query(
-            'SELECT Id, Method__c, Direction__c, Details__c, Revision__c, Entry_DateTime__c, CreatedDate, CreatedBy.Name ' +
-            'FROM Deal_Message__c WHERE ' + parentField + ' = :recordId ' +
-            'ORDER BY Entry_DateTime__c DESC, CreatedDate DESC, Id DESC'
-        )) {
+        // SOQL relocated to DealMessageSelector per ARCHITECTURE.md §2. The selector
+        // owns the query text, re-binds :recordId via queryWithBinds (the original
+        // bind was controller-method-scoped), and re-validates parentField against
+        // its own allow-list.
+        for (Deal_Message__c m : DealMessageSelector.selectByParent(parentField, recordId)) {
             Entry e = new Entry();
             e.id = m.Id;
             e.method = m.Method__c;

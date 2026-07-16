@@ -83,4 +83,31 @@ private class ContractReviewSelectorTest {
         }
         Test.stopTest();
     }
+
+    // selectByOpportunityIds — the bulk existence read added for
+    // OpportunityReviewService.createReviewRecords idempotency (Module A2).
+
+    @isTest
+    static void selectByOpportunityIds_bulk_returnsMatching() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        TestDataFactory.createContractReviews(BULK_N, opp.Id, true);
+
+        Test.startTest();
+        List<Contract_Review__c> result = ContractReviewSelector.selectByOpportunityIds(new Set<Id>{ opp.Id });
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(), 'Should return all 251 Contract Reviews for the Opportunity set');
+        Assert.areEqual(opp.Id, result[0].Opportunity__c, 'Opportunity__c must be populated for the idempotency drop');
+    }
+
+    @isTest
+    static void selectByOpportunityIds_nullOrEmptyInput_returnsEmpty() {
+        Test.startTest();
+        List<Contract_Review__c> nullResult = ContractReviewSelector.selectByOpportunityIds(null);
+        List<Contract_Review__c> emptyResult = ContractReviewSelector.selectByOpportunityIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.isTrue(nullResult.isEmpty(), 'Null input returns an empty list, not null');
+        Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
+    }
 }

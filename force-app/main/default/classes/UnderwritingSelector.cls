@@ -90,4 +90,27 @@ public with sharing class UnderwritingSelector {
             LIMIT 1
         ];
     }
+
+    /**
+     * Underwritings related to a set of Opportunities — backs
+     * OpportunityReviewService.createReviewRecords idempotency (drop any deal that
+     * already has an Underwriting so entering the Underwriting stage never opens a
+     * second). Added by Module A2: the A2 service repoint needs a bulk, set-based
+     * existence read that A1's single-record methods do not provide. Bulk-safe.
+     *
+     * @param opportunityIds Parent Opportunity Ids; null/empty-safe.
+     * @return Underwritings with Id and Opportunity__c populated; empty when the
+     *         input is null or empty.
+     */
+    public static List<Underwriting__c> selectByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Underwriting__c>();
+        }
+        return [
+            SELECT Id, Opportunity__c
+            FROM Underwriting__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH USER_MODE
+        ];
+    }
 }

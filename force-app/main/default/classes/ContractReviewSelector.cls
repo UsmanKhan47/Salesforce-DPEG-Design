@@ -62,4 +62,27 @@ public with sharing class ContractReviewSelector {
             LIMIT 1
         ];
     }
+
+    /**
+     * Contract Reviews related to a set of Opportunities — backs
+     * OpportunityReviewService.createReviewRecords idempotency (drop any deal that
+     * already has a Contract Review so entering the PSA stage never opens a second).
+     * Added by Module A2: the A2 service repoint needs a bulk, set-based existence
+     * read that A1's single-record methods do not provide. Bulk-safe.
+     *
+     * @param opportunityIds Parent Opportunity Ids; null/empty-safe.
+     * @return Contract Reviews with Id and Opportunity__c populated; empty when the
+     *         input is null or empty.
+     */
+    public static List<Contract_Review__c> selectByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Contract_Review__c>();
+        }
+        return [
+            SELECT Id, Opportunity__c
+            FROM Contract_Review__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH USER_MODE
+        ];
+    }
 }

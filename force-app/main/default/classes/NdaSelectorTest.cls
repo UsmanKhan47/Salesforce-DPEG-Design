@@ -91,4 +91,33 @@ private class NdaSelectorTest {
         Test.stopTest();
         Assert.isNull(result, 'Null input returns null');
     }
+
+    // selectByOpportunityIds — the bulk existence read added for
+    // OpportunityReviewService.ensureNda idempotency (Module A2).
+
+    @isTest
+    static void selectByOpportunityIds_bulk_returnsMatching() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        // OpportunityReviewService.ensureNda auto-creates one NDA on Opportunity
+        // insert; add 250 more for a deterministic total of 251.
+        TestDataFactory.createNdas(BULK_N - 1, opp.Id, true);
+
+        Test.startTest();
+        List<NDA__c> result = NdaSelector.selectByOpportunityIds(new Set<Id>{ opp.Id });
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(), 'Should return all 251 NDAs for the Opportunity set');
+        Assert.areEqual(opp.Id, result[0].Opportunity__c, 'Opportunity__c must be populated for the idempotency drop');
+    }
+
+    @isTest
+    static void selectByOpportunityIds_nullOrEmptyInput_returnsEmpty() {
+        Test.startTest();
+        List<NDA__c> nullResult = NdaSelector.selectByOpportunityIds(null);
+        List<NDA__c> emptyResult = NdaSelector.selectByOpportunityIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.isTrue(nullResult.isEmpty(), 'Null input returns an empty list, not null');
+        Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
+    }
 }

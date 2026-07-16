@@ -36,4 +36,28 @@ public with sharing class ConstructionFeasibilityReviewSelector {
             LIMIT 1
         ];
     }
+
+    /**
+     * Construction Feasibility Reviews related to a set of Opportunities — backs
+     * OpportunityReviewService.createReviewRecords idempotency (drop any deal that
+     * already has a Construction review so the stage/input-needed trigger never
+     * opens a second). Added by Module A2: the A2 service repoint needs a bulk,
+     * set-based existence read that A1's single-record method does not provide.
+     * Bulk-safe.
+     *
+     * @param opportunityIds Parent Opportunity Ids; null/empty-safe.
+     * @return Reviews with Id and Opportunity__c populated; empty when the input is
+     *         null or empty.
+     */
+    public static List<Construction_Feasibility_Review__c> selectByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Construction_Feasibility_Review__c>();
+        }
+        return [
+            SELECT Id, Opportunity__c
+            FROM Construction_Feasibility_Review__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH USER_MODE
+        ];
+    }
 }
