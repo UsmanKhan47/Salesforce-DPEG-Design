@@ -50,7 +50,7 @@ public with sharing class WireController {
             String wireSource, Decimal confirmedAmount) {
         Wire__c w;
         if (wireId != null) {
-            w = [SELECT Id FROM Wire__c WHERE Id = :wireId LIMIT 1];
+            w = [SELECT Id, Verified_DateTime__c FROM Wire__c WHERE Id = :wireId LIMIT 1];
         } else {
             w = new Wire__c(Disposition__c = dispositionId);
         }

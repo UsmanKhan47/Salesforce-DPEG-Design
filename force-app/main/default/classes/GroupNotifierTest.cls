@@ -64,4 +64,33 @@ private class GroupNotifierTest {
         Test.stopTest();
         System.Assert.areEqual(0, GroupNotifier.sentCount, 'No sends for empty input');
     }
+
+    /**
+     * The guardrail this class exists to prove: a caller that loops send() for the same
+     * group within one transaction (the exact shape of the bug ContractExecutionService had
+     * — 3 send() calls per Opportunity, 9N queries for N records) must not re-query
+     * Group / GroupMember / CustomNotificationType on every call. The cache is what makes a
+     * looping caller merely inefficient (still O(1) queries) instead of a governor-limit break.
+     */
+    @IsTest
+    static void notify_repeatedCallsInSameTransaction_reuseCachedRecipientsAndAddNoQueries() {
+        createGroupWithMember();
+        Lead l = new Lead(LastName = 'Target', Company = 'Acme', Status = 'New');
+        insert l;
+
+        Test.startTest();
+        GroupNotifier.send(GROUP_NAME, 'Title', 'Body', l.Id);
+        Integer queriesAfterFirstCall = Limits.getQueries();
+
+        // Simulate a looping caller — the anti-pattern the cache exists to protect against.
+        for (Integer i = 0; i < 4; i++) {
+            GroupNotifier.send(GROUP_NAME, 'Title ' + i, 'Body ' + i, l.Id);
+        }
+        Integer queriesAfterFourMoreCalls = Limits.getQueries();
+        Test.stopTest();
+
+        System.Assert.areEqual(5, GroupNotifier.sentCount, 'All five sends succeed using the cached recipient set');
+        System.Assert.areEqual(queriesAfterFirstCall, queriesAfterFourMoreCalls,
+            'Four additional send() calls for the same group in the same transaction must add zero additional SOQL queries — this is the cache guardrail, proven rather than assumed');
+    }
 }

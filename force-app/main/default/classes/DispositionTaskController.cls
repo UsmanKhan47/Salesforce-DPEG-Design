@@ -48,7 +48,7 @@ public with sharing class DispositionTaskController {
 
         Map<String, Task> bySubject = new Map<String, Task>();
         for (Task t : [
-            SELECT Id, Subject, IsClosed, CompletedDateTime FROM Task
+            SELECT Id, Subject, IsClosed, LastModifiedDate FROM Task
             WHERE WhatId = :dispositionId AND Subject IN :SUBJECTS
         ]) {
             bySubject.put(t.Subject, t);
@@ -65,7 +65,7 @@ public with sharing class DispositionTaskController {
             r.subject = t.Subject;
             r.sequence = i + 1;
             r.done = t.IsClosed;
-            r.completedDate = t.CompletedDateTime;
+            r.completedDate = t.IsClosed ? t.LastModifiedDate : null;
             rows.add(r);
         }
         return rows;
