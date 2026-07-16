@@ -8,7 +8,29 @@
  *     status counts, LeadSource counts, 90-day converted / disqualified outcome
  *     counts, recent-leads list). USER_MODE.
  *   - BrokerPortalNotifier (guest/automation Broker-Portal lead-intake notification
- *     path). SYSTEM_MODE (selectByIdsSystem).
+ *     path). SYSTEM_MODE (selectByIdsSystem — by-Id fetch of just-created leads).
+ *   - BrokerPortalController (guest LWR deal-intake controller: open-duplicate
+ *     detection by property address). SYSTEM_MODE + without sharing —
+ *     GuestReads.selectOpenDuplicatesByAddressSystem (nested class below).
+ *
+ * ⚠ ADDED-METHOD NOTE (flagged to the orchestrator, accepted). The P4 cleanup-wave
+ * task directed BrokerPortalController's Lead site to "reuse selectByIdsSystem".
+ * That is not expressible: selectByIdsSystem is a by-Id fetch (Set<Id> ->
+ * notification body fields), whereas the controller's isDuplicate SEARCHES for an
+ * open lead by Property_Address__c + Status. No existing method matches, so
+ * relocating the SOQL out of the controller (the wave's primary goal: 0 inline SOQL)
+ * required this one additive method. selectByIdsSystem and every other method are
+ * unchanged.
+ *
+ * ⚠ SHARING — the dedup read is BEHAVIOR-PRESERVING WITHOUT SHARING (see the nested
+ * `GuestReads` class). The outer LeadSelector stays `with sharing`; only the guest
+ * dedup lives in the `without sharing` inner class so it sees ALL open leads at an
+ * address regardless of the guest user's sharing — exactly as the original
+ * `without sharing` BrokerPortalController inline query did. Under `WITH SYSTEM_MODE`,
+ * FLS is bypassed but record-level sharing follows the class keyword; a `with sharing`
+ * selector would have silently scoped the dedup to the (minimal, unconfigured) guest
+ * sharing and weakened the Duplicate_Flag__c anti-abuse signal. selectByIdsSystem
+ * (the notifier by-Id fetch, out of scope) is left `with sharing` unchanged.
  *
  * ── MODE ──────────────────────────────────────────────────────────────────────
  * `with sharing` per ARCHITECTURE.md §2 (mandatory on every selector).
@@ -194,5 +216,62 @@ public with sharing class LeadSelector {
             WHERE Id IN :leadIds
             WITH SYSTEM_MODE
         ];
+    }
+
+    /**
+     * Guest-portal anti-abuse Lead reads that MUST run WITHOUT SHARING.
+     *
+     * `without sharing` — guest-portal anti-abuse read; must see ALL records
+     * regardless of the site guest user's sharing, which is minimal and unconfigured
+     * (P3 guest spike incomplete). Inner classes do NOT inherit the outer class's
+     * sharing, so `without sharing` is declared explicitly here; the outer
+     * LeadSelector stays `with sharing`. Apex forbids static methods on inner
+     * classes, so this is an instance method — call
+     * `new LeadSelector.GuestReads().selectOpenDuplicatesByAddressSystem(...)`.
+     *
+     * ⚠ PRE-PROMOTION: this preserves the INTENT (all-records anti-abuse dedup, as
+     * the original `without sharing` BrokerPortalController inline query did), but
+     * the guest sharing/ownership model itself is still unverified — the P3
+     * guest-sharing spike must be completed before portal promotion.
+     */
+    public without sharing class GuestReads {
+
+        /**
+         * Open (non-closed) leads at a given property address — backs
+         * BrokerPortalController.isDuplicate, which flags a broker submission as a
+         * duplicate when an open lead already exists for the same address. Mirrors
+         * the original inline query exactly: address trimmed, Status excluded via
+         * NOT IN, LIMIT 1 (the caller only needs existence, not the rows).
+         *
+         * SYSTEM_MODE (API 67) bypasses FLS; the enclosing `without sharing` bypasses
+         * record sharing — together reproducing the original all-fields/all-records
+         * guest read.
+         *
+         * @param propertyAddress The address to match against Property_Address__c
+         *                        (trimmed before binding); null/blank returns empty.
+         * @param excludedStatuses Statuses that do NOT count as duplicates (e.g.
+         *                        Converted / Disqualified); null is treated as no
+         *                        exclusions.
+         * @return At most one open Lead (Id) at that address; an empty list when the
+         *         input is blank or no open duplicate exists (never null). The caller
+         *         treats a non-empty result as "duplicate".
+         * @example
+         * Boolean isDup = !new LeadSelector.GuestReads()
+         *     .selectOpenDuplicatesByAddressSystem(address, CLOSED_STATUSES).isEmpty();
+         */
+        public List<Lead> selectOpenDuplicatesByAddressSystem(String propertyAddress, Set<String> excludedStatuses) {
+            if (String.isBlank(propertyAddress)) {
+                return new List<Lead>();
+            }
+            String trimmedAddress = propertyAddress.trim();
+            Set<String> closedStatuses = (excludedStatuses == null) ? new Set<String>() : excludedStatuses;
+            return [
+                SELECT Id
+                FROM Lead
+                WHERE Property_Address__c = :trimmedAddress AND Status NOT IN :closedStatuses
+                WITH SYSTEM_MODE
+                LIMIT 1
+            ];
+        }
     }
 }

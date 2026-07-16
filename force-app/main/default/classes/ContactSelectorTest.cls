@@ -92,6 +92,68 @@ private class ContactSelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GuestReads.selectBrokerPriorityByEmailSystem
+    //   (BrokerPortalController — guest; SYSTEM_MODE + without sharing)
+    // ─────────────────────────────────────────────────────────────────────────
+    //
+    // Lives in the `without sharing` GuestReads inner class (all-records guest read,
+    // preserving the original controller behavior); SYSTEM_MODE additionally bypasses
+    // FLS. These tests run as the default (privileged) test user and prove the query
+    // shape (email trim, Is_Broker__c filter, field population, blank guard). The
+    // guest sharing/ownership model itself is out of scope for a unit test — it needs
+    // the P3 guest-sharing spike verified before portal promotion (see the report).
+
+    @isTest
+    static void selectBrokerPriorityByEmailSystem_matchingBroker_returnsPriority() {
+        Contact broker = TestDataFactory.createBrokerContact(null, false);
+        broker.Email = 'known.broker@example.com';
+        broker.Broker_Priority__c = 'High';
+        insert broker;
+
+        Test.startTest();
+        Contact result = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem('  known.broker@example.com  ');
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'A broker Contact with the given email resolves');
+        Assert.areEqual('High', result.Broker_Priority__c, 'Broker_Priority__c is populated for the caller to copy');
+    }
+
+    @isTest
+    static void selectBrokerPriorityByEmailSystem_nonBrokerWithSameEmail_excluded() {
+        // A non-broker Contact (Is_Broker__c defaults false) with the same email
+        // must not match — the WHERE Is_Broker__c = true filter excludes it.
+        Contact plain = TestDataFactory.createContact(null, false);
+        plain.Email = 'plain.contact@example.com';
+        insert plain;
+
+        Test.startTest();
+        Contact result = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem('plain.contact@example.com');
+        Test.stopTest();
+
+        Assert.isNull(result, 'A non-broker Contact is excluded by Is_Broker__c = true');
+    }
+
+    @isTest
+    static void selectBrokerPriorityByEmailSystem_noMatch_returnsNull() {
+        Test.startTest();
+        Contact result = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem('nobody@example.com');
+        Test.stopTest();
+
+        Assert.isNull(result, 'An unknown email returns null (caller defaults to Standard)');
+    }
+
+    @isTest
+    static void selectBrokerPriorityByEmailSystem_blankInput_returnsNull() {
+        Test.startTest();
+        Contact nullResult = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem(null);
+        Contact blankResult = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem('   ');
+        Test.stopTest();
+
+        Assert.isNull(nullResult, 'Null input returns null');
+        Assert.isNull(blankResult, 'Blank input returns null');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

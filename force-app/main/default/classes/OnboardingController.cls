@@ -1,21 +1,11 @@
 public with sharing class OnboardingController {
 
-    private static final String DONE_STAGE = 'Onboarding Complete';
     private static Decimal nz(Decimal v) { return v == null ? 0 : v; }
 
-    // Active = still onboarding (not the terminal stage).
+    // Active = still onboarding (not the terminal stage). All Onboarding__c SOQL
+    // lives in OnboardingSelector (ARCHITECTURE.md §2 / apex-layering-rule).
     private static List<Onboarding__c> activeOnboardings() {
-        return [
-            SELECT Id, Name, Property_Name__c, Stage__c, Status__c,
-                   Start_Date__c, Target_Completion_Date__c, Onboarding_Lead__c,
-                   Completion_Pct__c, Tasks_Total__c, Tasks_Complete__c, Tasks_In_Progress__c,
-                   Tasks_Not_Started__c, Tasks_Blocked__c, Tasks_NA__c, Tasks_Open__c,
-                   Tasks_Overdue__c, Tasks_Blocked_Now__c, Tasks_Stalled__c, Tasks_Due_7d__c,
-                   Days_To_Onboard__c, Age_Days__c, Oldest_Open_Days__c, Past_Target__c
-            FROM Onboarding__c
-            WHERE Stage__c != :DONE_STAGE
-            ORDER BY Target_Completion_Date__c NULLS LAST
-        ];
+        return OnboardingSelector.selectActive();
     }
 
     public class Kpis {
@@ -177,13 +167,7 @@ public with sharing class OnboardingController {
             byCat.put(c, g);
         }
         Date today = Date.today();
-        for (Task t : [
-            SELECT Id, Subject, Onboarding_Category__c, Onboarding_Status__c, Source_System__c,
-                   Task_Owner_Label__c, ActivityDate, Blocked_Reason__c, Description
-            FROM Task
-            WHERE Onboarding__c = :onboardingId
-            ORDER BY Onboarding_Category__c, ActivityDate NULLS LAST
-        ]) {
+        for (Task t : TaskSelector.selectChecklistByOnboardingId(onboardingId)) {
             ChecklistGroup g = byCat.get(t.Onboarding_Category__c);
             if (g == null) continue;
             ChecklistItem it = new ChecklistItem();
@@ -206,10 +190,7 @@ public with sharing class OnboardingController {
     // roll the change up onto the parent Onboarding so the rings/bars/KPIs reflect it.
     @AuraEnabled
     public static void completeTask(Id taskId, String notes) {
-        Task t = [
-            SELECT Id, Onboarding__c, Onboarding_Status__c, Status, Description
-            FROM Task WHERE Id = :taskId LIMIT 1
-        ];
+        Task t = TaskSelector.selectForOnboardingCompletion(taskId);
         t.Onboarding_Status__c = 'Complete';
         t.Status = 'Completed';
         t.ActivityDate = Date.today();

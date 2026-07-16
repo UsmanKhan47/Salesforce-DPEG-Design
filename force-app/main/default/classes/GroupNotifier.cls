@@ -101,10 +101,10 @@ public without sharing class GroupNotifier {
     private static Id resolveNotificationTypeId() {
         if (!notificationTypeResolved) {
             notificationTypeResolved = true;
-            List<CustomNotificationType> types = [
-                SELECT Id FROM CustomNotificationType WHERE DeveloperName = :NOTIF_TYPE_DEV_NAME LIMIT 1
-            ];
-            cachedNotificationTypeId = types.isEmpty() ? null : types[0].Id;
+            // SOQL relocated to NotificationTypeSelector (P4 §2 layering).
+            CustomNotificationType notifType =
+                NotificationTypeSelector.selectByDeveloperName(NOTIF_TYPE_DEV_NAME);
+            cachedNotificationTypeId = (notifType == null) ? null : notifType.Id;
         }
         return cachedNotificationTypeId;
     }
@@ -141,17 +141,15 @@ public without sharing class GroupNotifier {
         }
         groupNames = uncachedNames;
 
+        // SOQL relocated to per-object selectors (P4 §2 layering). The Group lookup
+        // spans Type IN ('Regular','Queue') — broader than QueueGroupSelector's
+        // Queue-only method — hence selectRegularAndQueueByDeveloperNames.
         Map<Id, String> groupIdToName = new Map<Id, String>();
-        for (Group g : [
-            SELECT Id, DeveloperName FROM Group
-            WHERE DeveloperName IN :groupNames AND Type IN ('Regular', 'Queue')
-        ]) {
+        for (Group g : QueueGroupSelector.selectRegularAndQueueByDeveloperNames(groupNames)) {
             groupIdToName.put(g.Id, g.DeveloperName);
             result.put(g.DeveloperName, new Set<String>());
         }
-        for (GroupMember gm : [
-            SELECT GroupId, UserOrGroupId FROM GroupMember WHERE GroupId IN :groupIdToName.keySet()
-        ]) {
+        for (GroupMember gm : GroupMemberSelector.selectByGroupIds(groupIdToName.keySet())) {
             if (String.valueOf(gm.UserOrGroupId).startsWith(USER_KEY_PREFIX)) {
                 result.get(groupIdToName.get(gm.GroupId)).add(gm.UserOrGroupId);
             }

@@ -203,6 +203,96 @@ private class LeadSelectorTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // GUEST DEDUP READ — GuestReads.selectOpenDuplicatesByAddressSystem
+    //   (SYSTEM_MODE + without sharing)
+    // ═══════════════════════════════════════════════════════════════════════════
+    //
+    // Lives in the `without sharing` GuestReads inner class (all-records dedup,
+    // preserving the original controller behavior); SYSTEM_MODE additionally bypasses
+    // FLS. These tests run as the default (privileged) test user and prove the query
+    // shape (address trim, Status NOT IN filter, blank guard). The guest
+    // sharing/ownership model itself needs the P3 guest-sharing spike verified before
+    // portal promotion (see the report).
+
+    private static final Set<String> CLOSED_STATUSES = new Set<String>{ 'Converted', 'Disqualified' };
+    private static final String DUP_ADDRESS = '123 Main St, Dallas TX';
+
+    @isTest
+    static void selectOpenDuplicatesByAddressSystem_openLeadAtAddress_returnsMatch() {
+        Lead existing = TestDataFactory.createLead(false);
+        existing.Property_Address__c = DUP_ADDRESS;
+        existing.Status = 'New';
+        existing.LeadSource = 'Web'; // not 'Broker Portal' -> avoids the notify flow
+        insertWithDupBypass(new List<Lead>{ existing });
+
+        Test.startTest();
+        // Leading/trailing spaces prove the address is trimmed before binding.
+        List<Lead> result =
+            new LeadSelector.GuestReads().selectOpenDuplicatesByAddressSystem('  ' + DUP_ADDRESS + '  ', CLOSED_STATUSES);
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'An open lead at the same address is returned (caller reads this as a duplicate)');
+    }
+
+    @isTest
+    static void selectOpenDuplicatesByAddressSystem_closedLeadAtAddress_excluded() {
+        Lead closed = TestDataFactory.createLead(false);
+        closed.Property_Address__c = DUP_ADDRESS;
+        closed.Status = 'Disqualified'; // in CLOSED_STATUSES -> excluded
+        closed.LeadSource = 'Web';
+        insertWithDupBypass(new List<Lead>{ closed });
+
+        Test.startTest();
+        List<Lead> result =
+            new LeadSelector.GuestReads().selectOpenDuplicatesByAddressSystem(DUP_ADDRESS, CLOSED_STATUSES);
+        Test.stopTest();
+
+        Assert.isTrue(result.isEmpty(), 'A closed lead (Status NOT IN excluded) is not counted as a duplicate');
+    }
+
+    @isTest
+    static void selectOpenDuplicatesByAddressSystem_differentAddress_returnsEmpty() {
+        Lead existing = TestDataFactory.createLead(false);
+        existing.Property_Address__c = '999 Elsewhere Ave';
+        existing.Status = 'New';
+        existing.LeadSource = 'Web';
+        insertWithDupBypass(new List<Lead>{ existing });
+
+        Test.startTest();
+        List<Lead> result =
+            new LeadSelector.GuestReads().selectOpenDuplicatesByAddressSystem(DUP_ADDRESS, CLOSED_STATUSES);
+        Test.stopTest();
+
+        Assert.isTrue(result.isEmpty(), 'No lead at the queried address returns an empty list');
+    }
+
+    @isTest
+    static void selectOpenDuplicatesByAddressSystem_nullExcludedStatuses_treatedAsNoExclusions() {
+        Lead existing = TestDataFactory.createLead(false);
+        existing.Property_Address__c = DUP_ADDRESS;
+        existing.Status = 'New';
+        existing.LeadSource = 'Web';
+        insertWithDupBypass(new List<Lead>{ existing });
+
+        Test.startTest();
+        List<Lead> result = new LeadSelector.GuestReads().selectOpenDuplicatesByAddressSystem(DUP_ADDRESS, null);
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'Null excludedStatuses is treated as no exclusions (no NPE), so the open lead matches');
+    }
+
+    @isTest
+    static void selectOpenDuplicatesByAddressSystem_blankAddress_returnsEmpty() {
+        Test.startTest();
+        List<Lead> nullResult = new LeadSelector.GuestReads().selectOpenDuplicatesByAddressSystem(null, CLOSED_STATUSES);
+        List<Lead> blankResult = new LeadSelector.GuestReads().selectOpenDuplicatesByAddressSystem('   ', CLOSED_STATUSES);
+        Test.stopTest();
+
+        Assert.isTrue(nullResult.isEmpty(), 'Null address returns an empty list, not null');
+        Assert.isTrue(blankResult.isEmpty(), 'Blank address returns an empty list, not null');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════════════
 

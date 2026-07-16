@@ -15,10 +15,7 @@ public with sharing class OnboardingTaskRollupService {
                 Tasks_Blocked_Now__c=0, Tasks_Stalled__c=0, Tasks_Due_7d__c=0, Completion_Pct__c=0));
         }
 
-        for (Task t : [
-            SELECT Onboarding__c, Onboarding_Status__c, ActivityDate
-            FROM Task WHERE Onboarding__c IN :onboardingIds
-        ]) {
+        for (Task t : TaskSelector.selectByOnboardingIds(onboardingIds)) {
             Onboarding__c o = upd.get(t.Onboarding__c);
             String st = t.Onboarding_Status__c;
             o.Tasks_Total__c += 1;

@@ -105,12 +105,9 @@ public without sharing class BrokerPortalController {
     private static Id brokerQueueId() {
         if (!queueResolved) {
             queueResolved = true;
-            List<Group> qs = [
-                SELECT Id FROM Group
-                WHERE Type = 'Queue' AND DeveloperName = :QUEUE_DEV_NAME
-                LIMIT 1
-            ];
-            cachedQueueId = qs.isEmpty() ? null : qs[0].Id;
+            // SOQL relocated to QueueGroupSelector (P4 §2 layering).
+            Group queue = QueueGroupSelector.selectQueueByDeveloperName(QUEUE_DEV_NAME);
+            cachedQueueId = (queue == null) ? null : queue.Id;
         }
         return cachedQueueId;
     }
@@ -126,13 +123,11 @@ public without sharing class BrokerPortalController {
      */
     private static String brokerPriorityFor(String email) {
         if (String.isNotBlank(email)) {
-            List<Contact> brokers = [
-                SELECT Broker_Priority__c FROM Contact
-                WHERE Email = :email.trim() AND Is_Broker__c = true
-                LIMIT 1
-            ];
-            if (!brokers.isEmpty() && String.isNotBlank(brokers[0].Broker_Priority__c)) {
-                return brokers[0].Broker_Priority__c;
+            // SOQL relocated to ContactSelector's without-sharing GuestReads inner
+            // class (P4 §2 layering; preserves the original all-records guest read).
+            Contact broker = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem(email);
+            if (broker != null && String.isNotBlank(broker.Broker_Priority__c)) {
+                return broker.Broker_Priority__c;
             }
         }
         return 'Standard';
@@ -184,12 +179,11 @@ public without sharing class BrokerPortalController {
         if (String.isBlank(address)) {
             return false;
         }
-        List<Lead> existing = [
-            SELECT Id FROM Lead
-            WHERE Property_Address__c = :address.trim()
-              AND Status NOT IN :CLOSED_STATUSES
-            LIMIT 1
-        ];
-        return !existing.isEmpty();
+        // SOQL relocated to LeadSelector's without-sharing GuestReads inner class
+        // (P4 §2 layering; preserves the original all-records dedup). selectByIdsSystem
+        // cannot express this address+status search — see LeadSelector's ADDED-METHOD note.
+        return !new LeadSelector.GuestReads()
+            .selectOpenDuplicatesByAddressSystem(address, CLOSED_STATUSES)
+            .isEmpty();
     }
 }

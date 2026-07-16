@@ -27,11 +27,7 @@ public with sharing class TaskRollupService {
         // sees fan-out tasks — not ad-hoc Activities. Computed counts: closed, past-due-open, and
         // open anti-fraud wire-verification tasks (those drive the dashboard's Wire Sentinel).
         Date today = Date.today();
-        for (Task t : [
-            SELECT Transaction_Deal__c, IsClosed, ActivityDate, Subject, Verbal_Verification_Completed__c
-            FROM Task
-            WHERE Transaction_Deal__c IN :txnIds
-        ]) {
+        for (Task t : TaskSelector.selectByTransactionDealIds(txnIds)) {
             Id d = t.Transaction_Deal__c;
             if (t.IsClosed) {
                 complete.put(d, complete.get(d) + 1);

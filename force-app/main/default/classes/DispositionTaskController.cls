@@ -24,10 +24,7 @@ public with sharing class DispositionTaskController {
     @AuraEnabled
     public static List<ClosingTask> getClosingTasks(Id dispositionId) {
         Set<String> existing = new Set<String>();
-        for (Task t : [
-            SELECT Subject FROM Task
-            WHERE WhatId = :dispositionId AND Subject IN :SUBJECTS
-        ]) {
+        for (Task t : TaskSelector.selectByWhatIdAndSubjects(dispositionId, SUBJECTS)) {
             existing.add(t.Subject);
         }
 
@@ -46,11 +43,11 @@ public with sharing class DispositionTaskController {
             insert toCreate;
         }
 
+        // Re-read (incl. any just-inserted) with the guarded field set
+        // (Id, Subject, IsClosed, LastModifiedDate) the completedDate guard below
+        // depends on. SOQL lives in TaskSelector; the IsClosed ? : guard stays here.
         Map<String, Task> bySubject = new Map<String, Task>();
-        for (Task t : [
-            SELECT Id, Subject, IsClosed, LastModifiedDate FROM Task
-            WHERE WhatId = :dispositionId AND Subject IN :SUBJECTS
-        ]) {
+        for (Task t : TaskSelector.selectByWhatIdAndSubjects(dispositionId, SUBJECTS)) {
             bySubject.put(t.Subject, t);
         }
 
