@@ -13,17 +13,8 @@ public with sharing class WireController {
 
     @AuraEnabled(cacheable=true)
     public static WireRow getWire(Id dispositionId) {
-        List<Wire__c> wires = [
-            SELECT Id, Verbal_Verification_Completed__c, Verifier_Name__c,
-                   Verifier_Phone__c, Verified_DateTime__c, Wire_Instructions_Source__c,
-                   Confirmed_Wire_Amount__c
-            FROM Wire__c
-            WHERE Disposition__c = :dispositionId
-            ORDER BY CreatedDate DESC, Id DESC
-            LIMIT 1
-        ];
-        if (wires.isEmpty()) return null;
-        Wire__c w = wires[0];
+        Wire__c w = WireSelector.selectMostRecentByDispositionId(dispositionId);
+        if (w == null) return null;
         WireRow r = new WireRow();
         r.id = w.Id;
         r.verbalVerificationCompleted = w.Verbal_Verification_Completed__c;
@@ -50,7 +41,7 @@ public with sharing class WireController {
             String wireSource, Decimal confirmedAmount) {
         Wire__c w;
         if (wireId != null) {
-            w = [SELECT Id, Verified_DateTime__c FROM Wire__c WHERE Id = :wireId LIMIT 1];
+            w = WireSelector.selectRequiredById((Id) wireId);
         } else {
             w = new Wire__c(Disposition__c = dispositionId);
         }
