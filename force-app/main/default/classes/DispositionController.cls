@@ -12,14 +12,9 @@ public with sharing class DispositionController {
 
     @AuraEnabled(cacheable=false)
     public static String findOrCreate(Id assetId) {
-        List<Disposition__c> existing = [
-            SELECT Id FROM Disposition__c
-            WHERE Property_Asset__c = :assetId
-            ORDER BY CreatedDate DESC
-            LIMIT 1
-        ];
-        if (!existing.isEmpty()) {
-            return existing[0].Id;
+        Disposition__c existing = DispositionSelector.selectMostRecentByPropertyAssetId(assetId);
+        if (existing != null) {
+            return existing.Id;
         }
         Disposition__c d = new Disposition__c(Property_Asset__c = assetId);
         insert d;
@@ -28,14 +23,7 @@ public with sharing class DispositionController {
 
     @AuraEnabled(cacheable=true)
     public static DispositionRow getClosingSummary(Id dispositionId) {
-        Disposition__c d = [
-            SELECT Id, Property_Asset__r.Name, Disposition_Stage__c,
-                   PSA_Executed__c, Title_Company__c, Closing_Statement_Uploaded__c,
-                   (SELECT Id FROM Wires__r LIMIT 1)
-            FROM Disposition__c
-            WHERE Id = :dispositionId
-            LIMIT 1
-        ];
+        Disposition__c d = DispositionSelector.selectClosingSummaryById(dispositionId);
         DispositionRow row = new DispositionRow();
         row.id = d.Id;
         row.assetName = d.Property_Asset__r != null ? d.Property_Asset__r.Name : '';

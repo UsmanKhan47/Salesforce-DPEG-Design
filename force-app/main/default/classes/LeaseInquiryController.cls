@@ -3,6 +3,10 @@
  * append-only Lease_Activity__c log (newest first) and appends a new entry. Saving
  * an update sets the parent's Ball in Court and can advance the Stage to the next
  * step; the Stage Start Date reset is handled by the before-save Stage Timer flow.
+ *
+ * All SOQL is delegated to selectors per ARCHITECTURE.md §2 (P4 cleanup wave F1):
+ * Lease_Inquiry__c -> LeaseInquirySelector, Lease_Activity__c -> LeaseActivitySelector,
+ * Lease__c -> LeaseSelector. This controller holds no inline SOQL. DML stays here.
  */
 public with sharing class LeaseInquiryController {
 
@@ -35,23 +39,14 @@ public with sharing class LeaseInquiryController {
         if (inquiryId == null) {
             return v;
         }
-        Lease_Inquiry__c inq = [
-            SELECT Id, Stage__c, Status__c, Ball_In_Court__c
-            FROM Lease_Inquiry__c
-            WHERE Id = :inquiryId
-        ];
+        Lease_Inquiry__c inq = LeaseInquirySelector.selectRequiredById(inquiryId);
         v.stage = inq.Stage__c;
         v.ballInCourt = inq.Ball_In_Court__c;
         v.closed = inq.Status__c == 'Closed Won' || inq.Status__c == 'Closed Lost';
         Integer idx = STAGES.indexOf(inq.Stage__c);
         v.canAdvance = !v.closed && idx >= 0 && idx < STAGES.size() - 1;
         v.nextStage = v.canAdvance ? STAGES[idx + 1] : null;
-        for (Lease_Activity__c a : [
-            SELECT Id, Details__c, Ball_In_Court__c, Entry_DateTime__c, Logged_By__r.Name
-            FROM Lease_Activity__c
-            WHERE Lease_Inquiry__c = :inquiryId
-            ORDER BY Entry_DateTime__c DESC NULLS LAST, Name DESC
-        ]) {
+        for (Lease_Activity__c a : LeaseActivitySelector.selectByInquiryId(inquiryId)) {
             Entry e = new Entry();
             e.id = a.Id;
             e.details = a.Details__c;
@@ -71,11 +66,7 @@ public with sharing class LeaseInquiryController {
         if (String.isBlank(details)) {
             throw new AuraHandledException('Enter what changed before saving.');
         }
-        Lease_Inquiry__c inq = [
-            SELECT Id, Stage__c, Status__c
-            FROM Lease_Inquiry__c
-            WHERE Id = :inquiryId
-        ];
+        Lease_Inquiry__c inq = LeaseInquirySelector.selectStageStatusById(inquiryId);
         Boolean closed = inq.Status__c == 'Closed Won' || inq.Status__c == 'Closed Lost';
 
         // Entry_DateTime__c is the ARCHITECTURE.md §1 rule-9 stamp for this log entry.
@@ -121,9 +112,7 @@ public with sharing class LeaseInquiryController {
         HomeKpis k = new HomeKpis();
         Date today = Date.today();
         Date yearStart = Date.newInstance(today.year(), 1, 1);
-        for (Lease_Inquiry__c q : [
-            SELECT Status__c, Ball_In_Court__c, Stage_Start_Date__c, Signed_Date__c FROM Lease_Inquiry__c
-        ]) {
+        for (Lease_Inquiry__c q : LeaseInquirySelector.selectForKpis()) {
             Boolean closed = q.Status__c == 'Closed Won' || q.Status__c == 'Closed Lost';
             // Signed Leases (YTD): Closed Won with a Signed Date in the current calendar year.
             if (q.Status__c == 'Closed Won' && q.Signed_Date__c != null && q.Signed_Date__c >= yearStart) k.signed++;
@@ -167,12 +156,7 @@ public with sharing class LeaseInquiryController {
     @AuraEnabled(cacheable=true)
     public static List<InquiryRow> getRecentInquiries() {
         List<InquiryRow> rows = new List<InquiryRow>();
-        for (Lease_Inquiry__c q : [
-            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c, CreatedDate
-            FROM Lease_Inquiry__c
-            ORDER BY LastModifiedDate DESC
-            LIMIT 6
-        ]) {
+        for (Lease_Inquiry__c q : LeaseInquirySelector.selectRecent()) {
             rows.add(toRow(q));
         }
         return rows;
@@ -191,9 +175,7 @@ public with sharing class LeaseInquiryController {
         }
         // Mirror Portfolio Status: only inquiries from the last 5 years.
         Datetime fiveYearsAgo = Datetime.now().addYears(-5);
-        for (Lease_Inquiry__c q : [
-            SELECT Stage__c FROM Lease_Inquiry__c WHERE Status__c = 'Active' AND CreatedDate >= :fiveYearsAgo
-        ]) {
+        for (Lease_Inquiry__c q : LeaseInquirySelector.selectActiveStagesCreatedSince(fiveYearsAgo)) {
             if (byStage.containsKey(q.Stage__c)) {
                 byStage.put(q.Stage__c, byStage.get(q.Stage__c) + 1);
             }
@@ -214,12 +196,7 @@ public with sharing class LeaseInquiryController {
     public static List<InquiryRow> getAttention() {
         List<InquiryRow> rows = new List<InquiryRow>();
         Date today = Date.today();
-        for (Lease_Inquiry__c q : [
-            SELECT Id, Tenant_Name__c, Property_Name__c, Broker_Name__c, Stage__c, Ball_In_Court__c, Status__c, Stage_Start_Date__c, CreatedDate
-            FROM Lease_Inquiry__c
-            WHERE Status__c = 'Active'
-            ORDER BY Stage_Start_Date__c ASC NULLS LAST
-        ]) {
+        for (Lease_Inquiry__c q : LeaseInquirySelector.selectActive()) {
             Integer d = q.Stage_Start_Date__c != null ? q.Stage_Start_Date__c.daysBetween(today) : 0;
             if (q.Ball_In_Court__c == 'Landlord' || d > 7) {
                 rows.add(toRow(q));
@@ -256,17 +233,10 @@ public with sharing class LeaseInquiryController {
         if (inquiryId == null) {
             return s;
         }
-        List<Lease__c> leases = [
-            SELECT Id, Name, Stage__c, Legal_Owner__r.Name, Target_Execution_Date__c, Executed_Date__c
-            FROM Lease__c
-            WHERE Lease_Inquiry__c = :inquiryId
-            ORDER BY CreatedDate DESC
-            LIMIT 1
-        ];
-        if (leases.isEmpty()) {
+        Lease__c l = LeaseSelector.selectMostRecentByInquiryId(inquiryId);
+        if (l == null) {
             return s;
         }
-        Lease__c l = leases[0];
         s.exists = true;
         s.leaseId = l.Id;
         s.leaseName = l.Name;

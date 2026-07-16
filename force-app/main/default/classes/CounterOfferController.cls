@@ -12,14 +12,7 @@ public with sharing class CounterOfferController {
         if (loiId == null) {
             return new List<Counter_Offer__c>();
         }
-        return [
-            SELECT Id, Name, Direction__c, Counter_Price__c, Counter_Cap_Rate__c,
-                   Counter_Date__c, Counter_Response__c, Revision_Number__c,
-                   Subsequent_Version__c, CreatedDate
-            FROM Counter_Offer__c
-            WHERE LOI__c = :loiId
-            ORDER BY CreatedDate DESC, Name DESC
-        ];
+        return CounterOfferSelector.selectByLoiId(loiId);
     }
 
     @AuraEnabled

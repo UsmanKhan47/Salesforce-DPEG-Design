@@ -31,10 +31,7 @@ public with sharing class SellMeterController {
     @AuraEnabled(cacheable=true)
     public static MeterSummary getMeterSummary() {
         MeterSummary s = new MeterSummary();
-        for (Property_Asset__c a : [
-            SELECT NOI__c, Market_Cap_Rate__c, Target_Sale_Price__c, Peak_Sell_Date__c
-            FROM Property_Asset__c
-        ]) {
+        for (Property_Asset__c a : PropertyAssetSelector.selectAllForMeterSummary()) {
             String band = bandForPeak(a.Peak_Sell_Date__c);
             if (band == 'GREEN') {
                 s.green++;
@@ -75,13 +72,7 @@ public with sharing class SellMeterController {
 
     @AuraEnabled(cacheable=true)
     public static List<PropertyRow> getPortfolio() {
-        List<Property_Asset__c> assets = [
-            SELECT Id, Name, Property__r.Asset_Type__c,
-                   NOI__c, Market_Cap_Rate__c, Target_Sale_Price__c, Argus_Signal__c,
-                   Peak_Sell_Date__c, Projected_Value_at_Peak__c
-            FROM Property_Asset__c
-            ORDER BY Name
-        ];
+        List<Property_Asset__c> assets = PropertyAssetSelector.selectAllForPortfolio();
         List<PropertyRow> rows = new List<PropertyRow>();
         for (Property_Asset__c a : assets) {
             PropertyRow r = new PropertyRow();

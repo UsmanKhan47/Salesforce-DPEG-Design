@@ -16,18 +16,8 @@ public with sharing class BrokerListingController {
 
     @AuraEnabled(cacheable=true)
     public static ListingRow getListing(Id dispositionId) {
-        List<Broker_Listing__c> listings = [
-            SELECT Id, Disposition__r.Property_Asset__r.Name,
-                   Broker_Firm__c, Contact_Name__c, List_Date__c,
-                   Call_For_Offers_Date__c, Days_On_Market__c, Listing_Status__c,
-                   Offers_Received__c
-            FROM Broker_Listing__c
-            WHERE Disposition__c = :dispositionId
-            ORDER BY CreatedDate DESC
-            LIMIT 1
-        ];
-        if (listings.isEmpty()) return null;
-        Broker_Listing__c bl = listings[0];
+        Broker_Listing__c bl = BrokerListingSelector.selectMostRecentByDispositionId(dispositionId);
+        if (bl == null) return null;
         ListingRow r = new ListingRow();
         r.id = bl.Id;
         r.assetName = bl.Disposition__r != null && bl.Disposition__r.Property_Asset__r != null
