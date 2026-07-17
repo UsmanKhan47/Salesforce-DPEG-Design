@@ -1,0 +1,114 @@
+/**
+ * c-total-opportunities — @wire-to-Apex suite.
+ * Pattern: brokerFirmCard template (WIRE-MOCK TEMPLATE 1) + statCard child assertions.
+ *
+ * Data source: @wire(getStageCounts) from
+ * OpportunityFunnelController.getStageCounts -> a LIST of { label, count } rows.
+ * The JS ALWAYS renders one c-stat-card per fixed STAGE_META entry (9 cards),
+ * defaulting each to '0' — so the card renders before the wire emits.
+ */
+import { createElement } from 'lwc';
+import TotalOpportunities from 'c/totalOpportunities';
+import getStageCounts from '@salesforce/apex/OpportunityFunnelController.getStageCounts';
+
+jest.mock(
+    '@salesforce/apex/OpportunityFunnelController.getStageCounts',
+    () => {
+        const {
+            createApexTestWireAdapter
+        } = require('@salesforce/sfdx-lwc-jest');
+        return { default: createApexTestWireAdapter(jest.fn()) };
+    },
+    { virtual: true }
+);
+
+const STAGE_COUNTS = [
+    { label: 'New', count: 8 },
+    { label: 'Under Review', count: 6 },
+    { label: 'Development Review', count: 3 },
+    { label: 'Construction Review', count: 2 },
+    { label: 'Underwriting', count: 5 },
+    { label: 'LOI', count: 4 },
+    { label: 'PSA', count: 7 },
+    { label: 'Closed Won', count: 9 },
+    { label: 'Dead/Pass', count: 1 }
+];
+
+describe('c-total-opportunities', () => {
+    afterEach(() => {
+        while (document.body.firstChild) {
+            document.body.removeChild(document.body.firstChild);
+        }
+        jest.clearAllMocks();
+    });
+
+    function createComponent() {
+        const element = createElement('c-total-opportunities', {
+            is: TotalOpportunities
+        });
+        document.body.appendChild(element);
+        return element;
+    }
+
+    function cards(element) {
+        return element.shadowRoot.querySelectorAll('c-stat-card');
+    }
+
+    it('EMPTY: renders all nine stage cards at 0 before the wire emits', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        const stageCards = cards(element);
+        expect(stageCards.length).toBe(9);
+        expect([...stageCards].every((c) => c.value === '0')).toBe(true);
+    });
+
+    it('DATA BRANCH: maps each stage count onto its stat card', async () => {
+        const element = createComponent();
+
+        getStageCounts.emit(STAGE_COUNTS);
+        await Promise.resolve();
+
+        const values = [...cards(element)].map((c) => c.value);
+        expect(values).toEqual(['8', '6', '3', '2', '5', '4', '7', '9', '1']);
+
+        // Fixed labels from STAGE_META (with the "Last 90 Days" suffixes).
+        const labels = [...cards(element)].map((c) => c.label);
+        expect(labels[6]).toBe('PSA (Last 90 Days)');
+        expect(labels[8]).toBe('Dead (Last 90 Days)');
+    });
+
+    it('DATA BRANCH: ignores unknown labels and defaults unreported stages to 0', async () => {
+        const element = createComponent();
+
+        getStageCounts.emit([
+            { label: 'LOI', count: 12 },
+            { label: 'Portfolio Deal', count: 99 } // not in STAGE_META -> ignored
+        ]);
+        await Promise.resolve();
+
+        const values = [...cards(element)].map((c) => c.value);
+        // LOI is index 5; everything else stays '0'; 99 never appears.
+        expect(values).toEqual(['0', '0', '0', '0', '0', '12', '0', '0', '0']);
+        expect(values).not.toContain('99');
+    });
+
+    it('ERROR BRANCH: keeps the nine 0 cards when the wire errors', async () => {
+        const element = createComponent();
+
+        getStageCounts.error();
+        await Promise.resolve();
+
+        expect([...cards(element)].every((c) => c.value === '0')).toBe(true);
+    });
+
+    it('is accessible', async () => {
+        const element = createComponent();
+
+        getStageCounts.emit(STAGE_COUNTS);
+        await Promise.resolve();
+
+        await expect(element).toBeAccessible();
+    });
+});
