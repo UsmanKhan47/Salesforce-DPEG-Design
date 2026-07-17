@@ -20,7 +20,7 @@
     </columns>
     <filter>
         <criteriaItems>
-            <column>Lease_Renewal__c.Non_Responsive__c</column>
+            <column>Lease_Renewal__c.Is_Non_Responsive__c</column>
             <columnToColumn>false</columnToColumn>
             <isUnlocked>false</isUnlocked>
             <operator>equals</operator>

@@ -104,14 +104,14 @@ private class WorkOrderControllerTest {
         w.Subject__c = 'Flow stamp'; w.Priority__c = 'Low'; w.Status__c = 'New';
         w.Reported_DateTime__c = Datetime.now().addHours(-2);
         insert w;
-        w = [SELECT First_Touched_DateTime__c, Untouched__c FROM Work_Order__c WHERE Id = :w.Id];
+        w = [SELECT First_Touched_DateTime__c, Is_Untouched__c FROM Work_Order__c WHERE Id = :w.Id];
         System.assertEquals(null, w.First_Touched_DateTime__c, 'a New work order has not been touched');
-        System.assertEquals(true, w.Untouched__c);
+        System.assertEquals(true, w.Is_Untouched__c);
         Test.startTest();
         update new Work_Order__c(Id=w.Id, Status__c='In Progress');
-        Work_Order__c touched = [SELECT First_Touched_DateTime__c, Untouched__c FROM Work_Order__c WHERE Id = :w.Id];
+        Work_Order__c touched = [SELECT First_Touched_DateTime__c, Is_Untouched__c FROM Work_Order__c WHERE Id = :w.Id];
         System.assertNotEquals(null, touched.First_Touched_DateTime__c, 'leaving New stamps First_Touched_DateTime');
-        System.assertEquals(false, touched.Untouched__c);
+        System.assertEquals(false, touched.Is_Untouched__c);
         update new Work_Order__c(Id=w.Id, Status__c='Completed');
         Work_Order__c done = [SELECT Completed_DateTime__c, First_Touched_DateTime__c, Is_Open__c FROM Work_Order__c WHERE Id = :w.Id];
         System.assertNotEquals(null, done.Completed_DateTime__c, 'Completed stamps Completed_DateTime');

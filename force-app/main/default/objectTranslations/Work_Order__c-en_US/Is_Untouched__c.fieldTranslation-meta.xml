@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
-    <label><!-- Non-Responsive --></label>
-    <name>Non_Responsive__c</name>
+    <label><!-- Untouched --></label>
+    <name>Is_Untouched__c</name>
 </CustomFieldTranslation>

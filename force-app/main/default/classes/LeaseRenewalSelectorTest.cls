@@ -88,7 +88,7 @@ private class LeaseRenewalSelectorTest {
         Assert.areEqual('ATT', result[0].Tenant_Name__c, 'The attention row should be the Active soon-expiring one');
         for (Lease_Renewal__c r : result) {
             Assert.areEqual('Active', r.Status__c, 'selectAttention must return only Active renewals');
-            Assert.isTrue(r.Non_Responsive__c == true || r.Days_To_Expiry__c <= 30,
+            Assert.isTrue(r.Is_Non_Responsive__c == true || r.Days_To_Expiry__c <= 30,
                 'Every attention row must be non-responsive or expiring within 30 days');
         }
     }

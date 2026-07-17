@@ -27,7 +27,7 @@ public with sharing class LeaseRenewalSelector {
     private static final String ROW_FIELDS = String.join(new List<String>{
         'Id', 'Tenant_Name__c', 'Property_Display_Name__c', 'Unit_Label__c', 'Lease_End__c',
         'Days_To_Expiry__c', 'Stage__c', 'Status__c', 'Last_Contact_Date__c',
-        'Days_Since_Contact__c', 'Non_Responsive__c'
+        'Days_Since_Contact__c', 'Is_Non_Responsive__c'
     }, ', ');
 
     /**
@@ -35,11 +35,11 @@ public with sharing class LeaseRenewalSelector {
      * LeaseRenewalController.getHomeKpis.
      *
      * @return Every Lease_Renewal__c with Status__c, Days_To_Expiry__c,
-     *         Non_Responsive__c and Renewed_Date__c populated; empty list when none.
+     *         Is_Non_Responsive__c and Renewed_Date__c populated; empty list when none.
      */
     public static List<Lease_Renewal__c> selectForKpis() {
         return [
-            SELECT Status__c, Days_To_Expiry__c, Non_Responsive__c, Renewed_Date__c
+            SELECT Status__c, Days_To_Expiry__c, Is_Non_Responsive__c, Renewed_Date__c
             FROM Lease_Renewal__c
             WITH USER_MODE
         ];
@@ -69,7 +69,7 @@ public with sharing class LeaseRenewalSelector {
     public static List<Lease_Renewal__c> selectAttention() {
         return Database.query(
             'SELECT ' + ROW_FIELDS + ' FROM Lease_Renewal__c ' +
-            'WHERE Status__c = \'Active\' AND (Non_Responsive__c = true OR Days_To_Expiry__c <= 30) ' +
+            'WHERE Status__c = \'Active\' AND (Is_Non_Responsive__c = true OR Days_To_Expiry__c <= 30) ' +
             'ORDER BY Lease_End__c ASC NULLS LAST',
             AccessLevel.USER_MODE
         );
@@ -80,13 +80,13 @@ public with sharing class LeaseRenewalSelector {
      * Single-row assignment: a missing Id throws System.QueryException.
      *
      * @param renewalId Lease_Renewal__c Id (record-page context).
-     * @return The Lease_Renewal__c with Id, Stage__c, Status__c, Non_Responsive__c
+     * @return The Lease_Renewal__c with Id, Stage__c, Status__c, Is_Non_Responsive__c
      *         and Days_Since_Contact__c populated.
      * @throws System.QueryException when no Lease_Renewal__c matches the Id.
      */
     public static Lease_Renewal__c selectRequiredById(Id renewalId) {
         return [
-            SELECT Id, Stage__c, Status__c, Non_Responsive__c, Days_Since_Contact__c
+            SELECT Id, Stage__c, Status__c, Is_Non_Responsive__c, Days_Since_Contact__c
             FROM Lease_Renewal__c
             WHERE Id = :renewalId
             WITH USER_MODE

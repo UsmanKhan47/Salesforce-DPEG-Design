@@ -40,7 +40,7 @@ public with sharing class WorkOrderSelector {
      */
     private static final String ROW_FIELDS = String.join(new List<String>{
         'Id', 'Subject__c', 'Property_Display_Name__c', 'Unit_Label__c', 'Priority__c',
-        'Status__c', 'SLA_Health__c', 'Hours_Open__c', 'SLA_Breached__c', 'Untouched__c', 'Is_Open__c'
+        'Status__c', 'SLA_Health__c', 'Hours_Open__c', 'SLA_Breached__c', 'Is_Untouched__c', 'Is_Open__c'
     }, ', ');
 
     /**
@@ -48,11 +48,11 @@ public with sharing class WorkOrderSelector {
      * Apex. Backs WorkOrderController.getHomeKpis.
      *
      * @return Every Work_Order__c with Is_Open__c, SLA_Breached__c, SLA_Health__c
-     *         and Untouched__c populated; empty list when none exist.
+     *         and Is_Untouched__c populated; empty list when none exist.
      */
     public static List<Work_Order__c> selectForKpis() {
         return [
-            SELECT Is_Open__c, SLA_Breached__c, SLA_Health__c, Untouched__c
+            SELECT Is_Open__c, SLA_Breached__c, SLA_Health__c, Is_Untouched__c
             FROM Work_Order__c
             WITH USER_MODE
         ];
@@ -96,7 +96,7 @@ public with sharing class WorkOrderSelector {
     public static List<Work_Order__c> selectUntouched() {
         return Database.query(
             'SELECT ' + ROW_FIELDS + ' FROM Work_Order__c ' +
-            'WHERE Untouched__c = true ORDER BY Reported_DateTime__c ASC NULLS LAST',
+            'WHERE Is_Untouched__c = true ORDER BY Reported_DateTime__c ASC NULLS LAST',
             AccessLevel.USER_MODE
         );
     }
@@ -107,12 +107,12 @@ public with sharing class WorkOrderSelector {
      * record-page contract that the Id always resolves to a live row.
      *
      * @param workOrderId Work_Order__c Id (record-page context).
-     * @return The Work_Order__c with Id and Untouched__c populated.
+     * @return The Work_Order__c with Id and Is_Untouched__c populated.
      * @throws System.QueryException when no Work_Order__c matches the Id.
      */
     public static Work_Order__c selectRequiredById(Id workOrderId) {
         return [
-            SELECT Id, Untouched__c
+            SELECT Id, Is_Untouched__c
             FROM Work_Order__c
             WHERE Id = :workOrderId
             WITH USER_MODE

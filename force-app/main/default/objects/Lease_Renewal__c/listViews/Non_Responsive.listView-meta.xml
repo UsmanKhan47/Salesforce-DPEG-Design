@@ -10,7 +10,7 @@
     <columns>Lease_End__c</columns>
     <filterScope>Everything</filterScope>
     <filters>
-        <field>Non_Responsive__c</field>
+        <field>Is_Non_Responsive__c</field>
         <operation>equals</operation>
         <value>1</value>
     </filters>

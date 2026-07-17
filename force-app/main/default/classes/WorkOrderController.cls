@@ -19,7 +19,7 @@ public with sharing class WorkOrderController {
                 k.open++;
                 if (w.SLA_Breached__c) k.breached++;
                 if (w.SLA_Health__c != null && w.SLA_Health__c.contains('Due Soon')) k.dueSoon++;
-                if (w.Untouched__c) k.untouched++;
+                if (w.Is_Untouched__c) k.untouched++;
             }
         }
         return k;
@@ -45,7 +45,7 @@ public with sharing class WorkOrderController {
             r.id = w.Id; r.subject = w.Subject__c; r.property = w.Property_Display_Name__c; r.unit = w.Unit_Label__c;
             r.priority = w.Priority__c; r.status = w.Status__c; r.slaHealth = w.SLA_Health__c;
             r.hoursOpen = w.Hours_Open__c == null ? null : (Integer) w.Hours_Open__c;
-            r.breached = w.SLA_Breached__c == true; r.untouched = w.Untouched__c == true; r.isOpen = w.Is_Open__c == true;
+            r.breached = w.SLA_Breached__c == true; r.untouched = w.Is_Untouched__c == true; r.isOpen = w.Is_Open__c == true;
             out.add(r);
         }
         return out;
@@ -79,7 +79,7 @@ public with sharing class WorkOrderController {
     public static ActivityView getActivity(Id workOrderId) {
         Work_Order__c w = WorkOrderSelector.selectRequiredById(workOrderId);
         ActivityView v = new ActivityView();
-        v.untouched = w.Untouched__c == true;
+        v.untouched = w.Is_Untouched__c == true;
         v.entries = new List<Entry>();
         // Frozen-clock gotcha: same-transaction rows share timestamps, so the
         // selector tie-breaks on Name DESC (see WorkOrderActivitySelector).

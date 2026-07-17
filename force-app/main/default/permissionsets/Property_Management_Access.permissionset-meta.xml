@@ -419,7 +419,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Lease_Renewal__c.Non_Responsive__c</field>
+        <field>Lease_Renewal__c.Is_Non_Responsive__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -964,7 +964,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Work_Order__c.Untouched__c</field>
+        <field>Work_Order__c.Is_Untouched__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

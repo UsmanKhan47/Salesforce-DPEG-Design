@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>First_Touched_DateTime__c</fullName>
-    <description>When someone first acted on this work order. Blank means Untouched. Stamped automatically by the Work Order Touch Sync before-save flow the first time Status leaves New; drives Untouched__c and the Untouched KPI. Replaces First_Touched_Date__c, whose _Date suffix asserted a date-only type it never had - this field stores date AND time, per ARCHITECTURE.md §1 rule 9.</description>
+    <description>When someone first acted on this work order. Blank means Untouched. Stamped automatically by the Work Order Touch Sync before-save flow the first time Status leaves New; drives Is_Untouched__c and the Untouched KPI. Replaces First_Touched_Date__c, whose _Date suffix asserted a date-only type it never had - this field stores date AND time, per ARCHITECTURE.md §1 rule 9.</description>
     <inlineHelpText>Date AND time of the first action on this work order. Stamped automatically when Status first leaves New - leave it blank; a blank value is what marks the work order Untouched.</inlineHelpText>
     <label>First Touched DateTime</label>
     <required>false</required>

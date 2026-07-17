@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave B — APEX subset, DEPLOY 2 of 2 (RETIRE).
+
+  Destructively deletes the 2 old-named checkbox-formula fields now that
+  their replacements (Is_Untouched__c, Is_Non_Responsive__c) have been
+  created, FLS-granted, and every live reader repointed by deploy 1
+  (package-add-repoint-bapex.xml). Both fields carry zero stored data
+  (formula fields) so there is nothing to backfill; deleting the FLS from
+  the ~42 profile stubs is handled automatically by the field deletion.
+
+  Run ONLY after deploy 1 has committed and verified (describe shows both
+  new fields present, 0 test failures).
+
+  Deploy (reuses the empty package.xml in this dir as the constructive wrapper):
+    sf project deploy start \
+      --manifest manifest/wave-b-formula/package.xml \
+      --post-destructive-changes manifest/wave-b-formula/destructiveChangesPost-bapex.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level RunLocalTests --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Work_Order__c.Untouched__c</members>
+        <members>Lease_Renewal__c.Non_Responsive__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

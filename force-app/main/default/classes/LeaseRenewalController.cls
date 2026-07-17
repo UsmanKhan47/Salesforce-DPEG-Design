@@ -21,7 +21,7 @@ public with sharing class LeaseRenewalController {
             if (r.Status__c == 'Active') {
                 k.active++;
                 if (r.Days_To_Expiry__c != null && r.Days_To_Expiry__c <= 90) k.expiring90++;
-                if (r.Non_Responsive__c) k.nonResponsive++;
+                if (r.Is_Non_Responsive__c) k.nonResponsive++;
             }
             if (r.Status__c == 'Closed Won' && r.Renewed_Date__c != null && r.Renewed_Date__c >= yearStart) k.renewedYtd++;
         }
@@ -50,7 +50,7 @@ public with sharing class LeaseRenewalController {
         w.stage = r.Stage__c; w.status = r.Status__c; w.closed = r.Status__c != 'Active';
         w.lastContact = r.Last_Contact_Date__c;
         w.daysSinceContact = r.Days_Since_Contact__c == null ? null : (Integer) r.Days_Since_Contact__c;
-        w.nonResponsive = r.Non_Responsive__c == true;
+        w.nonResponsive = r.Is_Non_Responsive__c == true;
         return w;
     }
     private static List<Row> toRows(List<Lease_Renewal__c> recs) {
@@ -89,7 +89,7 @@ public with sharing class LeaseRenewalController {
         Lease_Renewal__c r = LeaseRenewalSelector.selectRequiredById(renewalId);
         TimelineView v = new TimelineView();
         v.stage = r.Stage__c; v.status = r.Status__c; v.closed = r.Status__c != 'Active';
-        v.nonResponsive = r.Non_Responsive__c == true;
+        v.nonResponsive = r.Is_Non_Responsive__c == true;
         v.daysSinceContact = r.Days_Since_Contact__c == null ? null : (Integer) r.Days_Since_Contact__c;
         v.canLog = !v.closed;
         v.entries = new List<Entry>();

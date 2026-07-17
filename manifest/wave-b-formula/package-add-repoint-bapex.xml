@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave B — APEX subset, DEPLOY 1 of 2 (ADD + REPOINT).
+
+  Distinct from the earlier "b-clean" subset (Rule-9 formula pair
+  Is_Ready__c/Occupied_Flag__c, no Apex readers, already retired). This
+  subset is the 2 Rule-4 CHECKBOX-FORMULA renames that DO have Apex readers:
+    - Work_Order__c.Untouched__c        -> Is_Untouched__c
+    - Lease_Renewal__c.Non_Responsive__c -> Is_Non_Responsive__c
+
+  Both are formula fields (zero stored data -> no backfill). This deploy
+  creates the 2 new formula fields (identical formula/type), grants FLS
+  (readable-only) in Property_Management_Access, and repoints every live
+  reader: Apex (selectors/controllers/tests, incl. dynamic-SOQL string
+  literals), reports, layouts, list views (internal field only; list-view
+  API names left as-is), and field translations. No Dashboard references
+  either field (verified by repo-wide grep).
+
+  First_Touched_DateTime__c is included only for a one-word <description>
+  accuracy fix ("drives Is_Untouched__c").
+
+  Old fields stay in place here (coexistence window); deploy 2
+  (destructiveChangesPost-bapex.xml) retires them after this verifies green.
+
+  Deploy:
+    sf project deploy start \
+      --manifest manifest/wave-b-formula/package-add-repoint-bapex.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level RunLocalTests --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Work_Order__c.Is_Untouched__c</members>
+        <members>Lease_Renewal__c.Is_Non_Responsive__c</members>
+        <members>Work_Order__c.First_Touched_DateTime__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>WorkOrderSelector</members>
+        <members>WorkOrderController</members>
+        <members>WorkOrderSelectorTest</members>
+        <members>WorkOrderControllerTest</members>
+        <members>LeaseRenewalSelector</members>
+        <members>LeaseRenewalController</members>
+        <members>LeaseRenewalSelectorTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>Work_Orders/Untouched_Work_Orders</members>
+        <members>Leasing/Non_Responsive_Renewals</members>
+        <name>Report</name>
+    </types>
+    <types>
+        <members>Work_Order__c-Work Order Layout</members>
+        <members>Lease_Renewal__c-Lease Renewal Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>Work_Order__c.Untouched</members>
+        <members>Lease_Renewal__c.Non_Responsive</members>
+        <members>Lease_Renewal__c.Renewal_Pipeline</members>
+        <name>ListView</name>
+    </types>
+    <types>
+        <members>Property_Management_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>Work_Order__c-en_US</members>
+        <members>Lease_Renewal__c-en_US</members>
+        <name>CustomObjectTranslation</name>
+    </types>
+    <version>67.0</version>
+</Package>

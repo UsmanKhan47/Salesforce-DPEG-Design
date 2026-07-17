@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Non_Responsive__c</fullName>
+    <fullName>Is_Non_Responsive__c</fullName>
     <description>Tenant has gone quiet: active, in an outreach stage, and more than 14 days since last contact. The 14-day threshold is a working assumption — change it here only.</description>
     <formula>AND(ISPICKVAL(Status__c, &quot;Active&quot;), OR(ISPICKVAL(Stage__c, &quot;Notice Sent&quot;), ISPICKVAL(Stage__c, &quot;Awaiting Tenant Response&quot;), ISPICKVAL(Stage__c, &quot;Negotiating&quot;)), NOT(ISBLANK(Last_Contact_Date__c)), (TODAY() - Last_Contact_Date__c) &gt; 14)</formula>
     <label>Non-Responsive</label>

@@ -7,7 +7,7 @@
     <columns>Lease_End__c</columns>
     <columns>Days_To_Expiry__c</columns>
     <columns>Expiry_Health__c</columns>
-    <columns>Non_Responsive__c</columns>
+    <columns>Is_Non_Responsive__c</columns>
     <columns>Stage__c</columns>
     <filterScope>Everything</filterScope>
     <label>Renewal Pipeline</label>

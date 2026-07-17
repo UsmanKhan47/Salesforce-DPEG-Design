@@ -43,7 +43,7 @@ private class WorkOrderSelectorTest {
         Assert.areEqual(3, result.size(), 'selectForKpis should return every Work Order');
         for (Work_Order__c w : result) {
             Assert.areEqual(true, w.Is_Open__c, 'A New Work Order should be open');
-            Assert.areEqual(true, w.Untouched__c, 'A never-touched open Work Order should be untouched');
+            Assert.areEqual(true, w.Is_Untouched__c, 'A never-touched open Work Order should be untouched');
             Assert.areEqual(false, w.SLA_Breached__c, 'A just-reported Work Order should not be breached');
         }
     }
@@ -80,7 +80,7 @@ private class WorkOrderSelectorTest {
             untouched[i].Subject__c = 'UT-' + i;
         }
         insert untouched;
-        // A Completed Work Order is not open, so Untouched__c is false -> excluded.
+        // A Completed Work Order is not open, so Is_Untouched__c is false -> excluded.
         Work_Order__c closed = TestDataFactory.createWorkOrder(aId, false);
         closed.Status__c = 'Completed';
         closed.Subject__c = 'CLOSED';
@@ -94,7 +94,7 @@ private class WorkOrderSelectorTest {
         // Oldest reported first: UT-0 leads.
         Assert.areEqual('UT-0', result[0].Subject__c, 'selectUntouched should order oldest-reported first');
         for (Work_Order__c w : result) {
-            Assert.areEqual(true, w.Untouched__c, 'selectUntouched must return only untouched Work Orders');
+            Assert.areEqual(true, w.Is_Untouched__c, 'selectUntouched must return only untouched Work Orders');
             Assert.areNotEqual('CLOSED', w.Subject__c, 'A Completed Work Order must not appear');
         }
     }
@@ -134,7 +134,7 @@ private class WorkOrderSelectorTest {
         Test.stopTest();
 
         Assert.areEqual(wo.Id, result.Id, 'selectRequiredById should return the record for the given Id');
-        Assert.areEqual(true, result.Untouched__c, 'Untouched__c must be selected so getActivity can read it');
+        Assert.areEqual(true, result.Is_Untouched__c, 'Is_Untouched__c must be selected so getActivity can read it');
     }
 
     @isTest
