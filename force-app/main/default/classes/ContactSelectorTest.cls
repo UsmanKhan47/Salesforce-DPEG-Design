@@ -20,6 +20,8 @@
 @isTest
 private class ContactSelectorTest {
 
+    private static final Integer BULK_N = 251;
+
     // ─────────────────────────────────────────────────────────────────────────
     // selectBrokersOrderedByName
     // ─────────────────────────────────────────────────────────────────────────
@@ -89,6 +91,118 @@ private class ContactSelectorTest {
                 'Broker_Firm__c (custom, FLS-controlled) is readable under USER_MODE once DPEG_Acquisitions grants it');
         }
         Test.stopTest();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectBrokersRankedByClosedVolume  (BrokerController — Broker Hub)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectBrokersRankedByClosedVolume_ranksByVolumeThenName_excludesNonBrokers() {
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(3, null, false);
+        brokers[0].LastName = 'Zulu';  brokers[0].Closed_Volume__c = 10000000; brokers[0].Active_Listings__c = 2;
+        brokers[1].LastName = 'Bravo'; brokers[1].Closed_Volume__c = 30000000; brokers[1].Active_Listings__c = 8;
+        // Alpha ties Bravo on Closed_Volume__c so the Name ASC tiebreak decides order.
+        brokers[2].LastName = 'Alpha'; brokers[2].Closed_Volume__c = 30000000; brokers[2].Active_Listings__c = 4;
+        insert brokers;
+        // A non-broker Contact (Is_Broker__c defaults false) must be excluded.
+        TestDataFactory.createContact(null, true);
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokersRankedByClosedVolume();
+        Test.stopTest();
+
+        Assert.areEqual(3, rows.size(), 'Only Is_Broker__c = true Contacts are returned; the plain Contact is excluded');
+        Assert.areEqual('Test Alpha', rows[0].Name,
+            'Closed_Volume__c DESC then Name ASC: Alpha wins the 30M tie over Bravo on Name');
+        Assert.areEqual('Test Bravo', rows[1].Name, 'Bravo is the second of the two 30M brokers');
+        Assert.areEqual('Test Zulu', rows[2].Name, 'The 10M broker ranks last by Closed_Volume__c DESC');
+        Assert.areEqual(30000000, rows[0].Closed_Volume__c, 'Closed_Volume__c is selected for the header stats');
+        Assert.areEqual(4, rows[0].Active_Listings__c, 'Active_Listings__c is selected for the header stats');
+    }
+
+    @isTest
+    static void selectBrokersRankedByClosedVolume_noBrokers_returnsEmpty() {
+        TestDataFactory.createContacts(3, null, true);
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokersRankedByClosedVolume();
+        Test.stopTest();
+
+        Assert.areEqual(0, rows.size(), 'With no broker Contacts the selector returns an empty list, not null');
+    }
+
+    @isTest
+    static void selectBrokersRankedByClosedVolume_251Brokers_returnsAll() {
+        // A 251-record standard-object insert can trip an org duplicate rule; the
+        // factory makes Email unique, and AllowSave is set as defence-in-depth
+        // (guardrail from prior selector waves — see LeadSelectorTest).
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(BULK_N, null, false);
+        Database.DMLOptions dml = new Database.DMLOptions();
+        dml.DuplicateRuleHeader.AllowSave = true;
+        Database.insert(brokers, dml);
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokersRankedByClosedVolume();
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, rows.size(),
+            'All 251 broker Contacts are returned at data volume (bulk-safe single query)');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectTopBrokersByActiveListings  (BrokerController — Broker Hub top list)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectTopBrokersByActiveListings_filtersZeroListings_ranksByActiveListings() {
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(4, null, false);
+        brokers[0].LastName = 'Eight'; brokers[0].Active_Listings__c = 8; brokers[0].Closed_Volume__c = 24000000;
+        brokers[0].Broker_Firm__c = 'CBRE';
+        brokers[1].LastName = 'Five';  brokers[1].Active_Listings__c = 5; brokers[1].Closed_Volume__c = 18000000;
+        brokers[2].LastName = 'Two';   brokers[2].Active_Listings__c = 2; brokers[2].Closed_Volume__c = 6000000;
+        brokers[3].LastName = 'Zero';  brokers[3].Active_Listings__c = 0; brokers[3].Closed_Volume__c = 0;
+        insert brokers;
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectTopBrokersByActiveListings(6);
+        Test.stopTest();
+
+        Assert.areEqual(3, rows.size(), 'Active_Listings__c > 0 excludes the zero-listing broker');
+        Assert.areEqual(8, rows[0].Active_Listings__c, 'Highest Active_Listings__c first');
+        Assert.areEqual(2, rows[2].Active_Listings__c, 'Lowest of the three last');
+        Assert.areEqual('CBRE', rows[0].Broker_Firm__c, 'Broker_Firm__c is selected for the top-broker card');
+    }
+
+    @isTest
+    static void selectTopBrokersByActiveListings_respectsMaxRows() {
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(4, null, false);
+        brokers[0].LastName = 'Ten';  brokers[0].Active_Listings__c = 10; brokers[0].Closed_Volume__c = 40000000;
+        brokers[1].LastName = 'Nine'; brokers[1].Active_Listings__c = 9;  brokers[1].Closed_Volume__c = 30000000;
+        brokers[2].LastName = 'Six';  brokers[2].Active_Listings__c = 6;  brokers[2].Closed_Volume__c = 20000000;
+        brokers[3].LastName = 'Four'; brokers[3].Active_Listings__c = 4;  brokers[3].Closed_Volume__c = 10000000;
+        insert brokers;
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectTopBrokersByActiveListings(2);
+        Test.stopTest();
+
+        Assert.areEqual(2, rows.size(), 'LIMIT :maxRows caps the result at 2 rows');
+        Assert.areEqual(10, rows[0].Active_Listings__c, 'The top broker by Active_Listings__c is first');
+        Assert.areEqual(9, rows[1].Active_Listings__c, 'The second-highest is second; the rest are cut by the LIMIT');
+    }
+
+    @isTest
+    static void selectTopBrokersByActiveListings_nullOrNonPositiveMaxRows_returnsEmpty() {
+        TestDataFactory.createBrokerContacts(2, null, true);
+
+        Test.startTest();
+        List<Contact> nullRows = ContactSelector.selectTopBrokersByActiveListings(null);
+        List<Contact> zeroRows = ContactSelector.selectTopBrokersByActiveListings(0);
+        Test.stopTest();
+
+        Assert.areEqual(0, nullRows.size(), 'A null maxRows short-circuits to an empty list without querying');
+        Assert.areEqual(0, zeroRows.size(), 'A non-positive maxRows short-circuits to an empty list without querying');
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -61,20 +61,7 @@ public with sharing class RentRollController {
             return dto;
         }
 
-        for (Unit__c u : [
-            SELECT Id, Suite_Number__c, Tenant_Name__c, Status__c, Square_Feet__c,
-                   Lease_Start__c, Lease_End__c, Current_Monthly_Rent__c, Current_Rent_PSF__c,
-                   Asking_Rent_PSF__c, Estimated_NNN_PSF__c, NNN_Property_Tax__c,
-                   NNN_Insurance__c, NNN_CAM__c, NNN_Monthly_Total__c, NNN_PSF__c,
-                   LastModifiedDate,
-                   (SELECT Period_Start__c, Period_End__c, Period_Label__c, Monthly_Rent__c,
-                           Rent_PSF__c, Type__c, Note__c
-                    FROM Rent_Steps__r
-                    ORDER BY Sort_Order__c ASC NULLS LAST)
-            FROM Unit__c
-            WHERE Property_Asset__c = :propertyAssetId
-            ORDER BY Suite_Number__c ASC NULLS LAST
-        ]) {
+        for (Unit__c u : UnitSelector.selectByPropertyAssetId(propertyAssetId)) {
             UnitDTO ud = new UnitDTO();
             ud.unitId = u.Id;
             ud.suite = u.Suite_Number__c;

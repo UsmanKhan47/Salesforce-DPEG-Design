@@ -6,6 +6,9 @@
  * Consumers:
  *   • BrokerAssignmentController.getBrokerOptions -> selectBrokersOrderedByName
  *     (P4, Module B2 — Property Management; internal, USER_MODE).
+ *   • BrokerController.getBrokerHub -> selectBrokersRankedByClosedVolume +
+ *     selectTopBrokersByActiveListings (P4 cleanup wave F2 — the Broker Hub page;
+ *     internal, USER_MODE. Module B missed this class; see the ⚠ FLS note below).
  *   • BrokerPortalController.brokerPriorityFor -> GuestReads
  *     .selectBrokerPriorityByEmailSystem (P4 cleanup wave — guest LWR deal-intake
  *     controller; SYSTEM_MODE + without sharing, nested class below).
@@ -18,6 +21,13 @@
  *     fields granted by the DPEG_Acquisitions permission set (the only permset
  *     granting them — see the SelectorTest runAs proof). USER_MODE therefore
  *     enforces the running user's FLS on those custom fields.
+ *   • selectBrokersRankedByClosedVolume and selectTopBrokersByActiveListings use
+ *     `WITH USER_MODE`. They select Name (permissionable=false) plus SEVEN custom
+ *     Contact fields (Broker_Firm__c, Broker_Specialty__c, Broker_Status__c,
+ *     Active_Listings__c, Offers_Received__c, Closed_Volume__c, Avg_Days_On_Market__c)
+ *     and filter Is_Broker__c / Active_Listings__c. Those custom fields are covered by
+ *     the P3 blanket "custom-field FLS gap = 0" verdict (design §5) but are NOT
+ *     itemised in design §5's Contact FLS table — see the ⚠ DESIGN NOTE below.
  *   • GuestReads.selectBrokerPriorityByEmailSystem uses `WITH SYSTEM_MODE` (API 67)
  *     inside a `without sharing` inner class — the guest Broker-Portal intake path
  *     (see that class's ApexDoc).
@@ -31,11 +41,19 @@
  * selector would have silently scoped the lookup to the (minimal, unconfigured) guest
  * sharing and defaulted every broker to 'Standard' priority.
  *
- * ⚠ DESIGN NOTE (flagged to the orchestrator): design §5 characterises this query
- * as "selects Name only", but the relocated getBrokerOptions query genuinely
- * selects Broker_Firm__c (for the option label) and filters Is_Broker__c — both
- * custom, FLS-controlled fields. A running user WITHOUT a permset that grants those
- * two Contact fields will hit a USER_MODE QueryException here. See the report.
+ * ⚠ DESIGN NOTE (flagged to the orchestrator): design §5 characterises the Contact
+ * queries as "selects Name only", but two relocated queries genuinely select custom,
+ * FLS-controlled fields:
+ *   - getBrokerOptions -> selectBrokersOrderedByName selects Broker_Firm__c and
+ *     filters Is_Broker__c.
+ *   - getBrokerHub -> selectBrokersRankedByClosedVolume /
+ *     selectTopBrokersByActiveListings select SEVEN custom Broker_* fields and filter
+ *     Is_Broker__c / Active_Listings__c. RentRollController/BrokerController were never
+ *     in the design's §2 inventory (Module B built BrokerAssignment and missed them),
+ *     so those seven fields were never itemised in §5's Contact FLS table — they rely
+ *     solely on the P3 blanket "custom-field FLS gap = 0" measurement, not a per-field
+ *     check. A running user WITHOUT a permset granting those Contact fields will hit a
+ *     USER_MODE QueryException here. See the report.
  *
  * @see .claude/skills/sf-apex/references/AccountSelector.cls
  * @see force-app/main/default/classes/TaskSelector.cls (P4 standard-object template)
@@ -61,6 +79,58 @@ public with sharing class ContactSelector {
             WHERE Is_Broker__c = true
             WITH USER_MODE
             ORDER BY Name
+        ];
+    }
+
+    /**
+     * All broker Contacts (Is_Broker__c = true) ranked by Closed_Volume__c — backs
+     * BrokerController.getBrokerHub, which uses this both as the full broker list and to
+     * derive the header stats (firm count, active-broker count, listing/offer/volume
+     * totals). Ordered by Closed_Volume__c DESC NULLS LAST, then Name ASC, and selects
+     * the seven Broker_* stat fields, mirroring the original inline query exactly.
+     *
+     * @return Broker Contacts (Id, Name, and the seven Broker_* fields) ranked by closed
+     *         volume; an empty list when no broker Contacts exist (never null).
+     * @example
+     * List<Contact> brokers = ContactSelector.selectBrokersRankedByClosedVolume();
+     */
+    public static List<Contact> selectBrokersRankedByClosedVolume() {
+        return [
+            SELECT Id, Name, Broker_Firm__c, Broker_Specialty__c, Broker_Status__c,
+                   Active_Listings__c, Offers_Received__c, Closed_Volume__c, Avg_Days_On_Market__c
+            FROM Contact
+            WHERE Is_Broker__c = true
+            WITH USER_MODE
+            ORDER BY Closed_Volume__c DESC NULLS LAST, Name ASC
+        ];
+    }
+
+    /**
+     * Top broker Contacts with at least one active listing, ranked for the "top brokers"
+     * widget — backs BrokerController.getBrokerHub. Filters Is_Broker__c = true AND
+     * Active_Listings__c > 0, orders by Active_Listings__c DESC then Closed_Volume__c
+     * DESC NULLS LAST, and caps the result at maxRows. Field set matches
+     * selectBrokersRankedByClosedVolume so the caller maps both lists identically.
+     *
+     * @param maxRows Maximum rows to return (the caller's TOP_LIMIT). A null or
+     *                non-positive value yields an empty list without querying.
+     * @return Up to maxRows broker Contacts with active listings, ranked; an empty list
+     *         when maxRows is null/non-positive or no broker has active listings (never null).
+     * @example
+     * List<Contact> top = ContactSelector.selectTopBrokersByActiveListings(6);
+     */
+    public static List<Contact> selectTopBrokersByActiveListings(Integer maxRows) {
+        if (maxRows == null || maxRows <= 0) {
+            return new List<Contact>();
+        }
+        return [
+            SELECT Id, Name, Broker_Firm__c, Broker_Specialty__c, Broker_Status__c,
+                   Active_Listings__c, Offers_Received__c, Closed_Volume__c, Avg_Days_On_Market__c
+            FROM Contact
+            WHERE Is_Broker__c = true AND Active_Listings__c > 0
+            WITH USER_MODE
+            ORDER BY Active_Listings__c DESC, Closed_Volume__c DESC NULLS LAST
+            LIMIT :maxRows
         ];
     }
 

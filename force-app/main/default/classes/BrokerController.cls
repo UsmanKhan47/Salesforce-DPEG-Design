@@ -20,13 +20,7 @@ public with sharing class BrokerController {
         Decimal closedVolume = 0;
         Set<String> firms = new Set<String>();
 
-        for (Contact c : [
-            SELECT Id, Name, Broker_Firm__c, Broker_Specialty__c, Broker_Status__c,
-                   Active_Listings__c, Offers_Received__c, Closed_Volume__c, Avg_Days_On_Market__c
-            FROM Contact
-            WHERE Is_Broker__c = true
-            ORDER BY Closed_Volume__c DESC NULLS LAST, Name ASC
-        ]) {
+        for (Contact c : ContactSelector.selectBrokersRankedByClosedVolume()) {
             hub.brokers.add(toRow(c));
             totalBrokers++;
             if (c.Broker_Status__c == 'Active') {
@@ -50,14 +44,7 @@ public with sharing class BrokerController {
 
         // --- top brokers ranked by active listings ---
         hub.topBrokers = new List<BrokerRow>();
-        for (Contact c : [
-            SELECT Id, Name, Broker_Firm__c, Broker_Specialty__c, Broker_Status__c,
-                   Active_Listings__c, Offers_Received__c, Closed_Volume__c, Avg_Days_On_Market__c
-            FROM Contact
-            WHERE Is_Broker__c = true AND Active_Listings__c > 0
-            ORDER BY Active_Listings__c DESC, Closed_Volume__c DESC NULLS LAST
-            LIMIT :TOP_LIMIT
-        ]) {
+        for (Contact c : ContactSelector.selectTopBrokersByActiveListings(TOP_LIMIT)) {
             hub.topBrokers.add(toRow(c));
         }
 
