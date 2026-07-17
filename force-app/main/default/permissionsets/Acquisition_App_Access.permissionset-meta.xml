@@ -12,7 +12,11 @@
         <application>Transaction</application>
         <visible>true</visible>
     </applicationVisibilities>
-    <description>Makes the Acquisition, Disposition, and Transaction Lightning apps visible. Assign to non-admin full-license users (e.g. principals) who need to navigate those apps.</description>
+    <applicationVisibilities>
+        <application>Property_Management</application>
+        <visible>true</visible>
+    </applicationVisibilities>
+    <description>Makes the Acquisition, Disposition, Transaction, and Property Management Lightning apps visible. Assign to full-license users (incl. admin, whose visibility is otherwise profile-only and profiles are not deployed) who need to navigate those apps.</description>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Acquisition App Access</label>
 </PermissionSet>
