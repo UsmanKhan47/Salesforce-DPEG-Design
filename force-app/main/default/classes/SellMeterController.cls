@@ -84,7 +84,7 @@ public with sharing class SellMeterController {
             r.targetPrice = a.Target_Sale_Price__c;
             r.argusSignal = a.Argus_Signal__c;
             r.peakSellDate = a.Peak_Sell_Date__c;
-            r.projectedValueAtPeak = a.Projected_Value_at_Peak__c;
+            r.projectedValueAtPeak = a.Projected_Value_At_Peak__c;
             // Readiness band is driven by days until the peak sell date (see bandForPeak).
             r.sellMeter = bandForPeak(a.Peak_Sell_Date__c);
             // Implied value / score still computed for the portfolio-upside metric; no longer drive the band.

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A, sub-wave A2 — DESTRUCTIVE DELETE (post-destructive half of DEPLOY 1).
+
+  Deletes EXACTLY the 2 OLD-cased fields that were blocked by live Apex/FlexiPage
+  references (those references are removed by the paired package-a2-remove.xml, which
+  deploys first):
+    - Property_Asset__c.Projected_Value_at_Peak__c  (Currency — 0 populated rows)
+    - Underwriting__c.Cash_on_Cash_Return__c        (Percent  — 0 populated rows)
+
+  Both are recreated at the correct NEW casing by package-a2-create.xml (DEPLOY 2).
+  Field API names resolve case-insensitively, so these OLD-cased members match and
+  delete the currently-stored OLD-cased fields in DPEG-Acq-5.
+
+  Rollback: deleted custom fields are recoverable from the org field recycle bin for
+  15 days; metadata is also recoverable from git history.
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Property_Asset__c.Projected_Value_at_Peak__c</members>
+        <members>Underwriting__c.Cash_on_Cash_Return__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

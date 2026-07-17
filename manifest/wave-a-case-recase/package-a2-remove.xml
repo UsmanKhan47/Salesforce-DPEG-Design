@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A, sub-wave A2 — DEPLOY 1 of 2 (remove references + destructive delete).
+
+  Regular components: the 3 Apex classes and the FlexiPage that referenced the two
+  OLD-cased blocked fields, edited to REMOVE those references (SOQL select field,
+  DTO assignment read, test-factory field assignment, FlexiPage spanning fieldInstance).
+  These deploy FIRST; then the paired --post-destructive-changes manifest
+  (destructiveChangesPost-a2.xml) deletes the now-unreferenced OLD-cased fields.
+
+  Deleting a field is blocked by field ID (case-insensitive), so the reference had to be
+  physically removed here — a re-case alone does not clear the dependency.
+
+  Deploy:
+    sf project deploy start \
+      --manifest manifest/wave-a-case-recase/package-a2-remove.xml \
+      --post-destructive-changes manifest/wave-a-case-recase/destructiveChangesPost-a2.xml \
+      --target-org DPEG-Acq-5 --test-level RunLocalTests --wait 30
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>PropertyAssetSelector</members>
+        <members>SellMeterController</members>
+        <members>TestDataFactory</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>Opportunity_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <version>67.0</version>
+</Package>

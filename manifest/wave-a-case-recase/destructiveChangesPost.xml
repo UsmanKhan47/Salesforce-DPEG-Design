@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A — case-only re-case, DESTRUCTIVE DELETE step (deploy 1 of 3).
+
+  ⚠️ SUPERSEDED BY THE SPLIT BELOW — DO NOT DEPLOY THIS FILE AS-IS.
+  A check-only validate (2026-07-17, DPEG-Acq-5) of this exact 4-field
+  manifest FAILED: 2 of the 4 fields are blocked by live references (Apex
+  classes + a Lightning Page/FlexiPage component). Field dependency tracking
+  is by field ID, not name-string casing, so re-casing the reference does NOT
+  clear the blocker — the reference must be physically REMOVED, redeployed,
+  THEN the field can be deleted. See the session report for full detail.
+
+  This file still documents the FULL 4-field target state for reference.
+  For an EXECUTABLE sequence today, use:
+    - destructiveChangesPost-clean.xml (2 fields, validated clean)
+  The other 2 fields (Property_Asset__c.Projected_Value_at_Peak__c,
+  Underwriting__c.Cash_on_Cash_Return__c) need Apex prework (out of admin
+  scope — salesforce-developer) before their delete can be attempted.
+
+  STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+  go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+
+  WHY DESTRUCTIVE: CustomField API names resolve case-insensitively in the
+  Metadata API. Re-deploying a case-only-renamed .field-meta.xml is a verified
+  no-op ("Unchanged", zero writes — see
+  .claude/agent-memory-local/salesforce-admin/case-only-field-recase-noop.md).
+  Old and new casing cannot coexist (they collide on the same field), so the
+  only mechanism that changes stored casing is delete-then-create. This is the
+  DELETE half; the CREATE half is manifest/wave-a-case-recase/package-create.xml
+  and MUST run as a separate, later deploy (a create submitted before this
+  delete commits would also no-op against the still-present old-cased field).
+
+  DELETES EXACTLY 4 FIELDS (all OLD-cased):
+    - Disposition__c.Days_on_Market__c       (Number formula — no stored data)
+    - Property_Asset__c.Projected_Value_at_Peak__c  (Currency — 0 populated rows, verified 2026-07-17)
+    - Underwriting__c.Cash_on_Cash_Return__c  (Percent — 0 populated rows, verified 2026-07-17)
+    - Opportunity.Cash_on_Cash_Return__c      (Percent — 0 populated rows, verified 2026-07-17;
+                                                out of §1's literal scope but an exact twin of the
+                                                Underwriting field, folded into this same wave)
+
+  Data-loss risk: NONE measured on this org. All 3 stored-data fields queried 0
+  populated rows out of 48/14/67 total records on their respective objects
+  (Property_Asset__c/Underwriting__c/Opportunity) — see
+  agent-output/wave-a-case-recase/export-*.csv. If this sequence is later run
+  against a DIFFERENT org where these fields ARE populated, re-run the exports
+  first and do not skip the reimport step.
+
+  Reports do NOT block field deletion (they fail silently, not loudly) — see
+  agent-output/s1-conformance-requirements.md (c) "Standing constraints". The
+  Report and FlexiPage readers of these 4 fields are intentionally NOT
+  repointed until deploy 3 (package-repoint.xml), because repointing them to
+  the new casing before the new field exists would itself fail deploy (a
+  FlexiPage spanning fieldItem reference requires a live, exact-cased field —
+  see the same case-only-field-recase-noop.md memory).
+
+  Deploy (only once authorised by the user; requires --post-destructive-changes
+  paired with a package.xml, per Metadata API requirement — this one is
+  intentionally EMPTY of <types>, this wave deploys no new metadata in this step):
+    sf project deploy start \
+      --manifest manifest/wave-a-case-recase/package.xml \
+      --post-destructive-changes manifest/wave-a-case-recase/destructiveChangesPost.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level RunLocalTests --wait 30
+
+  Rollback: deleted custom fields are recoverable from the org's field recycle
+  bin for 15 days; the metadata is also recoverable from git history.
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Disposition__c.Days_on_Market__c</members>
+        <members>Property_Asset__c.Projected_Value_at_Peak__c</members>
+        <members>Underwriting__c.Cash_on_Cash_Return__c</members>
+        <members>Opportunity.Cash_on_Cash_Return__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

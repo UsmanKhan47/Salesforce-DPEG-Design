@@ -310,7 +310,7 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
-                <fieldItem>Record.Primary_Underwriting__r.Cash_on_Cash_Return__c</fieldItem>
+                <fieldItem>Record.Primary_Underwriting__r.Cash_On_Cash_Return__c</fieldItem>
                 <identifier>RecordPrimary_Underwriting_rCash_on_Cash_Return_cField</identifier>
             </fieldInstance>
         </itemInstances>

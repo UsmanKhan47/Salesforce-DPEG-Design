@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A, sub-wave A2 — DEPLOY 2 of 2 (create NEW-cased fields + re-add references).
+
+  Recreates the 2 fields at the correct NEW casing (they were destructively deleted in
+  DEPLOY 1 / destructiveChangesPost-a2.xml), grants their FLS via the DPEG_Acquisitions
+  permission set, and re-points the 3 Apex classes + the FlexiPage spanning fieldInstance
+  to the NEW-cased API names.
+
+  New fields:
+    - Property_Asset__c.Projected_Value_At_Peak__c  (Currency)
+    - Underwriting__c.Cash_On_Cash_Return__c        (Percent)
+
+  FLS: DPEG_Acquisitions carries the readable/editable grants for BOTH fields at the new
+  casing (lines 1402 and 1622) — it is the single permission set covering both. (The reader
+  maps in agent-output/s1-conformance-requirements.md §9/§10 confirm DPEG_Acquisitions is the
+  only permission set granting these two fields.)
+
+  sf orders the dependency graph: CustomFields create first, then Apex compiles against the
+  now-existing NEW-cased fields, then the FlexiPage spanning fieldItem resolves.
+
+  Deploy:
+    sf project deploy start \
+      --manifest manifest/wave-a-case-recase/package-a2-create.xml \
+      --target-org DPEG-Acq-5 --test-level RunLocalTests --wait 30
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Property_Asset__c.Projected_Value_At_Peak__c</members>
+        <members>Underwriting__c.Cash_On_Cash_Return__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>DPEG_Acquisitions</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>PropertyAssetSelector</members>
+        <members>SellMeterController</members>
+        <members>TestDataFactory</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>Opportunity_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <version>67.0</version>
+</Package>

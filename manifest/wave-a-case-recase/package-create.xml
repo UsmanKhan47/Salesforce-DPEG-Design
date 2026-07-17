@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A — case-only re-case, CREATE + FLS step (deploy 2 of 3).
+
+  ⚠️ SUPERSEDED BY THE SPLIT BELOW — DO NOT DEPLOY THIS FILE AS-IS.
+  Its companion destructiveChangesPost.xml (all 4 fields) failed check-only
+  validate — 2 of 4 fields are blocked (see that file's header). This file
+  documents the FULL 4-field target state for reference only.
+  For an EXECUTABLE sequence today, use package-create-clean.xml (2 fields).
+
+  STATUS: PREPARED, NOT AUTHORISED. Run ONLY after deploy 1
+  (destructiveChangesPost.xml) has been submitted AND its job has fully
+  committed (poll `sf project deploy report --job-id <id>` to Succeeded, or
+  re-query the field to confirm it no longer resolves) — a create submitted
+  while the old-cased field still exists will silently no-op against it
+  instead of creating the new-cased field (case-insensitive collision).
+
+  Creates the 4 new-cased fields (local source already carries the new-cased
+  definitions, byte-identical to their old-cased twins apart from <fullName>)
+  and grants FLS on them in the same permission sets the old fields used.
+
+  Field 1 (Disposition__c.Days_On_Market__c) is a formula — FLS is read-only
+  (editable=false), matching the old field's own FLS shape.
+
+  CustomObjectTranslation is NOT listed here: the new-cased
+  .fieldTranslation-meta.xml files were added inside the EXISTING
+  Disposition__c-en_US / Property_Asset__c-en_US / Underwriting__c-en_US
+  translation folders (already tracked in the main manifest/package.xml as
+  whole-folder members), so no new manifest member is needed for them — they
+  ride along whenever those folders deploy. If deploying this scoped manifest
+  alone does not pick them up, deploy CustomObjectTranslation explicitly too:
+  add a <types><members>Disposition__c-en_US</members>... <name>CustomObjectTranslation</name></types>
+  block, or just fold this manifest into a full `--source-dir force-app` pass.
+
+  Deploy (only once deploy 1 has committed):
+    sf project deploy start \
+      --manifest manifest/wave-a-case-recase/package-create.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level RunLocalTests --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Disposition__c.Days_On_Market__c</members>
+        <members>Property_Asset__c.Projected_Value_At_Peak__c</members>
+        <members>Underwriting__c.Cash_On_Cash_Return__c</members>
+        <members>Opportunity.Cash_On_Cash_Return__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>DPEG_Acquisitions</members>
+        <members>Disposition_Dashboard_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

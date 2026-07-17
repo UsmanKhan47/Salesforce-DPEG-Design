@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A — SUB-WAVE A1 (clean subset), REPOINT step
+  (deploy 3 of 3 for the 2 fields that validated with zero blockers).
+
+  STATUS: PREPARED, NOT AUTHORISED. Run ONLY after deploy 2
+  (package-create-clean.xml) has committed.
+
+  Report columns/groupingsDown <field> resolve case-insensitively as loose
+  string references (verified safe to re-case any time — see
+  case-only-field-recase-noop.md memory), so this would technically validate
+  even before deploy 2, but is kept last for one simple, always-safe-order
+  sequence: delete -> create+FLS -> repoint.
+
+  Only the Report is in scope here. The FlexiPage spanning reference
+  (Record.Primary_Underwriting__r.Cash_On_Cash_Return__c) belongs to the
+  BLOCKED Underwriting__c field (sub-wave A2), not this clean subset — do NOT
+  bundle it here. See package-repoint-blocked-NOTES.md / the session report
+  for why: it requires an exact live match against a field that, in this
+  sub-wave, is never touched.
+
+  Deploy (only once deploy 2-clean has committed):
+    sf project deploy start \
+      --manifest manifest/wave-a-case-recase/package-repoint-clean.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level RunLocalTests --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Dispositions/Avg_Days_on_Market</members>
+        <name>Report</name>
+    </types>
+    <version>67.0</version>
+</Package>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A — SUB-WAVE A1 (clean subset), CREATE + FLS step
+  (deploy 2 of 3 for the 2 fields that validated with zero blockers).
+
+  STATUS: PREPARED, NOT AUTHORISED. Run ONLY after deploy 1
+  (destructiveChangesPost-clean.xml) has been submitted AND its job has fully
+  committed — a create submitted while the old-cased field still exists will
+  silently no-op against it instead of creating the new-cased field
+  (case-insensitive collision — see case-only-field-recase-noop.md memory).
+
+  Creates:
+    - Disposition__c.Days_On_Market__c        (Number formula, FLS read-only)
+    - Opportunity.Cash_On_Cash_Return__c       (Percent, FLS read/write)
+  and grants FLS on them in the same permission sets the old fields used
+  (Disposition_Dashboard_Access, DPEG_Acquisitions).
+
+  Deploy (only once deploy 1-clean has committed):
+    sf project deploy start \
+      --manifest manifest/wave-a-case-recase/package-create-clean.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level RunLocalTests --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Disposition__c.Days_On_Market__c</members>
+        <members>Opportunity.Cash_On_Cash_Return__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>DPEG_Acquisitions</members>
+        <members>Disposition_Dashboard_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

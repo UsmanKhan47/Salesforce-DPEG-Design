@@ -949,7 +949,7 @@ public with sharing class TestDataFactory {
                 Target_Return__c = 15,
                 Year_5_IRR__c = 16,
                 Equity_Multiple__c = 1.8,
-                Cash_on_Cash_Return__c = 8,
+                Cash_On_Cash_Return__c = 8,
                 GRM__c = 12
             ));
         }

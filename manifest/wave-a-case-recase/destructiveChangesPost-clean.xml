@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave A — SUB-WAVE A1 (clean subset), DESTRUCTIVE DELETE.
+
+  Isolates the 2 of 4 Wave-A fields that validated with ZERO blockers in the
+  full 4-field dry run (see agent-output/wave-a-case-recase/ for the raw
+  result). Both have no Apex or FlexiPage/Lightning-Page reference in the
+  live org:
+    - Disposition__c.Days_on_Market__c        (Number formula, no data)
+    - Opportunity.Cash_on_Cash_Return__c       (Percent, 0 populated rows)
+
+  The other 2 fields (Property_Asset__c.Projected_Value_at_Peak__c,
+  Underwriting__c.Cash_on_Cash_Return__c) are DEFERRED — see
+  destructiveChangesPost.xml's header and the session report for why (live
+  Apex class + Lightning Page references block their deletion; field
+  dependency tracking is by field ID, not name casing, so re-casing the
+  reference does not help — the reference must be actually REMOVED first,
+  redeployed, then the field can be deleted, then recreated, then the
+  reference re-added pointing at the new field).
+
+  STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+  go-ahead.
+
+  Deploy (only once authorised by the user):
+    sf project deploy start \
+      --manifest manifest/wave-a-case-recase/package.xml \
+      --post-destructive-changes manifest/wave-a-case-recase/destructiveChangesPost-clean.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level RunLocalTests --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Disposition__c.Days_on_Market__c</members>
+        <members>Opportunity.Cash_on_Cash_Return__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

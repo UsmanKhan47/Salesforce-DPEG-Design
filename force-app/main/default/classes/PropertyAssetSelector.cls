@@ -52,14 +52,14 @@ public with sharing class PropertyAssetSelector {
      * @return All Property_Asset__c records ordered by Name, with the portfolio
      *         field set (Id, Name, Property__r.Asset_Type__c, NOI__c,
      *         Market_Cap_Rate__c, Target_Sale_Price__c, Argus_Signal__c,
-     *         Peak_Sell_Date__c, Projected_Value_at_Peak__c) populated; an empty
+     *         Peak_Sell_Date__c, Projected_Value_At_Peak__c) populated; an empty
      *         list when there are no assets.
      */
     public static List<Property_Asset__c> selectAllForPortfolio() {
         return [
             SELECT Id, Name, Property__r.Asset_Type__c,
                    NOI__c, Market_Cap_Rate__c, Target_Sale_Price__c, Argus_Signal__c,
-                   Peak_Sell_Date__c, Projected_Value_at_Peak__c
+                   Peak_Sell_Date__c, Projected_Value_At_Peak__c
             FROM Property_Asset__c
             WITH USER_MODE
             ORDER BY Name

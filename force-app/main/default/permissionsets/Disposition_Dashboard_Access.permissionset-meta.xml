@@ -18,7 +18,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Disposition__c.Days_on_Market__c</field>
+        <field>Disposition__c.Days_On_Market__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
