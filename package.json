@@ -1,0 +1,16 @@
+{
+  "name": "acquisition-design-salesforce",
+  "version": "1.0.0",
+  "description": "DPEG Salesforce DX project — local LWC Jest unit + accessibility test toolchain (runs in CI, never deployed to the org; excluded via .forceignore).",
+  "private": true,
+  "scripts": {
+    "test": "sfdx-lwc-jest",
+    "test:unit": "sfdx-lwc-jest",
+    "test:unit:watch": "sfdx-lwc-jest --watch",
+    "test:unit:coverage": "sfdx-lwc-jest --coverage"
+  },
+  "devDependencies": {
+    "@sa11y/jest": "^8.0.27",
+    "@salesforce/sfdx-lwc-jest": "^7.9.0"
+  }
+}
