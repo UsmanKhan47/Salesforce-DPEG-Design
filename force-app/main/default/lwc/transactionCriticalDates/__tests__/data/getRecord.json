@@ -1,0 +1,15 @@
+{
+    "apiName": "Transaction__c",
+    "id": "a0A5g000000TxnAEAS",
+    "fields": {
+        "Contract_Executed_Date__c": { "value": "2020-01-15" },
+        "Earnest_Money__c": { "value": 500000 },
+        "EM_Wired_Date__c": { "value": "2020-01-20" },
+        "Earnest_At_Risk__c": { "value": true },
+        "Feasibility_Deadline__c": { "value": "2020-02-10" },
+        "Feasibility_Missed__c": { "value": true },
+        "Target_Close_Date__c": { "value": "2020-03-01" },
+        "Status__c": { "value": "Closed" },
+        "Stage__c": { "value": "Closed Won" }
+    }
+}
