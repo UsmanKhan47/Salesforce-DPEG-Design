@@ -698,10 +698,11 @@
         <members>Transaction__c.Contract_Value__c</members>
         <members>Transaction__c.EM_Wired_Date__c</members>
         <members>Transaction__c.EM_Wired__c</members>
-        <members>Transaction__c.Earnest_At_Risk__c</members>
         <members>Transaction__c.Earnest_Money__c</members>
         <members>Transaction__c.Feasibility_Deadline__c</members>
         <members>Transaction__c.Feasibility_Missed__c</members>
+        <members>Transaction__c.Is_Earnest_At_Risk__c</members>
+        <members>Transaction__c.Is_Wire_Approval_Due__c</members>
         <members>Transaction__c.Loan_Required__c</members>
         <members>Transaction__c.OneDrive_URL__c</members>
         <members>Transaction__c.Opportunity__c</members>
@@ -717,7 +718,6 @@
         <members>Transaction__c.Tasks_Fanned_Out__c</members>
         <members>Transaction__c.Tasks_Overdue__c</members>
         <members>Transaction__c.Tasks_Total__c</members>
-        <members>Transaction__c.Wire_Approval_Due__c</members>
         <members>Transaction__c.Wire_Open_Risks__c</members>
         <members>Underwriting__c.Cash_on_Cash_Return__c</members>
         <members>Underwriting__c.Equity_Multiple__c</members>

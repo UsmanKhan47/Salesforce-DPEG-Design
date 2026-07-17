@@ -127,8 +127,8 @@ public with sharing class TransactionSelector {
      */
     public static List<Transaction__c> selectForKpis() {
         return [
-            SELECT Status__c, Contract_Value__c, Earnest_Money__c, Earnest_At_Risk__c,
-                   Contract_Executed_Date__c, Target_Close_Date__c, Wire_Approval_Due__c,
+            SELECT Status__c, Contract_Value__c, Earnest_Money__c, Is_Earnest_At_Risk__c,
+                   Contract_Executed_Date__c, Target_Close_Date__c, Is_Wire_Approval_Due__c,
                    Feasibility_Missed__c, Feasibility_Deadline__c
             FROM Transaction__c
             WITH USER_MODE

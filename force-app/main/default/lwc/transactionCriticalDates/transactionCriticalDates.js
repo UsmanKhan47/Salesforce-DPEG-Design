@@ -3,7 +3,7 @@ import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
 import CED from '@salesforce/schema/Transaction__c.Contract_Executed_Date__c';
 import EM from '@salesforce/schema/Transaction__c.Earnest_Money__c';
 import EMD from '@salesforce/schema/Transaction__c.EM_Wired_Date__c';
-import EAR from '@salesforce/schema/Transaction__c.Earnest_At_Risk__c';
+import EAR from '@salesforce/schema/Transaction__c.Is_Earnest_At_Risk__c';
 import FEAS from '@salesforce/schema/Transaction__c.Feasibility_Deadline__c';
 import FMISS from '@salesforce/schema/Transaction__c.Feasibility_Missed__c';
 import CLOSE from '@salesforce/schema/Transaction__c.Target_Close_Date__c';

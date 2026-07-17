@@ -149,11 +149,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Transaction__c.Earnest_At_Risk__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Transaction__c.Earnest_Money__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -165,6 +160,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Transaction__c.Feasibility_Missed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Transaction__c.Is_Earnest_At_Risk__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Transaction__c.Is_Wire_Approval_Due__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -240,11 +245,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Transaction__c.Tasks_Total__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Transaction__c.Wire_Approval_Due__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

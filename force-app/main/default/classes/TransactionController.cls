@@ -32,10 +32,10 @@ public with sharing class TransactionController {
                 if (t.Contract_Value__c != null) {
                     k.inContractValue += t.Contract_Value__c;
                 }
-                if (t.Earnest_At_Risk__c && t.Earnest_Money__c != null) {
+                if (t.Is_Earnest_At_Risk__c && t.Earnest_Money__c != null) {
                     k.earnestAtRisk += t.Earnest_Money__c;
                 }
-                if (t.Wire_Approval_Due__c) {
+                if (t.Is_Wire_Approval_Due__c) {
                     k.wireApprovalsDue++;
                 }
                 if (t.Contract_Executed_Date__c != null && t.Target_Close_Date__c != null) {

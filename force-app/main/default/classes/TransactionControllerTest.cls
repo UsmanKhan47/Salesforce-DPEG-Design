@@ -19,7 +19,7 @@ private class TransactionControllerTest {
 
         TestDataFactory.applyOverrides(alpha, new Map<String, Object>{
             'Status__c' => 'Active', 'Contract_Value__c' => 52000000,
-            'Earnest_Money__c' => 1500000, 'Earnest_At_Risk__c' => true, 'Wire_Approval_Due__c' => true,
+            'Earnest_Money__c' => 1500000, 'Is_Earnest_At_Risk__c' => true, 'Is_Wire_Approval_Due__c' => true,
             'Contract_Executed_Date__c' => today, 'Target_Close_Date__c' => today.addDays(45),
             'Feasibility_Deadline__c' => today.addDays(20), 'Feasibility_Missed__c' => false,
             'Property_Name__c' => 'Alpha Tower', 'Stage__c' => 'Due Diligence', 'Risk__c' => 'Watch',
@@ -27,19 +27,19 @@ private class TransactionControllerTest {
         });
         TestDataFactory.applyOverrides(beta, new Map<String, Object>{
             'Status__c' => 'Active', 'Contract_Value__c' => 41000000,
-            'Earnest_Money__c' => 900000, 'Earnest_At_Risk__c' => true, 'Wire_Approval_Due__c' => false,
+            'Earnest_Money__c' => 900000, 'Is_Earnest_At_Risk__c' => true, 'Is_Wire_Approval_Due__c' => false,
             'Contract_Executed_Date__c' => today, 'Target_Close_Date__c' => today.addDays(75),
             'Feasibility_Deadline__c' => today.addDays(30), 'Feasibility_Missed__c' => false
         });
         TestDataFactory.applyOverrides(gamma, new Map<String, Object>{
             'Status__c' => 'Active', 'Contract_Value__c' => 28000000,
-            'Earnest_Money__c' => 700000, 'Earnest_At_Risk__c' => false, 'Wire_Approval_Due__c' => true,
+            'Earnest_Money__c' => 700000, 'Is_Earnest_At_Risk__c' => false, 'Is_Wire_Approval_Due__c' => true,
             'Contract_Executed_Date__c' => today, 'Target_Close_Date__c' => today.addDays(78),
             'Feasibility_Deadline__c' => today.addDays(40), 'Feasibility_Missed__c' => false
         });
         TestDataFactory.applyOverrides(closed, new Map<String, Object>{
             'Status__c' => 'Closed', 'Contract_Value__c' => 99000000,
-            'Earnest_Money__c' => 5000000, 'Earnest_At_Risk__c' => true, 'Wire_Approval_Due__c' => true,
+            'Earnest_Money__c' => 5000000, 'Is_Earnest_At_Risk__c' => true, 'Is_Wire_Approval_Due__c' => true,
             'Contract_Executed_Date__c' => today.addDays(-200), 'Target_Close_Date__c' => today.addDays(-120)
         });
         TestDataFactory.applyOverrides(feasibilityMissed, new Map<String, Object>{
@@ -191,8 +191,8 @@ private class TransactionControllerTest {
         TestDataFactory.applyOverrides(bulkTxns, new Map<String, Object>{
             'Status__c' => 'Active',
             'Tasks_Fanned_Out__c' => true, // suppress the Day-0 fan-out Flow; irrelevant to this controller
-            'Wire_Approval_Due__c' => false,
-            'Earnest_At_Risk__c' => false
+            'Is_Wire_Approval_Due__c' => false,
+            'Is_Earnest_At_Risk__c' => false
         });
         insert bulkTxns;
 
@@ -208,8 +208,8 @@ private class TransactionControllerTest {
 
         System.assertEquals(251, k.activeCount, 'All 251 bulk-inserted Transactions are Active and counted without truncation');
         System.assertEquals(expectedContractValue, k.inContractValue, 'Σ contract value sums correctly across all 251 records');
-        System.assertEquals(0, k.earnestAtRisk, 'No Earnest_At_Risk__c records in this bulk set');
-        System.assertEquals(0, k.wireApprovalsDue, 'No Wire_Approval_Due__c records in this bulk set');
+        System.assertEquals(0, k.earnestAtRisk, 'No Is_Earnest_At_Risk__c records in this bulk set');
+        System.assertEquals(0, k.wireApprovalsDue, 'No Is_Wire_Approval_Due__c records in this bulk set');
         System.assertEquals(75, k.avgTimeToCloseDays, 'Every bulk row has the same 75-day TTC (factory default), so the average is exactly 75');
         System.assertEquals(251, rows.size(), 'getActiveTransactions returns all 251 rows, not capped at 200');
     }

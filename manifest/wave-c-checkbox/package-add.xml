@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Transaction__c.Is_Earnest_At_Risk__c</members>
+        <members>Transaction__c.Is_Wire_Approval_Due__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>Transaction_App_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

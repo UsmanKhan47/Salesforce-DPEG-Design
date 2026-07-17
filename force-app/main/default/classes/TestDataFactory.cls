@@ -35,7 +35,7 @@
  * ⚠ 2. FOUR FIELDS ARE TYPE-INVERTED AGAINST THEIR OWN NAMES.
  *
  *   - Disposition__c.Package_Sent__c        is a DATE     (sounds Boolean)
- *   - Transaction__c.Wire_Approval_Due__c   is a CHECKBOX (sounds like a Date)
+ *   - Transaction__c.Is_Wire_Approval_Due__c is a CHECKBOX (sounds like a Date)
  *   - Counter_Offer__c.Revision_Number__c   is TEXT       (says "Number")
  *   - Deal_Message__c.Revision__c           is TEXT       (sounds like a Number)
  *
@@ -1249,8 +1249,8 @@ public with sharing class TestDataFactory {
                 Contract_Executed_Date__c = Date.today(),
                 Feasibility_Deadline__c = Date.today().addDays(45),
                 Target_Close_Date__c = Date.today().addDays(75),
-                // Wire_Approval_Due__c is a CHECKBOX despite the date-sounding name.
-                Wire_Approval_Due__c = false
+                // Is_Wire_Approval_Due__c is a CHECKBOX despite the date-sounding name.
+                Is_Wire_Approval_Due__c = false
             ));
         }
         insertIf(doInsert, transactions);
