@@ -12,6 +12,8 @@
  *   • BrokerPortalController.brokerPriorityFor -> GuestReads
  *     .selectBrokerPriorityByEmailSystem (P4 cleanup wave — guest LWR deal-intake
  *     controller; SYSTEM_MODE + without sharing, nested class below).
+ *   • BrokerFirmController.getBrokerFirm -> selectEarliestByAccountId (P4 cleanup
+ *     wave G — Opportunity sidebar broker person; internal, USER_MODE, Name-only).
  *
  * MODE — mixed, per method (each method's ApexDoc restates its own mode):
  *   • selectBrokersOrderedByName uses `WITH USER_MODE` (API 67). Design §5
@@ -132,6 +134,41 @@ public with sharing class ContactSelector {
             ORDER BY Active_Listings__c DESC, Closed_Volume__c DESC NULLS LAST
             LIMIT :maxRows
         ];
+    }
+
+    /**
+     * The earliest-created Contact linked to an Account — backs
+     * BrokerFirmController.getBrokerFirm, which treats it as the broker person behind
+     * the brokerage firm (Account). Selects Id + Name (the caller reads only Name) and
+     * orders CreatedDate ASC LIMIT 1, mirroring the original inline query. Added by P4
+     * cleanup wave G.
+     *
+     * MODE — `WITH USER_MODE`. Only Name (permissionable=false) is selected and only
+     * the standard AccountId is filtered, so USER_MODE cannot throw an FLS error here
+     * (no custom, FLS-controlled field is touched — unlike the broker methods above).
+     *
+     * READ-FOR-DISPLAY: an Account with no linked Contact is a normal state, so this
+     * returns Contact-or-null rather than throwing.
+     *
+     * @param accountId The firm Account whose broker Contact to read; null-safe.
+     * @return The earliest-created Contact (Id, Name) for the Account, or null when
+     *         the input is null or the Account has no Contact.
+     * @example
+     * Contact broker = ContactSelector.selectEarliestByAccountId(accountId);
+     */
+    public static Contact selectEarliestByAccountId(Id accountId) {
+        if (accountId == null) {
+            return null;
+        }
+        List<Contact> contacts = [
+            SELECT Id, Name
+            FROM Contact
+            WHERE AccountId = :accountId
+            WITH USER_MODE
+            ORDER BY CreatedDate
+            LIMIT 1
+        ];
+        return contacts.isEmpty() ? null : contacts[0];
     }
 
     /**

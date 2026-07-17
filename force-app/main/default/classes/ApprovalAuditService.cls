@@ -63,9 +63,7 @@ public without sharing class ApprovalAuditService {
         // Approved so the Underwriting Path and Status reflect the decision.
         List<Underwriting__c> uwUpdates = new List<Underwriting__c>();
         if (!approvedUwOpps.isEmpty()) {
-            for (Underwriting__c uw : [
-                SELECT Id FROM Underwriting__c WHERE Opportunity__c IN :approvedUwOpps
-            ]) {
+            for (Underwriting__c uw : UnderwritingSelector.selectIdsByOpportunityIds(approvedUwOpps)) {
                 uwUpdates.add(new Underwriting__c(
                     Id = uw.Id,
                     Stage__c = 'Approved',
@@ -76,10 +74,7 @@ public without sharing class ApprovalAuditService {
 
         List<LOI__c> loiUpdates = new List<LOI__c>();
         if (!loiOpps.isEmpty()) {
-            for (Opportunity o : [
-                SELECT Id, Primary_LOI__c FROM Opportunity
-                WHERE Id IN :loiOpps AND Primary_LOI__c != null
-            ]) {
+            for (Opportunity o : OpportunitySelector.selectPrimaryLoiByIds(loiOpps)) {
                 ProcessInstanceStep step = latestApproval.get(o.Id);
                 if (step != null) {
                     loiUpdates.add(new LOI__c(
@@ -108,16 +103,19 @@ public without sharing class ApprovalAuditService {
         }
     }
 
-    /** Newest 'Approved' history step per target record. */
+    /**
+     * Newest 'Approved' history step per target record. The SOQL lives in
+     * ProcessInstanceStepSelector.AuditReads (without sharing + SYSTEM_MODE) so the
+     * audit read still sees the full approval trail regardless of the running user;
+     * this method keeps the in-memory newest-per-target fold (the selector returns the
+     * steps ordered CreatedDate DESC, so first-wins keeps the latest).
+     */
     @TestVisible
     private static Map<Id, ProcessInstanceStep> latestApprovedStepByTarget(Set<Id> targetIds) {
         Map<Id, ProcessInstanceStep> latest = new Map<Id, ProcessInstanceStep>();
-        for (ProcessInstanceStep s : [
-            SELECT ActorId, Comments, CreatedDate, ProcessInstance.TargetObjectId
-            FROM ProcessInstanceStep
-            WHERE ProcessInstance.TargetObjectId IN :targetIds AND StepStatus = 'Approved'
-            ORDER BY CreatedDate DESC
-        ]) {
+        List<ProcessInstanceStep> steps = new ProcessInstanceStepSelector.AuditReads()
+            .selectApprovedStepsByTargetIds(targetIds);
+        for (ProcessInstanceStep s : steps) {
             Id target = s.ProcessInstance.TargetObjectId;
             if (!latest.containsKey(target)) {
                 latest.put(target, s);

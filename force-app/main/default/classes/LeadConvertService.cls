@@ -59,11 +59,8 @@ public with sharing class LeadConvertService {
 
         // 2. Resolve Opportunity record types by developer name (Land / Commercial).
         Map<String, Id> rtByName = new Map<String, Id>();
-        for (RecordType rt : [
-            SELECT Id, DeveloperName
-            FROM RecordType
-            WHERE SobjectType = 'Opportunity' AND DeveloperName IN ('Land', 'Commercial')
-        ]) {
+        for (RecordType rt : RecordTypeSelector.selectByObjectAndDeveloperNames(
+                'Opportunity', new Set<String>{ 'Land', 'Commercial' })) {
             rtByName.put(rt.DeveloperName, rt.Id);
         }
 

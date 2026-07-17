@@ -113,4 +113,34 @@ public with sharing class UnderwritingSelector {
             WITH USER_MODE
         ];
     }
+
+    /**
+     * The Ids of Underwritings related to a set of Opportunities — backs
+     * ApprovalAuditService, which on principal sign-off advances each related
+     * Underwriting to Approved (it needs only Id to build the update). Added by P4
+     * cleanup wave G.
+     *
+     * DELIBERATELY DISTINCT from selectByOpportunityIds (which also selects
+     * Opportunity__c): the audit read needs ONLY Id, and this selector's per-caller
+     * "minimal field list" philosophy keeps the USER_MODE FLS surface as small as the
+     * caller requires. The original ApprovalAuditService query was `SELECT Id`; adding
+     * Opportunity__c here would widen the FLS surface (that custom lookup is
+     * FLS-controlled) and could throw USER_MODE where the Id-only read would not.
+     * Bulk-safe.
+     *
+     * @param opportunityIds Parent Opportunity Ids; null/empty-safe.
+     * @return Underwritings with Id populated; an empty list when the input is null
+     *         or empty (never null).
+     */
+    public static List<Underwriting__c> selectIdsByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Underwriting__c>();
+        }
+        return [
+            SELECT Id
+            FROM Underwriting__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH USER_MODE
+        ];
+    }
 }

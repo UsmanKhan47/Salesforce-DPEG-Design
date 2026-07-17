@@ -12,12 +12,7 @@ public with sharing class BrokerFirmController {
             return bf;
         }
 
-        Opportunity opp = [
-            SELECT Id, AccountId, Account.Name
-            FROM Opportunity
-            WHERE Id = :opportunityId
-            LIMIT 1
-        ];
+        Opportunity opp = OpportunitySelector.selectAccountRefById(opportunityId);
         if (opp.AccountId == null) {
             return bf;
         }
@@ -26,20 +21,13 @@ public with sharing class BrokerFirmController {
         bf.firmName = opp.Account.Name;
 
         // Broker person: the broker Contact linked to the firm Account.
-        List<Contact> cs = [
-            SELECT Name FROM Contact WHERE AccountId = :opp.AccountId ORDER BY CreatedDate LIMIT 1
-        ];
-        if (!cs.isEmpty()) {
-            bf.brokerName = cs[0].Name;
+        Contact broker = ContactSelector.selectEarliestByAccountId(opp.AccountId);
+        if (broker != null) {
+            bf.brokerName = broker.Name;
         }
 
         // Firm-level deal counts across every Opportunity from this brokerage.
-        for (AggregateResult ar : [
-            SELECT StageName st, COUNT(Id) c
-            FROM Opportunity
-            WHERE AccountId = :opp.AccountId
-            GROUP BY StageName
-        ]) {
+        for (AggregateResult ar : OpportunitySelector.countByStageForAccount(opp.AccountId)) {
             Integer c = (Integer) ar.get('c');
             String st = (String) ar.get('st');
             bf.dealsSubmitted += c;

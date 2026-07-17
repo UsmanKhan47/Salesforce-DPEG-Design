@@ -127,4 +127,33 @@ private class UnderwritingSelectorTest {
         Assert.isTrue(nullResult.isEmpty(), 'Null input returns an empty list, not null');
         Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
     }
+
+    // selectIdsByOpportunityIds — the Id-only bulk read added for ApprovalAuditService
+    // (advance related Underwritings to Approved on principal sign-off). Distinct from
+    // selectByOpportunityIds: minimal field list (Id only) to preserve the original
+    // audit read's small FLS surface (P4 cleanup wave G).
+
+    @isTest
+    static void selectIdsByOpportunityIds_bulk_returnsMatching() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        TestDataFactory.createUnderwritings(BULK_N, opp.Id, true);
+
+        Test.startTest();
+        List<Underwriting__c> result = UnderwritingSelector.selectIdsByOpportunityIds(new Set<Id>{ opp.Id });
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(), 'Should return all 251 Underwritings for the Opportunity set');
+        Assert.isNotNull(result[0].Id, 'Id must be populated for the Approved-advance update');
+    }
+
+    @isTest
+    static void selectIdsByOpportunityIds_nullOrEmptyInput_returnsEmpty() {
+        Test.startTest();
+        List<Underwriting__c> nullResult = UnderwritingSelector.selectIdsByOpportunityIds(null);
+        List<Underwriting__c> emptyResult = UnderwritingSelector.selectIdsByOpportunityIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.isTrue(nullResult.isEmpty(), 'Null input returns an empty list, not null');
+        Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
+    }
 }

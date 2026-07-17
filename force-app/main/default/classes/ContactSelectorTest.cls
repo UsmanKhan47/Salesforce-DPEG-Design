@@ -268,6 +268,66 @@ private class ContactSelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // selectEarliestByAccountId  (BrokerFirmController — sidebar broker person)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectEarliestByAccountId_returnsContactScopedToAccount() {
+        // Two same-City/State Accounts AND two similar Contacts each trip an org
+        // duplicate rule on the second insert; bypass both (defence-in-depth pattern
+        // from prior waves).
+        Database.DMLOptions dml = new Database.DMLOptions();
+        dml.DuplicateRuleHeader.AllowSave = true;
+        Account firmA = TestDataFactory.createAccount(false);
+        Account firmB = TestDataFactory.createAccount(false);
+        Database.insert(new List<Account>{ firmA, firmB }, dml);
+        Contact contactA = TestDataFactory.createContact(firmA.Id, false);
+        Contact contactB = TestDataFactory.createContact(firmB.Id, false);  // different firm — must not be returned
+        Database.insert(new List<Contact>{ contactA, contactB }, dml);
+
+        Test.startTest();
+        Contact result = ContactSelector.selectEarliestByAccountId(firmA.Id);
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'A firm Account with a linked Contact resolves a broker person');
+        Assert.areEqual(contactA.Id, result.Id, 'Only the Contact under the requested Account is returned');
+        Assert.isNotNull(result.Name, 'Name must be populated for the sidebar broker name');
+    }
+
+    @isTest
+    static void selectEarliestByAccountId_manyContacts_returnsSingleRow() {
+        Account firm = TestDataFactory.createAccount(true);
+        TestDataFactory.createContacts(BULK_N, firm.Id, true);
+
+        Test.startTest();
+        Contact result = ContactSelector.selectEarliestByAccountId(firm.Id);
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'LIMIT 1 returns a single Contact even with 251 under the Account');
+        Assert.isNotNull(result.Name, 'Name is populated on the returned row');
+    }
+
+    @isTest
+    static void selectEarliestByAccountId_noContact_returnsNull() {
+        Account firm = TestDataFactory.createAccount(true);
+
+        Test.startTest();
+        Contact result = ContactSelector.selectEarliestByAccountId(firm.Id);
+        Test.stopTest();
+
+        Assert.isNull(result, 'An Account with no linked Contact returns null');
+    }
+
+    @isTest
+    static void selectEarliestByAccountId_nullInput_returnsNull() {
+        Test.startTest();
+        Contact result = ContactSelector.selectEarliestByAccountId(null);
+        Test.stopTest();
+
+        Assert.isNull(result, 'Null input returns null');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

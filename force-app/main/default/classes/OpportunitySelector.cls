@@ -204,4 +204,76 @@ public with sharing class OpportunitySelector {
             WITH USER_MODE
         ];
     }
+
+    /**
+     * Loads a deal's brokerage-firm reference — the Account and its Name — for the
+     * Opportunity record-page sidebar (backs BrokerFirmController.getBrokerFirm).
+     * Added by P4 cleanup wave G.
+     *
+     * FETCH-FOR-USE: BrokerFirmController already null-checked opportunityId and
+     * assigned the original query straight to a single Opportunity, then dereferenced
+     * `opp.AccountId` WITHOUT a null-guard on the record itself — so a miss must throw,
+     * not return null (returning null would NPE the caller). Preserved here via a
+     * single-row SOQL assignment that throws native System.QueryException on a miss.
+     *
+     * @param opportunityId Opportunity Id to load; must reference an existing row.
+     * @return The Opportunity with Id, AccountId, and Account.Name populated.
+     * @throws System.QueryException when no Opportunity matches the Id.
+     */
+    public static Opportunity selectAccountRefById(Id opportunityId) {
+        return [
+            SELECT Id, AccountId, Account.Name
+            FROM Opportunity
+            WHERE Id = :opportunityId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
+
+    /**
+     * Count of an Account's Opportunities grouped by stage — backs the firm-level
+     * deal counts (submitted / won / lost) on the Opportunity sidebar
+     * (BrokerFirmController.getBrokerFirm). Added by P4 cleanup wave G.
+     *
+     * @param accountId The brokerage-firm Account whose deals to aggregate.
+     * @return AggregateResult rows with alias `st` (StageName) and `c` (COUNT(Id));
+     *         empty when the Account has no Opportunities.
+     * @example
+     * for (AggregateResult ar : OpportunitySelector.countByStageForAccount(accountId)) { ... }
+     */
+    public static List<AggregateResult> countByStageForAccount(Id accountId) {
+        return [
+            SELECT StageName st, COUNT(Id) c
+            FROM Opportunity
+            WHERE AccountId = :accountId
+            WITH USER_MODE
+            GROUP BY StageName
+        ];
+    }
+
+    /**
+     * Opportunities in a set that have a Primary LOI designated — backs
+     * ApprovalAuditService's LOI-gate stamp, which reads each deal's Primary_LOI__c
+     * to know which LOI to mark Approved. Added by P4 cleanup wave G.
+     *
+     * BULK read (Set<Id>): the audit invocable processes a whole batch of LOI-gate
+     * deals at once, so this returns a List — never a single row. The
+     * `Primary_LOI__c != null` filter mirrors the original inline query so deals
+     * without a primary LOI are excluded at the query, not in Apex.
+     *
+     * @param opportunityIds Deal Ids to load (bound with IN); null/empty-safe.
+     * @return Opportunities (Id, Primary_LOI__c) that have a non-null Primary_LOI__c;
+     *         an empty list when the input is null/empty or none qualify (never null).
+     */
+    public static List<Opportunity> selectPrimaryLoiByIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Opportunity>();
+        }
+        return [
+            SELECT Id, Primary_LOI__c
+            FROM Opportunity
+            WHERE Id IN :opportunityIds AND Primary_LOI__c != null
+            WITH USER_MODE
+        ];
+    }
 }

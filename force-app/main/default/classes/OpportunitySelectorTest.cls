@@ -196,6 +196,120 @@ private class OpportunitySelectorTest {
             'All 251 setup Opportunities are read by their Ids in a single bulk Set<Id> query');
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectAccountRefById  (BrokerFirmController — sidebar firm reference)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectAccountRefById_returnsAccountReference() {
+        Account acct = TestDataFactory.createAccount(true);
+        Opportunity opp = TestDataFactory.createOpportunity(acct.Id, true);
+
+        Test.startTest();
+        Opportunity result = OpportunitySelector.selectAccountRefById(opp.Id);
+        Test.stopTest();
+
+        Assert.areEqual(opp.Id, result.Id, 'Should return the requested Opportunity');
+        Assert.areEqual(acct.Id, result.AccountId, 'AccountId must be populated for the sidebar');
+        Assert.areEqual(acct.Name, result.Account.Name, 'Account.Name must be populated for the firm name');
+    }
+
+    @isTest
+    static void selectAccountRefById_missing_throwsQueryException() {
+        Id ghostId = ghostOpportunityId();
+
+        Test.startTest();
+        try {
+            OpportunitySelector.selectAccountRefById(ghostId);
+            Assert.fail('A missing fetch-for-use Id must throw QueryException');
+        } catch (System.QueryException e) {
+            Assert.isNotNull(e.getMessage(), 'QueryException expected for a non-existent Id');
+        }
+        Test.stopTest();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // countByStageForAccount  (BrokerFirmController — firm-level deal counts)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void countByStageForAccount_scopesToAccountAndGroupsByStage() {
+        Account acct = TestDataFactory.createAccount(true);
+        TestDataFactory.createOpportunities(BULK_N, acct.Id, true);
+
+        Test.startTest();
+        List<AggregateResult> results = OpportunitySelector.countByStageForAccount(acct.Id);
+        Test.stopTest();
+
+        Integer newCount = null;
+        for (AggregateResult ar : results) {
+            if ('New'.equals((String) ar.get('st'))) {
+                newCount = (Integer) ar.get('c');
+            }
+        }
+        Assert.areEqual(BULK_N, newCount,
+            'All 251 New Opportunities for the account group into the New bucket; the no-account setup Opps are excluded');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectPrimaryLoiByIds  (ApprovalAuditService — LOI-gate stamp)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectPrimaryLoiByIds_returnsOnlyDealsWithPrimaryLoi() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        LOI__c loi = TestDataFactory.createLoi(opp.Id, true);
+        opp.Primary_LOI__c = loi.Id;
+        update opp;
+        // A second deal with no Primary_LOI__c must be excluded even though its Id is
+        // in the requested set.
+        Opportunity oppNoLoi = TestDataFactory.createOpportunity(null, true);
+
+        Test.startTest();
+        List<Opportunity> result =
+            OpportunitySelector.selectPrimaryLoiByIds(new Set<Id>{ opp.Id, oppNoLoi.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'Only the deal with a non-null Primary_LOI__c is returned');
+        Assert.areEqual(opp.Id, result[0].Id, 'The returned row is the deal that has a Primary LOI');
+        Assert.areEqual(loi.Id, result[0].Primary_LOI__c, 'Primary_LOI__c must be selected for the LOI stamp');
+    }
+
+    @isTest
+    static void selectPrimaryLoiByIds_nullOrEmpty_returnsEmpty() {
+        Test.startTest();
+        List<Opportunity> forNull = OpportunitySelector.selectPrimaryLoiByIds(null);
+        List<Opportunity> forEmpty = OpportunitySelector.selectPrimaryLoiByIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'Null ids short-circuit to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'Empty ids short-circuit to an empty list, not null');
+    }
+
+    @isTest
+    static void selectPrimaryLoiByIds_bulk251_readsAll() {
+        List<Opportunity> opps = TestDataFactory.createOpportunities(BULK_N, true);
+        // One LOI per deal (built unsaved, inserted once — no DML in the loop), then
+        // each deal points to its own Primary LOI.
+        List<LOI__c> lois = new List<LOI__c>();
+        for (Opportunity o : opps) {
+            lois.add(TestDataFactory.createLoi(o.Id, false));
+        }
+        insert lois;
+        for (Integer i = 0; i < opps.size(); i++) {
+            opps[i].Primary_LOI__c = lois[i].Id;
+        }
+        update opps;
+        Set<Id> ids = (new Map<Id, Opportunity>(opps)).keySet();
+
+        Test.startTest();
+        List<Opportunity> result = OpportunitySelector.selectPrimaryLoiByIds(ids);
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(),
+            'All 251 deals with a Primary LOI are read by their Ids in a single bulk Set<Id> query');
+    }
+
     /** A syntactically valid Opportunity Id that resolves to no row (create then delete). */
     private static Id ghostOpportunityId() {
         Opportunity ghost = TestDataFactory.createOpportunity(null, true);
