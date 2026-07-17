@@ -1,5 +1,6 @@
 import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
+import { formatMillions } from 'c/utils';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 
 const SELECTED_BAR = '#2e7d32';
@@ -66,7 +67,7 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
                 recordUrl: `/lightning/r/BOV_Submission__c/${r.id}/view`,
                 brokerFirm: r.brokerFirm || '—',
                 contactName: r.contactName || '—',
-                bovAmountLabel: r.bovAmount != null ? '$' + (parseFloat(r.bovAmount) / 1000000).toFixed(1) + 'M' : '—',
+                bovAmountLabel: formatMillions(r.bovAmount),
                 daysLabel: r.daysToMarket != null ? r.daysToMarket + 'd' : '—',
                 capRateLabel: r.capRate != null ? parseFloat(r.capRate).toFixed(2) + '%' : '—',
                 scoreText: score != null ? String(score) : '—',

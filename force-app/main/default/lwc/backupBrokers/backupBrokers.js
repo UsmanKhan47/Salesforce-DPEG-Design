@@ -1,4 +1,5 @@
 import { LightningElement, api, wire } from 'lwc';
+import { formatMillions } from 'c/utils';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 
 export default class BackupBrokers extends LightningElement {
@@ -17,8 +18,7 @@ export default class BackupBrokers extends LightningElement {
                 brokerFirm: r.brokerFirm || '—',
                 contactName: r.contactName || '—',
                 bovScore: r.bovScore != null ? r.bovScore : '—',
-                bovAmountLabel: r.bovAmount != null
-                    ? '$' + (parseFloat(r.bovAmount) / 1000000).toFixed(1) + 'M' : '—'
+                bovAmountLabel: formatMillions(r.bovAmount)
             }));
     }
 

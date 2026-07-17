@@ -1,7 +1,6 @@
 import { LightningElement, api, wire } from 'lwc';
+import { formatLongDate } from 'c/utils';
 import getOutreachSummary from '@salesforce/apex/BovController.getOutreachSummary';
-
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 export default class BovOutreach extends LightningElement {
     @api recordId;
@@ -20,8 +19,8 @@ export default class BovOutreach extends LightningElement {
         return 'nda-pill ' + (cls[this._ndaStatus] || 'nda-pending');
     }
 
-    get packageSentLabel()        { return this._fmtDate(this.summary?.packageSent); }
-    get submissionDeadlineLabel() { return this._fmtDate(this.summary?.submissionDeadline); }
+    get packageSentLabel()        { return formatLongDate(this.summary?.packageSent); }
+    get submissionDeadlineLabel() { return formatLongDate(this.summary?.submissionDeadline); }
     get selectedBrokerLabel()     { return this.summary?.selectedBroker || 'TBD'; }
 
     get stats() {
@@ -32,11 +31,5 @@ export default class BovOutreach extends LightningElement {
             { key: 'resp', label: 'Responses Received',  value: `${s.responsesReceived ?? 0} of ${s.brokersContacted ?? 0}`, iconName: 'utility:reply', iconColor: '#2BAFAC' },
             { key: 'brk',  label: 'Selected Broker',     value: this.selectedBrokerLabel,     iconName: 'utility:user',   iconColor: '#5a6b7b' }
         ];
-    }
-
-    _fmtDate(d) {
-        if (!d) return '—';
-        const parts = String(d).split('-');
-        return MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parseInt(parts[2], 10) + ', ' + parts[0];
     }
 }
