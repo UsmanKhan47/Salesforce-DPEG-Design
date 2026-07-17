@@ -4,13 +4,5 @@
  * OpportunityReviewService to create the matching feasibility-review child record.
  */
 trigger OpportunityReviewTrigger on Opportunity (after insert, after update) {
-    OpportunityReviewService.createReviewRecords(
-        Trigger.new,
-        Trigger.isUpdate ? Trigger.oldMap : null
-    );
-    // Open (and stamp) the deal's NDA the moment the Opportunity is created.
-    OpportunityReviewService.ensureNda(
-        Trigger.new,
-        Trigger.isUpdate ? Trigger.oldMap : null
-    );
+    new OpportunityReviewTriggerHandler().run();
 }

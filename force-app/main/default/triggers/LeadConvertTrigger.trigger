@@ -4,5 +4,5 @@
  * type and the matching record type on that Opportunity.
  */
 trigger LeadConvertTrigger on Lead (after update) {
-    LeadConvertService.stampConvertedOpportunities(Trigger.new, Trigger.oldMap);
+    new LeadConvertTriggerHandler().run();
 }
