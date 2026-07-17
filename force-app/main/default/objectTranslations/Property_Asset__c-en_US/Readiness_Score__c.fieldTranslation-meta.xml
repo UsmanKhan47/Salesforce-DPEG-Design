@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
-    <label><!-- Occupied Flag --></label>
-    <name>Occupied_Flag__c</name>
+    <label><!-- Readiness Score --></label>
+    <name>Readiness_Score__c</name>
 </CustomFieldTranslation>

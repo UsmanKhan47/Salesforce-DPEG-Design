@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave B — clean subset, DEPLOY 1 of 2 (ADD + REPOINT).
+
+  Creates the 2 Rule-9 formula-field renames (identical formula, no stored
+  data to backfill) and grants FLS in the same permission sets the old
+  fields used, then repoints every live reader found for these 2 fields:
+    - Property_Asset__c.Is_Ready__c        -> Readiness_Score__c
+      (Disposition_Dashboard_Access FLS; Dispositions/Sell_Readiness_By_Type report)
+    - Unit__c.Occupied_Flag__c              -> Occupied_Pct__c
+      (Property_Management_Access FLS; Property_Management/Occupancy_by_Property
+      report; Property_Management/Property_Management_Overview dashboard — TWO
+      chartSummary column references, found by repo-wide grep, not in the
+      original reader map)
+
+  Old fields are left in place and untouched here (coexistence window).
+  Deploy 2 (destructiveChangesPost-bclean.xml) retires them once this has
+  committed and been verified.
+
+  Deploy:
+    sf project deploy start \
+      --manifest manifest/wave-b-formula/package-add-repoint.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level NoTestRun --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Property_Asset__c.Readiness_Score__c</members>
+        <members>Unit__c.Occupied_Pct__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>Disposition_Dashboard_Access</members>
+        <members>Property_Management_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>Dispositions/Sell_Readiness_By_Type</members>
+        <members>Property_Management/Occupancy_by_Property</members>
+        <name>Report</name>
+    </types>
+    <types>
+        <members>Property_Management/Property_Management_Overview</members>
+        <name>Dashboard</name>
+    </types>
+    <version>67.0</version>
+</Package>

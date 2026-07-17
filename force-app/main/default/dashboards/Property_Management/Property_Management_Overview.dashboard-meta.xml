@@ -33,7 +33,7 @@
                 <autoselectColumnsFromReport>false</autoselectColumnsFromReport>
                 <chartSummary>
                     <aggregate>Average</aggregate>
-                    <column>Unit__c.Occupied_Flag__c</column>
+                    <column>Unit__c.Occupied_Pct__c</column>
                 </chartSummary>
                 <componentType>Metric</componentType>
                 <decimalPrecision>0</decimalPrecision>
@@ -176,7 +176,7 @@
                 <chartSummary>
                     <aggregate>Average</aggregate>
                     <axisBinding>y</axisBinding>
-                    <column>Unit__c.Occupied_Flag__c</column>
+                    <column>Unit__c.Occupied_Pct__c</column>
                 </chartSummary>
                 <componentType>Bar</componentType>
                 <decimalPrecision>0</decimalPrecision>

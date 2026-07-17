@@ -10,7 +10,7 @@
     </columns>
     <columns>
         <aggregateTypes>Sum</aggregateTypes>
-        <field>Property_Asset__c.Is_Ready__c</field>
+        <field>Property_Asset__c.Readiness_Score__c</field>
     </columns>
     <filter>
         <criteriaItems>

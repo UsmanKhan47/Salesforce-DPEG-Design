@@ -629,7 +629,7 @@
         <members>Property_Asset__c.Argus_Value__c</members>
         <members>Property_Asset__c.Closing_Date__c</members>
         <members>Property_Asset__c.Final_Purchase_Price__c</members>
-        <members>Property_Asset__c.Is_Ready__c</members>
+        <members>Property_Asset__c.Readiness_Score__c</members>
         <members>Property_Asset__c.Market_Cap_Rate__c</members>
         <members>Property_Asset__c.NOI__c</members>
         <members>Property_Asset__c.Peak_Sell_Date__c</members>
@@ -748,7 +748,7 @@
         <members>Unit__c.NNN_Monthly_Total__c</members>
         <members>Unit__c.NNN_PSF__c</members>
         <members>Unit__c.NNN_Property_Tax__c</members>
-        <members>Unit__c.Occupied_Flag__c</members>
+        <members>Unit__c.Occupied_Pct__c</members>
         <members>Unit__c.Property_Asset__c</members>
         <members>Unit__c.Square_Feet__c</members>
         <members>Unit__c.Status__c</members>

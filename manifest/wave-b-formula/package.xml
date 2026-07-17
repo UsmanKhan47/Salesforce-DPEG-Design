@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Companion (empty) manifest for manifest/wave-b-formula/destructiveChangesPost-bclean.xml.
+
+    The Metadata API requires a package.xml alongside any destructive
+    manifest. This one deploys no new metadata — it only retires the 2
+    old-named formula fields being replaced by package-add-repoint.xml
+    (deploy 1).
+    -->
+    <version>67.0</version>
+</Package>

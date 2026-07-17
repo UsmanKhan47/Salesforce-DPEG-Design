@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ARCHITECTURE.md §1 Wave B — clean subset, DEPLOY 2 of 2 (RETIRE).
+
+  Destructively deletes the 2 old-named formula fields now that their
+  replacements (Readiness_Score__c, Occupied_Pct__c) have been created,
+  FLS-granted, and every live reader repointed by deploy 1
+  (package-add-repoint.xml). Both fields carry zero stored data (formula
+  fields) so there is nothing to backfill.
+
+  Run ONLY after deploy 1 has committed and been verified (describe shows
+  both new fields present and readers resolving).
+
+  Deploy:
+    sf project deploy start \
+      --manifest manifest/wave-b-formula/package.xml \
+      --post-destructive-changes manifest/wave-b-formula/destructiveChangesPost-bclean.xml \
+      --target-org DPEG-Acq-5 \
+      --test-level NoTestRun --wait 30
+  -->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Property_Asset__c.Is_Ready__c</members>
+        <members>Unit__c.Occupied_Flag__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

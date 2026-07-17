@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomFieldTranslation xmlns="http://soap.sforce.com/2006/04/metadata">
-    <label><!-- Is Ready --></label>
-    <name>Is_Ready__c</name>
+    <label><!-- Occupied Pct --></label>
+    <name>Occupied_Pct__c</name>
 </CustomFieldTranslation>

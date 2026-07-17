@@ -813,7 +813,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Unit__c.Occupied_Flag__c</field>
+        <field>Unit__c.Occupied_Pct__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

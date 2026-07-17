@@ -38,7 +38,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Asset__c.Is_Ready__c</field>
+        <field>Property_Asset__c.Readiness_Score__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
