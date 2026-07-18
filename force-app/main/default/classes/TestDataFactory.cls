@@ -45,9 +45,9 @@
  *   word "Number" and it is not one. This defect class is the evidence behind the
  *   type-suffix rule in ARCHITECTURE.md §1.
  *
- *   Related: nine money/duration fields are TEXT, not Currency/Number, against
+ *   Related: seven money/duration fields are TEXT, not Currency/Number, against
  *   ARCHITECTURE.md §1's naming convention — Lease_Inquiry__c.Base_Rent__c,
- *   .Lease_Term__c, .Free_Rent__c, .TI_Allowance__c; Lease_Renewal__c.Current_Rent__c;
+ *   .TI_Allowance__c; Lease_Renewal__c.Current_Rent__c;
  *   Development_Feasibility_Review__c.Est_Cost_Impact__c, .Proposals_Target__c;
  *   Construction_Feasibility_Review__c.Estimated_Timeline_Impact__c;
  *   CAM_Reconciliation__c.Reconciliation_Year__c. They take String literals here.
@@ -1561,11 +1561,12 @@ public with sharing class TestDataFactory {
                 Inquiry_Date__c = Date.today(),
                 Stage_Start_Date__c = Date.today(),
                 Space_Required__c = 1000 + (i * 10),
-                // Base_Rent__c / Lease_Term__c / Free_Rent__c / TI_Allowance__c are TEXT,
+                // Base_Rent__c / TI_Allowance__c are TEXT (blessed quoted-deal-term Text),
                 // not Currency/Number — see the type-inversion note in the class header.
+                // Lease_Term_Months__c / Free_Rent_Months__c are typed Number(months) per §1 rule 9 (Wave D).
                 Base_Rent__c = String.valueOf(5000 + (i * 10)),
-                Lease_Term__c = '60',
-                Free_Rent__c = '2',
+                Lease_Term_Months__c = 60,
+                Free_Rent_Months__c = 2,
                 TI_Allowance__c = '25',
                 Initial_Notes__c = 'Test inquiry ' + i
             ));

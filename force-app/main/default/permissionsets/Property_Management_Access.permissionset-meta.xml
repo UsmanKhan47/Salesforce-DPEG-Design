@@ -314,7 +314,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lease_Inquiry__c.Free_Rent__c</field>
+        <field>Lease_Inquiry__c.Free_Rent_Months__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -339,7 +339,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lease_Inquiry__c.Lease_Term__c</field>
+        <field>Lease_Inquiry__c.Lease_Term_Months__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

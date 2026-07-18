@@ -19,8 +19,8 @@
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Base_Rent__c</fieldNames>
-        <fieldNames>Lease_Term__c</fieldNames>
-        <fieldNames>Free_Rent__c</fieldNames>
+        <fieldNames>Lease_Term_Months__c</fieldNames>
+        <fieldNames>Free_Rent_Months__c</fieldNames>
         <fieldNames>TI_Allowance__c</fieldNames>
         <fieldNames>Commencement_Date__c</fieldNames>
         <info>Key terms are locked. Capture the agreed LOI terms — they stay fixed from here.</info>
