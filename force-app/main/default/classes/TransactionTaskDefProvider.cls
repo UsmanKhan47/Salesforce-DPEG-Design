@@ -30,6 +30,7 @@ public with sharing class TransactionTaskDefProvider {
     }
 
     /** Orders by Group_Letter__c, then Sequence__c — both ascending, nulls first. */
+    @TestVisible
     private class GroupSequenceComparator implements System.Comparator<Transaction_Task_Def__mdt> {
         public Integer compare(Transaction_Task_Def__mdt first, Transaction_Task_Def__mdt second) {
             Integer byGroup = compareStrings(first.Group_Letter__c, second.Group_Letter__c);

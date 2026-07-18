@@ -32,6 +32,7 @@ public with sharing class TaskGroupDefProvider {
     }
 
     /** Orders by Sequence__c ascending, nulls first (SOQL ASC semantics). */
+    @TestVisible
     private class SequenceComparator implements System.Comparator<Task_Group_Def__mdt> {
         public Integer compare(Task_Group_Def__mdt first, Task_Group_Def__mdt second) {
             Decimal a = first.Sequence__c;

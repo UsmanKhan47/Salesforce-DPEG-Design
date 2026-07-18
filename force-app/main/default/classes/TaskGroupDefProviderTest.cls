@@ -47,4 +47,28 @@ private class TaskGroupDefProviderTest {
         }
         System.assertEquals(defs.size(), letters.size(), 'Every group def has a unique Letter__c');
     }
+
+    /**
+     * Directly exercises the SequenceComparator's defensive tie/null branches,
+     * which the real deployed data (distinct, non-null Sequence__c values) never
+     * reaches. CMDT cannot be inserted in a test, so the comparator is invoked on
+     * in-memory Task_Group_Def__mdt instances — no DML required.
+     */
+    @isTest
+    static void sequenceComparator_handlesTiesAndNulls() {
+        TaskGroupDefProvider.SequenceComparator comparator = new TaskGroupDefProvider.SequenceComparator();
+
+        Task_Group_Def__mdt five = new Task_Group_Def__mdt(Sequence__c = 5);
+        Task_Group_Def__mdt fiveAgain = new Task_Group_Def__mdt(Sequence__c = 5);
+        Task_Group_Def__mdt three = new Task_Group_Def__mdt(Sequence__c = 3);
+        Task_Group_Def__mdt nullSeq = new Task_Group_Def__mdt(Sequence__c = null);
+        Task_Group_Def__mdt nullSeqAgain = new Task_Group_Def__mdt(Sequence__c = null);
+
+        System.assertEquals(0, comparator.compare(five, fiveAgain), 'Equal sequences tie -> 0');
+        System.assertEquals(0, comparator.compare(nullSeq, nullSeqAgain), 'Both null sequences tie -> 0');
+        System.assertEquals(-1, comparator.compare(nullSeq, five), 'Null sequence sorts before non-null');
+        System.assertEquals(1, comparator.compare(five, nullSeq), 'Non-null sequence sorts after null');
+        System.assertEquals(-1, comparator.compare(three, five), 'Smaller sequence sorts first');
+        System.assertEquals(1, comparator.compare(five, three), 'Larger sequence sorts last');
+    }
 }
