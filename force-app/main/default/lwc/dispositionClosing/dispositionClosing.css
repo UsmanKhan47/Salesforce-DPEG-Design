@@ -5,7 +5,7 @@
 }
 .card {
     background: #fff;
-    border: 1px solid #e3e6eb;
+    border: var(--slds-g-sizing-border-1, 1px) solid #e3e6eb;
     border-radius: 10px;
     overflow: hidden;
 }
@@ -13,11 +13,11 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    padding: 16px 20px 12px;
+    padding: var(--slds-g-spacing-4, 16px) 20px var(--slds-g-spacing-3, 12px);
     border-bottom: 1px solid #eef1f4;
     gap: 12px;
 }
-.card-title { font-weight: 700; font-size: 13px; color: #181818; }
+.card-title { font-weight: var(--slds-g-font-weight-7, 700); font-size: var(--slds-g-font-scale-base, 13px); color: #181818; }
 .card-sub { font-size: 11px; color: #8a96a3; margin-top: 3px; }
 .status-badge {
     display: inline-flex;
@@ -25,10 +25,10 @@
     gap: 6px;
     background: #eceff1;
     color: #5a6b7b;
-    border: 1px solid #e1e6ea;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 4px 11px;
+    border: var(--slds-g-sizing-border-1, 1px) solid #e1e6ea;
+    font-size: var(--slds-g-font-scale-neg-2, 10px);
+    font-weight: var(--slds-g-font-weight-6, 600);
+    padding: var(--slds-g-spacing-1, 4px) 11px;
     border-radius: 14px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -38,5 +38,5 @@
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 0.5rem;
-    padding: 4px 16px 14px;
+    padding: var(--slds-g-spacing-1, 4px) var(--slds-g-spacing-4, 16px) 14px;
 }

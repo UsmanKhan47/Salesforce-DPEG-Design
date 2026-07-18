@@ -1,7 +1,7 @@
 .ps-card {
     background: #fff;
-    border: 1px solid #E2E0DB;
-    border-radius: 8px;
+    border: var(--slds-g-sizing-border-1, 1px) solid #E2E0DB;
+    border-radius: var(--slds-g-radius-border-2, 8px);
     box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
     padding: 18px;
     display: block;
@@ -12,7 +12,7 @@
     display: flex;
     align-items: center;
     gap: 9px;
-    margin-bottom: 16px;
+    margin-bottom: var(--slds-g-spacing-4, 16px);
 }
 .ps-icon {
     display: inline-flex;
@@ -21,8 +21,8 @@
     flex-shrink: 0;
 }
 .ps-title {
-    font-size: 16px;
-    font-weight: 700;
+    font-size: var(--slds-g-font-scale-2, 16px);
+    font-weight: var(--slds-g-font-weight-7, 700);
     color: #1A1714;
 }
 
@@ -50,13 +50,13 @@
 .ps-pct {
     font-family: 'Courier New', Courier, monospace;
     font-size: 22px;
-    font-weight: 600;
+    font-weight: var(--slds-g-font-weight-6, 600);
     color: #1A1714;
-    line-height: 1;
+    line-height: var(--slds-g-font-line-height-1, 1);
 }
 .ps-act-lbl {
     font-size: 9px;
-    font-weight: 600;
+    font-weight: var(--slds-g-font-weight-6, 600);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: #8A8680;
@@ -69,22 +69,22 @@
 }
 .ps-rd-label {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: var(--slds-g-font-weight-6, 600);
     letter-spacing: 0.07em;
     text-transform: uppercase;
     color: #8A8680;
 }
 .ps-rd-nums {
-    margin-top: 4px;
+    margin-top: var(--slds-g-spacing-1, 4px);
 }
 .ps-rd-active {
     font-family: 'Courier New', Courier, monospace;
     font-size: 30px;
-    font-weight: 600;
+    font-weight: var(--slds-g-font-weight-6, 600);
     color: #1A1714;
 }
 .ps-rd-sub {
-    font-size: 12px;
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
     color: #6B6560;
     margin-top: 2px;
 }
@@ -109,7 +109,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
 }
 .ps-leg-lbl {
     flex: 1;
@@ -117,6 +117,6 @@
 }
 .ps-leg-cnt {
     font-family: 'Courier New', Courier, monospace;
-    font-weight: 600;
+    font-weight: var(--slds-g-font-weight-6, 600);
     color: #1A1714;
 }

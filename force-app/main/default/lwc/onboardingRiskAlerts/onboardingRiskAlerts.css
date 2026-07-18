@@ -1,4 +1,4 @@
 .grid { padding: 6px 14px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .tile { border-radius: 9px; padding: 13px 14px; }
-.val { font-size: 21px; font-weight: 700; line-height: 1; }
-.lbl { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #706E6B; margin-top: 5px; }
+.val { font-size: 21px; font-weight: var(--slds-g-font-weight-7, 700); line-height: var(--slds-g-font-line-height-1, 1); }
+.lbl { font-size: 10.5px; font-weight: var(--slds-g-font-weight-6, 600); text-transform: uppercase; letter-spacing: 0.03em; color: #706E6B; margin-top: 5px; }

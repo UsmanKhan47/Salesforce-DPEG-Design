@@ -4,7 +4,7 @@
 .view-all-footer a {
     color: var(--slds-g-color-brand-base-50, #0176d3);
     text-decoration: none;
-    font-size: 0.8125rem;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
 }
 .view-all-footer a:hover {
     text-decoration: underline;

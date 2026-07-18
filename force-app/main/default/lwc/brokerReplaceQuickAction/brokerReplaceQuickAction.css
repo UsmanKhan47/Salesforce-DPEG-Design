@@ -5,9 +5,9 @@
     align-items: flex-start;
     gap: 6px;
     background: #f3f3f2;
-    border: 1px solid #e5e5e5;
-    border-radius: 0.25rem;
-    padding: 8px 10px;
-    font-size: 12px;
+    border: var(--slds-g-sizing-border-1, 1px) solid #e5e5e5;
+    border-radius: var(--slds-g-radius-border-1, 0.25rem);
+    padding: var(--slds-g-spacing-2, 8px) 10px;
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
     color: #444;
 }

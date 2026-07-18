@@ -5,7 +5,7 @@
 }
 .card {
     background: #fff;
-    border: 1px solid #e3e6eb;
+    border: var(--slds-g-sizing-border-1, 1px) solid #e3e6eb;
     border-radius: 10px;
     overflow: hidden;
 }
@@ -13,21 +13,21 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    padding: 16px 20px 12px;
+    padding: var(--slds-g-spacing-4, 16px) 20px var(--slds-g-spacing-3, 12px);
     border-bottom: 1px solid #eef1f4;
     gap: 12px;
 }
-.card-title { font-weight: 700; font-size: 13px; color: #181818; }
+.card-title { font-weight: var(--slds-g-font-weight-7, 700); font-size: var(--slds-g-font-scale-base, 13px); color: #181818; }
 .card-sub { font-size: 11px; color: #8a96a3; margin-top: 3px; }
 .matrix-badge {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     background: #e6f4ea;
-    color: #2e7d32;
+    color: var(--slds-g-color-palette-green-50, #2e7d32);
     font-size: 11px;
-    font-weight: 600;
-    padding: 4px 11px;
+    font-weight: var(--slds-g-font-weight-6, 600);
+    padding: var(--slds-g-spacing-1, 4px) 11px;
     border-radius: 14px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -37,18 +37,18 @@
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 0.5rem;
-    padding: 4px 16px 14px;
+    padding: var(--slds-g-spacing-1, 4px) var(--slds-g-spacing-4, 16px) 14px;
 }
 .nda-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 20px;
+    padding: var(--slds-g-spacing-3, 12px) 20px;
     border-top: 1px solid #eef1f4;
 }
 .nda-label {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: var(--slds-g-font-weight-7, 700);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: #5a6b7b;
@@ -58,8 +58,8 @@
     align-items: center;
     gap: 6px;
     font-size: 11px;
-    font-weight: 600;
-    padding: 4px 11px;
+    font-weight: var(--slds-g-font-weight-6, 600);
+    padding: var(--slds-g-spacing-1, 4px) 11px;
     border-radius: 14px;
     white-space: nowrap;
 }
@@ -70,6 +70,6 @@
     background: currentColor;
     flex-shrink: 0;
 }
-.nda-signed   { background: #e6f4ea; color: #2e7d32; }
+.nda-signed   { background: #e6f4ea; color: var(--slds-g-color-palette-green-50, #2e7d32); }
 .nda-received { background: #e6f3f3; color: #1b7e7a; }
 .nda-pending  { background: #fdf0e1; color: #a86616; }

@@ -7,8 +7,8 @@
     width: 100%;
 }
 .sm-range {
-    color: #8a96a3;
-    font-size: 12px;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
@@ -24,9 +24,9 @@
     width: 26px;
     height: 26px;
     padding: 0;
-    border: 1px solid #dddbda;
-    border-radius: 4px;
-    background: #fff;
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #dddbda);
+    border-radius: var(--slds-g-radius-border-1, 4px);
+    background: var(--slds-g-color-surface-container-1, #fff);
     cursor: pointer;
 }
 .sm-pgbtn:hover:not(:disabled) {
@@ -38,14 +38,14 @@
 }
 .sm-pglabel {
     color: #514f4d;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    font-weight: var(--slds-g-font-weight-6, 600);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
 .sm-viewall {
     color: var(--slds-g-color-brand-base-50, #0176d3);
-    font-size: 0.8125rem;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
     text-decoration: none;
     white-space: nowrap;
 }

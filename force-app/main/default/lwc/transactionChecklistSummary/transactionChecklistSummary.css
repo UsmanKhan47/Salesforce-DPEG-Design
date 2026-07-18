@@ -5,10 +5,10 @@
 }
 .cs {
     background: #fff;
-    border: 1px solid #dddbda;
+    border: var(--slds-g-sizing-border-1, 1px) solid #dddbda;
     border-radius: 6px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    padding: 14px 16px;
+    padding: 14px var(--slds-g-spacing-4, 16px);
 }
 .cs-row {
     display: flex;
@@ -19,22 +19,22 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
-    font-weight: 700;
+    font-size: var(--slds-g-font-scale-base, 13px);
+    font-weight: var(--slds-g-font-weight-7, 700);
     color: #080707;
 }
 .cs-icon {
     --slds-c-icon-color-background: #e8a200;
 }
 .cs-pct {
-    font-size: 13px;
-    font-weight: 700;
-    color: #2e7d32;
+    font-size: var(--slds-g-font-scale-base, 13px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-palette-green-50, #2e7d32);
     font-variant-numeric: tabular-nums;
 }
 .cs-track {
-    margin: 10px 0 8px;
-    height: 8px;
+    margin: 10px 0 var(--slds-g-spacing-2, 8px);
+    height: var(--slds-g-sizing-3, 8px);
     background: #ecebea;
     border-radius: 5px;
     overflow: hidden;

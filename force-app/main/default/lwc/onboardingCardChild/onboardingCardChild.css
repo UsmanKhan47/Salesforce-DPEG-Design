@@ -1,10 +1,10 @@
 .stat-card {
     background-color: var(--slds-g-color-neutral-base-95, #f3f2f2);
-    border: 1px solid var(--slds-g-color-border-base-1, #e5e5e5);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-base-1, #e5e5e5);
     border-radius: var(--slds-g-radius-border-2, 0.5rem);
     height: 100%;
     box-sizing: border-box;
-    padding: 0.625rem 0.75rem;
+    padding: 0.625rem var(--slds-g-spacing-3, 0.75rem);
 }
 
 /* Complete state: green card (used by phase-progress cards when all tasks are done). */
@@ -16,7 +16,7 @@
     color: #1b5e20;
 }
 .stat-card--done .text-col .stat-label {
-    color: #2e7d32;
+    color: var(--slds-g-color-palette-green-50, #2e7d32);
 }
 
 .card-body {
@@ -37,8 +37,8 @@
 
 /* .text-col prefix raises specificity above the SLDS text classes so the smaller size wins. */
 .text-col .stat-value {
-    font-size: 0.875rem;
-    font-weight: 700;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
     color: var(--slds-g-color-neutral-base-10, #181818);
     margin-bottom: 0.125rem;
     white-space: normal;
@@ -46,7 +46,7 @@
 }
 
 .text-col .stat-label {
-    font-size: 0.625rem;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
     color: var(--slds-g-color-neutral-base-30, #5a6b7b);
     white-space: normal;
     overflow-wrap: break-word;

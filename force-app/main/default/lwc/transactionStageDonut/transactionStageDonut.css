@@ -2,7 +2,7 @@
     display: block;
 }
 .body {
-    padding: 4px 14px 14px;
+    padding: var(--slds-g-spacing-1, 4px) 14px 14px;
 }
 
 /* ── Donut ── */
@@ -10,7 +10,7 @@
     position: relative;
     width: 168px;
     max-width: 100%;
-    margin: 4px auto 14px;
+    margin: var(--slds-g-spacing-1, 4px) auto 14px;
 }
 .donut__svg {
     width: 100%;
@@ -27,9 +27,9 @@
     pointer-events: none;
 }
 .donut__total {
-    font-size: 28px;
-    font-weight: 700;
-    line-height: 1;
+    font-size: var(--slds-g-font-scale-5, 28px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    line-height: var(--slds-g-font-line-height-1, 1);
     color: #181818;
     font-variant-numeric: tabular-nums;
 }
@@ -38,7 +38,7 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #8a96a3;
-    font-weight: 700;
+    font-weight: var(--slds-g-font-weight-7, 700);
     margin-top: 3px;
 }
 
@@ -74,7 +74,7 @@
 }
 .legend__count {
     font-size: 12.5px;
-    font-weight: 700;
+    font-weight: var(--slds-g-font-weight-7, 700);
     color: #181818;
     font-variant-numeric: tabular-nums;
 }
@@ -88,6 +88,6 @@
 .empty {
     text-align: center;
     color: #8a96a3;
-    font-size: 13px;
-    padding: 24px 0;
+    font-size: var(--slds-g-font-scale-base, 13px);
+    padding: var(--slds-g-spacing-5, 24px) 0;
 }

@@ -1,6 +1,6 @@
 .hdr { display:flex; align-items:center; gap:9px; }
 .hdr-icon { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
-.hdr-title { font-size:16px; font-weight:700; color:#1A1714; }
+.hdr-title { font-size:var(--slds-g-font-scale-2, 16px); font-weight:var(--slds-g-font-weight-7, 700); color:var(--slds-g-color-on-surface-2, #1A1714); }
 .view-all-footer { text-align: center; }
-.view-all-footer a { font-weight: 600; color: #0B5CAB; text-decoration: none; }
+.view-all-footer a { font-weight: var(--slds-g-font-weight-6, 600); color: var(--slds-g-color-brand-base-50, #0B5CAB); text-decoration: none; }
 .view-all-footer a:hover { text-decoration: underline; }

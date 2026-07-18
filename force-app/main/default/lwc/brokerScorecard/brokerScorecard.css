@@ -1,10 +1,10 @@
 /* ── Wrapper ───────────────────────────────────────────────── */
 .scorecard-wrapper {
-    padding: 16px;
+    padding: var(--slds-g-spacing-4, 16px);
 }
 
 .scorecard-intro {
-    font-size: 13px;
+    font-size: var(--slds-g-font-scale-base, 13px);
     color: #5a6a7a;
     margin: 0 0 18px 0;
     max-width: 680px;
@@ -21,8 +21,8 @@
 /* ── Individual card ───────────────────────────────────────── */
 .broker-card {
     background: #ffffff;
-    border: 1px solid #e4e9ef;
-    border-radius: 8px;
+    border: var(--slds-g-sizing-border-1, 1px) solid #e4e9ef;
+    border-radius: var(--slds-g-radius-border-2, 8px);
     box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
     overflow: hidden;
 }
@@ -46,7 +46,7 @@
     align-items: center;
     justify-content: center;
     color: #E0C47E;
-    font-weight: 700;
+    font-weight: var(--slds-g-font-weight-7, 700);
     font-size: 15px;
     flex-shrink: 0;
 }
@@ -57,13 +57,13 @@
 
 .broker-name {
     font-size: 18px;
-    font-weight: 600;
+    font-weight: var(--slds-g-font-weight-6, 600);
     color: #0c1e3c;
     line-height: 1.2;
 }
 
 .broker-firm {
-    font-size: 13px;
+    font-size: var(--slds-g-font-scale-base, 13px);
     color: #5a6a7a;
     margin-top: 2px;
 }
@@ -73,13 +73,13 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    height: 32px;
-    padding: 0 12px;
-    border: 1px solid #c9d3dc;
-    border-radius: 4px;
+    height: var(--slds-g-sizing-9, 32px);
+    padding: 0 var(--slds-g-spacing-3, 12px);
+    border: var(--slds-g-sizing-border-1, 1px) solid #c9d3dc;
+    border-radius: var(--slds-g-radius-border-1, 4px);
     background: #ffffff;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    font-weight: var(--slds-g-font-weight-6, 600);
     color: #5a6a7a;
     cursor: pointer;
     white-space: nowrap;
@@ -106,24 +106,24 @@
 .active-count {
     font-family: 'Courier New', Courier, monospace;
     font-size: 34px;
-    font-weight: 500;
+    font-weight: var(--slds-g-font-weight-5, 500);
     color: #146830;
-    line-height: 1;
+    line-height: var(--slds-g-font-line-height-1, 1);
 }
 
 .active-label {
-    font-size: 13px;
+    font-size: var(--slds-g-font-scale-base, 13px);
     color: #5a6a7a;
 }
 
 /* Stacked bar */
 .stacked-bar {
     display: flex;
-    height: 8px;
+    height: var(--slds-g-sizing-3, 8px);
     border-radius: 9999px;
     overflow: hidden;
     background: #f0f2f5;
-    margin-bottom: 16px;
+    margin-bottom: var(--slds-g-spacing-4, 16px);
 }
 
 /* ── 4-stat footer ─────────────────────────────────────────── */
@@ -139,13 +139,13 @@
 
 .stat-num {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 20px;
-    font-weight: 600;
-    line-height: 1;
+    font-size: var(--slds-g-font-scale-3, 20px);
+    font-weight: var(--slds-g-font-weight-6, 600);
+    line-height: var(--slds-g-font-line-height-1, 1);
 }
 
 .stat-label {
-    font-size: 10px;
+    font-size: var(--slds-g-font-scale-neg-2, 10px);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #8a97a5;
@@ -154,13 +154,13 @@
 
 /* Outcome colours */
 .stat-active   { color: #146830; }
-.stat-leased   { color: #8B6800; }
+.stat-leased   { color: var(--slds-g-color-palette-orange-40, #8B6800); }
 .stat-disposed { color: #475569; }
 
 /* ── Empty state ───────────────────────────────────────────── */
 .empty-state {
-    padding: 32px 0;
-    font-size: 14px;
+    padding: var(--slds-g-spacing-6, 32px) 0;
+    font-size: var(--slds-g-font-scale-1, 14px);
     color: #5a6a7a;
     text-align: center;
 }
