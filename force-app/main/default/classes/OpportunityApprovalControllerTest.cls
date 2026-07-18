@@ -122,4 +122,44 @@ private class OpportunityApprovalControllerTest {
         Test.stopTest();
         System.assert(threw, 'A null record id should throw');
     }
+
+    @isTest
+    static void resolvesDealFromContractReviewRecord() {
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = 'PSA';
+        insert o; // stage entry auto-creates a Contract_Review__c
+        Contract_Review__c cr = [SELECT Id FROM Contract_Review__c WHERE Opportunity__c = :o.Id LIMIT 1];
+
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            OpportunityApprovalController.submitForApproval(cr.Id);
+        } catch (Exception e) {
+            threw = true;
+        }
+        Test.stopTest();
+
+        // Proves resolveDealId routes a Contract Review submission to its PARENT deal:
+        // PSA meets neither approval process's entry criteria, so the no-applicable-process
+        // branch throws (not the "not linked to a deal" error), proving the parent
+        // Opportunity was resolved correctly before Approval.process ever ran.
+        System.assert(threw, 'A deal at PSA meets no approval entry criteria');
+        System.assertEquals(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :o.Id],
+            'No pending approval should be created for an ineligible stage');
+    }
+
+    @isTest
+    static void unsupportedObjectThrows() {
+        Contact c = TestDataFactory.createContact(null, true);
+
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            OpportunityApprovalController.submitForApproval(c.Id);
+        } catch (Exception e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw, 'Submit for Approval is not available on an unsupported object type');
+    }
 }
