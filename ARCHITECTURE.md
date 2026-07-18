@@ -10,14 +10,14 @@ This document is the source of truth for **how the DPEG application is shaped**:
 
 **API Version:** 67.0 (authoritative: `sfdx-project.json` → `sourceApiVersion`, which matches the org's own API version — verify with `sf org display`).
 
-> ⚠️ **The repo is deliberately mixed-version. This is not an oversight — do not "fix" it.**
+> ✅ **The repo is now uniformly 67.0 — the mixed-version state is resolved (2026-07-18).**
 >
 > | Metadata | Version | Status |
 > | --- | --- | --- |
 > | Apex classes, triggers, Flows, VF pages/components | **67.0** | Uplifted. Matches the org. |
-> | **LWC (`.js-meta.xml`)** | **62.0 / 59.0** | ⚠️ **Intentionally held back.** |
+> | **LWC (`.js-meta.xml`)** | **67.0** | ✅ Uplifted 2026-07-18 (commit `949e710`), once Phase 8 delivered the Jest net. |
 >
-> LWC `apiVersion` gates rendering behaviour (shadow DOM). This repo has **no Jest suite** — it is stood up from zero in Phase 8 — and `RunLocalTests` covers Apex only, so bumping the 82 LWC bundles today would ship a rendering-behaviour change with **zero automated verification** (10 of them span seven releases, 59.0 → 67.0). The LWC uplift is therefore split into its own PR, gated on Phase 8 delivering the Jest net. Until then, **leave LWC `apiVersion` values alone.**
+> The LWC uplift was gated on Phase 8 because `apiVersion` governs shadow-DOM rendering and `RunLocalTests` is Apex-only. **Phase 8 landed the Jest net (82 suites / 439 tests), so the 82 bundles were bumped 59.0/62.0 → 67.0 and verified against that net (still 82/439 green) before deploying to the org.** **One deliberate exception remains:** `lwc/leaseNegotiationLog` was left at 62.0 because it is mid-flight in an active feature — bump it when that feature merges. Otherwise, LWC now matches the rest of the repo.
 
 **Reference document:** `docs/DPEG_Technical_Solution_Design_v1.3.docx`
 
@@ -271,7 +271,7 @@ All external API credentials stored in Named Credentials (or ASB secrets vault f
 
 ## 5. LWC / UI Architecture
 
-> ⚠️ **LWC `apiVersion` is intentionally behind the rest of the repo (62.0 / 59.0 vs 67.0).** Do not bump it as a drive-by cleanup — see the mixed-version table at the top of this document. The uplift is its own PR, gated on the Phase 8 Jest net, because LWC `apiVersion` gates rendering behaviour and there is currently no automated test that would catch a regression.
+> ✅ **LWC `apiVersion` is now 67.0, matching the rest of the repo (uplifted 2026-07-18, commit `949e710`, verified against the Phase 8 Jest net).** The sole exception is `lwc/leaseNegotiationLog`, left at 62.0 pending its in-flight feature merge. New LWCs should be authored at 67.0.
 
 ### Component Hierarchy
 
