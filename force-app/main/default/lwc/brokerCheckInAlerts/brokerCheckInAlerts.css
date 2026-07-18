@@ -1,7 +1,7 @@
 .ca-card {
-    background: #fff;
-    border: 1px solid #E2E0DB;
-    border-radius: 8px;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB);
+    border-radius: var(--slds-g-radius-border-2, 8px);
     box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
     padding: 18px;
     display: block;
@@ -18,16 +18,16 @@
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: #C0392B;
+    background: var(--slds-g-color-palette-red-40, #C0392B);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 }
 .ca-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: #1A1714;
+    font-size: var(--slds-g-font-scale-2, 16px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-2, #1A1714);
 }
 
 /* 2×2 tile grid */
@@ -40,15 +40,15 @@
 /* Tile value (big mono number) */
 .ca-val {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 24px;
-    font-weight: 700;
-    line-height: 1;
+    font-size: var(--slds-g-font-scale-4, 24px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    line-height: var(--slds-g-font-line-height-1, 1);
 }
 
 /* Tile label (uppercase small) */
 .ca-lbl {
-    font-size: 10px;
-    font-weight: 600;
+    font-size: var(--slds-g-font-scale-neg-2, 10px);
+    font-weight: var(--slds-g-font-weight-6, 600);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     margin-top: 5px;

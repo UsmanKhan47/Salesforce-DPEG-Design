@@ -7,10 +7,13 @@
     "test": "sfdx-lwc-jest",
     "test:unit": "sfdx-lwc-jest",
     "test:unit:watch": "sfdx-lwc-jest --watch",
-    "test:unit:coverage": "sfdx-lwc-jest --coverage"
+    "test:unit:coverage": "sfdx-lwc-jest --coverage",
+    "slds:lint": "slds-linter lint force-app/main/default/lwc",
+    "slds:lint:fix": "slds-linter lint --fix force-app/main/default/lwc"
   },
   "devDependencies": {
     "@sa11y/jest": "^8.0.27",
+    "@salesforce-ux/slds-linter": "^1.2.1",
     "@salesforce/sfdx-lwc-jest": "^7.9.0"
   }
 }
