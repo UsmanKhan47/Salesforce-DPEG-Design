@@ -39,13 +39,16 @@ DPEG's Salesforce platform follows a **hub-and-spoke integration model**. Salesf
 >
 > **Amended:** object naming, field naming, boolean, currency, relationship, status. **Added:** rule 9, type-suffix discipline. **Replaced:** examples referencing `Investment__c` / `Investor__c` / `ACH_Status__c` — the IR module was never built, so §1 illustrated a data model nobody could find. Examples are now real fields in this org unless marked _(proposed)_; see the note under _Naming Conventions_.
 >
-> **Not amended — a rule that was merely unmet stays unmet.** The following remain **live violations scheduled for repair, not blessed**:
+> **Formerly "not amended — a rule that was merely unmet stays unmet." ✅ NOW RESOLVED — the repair ran 2026-07-17/18 on DPEG-Acq-5, deployed and verified (RunLocalTests green), commits `319d7e9`→`35c6cf5`.** All items below are fixed; retained here as the record of what changed and why.
 >
-> - **Rule 2** — `Disposition__c.Days_on_Market__c`, `Property_Asset__c.Projected_Value_at_Peak__c`, `Underwriting__c.Cash_on_Cash_Return__c` (lowercase segments).
-> - **Rule 6** — 8 of 9 DateTime fields are suffixed `_Date`: `Work_Order__c.Reported_Date__c`, `.SLA_Due_Date__c`, `.Completed_Date__c`, `.First_Touched_Date__c`, and `Entry_Date__c` on `Deal_Message__c` / `Lease_Activity__c` / `Renewal_Activity__c` / `Work_Order_Activity__c`. Only `Wire__c.Verified_DateTime__c` is correct. **To be fixed as a single bundle** — half-renamed is worse than either state, because the org would then carry both conventions *and* look deliberate.
-> - **Rule 4** — 7 checkboxes are neither `Is_`/`Has_` nor a past-participle state flag: `Untouched__c`, `Past_Target__c`, `Non_Responsive__c`, `Never_Expires__c`, `Renewal_Option__c`, `Earnest_At_Risk__c`, `Wire_Approval_Due__c`.
-> - **Rule 9** — `Lease_Renewal__c.Unit__c` and `Work_Order__c.Unit__c` are **Text** while `Rent_Step__c.Unit__c` is a real MasterDetail to `Unit__c`. Scheduled → `Unit_Label__c`.
-> - **Rule 9** — `Property_Asset__c.Is_Ready__c` (Number) → `Readiness_Score__c`; `Unit__c.Occupied_Flag__c` (Number) → `Occupied_Count__c`.
+> - **Rule 2 — ✅ done.** `Days_on_Market__c`→`Days_On_Market__c` (Disposition), `Projected_Value_at_Peak__c`→`Projected_Value_At_Peak__c` (Property_Asset), `Cash_on_Cash_Return__c`→`Cash_On_Cash_Return__c` (Underwriting **and** the Opportunity twin the original list missed). **Finding:** in-place case-only re-casing is a **Metadata-API no-op** — the API diffs field API names case-insensitively, so the change is invisible and old/new can't coexist. The only mechanism is destructive **delete-and-recreate**; all four had 0 stored rows, so no data was lost. Apex/FlexiPage references block deletion by field-ID (not name), so blocked fields needed a remove-refs→delete→recreate→re-add-refs pass.
+> - **Rule 6 — ✅ done (earlier phase).** All 8 `_Date`-suffixed DateTime fields already migrated to `..._DateTime__c` before this program; verified absent.
+> - **Rule 4 — ✅ done.** `Untouched__c`→`Is_Untouched__c` (WO), `Non_Responsive__c`→`Is_Non_Responsive__c` (Lease_Renewal) were **formula** checkboxes (no data, additive rename); `Past_Target__c`→`Is_Past_Target__c` (Onboarding), `Never_Expires__c`→`Is_Non_Expiring__c` (NDA), `Renewal_Option__c`→`Has_Renewal_Option__c` (Lease_Renewal), `Earnest_At_Risk__c`→`Is_Earnest_At_Risk__c`, `Wire_Approval_Due__c`→`Is_Wire_Approval_Due__c` (Transaction) were **stored** checkboxes (backfilled `new=old` per record before retire).
+> - **Rule 9 (Unit) — ✅ done (earlier phase).** `Unit__c` Text→`Unit_Label__c` on `Lease_Renewal__c`/`Work_Order__c`; `Rent_Step__c.Unit__c` remains the real MasterDetail.
+> - **Rule 9 (formula) — ✅ done.** `Is_Ready__c`→`Readiness_Score__c` (Property_Asset); `Occupied_Flag__c`→**`Occupied_Pct__c`** (Unit) — renamed to `_Pct__c`, **not** `_Count__c`, because the formula returns 100/0 (a percentage the occupancy report averages), which a "Count" name would misdescribe.
+> - **Rule 9 (scalar-in-Text) — ✅ done.** `Lease_Inquiry__c.Lease_Term__c`→`Lease_Term_Months__c` and `Free_Rent__c`→`Free_Rent_Months__c` (Text→Number, months-canonical, parse-backfill: `'7 years'`→84, `'N months'`→N, bare→months; 0 unparseable). An **active pathAssistant** referenced these as key fields — pathAssistants (like reports/dashboards) name fields directly and block/silently-break on deletion; repointed before retire.
+>
+> ~123 `<fieldPermissions>` stubs for these now-deleted fields remain in `profiles/*.profile-meta.xml`, but profiles are `.forceignore`d (never deploy) — harmless; a bulk profile-stub sweep is the one remaining tidy-up.
 >
 > **Known-good exceptions, deliberately not "fixed":** `Lease_Inquiry__c.Base_Rent__c` / `.TI_Allowance__c` and `Lease_Renewal__c.Current_Rent__c` are **Text on purpose** — they hold quoted deal terms like `'$34.00 / sq ft NNN'`. Currency cannot carry the NNN qualifier, and NNN-vs-gross changes the economics entirely. Do not "correct" these to Currency. `Lease_Renewal__c` already pairs `Current_Rent__c` (Text display term) with `Proposed_Rate__c` (Number, computable) — that split is the intended pattern.
 
@@ -63,7 +66,7 @@ Every example below is a **real field or object in this org** — verified again
 | **6.** Date fields                           | Suffix `Date` for date-only, `DateTime` for date+time. **Never** suffix a DateTime field with `Date`.                                                                                      | `Closing_Date__c`, `Verified_DateTime__c`                                             |
 | **7.** Status fields                         | A field expressing a record's current state → suffix `Status__c`. A lifecycle field that drives a Path → `Stage__c`. Other picklists are **not** status fields.                            | `LOI_Status__c`, `Offer_Status__c`, `Stage__c`                                        |
 | **8.** Masked display formula fields         | Suffix `_Masked__c`.                                                                                                                                                                      | `SSN_Masked__c` _(proposed)_ — **dormant rule**: zero masked fields exist; IR module unbuilt |
-| **9.** Type-suffix discipline                | A field's name must not imply a type it does not have. See rule 9 below.                                                                                                                   | `Verified_DateTime__c`; `Unit_Label__c` _(proposed)_, `Readiness_Score__c` _(proposed)_ |
+| **9.** Type-suffix discipline                | A field's name must not imply a type it does not have. See rule 9 below.                                                                                                                   | `Verified_DateTime__c`; `Unit_Label__c`, `Readiness_Score__c` |
 
 **No team-wide field prefix in use.** Field API names are unprefixed past `__c`.
 
@@ -94,15 +97,15 @@ Where a name is ambiguous about its type, the suffix resolves it:
 | --- | --- | --- |
 | `_DateTime__c` | DateTime fields | `Verified_DateTime__c` |
 | `_Date__c` | Date (date-only) fields | `Closing_Date__c` |
-| `_Label__c` / `_Name__c` | Text carrying a human label for something that also exists as a record | `Property_Name__c`; `Unit_Label__c` _(proposed)_ |
-| `_Score__c` / `_Count__c` / `_Pct__c` | Number fields whose name would otherwise read Boolean or categorical | `Tasks_Open__c`, `Completion_Pct__c`; `Readiness_Score__c` _(proposed)_ |
+| `_Label__c` / `_Name__c` | Text carrying a human label for something that also exists as a record | `Property_Name__c`, `Unit_Label__c` |
+| `_Score__c` / `_Count__c` / `_Pct__c` | Number fields whose name would otherwise read Boolean or categorical | `Tasks_Open__c`, `Completion_Pct__c`, `Readiness_Score__c`, `Occupied_Pct__c` |
 | `_Masked__c` | masked display formula | `SSN_Masked__c` _(proposed)_ |
 
 **Hard prohibitions:**
 
-1. **A Text or Number field must never be named identically to a custom object.** Rule 3 reserves that exact name for a lookup to that object, so such a field is camouflaged as a relationship by the convention itself. This produced the worst defect in the audit: `Unit__c` is a **MasterDetail** on `Rent_Step__c` but **Text** on `Lease_Renewal__c` and `Work_Order__c` — `Unit__r.Name` fails to compile, and `Unit__c = unitId` silently stores an Id in a string.
-2. **A field name must not assert a type the field does not have.** `Is_Ready__c` typed Number wears rule 4's own Boolean marker. `Package_Sent__c` is a Date; `Wire_Approval_Due__c` is a Checkbox.
-3. **A scalar quantity must not be stored as Text.** Text with no validation drifts: `Lease_Term__c` already holds both `'7 years'` (seed scripts) and `'60'` (TestDataFactory) — two incompatible unit conventions in one field, in this repo, today. This is not a hypothetical.
+1. **A Text or Number field must never be named identically to a custom object.** Rule 3 reserves that exact name for a lookup to that object, so such a field is camouflaged as a relationship by the convention itself. This produced the worst defect in the original audit: `Unit__c` was **MasterDetail** on `Rent_Step__c` but **Text** on `Lease_Renewal__c` and `Work_Order__c` — `Unit__r.Name` failing to compile, `Unit__c = unitId` silently storing an Id in a string. **✅ Fixed:** the two Text instances are now `Unit_Label__c`; `Rent_Step__c.Unit__c` remains the real MasterDetail.
+2. **A field name must not assert a type the field does not have.** `Package_Sent__c` is a Date named like a past-participle boolean (still open — not in the §1 repair scope). **✅ Fixed in the §1 repair:** `Is_Ready__c` (a Number wearing rule 4's Boolean marker) → `Readiness_Score__c`; `Wire_Approval_Due__c` (a Checkbox) → `Is_Wire_Approval_Due__c`.
+3. **A scalar quantity must not be stored as Text.** Text with no validation drifts: `Lease_Term__c` used to hold both `'7 years'` (seed scripts) and `'60'` (TestDataFactory) — two incompatible unit conventions in one field. **✅ Fixed:** now `Lease_Term_Months__c` (Number, months-canonical); this was never hypothetical.
 
 Exception to (3): a field holding a **quoted deal term** whose qualifier a typed field cannot carry (`'$34.00 / sq ft NNN'`) is legitimately Text — but it must say so in its `<description>`, and any computable counterpart belongs in a separate typed field (see `Current_Rent__c` / `Proposed_Rate__c`).
 
@@ -204,7 +207,7 @@ This is observable, not theoretical: the platform generated these classes at **t
 - **Bulkification:** every public method accepts collections, not single records. No SOQL/DML inside loops. Bulk tests insert 251+ records.
 - **Callouts:** all ASB/Plaid callouts wrapped in a dedicated service class (`PlaidCalloutService`) so they can be mocked via `HttpCalloutMock`. all other callouts will use ASB.
 - **Error handling at LWC boundary:** `@AuraEnabled` methods throw `AuraHandledException` with user-safe messages.
-- **Test data:** always use `TestDataFactory` — ⚠️ **this class does not exist yet; it is created in Phase 1 of the conformance program.** Until it lands, do not stand up a competing per-feature factory. Never `@isTest(SeeAllData=true)`.
+- **Test data:** always use `TestDataFactory` (`force-app/main/default/classes/TestDataFactory.cls` — **it exists and is the org-wide factory**; do not stand up a competing per-feature factory). Never `@isTest(SeeAllData=true)`.
 - **Coverage target:** 90%+ per class, **team-owned classes only** (see _Scope_ above).
 
 ### Key Apex Services
@@ -226,7 +229,7 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 - Selector pattern: `.claude/skills/sf-apex/references/AccountSelector.cls`
 - Service pattern: `.claude/skills/sf-apex/references/AccountService.cls`
 - Batch pattern: `.claude/skills/sf-apex/references/AccountDeduplicationBatch.cls`
-- Test factory: `force-app/main/default/classes/TestDataFactory.cls` — ⚠️ **pending Phase 1; does not exist yet.** Listed here as the mandated target, not as an available reference.
+- Test factory: `force-app/main/default/classes/TestDataFactory.cls` — **exists; the org-wide test-data factory. Use it.**
 - Test guidance: `.claude/skills/sf-apex-test/references/{assertion-patterns,mocking-patterns,async-testing,test-data-factory}.md`
 
 **Referenced skills:** `.claude/skills/sf-apex/`, `.claude/skills/sf-apex-test/`, `.claude/skills/trigger-refactor-pipeline/`.
