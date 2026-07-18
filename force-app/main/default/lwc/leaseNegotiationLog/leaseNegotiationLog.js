@@ -17,6 +17,9 @@ export default class LeaseNegotiationLog extends LightningElement {
     adding = false;
     upDetails = '';
     upBall = '';
+    upReminder = false;
+    upReminderName = '';
+    upReminderDate = '';
     error = '';
 
     @wire(getLog, { inquiryId: '$recordId' })
@@ -59,6 +62,9 @@ export default class LeaseNegotiationLog extends LightningElement {
         this.adding = true;
         this.upDetails = '';
         this.upBall = '';
+        this.upReminder = false;
+        this.upReminderName = '';
+        this.upReminderDate = '';
         this.error = '';
     }
     cancel() {
@@ -72,6 +78,23 @@ export default class LeaseNegotiationLog extends LightningElement {
     onBall(e) {
         this.upBall = e.detail.value;
     }
+    // Unticking clears both fields, so a ticked-then-unticked composer sends nothing.
+    onReminder(e) {
+        this.upReminder = e.target.checked;
+        if (!this.upReminder) {
+            this.upReminderName = '';
+            this.upReminderDate = '';
+        }
+        this.error = '';
+    }
+    onReminderName(e) {
+        this.upReminderName = e.detail.value;
+        this.error = '';
+    }
+    onReminderDate(e) {
+        this.upReminderDate = e.detail.value;
+        this.error = '';
+    }
 
     save() {
         if (!this.upDetails || !this.upDetails.trim()) {
@@ -82,17 +105,38 @@ export default class LeaseNegotiationLog extends LightningElement {
             this.error = 'Choose who the ball is in court with.';
             return;
         }
+        if (this.upReminder && !(this.upReminderName && this.upReminderName.trim())) {
+            this.error = 'Name the reminder, or untick the reminder.';
+            return;
+        }
+        if (this.upReminder && !this.upReminderDate) {
+            this.error = 'Pick a date for the reminder, or untick the reminder.';
+            return;
+        }
         addUpdate({
             inquiryId: this.recordId,
             details: this.upDetails,
             ball: this.upBall,
-            advance: false
+            advance: false,
+            reminder: this.upReminder,
+            reminderName: this.upReminder ? this.upReminderName : null,
+            reminderDate: this.upReminder ? this.upReminderDate : null
         })
             .then(() => {
+                // Past this point the save has COMMITTED. Nothing that happens from here
+                // may present as a save failure, so the refresh is isolated below rather
+                // than left to fall into the save's .catch.
                 this.adding = false;
                 // Refresh the record so the Path + highlights reflect the new stage/ball live.
                 notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
-                return refreshApex(this._wired);
+                // A refresh failure is not a save failure: the entry is already saved, and
+                // the composer (which hosts the inline error) is closed, so reporting it
+                // there would set an invisible error for a save that actually worked. The
+                // stale list self-corrects on the next wire refresh, so swallow it and let
+                // the success toast stand.
+                return refreshApex(this._wired).catch(() => {
+                    /* refresh-only failure — save already succeeded; nothing to report */
+                });
             })
             .then(() => {
                 this.dispatchEvent(
@@ -100,6 +144,9 @@ export default class LeaseNegotiationLog extends LightningElement {
                 );
             })
             .catch((e) => {
+                // Only a genuine save failure reaches here — a rejection from addUpdate
+                // skips both .then blocks, so `adding` is still true and the composer is
+                // still mounted to display this inline.
                 this.error = (e && e.body && e.body.message) || 'Unexpected error';
             });
     }

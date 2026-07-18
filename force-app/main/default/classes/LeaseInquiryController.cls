@@ -6,7 +6,17 @@
  *
  * All SOQL is delegated to selectors per ARCHITECTURE.md §2 (P4 cleanup wave F1):
  * Lease_Inquiry__c -> LeaseInquirySelector, Lease_Activity__c -> LeaseActivitySelector,
- * Lease__c -> LeaseSelector. This controller holds no inline SOQL. DML stays here.
+ * Lease__c -> LeaseSelector. This controller holds no inline SOQL.
+ *
+ * KNOWN LAYERING DEVIATION — an accepted deferral, NOT a sanctioned pattern.
+ * .claude/rules/apex-layering-rule.md scopes a Controller to "Thin: call service, catch
+ * AuraHandledException" and prohibits business logic. addUpdate() breaches that contract:
+ * it carries the stage-advance rule, DML across three objects, and its own savepoint /
+ * rollback transaction management. That is Service work and belongs behind a
+ * LeaseInquiryService. It remains here only because the P4 cleanup wave scoped itself to
+ * SOQL extraction and consciously left DML in place. The layering rule does not permit
+ * this arrangement; it is simply not fixed yet. Do not copy this shape into a new
+ * controller, and do not cite this class as precedent.
  */
 public with sharing class LeaseInquiryController {
 
@@ -14,6 +24,18 @@ public with sharing class LeaseInquiryController {
         'Inquiry Received', 'LOI Received', 'LOI Negotiation', 'LOI Signed', 'Lease Drafting', 'Lease Ready', 'Lease Signed'
     };
     private static final List<String> LEASE_STAGES = new List<String>{ 'Draft', 'Prepare/Review', 'Completed' };
+
+    // The user-safe message for a failed save. Fixed and generic on purpose — never
+    // interpolate platform text or exception detail into it (ARCHITECTURE.md §5). The test
+    // asserts the literal rather than this constant, so a text change has to be a deliberate
+    // edit in two places instead of a silent tautology.
+    private static final String DML_FAILURE_MESSAGE =
+        'This update could not be saved. Check your entry and try again, or contact your administrator.';
+
+    // Task.Subject is a 255-char combobox (verified against the org: 255 inserts, 256 fails
+    // with 'Subject: data value too large'). The composer's max-length="255" is a
+    // client-side control only and binds no other caller.
+    private static final Integer REMINDER_NAME_MAX = 255;
 
     public class LogView {
         @AuraEnabled public List<Entry> entries;
@@ -58,44 +80,116 @@ public with sharing class LeaseInquiryController {
         return v;
     }
 
+    /**
+     * Appends a log entry, optionally sets the parent's Ball in Court / advances the Stage,
+     * and optionally raises a standard Task as a reminder against the INQUIRY.
+     *
+     * The reminder Task targets the Lease Inquiry (WhatId) because Lease_Inquiry__c has
+     * activities enabled and Lease_Activity__c does not — the log entry itself cannot carry
+     * a Task. Only Subject / ActivityDate / OwnerId / WhatId are set: IsReminderSet and
+     * ReminderDateTime are deliberately left unset (no bell popup was requested), and
+     * Status / Priority / Description are left to their field defaults.
+     *
+     * @param inquiryId    the Lease Inquiry being logged against; required
+     * @param details      what changed; required, trimmed onto Details__c
+     * @param ball         who the ball is in court with next; sets the parent when non-blank
+     * @param advance      true to move the parent to the next Stage (ignored when closed)
+     * @param reminder     true to create the reminder Task; null/false creates nothing
+     * @param reminderName reminder Task Subject; required when reminder is true
+     * @param reminderDate reminder Task ActivityDate (Due Date, date-only); required when reminder is true
+     * @return the inquiry Id, so the caller can refresh the record
+     */
     @AuraEnabled
-    public static Id addUpdate(Id inquiryId, String details, String ball, Boolean advance) {
+    public static Id addUpdate(Id inquiryId, String details, String ball, Boolean advance,
+                               Boolean reminder, String reminderName, Date reminderDate) {
         if (inquiryId == null) {
-            throw new AuraHandledException('No inquiry specified.');
+            throw ahe('No inquiry specified.');
         }
         if (String.isBlank(details)) {
-            throw new AuraHandledException('Enter what changed before saving.');
+            throw ahe('Enter what changed before saving.');
+        }
+        // Server-side length guard. Without it, a caller other than the composer (Flow, API,
+        // a future component) that passes an over-length name fails on the Task insert with
+        // STRING_TOO_LONG and gets DML_FAILURE_MESSAGE — a generic string that names nothing
+        // the user can act on. Measured on the TRIMMED value, because reminderName.trim() is
+        // what the Task insert below actually stores: a 250-char name padded to 260 with
+        // whitespace fits, and must not be rejected here.
+        if (reminder == true && reminderName != null
+                && reminderName.trim().length() > REMINDER_NAME_MAX) {
+            throw ahe('The reminder name is too long. Shorten it to '
+                + REMINDER_NAME_MAX + ' characters or fewer.');
         }
         Lease_Inquiry__c inq = LeaseInquirySelector.selectStageStatusById(inquiryId);
         Boolean closed = inq.Status__c == 'Closed Won' || inq.Status__c == 'Closed Lost';
 
-        // Entry_DateTime__c is the ARCHITECTURE.md §1 rule-9 stamp for this log entry.
-        Datetime entryStamp = System.now();
-        insert new Lease_Activity__c(
-            Lease_Inquiry__c = inquiryId,
-            Details__c = details.trim(),
-            Ball_In_Court__c = ball,
-            Logged_By__c = UserInfo.getUserId(),
-            Entry_DateTime__c = entryStamp
-        );
+        // The log entry, the parent update and the reminder Task are one unit of work: a
+        // caught DmlException converted to AuraHandledException at the LWC boundary
+        // (ARCHITECTURE.md §5) suppresses the platform's automatic rollback, which would
+        // otherwise leave the Lease_Activity__c committed without its Task.
+        Savepoint sp = Database.setSavepoint();
+        try {
+            // Entry_DateTime__c is the ARCHITECTURE.md §1 rule-9 stamp for this log entry.
+            Datetime entryStamp = System.now();
+            insert new Lease_Activity__c(
+                Lease_Inquiry__c = inquiryId,
+                Details__c = details.trim(),
+                Ball_In_Court__c = ball,
+                Logged_By__c = UserInfo.getUserId(),
+                Entry_DateTime__c = entryStamp
+            );
 
-        Lease_Inquiry__c upd = new Lease_Inquiry__c(Id = inquiryId);
-        Boolean touched = false;
-        if (String.isNotBlank(ball)) {
-            upd.Ball_In_Court__c = ball;
-            touched = true;
-        }
-        if (advance == true && !closed) {
-            Integer idx = STAGES.indexOf(inq.Stage__c);
-            if (idx >= 0 && idx < STAGES.size() - 1) {
-                upd.Stage__c = STAGES[idx + 1];
+            Lease_Inquiry__c upd = new Lease_Inquiry__c(Id = inquiryId);
+            Boolean touched = false;
+            if (String.isNotBlank(ball)) {
+                upd.Ball_In_Court__c = ball;
                 touched = true;
             }
-        }
-        if (touched) {
-            update upd;
+            if (advance == true && !closed) {
+                Integer idx = STAGES.indexOf(inq.Stage__c);
+                if (idx >= 0 && idx < STAGES.size() - 1) {
+                    upd.Stage__c = STAGES[idx + 1];
+                    touched = true;
+                }
+            }
+            if (touched) {
+                update upd;
+            }
+
+            if (reminder == true) {
+                // Backstops the composer's client-side validation; it does not replace it.
+                if (String.isBlank(reminderName) || reminderDate == null) {
+                    throw ahe('Add a reminder name and due date, or clear the reminder.');
+                }
+                insert new Task(
+                    Subject = reminderName.trim(),
+                    ActivityDate = reminderDate,
+                    OwnerId = UserInfo.getUserId(),
+                    WhatId = inquiryId
+                );
+            }
+        } catch (AuraHandledException e) {
+            // Already user-safe — roll back explicitly, since catching it here means the
+            // platform will not do it for us, then surface it unchanged.
+            Database.rollback(sp);
+            throw e;
+        } catch (DmlException e) {
+            Database.rollback(sp);
+            // The raw platform text (e.getDmlMessage(0)) is user-VISIBLE but not user-SAFE:
+            // a validation rule or an FLS failure leaks field API names and rule internals to
+            // whoever is on the page. ARCHITECTURE.md §5 requires a user-safe message at the
+            // LWC boundary, so the detail goes to the debug log (admin-only) and the user gets
+            // a fixed, generic string with no exception detail concatenated into it.
+            System.debug(LoggingLevel.ERROR, 'LeaseInquiryController.addUpdate DML failure on '
+                + inquiryId + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(DML_FAILURE_MESSAGE);
         }
         return inquiryId;
+    }
+
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
     }
 
     // ───────────────── Home page (Lease Activity Tracker) ─────────────────

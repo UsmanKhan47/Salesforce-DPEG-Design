@@ -46,6 +46,40 @@
                     </lightning-combobox>
                 </div>
 
+                <div class="slds-m-top_small">
+                    <lightning-input
+                        type="checkbox"
+                        label="Do you need a reminder?"
+                        checked={upReminder}
+                        onchange={onReminder}>
+                    </lightning-input>
+                </div>
+
+                <template if:true={upReminder}>
+                    <div class="slds-grid slds-gutters_x-small slds-wrap slds-m-top_x-small">
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <lightning-input
+                                type="text"
+                                label="Reminder name"
+                                required
+                                max-length="255"
+                                value={upReminderName}
+                                onchange={onReminderName}
+                                placeholder="e.g. Chase the tenant for the signed LOI">
+                            </lightning-input>
+                        </div>
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <lightning-input
+                                type="date"
+                                label="Reminder date"
+                                required
+                                value={upReminderDate}
+                                onchange={onReminderDate}>
+                            </lightning-input>
+                        </div>
+                    </div>
+                </template>
+
                 <template if:true={error}>
                     <div class="lnl-error">{error}</div>
                 </template>
