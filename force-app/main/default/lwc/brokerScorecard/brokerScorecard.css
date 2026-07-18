@@ -5,7 +5,7 @@
 
 .scorecard-intro {
     font-size: var(--slds-g-font-scale-base, 13px);
-    color: #5a6a7a;
+    color: var(--slds-g-color-neutral-base-60, #5a6a7a);
     margin: 0 0 18px 0;
     max-width: 680px;
     line-height: 1.5;
@@ -20,8 +20,8 @@
 
 /* ── Individual card ───────────────────────────────────────── */
 .broker-card {
-    background: #ffffff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e4e9ef;
+    background: var(--slds-g-color-surface-container-1, #ffffff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e4e9ef);
     border-radius: var(--slds-g-radius-border-2, 8px);
     box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
     overflow: hidden;
@@ -64,7 +64,7 @@
 
 .broker-firm {
     font-size: var(--slds-g-font-scale-base, 13px);
-    color: #5a6a7a;
+    color: var(--slds-g-color-neutral-base-60, #5a6a7a);
     margin-top: 2px;
 }
 
@@ -75,12 +75,12 @@
     gap: 5px;
     height: var(--slds-g-sizing-9, 32px);
     padding: 0 var(--slds-g-spacing-3, 12px);
-    border: var(--slds-g-sizing-border-1, 1px) solid #c9d3dc;
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #c9d3dc);
     border-radius: var(--slds-g-radius-border-1, 4px);
-    background: #ffffff;
+    background: var(--slds-g-color-surface-container-1, #ffffff);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
     font-weight: var(--slds-g-font-weight-6, 600);
-    color: #5a6a7a;
+    color: var(--slds-g-color-neutral-base-60, #5a6a7a);
     cursor: pointer;
     white-space: nowrap;
     transition: border-color 120ms ease-out;
@@ -107,13 +107,13 @@
     font-family: 'Courier New', Courier, monospace;
     font-size: 34px;
     font-weight: var(--slds-g-font-weight-5, 500);
-    color: #146830;
+    color: var(--slds-g-color-palette-green-40, #146830);
     line-height: var(--slds-g-font-line-height-1, 1);
 }
 
 .active-label {
     font-size: var(--slds-g-font-scale-base, 13px);
-    color: #5a6a7a;
+    color: var(--slds-g-color-neutral-base-60, #5a6a7a);
 }
 
 /* Stacked bar */
@@ -148,12 +148,12 @@
     font-size: var(--slds-g-font-scale-neg-2, 10px);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #8a97a5;
+    color: var(--slds-g-color-neutral-base-60, #8a97a5);
     margin-top: 2px;
 }
 
 /* Outcome colours */
-.stat-active   { color: #146830; }
+.stat-active   { color: var(--slds-g-color-palette-green-40, #146830); }
 .stat-leased   { color: var(--slds-g-color-palette-orange-40, #8B6800); }
 .stat-disposed { color: #475569; }
 
@@ -161,6 +161,6 @@
 .empty-state {
     padding: var(--slds-g-spacing-6, 32px) 0;
     font-size: var(--slds-g-font-scale-1, 14px);
-    color: #5a6a7a;
+    color: var(--slds-g-color-neutral-base-60, #5a6a7a);
     text-align: center;
 }

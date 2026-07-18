@@ -1,12 +1,12 @@
-.ra-card { background:#fff; border:var(--slds-g-sizing-border-1, 1px) solid #E2E0DB; border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; display:block; }
+.ra-card { background:var(--slds-g-color-surface-container-1, #fff); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; display:block; }
 .ra-hd { display:flex; align-items:center; gap:9px; margin-bottom:6px; }
 .ra-icon { width:26px; height:26px; border-radius:50%; background:#FDECEC; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
-.ra-title { font-size:var(--slds-g-font-scale-2, 16px); font-weight:var(--slds-g-font-weight-7, 700); color:#1A1714; line-height:1.1; }
-.ra-sub { font-size:11px; color:#8A8680; margin-top:2px; }
+.ra-title { font-size:var(--slds-g-font-scale-2, 16px); font-weight:var(--slds-g-font-weight-7, 700); color:var(--slds-g-color-on-surface-2, #1A1714); line-height:1.1; }
+.ra-sub { font-size:11px; color:var(--slds-g-color-neutral-base-60, #8A8680); margin-top:2px; }
 .ra-body { display:flex; flex-direction:column; }
-.ra-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px var(--slds-g-spacing-1, 4px); border-bottom:1px solid #EDECEA; text-decoration:none; }
+.ra-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px var(--slds-g-spacing-1, 4px); border-bottom:1px solid var(--slds-g-color-border-1, #EDECEA); text-decoration:none; }
 .ra-row:last-child { border-bottom:none; }
 .ra-row:hover { background:#FFF7F7; }
-.ra-name { font-size:var(--slds-g-font-scale-1, 14px); font-weight:var(--slds-g-font-weight-7, 700); color:#1565C0; }
+.ra-name { font-size:var(--slds-g-font-scale-1, 14px); font-weight:var(--slds-g-font-weight-7, 700); color:var(--slds-g-color-brand-base-50, #1565C0); }
 .ra-metasub { font-size:var(--slds-g-font-scale-neg-1, 12px); color:#524F4A; margin-top:2px; }
-.ra-empty { padding:20px var(--slds-g-spacing-1, 4px); text-align:center; color:#8A8680; font-size:var(--slds-g-font-scale-base, 13px); }
+.ra-empty { padding:20px var(--slds-g-spacing-1, 4px); text-align:center; color:var(--slds-g-color-neutral-base-60, #8A8680); font-size:var(--slds-g-font-scale-base, 13px); }

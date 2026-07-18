@@ -1,15 +1,15 @@
-.tb-card { background:#fff; border:var(--slds-g-sizing-border-1, 1px) solid #E2E0DB; border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; overflow:hidden; display:block; }
+.tb-card { background:var(--slds-g-color-surface-container-1, #fff); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); padding:18px; overflow:hidden; display:block; }
 .tb-hd { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
 .tb-icon { width:30px; height:30px; border-radius:50%; background:#EC4899; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 .tb-title { font-size:17px; font-weight:var(--slds-g-font-weight-7, 700); color:#132850; }
-.tb-cap { margin-left:auto; font-size:var(--slds-g-font-scale-neg-1, 12px); color:#8A8680; }
+.tb-cap { margin-left:auto; font-size:var(--slds-g-font-scale-neg-1, 12px); color:var(--slds-g-color-neutral-base-60, #8A8680); }
 .tb-list { list-style:none; margin:var(--slds-g-spacing-2, 8px) -18px 0; padding:0; }
 .tb-row { display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #EDEDED; }
 .tb-row:first-child { border-top:none; }
 .tb-row--top { background:#F1F6FE; }
 .tb-rank { width:26px; height:26px; border-radius:50%; background:#E8F0FE; color:#1A3464; font-size:var(--slds-g-font-scale-base, 13px); font-weight:var(--slds-g-font-weight-7, 700); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 .tb-name { display:flex; flex-direction:column; flex:1; min-width:0; }
-.tb-n { font-size:var(--slds-g-font-scale-1, 14px); font-weight:var(--slds-g-font-weight-6, 600); color:#1A1714; }
-.tb-f { font-size:var(--slds-g-font-scale-neg-1, 12px); color:#8A8680; }
+.tb-n { font-size:var(--slds-g-font-scale-1, 14px); font-weight:var(--slds-g-font-weight-6, 600); color:var(--slds-g-color-on-surface-2, #1A1714); }
+.tb-f { font-size:var(--slds-g-font-scale-neg-1, 12px); color:var(--slds-g-color-neutral-base-60, #8A8680); }
 .tb-count { font-size:19px; font-weight:var(--slds-g-font-weight-7, 700); color:#1565C0; flex-shrink:0; }
-.tb-empty { font-size:var(--slds-g-font-scale-base, 13px); color:#8A8680; padding:var(--slds-g-spacing-2, 8px) 0; }
+.tb-empty { font-size:var(--slds-g-font-scale-base, 13px); color:var(--slds-g-color-neutral-base-60, #8A8680); padding:var(--slds-g-spacing-2, 8px) 0; }

@@ -30,14 +30,14 @@
     font-size: var(--slds-g-font-scale-5, 28px);
     font-weight: var(--slds-g-font-weight-7, 700);
     line-height: var(--slds-g-font-line-height-1, 1);
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
     font-variant-numeric: tabular-nums;
 }
 .donut__cap {
     font-size: 11px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #8a96a3;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
     font-weight: var(--slds-g-font-weight-7, 700);
     margin-top: 3px;
 }
@@ -75,19 +75,19 @@
 .legend__count {
     font-size: 12.5px;
     font-weight: var(--slds-g-font-weight-7, 700);
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
     font-variant-numeric: tabular-nums;
 }
 .legend__pct {
     font-size: 11.5px;
-    color: #8a96a3;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
     font-variant-numeric: tabular-nums;
     min-width: 34px;
     text-align: right;
 }
 .empty {
     text-align: center;
-    color: #8a96a3;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
     font-size: var(--slds-g-font-scale-base, 13px);
     padding: var(--slds-g-spacing-5, 24px) 0;
 }

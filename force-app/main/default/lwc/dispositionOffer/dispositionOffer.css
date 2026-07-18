@@ -1,11 +1,11 @@
 :host {
     display: block;
     font-family: 'Salesforce Sans', Arial, sans-serif;
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
 }
 .card {
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e3e6eb;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e3e6eb);
     border-radius: 10px;
     overflow: hidden;
 }
@@ -13,14 +13,14 @@
     padding: var(--slds-g-spacing-4, 16px) 18px 13px;
     font-size: var(--slds-g-font-scale-base, 13px);
     font-weight: var(--slds-g-font-weight-7, 700);
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
     letter-spacing: -0.01em;
     border-bottom: 1px solid #eef1f4;
 }
 .empty-msg {
     padding: var(--slds-g-spacing-4, 16px);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
-    color: #8a96a3;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
     font-style: italic;
 }
 .offer-list { padding: var(--slds-g-spacing-1, 4px) 0; }
@@ -32,18 +32,18 @@
     border-bottom: 1px solid #f3f4f6;
     font-size: var(--slds-g-font-scale-neg-1, 12px);
 }
-.offer-buyer { font-weight: var(--slds-g-font-weight-4, 400); color: #181818; flex: 1; }
-.offer-amount { font-weight: var(--slds-g-font-weight-4, 400); color: #1B7A4B; margin: 0 var(--slds-g-spacing-3, 12px); }
-.offer-date { color: #8a96a3; }
+.offer-buyer { font-weight: var(--slds-g-font-weight-4, 400); color: var(--slds-g-color-on-surface-2, #181818); flex: 1; }
+.offer-amount { font-weight: var(--slds-g-font-weight-4, 400); color: var(--slds-g-color-palette-green-40, #1B7A4B); margin: 0 var(--slds-g-spacing-3, 12px); }
+.offer-date { color: var(--slds-g-color-neutral-base-60, #8a96a3); }
 .log-btn-wrap {
     padding: var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-4, 16px);
     border-top: 1px solid #f0f0f0;
 }
 .log-btn {
     width: 100%;
-    border: var(--slds-g-sizing-border-1, 1px) solid #d1d5db;
-    background: #fff;
-    color: #1565c0;
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #d1d5db);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    color: var(--slds-g-color-brand-base-50, #1565c0);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
     font-weight: var(--slds-g-font-weight-6, 600);
     padding: 9px;

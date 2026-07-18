@@ -1,29 +1,29 @@
 :host { display:block; }
 
 /* shared card chrome */
-.ba-card { background:#fff; border:var(--slds-g-sizing-border-1, 1px) solid #E2E0DB; border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); }
+.ba-card { background:var(--slds-g-color-surface-container-1, #fff); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); }
 .ba-mono { font-variant-numeric:tabular-nums; }
 
 /* ===== history ===== */
 .ba-histcard { overflow:hidden; }
 .ba-histbody { padding:10px var(--slds-g-spacing-5, 24px) 18px; }
 .ba-histintro { font-size:var(--slds-g-font-scale-neg-1, 12px); color:#524F4A; margin:6px 0 2px; }
-.ba-histrow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px var(--slds-g-spacing-4, 16px); margin-top:10px; border:var(--slds-g-sizing-border-1, 1px) solid #E2E0DB; background:#fff; border-radius:var(--slds-g-radius-border-2, 8px); }
+.ba-histrow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px var(--slds-g-spacing-4, 16px); margin-top:10px; border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); background:var(--slds-g-color-surface-container-1, #fff); border-radius:var(--slds-g-radius-border-2, 8px); }
 .ba-histrow--active { border-color:#22A652; background:#E9F8EF; }
 .ba-histleft { display:flex; align-items:flex-start; gap:12px; }
 .ba-histnamerow { display:flex; align-items:center; gap:8px; }
-.ba-histname { font-weight:var(--slds-g-font-weight-6, 600); font-size:var(--slds-g-font-scale-1, 14px); color:#1A1714; }
+.ba-histname { font-weight:var(--slds-g-font-weight-6, 600); font-size:var(--slds-g-font-scale-1, 14px); color:var(--slds-g-color-on-surface-2, #1A1714); }
 .ba-histbadge { display:inline-flex; align-items:center; font-size:var(--slds-g-font-scale-neg-2, 10px); font-weight:var(--slds-g-font-weight-7, 700); letter-spacing:0.04em; text-transform:uppercase; color:#146830; background:#D6F0E0; border:var(--slds-g-sizing-border-1, 1px) solid #22A652; border-radius:9999px; padding:1px var(--slds-g-spacing-2, 8px); }
-.ba-histfirm { font-size:var(--slds-g-font-scale-neg-1, 12px); color:#8A8680; margin-top:1px; }
+.ba-histfirm { font-size:var(--slds-g-font-scale-neg-1, 12px); color:var(--slds-g-color-neutral-base-60, #8A8680); margin-top:1px; }
 .ba-histnotes { display:flex; align-items:baseline; gap:6px; font-size:var(--slds-g-font-scale-neg-1, 12px); color:#524F4A; margin-top:5px; }
 .ba-histnotes--clip { max-width:50%; }
 .ba-histnotes-lbl { font-weight:var(--slds-g-font-weight-6, 600); color:#3E3B37; flex-shrink:0; }
 .ba-histnotes-txt { min-width:0; }
 .ba-histnotes--clip .ba-histnotes-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ba-histnotes-view { flex-shrink:0; border:none; background:none; color:#1565C0; font-size:var(--slds-g-font-scale-neg-1, 12px); font-weight:var(--slds-g-font-weight-6, 600); cursor:pointer; padding:0; }
+.ba-histnotes-view { flex-shrink:0; border:none; background:none; color:var(--slds-g-color-brand-base-50, #1565C0); font-size:var(--slds-g-font-scale-neg-1, 12px); font-weight:var(--slds-g-font-weight-6, 600); cursor:pointer; padding:0; }
 .ba-histnotes-view:hover { text-decoration:underline; }
-.ba-note-sub { font-size:var(--slds-g-font-scale-base, 13px); color:#8A8680; margin-top:var(--slds-g-spacing-1, 4px); }
-.ba-note-full { font-size:var(--slds-g-font-scale-1, 14px); color:#1A1714; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.ba-note-sub { font-size:var(--slds-g-font-scale-base, 13px); color:var(--slds-g-color-neutral-base-60, #8A8680); margin-top:var(--slds-g-spacing-1, 4px); }
+.ba-note-full { font-size:var(--slds-g-font-scale-1, 14px); color:var(--slds-g-color-on-surface-2, #1A1714); line-height:1.5; white-space:pre-wrap; word-break:break-word; }
 .ba-histright { text-align:right; flex-shrink:0; }
 .ba-histrange { font-size:var(--slds-g-font-scale-neg-1, 12px); color:#524F4A; }
-.ba-histreason { font-size:11px; color:#8A8680; margin-top:3px; }
+.ba-histreason { font-size:11px; color:var(--slds-g-color-neutral-base-60, #8A8680); margin-top:3px; }

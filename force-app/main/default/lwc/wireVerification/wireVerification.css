@@ -1,11 +1,11 @@
 :host {
     display: block;
     font-family: 'Salesforce Sans', Arial, sans-serif;
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
 }
 .card {
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e3e6eb;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e3e6eb);
     border-radius: 10px;
     overflow: hidden;
 }
@@ -17,8 +17,8 @@
     border-bottom: 1px solid #eef1f4;
     gap: 12px;
 }
-.card-title { font-weight: var(--slds-g-font-weight-7, 700); font-size: 15px; color: #181818; }
-.enforced-label { font-size: 11.5px; color: #b91c1c; margin-top: var(--slds-g-spacing-1, 4px); font-weight: var(--slds-g-font-weight-6, 600); }
+.card-title { font-weight: var(--slds-g-font-weight-7, 700); font-size: 15px; color: var(--slds-g-color-on-surface-2, #181818); }
+.enforced-label { font-size: 11.5px; color: var(--slds-g-color-palette-red-40, #b91c1c); margin-top: var(--slds-g-spacing-1, 4px); font-weight: var(--slds-g-font-weight-6, 600); }
 .progress-badge {
     display: inline-flex;
     align-items: center;
@@ -71,14 +71,14 @@
     font-family: 'Salesforce Sans', Arial, sans-serif;
     font-weight: var(--slds-g-font-weight-7, 700);
     font-size: var(--slds-g-font-scale-base, 13px);
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
     margin-bottom: var(--slds-g-spacing-1, 4px);
 }
-.field-hint { font-size: 11.5px; color: #8a96a3; margin-bottom: var(--slds-g-spacing-2, 8px); line-height: 1.45; }
+.field-hint { font-size: 11.5px; color: var(--slds-g-color-neutral-base-60, #8a96a3); margin-bottom: var(--slds-g-spacing-2, 8px); line-height: 1.45; }
 .readonly-val {
     font-family: 'Salesforce Sans', Arial, sans-serif;
     font-size: var(--slds-g-font-scale-base, 13px);
-    color: #8a96a3;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
     padding: 6px 0;
 }
 .save-bar { padding: 14px 20px; display: flex; justify-content: flex-end; border-top: 1px solid #eef1f4; }

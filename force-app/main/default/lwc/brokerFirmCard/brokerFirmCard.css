@@ -1,11 +1,11 @@
 :host {
     display: block;
     font-family: 'Salesforce Sans', Arial, sans-serif;
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
 }
 .card {
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e3e6eb;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e3e6eb);
     border-radius: 10px;
     overflow: hidden;
 }
@@ -16,7 +16,7 @@
 .card-title {
     font-weight: var(--slds-g-font-weight-7, 700);
     font-size: var(--slds-g-font-scale-base, 13px);
-    color: #181818;
+    color: var(--slds-g-color-on-surface-2, #181818);
 }
 .firm-name {
     margin-top: 5px;

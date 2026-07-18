@@ -2,6 +2,6 @@
     display: block;
     /* Divider above the card so it reads as a separate component from the LOI detail section. */
     margin-top: var(--slds-g-spacing-4, 1rem);
-    border-top: 1px solid #d8dde6;
+    border-top: 1px solid var(--slds-g-color-border-1, #d8dde6);
     padding-top: var(--slds-g-spacing-4, 1rem);
 }

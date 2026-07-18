@@ -2,12 +2,12 @@
 
 .ban-hdr { display:flex; align-items:center; gap:8px; }
 .ban-hdr-icon { --slds-c-icon-color-foreground-default:#1A3464; }
-.ban-title { font-size:var(--slds-g-font-scale-2, 16px); font-weight:var(--slds-g-font-weight-7, 700); color:#1A1714; }
+.ban-title { font-size:var(--slds-g-font-scale-2, 16px); font-weight:var(--slds-g-font-weight-7, 700); color:var(--slds-g-color-on-surface-2, #1A1714); }
 
 .ban-body { padding:14px 20px 18px; }
 
 /* composer */
-.ban-composer { border:var(--slds-g-sizing-border-1, 1px) solid #E2E0DB; border-radius:var(--slds-g-radius-border-2, 8px); padding:var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-3, 12px) 10px; background:#FBFAF9; }
+.ban-composer { border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); padding:var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-3, 12px) 10px; background:#FBFAF9; }
 .ban-textarea { --slds-c-textarea-radius-border:6px; }
 .ban-composer-actions { display:flex; justify-content:flex-end; margin-top:var(--slds-g-spacing-2, 8px); }
 
@@ -17,8 +17,8 @@
 .ban-item:last-child { border-bottom:none; }
 .ban-item-head { display:flex; align-items:center; gap:8px; }
 .ban-dot { position:absolute; left:0; top:var(--slds-g-spacing-4, 16px); width:7px; height:7px; border-radius:50%; background:#1A3464; }
-.ban-author { font-weight:var(--slds-g-font-weight-6, 600); font-size:var(--slds-g-font-scale-base, 13px); color:#1A1714; }
-.ban-date { font-size:11px; color:#8A8680; font-variant-numeric:tabular-nums; }
+.ban-author { font-weight:var(--slds-g-font-weight-6, 600); font-size:var(--slds-g-font-scale-base, 13px); color:var(--slds-g-color-on-surface-2, #1A1714); }
+.ban-date { font-size:11px; color:var(--slds-g-color-neutral-base-60, #8A8680); font-variant-numeric:tabular-nums; }
 .ban-text { font-size:var(--slds-g-font-scale-base, 13px); color:#3E3B37; line-height:1.5; margin-top:3px; white-space:pre-wrap; word-break:break-word; }
 
-.ban-empty { margin-top:var(--slds-g-spacing-4, 16px); font-size:var(--slds-g-font-scale-base, 13px); color:#8A8680; font-style:italic; }
+.ban-empty { margin-top:var(--slds-g-spacing-4, 16px); font-size:var(--slds-g-font-scale-base, 13px); color:var(--slds-g-color-neutral-base-60, #8A8680); font-style:italic; }

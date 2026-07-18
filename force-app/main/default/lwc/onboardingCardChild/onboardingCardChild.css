@@ -13,7 +13,7 @@
     border-color: #b5e3c1;
 }
 .stat-card--done .text-col .stat-value {
-    color: #1b5e20;
+    color: var(--slds-g-color-palette-green-40, #1b5e20);
 }
 .stat-card--done .text-col .stat-label {
     color: var(--slds-g-color-palette-green-50, #2e7d32);

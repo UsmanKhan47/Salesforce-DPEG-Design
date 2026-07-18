@@ -1,11 +1,11 @@
 :host {
     display: block;
     font-family: 'Salesforce Sans', Arial, sans-serif;
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
 }
 .cd {
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #dddbda;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #dddbda);
     border-radius: 6px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     padding: 14px var(--slds-g-spacing-4, 16px) 6px;
@@ -21,7 +21,7 @@
 .cd-title {
     font-size: var(--slds-g-font-scale-base, 13px);
     font-weight: var(--slds-g-font-weight-7, 700);
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
 }
 
 /* ---- Rows ---- */
@@ -70,7 +70,7 @@
     align-items: center;
     gap: 6px;
     font-size: 11px;
-    color: #706e6b;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
     font-variant-numeric: tabular-nums;
 }
 .cd-amount {
@@ -137,6 +137,6 @@
 .cd-empty {
     padding: 14px 0 18px;
     text-align: center;
-    color: #969492;
+    color: var(--slds-g-color-neutral-base-60, #969492);
     font-size: 12.5px;
 }

@@ -10,8 +10,8 @@
 .portal {
     max-width: 880px;
     margin: 0 auto;
-    background: #ffffff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e3e6eb;
+    background: var(--slds-g-color-surface-container-1, #ffffff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e3e6eb);
     border-radius: 10px;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -36,11 +36,11 @@
     padding: var(--slds-g-spacing-5, 24px) 28px;
 }
 .section__title {
-    color: #111111;
+    color: var(--slds-g-color-on-surface-2, #111111);
     font-size: 15px;
     font-weight: var(--slds-g-font-weight-7, 700);
     margin: 18px 0 var(--slds-g-spacing-2, 8px);
-    border-bottom: 1px solid #e3e6eb;
+    border-bottom: 1px solid var(--slds-g-color-border-1, #e3e6eb);
     padding-bottom: 6px;
 }
 .section__title:first-child {
@@ -95,7 +95,7 @@ lightning-button {
 }
 .portal__logo-chip {
     display: inline-block;
-    background: #ffffff;
+    background: var(--slds-g-color-surface-container-1, #ffffff);
     border-radius: var(--slds-g-radius-border-2, 8px);
     padding: 7px var(--slds-g-spacing-3, 12px);
     margin-bottom: 14px;

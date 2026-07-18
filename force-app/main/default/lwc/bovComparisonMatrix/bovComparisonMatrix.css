@@ -1,6 +1,6 @@
 .formula-label {
     font-size: 11px;
-    color: #8a96a3;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
     font-weight: var(--slds-g-font-weight-4, 400);
     white-space: nowrap;
 }

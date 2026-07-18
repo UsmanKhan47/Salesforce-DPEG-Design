@@ -1,7 +1,7 @@
 :host {
     display: block;
     font-family: 'Salesforce Sans', Arial, sans-serif;
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
 }
 .tg {
     display: flex;
@@ -21,8 +21,8 @@
     flex-direction: column;
     gap: 10px;
     padding: 14px var(--slds-g-spacing-4, 16px) 15px;
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e5e9ef;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e9ef);
     border-radius: 10px;
     box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
     cursor: pointer;
@@ -113,7 +113,7 @@
 .tg-phase-count {
     font-size: var(--slds-g-font-scale-neg-1, 12px);
     font-weight: var(--slds-g-font-weight-6, 600);
-    color: #706e6b;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
     font-variant-numeric: tabular-nums;
 }
 .tg-phase-pct {
@@ -159,8 +159,8 @@
     align-items: center;
     gap: 10px;
     padding: 9px 14px 9px 10px;
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e5e9ef;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e9ef);
     border-radius: 10px;
     box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
     cursor: pointer;
@@ -222,7 +222,7 @@
     gap: 6px;
 }
 .tg-gchip-count {
-    color: #706e6b;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
     font-size: 11.5px;
     font-weight: var(--slds-g-font-weight-6, 600);
     font-variant-numeric: tabular-nums;
@@ -230,8 +230,8 @@
 
 /* ---- Detail pane (full width) ---- */
 .tg-detail {
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #e5e9ef;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e9ef);
     border-radius: 10px;
     box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
     padding: var(--slds-g-spacing-4, 16px) 18px 10px;
@@ -251,7 +251,7 @@
     gap: 8px;
     font-size: 15px;
     font-weight: var(--slds-g-font-weight-7, 700);
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
 }
 .tg-detail-sub {
     display: flex;
@@ -260,7 +260,7 @@
     margin-top: var(--slds-g-spacing-1, 4px);
 }
 .tg-detail-count {
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
     font-size: 12.5px;
     font-weight: var(--slds-g-font-weight-7, 700);
     font-variant-numeric: tabular-nums;
@@ -358,10 +358,10 @@
 .tg-subject {
     flex: 1 1 auto;
     font-size: var(--slds-g-font-scale-base, 13px);
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
 }
 .tg-task--done .tg-subject {
-    color: #969492;
+    color: var(--slds-g-color-neutral-base-60, #969492);
     text-decoration: line-through;
 }
 .tg-task--critical {
@@ -399,7 +399,7 @@
 }
 .tg-meta {
     flex: 0 0 auto;
-    color: #706e6b;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -411,7 +411,7 @@
     background: none;
     border: none;
     padding: 0;
-    color: #0070d2;
+    color: var(--slds-g-color-brand-base-50, #0070d2);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
     font-weight: var(--slds-g-font-weight-6, 600);
     cursor: pointer;
@@ -430,23 +430,23 @@
 }
 .tg-view-label {
     flex: 0 0 110px;
-    color: #706e6b;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
     font-size: 12.5px;
     font-weight: var(--slds-g-font-weight-6, 600);
 }
 .tg-view-val {
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
     font-size: var(--slds-g-font-scale-base, 13px);
     overflow-wrap: anywhere;
 }
 .tg-view-notes-label {
     margin: var(--slds-g-spacing-3, 12px) 0 var(--slds-g-spacing-1, 4px);
-    color: #706e6b;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
     font-size: 12.5px;
     font-weight: var(--slds-g-font-weight-6, 600);
 }
 .tg-view-notes {
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
     font-size: var(--slds-g-font-scale-base, 13px);
     line-height: 1.5;
     white-space: pre-wrap;
@@ -457,7 +457,7 @@
 .tg-modal-sub {
     margin-top: 6px;
     font-size: 12.5px;
-    color: #b0adab;
+    color: var(--slds-g-color-neutral-base-60, #b0adab);
     font-weight: var(--slds-g-font-weight-4, 400);
 }
 .tg-verify-banner {
@@ -475,30 +475,30 @@
 }
 .tg-modal-error {
     margin-top: var(--slds-g-spacing-3, 12px);
-    color: #ba0517;
+    color: var(--slds-g-color-palette-red-40, #ba0517);
     font-size: 12.5px;
     font-weight: var(--slds-g-font-weight-6, 600);
 }
 .tg-modal-note {
     margin-top: 14px;
-    color: #706e6b;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
     font-style: italic;
 }
 .tg-confirm-subject {
     margin-top: var(--slds-g-spacing-2, 8px);
     font-weight: var(--slds-g-font-weight-7, 700);
-    color: #080707;
+    color: var(--slds-g-color-on-surface-2, #080707);
 }
 
 /* ---- Empty ---- */
 .tg-empty {
     padding: 28px;
     text-align: center;
-    color: #969492;
+    color: var(--slds-g-color-neutral-base-60, #969492);
     font-size: var(--slds-g-font-scale-base, 13px);
-    background: #fff;
-    border: var(--slds-g-sizing-border-1, 1px) solid #dddbda;
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #dddbda);
     border-radius: 6px;
 }
 
