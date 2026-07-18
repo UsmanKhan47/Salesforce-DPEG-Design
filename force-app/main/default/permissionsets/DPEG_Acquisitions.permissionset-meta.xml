@@ -1049,7 +1049,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>NDA__c.Never_Expires__c</field>
+        <field>NDA__c.Is_Non_Expiring__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

@@ -57,7 +57,7 @@ public with sharing class OnboardingSelector {
                    Completion_Pct__c, Tasks_Total__c, Tasks_Complete__c, Tasks_In_Progress__c,
                    Tasks_Not_Started__c, Tasks_Blocked__c, Tasks_NA__c, Tasks_Open__c,
                    Tasks_Overdue__c, Tasks_Blocked_Now__c, Tasks_Stalled__c, Tasks_Due_7d__c,
-                   Days_To_Onboard__c, Age_Days__c, Oldest_Open_Days__c, Past_Target__c
+                   Days_To_Onboard__c, Age_Days__c, Oldest_Open_Days__c, Is_Past_Target__c
             FROM Onboarding__c
             WHERE Stage__c != :DONE_STAGE
             WITH USER_MODE

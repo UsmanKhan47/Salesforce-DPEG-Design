@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Onboarding__c.Past_Target__c</members>
+        <members>NDA__c.Never_Expires__c</members>
+        <members>Lease_Renewal__c.Renewal_Option__c</members>
+        <name>CustomField</name>
+    </types>
+</Package>

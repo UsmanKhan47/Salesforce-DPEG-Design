@@ -100,7 +100,7 @@ public with sharing class OnboardingController {
         a.overdue = 0; a.pastTarget = 0; a.stalled = 0; a.due7d = 0;
         for (Onboarding__c o : activeOnboardings()) {
             a.overdue += (Integer) nz(o.Tasks_Overdue__c);
-            if (o.Past_Target__c == true) a.pastTarget += 1;
+            if (o.Is_Past_Target__c == true) a.pastTarget += 1;
             a.stalled += (Integer) nz(o.Tasks_Stalled__c);
             a.due7d += (Integer) nz(o.Tasks_Due_7d__c);
         }
@@ -122,7 +122,7 @@ public with sharing class OnboardingController {
         for (Onboarding__c o : activeOnboardings()) {
             if (o.Days_To_Onboard__c != null) { dtoSum += o.Days_To_Onboard__c; dtoCount++; }
             if (o.Age_Days__c != null) { ageSum += o.Age_Days__c; ageCount++; }
-            if (o.Past_Target__c == true) pastTarget++;
+            if (o.Is_Past_Target__c == true) pastTarget++;
             if (o.Oldest_Open_Days__c != null && o.Oldest_Open_Days__c > oldest) {
                 oldest = (Integer) o.Oldest_Open_Days__c;
             }

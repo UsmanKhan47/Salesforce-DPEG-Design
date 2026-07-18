@@ -35,7 +35,7 @@ private class OnboardingSelectorTest {
         o.Days_To_Onboard__c = 25;
         o.Age_Days__c = 12;
         o.Oldest_Open_Days__c = 17;
-        o.Past_Target__c = true;
+        o.Is_Past_Target__c = true;
         o.Start_Date__c = Date.newInstance(2026, 5, 1);
         o.Target_Completion_Date__c = Date.newInstance(2026, 7, 1);
         insert o;
@@ -55,7 +55,7 @@ private class OnboardingSelectorTest {
         Assert.areEqual(25, r.Days_To_Onboard__c, 'Days_To_Onboard__c is selected');
         Assert.areEqual(12, r.Age_Days__c, 'Age_Days__c is selected');
         Assert.areEqual(17, r.Oldest_Open_Days__c, 'Oldest_Open_Days__c is selected');
-        Assert.areEqual(true, r.Past_Target__c, 'Past_Target__c is selected');
+        Assert.areEqual(true, r.Is_Past_Target__c, 'Is_Past_Target__c is selected');
         Assert.areEqual(Date.newInstance(2026, 5, 1), r.Start_Date__c, 'Start_Date__c is selected');
         Assert.areEqual(Date.newInstance(2026, 7, 1), r.Target_Completion_Date__c, 'Target_Completion_Date__c is selected');
     }

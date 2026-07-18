@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Past_Target__c</fullName>
+    <fullName>Is_Past_Target__c</fullName>
     <defaultValue>false</defaultValue>
     <label>Past Target</label>
     <trackHistory>false</trackHistory>

@@ -827,7 +827,7 @@ public with sharing class TestDataFactory {
                 Counterparty_Name__c = 'Test Counterparty ' + i,
                 Method__c = 'DocuSign',
                 Date_Sent__c = Date.today(),
-                Never_Expires__c = false,
+                Is_Non_Expiring__c = false,
                 NDA_Expiry_Date__c = Date.today().addYears(1)
             ));
         }
@@ -1726,7 +1726,7 @@ public with sharing class TestDataFactory {
                 Current_Rent__c = String.valueOf(5000 + (i * 10)), // TEXT, not Currency
                 Proposed_Rate__c = 5250 + (i * 10),
                 Space_Sq_Ft__c = 1000 + (i * 10),
-                Renewal_Option__c = true,
+                Has_Renewal_Option__c = true,
                 Last_Contact_Date__c = Date.today()
             ));
         }

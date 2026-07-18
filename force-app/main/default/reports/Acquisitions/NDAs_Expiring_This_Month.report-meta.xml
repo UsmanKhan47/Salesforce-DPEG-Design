@@ -19,7 +19,7 @@
             <value>THIS_MONTH</value>
         </criteriaItems>
         <criteriaItems>
-            <column>NDA__c.Never_Expires__c</column>
+            <column>NDA__c.Is_Non_Expiring__c</column>
             <columnToColumn>false</columnToColumn>
             <isUnlocked>false</isUnlocked>
             <operator>equals</operator>

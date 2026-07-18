@@ -8,7 +8,7 @@ private class OnboardingControllerTest {
         obs[0].Tasks_Total__c=100; obs[0].Tasks_Complete__c=80; obs[0].Tasks_In_Progress__c=10; obs[0].Tasks_Not_Started__c=6;
         obs[0].Tasks_Blocked__c=2; obs[0].Tasks_NA__c=2; obs[0].Tasks_Overdue__c=6; obs[0].Tasks_Blocked_Now__c=2;
         obs[0].Tasks_Stalled__c=3; obs[0].Tasks_Due_7d__c=4; obs[0].Days_To_Onboard__c=20; obs[0].Age_Days__c=10;
-        obs[0].Oldest_Open_Days__c=15; obs[0].Past_Target__c=false;
+        obs[0].Oldest_Open_Days__c=15; obs[0].Is_Past_Target__c=false;
 
         obs[1].Stage__c='Leasing'; obs[1].Status__c='At Risk';
         obs[1].Onboarding_Lead__c='Endya Williams'; obs[1].Completion_Pct__c=40; obs[1].Tasks_Open__c=12;
@@ -16,7 +16,7 @@ private class OnboardingControllerTest {
         obs[1].Tasks_Total__c=100; obs[1].Tasks_Complete__c=40; obs[1].Tasks_In_Progress__c=30; obs[1].Tasks_Not_Started__c=24;
         obs[1].Tasks_Blocked__c=4; obs[1].Tasks_NA__c=2; obs[1].Tasks_Overdue__c=8; obs[1].Tasks_Blocked_Now__c=3;
         obs[1].Tasks_Stalled__c=5; obs[1].Tasks_Due_7d__c=6; obs[1].Days_To_Onboard__c=28; obs[1].Age_Days__c=14;
-        obs[1].Oldest_Open_Days__c=41; obs[1].Past_Target__c=true;
+        obs[1].Oldest_Open_Days__c=41; obs[1].Is_Past_Target__c=true;
 
         obs[2].Stage__c='Onboarding Complete'; obs[2].Status__c='Complete';  // terminal — excluded from active
         obs[2].Tasks_Total__c=50; obs[2].Tasks_Complete__c=50;

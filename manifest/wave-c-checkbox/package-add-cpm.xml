@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Onboarding__c.Is_Past_Target__c</members>
+        <members>NDA__c.Is_Non_Expiring__c</members>
+        <members>Lease_Renewal__c.Has_Renewal_Option__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>Property_Management_Access</members>
+        <members>DPEG_Acquisitions</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

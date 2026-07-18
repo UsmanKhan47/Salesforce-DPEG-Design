@@ -449,7 +449,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lease_Renewal__c.Renewal_Option__c</field>
+        <field>Lease_Renewal__c.Has_Renewal_Option__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -539,7 +539,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Onboarding__c.Past_Target__c</field>
+        <field>Onboarding__c.Is_Past_Target__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

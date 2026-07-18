@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>OnboardingController</members>
+        <members>OnboardingControllerTest</members>
+        <members>OnboardingSelector</members>
+        <members>OnboardingSelectorTest</members>
+        <members>TestDataFactory</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>Lease_Renewal__c-Lease Renewal Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>Acquisitions/NDAs_Expiring_This_Month</members>
+        <name>Report</name>
+    </types>
+    <version>67.0</version>
+</Package>
