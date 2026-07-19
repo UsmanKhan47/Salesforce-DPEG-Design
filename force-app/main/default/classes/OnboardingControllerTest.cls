@@ -93,4 +93,80 @@ private class OnboardingControllerTest {
         Onboarding__c rolled = [SELECT Tasks_Complete__c FROM Onboarding__c WHERE Id = :o.Id];
         System.assertEquals(1, rolled.Tasks_Complete__c, 'rollup sees the completed task');
     }
+
+    // A valid-format but non-existent Id for the given type. The bare-user read throws on
+    // object/field access under WITH USER_MODE before any row match, so the Id need not resolve.
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL on the custom
+    // Onboarding__c object (no object access), and on the custom Task checklist fields (no
+    // FLS), throws — exercising each read method's failure catch (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.ob.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the read-failure catch on all six @AuraEnabled reads: under a bare Standard
+     * User, WITH USER_MODE throws (no access to the custom Onboarding__c object, no FLS on
+     * the custom Task checklist fields), and the controller maps it to a user-safe
+     * AuraHandledException. getChecklist takes an Id, so it is passed a valid-format fake
+     * one. Its own method because bareUser() inserts a User (setup DML); the reads throw at
+     * the query, so no record DML runs here (avoids MIXED_DML_OPERATION).
+     */
+    @isTest
+    static void readCatchesThrowAuraHandledException() {
+        User u = bareUser();
+        Id fakeOnbId = fakeId(Onboarding__c.SObjectType);
+        System.runAs(u) {
+            Test.startTest();
+            try { OnboardingController.getKpis(); Assert.fail('getKpis should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getKpis maps read failure to AuraHandledException'); }
+            try { OnboardingController.getOnboardings(); Assert.fail('getOnboardings should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getOnboardings maps read failure to AuraHandledException'); }
+            try { OnboardingController.getPortfolio(); Assert.fail('getPortfolio should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getPortfolio maps read failure to AuraHandledException'); }
+            try { OnboardingController.getRiskAlerts(); Assert.fail('getRiskAlerts should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getRiskAlerts maps read failure to AuraHandledException'); }
+            try { OnboardingController.getTimeSla(); Assert.fail('getTimeSla should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getTimeSla maps read failure to AuraHandledException'); }
+            try { OnboardingController.getChecklist(fakeOnbId); Assert.fail('getChecklist should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getChecklist maps read failure to AuraHandledException'); }
+            Test.stopTest();
+        }
+    }
+
+    /**
+     * Covers completeTask's write-failure catch: a deleted Task Id makes the service's
+     * single-row read (selectForOnboardingCompletion) throw QueryException under admin — the
+     * deterministic way to reach the write catch. Kept apart from the bare-user read test so
+     * the setup-object User insert and this record DML never share a transaction
+     * (MIXED_DML_OPERATION).
+     */
+    @isTest
+    static void completeTaskWriteCatchThrowsAuraHandledException() {
+        Onboarding__c o = TestDataFactory.createOnboarding(null, false);
+        o.Stage__c = 'Property Set up'; o.Status__c = 'In Progress';
+        insert o;
+        Task t = TestDataFactory.createOnboardingTasks(1, o.Id, false)[0];
+        insert t;
+        Id deletedTaskId = t.Id;
+        delete t;
+
+        Test.startTest();
+        try {
+            OnboardingController.completeTask(deletedTaskId, 'note');
+            Assert.fail('completeTask on a deleted Task should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'completeTask write failure maps to AuraHandledException');
+        }
+        Test.stopTest();
+    }
 }

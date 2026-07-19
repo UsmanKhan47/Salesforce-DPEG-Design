@@ -213,4 +213,41 @@ private class TransactionControllerTest {
         System.assertEquals(75, k.avgTimeToCloseDays, 'Every bulk row has the same 75-day TTC (factory default), so the average is exactly 75');
         System.assertEquals(251, rows.size(), 'getActiveTransactions returns all 251 rows, not capped at 200');
     }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL on the custom
+    // Transaction__c object (no object access) throws, exercising each read method's
+    // failure catch which maps it to a user-safe AuraHandledException (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.txn.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the read-failure catch on all four @AuraEnabled reads: under a bare Standard
+     * User, WITH USER_MODE on the custom Transaction__c object throws (no object access),
+     * and the controller maps it to a user-safe AuraHandledException. Its own method because
+     * bareUser() inserts a User (setup DML); the reads throw at the query, so no record DML
+     * runs here (avoids MIXED_DML_OPERATION).
+     */
+    @isTest
+    static void readCatchesThrowAuraHandledException() {
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try { TransactionController.getKpis(); Assert.fail('getKpis should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getKpis maps read failure to AuraHandledException'); }
+            try { TransactionController.getTaskSummary(); Assert.fail('getTaskSummary should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getTaskSummary maps read failure to AuraHandledException'); }
+            try { TransactionController.getStageBreakdown(); Assert.fail('getStageBreakdown should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getStageBreakdown maps read failure to AuraHandledException'); }
+            try { TransactionController.getActiveTransactions(); Assert.fail('getActiveTransactions should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getActiveTransactions maps read failure to AuraHandledException'); }
+            Test.stopTest();
+        }
+    }
 }

@@ -195,4 +195,92 @@ private class TransactionTaskControllerTest {
         System.assertEquals(51, byLetter.get('C').total, 'Group C has all 51 of its tasks');
         System.assertEquals(0, byLetter.get('C').complete, 'Group C nothing complete yet');
     }
+
+    // A valid-format but non-existent Id for the given type. The bare-user read throws on
+    // FLS under WITH USER_MODE before any row match, so the Id need not resolve.
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL selecting the custom
+    // Task fields (Task_Group__c, Task_Sequence__c, …) throws for a user with no FLS on
+    // them, exercising getTaskGroups' read-failure catch (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.tt.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers getTaskGroups' read-failure catch: under a bare Standard User, WITH USER_MODE
+     * on the checklist query's custom Task fields throws (no FLS), and the controller maps
+     * it to a user-safe AuraHandledException. Its own method because bareUser() inserts a
+     * User (setup DML); the read throws at the query, so no record DML runs here
+     * (avoids MIXED_DML_OPERATION).
+     */
+    @isTest
+    static void readCatchThrowsAuraHandledException() {
+        User u = bareUser();
+        Id fakeTxnId = fakeId(Transaction__c.SObjectType);
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                TransactionTaskController.getTaskGroups(fakeTxnId);
+                Assert.fail('getTaskGroups should throw under a bare user');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getTaskGroups maps read failure to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
+
+    /**
+     * Covers the generic write-failure catch on all three write methods: a deleted Task Id
+     * makes the update / single-row read fail under admin — the deterministic way to reach
+     * the write-failure catch. Kept apart from the bare-user read test so the setup-object
+     * User insert and this record DML never share a transaction (MIXED_DML_OPERATION).
+     */
+    @isTest
+    static void writeCatchesThrowAuraHandledException() {
+        Transaction__c t = newSuppressedTransaction();
+        insert t;
+        List<Task> tasks = new List<Task>{
+            new Task(Transaction_Deal__c = t.Id, Subject = 'del1', Status = 'Not Started'),
+            new Task(Transaction_Deal__c = t.Id, Subject = 'del2', Status = 'Not Started'),
+            new Task(Transaction_Deal__c = t.Id, Subject = 'del3', Status = 'Not Started',
+                Task_Group__c = 'B. Earnest Money Wire')
+        };
+        insert tasks;
+        Id deletedSetId = tasks[0].Id;
+        Id deletedCompleteId = tasks[1].Id;
+        Id deletedWireId = tasks[2].Id;
+        delete tasks;
+
+        Test.startTest();
+        try {
+            TransactionTaskController.setTaskStatus(deletedSetId, true);
+            Assert.fail('setTaskStatus on a deleted Task should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'setTaskStatus write failure maps to AuraHandledException');
+        }
+        try {
+            TransactionTaskController.completeTask(deletedCompleteId, 'note');
+            Assert.fail('completeTask on a deleted Task should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'completeTask write failure maps to AuraHandledException');
+        }
+        // Valid name/phone so the rule passes and the deleted-Id single-row read (QueryException)
+        // reaches the generic catch, not the WireVerificationException branch.
+        try {
+            TransactionTaskController.completeWireVerification(deletedWireId, 'Jane Doe', '713-555-0100', null);
+            Assert.fail('completeWireVerification on a deleted Task should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'completeWireVerification write failure maps to AuraHandledException');
+        }
+        Test.stopTest();
+    }
 }

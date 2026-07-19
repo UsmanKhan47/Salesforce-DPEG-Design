@@ -119,4 +119,51 @@ private class WorkOrderControllerTest {
         System.assertEquals(false, done.Is_Open__c);
         Test.stopTest();
     }
+
+    // A valid-format but non-existent Id for the given type. The bare-user read throws on
+    // object ACCESS under WITH USER_MODE before any row match, so the Id need not resolve.
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL on the custom
+    // Work_Order__c object (no object access) throws, exercising each read method's failure
+    // catch which maps it to a user-safe AuraHandledException (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.wo.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the read-failure catch on all five @AuraEnabled reads: under a bare Standard
+     * User, WITH USER_MODE on the custom Work_Order__c object throws (no object access), and
+     * the controller maps it to a user-safe AuraHandledException. getActivity takes an Id, so
+     * it is passed a valid-format fake one (the access failure fires before any row match).
+     * Its own method because bareUser() inserts a User (setup DML); the reads throw at the
+     * query, so no record DML runs here (avoids MIXED_DML_OPERATION).
+     */
+    @isTest
+    static void readCatchesThrowAuraHandledException() {
+        User u = bareUser();
+        Id fakeWoId = fakeId(Work_Order__c.SObjectType);
+        System.runAs(u) {
+            Test.startTest();
+            try { WorkOrderController.getHomeKpis(); Assert.fail('getHomeKpis should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getHomeKpis maps read failure to AuraHandledException'); }
+            try { WorkOrderController.getRecentWorkOrders(); Assert.fail('getRecentWorkOrders should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getRecentWorkOrders maps read failure to AuraHandledException'); }
+            try { WorkOrderController.getEscalations(); Assert.fail('getEscalations should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getEscalations maps read failure to AuraHandledException'); }
+            try { WorkOrderController.getUntouched(); Assert.fail('getUntouched should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getUntouched maps read failure to AuraHandledException'); }
+            try { WorkOrderController.getActivity(fakeWoId); Assert.fail('getActivity should throw under a bare user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getActivity maps read failure to AuraHandledException'); }
+            Test.stopTest();
+        }
+    }
 }
