@@ -247,4 +247,32 @@ private class BrokerPortalControllerTest {
         assertRejected(d, 'over-length property address');
         Test.stopTest();
     }
+
+    // ---- P6 boundary: an unexpected Lead-insert failure surfaces as a generic AuraHandledException ----
+
+    @IsTest
+    static void submitDeal_insertFails_surfacesGenericAhe() {
+        // A Lead with the same broker identity trips this org's active Lead duplicate
+        // rule (Block); the service's insert throws a DmlException that the thinned
+        // controller must map to a user-safe AuraHandledException (never a raw DML
+        // string to the unauthenticated guest).
+        Lead blocker = TestDataFactory.createLead(false);
+        blocker.FirstName = 'Jane';
+        blocker.LastName = 'Broker';
+        blocker.Company = 'Acme Realty';
+        blocker.Email = 'jane@acme.com';
+        blocker.Property_Address__c = '456 Blocker Rd';
+        blocker.Status = 'New';
+        insert blocker;
+
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            BrokerPortalController.submitDeal(validInput());
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.Assert.isTrue(threw, 'A failed Lead insert should surface as AuraHandledException');
+    }
 }

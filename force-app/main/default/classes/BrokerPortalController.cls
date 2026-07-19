@@ -1,12 +1,35 @@
+/**
+ * Apex controller behind the public Experience Cloud (LWR) guest Broker Portal. A guest
+ * submits the portal form; a Lead (LeadSource = 'Broker Portal') is created.
+ *
+ * ⚠ SHARING — `without sharing`, DELIBERATE and SECURITY-CRITICAL. Do NOT change it. The
+ * guest anti-abuse duplicate check must see Leads the site guest user cannot; that
+ * all-records read lives in LeadSelector.GuestReads / ContactSelector.GuestReads
+ * (`without sharing`, SYSTEM_MODE) and in BrokerPortalService (also `without sharing`).
+ * Converting to `with sharing` would silently scope the dedup to the guest's (empty)
+ * sharing and defeat the anti-abuse Duplicate_Flag__c signal.
+ *
+ * Thin controller (P6 controller thinning): marshals the guest DTO, delegates the
+ * Lead-creation + dedup workflow to BrokerPortalService, and maps every failure to a
+ * user-safe AuraHandledException at the LWC boundary (ARCHITECTURE.md §5). User-
+ * actionable messages (validation, routing) are surfaced verbatim via the service's
+ * typed SubmissionException; unexpected platform detail goes to the debug log
+ * (admin-only) and the guest gets a fixed, generic message with no exception detail
+ * concatenated in. All SOQL lives in selectors and the business logic lives in the
+ * service — this controller holds neither.
+ */
 public without sharing class BrokerPortalController {
 
-    private static final String LEAD_SOURCE = 'Broker Portal';
-    private static final String QUEUE_DEV_NAME = 'Broker_Portal_Leads';
-    private static final Set<String> CLOSED_STATUSES = new Set<String>{ 'Converted', 'Disqualified' };
-    private static final String CONFIRMATION_MSG =
-        'Thank you! We have received your deal. Our acquisitions team will review it shortly.';
+    // Fixed, generic user-safe message for an unexpected submit failure (e.g. the Lead
+    // insert). Matches the original inline insert-catch message, so guest-visible
+    // behaviour on a failed save is unchanged.
+    private static final String SUBMIT_FAILURE_MESSAGE =
+        'We could not save your submission. Please try again.';
+    // Fixed, generic user-safe message for a failed form-metadata read.
+    private static final String METADATA_FAILURE_MESSAGE =
+        'The submission form could not be loaded. Refresh the page or contact your administrator.';
 
-    // ---- DTOs ----
+    // ---- DTOs (the @AuraEnabled contract consumed by the brokerDealIntakeForm LWC) ----
     public class DealSubmission {
         @AuraEnabled public String firstName { get; set; }
         @AuraEnabled public String lastName { get; set; }
@@ -45,10 +68,16 @@ public without sharing class BrokerPortalController {
     // ---- getFormMetadata ----
     @AuraEnabled(cacheable=true)
     public static FormMetadata getFormMetadata() {
-        FormMetadata meta = new FormMetadata();
-        meta.assetTypes = optionsFor(Lead.Asset_Type__c.getDescribe());
-        meta.dealTypes = optionsFor(Lead.Deal_Type__c.getDescribe());
-        return meta;
+        try {
+            FormMetadata meta = new FormMetadata();
+            meta.assetTypes = optionsFor(Lead.Asset_Type__c.getDescribe());
+            meta.dealTypes = optionsFor(Lead.Deal_Type__c.getDescribe());
+            return meta;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'BrokerPortalController.getFormMetadata: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(METADATA_FAILURE_MESSAGE);
+        }
     }
 
     private static List<PicklistOption> optionsFor(Schema.DescribeFieldResult dfr) {
@@ -64,126 +93,23 @@ public without sharing class BrokerPortalController {
     // ---- submitDeal ----
     @AuraEnabled
     public static SubmitResult submitDeal(DealSubmission input) {
-        // Honeypot - silently drop bot submissions with a normal-looking response.
-        if (input != null && String.isNotBlank(input.website)) {
-            return new SubmitResult(true, CONFIRMATION_MSG);
-        }
-        validate(input);
-
-        Lead l = new Lead();
-        l.FirstName = input.firstName.trim();
-        l.LastName = input.lastName.trim();
-        l.Company = input.brokerageFirm.trim();
-        l.Broker_First__c = input.brokerageFirm.trim();
-        l.Email = input.email.trim();
-        l.Phone = trimToNull(input.phone);
-        l.Property_Address__c = input.propertyAddress.trim();
-        l.Asset_Type__c = input.assetType;
-        l.Deal_Type__c = trimToNull(input.dealType);
-        // Server-stamped - never accepted from the client.
-        l.LeadSource = LEAD_SOURCE;
-        l.Status = 'New';
-        l.First_Seen_Date__c = Datetime.now();
-        Id queueId = brokerQueueId();
-        if (queueId == null) {
-            throw new AuraHandledException('We could not route your submission right now. Please try again later.');
-        }
-        l.OwnerId = queueId;
-        l.Duplicate_Flag__c = isDuplicate(l.Property_Address__c);
-        l.Broker_Priority__c = brokerPriorityFor(l.Email);
         try {
-            insert l;
-        } catch (DmlException e) {
-            throw new AuraHandledException('We could not save your submission. Please try again.');
-        }
-        return new SubmitResult(true, CONFIRMATION_MSG);
-    }
-
-    // ---- Helpers: queue ----
-    private static Id cachedQueueId;
-    private static Boolean queueResolved = false;
-    private static Id brokerQueueId() {
-        if (!queueResolved) {
-            queueResolved = true;
-            // SOQL relocated to QueueGroupSelector (P4 §2 layering).
-            Group queue = QueueGroupSelector.selectQueueByDeveloperName(QUEUE_DEV_NAME);
-            cachedQueueId = (queue == null) ? null : queue.Id;
-        }
-        return cachedQueueId;
-    }
-
-    private static String trimToNull(String value) {
-        return String.isBlank(value) ? null : value.trim();
-    }
-
-    /**
-     * Broker priority lives on the broker's Contact (source of truth) and is copied
-     * onto each lead they submit, so intake can be worked priority-first. Unknown
-     * brokers default to Standard.
-     */
-    private static String brokerPriorityFor(String email) {
-        if (String.isNotBlank(email)) {
-            // SOQL relocated to ContactSelector's without-sharing GuestReads inner
-            // class (P4 §2 layering; preserves the original all-records guest read).
-            Contact broker = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem(email);
-            if (broker != null && String.isNotBlank(broker.Broker_Priority__c)) {
-                return broker.Broker_Priority__c;
-            }
-        }
-        return 'Standard';
-    }
-
-    // ---- Helpers: validation ----
-    private static void validate(DealSubmission sub) {
-        if (sub == null) {
-            throw new AuraHandledException('No submission was received.');
-        }
-        List<String> errors = new List<String>();
-        if (String.isBlank(sub.firstName)) errors.add('First name is required.');
-        if (String.isBlank(sub.lastName)) errors.add('Last name is required.');
-        if (String.isBlank(sub.brokerageFirm)) errors.add('Brokerage firm is required.');
-        if (String.isBlank(sub.propertyAddress)) errors.add('Property address is required.');
-        if (String.isBlank(sub.email) || !isValidEmail(sub.email)) errors.add('A valid email is required.');
-        if (String.isBlank(sub.assetType) || !isValidPicklist(Lead.Asset_Type__c.getDescribe(), sub.assetType)) {
-            errors.add('Please choose a valid asset type.');
-        }
-        if (String.isNotBlank(sub.dealType) && !isValidPicklist(Lead.Deal_Type__c.getDescribe(), sub.dealType)) {
-            errors.add('Please choose a valid deal type.');
-        }
-        if (String.isNotBlank(sub.firstName) && sub.firstName.length() > 40) errors.add('First name is too long.');
-        if (String.isNotBlank(sub.lastName) && sub.lastName.length() > 80) errors.add('Last name is too long.');
-        if (String.isNotBlank(sub.brokerageFirm) && sub.brokerageFirm.length() > 255) errors.add('Brokerage firm is too long.');
-        if (String.isNotBlank(sub.email) && sub.email.length() > 80) errors.add('Email is too long.');
-        if (String.isNotBlank(sub.phone) && sub.phone.length() > 40) errors.add('Phone is too long.');
-        if (String.isNotBlank(sub.propertyAddress) && sub.propertyAddress.length() > 255) errors.add('Property address is too long.');
-        if (!errors.isEmpty()) {
-            throw new AuraHandledException(String.join(errors, ' '));
+            return BrokerPortalService.submitDeal(input);
+        } catch (BrokerPortalService.SubmissionException e) {
+            // User-actionable validation / routing message — safe to surface verbatim.
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            // Unexpected (e.g. the Lead insert) — log platform detail, show a fixed,
+            // generic message with no raw exception text to the unauthenticated guest.
+            System.debug(LoggingLevel.ERROR, 'BrokerPortalController.submitDeal: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(SUBMIT_FAILURE_MESSAGE);
         }
     }
 
-    private static Boolean isValidEmail(String value) {
-        return Pattern.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$', value.trim());
-    }
-
-    private static Boolean isValidPicklist(Schema.DescribeFieldResult dfr, String value) {
-        for (Schema.PicklistEntry e : dfr.getPicklistValues()) {
-            if (e.isActive() && e.getValue() == value) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // ---- Helpers: duplicate check ----
-    private static Boolean isDuplicate(String address) {
-        if (String.isBlank(address)) {
-            return false;
-        }
-        // SOQL relocated to LeadSelector's without-sharing GuestReads inner class
-        // (P4 §2 layering; preserves the original all-records dedup). selectByIdsSystem
-        // cannot express this address+status search — see LeadSelector's ADDED-METHOD note.
-        return !new LeadSelector.GuestReads()
-            .selectOpenDuplicatesByAddressSystem(address, CLOSED_STATUSES)
-            .isEmpty();
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
     }
 }
