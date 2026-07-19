@@ -1,36 +1,22 @@
 /**
  * @description Test class for WireController.
  * Migrated onto TestDataFactory (Phase 2 conformance program, Disposition module).
- * Adds coverage for the two previously-untested saveWire branches (updating an
- * existing record via wireId, and turning verification back off to clear
- * Verified_DateTime__c — the gap behind the reported 92.3% coverage), a
- * delete-based negative scenario, and a 251-record data-volume read test
- * (251 Wire__c under one Disposition — a real scenario, since a
- * Yardi-mirrored Disposition can legitimately accumulate hundreds of wires).
+ * Covers both saveWire branches (updating an existing record via wireId, and turning
+ * verification back off to clear Verified_DateTime__c), a delete-based negative scenario,
+ * and a 251-record data-volume read test (251 Wire__c under one Disposition — a real
+ * scenario, since a Yardi-mirrored Disposition can accumulate hundreds of wires).
  *
- * saveWire(...) carries inline SOQL + DML with no Selector/Service delegation
- * (apex-layering-rule.md violation). NOT tested here at 251 calls: it is a
- * single-record @AuraEnabled method invoked once per LWC click, and a user
- * cannot click 251 times in one transaction — a sequential-call loop would
- * test a state production cannot produce. Logged as a layering finding for
- * Phase 4 (Selectors) / Phase 6 (controller thinning) instead.
+ * P6 controller thinning: the upsert / stamp logic now lives in WireService, and every
+ * @AuraEnabled method wraps its work in a try/catch that maps failures to an
+ * AuraHandledException at the LWC boundary (ARCHITECTURE.md §5). The invalid-wireId
+ * negative test therefore now expects an AuraHandledException (not the raw
+ * QueryException), and readPathsThrowAuraHandledException covers getWire's catch under a
+ * bare Standard User whose WITH USER_MODE SOQL on the custom Wire__c object throws.
  *
- * ⚠ KNOWN PRODUCTION DEFECT — testSaveWire_existingWireId_updatesInPlace is
- * EXPECTED TO FAIL until saveWire(...) is fixed; this is not a test-authoring
- * bug. saveWire's existing-record branch queries
- * `[SELECT Id FROM Wire__c WHERE Id = :wireId LIMIT 1]` (Id only) and then,
- * when verbalDone == true, reads `w.Verified_DateTime__c` on the very next
- * line to decide whether to stamp it — a field that row was never queried
- * for. That throws System.SObjectException: SObject row was retrieved via
- * SOQL without querying the requested field: Wire__c.Verified_DateTime__c.
- * (The sibling turn-verification-off test does NOT hit this: verbalDone ==
- * false short-circuits the `&&` before the unqueried field is ever read —
- * only assigned to, which needs no prior query. That's why exactly one of
- * the two existing-record saveWire tests fails, not both.) There is no
- * SOQL in this test class that omits the field — the fix belongs in
- * WireController.saveWire's own SELECT and is out of this agent's
- * test-classes-only boundary. Left asserting the correct behavior on
- * purpose; do not weaken this assertion to route around the bug.
+ * The prior existing-record SObjectException defect is resolved: WireSelector's
+ * selectRequiredById returns Verified_DateTime__c, so the update path can read it before
+ * deciding whether to (re-)stamp — testSaveWire_existingWireId_updatesInPlace asserts the
+ * in-place update directly.
  * @author Unit Testing Agent
  */
 @isTest
@@ -43,6 +29,25 @@ private class WireControllerTest {
         Disposition__c d = TestDataFactory.createDisposition(asset.Id, false);
         d.Disposition_Stage__c = 'Closing';
         insert d;
+    }
+
+    // A valid-format but non-existent Id for the given type. The bare-user read throws on
+    // object ACCESS under WITH USER_MODE before any row match, so the Id need not resolve.
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL on the custom
+    // Wire__c object (no object access) throws, exercising getWire's read-failure catch
+    // which maps it to a user-safe AuraHandledException (P6).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
     }
 
     @isTest
@@ -145,7 +150,11 @@ private class WireControllerTest {
     }
 
     @isTest
-    static void testSaveWire_invalidWireId_throwsQueryException() {
+    static void testSaveWire_invalidWireId_throwsAuraHandledException() {
+        // P6: the selector's raw QueryException is now caught in the controller and
+        // re-thrown as a user-safe AuraHandledException at the LWC boundary. A deleted
+        // Wire Id makes the single-row selector SOQL fail under admin — the deterministic
+        // way to reach saveWire's write-failure catch.
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
         Wire__c w = TestDataFactory.createWire(d.Id, true);
         Id deletedId = w.Id;
@@ -154,19 +163,38 @@ private class WireControllerTest {
         Test.startTest();
         try {
             WireController.saveWire(d.Id, deletedId, true, 'Jane', '555-1234', 'source', 100);
-            System.assert(false, 'Expected a QueryException for a Wire Id that no longer exists');
-        } catch (System.QueryException e) {
-            System.assertEquals(true, e.getMessage().toLowerCase().contains('no rows'),
-                'Exception message should indicate no matching Wire__c row: ' + e.getMessage());
+            Assert.fail('Expected an AuraHandledException for a Wire Id that no longer exists');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'saveWire failure maps to AuraHandledException');
         }
         Test.stopTest();
     }
 
+    // Runs getWire under a bare Standard User: WITH USER_MODE on the custom Wire__c object
+    // throws (no object access), exercising getWire's read-failure catch that maps it to a
+    // user-safe AuraHandledException. Kept in its own method: bareUser() inserts a User
+    // (setup DML), and getWire only queries (no record DML), so no MIXED_DML_OPERATION.
+    @isTest
+    static void readPathsThrowAuraHandledException() {
+        User u = bareUser();
+        Id fakeDispId = fakeId(Disposition__c.SObjectType);
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                WireController.getWire(fakeDispId);
+                Assert.fail('expected AuraHandledException from getWire under a bare user');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getWire read failure maps to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
+
     /**
-     * Data-volume read scenario per .claude/rules/bulk-test-rule.md: 251 Wire__c
-     * rows under one Disposition, inserted via a single bulk DML statement, to
-     * prove the ORDER BY CreatedDate DESC, Id DESC ... LIMIT 1 pattern still
-     * resolves to exactly one row at volume.
+     * Data-volume read scenario per .claude/rules/bulk-test-rule.md: 251 Wire__c rows
+     * under one Disposition, inserted via a single bulk DML statement, to prove the
+     * ORDER BY CreatedDate DESC, Id DESC ... LIMIT 1 pattern still resolves to exactly one
+     * row at volume.
      */
     @isTest
     static void testGetWire_251Wires_limitOneStillResolves() {

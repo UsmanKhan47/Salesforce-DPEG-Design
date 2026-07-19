@@ -1,11 +1,34 @@
+/**
+ * Backs the dispositionClosingTasks LWC on the Disposition record page. Renders the
+ * three-step closing checklist (find-or-created on first view) and toggles a step's
+ * completion.
+ *
+ * All SOQL is delegated to TaskSelector per ARCHITECTURE.md §2 — this controller holds no
+ * inline SOQL.
+ *
+ * Thin controller (P6 controller thinning). The find-or-create and toggle DML live in
+ * DispositionTaskService per .claude/rules/apex-layering-rule.md; the controller only
+ * marshals input, delegates, shapes the returned Tasks into ordered view DTOs, and maps
+ * failures to an AuraHandledException at the LWC boundary (ARCHITECTURE.md §5): platform
+ * detail goes to the debug log (admin-only) and the user gets a fixed, generic message.
+ */
 public with sharing class DispositionTaskController {
 
-    // The closing checklist, in order. Tasks are scoped to a disposition by WhatId + these subjects.
-    private static final List<String> SUBJECTS = new List<String>{
-        'PSA Executed',
-        'Title Company Engaged',
-        'Closing Statement Received'
-    };
+    // Fixed, generic user-safe message for a failed write (the toggle). Never interpolate
+    // platform text or exception detail into it (ARCHITECTURE.md §5).
+    private static final String WRITE_FAILURE_MESSAGE =
+        'This change could not be saved. Refresh the page and try again, or contact your administrator.';
+    // Fixed, generic user-safe message for a failed checklist load. getClosingTasks
+    // self-seeds (may insert), but from the user's perspective it loads the checklist, so
+    // a failure surfaces as a load failure.
+    private static final String READ_FAILURE_MESSAGE =
+        'This checklist could not be loaded. Refresh the page or contact your administrator.';
+
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
+    }
 
     public class ClosingTask {
         @AuraEnabled public Id id;
@@ -16,61 +39,49 @@ public with sharing class DispositionTaskController {
     }
 
     /**
-     * Returns the three Disposition Closing tasks for a disposition, creating any that don't exist
-     * yet (find-or-create) so the checklist self-seeds on first view. Built the same way as the
-     * transaction tasks: standard Task records keyed by Task_Group__c, completion via Status.
-     * NOT cacheable because it may insert — the LWC calls it imperatively.
+     * Returns the three Disposition Closing tasks for a disposition, creating any that
+     * don't exist yet (find-or-create) so the checklist self-seeds on first view. The
+     * find-or-create DML lives in DispositionTaskService; the controller shapes the
+     * returned Tasks into ordered view rows. NOT cacheable because the service may insert
+     * — the LWC calls it imperatively.
      */
     @AuraEnabled
     public static List<ClosingTask> getClosingTasks(Id dispositionId) {
-        Set<String> existing = new Set<String>();
-        for (Task t : TaskSelector.selectByWhatIdAndSubjects(dispositionId, SUBJECTS)) {
-            existing.add(t.Subject);
-        }
-
-        List<Task> toCreate = new List<Task>();
-        for (Integer i = 0; i < SUBJECTS.size(); i++) {
-            if (!existing.contains(SUBJECTS[i])) {
-                toCreate.add(new Task(
-                    WhatId = dispositionId,
-                    Subject = SUBJECTS[i],
-                    Status = 'Not Started',
-                    Priority = 'Normal'
-                ));
+        try {
+            Map<String, Task> bySubject = DispositionTaskService.findOrCreateClosingTasks(dispositionId);
+            List<ClosingTask> rows = new List<ClosingTask>();
+            for (Integer i = 0; i < DispositionTaskService.SUBJECTS.size(); i++) {
+                Task t = bySubject.get(DispositionTaskService.SUBJECTS[i]);
+                if (t == null) {
+                    continue;
+                }
+                ClosingTask r = new ClosingTask();
+                r.id = t.Id;
+                r.subject = t.Subject;
+                r.sequence = i + 1;
+                r.done = t.IsClosed;
+                // Guard: Task.CompletedDateTime is auto-stamped on close and never cleared
+                // on reopen, so derive the completed date from IsClosed instead.
+                r.completedDate = t.IsClosed ? t.LastModifiedDate : null;
+                rows.add(r);
             }
+            return rows;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'DispositionTaskController.getClosingTasks on ' + dispositionId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        if (!toCreate.isEmpty()) {
-            insert toCreate;
-        }
-
-        // Re-read (incl. any just-inserted) with the guarded field set
-        // (Id, Subject, IsClosed, LastModifiedDate) the completedDate guard below
-        // depends on. SOQL lives in TaskSelector; the IsClosed ? : guard stays here.
-        Map<String, Task> bySubject = new Map<String, Task>();
-        for (Task t : TaskSelector.selectByWhatIdAndSubjects(dispositionId, SUBJECTS)) {
-            bySubject.put(t.Subject, t);
-        }
-
-        List<ClosingTask> rows = new List<ClosingTask>();
-        for (Integer i = 0; i < SUBJECTS.size(); i++) {
-            Task t = bySubject.get(SUBJECTS[i]);
-            if (t == null) {
-                continue;
-            }
-            ClosingTask r = new ClosingTask();
-            r.id = t.Id;
-            r.subject = t.Subject;
-            r.sequence = i + 1;
-            r.done = t.IsClosed;
-            r.completedDate = t.IsClosed ? t.LastModifiedDate : null;
-            rows.add(r);
-        }
-        return rows;
     }
 
     // Toggles a closing task between Completed and Not Started (mirrors TransactionTaskController).
     @AuraEnabled
     public static void setTaskDone(Id taskId, Boolean done) {
-        update new Task(Id = taskId, Status = done ? 'Completed' : 'Not Started');
+        try {
+            DispositionTaskService.setTaskDone(taskId, done);
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'DispositionTaskController.setTaskDone on ' + taskId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
+        }
     }
 }

@@ -1,39 +1,20 @@
 /**
  * @description Test class for DispositionTaskController.
  * Migrated onto TestDataFactory (Phase 2 conformance program, Disposition module).
- * Reported coverage was 0% going into this pass; the prior single test method
- * already exercised the create/toggle/idempotency path reasonably well, so the
- * 0% most likely reflects "not yet executed by RunLocalTests" rather than a
- * defect — see the final report. Split into focused methods and added a
- * negative scenario.
+ * Split into focused methods with positive create/toggle/idempotency scenarios plus
+ * negative scenarios.
  *
- * getClosingTasks/setTaskDone carry inline SOQL + DML with no Selector/Service
- * delegation (apex-layering-rule.md violation). NOT tested here at 251 calls:
- * both are single-record @AuraEnabled methods invoked once per LWC click, and
- * a user cannot click 251 times in one transaction — a sequential-call loop
- * would test a state production cannot produce. Logged as a layering finding
- * for Phase 4 (Selectors) / Phase 6 (controller thinning) instead.
+ * P6 controller thinning: the find-or-create and toggle DML now live in
+ * DispositionTaskService, and every @AuraEnabled method wraps its work in a try/catch
+ * that maps failures to an AuraHandledException at the LWC boundary (ARCHITECTURE.md §5).
+ * getClosingTasks reads the standard Task object (which a bare Standard User can read, so
+ * a bare-user probe would not throw) AND inserts Tasks, so its catch is exercised by
+ * passing a deleted Disposition Id — the checklist insert then fails on the invalid
+ * cross-reference WhatId. setTaskDone's catch is exercised with a null Task Id.
  *
- * ⚠ KNOWN PRODUCTION DEFECT — testSetTaskDone_toggleOnAndOff's re-open
- * assertion is EXPECTED TO FAIL until getClosingTasks(...) is fixed; this is
- * not an invented requirement. getClosingTasks returns
- * `r.completedDate = t.CompletedDateTime` unguarded. Task.CompletedDateTime
- * is a standard, platform-managed field: Salesforce auto-stamps it when
- * Status closes and never auto-clears it when Status reopens, and nothing
- * else in this codebase touches it (no trigger, no Flow) — so a task marked
- * done then reopened keeps a stale completion date. The sibling class this
- * controller's own doc comment says it "mirrors" —
- * TransactionTaskController.getTaskGroups — already guards against exactly
- * this: `r.completedDate = t.IsClosed ? t.LastModifiedDate : null`.
- * DispositionTaskController.getClosingTasks omits that guard. That
- * inconsistency with an established sibling pattern in the same codebase,
- * solving the same UI problem, is the evidence this is an oversight, not a
- * deliberate design. Currently masked in the LWC (dispositionClosingTasks.js
- * only renders the date when `t.done` is true, so a reopened row shows
- * nothing today), but the API keeps returning stale data. Left asserting
- * the correct behavior on purpose; do not weaken this assertion to route
- * around the bug. Fix belongs in getClosingTasks, out of this agent's
- * test-classes-only boundary.
+ * The completed-date guard (r.completedDate = t.IsClosed ? t.LastModifiedDate : null) is
+ * in place in the controller and TaskSelector selects LastModifiedDate, so the
+ * clear-on-reopen behaviour holds — testSetTaskDone_toggleOnAndOff asserts it directly.
  * @author Unit Testing Agent
  */
 @isTest
@@ -101,14 +82,38 @@ private class DispositionTaskControllerTest {
     }
 
     @isTest
-    static void testSetTaskDone_nullTaskId_throwsDmlException() {
+    static void testSetTaskDone_nullTaskId_throwsAuraHandledException() {
+        // P6: the raw DmlException (no Id specified) is now caught in the controller and
+        // re-thrown as a user-safe AuraHandledException at the LWC boundary.
         Test.startTest();
         try {
             DispositionTaskController.setTaskDone(null, true);
-            System.assert(false, 'Expected a DmlException when no Task Id is supplied');
-        } catch (System.DmlException e) {
-            System.assertEquals(true, e.getMessage().toLowerCase().contains('not specified'),
-                'Exception should indicate the missing Id: ' + e.getMessage());
+            Assert.fail('Expected an AuraHandledException when no Task Id is supplied');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'setTaskDone DML failure maps to AuraHandledException');
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testGetClosingTasks_deletedDisposition_throwsAuraHandledException() {
+        // A deleted Disposition Id: the checklist Tasks are inserted with WhatId = that Id,
+        // so the insert fails on the invalid cross-reference — reaching the service's DML,
+        // which the controller maps to a user-safe AuraHandledException (P6). Task is a
+        // standard object a bare Standard User CAN read, so a bare-user probe would not
+        // throw here; the deleted-Id write path is the deterministic route to this catch.
+        Property__c prop = TestDataFactory.createProperty(true);
+        Property_Asset__c asset = TestDataFactory.createPropertyAsset(prop.Id, true);
+        Disposition__c d = TestDataFactory.createDisposition(asset.Id, true);
+        Id deletedId = d.Id;
+        delete d;
+
+        Test.startTest();
+        try {
+            DispositionTaskController.getClosingTasks(deletedId);
+            Assert.fail('Expected an AuraHandledException when the WhatId Disposition no longer exists');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'getClosingTasks DML failure maps to AuraHandledException');
         }
         Test.stopTest();
     }
