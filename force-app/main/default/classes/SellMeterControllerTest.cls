@@ -68,9 +68,12 @@ private class SellMeterControllerTest {
         List<SellMeterController.PropertyRow> rows = SellMeterController.getPortfolio();
         Test.stopTest();
 
-        System.assertEquals(4, rows.size(), 'Four assets expected');
+        // Only 3 of the 4 @testSetup assets are sell candidates: asset[3] has a
+        // null Peak_Sell_Date__c, so the selector's sell-candidate filter
+        // (Property__c != null AND Peak_Sell_Date__c != null) now excludes it.
+        System.assertEquals(3, rows.size(), 'Three sell-candidate assets expected (asset[3] has no peak date and is filtered out)');
 
-        // Results are ORDER BY Name; factory names 'Test Asset 0..3' sort in insertion order.
+        // Results are ORDER BY Name; factory names 'Test Asset 0..2' sort in insertion order.
         SellMeterController.PropertyRow a0 = rows[0];
         System.assertEquals('GREEN', a0.sellMeter, 'Asset 0: peak in 15 days should be GREEN');
         System.assertNotEquals(null, a0.impliedValue, 'Implied value should be computed for asset 0');
@@ -82,10 +85,6 @@ private class SellMeterControllerTest {
 
         SellMeterController.PropertyRow a2 = rows[2];
         System.assertEquals('RED', a2.sellMeter, 'Asset 2: peak in 120 days should be RED');
-
-        SellMeterController.PropertyRow a3 = rows[3];
-        System.assertEquals('RED', a3.sellMeter, 'Asset 3: no peak date should be RED');
-        System.assertEquals(null, a3.impliedValue, 'Asset 3: null NOI should leave impliedValue null');
     }
 
     @isTest
@@ -96,7 +95,9 @@ private class SellMeterControllerTest {
 
         System.assertEquals(1, s.green, 'One asset (0) within 30 days of peak');
         System.assertEquals(1, s.yellow, 'One asset (1) 30-90 days from peak');
-        System.assertEquals(2, s.red, 'Two assets (2 far out, 3 no date)');
+        // asset[3] (no peak date) is now excluded by the sell-candidate filter, so
+        // only asset[2] (120 days out) remains in the red bucket.
+        System.assertEquals(1, s.red, 'One sell-candidate asset (2, far out); asset[3] with no peak date is filtered out');
         // Only Asset 0 is in the money: implied 20M - target 18M = 2M upside.
         System.assertEquals(2000000, s.upside, 'Portfolio upside is asset 0 only');
     }
