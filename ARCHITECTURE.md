@@ -224,6 +224,16 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 | `OnboardingTaskRollupService` | Onboarding checklist Tasks                         | Recomputes `Onboarding__c` checklist rollups (total / complete / overdue / stalled / completion %).                                                      |
 | `ApprovalAuditService`        | after-save Flow (`@InvocableMethod`)               | Stamps approver identity and date from `ProcessInstanceStep` onto the Underwriting / LOI gates. `without sharing`.                                       |
 
+### Controller-support services (P6, completed 2026-07-19)
+
+The **P6 controller-thinning sweep** brought every `@AuraEnabled` controller into layering conformance: business logic and DML were extracted into a per-controller service, and each controller became thin (marshal → delegate → `catch` → `AuraHandledException` via the repo-standard `ahe()` helper). Read-only controllers with no logic to extract (`LeadFunnelController`, `OpportunityDocStatusController`, `OpportunityFunnelController`, `RentRollController`, `SellMeterController`, plus the `TransactionController` / `WorkOrderController` boundary-hardening) kept no service — they received only the `AuraHandledException` boundary. **These services own controller-invoked orchestration only; SOQL still lives in selectors and none of them holds cross-object trigger/flow logic** (that stays in the Key Apex Services above). Every touched class is ≥90% covered; the full suite is 636 tests / 0 failures on DPEG-Acq-5.
+
+The 13 services introduced by P6, each invoked from its like-named controller:
+
+`LeaseInquiryService`, `BrokerAssignmentService`, `DispositionService`, `DispositionTaskService`, `WireService`, `CounterOfferService`, `PsaVersionService`, `StageAdvanceService`, `TransactionTaskService`, `OnboardingService`, `LeaseRenewalService`, `DealMessageService`, `BrokerPortalService`.
+
+**`BrokerPortalService` is `without sharing`** — it mirrors the guest `BrokerPortalController` so the public Broker-Portal Lead insert runs in the identical guest context; the anti-abuse dedup reads remain in `LeadSelector.GuestReads` / `ContactSelector.GuestReads` (`WITH SYSTEM_MODE`) and were not moved. Its `without sharing` is justified in the class header per the Standards rule above. All other P6 services are `with sharing`.
+
 ### Reference Implementations
 
 - Selector pattern: `.claude/skills/sf-apex/references/AccountSelector.cls`
