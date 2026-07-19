@@ -161,17 +161,25 @@ public with sharing class LeadSelector {
     }
 
     /**
-     * Most-recent Leads for the funnel's recent / review-queue list, newest first by
-     * First Seen Date (the immutable intake stamp) then CreatedDate. Bulk-safe;
-     * capped by the caller's row limit.
+     * Most-recent OPEN (non-converted) Leads for the funnel's recent / review-queue
+     * list, newest first by First Seen Date (the immutable intake stamp) then
+     * CreatedDate. Bulk-safe; capped by the caller's row limit.
+     *
+     * `IsConverted = false` filters out converted Leads on purpose. A converted Lead
+     * is not actionable in this list: Salesforce ALWAYS auto-redirects
+     * `/lightning/r/Lead/{convertedLeadId}/view` to the converted Contact, so a
+     * converted row would silently navigate the user off the Lead — there is no way to
+     * suppress that redirect. Excluding converted Leads keeps every row clickable to an
+     * actual Lead record. The funnel's "Converted" outcome metric is computed
+     * separately by countConvertedInLastNDays(...) and is unaffected by this filter.
      *
      * @param maxRows Row cap (LIMIT); null / non-positive returns an empty list.
-     * @return Leads with the funnel display + partition fields populated (Id, Name,
-     *         Status, LeadSource, Parse_Confidence__c, Guidance_Price__c,
-     *         Broker_First__c, Property_Address__c, Asset_Type__c,
+     * @return Open (non-converted) Leads with the funnel display + partition fields
+     *         populated (Id, Name, Status, LeadSource, Parse_Confidence__c,
+     *         Guidance_Price__c, Broker_First__c, Property_Address__c, Asset_Type__c,
      *         First_Seen_Date__c, CreatedDate, Broker_Priority__c) ordered
      *         First_Seen_Date__c DESC NULLS LAST, CreatedDate DESC; empty when there
-     *         are no Leads.
+     *         are no open Leads.
      */
     public static List<Lead> selectRecent(Integer maxRows) {
         if (maxRows == null || maxRows <= 0) {
@@ -182,6 +190,7 @@ public with sharing class LeadSelector {
                    Broker_First__c, Property_Address__c, Asset_Type__c,
                    First_Seen_Date__c, CreatedDate, Broker_Priority__c
             FROM Lead
+            WHERE IsConverted = false
             WITH USER_MODE
             ORDER BY First_Seen_Date__c DESC NULLS LAST, CreatedDate DESC
             LIMIT :maxRows

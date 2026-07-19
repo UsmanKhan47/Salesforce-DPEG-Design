@@ -13,10 +13,14 @@
  * modules; the factory already makes Company/Email unique, so this is defence in
  * depth). This org's Lead Status set is New / Under Review / Qualified / Converted /
  * Disqualified; there are no Lead validation rules, so Status 'Disqualified' is
- * insertable directly ('Converted' is a converted-flag status and is NOT set directly
- * — it requires lead conversion, which these tests deliberately avoid). LeadSource
- * tests use 'Web' rather than 'Broker Portal' to avoid triggering the
- * Broker_Portal_New_Lead_Notify after-save flow (an unrelated dependency).
+ * insertable directly ('Converted' is a converted-flag status and cannot be set via
+ * direct DML — it requires an actual lead conversion). selectRecent excludes converted
+ * Leads (IsConverted = false), so selectRecent_excludesConvertedLeads produces a
+ * converted Lead through Database.convertLead with a valid converted status (the same
+ * standard-conversion recipe as LeadConvertServiceTest); every other test deliberately
+ * avoids conversion. LeadSource tests use 'Web' rather than 'Broker
+ * Portal' to avoid triggering the Broker_Portal_New_Lead_Notify after-save flow (an
+ * unrelated dependency).
  */
 @isTest
 private class LeadSelectorTest {
@@ -149,6 +153,42 @@ private class LeadSelectorTest {
         Assert.areEqual(leads[1].Id, recent[0].Id, 'Newest First Seen Date comes first');
         Assert.areEqual(leads[2].Id, recent[1].Id, 'Middle First Seen Date comes second');
         Assert.areEqual(leads[0].Id, recent[2].Id, 'Oldest First Seen Date comes last');
+    }
+
+    @isTest
+    static void selectRecent_excludesConvertedLeads() {
+        // Bug fix: a converted Lead must NOT appear in the recent / review-queue list.
+        // Salesforce always auto-redirects /lightning/r/Lead/{convertedId}/view to the
+        // converted Contact, so a converted row is not clickable to a Lead. selectRecent
+        // now filters WHERE IsConverted = false.
+        //
+        // IsConverted cannot be set via direct DML, so one Lead is converted through
+        // Database.convertLead with a valid converted status — the same recipe as
+        // LeadConvertServiceTest (a standard conversion that creates the Opportunity;
+        // conversion adds no new Lead rows, so selectRecent still returns only the two
+        // open leads).
+        List<Lead> openLeads = TestDataFactory.createLeads(2, false);
+        Lead toConvert = TestDataFactory.createLead(false);
+        toConvert.LastName = 'Convertible';
+        List<Lead> all = new List<Lead>(openLeads);
+        all.add(toConvert);
+        insertWithDupBypass(all);
+        Set<Id> openIds = new Set<Id>{ openLeads[0].Id, openLeads[1].Id };
+
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(toConvert.Id);
+        lc.setConvertedStatus(convertedStatus());
+
+        Test.startTest();
+        Database.LeadConvertResult res = Database.convertLead(lc);
+        List<Lead> recent = LeadSelector.selectRecent(100);
+        Test.stopTest();
+
+        Assert.isTrue(res.isSuccess(), 'Lead conversion should succeed');
+        Set<Id> recentIds = new Map<Id, Lead>(recent).keySet();
+        Assert.areEqual(2, recent.size(), 'Only the two open leads surface; the converted lead is excluded');
+        Assert.isTrue(recentIds.containsAll(openIds), 'Both open (non-converted) leads are present in the recent list');
+        Assert.isFalse(recentIds.contains(toConvert.Id), 'The converted lead is excluded from the recent list');
     }
 
     @isTest
@@ -299,6 +339,11 @@ private class LeadSelectorTest {
     /** Inserts `count` factory Leads (Status 'New') with duplicate rules bypassed. */
     private static void insertLeads(Integer count) {
         insertWithDupBypass(TestDataFactory.createLeads(count, false));
+    }
+
+    /** A valid converted Lead status label for this org (drives Database.convertLead). */
+    private static String convertedStatus() {
+        return [SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel;
     }
 
     /** Inserts pre-built Leads with the org duplicate rule bypassed. */
