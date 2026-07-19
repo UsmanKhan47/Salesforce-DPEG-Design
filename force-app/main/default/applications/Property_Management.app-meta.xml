@@ -81,12 +81,10 @@
     <tabs>Broker_Assignments</tabs>
     <tabs>Lease_Activity_Tracker</tabs>
     <tabs>Lease_Renewals</tabs>
-    <tabs>Work_Orders</tabs>
     <tabs>Onboarding__c</tabs>
     <tabs>Broker_Assignment__c</tabs>
     <tabs>Lease_Inquiry__c</tabs>
     <tabs>Lease_Renewal__c</tabs>
-    <tabs>Work_Order__c</tabs>
     <tabs>Property_Management_Dashboard</tabs>
     <tabs>Leasing_Dashboard</tabs>
     <tabs>Work_Order_Dashboard</tabs>
