@@ -103,4 +103,23 @@ private class BrokerFirmControllerTest {
         System.assertEquals(126, bf.dealsWon, 'Even indices (126 of 251) are Closed Won');
         System.assertEquals(125, bf.dealsLost, 'Odd indices (125 of 251) are Dead/Pass');
     }
+
+    // An Opportunity Id that no longer exists makes selectAccountRefById's single-row SOQL
+    // throw System.QueryException, exercising getBrokerFirm's read-failure catch which maps
+    // it to a user-safe AuraHandledException at the LWC boundary (P6).
+    @isTest
+    static void readPathThrowsAuraHandledException() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        Id deletedId = opp.Id;
+        delete opp;
+
+        Test.startTest();
+        try {
+            BrokerFirmController.getBrokerFirm(deletedId);
+            Assert.fail('expected AuraHandledException from getBrokerFirm for a deleted Opportunity Id');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'getBrokerFirm read failure maps to AuraHandledException');
+        }
+        Test.stopTest();
+    }
 }

@@ -154,4 +154,33 @@ private class BrokerListingControllerTest {
         System.assertEquals(251, listingCount, 'All 251 listings should have been inserted');
         System.assertNotEquals(null, row, 'getListing should still resolve exactly one row at volume');
     }
+
+    // A bare user with no DPEG access: the Broker_Listing__c custom-object read runs WITH
+    // USER_MODE and throws for the unprivileged user, exercising getListing's read-failure
+    // catch which maps it to a user-safe AuraHandledException at the LWC boundary (P6).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    @isTest
+    static void readPathThrowsAuraHandledException() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                BrokerListingController.getListing(d.Id);
+                Assert.fail('expected AuraHandledException from getListing under a restricted user');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getListing read failure maps to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
 }

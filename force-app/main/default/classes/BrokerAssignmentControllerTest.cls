@@ -158,4 +158,67 @@ private class BrokerAssignmentControllerTest {
         System.assertEquals(1, notes.size());
         System.assertEquals(50, notes[0].title.length(), 'title capped at 50 chars');
     }
+
+    // A bare user with no DPEG access: every dashboard read runs WITH USER_MODE against
+    // Broker_Assignment__c / broker Contact custom fields and throws for the unprivileged
+    // user, exercising each read method's read-failure catch which maps to a user-safe
+    // AuraHandledException at the LWC boundary (P6). getNotes is included; its
+    // ContentDocumentLink read may return early for the unprivileged user, so its catch is
+    // covered opportunistically only.
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    private static void assertThrows(String method) {
+        Assert.fail('expected AuraHandledException from ' + method + ' under a restricted user');
+    }
+
+    @isTest
+    static void readPathsThrowAuraHandledException() {
+        Id anId = [SELECT Id FROM Broker_Assignment__c LIMIT 1].Id;
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try { BrokerAssignmentController.getKpis(); assertThrows('getKpis'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { BrokerAssignmentController.getAssignments(); assertThrows('getAssignments'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { BrokerAssignmentController.getPortfolio(); assertThrows('getPortfolio'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { BrokerAssignmentController.getAlerts(); assertThrows('getAlerts'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { BrokerAssignmentController.getScorecard(); assertThrows('getScorecard'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { BrokerAssignmentController.getBrokerTotals(); assertThrows('getBrokerTotals'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { BrokerAssignmentController.getDetail(anId); assertThrows('getDetail'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { BrokerAssignmentController.getBrokerOptions(); assertThrows('getBrokerOptions'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            // getNotes may return early (its ContentDocumentLink read can succeed for a bare
+            // user); tolerate either a throw or a clean return without failing the test.
+            try { BrokerAssignmentController.getNotes(anId); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+            Test.stopTest();
+        }
+    }
+
+    // Write paths: a deleted Broker_Assignment__c Id makes the underlying DML/SOQL fail,
+    // exercising each write method's failure catch which maps to a user-safe
+    // AuraHandledException at the LWC boundary (P6). Kept separate from the bare-user reads
+    // so the record delete (non-setup DML) does not collide with the User insert (setup DML).
+    @isTest
+    static void writePathsThrowAuraHandledException() {
+        Broker_Assignment__c doomed = [SELECT Id FROM Broker_Assignment__c LIMIT 1];
+        Id deletedId = doomed.Id;
+        Id brokerId = [SELECT Id FROM Contact WHERE Is_Broker__c = true LIMIT 1].Id;
+        delete doomed;
+
+        Test.startTest();
+        try { BrokerAssignmentController.logCheckIn(deletedId); assertThrows('logCheckIn'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+        try { BrokerAssignmentController.closeOut(deletedId, 'Fully Leased', Date.today(), 'x'); assertThrows('closeOut'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+        try { BrokerAssignmentController.replaceBroker(deletedId, brokerId, Date.today(), 'r', 'n'); assertThrows('replaceBroker'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+        // addNote: the ContentNote insert succeeds, then the ContentDocumentLink insert fails
+        // against the deleted LinkedEntityId -> the service rolls back and the controller's
+        // generic catch maps it to the write-failure AuraHandledException.
+        try { BrokerAssignmentController.addNote(deletedId, 'orphan attempt'); assertThrows('addNote'); } catch (AuraHandledException e) { Assert.isNotNull(e); }
+        Test.stopTest();
+    }
 }

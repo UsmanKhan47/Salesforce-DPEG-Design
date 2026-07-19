@@ -54,4 +54,32 @@ private class BrokerControllerTest {
         System.assertEquals(2, hub.topBrokers[2].activeListings, 'lowest of the three last');
         System.assertEquals('CBRE', hub.topBrokers[0].firm, 'top broker firm carried through');
     }
+
+    // A bare user with no DPEG access: the custom-field FLS on the broker Contact query
+    // makes the WITH USER_MODE SOQL throw, exercising getBrokerHub's read-failure catch
+    // which maps it to a user-safe AuraHandledException at the LWC boundary (P6).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    @isTest
+    static void readPathsThrowAuraHandledException() {
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                BrokerController.getBrokerHub();
+                Assert.fail('expected AuraHandledException from getBrokerHub');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getBrokerHub read failure maps to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
 }

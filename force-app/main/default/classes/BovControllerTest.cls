@@ -160,4 +160,41 @@ private class BovControllerTest {
         System.assert(threw, 'A deleted Disposition Id should surface a user-safe AuraHandledException');
         Test.stopTest();
     }
+
+    // A bare user with no DPEG access: both reads query custom objects (BOV_Submission__c /
+    // Disposition__c) WITH USER_MODE and throw for the unprivileged user, exercising both
+    // read-failure catches which map to a user-safe AuraHandledException at the LWC boundary
+    // (P6). getSubmissions has no prior negative-path coverage (an empty list returns early),
+    // so this restricted-user path is the only way to reach its catch.
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    @isTest
+    static void readPathsThrowAuraHandledException() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                BovController.getSubmissions(d.Id);
+                Assert.fail('expected AuraHandledException from getSubmissions under a restricted user');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getSubmissions read failure maps to AuraHandledException');
+            }
+            try {
+                BovController.getOutreachSummary(d.Id);
+                Assert.fail('expected AuraHandledException from getOutreachSummary under a restricted user');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getOutreachSummary read failure maps to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
 }
