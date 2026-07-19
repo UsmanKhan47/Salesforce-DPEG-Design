@@ -1,10 +1,25 @@
 /**
  * Backs the Lease Renewal Tracker: home-page widgets and the record-page
  * timeline. Timeline entries are append-only.
+ *
+ * Thin controller (P6 controller thinning). The addUpdate write DML and the
+ * valid-method/non-blank-outcome business rule live in LeaseRenewalService per
+ * .claude/rules/apex-layering-rule.md; all SOQL lives in LeaseRenewalSelector /
+ * RenewalActivitySelector per ARCHITECTURE.md §2. Every @AuraEnabled method (read and
+ * write) maps failures the same way (ARCHITECTURE.md §5): the platform detail goes to the
+ * debug log (admin-only) and the user gets a user-safe message. A user-actionable rule
+ * violation (RenewalUpdateException) is surfaced verbatim; an unexpected platform failure
+ * gets a fixed, generic message with no exception detail concatenated into it.
  */
 public with sharing class LeaseRenewalController {
 
-    private static final Set<String> METHODS = new Set<String>{ 'Call', 'Email', 'Visit', 'Note', 'System' };
+    // Fixed, generic user-safe message for a failed read.
+    private static final String READ_FAILURE_MESSAGE =
+        'This information could not be loaded. Refresh the page or contact your administrator.';
+    // Fixed, generic user-safe message for an unexpected failed write. Never interpolate
+    // platform text or exception detail into it (ARCHITECTURE.md §5).
+    private static final String WRITE_FAILURE_MESSAGE =
+        'This update could not be saved. Refresh the page and try again, or contact your administrator.';
 
     public class HomeKpis {
         @AuraEnabled public Integer active;
@@ -14,18 +29,24 @@ public with sharing class LeaseRenewalController {
     }
     @AuraEnabled(cacheable=true)
     public static HomeKpis getHomeKpis() {
-        HomeKpis k = new HomeKpis();
-        k.active = 0; k.expiring90 = 0; k.nonResponsive = 0; k.renewedYtd = 0;
-        Date yearStart = Date.newInstance(Date.today().year(), 1, 1);
-        for (Lease_Renewal__c r : LeaseRenewalSelector.selectForKpis()) {
-            if (r.Status__c == 'Active') {
-                k.active++;
-                if (r.Days_To_Expiry__c != null && r.Days_To_Expiry__c <= 90) k.expiring90++;
-                if (r.Is_Non_Responsive__c) k.nonResponsive++;
+        try {
+            HomeKpis k = new HomeKpis();
+            k.active = 0; k.expiring90 = 0; k.nonResponsive = 0; k.renewedYtd = 0;
+            Date yearStart = Date.newInstance(Date.today().year(), 1, 1);
+            for (Lease_Renewal__c r : LeaseRenewalSelector.selectForKpis()) {
+                if (r.Status__c == 'Active') {
+                    k.active++;
+                    if (r.Days_To_Expiry__c != null && r.Days_To_Expiry__c <= 90) k.expiring90++;
+                    if (r.Is_Non_Responsive__c) k.nonResponsive++;
+                }
+                if (r.Status__c == 'Closed Won' && r.Renewed_Date__c != null && r.Renewed_Date__c >= yearStart) k.renewedYtd++;
             }
-            if (r.Status__c == 'Closed Won' && r.Renewed_Date__c != null && r.Renewed_Date__c >= yearStart) k.renewedYtd++;
+            return k;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseRenewalController.getHomeKpis: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        return k;
     }
 
     public class Row {
@@ -61,11 +82,23 @@ public with sharing class LeaseRenewalController {
 
     @AuraEnabled(cacheable=true)
     public static List<Row> getRecentRenewals() {
-        return toRows(LeaseRenewalSelector.selectRecent());
+        try {
+            return toRows(LeaseRenewalSelector.selectRecent());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseRenewalController.getRecentRenewals: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
+        }
     }
     @AuraEnabled(cacheable=true)
     public static List<Row> getAttention() {
-        return toRows(LeaseRenewalSelector.selectAttention());
+        try {
+            return toRows(LeaseRenewalSelector.selectAttention());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseRenewalController.getAttention: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
+        }
     }
 
     public class Entry {
@@ -86,37 +119,47 @@ public with sharing class LeaseRenewalController {
     }
     @AuraEnabled(cacheable=true)
     public static TimelineView getTimeline(Id renewalId) {
-        Lease_Renewal__c r = LeaseRenewalSelector.selectRequiredById(renewalId);
-        TimelineView v = new TimelineView();
-        v.stage = r.Stage__c; v.status = r.Status__c; v.closed = r.Status__c != 'Active';
-        v.nonResponsive = r.Is_Non_Responsive__c == true;
-        v.daysSinceContact = r.Days_Since_Contact__c == null ? null : (Integer) r.Days_Since_Contact__c;
-        v.canLog = !v.closed;
-        v.entries = new List<Entry>();
-        // Frozen-clock gotcha: same-transaction rows share timestamps, so the
-        // selector tie-breaks on Name DESC (see RenewalActivitySelector).
-        for (Renewal_Activity__c a : RenewalActivitySelector.selectByLeaseRenewalId(renewalId)) {
-            Entry e = new Entry();
-            e.id = a.Id; e.method = a.Method__c; e.details = a.Details__c;
-            e.enteredBy = a.CreatedBy.Name; e.entryDate = a.Entry_DateTime__c;
-            v.entries.add(e);
+        try {
+            Lease_Renewal__c r = LeaseRenewalSelector.selectRequiredById(renewalId);
+            TimelineView v = new TimelineView();
+            v.stage = r.Stage__c; v.status = r.Status__c; v.closed = r.Status__c != 'Active';
+            v.nonResponsive = r.Is_Non_Responsive__c == true;
+            v.daysSinceContact = r.Days_Since_Contact__c == null ? null : (Integer) r.Days_Since_Contact__c;
+            v.canLog = !v.closed;
+            v.entries = new List<Entry>();
+            // Frozen-clock gotcha: same-transaction rows share timestamps, so the
+            // selector tie-breaks on Name DESC (see RenewalActivitySelector).
+            for (Renewal_Activity__c a : RenewalActivitySelector.selectByLeaseRenewalId(renewalId)) {
+                Entry e = new Entry();
+                e.id = a.Id; e.method = a.Method__c; e.details = a.Details__c;
+                e.enteredBy = a.CreatedBy.Name; e.entryDate = a.Entry_DateTime__c;
+                v.entries.add(e);
+            }
+            return v;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseRenewalController.getTimeline on ' + renewalId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        return v;
     }
 
+    /**
+     * Logs one timeline entry against the renewal and, for a human contact method, stamps
+     * the tenant-contact date. Delegates the write + validation to LeaseRenewalService; a
+     * user-actionable rule violation is surfaced verbatim, any other failure gets the
+     * generic message.
+     */
     @AuraEnabled
     public static void addUpdate(Id renewalId, String method, String details) {
-        if (String.isBlank(details)) throw ahe('Enter the outcome before saving.');
-        if (String.isBlank(method) || !METHODS.contains(method)) throw ahe('Choose a valid contact method.');
-        // Entry_DateTime__c is the ARCHITECTURE.md §1 rule-9 stamp for this log entry.
-        Datetime entryStamp = Datetime.now();
-        insert new Renewal_Activity__c(
-            Lease_Renewal__c = renewalId, Method__c = method,
-            Details__c = details.trim(),
-            Entry_DateTime__c = entryStamp);
-        // A Yardi/system note is not tenant contact — only human methods reset the clock.
-        if (method != 'System') {
-            update new Lease_Renewal__c(Id = renewalId, Last_Contact_Date__c = Date.today());
+        try {
+            LeaseRenewalService.addUpdate(renewalId, method, details);
+        } catch (LeaseRenewalService.RenewalUpdateException e) {
+            // User-actionable rule violation — surface the guidance verbatim.
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseRenewalController.addUpdate on ' + renewalId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
         }
     }
 

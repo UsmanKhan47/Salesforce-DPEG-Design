@@ -119,4 +119,74 @@ private class LeaseRenewalControllerTest {
         r.Stage__c = 'Not Renewing'; update r;
         System.assertEquals('Closed Lost', byTenant('Golden Wok').Status__c);
     }
+
+    // ── P6 boundary coverage ─────────────────────────────────────────────────────
+    // A valid-format but non-existent Id for the given type — the bare-user read throws on
+    // object access under WITH USER_MODE before any row match, so the Id need not resolve.
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL against the custom
+    // Lease_Renewal__c / Renewal_Activity__c objects throws for a user with no access,
+    // exercising each read method's read-failure catch (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6lr', Email = 'p6lr@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6LeaseRen', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6lr.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the read-failure catch on all four read methods: under a bare Standard User,
+     * WITH USER_MODE on the custom-object queries throws and the controller maps it to a
+     * user-safe AuraHandledException. Its own method because bareUser() inserts a User (setup
+     * DML) and the reads do no record DML, so no MIXED_DML_OPERATION arises.
+     */
+    @isTest static void readCatchesThrowAuraHandledException() {
+        User u = bareUser();
+        Id fakeRenewalId = fakeId(Lease_Renewal__c.SObjectType);
+        System.runAs(u) {
+            Test.startTest();
+            try { LeaseRenewalController.getHomeKpis(); Assert.fail('getHomeKpis should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseRenewalController.getRecentRenewals(); Assert.fail('getRecentRenewals should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseRenewalController.getAttention(); Assert.fail('getAttention should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseRenewalController.getTimeline(fakeRenewalId); Assert.fail('getTimeline should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            Test.stopTest();
+        }
+    }
+
+    /**
+     * Covers addUpdate's generic write-failure catch: a deleted renewal Id makes the
+     * Renewal_Activity__c insert fail on its Master-Detail parent under admin — the
+     * deterministic way to reach the catch. Valid method + non-blank details so the typed
+     * RenewalUpdateException branch is skipped. Kept apart from the bare-user read test so the
+     * setup-object User insert and this record DML never share a transaction (MIXED_DML).
+     */
+    @isTest static void addUpdateWriteFailureThrowsAuraHandledException() {
+        Property_Asset__c pa = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        Lease_Renewal__c r = TestDataFactory.createLeaseRenewal(pa.Id, false);
+        r.Tenant_Name__c = 'Doomed Tenant';
+        insert r;
+        Id deletedId = r.Id;
+        delete r;
+
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            LeaseRenewalController.addUpdate(deletedId, 'Call', 'Logged against a deleted renewal.');
+            Assert.fail('addUpdate on a deleted renewal should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw, 'write failure maps to AuraHandledException');
+    }
 }

@@ -55,4 +55,74 @@ private class LeadFunnelControllerTest {
         System.assertEquals(Date.today().addDays(80), row.bpExpiry, 'BP expiry = First Seen + 90');
         System.assertEquals(true, row.bpActive, 'BP window still active');
     }
+
+    // ── P6 boundary coverage ─────────────────────────────────────────────────────
+    // A bare Standard User with no DPEG perm sets: LeadSelector.selectRecent selects custom
+    // Lead fields (Parse_Confidence__c, Guidance_Price__c, …) the bare user has no FLS on, so
+    // WITH USER_MODE throws — exercising getFunnel's read-failure catch (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6lf', Email = 'p6lf@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6LeadFunnel', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6lf.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the First Seen Date -> CreatedDate fallback: a lead with no First_Seen_Date__c
+     * makes getFunnel derive age/BP-window from CreatedDate instead. Isolated in its own
+     * method so the seeded three-lead assertions in testGetFunnel are unaffected.
+     */
+    @isTest
+    static void getFunnel_leadWithoutFirstSeenDate_fallsBackToCreatedDate() {
+        // Uniquely named/addressed so the org's Lead duplicate rule (which matches live
+        // records, including the @testSetup leads, even in tests) does not block the insert.
+        String uniq = String.valueOf(DateTime.now().getTime()) + Math.mod(Crypto.getRandomInteger(), 100000);
+        String addr = 'No-FirstSeen Parcel ' + uniq;
+        Lead l = TestDataFactory.createLeads(1, false)[0];
+        l.FirstName = 'NoFS';
+        l.LastName = 'NoFirstSeen ' + uniq;
+        l.LeadSource = 'Manual Entry';
+        l.Parse_Confidence__c = 'HIGH';
+        l.Property_Address__c = addr;
+        l.First_Seen_Date__c = null;
+        insert l;
+
+        Test.startTest();
+        LeadFunnelController.FunnelData data = LeadFunnelController.getFunnel();
+        Test.stopTest();
+
+        Boolean found = false;
+        for (LeadFunnelController.LeadRow r : data.recent) {
+            if (r.name == addr) {
+                found = true;
+                System.assertEquals(Date.today(), r.created, 'Age anchor falls back to CreatedDate when First Seen is null');
+                System.assertEquals(0, r.days, 'A lead created today with no First Seen is 0 days old');
+                System.assertEquals(Date.today().addDays(90), r.bpExpiry, 'BP expiry derived from the CreatedDate fallback');
+            }
+        }
+        System.assert(found, 'The no-First-Seen lead is present in the funnel');
+    }
+
+    /**
+     * Covers getFunnel's read-failure catch: under a bare Standard User with no FLS on the
+     * custom Lead funnel fields, the WITH USER_MODE recent-leads query throws and the
+     * controller maps it to a user-safe AuraHandledException.
+     */
+    @isTest
+    static void getFunnelReadFailureThrowsAuraHandledException() {
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                LeadFunnelController.getFunnel();
+                Assert.fail('getFunnel should throw under a bare user');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getFunnel maps read failure to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
 }

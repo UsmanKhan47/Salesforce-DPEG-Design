@@ -4,14 +4,31 @@
  * pages (same interaction pattern as the Lease Activity / Lease Renewal
  * timelines). The parent object is derived from the record Id, so one component
  * and one controller serve all three objects.
+ *
+ * Thin controller (P6 controller thinning). The message-insert DML and the
+ * parent-resolution business rule live in DealMessageService per
+ * .claude/rules/apex-layering-rule.md; all SOQL lives in DealMessageSelector per
+ * ARCHITECTURE.md §2. Every @AuraEnabled method (read and write) maps failures the same
+ * way (ARCHITECTURE.md §5): the platform detail goes to the debug log (admin-only) and
+ * the user gets a message. A user-actionable rule violation (ValidationException /
+ * UnsupportedParentException) is surfaced verbatim; an unexpected platform failure gets a
+ * fixed, generic message with no exception detail concatenated into it.
  */
 public with sharing class DealMessageController {
 
-    private static final Map<String, SObjectField> PARENT_FIELDS = new Map<String, SObjectField>{
-        'LOI__c'             => Deal_Message__c.LOI__c,
-        'Underwriting__c'    => Deal_Message__c.Underwriting__c,
-        'Contract_Review__c' => Deal_Message__c.Contract_Review__c
-    };
+    // Fixed, generic user-safe message for a failed read.
+    private static final String READ_FAILURE_MESSAGE =
+        'This information could not be loaded. Refresh the page or contact your administrator.';
+    // Fixed, generic user-safe message for an unexpected failed write. Never interpolate
+    // platform text or exception detail into it (ARCHITECTURE.md §5).
+    private static final String WRITE_FAILURE_MESSAGE =
+        'This message could not be saved. Refresh the page and try again, or contact your administrator.';
+
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
+    }
 
     public class Entry {
         @AuraEnabled public String id;
@@ -25,57 +42,53 @@ public with sharing class DealMessageController {
 
     @AuraEnabled(cacheable=true)
     public static List<Entry> getMessages(Id recordId) {
-        if (recordId == null) {
-            return new List<Entry>();
+        try {
+            if (recordId == null) {
+                return new List<Entry>();
+            }
+            // Parent-field resolution is a business rule owned by the service.
+            String parentField = DealMessageService.parentFieldFor(recordId);
+            List<Entry> entries = new List<Entry>();
+            // SOQL relocated to DealMessageSelector per ARCHITECTURE.md §2 (it re-validates
+            // parentField against its own allow-list and re-binds :recordId via queryWithBinds).
+            for (Deal_Message__c m : DealMessageSelector.selectByParent(parentField, recordId)) {
+                Entry e = new Entry();
+                e.id = m.Id;
+                e.method = m.Method__c;
+                e.direction = m.Direction__c;
+                e.details = m.Details__c;
+                e.revision = m.Revision__c;
+                e.enteredBy = m.CreatedBy.Name;
+                e.entryDate = m.Entry_DateTime__c != null ? m.Entry_DateTime__c : m.CreatedDate;
+                entries.add(e);
+            }
+            return entries;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'DealMessageController.getMessages on ' + recordId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        String parentField = parentFieldFor(recordId);
-        List<Entry> entries = new List<Entry>();
-        // SOQL relocated to DealMessageSelector per ARCHITECTURE.md §2. The selector
-        // owns the query text, re-binds :recordId via queryWithBinds (the original
-        // bind was controller-method-scoped), and re-validates parentField against
-        // its own allow-list.
-        for (Deal_Message__c m : DealMessageSelector.selectByParent(parentField, recordId)) {
-            Entry e = new Entry();
-            e.id = m.Id;
-            e.method = m.Method__c;
-            e.direction = m.Direction__c;
-            e.details = m.Details__c;
-            e.revision = m.Revision__c;
-            e.enteredBy = m.CreatedBy.Name;
-            e.entryDate = m.Entry_DateTime__c != null ? m.Entry_DateTime__c : m.CreatedDate;
-            entries.add(e);
-        }
-        return entries;
     }
 
+    /**
+     * Logs one message against the record's parent (LOI / Underwriting / Contract Review).
+     * Delegates the validation + insert to DealMessageService; a user-actionable rule
+     * violation is surfaced verbatim, any other failure gets the generic message.
+     */
     @AuraEnabled
     public static void addMessage(Id recordId, String method, String direction, String details, String revision) {
-        if (recordId == null) {
-            throw new AuraHandledException('No record to log the message against.');
+        try {
+            DealMessageService.addMessage(recordId, method, direction, details, revision);
+        } catch (DealMessageService.ValidationException e) {
+            // User-actionable rule violation — surface the guidance verbatim.
+            throw ahe(e.getMessage());
+        } catch (DealMessageService.UnsupportedParentException e) {
+            // User-actionable rule violation — surface the guidance verbatim.
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'DealMessageController.addMessage on ' + recordId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
         }
-        if (String.isBlank(details)) {
-            throw new AuraHandledException('Enter what was communicated before saving.');
-        }
-        String parentField = parentFieldFor(recordId);
-        // Entry_DateTime__c is the ARCHITECTURE.md §1 rule-9 stamp for this log entry.
-        Datetime entryStamp = Datetime.now();
-        Deal_Message__c m = new Deal_Message__c(
-            Method__c = String.isBlank(method) ? 'Note' : method,
-            Direction__c = String.isBlank(direction) ? 'Internal' : direction,
-            Details__c = details.trim(),
-            Revision__c = String.isBlank(revision) ? null : revision.trim(),
-            Entry_DateTime__c = entryStamp
-        );
-        m.put(PARENT_FIELDS.get(parentField), recordId);
-        insert m;
-    }
-
-    /** The Deal_Message__c lookup matching the record's object; throws for anything else. */
-    private static String parentFieldFor(Id recordId) {
-        String objectName = recordId.getSobjectType().getDescribe().getName();
-        if (!PARENT_FIELDS.containsKey(objectName)) {
-            throw new AuraHandledException('The message tracker is not available on ' + objectName + '.');
-        }
-        return objectName;
     }
 }

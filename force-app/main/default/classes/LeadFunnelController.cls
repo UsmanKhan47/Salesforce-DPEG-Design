@@ -4,6 +4,11 @@
  *
  * All SOQL against Lead lives in LeadSelector per ARCHITECTURE.md §2 and
  * .claude/rules/apex-layering-rule.md — this controller holds zero inline SOQL.
+ *
+ * Thin, read-only controller (P6 controller thinning — boundaries only, no DML to extract).
+ * The single @AuraEnabled read maps any failure to a user-safe AuraHandledException at the
+ * LWC boundary (ARCHITECTURE.md §5): platform detail goes to the debug log (admin-only) and
+ * the user gets a fixed, generic message with no exception detail concatenated into it.
  */
 public with sharing class LeadFunnelController {
 
@@ -19,9 +24,13 @@ public with sharing class LeadFunnelController {
     private static final Integer OUTCOME_WINDOW_DAYS = 90;
     // Row cap for the recent-leads / review-queue list.
     private static final Integer RECENT_LIMIT = 50;
+    // Fixed, generic user-safe message for a failed read.
+    private static final String READ_FAILURE_MESSAGE =
+        'The lead funnel could not be loaded. Refresh the page or contact your administrator.';
 
     @AuraEnabled(cacheable=true)
     public static FunnelData getFunnel() {
+        try {
         FunnelData data = new FunnelData();
 
         // --- counts by stage ---
@@ -103,6 +112,17 @@ public with sharing class LeadFunnelController {
         data.total = data.recent.size();
         data.reviewQueue = reviewQueue;
         return data;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeadFunnelController.getFunnel: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
+        }
+    }
+
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
     }
 
     public class FunnelData {
