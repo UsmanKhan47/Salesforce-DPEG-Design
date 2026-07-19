@@ -7,48 +7,66 @@ public with sharing class BrokerController {
 
     private static final Integer TOP_LIMIT = 6;
 
+    // Fixed, generic user-safe message for a failed read (ARCHITECTURE.md §5). Never
+    // interpolate platform text or exception detail into it — the detail goes to the
+    // debug log (admin-only) and the user gets this. The AuraHandledException boundary
+    // is at this controller, so it owns the message.
+    private static final String READ_FAILURE_MESSAGE =
+        'The broker hub could not be loaded. Refresh the page or contact your administrator.';
+
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
+    }
+
     @AuraEnabled(cacheable=true)
     public static BrokerHub getBrokerHub() {
-        BrokerHub hub = new BrokerHub();
+        try {
+            BrokerHub hub = new BrokerHub();
 
-        // --- full broker list (drives the list + header stats) ---
-        hub.brokers = new List<BrokerRow>();
-        Integer totalBrokers = 0;
-        Integer activeBrokers = 0;
-        Integer activeListings = 0;
-        Integer offersReceived = 0;
-        Decimal closedVolume = 0;
-        Set<String> firms = new Set<String>();
+            // --- full broker list (drives the list + header stats) ---
+            hub.brokers = new List<BrokerRow>();
+            Integer totalBrokers = 0;
+            Integer activeBrokers = 0;
+            Integer activeListings = 0;
+            Integer offersReceived = 0;
+            Decimal closedVolume = 0;
+            Set<String> firms = new Set<String>();
 
-        for (Contact c : ContactSelector.selectBrokersRankedByClosedVolume()) {
-            hub.brokers.add(toRow(c));
-            totalBrokers++;
-            if (c.Broker_Status__c == 'Active') {
-                activeBrokers++;
+            for (Contact c : ContactSelector.selectBrokersRankedByClosedVolume()) {
+                hub.brokers.add(toRow(c));
+                totalBrokers++;
+                if (c.Broker_Status__c == 'Active') {
+                    activeBrokers++;
+                }
+                activeListings += intOf(c.Active_Listings__c);
+                offersReceived += intOf(c.Offers_Received__c);
+                closedVolume += (c.Closed_Volume__c == null ? 0 : c.Closed_Volume__c);
+                if (String.isNotBlank(c.Broker_Firm__c)) {
+                    firms.add(c.Broker_Firm__c.trim().toLowerCase());
+                }
             }
-            activeListings += intOf(c.Active_Listings__c);
-            offersReceived += intOf(c.Offers_Received__c);
-            closedVolume += (c.Closed_Volume__c == null ? 0 : c.Closed_Volume__c);
-            if (String.isNotBlank(c.Broker_Firm__c)) {
-                firms.add(c.Broker_Firm__c.trim().toLowerCase());
+
+            hub.stats = new BrokerStats();
+            hub.stats.totalFirms = firms.size();
+            hub.stats.totalBrokers = totalBrokers;
+            hub.stats.activeBrokers = activeBrokers;
+            hub.stats.activeListings = activeListings;
+            hub.stats.offersReceived = offersReceived;
+            hub.stats.closedVolume = closedVolume;
+
+            // --- top brokers ranked by active listings ---
+            hub.topBrokers = new List<BrokerRow>();
+            for (Contact c : ContactSelector.selectTopBrokersByActiveListings(TOP_LIMIT)) {
+                hub.topBrokers.add(toRow(c));
             }
+
+            return hub;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'BrokerController.getBrokerHub: ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-
-        hub.stats = new BrokerStats();
-        hub.stats.totalFirms = firms.size();
-        hub.stats.totalBrokers = totalBrokers;
-        hub.stats.activeBrokers = activeBrokers;
-        hub.stats.activeListings = activeListings;
-        hub.stats.offersReceived = offersReceived;
-        hub.stats.closedVolume = closedVolume;
-
-        // --- top brokers ranked by active listings ---
-        hub.topBrokers = new List<BrokerRow>();
-        for (Contact c : ContactSelector.selectTopBrokersByActiveListings(TOP_LIMIT)) {
-            hub.topBrokers.add(toRow(c));
-        }
-
-        return hub;
     }
 
     private static BrokerRow toRow(Contact c) {

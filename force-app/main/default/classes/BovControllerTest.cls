@@ -131,20 +131,33 @@ private class BovControllerTest {
         System.assertEquals(false, s.matrixGenerated, 'Below the 3-response threshold, the matrix should not be flagged generated');
     }
 
+    /**
+     * P6 controller error boundary: a Disposition Id that no longer exists makes the
+     * selector's single-row SOQL throw System.QueryException, which getOutreachSummary
+     * now catches and re-surfaces as a user-safe AuraHandledException at the LWC boundary
+     * (ARCHITECTURE.md §5). Intent preserved from the original raw-QueryException test:
+     * a missing Disposition surfaces an error — but now the raw "no rows" detail is
+     * masked and only the user-safe message reaches the caller.
+     */
     @isTest
-    static void testGetOutreachSummary_invalidId_throwsQueryException() {
+    static void testGetOutreachSummary_invalidId_throwsUserSafeAuraException() {
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
         Id deletedId = d.Id;
         delete d;
 
         Test.startTest();
+        Boolean threw = false;
         try {
             BovController.getOutreachSummary(deletedId);
-            System.assert(false, 'Expected a QueryException for a Disposition Id that no longer exists');
-        } catch (System.QueryException e) {
-            System.assertEquals(true, e.getMessage().toLowerCase().contains('no rows'),
-                'Exception message should indicate no matching Disposition row: ' + e.getMessage());
+            System.assert(false, 'Expected an AuraHandledException for a Disposition Id that no longer exists');
+        } catch (AuraHandledException e) {
+            threw = true;
+            System.assertEquals(false, e.getMessage().toLowerCase().contains('no rows'),
+                'The raw QueryException detail must be masked at the boundary: ' + e.getMessage());
+            System.assertEquals(true, e.getMessage().toLowerCase().contains('could not be loaded'),
+                'The user should get the fixed user-safe read-failure message: ' + e.getMessage());
         }
+        System.assert(threw, 'A deleted Disposition Id should surface a user-safe AuraHandledException');
         Test.stopTest();
     }
 }
