@@ -68,4 +68,46 @@ private class OpportunityDocStatusControllerTest {
         System.assert(!d.hasNda && !d.hasLoi && !d.hasUnderwriting && !d.hasDevelopment
             && !d.hasConstruction && !d.hasContract, 'Empty status for null opp');
     }
+
+    // A bare Standard User with no DPEG perm sets: Standard User has Opportunity object
+    // read but NO FLS on the custom Primary_NDA__c / Primary_LOI__c / Primary_Underwriting__c
+    // fields, so selectPrimaryRefsById's WITH USER_MODE query throws — exercising the
+    // read-failure catch that maps it to a user-safe AuraHandledException (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.docstatus.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    /**
+     * Covers the read-failure catch on getDocStatus: under a bare Standard User,
+     * WITH USER_MODE on Opportunity's custom Primary_* fields (no FLS) throws, and the
+     * controller maps it to a user-safe AuraHandledException. Its own method because
+     * bareUser() inserts a User (setup DML) and no record DML runs here — the query
+     * throws before any — which avoids MIXED_DML_OPERATION. A fake (valid-format,
+     * non-existent) Opportunity Id clears the null guard; USER_MODE throws on FLS
+     * before any row match, so the Id need not resolve.
+     */
+    @isTest
+    static void readCatchThrowsAuraHandledException() {
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                OpportunityDocStatusController.getDocStatus(fakeId(Opportunity.SObjectType));
+                Assert.fail('getDocStatus should throw under a bare user (no FLS on Primary_* fields)');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getDocStatus maps read failure to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
 }

@@ -2,8 +2,27 @@
  * Backs the rentRoll LWC on the Property Asset record page. Unit__c/Rent_Step__c are a
  * read-only mirror of Yardi (dummy-seeded until the nightly sync exists); this controller
  * only reads and aggregates. All display formatting happens client-side.
+ *
+ * All SOQL is delegated to UnitSelector per ARCHITECTURE.md §2 — this controller holds
+ * no inline SOQL. Read-only: there are no mutation methods here.
+ *
+ * Thin controller (P6 controller thinning — boundaries only, no DML to extract). The
+ * single @AuraEnabled read wraps its work in a try/catch that maps a failure to a
+ * user-safe AuraHandledException at the LWC boundary (ARCHITECTURE.md §5): platform
+ * detail goes to the debug log (admin-only) and the user gets a fixed, generic message
+ * with no exception detail concatenated into it.
  */
 public with sharing class RentRollController {
+
+    // Fixed, generic user-safe message for a failed read.
+    private static final String READ_FAILURE_MESSAGE =
+        'The rent roll could not be loaded. Refresh the page or contact your administrator.';
+
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
+    }
 
     public class StepDTO {
         @AuraEnabled public Date periodStart;
@@ -56,70 +75,76 @@ public with sharing class RentRollController {
 
     @AuraEnabled(cacheable=true)
     public static RentRollDTO getRentRoll(Id propertyAssetId) {
-        RentRollDTO dto = new RentRollDTO();
-        if (propertyAssetId == null) {
+        try {
+            RentRollDTO dto = new RentRollDTO();
+            if (propertyAssetId == null) {
+                return dto;
+            }
+
+            for (Unit__c u : UnitSelector.selectByPropertyAssetId(propertyAssetId)) {
+                UnitDTO ud = new UnitDTO();
+                ud.unitId = u.Id;
+                ud.suite = u.Suite_Number__c;
+                ud.tenant = u.Tenant_Name__c;
+                ud.status = u.Status__c;
+                ud.squareFeet = u.Square_Feet__c;
+                ud.leaseStart = u.Lease_Start__c;
+                ud.leaseEnd = u.Lease_End__c;
+                ud.currentRent = u.Current_Monthly_Rent__c;
+                ud.currentRentPsf = u.Current_Rent_PSF__c;
+                ud.askingRentPsf = u.Asking_Rent_PSF__c;
+                ud.estimatedNnnPsf = u.Estimated_NNN_PSF__c;
+                ud.nnnTax = u.NNN_Property_Tax__c;
+                ud.nnnInsurance = u.NNN_Insurance__c;
+                ud.nnnCam = u.NNN_CAM__c;
+                ud.nnnMonthlyTotal = u.NNN_Monthly_Total__c;
+                ud.nnnPsf = u.NNN_PSF__c;
+                for (Rent_Step__c s : u.Rent_Steps__r) {
+                    StepDTO sd = new StepDTO();
+                    sd.periodStart = s.Period_Start__c;
+                    sd.periodEnd = s.Period_End__c;
+                    sd.periodLabel = s.Period_Label__c;
+                    sd.monthlyRent = s.Monthly_Rent__c;
+                    sd.rentPsf = s.Rent_PSF__c;
+                    sd.stepType = s.Type__c;
+                    sd.note = s.Note__c;
+                    ud.steps.add(sd);
+                }
+                dto.units.add(ud);
+
+                Decimal sqFt = u.Square_Feet__c == null ? 0 : u.Square_Feet__c;
+                dto.summary.totalSqFt += sqFt;
+                if (u.Status__c == 'Occupied') {
+                    dto.summary.occupiedCount++;
+                    dto.summary.occupiedSqFt += sqFt;
+                    if (u.Current_Monthly_Rent__c != null) {
+                        dto.summary.monthlyRent += u.Current_Monthly_Rent__c;
+                    }
+                    // NNN total is occupied-only by design: vacant units carry only Estimated_NNN_PSF__c.
+                    if (u.NNN_Monthly_Total__c != null) {
+                        dto.summary.nnnMonthlyTotal += u.NNN_Monthly_Total__c;
+                    }
+                } else {
+                    dto.summary.vacantCount++;
+                    dto.summary.vacantSqFt += sqFt;
+                }
+                if (dto.summary.lastSynced == null || u.LastModifiedDate > dto.summary.lastSynced) {
+                    dto.summary.lastSynced = u.LastModifiedDate;
+                }
+            }
+
+            if (dto.summary.totalSqFt > 0) {
+                dto.summary.occupiedPct = (dto.summary.occupiedSqFt * 100 / dto.summary.totalSqFt).setScale(1);
+                dto.summary.vacantPct = (dto.summary.vacantSqFt * 100 / dto.summary.totalSqFt).setScale(1);
+            }
+            if (dto.summary.occupiedSqFt > 0 && dto.summary.monthlyRent > 0) {
+                dto.summary.blendedPsf = (dto.summary.monthlyRent * 12 / dto.summary.occupiedSqFt).setScale(2);
+            }
             return dto;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'RentRollController.getRentRoll: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-
-        for (Unit__c u : UnitSelector.selectByPropertyAssetId(propertyAssetId)) {
-            UnitDTO ud = new UnitDTO();
-            ud.unitId = u.Id;
-            ud.suite = u.Suite_Number__c;
-            ud.tenant = u.Tenant_Name__c;
-            ud.status = u.Status__c;
-            ud.squareFeet = u.Square_Feet__c;
-            ud.leaseStart = u.Lease_Start__c;
-            ud.leaseEnd = u.Lease_End__c;
-            ud.currentRent = u.Current_Monthly_Rent__c;
-            ud.currentRentPsf = u.Current_Rent_PSF__c;
-            ud.askingRentPsf = u.Asking_Rent_PSF__c;
-            ud.estimatedNnnPsf = u.Estimated_NNN_PSF__c;
-            ud.nnnTax = u.NNN_Property_Tax__c;
-            ud.nnnInsurance = u.NNN_Insurance__c;
-            ud.nnnCam = u.NNN_CAM__c;
-            ud.nnnMonthlyTotal = u.NNN_Monthly_Total__c;
-            ud.nnnPsf = u.NNN_PSF__c;
-            for (Rent_Step__c s : u.Rent_Steps__r) {
-                StepDTO sd = new StepDTO();
-                sd.periodStart = s.Period_Start__c;
-                sd.periodEnd = s.Period_End__c;
-                sd.periodLabel = s.Period_Label__c;
-                sd.monthlyRent = s.Monthly_Rent__c;
-                sd.rentPsf = s.Rent_PSF__c;
-                sd.stepType = s.Type__c;
-                sd.note = s.Note__c;
-                ud.steps.add(sd);
-            }
-            dto.units.add(ud);
-
-            Decimal sqFt = u.Square_Feet__c == null ? 0 : u.Square_Feet__c;
-            dto.summary.totalSqFt += sqFt;
-            if (u.Status__c == 'Occupied') {
-                dto.summary.occupiedCount++;
-                dto.summary.occupiedSqFt += sqFt;
-                if (u.Current_Monthly_Rent__c != null) {
-                    dto.summary.monthlyRent += u.Current_Monthly_Rent__c;
-                }
-                // NNN total is occupied-only by design: vacant units carry only Estimated_NNN_PSF__c.
-                if (u.NNN_Monthly_Total__c != null) {
-                    dto.summary.nnnMonthlyTotal += u.NNN_Monthly_Total__c;
-                }
-            } else {
-                dto.summary.vacantCount++;
-                dto.summary.vacantSqFt += sqFt;
-            }
-            if (dto.summary.lastSynced == null || u.LastModifiedDate > dto.summary.lastSynced) {
-                dto.summary.lastSynced = u.LastModifiedDate;
-            }
-        }
-
-        if (dto.summary.totalSqFt > 0) {
-            dto.summary.occupiedPct = (dto.summary.occupiedSqFt * 100 / dto.summary.totalSqFt).setScale(1);
-            dto.summary.vacantPct = (dto.summary.vacantSqFt * 100 / dto.summary.totalSqFt).setScale(1);
-        }
-        if (dto.summary.occupiedSqFt > 0 && dto.summary.monthlyRent > 0) {
-            dto.summary.blendedPsf = (dto.summary.monthlyRent * 12 / dto.summary.occupiedSqFt).setScale(2);
-        }
-        return dto;
     }
 }

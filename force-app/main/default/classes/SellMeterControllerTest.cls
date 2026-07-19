@@ -174,4 +174,38 @@ private class SellMeterControllerTest {
         System.assertEquals(251, matched, 'All 251 newly inserted assets should be present in getPortfolio results');
         System.assertEquals(251, after.red - before.red, 'The red bucket should grow by exactly the 251 newly inserted assets');
     }
+
+    // A bare Standard User with no DPEG perm sets has no access to the custom
+    // Property_Asset__c object, so both selectors' WITH USER_MODE queries throw —
+    // exercising each read-failure catch that maps it to a user-safe
+    // AuraHandledException (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.sellmeter.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the read-failure catch on both @AuraEnabled reads: under a bare Standard
+     * User, WITH USER_MODE on the custom Property_Asset__c object (no access) throws, and
+     * each method maps it to a user-safe AuraHandledException. Its own method because
+     * bareUser() inserts a User (setup DML) and no record DML runs here (the queries throw
+     * before any) — avoids MIXED_DML_OPERATION.
+     */
+    @isTest
+    static void readCatchesThrowAuraHandledException() {
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try { SellMeterController.getMeterSummary(); Assert.fail('getMeterSummary should throw under a bare user (no access to Property_Asset__c)'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getMeterSummary maps read failure to AuraHandledException'); }
+            try { SellMeterController.getPortfolio(); Assert.fail('getPortfolio should throw under a bare user (no access to Property_Asset__c)'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getPortfolio maps read failure to AuraHandledException'); }
+            Test.stopTest();
+        }
+    }
 }

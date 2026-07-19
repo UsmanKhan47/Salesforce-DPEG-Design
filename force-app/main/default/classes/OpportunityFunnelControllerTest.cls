@@ -159,4 +159,41 @@ private class OpportunityFunnelControllerTest {
         System.assertEquals(0, snap.landDeals, 'No Land deals when there is zero data');
         System.assertEquals(0, snap.commercialDeals, 'No Commercial deals when there is zero data');
     }
+
+    // A user on the "Minimum Access - Salesforce" profile has NO Opportunity object
+    // access, so even getStageCounts (which reads only the standard StageName/CloseDate
+    // fields, where a plain Standard User would NOT trip FLS) throws under WITH USER_MODE
+    // on object access. That drives every read-failure catch to a user-safe
+    // AuraHandledException (P6 boundaries).
+    private static User noAccessUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1];
+        User u = new User(Alias = 'p6min', Email = 'p6min@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Min', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6min.funnel.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the read-failure catch on all three @AuraEnabled reads: under a user with no
+     * Opportunity object access, WITH USER_MODE throws, and each method maps it to a
+     * user-safe AuraHandledException. One method because noAccessUser() inserts a User
+     * (setup DML) and no record DML runs here (the queries throw before any) — avoids
+     * MIXED_DML_OPERATION.
+     */
+    @isTest
+    static void readCatchesThrowAuraHandledException() {
+        User u = noAccessUser();
+        System.runAs(u) {
+            Test.startTest();
+            try { OpportunityFunnelController.getStageCounts(); Assert.fail('getStageCounts should throw under a no-access user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getStageCounts maps read failure to AuraHandledException'); }
+            try { OpportunityFunnelController.getRecentOpportunities(); Assert.fail('getRecentOpportunities should throw under a no-access user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getRecentOpportunities maps read failure to AuraHandledException'); }
+            try { OpportunityFunnelController.getPipelineSnapshot(); Assert.fail('getPipelineSnapshot should throw under a no-access user'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e, 'getPipelineSnapshot maps read failure to AuraHandledException'); }
+            Test.stopTest();
+        }
+    }
 }

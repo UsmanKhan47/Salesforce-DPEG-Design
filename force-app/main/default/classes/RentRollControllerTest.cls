@@ -81,4 +81,44 @@ private class RentRollControllerTest {
 
         System.assertEquals(0, RentRollController.getRentRoll(null).units.size(), 'Null id -> empty DTO');
     }
+
+    // A bare Standard User with no DPEG perm sets has no access to the custom Unit__c
+    // object, so selectByPropertyAssetId's WITH USER_MODE query throws — exercising the
+    // read-failure catch that maps it to a user-safe AuraHandledException (P6 boundaries).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.rentroll.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    /**
+     * Covers the read-failure catch on getRentRoll: under a bare Standard User, WITH
+     * USER_MODE on the custom Unit__c object (no access) throws, and the controller maps
+     * it to a user-safe AuraHandledException. Its own method because bareUser() inserts a
+     * User (setup DML) and no record DML runs here (the query throws before any) — avoids
+     * MIXED_DML_OPERATION. A fake (valid-format, non-existent) Property_Asset__c Id clears
+     * the null guard; USER_MODE throws on object access before any row match.
+     */
+    @isTest
+    static void readCatchThrowsAuraHandledException() {
+        User u = bareUser();
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                RentRollController.getRentRoll(fakeId(Property_Asset__c.SObjectType));
+                Assert.fail('getRentRoll should throw under a bare user (no access to Unit__c)');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getRentRoll maps read failure to AuraHandledException');
+            }
+            Test.stopTest();
+        }
+    }
 }
