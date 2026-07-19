@@ -1,51 +1,62 @@
 /**
- * Backs the psaVersionLog LWC on the Opportunity Contract tab and the Contract
- * Review record page. Each PSA draft/counter is a PSA_Version__c child of the
- * Contract Review (the full version history); saving also flips the parent's
- * Ball_In_Court__c (seller version -> Us, our version -> Seller), derives
- * Negotiation_Status__c (first seller version = Initial Draft), and bumps
- * Latest_Version__c.
+ * Backs the psaVersionLog LWC on the Opportunity Contract tab and the Contract Review
+ * record page. Reads the PSA draft/counter history (PSA_Version__c children of the
+ * Contract Review) and appends a new version, which also derives and stamps the parent's
+ * Ball_In_Court__c, Negotiation_Status__c, and Latest_Version__c.
+ *
+ * All SOQL is delegated to PsaVersionSelector per ARCHITECTURE.md §2 — this controller
+ * holds no inline SOQL.
+ *
+ * Thin controller (P6 controller thinning). The append + Contract-Review-stamp DML and the
+ * version business rules live in PsaVersionService per .claude/rules/apex-layering-rule.md;
+ * saveVersion() only marshals input, delegates, and maps failures to an
+ * AuraHandledException at the LWC boundary (ARCHITECTURE.md §5). Every @AuraEnabled method
+ * (read and write) maps failures the same way: platform detail goes to the debug log
+ * (admin-only) and the user gets a message. A user-actionable rule violation
+ * (PsaVersionException) is surfaced verbatim; an unexpected platform failure gets a fixed,
+ * generic message with no exception detail concatenated into it.
  */
 public with sharing class PsaVersionController {
 
+    // Fixed, generic user-safe message for an unexpected failed write. Never interpolate
+    // platform text or exception detail into it (ARCHITECTURE.md §5).
+    private static final String WRITE_FAILURE_MESSAGE =
+        'This PSA version could not be saved. Refresh the page and try again, or contact your administrator.';
+    // Fixed, generic user-safe message for a failed read.
+    private static final String READ_FAILURE_MESSAGE =
+        'This information could not be loaded. Refresh the page or contact your administrator.';
+
+    private static AuraHandledException ahe(String msg) {
+        AuraHandledException ex = new AuraHandledException(msg);
+        ex.setMessage(msg);
+        return ex;
+    }
+
     @AuraEnabled(cacheable=true)
     public static List<PSA_Version__c> getVersions(Id contractReviewId) {
-        // SOQL relocated to PsaVersionSelector per ARCHITECTURE.md §2; the selector's
-        // null guard preserves the empty-list-on-null contract.
-        return PsaVersionSelector.selectByContractReviewId(contractReviewId);
+        try {
+            // SOQL and the null guard live in PsaVersionSelector per ARCHITECTURE.md §2;
+            // the selector preserves the empty-list-on-null contract.
+            return PsaVersionSelector.selectByContractReviewId(contractReviewId);
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'PsaVersionController.getVersions on ' + contractReviewId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
+        }
     }
 
     @AuraEnabled
     public static void saveVersion(Id contractReviewId, String direction, Date versionDate,
                                    String summary, String documentUrl) {
-        if (contractReviewId == null) {
-            throw new AuraHandledException('No Contract Review is linked to this deal yet.');
+        try {
+            PsaVersionService.saveVersion(contractReviewId, direction, versionDate, summary, documentUrl);
+        } catch (PsaVersionService.PsaVersionException e) {
+            // User-actionable rule violation — surface the guidance verbatim.
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'PsaVersionController.saveVersion on Contract Review '
+                + contractReviewId + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
         }
-        if (direction != 'Seller' && direction != 'Ours') {
-            throw new AuraHandledException('Pick who sent this version (Seller or Ours).');
-        }
-        Integer priorCount = PsaVersionSelector.countByContractReviewId(contractReviewId);
-
-        insert new PSA_Version__c(
-            Contract_Review__c = contractReviewId,
-            Direction__c = direction,
-            Version_Date__c = (versionDate == null) ? Date.today() : versionDate,
-            Summary__c = summary,
-            Document_URL__c = documentUrl
-        );
-
-        Boolean fromSeller = direction == 'Seller';
-        String status;
-        if (priorCount == 0 && fromSeller) {
-            status = 'Initial Draft'; // the seller drafts first (Section 15)
-        } else {
-            status = fromSeller ? 'Seller Counter' : 'Buyer Counter';
-        }
-        update new Contract_Review__c(
-            Id = contractReviewId,
-            Ball_In_Court__c = fromSeller ? 'Us' : 'Seller',
-            Negotiation_Status__c = status,
-            Latest_Version__c = priorCount + 1
-        );
     }
 }

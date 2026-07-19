@@ -1,6 +1,16 @@
 /**
- * Tests PsaVersionController: version history, ball-in-court flips, and the
- * Negotiation Status derivation (first seller version = Initial Draft).
+ * Tests PsaVersionController (thinned in P6). The happy paths prove the delegated behaviour
+ * is preserved end-to-end: version history, ball-in-court flips, and the Negotiation Status
+ * derivation (first seller version = Initial Draft).
+ *
+ * P6 controller thinning: saveVersion's DML + rules now live in PsaVersionService, and every
+ * @AuraEnabled method wraps its work in a try/catch that maps failures to an
+ * AuraHandledException at the LWC boundary (ARCHITECTURE.md §5). The negative tests below
+ * therefore now expect an AuraHandledException; readCatchThrowsAuraHandledException covers
+ * getVersions' read catch via a bare Standard User whose WITH USER_MODE SOQL on the custom
+ * PSA_Version__c object throws, and writeFailureThrowsAuraHandledException covers
+ * saveVersion's generic write catch via a deleted parent Contract Review Id (the child
+ * insert fails INVALID_CROSS_REFERENCE_KEY).
  */
 @isTest
 private class PsaVersionControllerTest {
@@ -10,6 +20,25 @@ private class PsaVersionControllerTest {
         o.StageName = 'LOI';
         insert o;
         return TestDataFactory.createContractReview(o.Id, true); // Stage__c 'PSA Drafting'
+    }
+
+    // A valid-format but non-existent Id for the given type. The bare-user read throws on
+    // object ACCESS under WITH USER_MODE before any row match, so the Id need not resolve.
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL on the custom
+    // PSA_Version__c object (no object access) throws, exercising the controller's
+    // read-failure catch which maps it to a user-safe AuraHandledException (P6).
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'p6bare', Email = 'p6bare@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'P6Bare', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'p6bare.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
     }
 
     @isTest
@@ -52,24 +81,67 @@ private class PsaVersionControllerTest {
     }
 
     @isTest
-    static void nullContractAndBadDirectionAreHandled() {
+    static void nullContractReturnsEmptyHistory() {
         System.assertEquals(0, PsaVersionController.getVersions(null).size(), 'Null contract = empty history');
+    }
 
-        Boolean threwNull = false;
+    @isTest
+    static void nullContractAndBadDirectionThrowAuraHandledException() {
+        // P6: the service's PsaVersionException is now caught in the controller and
+        // re-thrown as a user-safe AuraHandledException at the LWC boundary.
         try {
             PsaVersionController.saveVersion(null, 'Seller', null, 'x', null);
-        } catch (Exception e) {
-            threwNull = true;
+            Assert.fail('Saving with no contract should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'no-Contract-Review rule violation maps to AuraHandledException');
         }
-        System.assert(threwNull, 'Saving with no contract should throw');
 
         Contract_Review__c cr = newContract();
-        Boolean threwDir = false;
         try {
             PsaVersionController.saveVersion(cr.Id, 'Nobody', null, 'x', null);
-        } catch (Exception e) {
-            threwDir = true;
+            Assert.fail('An unknown direction should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'bad-direction rule violation maps to AuraHandledException');
         }
-        System.assert(threwDir, 'An unknown direction should throw');
+    }
+
+    // Covers saveVersion's generic write catch: a deleted parent Contract Review Id makes the
+    // child PSA_Version__c insert fail (INVALID_CROSS_REFERENCE_KEY) under admin — the
+    // deterministic way to reach the write-failure catch without a bare user. Kept apart from
+    // the bare-user read test to avoid MIXED_DML_OPERATION.
+    @isTest
+    static void writeFailureThrowsAuraHandledException() {
+        Contract_Review__c cr = newContract();
+        Id deletedCrId = cr.Id;
+        delete cr;
+
+        Test.startTest();
+        try {
+            PsaVersionController.saveVersion(deletedCrId, 'Seller', Date.today(), 'x', null);
+            Assert.fail('Saving a version under a deleted Contract Review should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'save failure maps to AuraHandledException');
+        }
+        Test.stopTest();
+    }
+
+    // Covers getVersions' read catch: WITH USER_MODE on the custom PSA_Version__c object
+    // throws for a bare Standard User (no object access). A non-null fake Contract Review Id
+    // is passed so the selector's null guard does not short-circuit before the query. Its own
+    // method to avoid MIXED_DML_OPERATION with the setup-object User insert.
+    @isTest
+    static void readCatchThrowsAuraHandledException() {
+        User u = bareUser();
+        Id fakeCrId = fakeId(Contract_Review__c.SObjectType);
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                PsaVersionController.getVersions(fakeCrId);
+                Assert.fail('expected AuraHandledException from getVersions under a bare user');
+            } catch (AuraHandledException e) {
+                Assert.isNotNull(e, 'getVersions read failure maps to AuraHandledException');
+            }
+            Test.stopTest();
+        }
     }
 }

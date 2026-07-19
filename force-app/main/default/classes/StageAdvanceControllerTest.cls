@@ -1,7 +1,18 @@
 /**
- * Tests StageAdvanceController: each per-stage "advance" quick action moves the
- * deal to the next stage, the signed-NDA gate blocks Underwriting entry, and the
+ * Tests StageAdvanceController (thinned in P6). The happy paths prove the delegated
+ * behaviour is preserved end-to-end: each per-stage "advance" quick action moves the deal
+ * to the next stage, the signed-NDA gate blocks Underwriting entry, and the
  * Underwriting -> LOI step routes through the principal approval process.
+ *
+ * P6 controller thinning: the stage-routing map, stage write, and approval hand-off now
+ * live in StageAdvanceService, and each @AuraEnabled method wraps its work in a try/catch
+ * that maps failures to an AuraHandledException at the LWC boundary (ARCHITECTURE.md §5).
+ * The negative tests below therefore now expect an AuraHandledException.
+ * missingRecordThrowsAuraHandledException covers the generic (read-failure) catch via a
+ * deleted Opportunity Id — Opportunity is a standard object a bare user CAN read under
+ * USER_MODE, so a bare user would not throw; a deleted Id makes the single-row selector
+ * SOQL throw instead. advanceRethrowsAlreadyPendingApproval covers advance's
+ * AuraHandledException re-throw branch (the approval-submission message propagating unchanged).
  */
 @isTest
 private class StageAdvanceControllerTest {
@@ -34,13 +45,13 @@ private class StageAdvanceControllerTest {
     static void initiateUnderwritingRequiresSignedNda() {
         Opportunity o = newOpp('Under Review');
 
-        Boolean blocked = false;
+        // P6: the signed-NDA validation DmlException is now surfaced as an AuraHandledException.
         try {
             StageAdvanceController.advance(o.Id);
-        } catch (Exception e) {
-            blocked = true;
+            Assert.fail('Initiate Underwriting is blocked without a signed NDA');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'the signed-NDA gate maps to AuraHandledException');
         }
-        System.assert(blocked, 'Initiate Underwriting is blocked without a signed NDA');
 
         linkSignedNda(o);
         Test.startTest();
@@ -102,13 +113,12 @@ private class StageAdvanceControllerTest {
     @isTest
     static void noNextStepFromTerminalStageThrows() {
         Opportunity o = newOpp('Closed Won');
-        Boolean threw = false;
         try {
             StageAdvanceController.advance(o.Id);
-        } catch (Exception e) {
-            threw = true;
+            Assert.fail('A terminal stage has no next step');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'no-next-step maps to AuraHandledException');
         }
-        System.assert(threw, 'A terminal stage has no next step');
     }
 
     @isTest
@@ -129,12 +139,59 @@ private class StageAdvanceControllerTest {
     @isTest
     static void advanceToBlankTargetThrows() {
         Opportunity o = newOpp('Under Review');
-        Boolean threw = false;
         try {
             StageAdvanceController.advanceTo(o.Id, '');
-        } catch (Exception e) {
-            threw = true;
+            Assert.fail('A blank target stage is rejected');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'blank target maps to AuraHandledException');
         }
-        System.assert(threw, 'A blank target stage is rejected');
+    }
+
+    // Covers both methods' generic (read-failure) catch: a deleted Opportunity Id makes the
+    // single-row selector SOQL throw System.QueryException, which the controller maps to a
+    // user-safe AuraHandledException. Run under admin (no bare user) — the only record DML is
+    // the insert+delete of the Opportunity, so no MIXED_DML_OPERATION arises.
+    @isTest
+    static void missingRecordThrowsAuraHandledException() {
+        Opportunity o = newOpp('New');
+        Id deletedId = o.Id;
+        delete o;
+
+        Test.startTest();
+        try {
+            StageAdvanceController.advance(deletedId);
+            Assert.fail('advance on a deleted deal should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'advance read failure maps to AuraHandledException');
+        }
+        try {
+            StageAdvanceController.advanceTo(deletedId, 'Under Review');
+            Assert.fail('advanceTo on a deleted deal should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'advanceTo read failure maps to AuraHandledException');
+        }
+        Test.stopTest();
+    }
+
+    // Covers advance's AuraHandledException re-throw branch: submitting a deal that is already
+    // pending approval makes OpportunityApprovalController.submitForApproval throw an
+    // AuraHandledException, which the controller re-throws unchanged (its message is already
+    // user-safe). Deterministic: the first submit creates the pending ProcessInstance the
+    // second submit detects in the same transaction.
+    @isTest
+    static void advanceRethrowsAlreadyPendingApproval() {
+        Opportunity o = newOpp('Underwriting');
+        o.Underwriting_Complete__c = true;
+        update o;
+
+        Test.startTest();
+        StageAdvanceController.advance(o.Id); // first submit -> now pending
+        try {
+            StageAdvanceController.advance(o.Id); // second submit -> already pending -> throws
+            Assert.fail('A second submit while pending should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e, 'the already-pending approval message propagates as AuraHandledException');
+        }
+        Test.stopTest();
     }
 }
