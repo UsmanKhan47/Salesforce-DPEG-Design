@@ -16,15 +16,19 @@
  * getDmlMessage(0), which the controller re-throws verbatim. Underwriting -> LOI still
  * goes through the approval process rather than a direct write.
  *
- * LAYERING NOTE: the Underwriting branch delegates to
- * OpportunityApprovalController.submitForApproval — a pre-existing collaborator relocated
- * unchanged from the controller. submitForApproval is functionally an approval-submission
- * service exposed under a *Controller name for historical reasons; it is out of P6 scope
- * to rename, and re-homing its call here (rather than leaving SOQL + branching business
- * logic in the thinned controller) is the lesser layering compromise. Its AuraHandledException
- * messages are already user-safe and are allowed to propagate through unchanged.
+ * APPROVAL HAND-OFF: the Underwriting branch delegates to
+ * OpportunityApprovalService.submitForApproval — the approval-submission service extracted
+ * from OpportunityApprovalController in the code-review W3 controller-thinning fix. This
+ * replaces the former service->controller call (StageAdvanceService -> the *Controller),
+ * restoring correct layering (ARCHITECTURE.md §2). The service raises a typed
+ * OpportunityApprovalService.ApprovalException for user-actionable reasons; this service
+ * re-wraps it as a StageAdvanceException so its user-safe message is surfaced verbatim
+ * through the controller's existing boundary (behaviour-preserving — the user sees the same
+ * message). An unexpected raw failure is left to propagate to the controller's fixed generic
+ * (masked) catch, so no raw platform text is leaked (code-review W2).
  *
  * @see force-app/main/default/classes/StageAdvanceController.cls (thin caller)
+ * @see force-app/main/default/classes/OpportunityApprovalService.cls (approval submission)
  * @see force-app/main/default/classes/OpportunitySelector.cls (all SOQL)
  */
 public with sharing class StageAdvanceService {
@@ -56,16 +60,24 @@ public with sharing class StageAdvanceService {
      *
      * @param recordId the Opportunity to advance (required)
      * @return a user-facing confirmation message
-     * @throws StageAdvanceException when recordId is null, there is no next step, or the
-     *         stage write is blocked (the block's message is surfaced)
+     * @throws StageAdvanceException when recordId is null, there is no next step, the stage
+     *         write is blocked (the block's message is surfaced), or the approval submission
+     *         hits a user-actionable rule violation (its message is surfaced)
      * @throws System.QueryException when recordId matches no Opportunity
-     * @throws AuraHandledException  propagated unchanged from the approval submission
      */
     public static String advance(Id recordId) {
         Opportunity o = load(recordId);
         if (o.StageName == 'Underwriting') {
-            // Gated by principal approval - submit into the approval process.
-            return OpportunityApprovalController.submitForApproval(recordId);
+            // Gated by principal approval - submit into the approval process. The service
+            // raises a typed ApprovalException for user-actionable reasons; re-wrap it as a
+            // StageAdvanceException so its user-safe message is surfaced verbatim through the
+            // controller boundary (behaviour-preserving). An unexpected raw failure propagates
+            // to the controller's fixed generic (masked) catch.
+            try {
+                return OpportunityApprovalService.submitForApproval(recordId);
+            } catch (OpportunityApprovalService.ApprovalException e) {
+                throw new StageAdvanceException(e.getMessage());
+            }
         }
         String target = NEXT_STAGE.get(o.StageName);
         if (target == null) {

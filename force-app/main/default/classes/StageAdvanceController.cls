@@ -17,9 +17,10 @@
  *
  * Gates preserved: Under Review -> Underwriting hits the signed-NDA validation rule and
  * its message is surfaced (via StageAdvanceException); Underwriting -> LOI goes through the
- * approval process, whose already-user-safe AuraHandledException messages propagate
- * unchanged. An unexpected failure (e.g. a missing/inaccessible Opportunity) maps to a
- * fixed, generic message with no exception detail concatenated into it.
+ * approval process (StageAdvanceService -> OpportunityApprovalService), whose user-actionable
+ * messages the service re-wraps as a StageAdvanceException so they surface verbatim here. An
+ * unexpected failure (e.g. a missing/inaccessible Opportunity, or an unexpected approval
+ * failure) maps to a fixed, generic message with no exception detail concatenated into it.
  */
 public with sharing class StageAdvanceController {
 
@@ -38,11 +39,9 @@ public with sharing class StageAdvanceController {
     public static String advance(Id recordId) {
         try {
             return StageAdvanceService.advance(recordId);
-        } catch (AuraHandledException e) {
-            // Already-user-safe approval-submission message — propagate unchanged.
-            throw e;
         } catch (StageAdvanceService.StageAdvanceException e) {
-            // "No next step" / the surfaced signed-NDA validation message.
+            // "No next step" / the surfaced signed-NDA validation message / a re-wrapped
+            // user-actionable approval-submission message.
             throw ahe(e.getMessage());
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'StageAdvanceController.advance on ' + recordId

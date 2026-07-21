@@ -76,6 +76,29 @@ private class StageAdvanceServiceTest {
     }
 
     @isTest
+    static void advanceFromUnderwritingWrapsApprovalRuleViolation() {
+        // The approval hand-off now calls OpportunityApprovalService, which raises a typed
+        // ApprovalException for a user-actionable reason (here: an already-pending deal). The
+        // service re-wraps it as a StageAdvanceException so the controller surfaces the same
+        // user-safe message (behaviour-preserving). Deterministic: the first submit creates the
+        // pending ProcessInstance the second submit detects in the same transaction.
+        Opportunity o = newOpp('Underwriting');
+        o.Underwriting_Complete__c = true;
+        update o;
+        StageAdvanceService.advance(o.Id); // first submit -> now pending
+
+        Test.startTest();
+        try {
+            StageAdvanceService.advance(o.Id); // second submit -> already pending
+            Assert.fail('A second submit while pending should throw');
+        } catch (StageAdvanceService.StageAdvanceException e) {
+            Assert.isNotNull(e.getMessage(),
+                'the approval rule violation is surfaced as a StageAdvanceException');
+        }
+        Test.stopTest();
+    }
+
+    @isTest
     static void advanceToMovesLandDealToDevelopmentReview() {
         Opportunity o = TestDataFactory.createOpportunitiesByRecordType(1, 'Land', null, false)[0];
         o.StageName = 'Under Review';

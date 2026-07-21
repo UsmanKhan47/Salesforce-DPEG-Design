@@ -11,8 +11,9 @@
  * missingRecordThrowsAuraHandledException covers the generic (read-failure) catch via a
  * deleted Opportunity Id — Opportunity is a standard object a bare user CAN read under
  * USER_MODE, so a bare user would not throw; a deleted Id makes the single-row selector
- * SOQL throw instead. advanceRethrowsAlreadyPendingApproval covers advance's
- * AuraHandledException re-throw branch (the approval-submission message propagating unchanged).
+ * SOQL throw instead. advanceRethrowsAlreadyPendingApproval proves an already-pending
+ * approval surfaces its message: StageAdvanceService re-wraps the service's typed
+ * ApprovalException as a StageAdvanceException, which advance maps to an AuraHandledException.
  */
 @isTest
 private class StageAdvanceControllerTest {
@@ -173,11 +174,11 @@ private class StageAdvanceControllerTest {
         Test.stopTest();
     }
 
-    // Covers advance's AuraHandledException re-throw branch: submitting a deal that is already
-    // pending approval makes OpportunityApprovalController.submitForApproval throw an
-    // AuraHandledException, which the controller re-throws unchanged (its message is already
-    // user-safe). Deterministic: the first submit creates the pending ProcessInstance the
-    // second submit detects in the same transaction.
+    // Proves an already-pending approval surfaces its message through advance: the second
+    // submit makes OpportunityApprovalService throw a typed ApprovalException, which
+    // StageAdvanceService re-wraps as a StageAdvanceException, which advance maps to an
+    // AuraHandledException. Deterministic: the first submit creates the pending ProcessInstance
+    // the second submit detects in the same transaction.
     @isTest
     static void advanceRethrowsAlreadyPendingApproval() {
         Opportunity o = newOpp('Underwriting');

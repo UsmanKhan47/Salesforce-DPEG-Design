@@ -1,6 +1,14 @@
 /**
- * Tests OpportunityApprovalController: an eligible Opp (Stage = LOI)
- * submits into the LOI approval process, and a second submit is blocked.
+ * Tests OpportunityApprovalController — the thin @AuraEnabled boundary over
+ * OpportunityApprovalService (W3 controller-thinning fix). The happy paths prove delegation
+ * is transparent (an eligible Opp submits into the approval process, resolving from a child
+ * record where needed); the negative paths prove the boundary maps failures to an
+ * AuraHandledException. Both catch branches are covered: a user-actionable
+ * OpportunityApprovalService.ApprovalException is surfaced (the null / orphan / already-pending
+ * / ineligible-stage / unsupported-object tests), and an UNEXPECTED failure maps to the fixed
+ * generic SUBMIT_FAILURE_MESSAGE with no raw platform text leaked (submitFailureMapsToGenericMessage,
+ * code-review W2). Per the task, negative tests assert only that an AuraHandledException is
+ * thrown — never its message.
  */
 @isTest
 private class OpportunityApprovalControllerTest {
@@ -161,5 +169,30 @@ private class OpportunityApprovalControllerTest {
         }
         Test.stopTest();
         System.assert(threw, 'Submit for Approval is not available on an unsupported object type');
+    }
+
+    @isTest
+    static void submitFailureMapsToGenericMessage() {
+        // An UNEXPECTED failure (a deleted / inaccessible deal) must surface the fixed generic
+        // message, not raw platform text: the service lets the QueryException propagate raw and
+        // the controller's generic catch maps it to SUBMIT_FAILURE_MESSAGE (code-review W2). Do
+        // not assert the message text (AuraHandledException.getMessage() is unreliable in tests)
+        // — only that an AuraHandledException is thrown via the generic catch. Admin context;
+        // the only record DML is the insert+delete, so no MIXED_DML_OPERATION arises.
+        Opportunity o = TestDataFactory.createOpportunity(null, false);
+        o.StageName = 'LOI';
+        insert o;
+        Id deletedId = o.Id;
+        delete o;
+
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            OpportunityApprovalController.submitForApproval(deletedId);
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw, 'An unexpected submission failure maps to an AuraHandledException');
     }
 }
