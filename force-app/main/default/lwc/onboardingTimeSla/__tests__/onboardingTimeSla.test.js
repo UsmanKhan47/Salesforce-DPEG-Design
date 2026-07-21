@@ -69,7 +69,7 @@ describe('c-onboarding-time-sla', () => {
         ]);
     });
 
-    it('ERROR BRANCH: stays on zeroes when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error alert alongside the zeroed tiles', async () => {
         const element = createComponent();
 
         getTimeSla.error();
@@ -79,6 +79,7 @@ describe('c-onboarding-time-sla', () => {
             (el) => el.textContent
         );
         expect(values).toEqual(['0', '0', '0', '0']);
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

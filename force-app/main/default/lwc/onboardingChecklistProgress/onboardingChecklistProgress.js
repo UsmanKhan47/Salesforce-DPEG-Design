@@ -6,7 +6,21 @@ import getChecklist from '@salesforce/apex/OnboardingController.getChecklist';
 export default class OnboardingChecklistProgress extends LightningElement {
     @api recordId;
     groups = [];
-    @wire(getChecklist, { onboardingId: '$recordId' }) wired({ data }) { if (data) this.groups = data; }
+    error;
+    @wire(getChecklist, { onboardingId: '$recordId' })
+    wired({ data, error }) {
+        if (data) {
+            this.groups = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.groups = [];
+        }
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load the onboarding checklist.';
+    }
     get overall() {
         let total = 0, complete = 0;
         this.groups.forEach((g) => { total += g.total; complete += g.complete; });

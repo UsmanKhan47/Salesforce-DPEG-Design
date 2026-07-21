@@ -1,5 +1,11 @@
 <template>
     <div class="cs">
+        <template lwc:if={error}>
+            <div class="slds-p-around_x-small slds-text-color_error slds-grid slds-grid_vertical-align-center" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error" class="slds-m-right_x-small"></lightning-icon>
+                <span>{errorMessage}</span>
+            </div>
+        </template>
         <div class="cs-row">
             <div class="cs-title">
                 <lightning-icon icon-name="standard:task" size="small" class="cs-icon"></lightning-icon>

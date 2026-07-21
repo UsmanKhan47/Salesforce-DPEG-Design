@@ -1,5 +1,13 @@
 <template>
     <div class="oc">
+            <!-- Inline wire-error state (data could not be loaded) -->
+            <template if:true={error}>
+                <div class="slds-p-around_x-small slds-text-color_error slds-grid slds-grid_vertical-align-center" role="alert">
+                    <lightning-icon icon-name="utility:error" size="x-small" variant="error" class="slds-m-right_x-small"></lightning-icon>
+                    <span>{errorMessage}</span>
+                </div>
+            </template>
+
             <!-- Filter chips -->
             <div class="oc-filters">
                 <template for:each={chips} for:item="c">
@@ -66,7 +74,7 @@
             class="slds-modal slds-fade-in-open oc-modal">
             <div class="slds-modal__container">
                 <header class="slds-modal__header">
-                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                    <button class="slds-button slds-button_icon slds-modal__close"
                         title="Close" onclick={cancelConfirm}>
                         <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
                     </button>

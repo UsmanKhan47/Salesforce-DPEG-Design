@@ -30,9 +30,22 @@ const COLUMNS = [
 export default class OnboardingPropertyList extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
     _data;
+    error;
     listUrl = '#';
 
-    @wire(getOnboardings) wired({ data }) { if (data) this._data = data; }
+    @wire(getOnboardings)
+    wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+        }
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load properties in onboarding.';
+    }
 
     connectedCallback() {
         this[NavigationMixin.GenerateUrl](this.listPageRef).then((url) => { this.listUrl = url; });

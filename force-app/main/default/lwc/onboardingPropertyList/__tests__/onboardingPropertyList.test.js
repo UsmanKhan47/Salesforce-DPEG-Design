@@ -93,7 +93,7 @@ describe('c-onboarding-property-list', () => {
         expect(table.data[1].openTasks).toBe(14);
     });
 
-    it('ERROR BRANCH: keeps the empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error alert when the wire errors', async () => {
         const element = createComponent();
 
         getOnboardings.error();
@@ -101,6 +101,7 @@ describe('c-onboarding-property-list', () => {
 
         const table = element.shadowRoot.querySelector('c-list-datatable');
         expect(table.data).toEqual([]);
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

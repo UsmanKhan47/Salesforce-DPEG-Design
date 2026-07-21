@@ -1,4 +1,10 @@
 <template>
+    <template lwc:if={error}>
+        <div class="slds-p-around_x-small slds-text-color_error slds-grid slds-grid_vertical-align-center" role="alert">
+            <lightning-icon icon-name="utility:error" size="x-small" variant="error" class="slds-m-right_x-small"></lightning-icon>
+            <span>{errorMessage}</span>
+        </div>
+    </template>
     <div class="dashboard-cards">
         <div class="cards-row">
             <template for:each={metrics} for:item="metric">

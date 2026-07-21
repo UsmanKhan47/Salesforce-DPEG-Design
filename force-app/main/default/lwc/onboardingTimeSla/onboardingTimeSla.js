@@ -15,7 +15,20 @@ const TONE = {
 
 export default class OnboardingTimeSla extends LightningElement {
     t;
-    @wire(getTimeSla) wired({ data }) { if (data) this.t = data; }
+    error;
+    @wire(getTimeSla)
+    wired({ data, error }) {
+        if (data) {
+            this.t = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+        }
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load time & SLA metrics.';
+    }
     get tiles() {
         const t = this.t || {};
         return TILES.map((x) => {

@@ -78,6 +78,7 @@ export default class PsaVersionLog extends LightningElement {
     documentUrl;
     oppBall;
     versions = [];
+    error;
     _wiredVersions;
 
     directionOptions = [
@@ -97,10 +98,13 @@ export default class PsaVersionLog extends LightningElement {
     primaryContractFromOpp;
 
     @wire(getRecord, { recordId: '$oppRecordId', fields: [PRIMARY_CONTRACT], optionalFields: [CR_BALL] })
-    wiredOpp({ data }) {
+    wiredOpp({ data, error }) {
         if (data) {
             this.primaryContractFromOpp = getFieldValue(data, PRIMARY_CONTRACT);
             this.oppBall = getFieldValue(data, CR_BALL);
+        } else if (error) {
+            // The version history wire owns clearing this on success; only set here.
+            this.error = error;
         }
     }
 
@@ -120,7 +124,16 @@ export default class PsaVersionLog extends LightningElement {
                 documentUrl: v.Document_URL__c,
                 versionDate: v.Version_Date__c || v.CreatedDate
             }));
+            this.error = undefined;
+        } else if (result.error) {
+            this.error = result.error;
+            this.versions = [];
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load the PSA version history.';
     }
 
     get hasContract() {

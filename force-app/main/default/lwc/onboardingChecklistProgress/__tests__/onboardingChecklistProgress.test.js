@@ -64,13 +64,15 @@ describe('c-onboarding-checklist-progress', () => {
         );
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error alert when the wire errors', async () => {
         const element = createComponent();
 
         getChecklist.error();
         await Promise.resolve();
 
+        // Roll-up falls back to the empty state, plus an explicit error alert.
         expect(element.shadowRoot.querySelector('.cs-pct').textContent).toBe('—');
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

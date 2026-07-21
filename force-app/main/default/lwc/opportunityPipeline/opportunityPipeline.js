@@ -4,12 +4,22 @@ import getPipelineSnapshot from '@salesforce/apex/OpportunityFunnelController.ge
 
 export default class OpportunityPipeline extends LightningElement {
     data;
+    error;
 
     @wire(getPipelineSnapshot)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.data = undefined;
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load the pipeline snapshot.';
     }
 
     get stats() {

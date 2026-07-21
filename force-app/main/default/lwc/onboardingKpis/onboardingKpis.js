@@ -10,7 +10,20 @@ const CARD_META = [
 
 export default class OnboardingKpis extends LightningElement {
     kpis;
-    @wire(getKpis) wired({ data }) { if (data) this.kpis = data; }
+    error;
+    @wire(getKpis)
+    wired({ data, error }) {
+        if (data) {
+            this.kpis = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+        }
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load onboarding KPIs.';
+    }
     get metrics() {
         const k = this.kpis || {};
         const values = {

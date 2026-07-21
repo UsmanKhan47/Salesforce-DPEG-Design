@@ -14,7 +14,20 @@ const TONE = {
 
 export default class OnboardingRiskAlerts extends LightningElement {
     a;
-    @wire(getRiskAlerts) wired({ data }) { if (data) this.a = data; }
+    error;
+    @wire(getRiskAlerts)
+    wired({ data, error }) {
+        if (data) {
+            this.a = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+        }
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load risk alerts.';
+    }
     get tiles() {
         const a = this.a || {};
         return TILES.map((t) => {

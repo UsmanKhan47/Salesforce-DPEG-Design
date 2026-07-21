@@ -68,7 +68,7 @@ describe('c-onboarding-kpis', () => {
         expect(cards[3].value).toBe('38d');
     });
 
-    it('ERROR BRANCH: keeps default zeroes when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error alert alongside the zeroed tiles', async () => {
         const element = createComponent();
 
         getKpis.error();
@@ -77,6 +77,7 @@ describe('c-onboarding-kpis', () => {
         const cards = element.shadowRoot.querySelectorAll('c-stat-card');
         expect(cards.length).toBe(4);
         expect(cards[0].value).toBe('0');
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

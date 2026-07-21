@@ -91,13 +91,14 @@ describe('c-opportunity-pipeline', () => {
         expect(tiles(element)[1].value).toBe('$0');
     });
 
-    it('ERROR BRANCH: stays in the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: hides the card and renders an inline error alert when the wire errors', async () => {
         const element = createComponent();
 
         getPipelineSnapshot.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.card')).toBeNull();
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

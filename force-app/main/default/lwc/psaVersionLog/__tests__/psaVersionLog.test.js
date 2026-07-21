@@ -170,7 +170,7 @@ describe('c-psa-version-log', () => {
         );
     });
 
-    it('ERROR BRANCH: keeps the empty state when the Apex wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error alert when the Apex wire errors', async () => {
         const element = createOnOpportunity();
 
         getRecord.emit(oppRecord({ contractId: CONTRACT_ID }));
@@ -183,6 +183,7 @@ describe('c-psa-version-log', () => {
         expect(element.shadowRoot.textContent).toContain(
             'No PSA versions logged yet'
         );
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('SAVE SUCCESS: submits the entered version, refreshes the record, and toasts', async () => {

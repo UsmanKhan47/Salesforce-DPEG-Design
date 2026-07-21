@@ -73,7 +73,7 @@ describe('c-onboarding-task-progress-by-category', () => {
         expect(cards[1].iconColor).toBe('#2e7d32');
     });
 
-    it('ERROR BRANCH: renders no tiles when the wire errors', async () => {
+    it('ERROR BRANCH: renders no tiles and an inline error alert when the wire errors', async () => {
         const element = createComponent();
 
         getChecklist.error();
@@ -82,6 +82,7 @@ describe('c-onboarding-task-progress-by-category', () => {
         expect(
             element.shadowRoot.querySelectorAll('c-onboarding-card-child').length
         ).toBe(0);
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

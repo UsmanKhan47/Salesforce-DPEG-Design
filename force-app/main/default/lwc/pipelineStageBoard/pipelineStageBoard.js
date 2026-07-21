@@ -33,23 +33,40 @@ const OPP_META = [
 export default class PipelineStageBoard extends LightningElement {
     leadCounts = {};
     oppCounts = {};
+    leadError;
+    oppError;
 
     @wire(getFunnel)
-    wiredLeads({ data }) {
+    wiredLeads({ data, error }) {
         if (data && data.stages) {
             const c = {};
             data.stages.forEach((s) => { c[s.label] = s.count; });
             this.leadCounts = c;
+            this.leadError = undefined;
+        } else if (error) {
+            this.leadError = error;
         }
     }
 
     @wire(getStageCounts)
-    wiredOpps({ data }) {
+    wiredOpps({ data, error }) {
         if (data) {
             const c = {};
             data.forEach((s) => { c[s.label] = s.count; });
             this.oppCounts = c;
+            this.oppError = undefined;
+        } else if (error) {
+            this.oppError = error;
         }
+    }
+
+    get error() {
+        return this.leadError || this.oppError;
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load the pipeline stage board.';
     }
 
     buildRows(meta, counts) {

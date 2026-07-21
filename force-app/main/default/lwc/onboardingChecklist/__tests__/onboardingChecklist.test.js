@@ -255,6 +255,51 @@ describe('c-onboarding-checklist', () => {
         expect(element.shadowRoot.querySelector('[role="dialog"]')).toBeNull();
     });
 
+    it('WIRE ERROR BRANCH: renders an inline error alert when the checklist read fails', async () => {
+        const element = createComponent();
+
+        getChecklist.error();
+        await Promise.resolve();
+
+        const alert = element.shadowRoot.querySelector('[role="alert"]');
+        expect(alert).not.toBeNull();
+        // No group tiles when the read fails.
+        expect(element.shadowRoot.querySelectorAll('.oc-gchip').length).toBe(0);
+    });
+
+    it('SAVE ERROR BRANCH: shows an error toast and keeps the modal open when completeTask fails', async () => {
+        completeTask.mockRejectedValue({ body: { message: 'Task is locked.' } });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getChecklist.emit(GROUPS);
+        await Promise.resolve();
+
+        // Open the confirm modal on the single open task.
+        element.shadowRoot
+            .querySelector('.oc-check:not([disabled])')
+            .dispatchEvent(new CustomEvent('change'));
+        await Promise.resolve();
+
+        // Confirm -> completeTask rejects.
+        element.shadowRoot.querySelector('button.slds-button_brand').click();
+        await flushPromises();
+        await flushPromises();
+
+        expect(completeTask).toHaveBeenCalledTimes(1);
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe('Task is locked.');
+
+        // Modal stays open so the user can retry — nothing was persisted.
+        await Promise.resolve();
+        expect(element.shadowRoot.querySelector('[role="dialog"]')).not.toBeNull();
+        // The record was never notified of a (non-existent) update.
+        expect(notifyRecordUpdateAvailable).not.toHaveBeenCalled();
+    });
+
     it('is accessible (empty-category state — no unlabeled checkboxes rendered)', async () => {
         const element = createComponent();
 

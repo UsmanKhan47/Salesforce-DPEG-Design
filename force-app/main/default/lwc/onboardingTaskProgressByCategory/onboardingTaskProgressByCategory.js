@@ -16,7 +16,21 @@ const ICONS = {
 export default class OnboardingTaskProgressByCategory extends LightningElement {
     @api recordId;
     groups = [];
-    @wire(getChecklist, { onboardingId: '$recordId' }) wired({ data }) { if (data) this.groups = data; }
+    error;
+    @wire(getChecklist, { onboardingId: '$recordId' })
+    wired({ data, error }) {
+        if (data) {
+            this.groups = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.groups = [];
+        }
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load task progress.';
+    }
     get cards() {
         return this.groups.map((g) => {
             const done = g.total > 0 && g.complete >= g.total;

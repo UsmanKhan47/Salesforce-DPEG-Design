@@ -1,6 +1,12 @@
 <template>
     <lightning-card icon-name="standard:date_time">
         <span slot="title">Time &amp; SLA</span>
+        <template lwc:if={error}>
+            <div class="slds-p-horizontal_small slds-p-bottom_small slds-text-color_error slds-grid slds-grid_vertical-align-center" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error" class="slds-m-right_x-small"></lightning-icon>
+                <span>{errorMessage}</span>
+            </div>
+        </template>
         <div class="grid">
             <template for:each={tiles} for:item="t">
                 <div key={t.key} class="tile" style={t.tileStyle}>

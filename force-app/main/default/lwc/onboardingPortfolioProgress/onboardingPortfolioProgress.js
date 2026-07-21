@@ -8,7 +8,20 @@ const SEG = [
 
 export default class OnboardingPortfolioProgress extends LightningElement {
     p;
-    @wire(getPortfolio) wired({ data }) { if (data) this.p = data; }
+    error;
+    @wire(getPortfolio)
+    wired({ data, error }) {
+        if (data) {
+            this.p = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+        }
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load portfolio progress.';
+    }
     get pct() { const p = this.p; if (!p || !p.tasksTotal) return 0; return Math.round((100 * p.complete) / p.tasksTotal); }
     get donutStyle() { const v = this.pct; return `background:conic-gradient(#1A7A6B 0% ${v}%, #ECEBEA ${v}% 100%)`; }
     get pctLabel() { return this.pct + '%'; }

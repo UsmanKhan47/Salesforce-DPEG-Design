@@ -121,7 +121,7 @@ describe('c-pipeline-stage-board', () => {
         expect(totals(element)).toEqual(['28', '0']);
     });
 
-    it('ERROR BRANCH: both wires erroring leaves 15 rows and zero totals', async () => {
+    it('ERROR BRANCH: an erroring wire adds an inline error alert above the board', async () => {
         const element = createComponent();
 
         getFunnel.error();
@@ -130,6 +130,7 @@ describe('c-pipeline-stage-board', () => {
 
         expect(rows(element).length).toBe(15);
         expect(totals(element)).toEqual(['0', '0']);
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

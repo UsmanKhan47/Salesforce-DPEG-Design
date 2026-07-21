@@ -80,13 +80,14 @@ describe('c-onboarding-portfolio-progress', () => {
         expect(counts).toEqual(['12', '5']);
     });
 
-    it('ERROR BRANCH: stays on the 0% empty state when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error alert when the wire errors', async () => {
         const element = createComponent();
 
         getPortfolio.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.dpct').textContent).toBe('0%');
+        expect(element.shadowRoot.querySelector('[role="alert"]')).not.toBeNull();
     });
 
     it('is accessible', async () => {

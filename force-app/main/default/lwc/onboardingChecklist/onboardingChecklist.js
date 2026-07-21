@@ -1,6 +1,7 @@
 import { LightningElement, api, wire } from 'lwc';
 import { refreshApex } from '@salesforce/apex';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getChecklist from '@salesforce/apex/OnboardingController.getChecklist';
 import completeTask from '@salesforce/apex/OnboardingController.completeTask';
 
@@ -12,6 +13,7 @@ const ownerShort = (n) => !n ? '' : (n === 'Accounting Queue' ? 'Accounting' : n
 export default class OnboardingChecklist extends LightningElement {
     @api recordId;
     groups = [];
+    error;
     selectedIndex = 0;
     filter = 'All';
     _wire;
@@ -19,7 +21,21 @@ export default class OnboardingChecklist extends LightningElement {
     _saving = false;
 
     @wire(getChecklist, { onboardingId: '$recordId' })
-    wired(result) { this._wire = result; if (result.data) this.groups = result.data; }
+    wired(result) {
+        this._wire = result;
+        if (result.data) {
+            this.groups = result.data;
+            this.error = undefined;
+        } else if (result.error) {
+            this.error = result.error;
+            this.groups = [];
+        }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load the onboarding checklist.';
+    }
 
     get tiles() {
         return this.groups.map((g, i) => {
@@ -104,6 +120,14 @@ export default class OnboardingChecklist extends LightningElement {
             this._confirm = {};
             await refreshApex(this._wire);
             notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
+        } catch (e) {
+            // Surface a user-safe message and keep the confirm modal open so the
+            // user can retry — the completion was never persisted.
+            this.dispatchEvent(new ShowToastEvent({
+                title: 'Could not complete the task',
+                message: (e && e.body && e.body.message) || 'Unexpected error',
+                variant: 'error'
+            }));
         } finally {
             this._saving = false;
         }
