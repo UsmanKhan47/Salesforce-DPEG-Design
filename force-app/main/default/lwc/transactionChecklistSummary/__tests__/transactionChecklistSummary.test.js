@@ -84,13 +84,17 @@ describe('c-transaction-checklist-summary', () => {
         ).toContain('#2e7d32');
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: renders a distinct error message instead of the progress bar', async () => {
         const element = createComponent();
 
-        getTaskGroups.error();
+        getTaskGroups.error({ message: 'Checklist summary unavailable.' });
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.cs-pct').textContent).toBe('—');
+        // The "—" / "No checklist generated yet" copy must NOT show on a load failure.
+        expect(element.shadowRoot.querySelector('.cs-pct')).toBeNull();
+        const err = element.shadowRoot.querySelector('.cs-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Checklist summary unavailable.');
     });
 
     it('is accessible', async () => {

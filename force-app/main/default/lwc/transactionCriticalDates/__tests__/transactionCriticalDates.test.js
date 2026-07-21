@@ -102,15 +102,18 @@ describe('c-transaction-critical-dates', () => {
         expect(amount.textContent).toBe('$500k');
     });
 
-    it('ERROR BRANCH: falls back to the empty state when the record wire errors', async () => {
+    it('ERROR BRANCH: surfaces a distinct error message when the record wire errors', async () => {
         const element = createComponent();
 
-        // getRecord.error() emits { data: undefined, error }. The component keeps
-        // its prior (empty) state rather than throwing.
-        getRecord.error();
+        // getRecord.error(body) emits { data: undefined, error }. The component now
+        // shows a distinct, announced error state instead of the benign empty copy.
+        getRecord.error({ message: 'Critical dates unavailable.' });
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.cd-empty')).not.toBeNull();
+        const state = element.shadowRoot.querySelector('.cd-empty');
+        expect(state).not.toBeNull();
+        expect(state.textContent).toBe('Critical dates unavailable.');
+        expect(state.getAttribute('role')).toBe('alert');
         expect(element.shadowRoot.querySelectorAll('.cd-row').length).toBe(0);
     });
 

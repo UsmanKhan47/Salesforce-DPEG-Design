@@ -141,13 +141,16 @@ describe('c-recent-opportunities', () => {
         expect(pageRef.attributes.actionName).toBe('list');
     });
 
-    it('ERROR BRANCH: falls back to an empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state and hides the datatable when the wire errors', async () => {
         const element = createComponent();
 
-        getRecentOpportunities.error();
+        getRecentOpportunities.error({ message: 'Opportunity feed unavailable.' });
         await Promise.resolve();
 
-        expect(datatable(element).data).toEqual([]);
+        expect(datatable(element)).toBeNull();
+        const err = element.shadowRoot.querySelector('.lv-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Opportunity feed unavailable.');
         expect(
             element.shadowRoot.querySelector('span[slot="title"]').textContent
         ).toBe('Recent Opportunities (0)');

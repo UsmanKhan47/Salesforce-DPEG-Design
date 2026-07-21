@@ -66,6 +66,18 @@ describe('c-renewal-kpis', () => {
         ]);
     });
 
+    it('ERROR BRANCH: renders an inline error message instead of the KPI cards', async () => {
+        const element = createComponent();
+
+        getHomeKpis.error({ message: 'Renewal metrics unavailable.' });
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelectorAll('c-stat-card').length).toBe(0);
+        const err = element.shadowRoot.querySelector('.kpi-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Renewal metrics unavailable.');
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 

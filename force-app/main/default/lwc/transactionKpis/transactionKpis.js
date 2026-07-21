@@ -11,12 +11,24 @@ const CARD_META = [
 
 export default class TransactionKpis extends LightningElement {
     kpis;
+    error;
 
     @wire(getKpis)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.kpis = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load transaction metrics.';
     }
 
     get metrics() {

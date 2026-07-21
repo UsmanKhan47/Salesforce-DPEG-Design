@@ -1,7 +1,12 @@
 <template>
-    <div class="kpi-grid">
-        <template for:each={cards} for:item="c">
-            <c-stat-card key={c.key} value={c.value} label={c.label} icon-name={c.iconName} icon-color={c.iconColor}></c-stat-card>
-        </template>
-    </div>
+    <template if:true={hasError}>
+        <div class="kpi-error slds-p-around_medium slds-text-color_error" role="alert">{errorMessage}</div>
+    </template>
+    <template if:false={hasError}>
+        <div class="kpi-grid">
+            <template for:each={cards} for:item="c">
+                <c-stat-card key={c.key} value={c.value} label={c.label} icon-name={c.iconName} icon-color={c.iconColor}></c-stat-card>
+            </template>
+        </div>
+    </template>
 </template>

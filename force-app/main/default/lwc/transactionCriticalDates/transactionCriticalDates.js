@@ -16,16 +16,32 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export default class TransactionCriticalDates extends LightningElement {
     @api recordId;
     _rec;
+    error;
 
     @wire(getRecord, { recordId: '$recordId', fields: FIELDS })
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this._rec = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
     }
 
     get hasData() {
         return !!this._rec;
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load critical dates.';
+    }
+    // The genuine "nothing scheduled yet" empty state — not a failed record load.
+    get showEmpty() {
+        return !this.error && !this._rec;
     }
 
     get rows() {

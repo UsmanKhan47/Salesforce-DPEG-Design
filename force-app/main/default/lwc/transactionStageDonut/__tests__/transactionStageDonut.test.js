@@ -98,13 +98,16 @@ describe('c-transaction-stage-donut', () => {
         expect(counts).toEqual(['2', '3', '0', '0', '1']);
     });
 
-    it('ERROR BRANCH: falls back to the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: surfaces a distinct error message (not the no-deals empty copy)', async () => {
         const element = createComponent();
 
-        getStageBreakdown.error();
+        getStageBreakdown.error({ message: 'Stage breakdown unavailable.' });
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.empty')).not.toBeNull();
+        const state = element.shadowRoot.querySelector('.empty');
+        expect(state).not.toBeNull();
+        expect(state.textContent).toBe('Stage breakdown unavailable.');
+        expect(state.getAttribute('role')).toBe('alert');
         expect(element.shadowRoot.querySelector('.donut')).toBeNull();
     });
 

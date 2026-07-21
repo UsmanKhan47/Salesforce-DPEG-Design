@@ -139,13 +139,17 @@ describe('c-recent-leads', () => {
         expect(pageRef.attributes.actionName).toBe('list');
     });
 
-    it('ERROR BRANCH: falls back to an empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state and hides the datatable when the wire errors', async () => {
         const element = createComponent();
 
-        getFunnel.error();
+        getFunnel.error({ message: 'Lead feed unavailable.' });
         await Promise.resolve();
 
-        expect(datatable(element).data).toEqual([]);
+        // The datatable is replaced by a visible error message (not a silent blank).
+        expect(datatable(element)).toBeNull();
+        const err = element.shadowRoot.querySelector('.lv-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Lead feed unavailable.');
         expect(
             element.shadowRoot.querySelector('span[slot="title"]').textContent
         ).toBe('Recent Leads (0)');

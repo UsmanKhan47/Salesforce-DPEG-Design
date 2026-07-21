@@ -91,13 +91,16 @@ describe('c-transaction-kpis', () => {
         expect(values[2]).toBe('$0');
     });
 
-    it('ERROR BRANCH: keeps the zeroed defaults when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error message instead of zeroed tiles', async () => {
         const element = createComponent();
 
-        getKpis.error();
+        getKpis.error({ message: 'Transaction metrics unavailable.' });
         await Promise.resolve();
 
-        expect(cardValues(element)).toEqual(['0', '$0', '$0', '0d']);
+        expect(element.shadowRoot.querySelectorAll('c-stat-card').length).toBe(0);
+        const err = element.shadowRoot.querySelector('.kpi-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Transaction metrics unavailable.');
     });
 
     it('is accessible', async () => {

@@ -8,7 +8,24 @@ const dot = (c) => `width:6px;height:6px;border-radius:50%;background:${c};flex-
 // expiring within 30 days.
 export default class RenewalAttention extends LightningElement {
     _data = [];
-    @wire(getAttention) wired({ data }) { if (data) this._data = data; }
+    error;
+    @wire(getAttention) wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this._data = [];
+        }
+    }
+
+    get hasError() { return !!this.error; }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load renewals needing attention.';
+    }
+    // Only the genuine "all on track" empty state — not a failed load.
+    get showEmpty() { return !this.error && this._data.length === 0; }
 
     get rows() {
         return this._data.map((q) => {

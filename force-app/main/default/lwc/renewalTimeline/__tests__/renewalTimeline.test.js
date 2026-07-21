@@ -239,6 +239,17 @@ describe('c-renewal-timeline', () => {
         );
     });
 
+    it('WIRE ERROR: shows an inline load-error message when the timeline wire fails', async () => {
+        const element = createComponent();
+
+        getTimeline.error({ message: 'Timeline unavailable.' });
+        await Promise.resolve();
+
+        const err = element.shadowRoot.querySelector('.rt-load-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Timeline unavailable.');
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 

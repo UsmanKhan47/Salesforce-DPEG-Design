@@ -19,11 +19,15 @@ const C = 2 * Math.PI * R; // circumference
 
 export default class TransactionStageDonut extends LightningElement {
     _data;
+    error;
 
     @wire(getStageBreakdown)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this._data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
     }
 
@@ -33,6 +37,18 @@ export default class TransactionStageDonut extends LightningElement {
 
     get hasData() {
         return this.total > 0;
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load the stage breakdown.';
+    }
+    // The genuine "no deals" empty state — not a failed load.
+    get showEmpty() {
+        return !this.error && !this.hasData;
     }
 
     // Stage -> count map from the apex breakdown.

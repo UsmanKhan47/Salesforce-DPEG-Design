@@ -11,12 +11,24 @@ const META = [
 
 export default class TransactionTaskCards extends LightningElement {
     summary;
+    error;
 
     @wire(getTaskSummary)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.summary = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load task metrics.';
     }
 
     get stats() {

@@ -62,6 +62,9 @@
         </template>
 
         <div class="rt-body">
+            <template if:true={hasLoadError}>
+                <div class="rt-load-error slds-text-color_error slds-p-around_x-small" role="alert">{loadErrorMessage}</div>
+            </template>
             <template for:each={entries} for:item="e">
                 <div key={e.id} class="rt-entry">
                     <div class="rt-rail">

@@ -1,5 +1,6 @@
 import { LightningElement, api, wire } from 'lwc';
 import { refreshApex } from '@salesforce/apex';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGroups';
 import completeTask from '@salesforce/apex/TransactionTaskController.completeTask';
 import completeWireVerification from '@salesforce/apex/TransactionTaskController.completeWireVerification';
@@ -26,6 +27,7 @@ export default class TransactionTaskGroups extends LightningElement {
     // and the phase-button row is hidden. Blank = show all phases with the buttons.
     @api phase;
     _wire;
+    _wireError;
     _data = [];
     _selectedPhase;
     _selectedKey;
@@ -39,11 +41,31 @@ export default class TransactionTaskGroups extends LightningElement {
         this._wire = result;
         if (result.data) {
             this._data = result.data;
+            this._wireError = undefined;
+        } else if (result.error) {
+            // Capture the load failure so the UI can show a distinct error state
+            // instead of the "no tasks yet" empty state (which reads as success).
+            this._wireError = result.error;
+            this._data = [];
         }
     }
 
     get isEmpty() {
         return this._data.length === 0;
+    }
+
+    get hasWireError() {
+        return !!this._wireError;
+    }
+
+    // Distinct from the error state: a genuinely empty checklist, not a failed load.
+    get showEmpty() {
+        return this._data.length === 0 && !this._wireError;
+    }
+
+    get wireErrorMessage() {
+        const e = this._wireError;
+        return (e && e.body && e.body.message) || 'Unable to load the task checklist. Please refresh and try again.';
     }
 
     // ---- Phase layer ----
@@ -236,9 +258,23 @@ export default class TransactionTaskGroups extends LightningElement {
     }
     async confirmComplete() {
         const { taskId, notes } = this._confirm;
-        this._confirm = {};
-        await completeTask({ taskId, notes });
-        await refreshApex(this._wire);
+        try {
+            await completeTask({ taskId, notes });
+            // Only dismiss the dialog once the write actually succeeds.
+            this._confirm = {};
+            await refreshApex(this._wire);
+        } catch (e) {
+            // The optimistic checkbox was already reverted to unchecked in handleCheck,
+            // so the row correctly reads incomplete — surface WHY it did not complete
+            // instead of silently swallowing the failure.
+            const msg = (e && e.body && e.body.message) || 'Could not complete the task. Please try again.';
+            this.dispatchEvent(new ShowToastEvent({
+                title: 'Task not completed',
+                message: msg,
+                variant: 'error',
+                mode: 'sticky'
+            }));
+        }
     }
 
     // ---- View-details dialog (read-only, for completed tasks) ----

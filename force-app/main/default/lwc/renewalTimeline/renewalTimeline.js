@@ -27,12 +27,24 @@ export default class RenewalTimeline extends LightningElement {
     adding = false;
     upMethod = '';
     upDetails = '';
-    error = '';
+    error = '';        // composer (save) error
+    loadError;         // timeline wire (read) error — kept separate from the composer error
 
     @wire(getTimeline, { renewalId: '$recordId' })
     wired(result) {
         this._wired = result;
-        if (result.data) this.view = result.data;
+        if (result.data) {
+            this.view = result.data;
+            this.loadError = undefined;
+        } else if (result.error) {
+            this.loadError = result.error;
+        }
+    }
+
+    get hasLoadError() { return !!this.loadError; }
+    get loadErrorMessage() {
+        const e = this.loadError;
+        return (e && e.body && e.body.message) || 'Unable to load the renewal timeline.';
     }
 
     get count() { return this.view && this.view.entries ? this.view.entries.length : 0; }

@@ -2,13 +2,19 @@
     <lightning-card icon-name="standard:lead">
         <span slot="title">Recent Leads ({count})</span>
 
-        <c-list-datatable
-            key-field="id"
-            data={rows}
-            columns={columns}
-            column-widths-mode="auto"
-            hide-checkbox-column>
-        </c-list-datatable>
+        <template if:true={hasError}>
+            <div class="lv-error slds-p-around_medium slds-text-color_error" role="alert">{errorMessage}</div>
+        </template>
+
+        <template if:false={hasError}>
+            <c-list-datatable
+                key-field="id"
+                data={rows}
+                columns={columns}
+                column-widths-mode="auto"
+                hide-checkbox-column>
+            </c-list-datatable>
+        </template>
 
         <div slot="footer" class="view-all-footer">
             <a href={listUrl} onclick={viewAll}>View All</a>

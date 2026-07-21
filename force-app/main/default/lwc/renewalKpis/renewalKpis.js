@@ -4,7 +4,21 @@ import getHomeKpis from '@salesforce/apex/LeaseRenewalController.getHomeKpis';
 // Top KPI strip on the Lease Renewals home page.
 export default class RenewalKpis extends LightningElement {
     k;
-    @wire(getHomeKpis) wired({ data }) { if (data) this.k = data; }
+    error;
+    @wire(getHomeKpis) wired({ data, error }) {
+        if (data) {
+            this.k = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+        }
+    }
+
+    get hasError() { return !!this.error; }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load renewal metrics.';
+    }
 
     get cards() {
         const k = this.k || {};

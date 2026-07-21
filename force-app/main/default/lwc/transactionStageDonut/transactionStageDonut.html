@@ -29,7 +29,10 @@
                     </template>
                 </ul>
             </template>
-            <template if:false={hasData}>
+            <template if:true={hasError}>
+                <div class="empty slds-text-color_error" role="alert">{errorMessage}</div>
+            </template>
+            <template if:true={showEmpty}>
                 <div class="empty">No active transactions</div>
             </template>
         </div>

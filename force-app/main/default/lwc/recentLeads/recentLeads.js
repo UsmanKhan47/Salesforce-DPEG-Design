@@ -37,13 +37,26 @@ const COLUMNS = [
 export default class RecentLeads extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
     data;
+    error;
     listUrl = '#';
 
     @wire(getFunnel)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.data = undefined;
         }
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load recent leads.';
     }
 
     connectedCallback() {

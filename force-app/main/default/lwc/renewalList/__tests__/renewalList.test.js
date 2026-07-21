@@ -104,14 +104,16 @@ describe('c-renewal-list', () => {
         expect(table.data[1].contactText).toBe('—');
     });
 
-    it('ERROR BRANCH: keeps the empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state and hides the datatable when the wire errors', async () => {
         const element = createComponent();
 
-        getRecentRenewals.error();
+        getRecentRenewals.error({ message: 'Renewal feed unavailable.' });
         await Promise.resolve();
 
-        const table = element.shadowRoot.querySelector('c-list-datatable');
-        expect(table.data.length).toBe(0);
+        expect(element.shadowRoot.querySelector('c-list-datatable')).toBeNull();
+        const err = element.shadowRoot.querySelector('.lv-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Renewal feed unavailable.');
         expect(
             element.shadowRoot.querySelector('.hdr-title').textContent
         ).toBe('Recent Renewals (0)');

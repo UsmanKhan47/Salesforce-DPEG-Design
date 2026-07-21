@@ -14,12 +14,24 @@ PHASES.forEach((p) => p.letters.forEach((l) => { PHASE_BY_LETTER[l] = p.key; }))
 export default class TransactionPhaseCards extends LightningElement {
     @api recordId;
     _data = [];
+    error;
 
     @wire(getTaskGroups, { transactionId: '$recordId' })
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this._data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load phase progress.';
     }
 
     // One card per phase: complete/total progress, green once every task in the phase is done.

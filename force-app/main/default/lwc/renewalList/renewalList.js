@@ -23,8 +23,23 @@ const COLUMNS = [
 export default class RenewalList extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
     _data = [];
+    error;
     listUrl = '#';
-    @wire(getRecentRenewals) wired({ data }) { if (data) this._data = data; }
+    @wire(getRecentRenewals) wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this._data = [];
+        }
+    }
+
+    get hasError() { return !!this.error; }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load recent renewals.';
+    }
 
     connectedCallback() {
         this[NavigationMixin.GenerateUrl](this.listPageRef).then((url) => { this.listUrl = url; });

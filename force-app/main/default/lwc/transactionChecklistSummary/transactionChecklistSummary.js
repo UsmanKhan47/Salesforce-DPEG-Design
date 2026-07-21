@@ -6,12 +6,24 @@ import getTaskGroups from '@salesforce/apex/TransactionTaskController.getTaskGro
 export default class TransactionChecklistSummary extends LightningElement {
     @api recordId;
     _data = [];
+    error;
 
     @wire(getTaskGroups, { transactionId: '$recordId' })
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this._data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load the checklist summary.';
     }
 
     get overall() {

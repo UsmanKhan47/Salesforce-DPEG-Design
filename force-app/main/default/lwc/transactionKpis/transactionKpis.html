@@ -1,15 +1,20 @@
 <template>
     <div class="dashboard-cards">
-        <div class="cards-row">
-            <template for:each={metrics} for:item="metric">
-                <c-stat-card
-                    key={metric.key}
-                    value={metric.displayValue}
-                    label={metric.label}
-                    icon-name={metric.iconName}
-                    icon-color={metric.iconColor}>
-                </c-stat-card>
-            </template>
-        </div>
+        <template if:true={hasError}>
+            <div class="kpi-error slds-p-around_medium slds-text-color_error" role="alert">{errorMessage}</div>
+        </template>
+        <template if:false={hasError}>
+            <div class="cards-row">
+                <template for:each={metrics} for:item="metric">
+                    <c-stat-card
+                        key={metric.key}
+                        value={metric.displayValue}
+                        label={metric.label}
+                        icon-name={metric.iconName}
+                        icon-color={metric.iconColor}>
+                    </c-stat-card>
+                </template>
+            </div>
+        </template>
     </div>
 </template>

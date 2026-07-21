@@ -117,13 +117,17 @@ describe('c-renewal-attention', () => {
         );
     });
 
-    it('ERROR BRANCH: degrades to the empty state without throwing', async () => {
+    it('ERROR BRANCH: surfaces a distinct error message instead of the on-track state', async () => {
         const element = createComponent();
 
-        getAttention.error();
+        getAttention.error({ message: 'Attention feed unavailable.' });
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.ra-empty')).not.toBeNull();
+        const state = element.shadowRoot.querySelector('.ra-empty');
+        expect(state).not.toBeNull();
+        // Distinct from the benign "on track" copy — a load failure is announced.
+        expect(state.textContent).toBe('Attention feed unavailable.');
+        expect(state.getAttribute('role')).toBe('alert');
         expect(element.shadowRoot.querySelectorAll('.ra-row').length).toBe(0);
     });
 

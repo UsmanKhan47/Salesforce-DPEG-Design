@@ -24,7 +24,10 @@
                 </template>
             </div>
         </template>
-        <template if:false={hasRows}>
+        <template if:true={hasError}>
+            <div class="ra-empty slds-text-color_error" role="alert">{errorMessage}</div>
+        </template>
+        <template if:true={showEmpty}>
             <div class="ra-empty">Every renewal is on track.</div>
         </template>
     </article>

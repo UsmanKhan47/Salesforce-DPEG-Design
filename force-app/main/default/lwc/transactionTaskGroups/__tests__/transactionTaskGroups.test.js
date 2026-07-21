@@ -324,15 +324,54 @@ describe('c-transaction-task-groups', () => {
         });
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('WIRE ERROR BRANCH: renders a distinct inline error state (not the empty state)', async () => {
         const element = createComponent();
 
         getTaskGroups.error();
         await Promise.resolve();
 
-        const empty = element.shadowRoot.querySelector('.tg-empty');
-        expect(empty).not.toBeNull();
-        expect(empty.textContent).toContain('No tasks yet.');
+        // Distinct error card is shown...
+        const err = element.shadowRoot.querySelector('.tg-error');
+        expect(err).not.toBeNull();
+        // ...and the "no tasks yet" empty state is NOT shown (would read as success).
+        expect(element.shadowRoot.querySelector('.tg-empty')).toBeNull();
+    });
+
+    it('CONFIRM ERROR: a failed completeTask surfaces an error toast and leaves the task incomplete', async () => {
+        completeTask.mockRejectedValue({
+            body: { message: 'Server refused the update.' }
+        });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getTaskGroups.emit(GROUPS);
+        await Promise.resolve();
+
+        // Check the open regular task (t2) -> confirmation dialog opens.
+        const checkbox = element.shadowRoot.querySelector(
+            'input.tg-check[data-id="t2"]'
+        );
+        checkbox.checked = true;
+        checkbox.dispatchEvent(new CustomEvent('change'));
+        await Promise.resolve();
+
+        // Click "Confirm" -> completeTask rejects.
+        brandFooterButton(element).click();
+        // Drain the rejected promise chain + the re-render (one macrotask).
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(completeTask).toHaveBeenCalledTimes(1);
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        const toast = toastHandler.mock.calls[0][0].detail;
+        expect(toast.variant).toBe('error');
+        expect(toast.message).toBe('Server refused the update.');
+
+        // The optimistic checkbox stays unchecked (task not completed).
+        expect(
+            element.shadowRoot.querySelector('input.tg-check[data-id="t2"]').checked
+        ).toBe(false);
     });
 
     it('is accessible (empty state)', async () => {

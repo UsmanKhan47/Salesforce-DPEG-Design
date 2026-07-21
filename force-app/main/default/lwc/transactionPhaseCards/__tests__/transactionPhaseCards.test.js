@@ -99,18 +99,16 @@ describe('c-transaction-phase-cards', () => {
         expect(close.done).toBe(false);
     });
 
-    it('ERROR BRANCH: keeps the zeroed cards when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error message instead of the phase cards', async () => {
         const element = createComponent();
 
-        getTaskGroups.error();
+        getTaskGroups.error({ message: 'Phase progress unavailable.' });
         await Promise.resolve();
 
-        expect(cards(element).map((c) => c.value)).toEqual([
-            '0 / 0',
-            '0 / 0',
-            '0 / 0',
-            '0 / 0'
-        ]);
+        expect(cards(element).length).toBe(0);
+        const err = element.shadowRoot.querySelector('.kpi-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Phase progress unavailable.');
     });
 
     it('is accessible', async () => {

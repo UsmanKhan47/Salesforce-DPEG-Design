@@ -4,16 +4,21 @@
             <lightning-icon icon-name="standard:task" size="small" class="hd__icon"></lightning-icon>
             <span class="hd__title">Overall Tasks</span>
         </div>
-        <div class="cards-grid">
-            <template for:each={stats} for:item="stat">
-                <c-onboarding-card-child
-                    key={stat.key}
-                    value={stat.value}
-                    label={stat.label}
-                    icon-name={stat.iconName}
-                    icon-color={stat.iconColor}>
-                </c-onboarding-card-child>
-            </template>
-        </div>
+        <template if:true={hasError}>
+            <div class="kpi-error slds-p-around_medium slds-text-color_error" role="alert">{errorMessage}</div>
+        </template>
+        <template if:false={hasError}>
+            <div class="cards-grid">
+                <template for:each={stats} for:item="stat">
+                    <c-onboarding-card-child
+                        key={stat.key}
+                        value={stat.value}
+                        label={stat.label}
+                        icon-name={stat.iconName}
+                        icon-color={stat.iconColor}>
+                    </c-onboarding-card-child>
+                </template>
+            </div>
+        </template>
     </div>
 </template>

@@ -101,18 +101,16 @@ describe('c-transaction-task-cards', () => {
         expect(cards(element)[3].iconColor).toBe('#c23934'); // red when > 0
     });
 
-    it('ERROR BRANCH: keeps the zeroed defaults when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error message instead of the task tiles', async () => {
         const element = createComponent();
 
-        getTaskSummary.error();
+        getTaskSummary.error({ message: 'Task metrics unavailable.' });
         await Promise.resolve();
 
-        expect(cards(element).map((c) => c.value)).toEqual([
-            '0',
-            '0',
-            '0',
-            '0'
-        ]);
+        expect(cards(element).length).toBe(0);
+        const err = element.shadowRoot.querySelector('.kpi-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe('Task metrics unavailable.');
     });
 
     it('is accessible', async () => {
