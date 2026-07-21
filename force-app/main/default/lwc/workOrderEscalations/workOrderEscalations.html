@@ -11,6 +11,12 @@
                 <div class="es-sub">Critical / High that breached SLA</div>
             </div>
         </div>
+        <template if:true={error}>
+            <div class="slds-p-around_x-small slds-text-color_error slds-grid slds-grid_vertical-align-center" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error" class="slds-m-right_x-small"></lightning-icon>
+                <span>{errorMessage}</span>
+            </div>
+        </template>
         <template if:true={hasRows}>
             <div class="es-body">
                 <template for:each={rows} for:item="r">

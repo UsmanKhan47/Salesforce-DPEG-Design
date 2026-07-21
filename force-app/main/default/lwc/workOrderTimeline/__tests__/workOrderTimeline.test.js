@@ -126,7 +126,7 @@ describe('c-work-order-timeline', () => {
         expect(element.shadowRoot.querySelector('.wot-empty')).not.toBeNull();
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: keeps the empty state and surfaces an inline alert when the wire errors', async () => {
         const element = createComponent();
 
         getActivity.error();
@@ -134,6 +134,10 @@ describe('c-work-order-timeline', () => {
 
         expect(element.shadowRoot.querySelector('.wot-empty')).not.toBeNull();
         expect(element.shadowRoot.querySelectorAll('.wot-entry').length).toBe(0);
+        // Additive error banner appears alongside the existing empty content.
+        expect(
+            element.shadowRoot.querySelector('[role="alert"]')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {

@@ -104,7 +104,7 @@ describe('c-work-order-list', () => {
         expect(table.data[1].propUnit).toBe('Midtown Tower');
     });
 
-    it('ERROR BRANCH: keeps the empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: keeps the empty datatable and surfaces an inline alert when the wire errors', async () => {
         const element = createComponent();
 
         getRecentWorkOrders.error();
@@ -115,6 +115,10 @@ describe('c-work-order-list', () => {
         expect(
             element.shadowRoot.querySelector('.hdr-title').textContent
         ).toBe('Open Work Orders (0)');
+        // Additive error banner appears without hiding the existing empty table.
+        expect(
+            element.shadowRoot.querySelector('[role="alert"]')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {

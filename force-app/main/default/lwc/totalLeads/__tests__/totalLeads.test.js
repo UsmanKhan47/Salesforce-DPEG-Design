@@ -87,7 +87,7 @@ describe('c-total-leads', () => {
         expect(values).toEqual(['0', '0', '6', '0', '0']);
     });
 
-    it('ERROR BRANCH: keeps the five 0 cards when the wire errors', async () => {
+    it('ERROR BRANCH: keeps the five 0 cards and surfaces an inline alert when the wire errors', async () => {
         const element = createComponent();
 
         getFunnel.error();
@@ -95,6 +95,10 @@ describe('c-total-leads', () => {
 
         const values = [...cards(element)].map((c) => c.value);
         expect(values).toEqual(['0', '0', '0', '0', '0']);
+        // Additive error banner appears without hiding the existing zero cards.
+        expect(
+            element.shadowRoot.querySelector('[role="alert"]')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {

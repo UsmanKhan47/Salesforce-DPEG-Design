@@ -1,6 +1,12 @@
 <template>
     <lightning-card>
         <span slot="title">Opportunities by Stage</span>
+        <template lwc:if={error}>
+            <div class="slds-p-horizontal_small slds-p-vertical_x-small slds-text-color_error slds-grid slds-grid_vertical-align-center" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error" class="slds-m-right_x-small"></lightning-icon>
+                <span>{errorMessage}</span>
+            </div>
+        </template>
         <div class="cards-wrap">
             <div class="cards-grid">
                 <template for:each={metrics} for:item="metric">

@@ -14,12 +14,21 @@ const STAGE_META = [
 
 export default class TotalLeads extends LightningElement {
     data;
+    error;
 
     @wire(getFunnel)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load leads by stage.';
     }
 
     get metrics() {

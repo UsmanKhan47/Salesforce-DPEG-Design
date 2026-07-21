@@ -16,12 +16,21 @@ const STAGE_META = [
 
 export default class TotalOpportunities extends LightningElement {
     data;
+    error;
 
     @wire(getStageCounts)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load opportunities by stage.';
     }
 
     get metrics() {

@@ -7,7 +7,16 @@ const pill = (bg, fg) => `display:inline-flex;align-items:center;gap:5px;backgro
 // Right-column widget: open work orders nobody has acted on yet.
 export default class WorkOrderUntouched extends LightningElement {
     _data = [];
-    @wire(getUntouched) wired({ data }) { if (data) this._data = data; }
+    error;
+    @wire(getUntouched) wired({ data, error }) {
+        if (data) { this._data = data; this.error = undefined; }
+        else if (error) { this.error = error; }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load untouched work orders.';
+    }
 
     get rows() {
         return this._data.map((w) => {

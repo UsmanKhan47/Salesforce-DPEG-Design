@@ -4,7 +4,16 @@ import getHomeKpis from '@salesforce/apex/WorkOrderController.getHomeKpis';
 // Top KPI strip on the Work Orders home page.
 export default class WorkOrderKpis extends LightningElement {
     k;
-    @wire(getHomeKpis) wired({ data }) { if (data) this.k = data; }
+    error;
+    @wire(getHomeKpis) wired({ data, error }) {
+        if (data) { this.k = data; this.error = undefined; }
+        else if (error) { this.error = error; }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load work order KPIs.';
+    }
 
     get cards() {
         const k = this.k || {};

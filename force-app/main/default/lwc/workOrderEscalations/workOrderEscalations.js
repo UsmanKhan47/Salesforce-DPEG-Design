@@ -8,7 +8,16 @@ const dot = (c) => `width:6px;height:6px;border-radius:50%;background:${c};flex-
 // Right-column widget: Critical/High work orders that have breached SLA.
 export default class WorkOrderEscalations extends LightningElement {
     _data = [];
-    @wire(getEscalations) wired({ data }) { if (data) this._data = data; }
+    error;
+    @wire(getEscalations) wired({ data, error }) {
+        if (data) { this._data = data; this.error = undefined; }
+        else if (error) { this.error = error; }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load escalations.';
+    }
 
     get rows() {
         return this._data.map((w) => {

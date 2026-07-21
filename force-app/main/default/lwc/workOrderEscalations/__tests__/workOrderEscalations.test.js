@@ -109,7 +109,7 @@ describe('c-work-order-escalations', () => {
         expect(element.shadowRoot.querySelector('.es-empty')).toBeNull();
     });
 
-    it('ERROR BRANCH: degrades to the empty state without throwing', async () => {
+    it('ERROR BRANCH: keeps the empty state and surfaces an inline alert without throwing', async () => {
         const element = createComponent();
 
         getEscalations.error();
@@ -117,6 +117,10 @@ describe('c-work-order-escalations', () => {
 
         expect(element.shadowRoot.querySelector('.es-empty')).not.toBeNull();
         expect(element.shadowRoot.querySelectorAll('.es-row').length).toBe(0);
+        // Additive error banner appears alongside the existing empty content.
+        expect(
+            element.shadowRoot.querySelector('[role="alert"]')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {

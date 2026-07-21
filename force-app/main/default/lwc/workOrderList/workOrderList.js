@@ -19,8 +19,17 @@ const COLUMNS = [
 export default class WorkOrderList extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
     _data = [];
+    error;
     listUrl = '#';
-    @wire(getRecentWorkOrders) wired({ data }) { if (data) this._data = data; }
+    @wire(getRecentWorkOrders) wired({ data, error }) {
+        if (data) { this._data = data; this.error = undefined; }
+        else if (error) { this.error = error; }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load open work orders.';
+    }
 
     connectedCallback() {
         this[NavigationMixin.GenerateUrl](this.listPageRef).then((url) => { this.listUrl = url; });

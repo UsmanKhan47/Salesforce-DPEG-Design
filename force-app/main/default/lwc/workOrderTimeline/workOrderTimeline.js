@@ -18,10 +18,17 @@ const badge = (kind) => {
 export default class WorkOrderTimeline extends LightningElement {
     @api recordId;
     view;
+    error;
 
     @wire(getActivity, { workOrderId: '$recordId' })
-    wired({ data }) {
-        if (data) this.view = data;
+    wired({ data, error }) {
+        if (data) { this.view = data; this.error = undefined; }
+        else if (error) { this.error = error; }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unable to load activity history.';
     }
 
     get count() { return this.view && this.view.entries ? this.view.entries.length : 0; }

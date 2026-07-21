@@ -94,13 +94,17 @@ describe('c-total-opportunities', () => {
         expect(values).not.toContain('99');
     });
 
-    it('ERROR BRANCH: keeps the nine 0 cards when the wire errors', async () => {
+    it('ERROR BRANCH: keeps the nine 0 cards and surfaces an inline alert when the wire errors', async () => {
         const element = createComponent();
 
         getStageCounts.error();
         await Promise.resolve();
 
         expect([...cards(element)].every((c) => c.value === '0')).toBe(true);
+        // Additive error banner appears without hiding the existing zero cards.
+        expect(
+            element.shadowRoot.querySelector('[role="alert"]')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {

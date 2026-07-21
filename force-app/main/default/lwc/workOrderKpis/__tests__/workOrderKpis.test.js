@@ -68,6 +68,21 @@ describe('c-work-order-kpis', () => {
         ]);
     });
 
+    it('ERROR BRANCH: keeps the four 0 cards and surfaces an inline alert when the wire errors', async () => {
+        const element = createComponent();
+
+        getHomeKpis.error();
+        await Promise.resolve();
+
+        const cards = element.shadowRoot.querySelectorAll('c-stat-card');
+        expect(cards.length).toBe(4);
+        expect([...cards].map((c) => c.value)).toEqual([0, 0, 0, 0]);
+        // Additive error banner appears without hiding the existing zero cards.
+        expect(
+            element.shadowRoot.querySelector('[role="alert"]')
+        ).not.toBeNull();
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 

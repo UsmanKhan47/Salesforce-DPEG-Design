@@ -106,7 +106,7 @@ describe('c-work-order-untouched', () => {
         expect(element.shadowRoot.querySelector('.ut-empty')).toBeNull();
     });
 
-    it('ERROR BRANCH: degrades to the empty state without throwing', async () => {
+    it('ERROR BRANCH: keeps the empty state and surfaces an inline alert without throwing', async () => {
         const element = createComponent();
 
         getUntouched.error();
@@ -114,6 +114,10 @@ describe('c-work-order-untouched', () => {
 
         expect(element.shadowRoot.querySelector('.ut-empty')).not.toBeNull();
         expect(element.shadowRoot.querySelectorAll('.ut-row').length).toBe(0);
+        // Additive error banner appears alongside the existing empty content.
+        expect(
+            element.shadowRoot.querySelector('[role="alert"]')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {
