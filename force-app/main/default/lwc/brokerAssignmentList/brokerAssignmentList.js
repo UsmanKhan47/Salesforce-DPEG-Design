@@ -34,10 +34,19 @@ export default class BrokerAssignmentList extends NavigationMixin(LightningEleme
     @api overdueDays = 21;
     columns = COLUMNS;
     _data = [];
+    loadError;
     @track statusFilter = 'all';
     @track sortDesc = true;
 
-    @wire(getAssignments) wired({ data }) { if (data) this._data = data; }
+    @wire(getAssignments) wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this.loadError = undefined;
+        } else if (error) {
+            this.loadError = 'Couldn\'t load broker assignments.';
+            this._data = [];
+        }
+    }
 
     fmt(d) { if (!d) return '—'; const p = String(d).split('-').map(Number); return `${MONTHS[p[1]-1]} ${p[2]}, ${p[0]}`; }
     flagFor(r) {

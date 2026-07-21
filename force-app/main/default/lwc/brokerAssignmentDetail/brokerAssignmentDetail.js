@@ -1,6 +1,7 @@
 import { LightningElement, api, wire, track } from 'lwc';
 import { refreshApex } from '@salesforce/apex';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getDetail from '@salesforce/apex/BrokerAssignmentController.getDetail';
 import getBrokerOptions from '@salesforce/apex/BrokerAssignmentController.getBrokerOptions';
 import logCheckIn from '@salesforce/apex/BrokerAssignmentController.logCheckIn';
@@ -23,6 +24,7 @@ export default class BrokerAssignmentDetail extends LightningElement {
     @api warnDays = 14;
     @api overdueDays = 21;
     d;
+    loadError;
     _wire;
     @track tab = 'details';
     @track replacing = false;
@@ -36,6 +38,10 @@ export default class BrokerAssignmentDetail extends LightningElement {
         this._wire = result;
         if (result.data) {
             this.d = result.data;
+            this.loadError = undefined;
+        } else if (result.error) {
+            this.loadError = (result.error?.body?.message) || 'Couldn\'t load this listing.';
+            this.d = undefined;
         }
     }
     @wire(getBrokerOptions) brokerOpts;
@@ -155,6 +161,12 @@ export default class BrokerAssignmentDetail extends LightningElement {
         try {
             await logCheckIn({ assignmentId: this.recordId });
             await this.refresh();
+        } catch (e) {
+            this.dispatchEvent(new ShowToastEvent({
+                title: 'Log check-in failed',
+                message: (e?.body?.message) || 'Something went wrong. Please try again.',
+                variant: 'error'
+            }));
         } finally {
             this._saving = false;
         }
@@ -178,6 +190,12 @@ export default class BrokerAssignmentDetail extends LightningElement {
             });
             this.replacing = false;
             await this.refresh();
+        } catch (e) {
+            this.dispatchEvent(new ShowToastEvent({
+                title: 'Replace broker failed',
+                message: (e?.body?.message) || 'Something went wrong. Please try again.',
+                variant: 'error'
+            }));
         } finally {
             this._saving = false;
         }

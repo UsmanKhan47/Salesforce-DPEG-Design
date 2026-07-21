@@ -5,13 +5,22 @@ import getOutreachSummary from '@salesforce/apex/BovController.getOutreachSummar
 export default class BovOutreach extends LightningElement {
     @api recordId;
     summary;
+    loadError;
 
     // NDA status shown in the footer row. Hard-set to 'Signed' for now; swap to
     // 'Received' / 'Pending' (or wire to the NDA record) when the data is available.
     _ndaStatus = 'Signed';
 
     @wire(getOutreachSummary, { dispositionId: '$recordId' })
-    wired({ data }) { if (data) this.summary = data; }
+    wired({ data, error }) {
+        if (data) {
+            this.summary = data;
+            this.loadError = undefined;
+        } else if (error) {
+            this.loadError = 'Couldn\'t load the BOV outreach summary.';
+            this.summary = undefined;
+        }
+    }
 
     get ndaStatus() { return this._ndaStatus; }
     get ndaPillClass() {

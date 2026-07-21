@@ -31,12 +31,17 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
     @api recordId;
     columns = COLUMNS;
     _data;
+    loadError;
     listUrl = '#';
 
     @wire(getSubmissions, { dispositionId: '$recordId' })
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this._data = data;
+            this.loadError = undefined;
+        } else if (error) {
+            this.loadError = 'Couldn\'t load BOV submissions.';
+            this._data = [];
         }
     }
 

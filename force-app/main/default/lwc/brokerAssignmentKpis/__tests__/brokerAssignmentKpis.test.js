@@ -70,13 +70,16 @@ describe('c-broker-assignment-kpis', () => {
         ]);
     });
 
-    it('ERROR BRANCH: keeps the zero tiles when the wire errors', async () => {
+    it('ERROR BRANCH: keeps the zero tiles and shows an error banner when the wire errors', async () => {
         const element = createComponent();
 
         getKpis.error();
         await Promise.resolve();
 
         expect(cardValues(element)).toEqual([0, 0, 0]);
+        const banner = element.shadowRoot.querySelector('.kpi-error');
+        expect(banner).not.toBeNull();
+        expect(banner.textContent).toBe("Couldn't load assignment KPIs.");
     });
 
     it('is accessible', async () => {

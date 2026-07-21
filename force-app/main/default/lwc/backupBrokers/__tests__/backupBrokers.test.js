@@ -117,7 +117,7 @@ describe('c-backup-brokers', () => {
         expect(element.shadowRoot.querySelector('.empty-msg')).not.toBeNull();
     });
 
-    it('ERROR BRANCH: degrades to the empty message when the wire errors', async () => {
+    it('ERROR BRANCH: shows a distinct error message when the wire errors', async () => {
         const element = createComponent();
 
         getSubmissions.error();
@@ -126,7 +126,10 @@ describe('c-backup-brokers', () => {
         expect(element.shadowRoot.querySelectorAll('.broker-row').length).toBe(
             0
         );
-        expect(element.shadowRoot.querySelector('.empty-msg')).not.toBeNull();
+        // A dedicated error message renders instead of the "No backup brokers." empty state.
+        const err = element.shadowRoot.querySelector('.error-msg');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe("Couldn't load backup brokers.");
     });
 
     it('is accessible', async () => {

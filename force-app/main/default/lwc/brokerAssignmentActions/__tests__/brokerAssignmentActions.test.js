@@ -181,13 +181,34 @@ describe('c-broker-assignment-actions', () => {
         expect(element.shadowRoot.querySelector('.ba-overlay')).toBeNull();
     });
 
-    it('ERROR BRANCH: stays empty when the detail wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error and no action card when the detail wire errors', async () => {
         const element = createComponent();
 
         getDetail.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.ba-actioncard')).toBeNull();
+        expect(element.shadowRoot.querySelector('.ba-error')).not.toBeNull();
+    });
+
+    it('LOG CHECK-IN ERROR: surfaces an error toast when the Apex call rejects', async () => {
+        logCheckIn.mockRejectedValue({ body: { message: 'Check-in could not be saved.' } });
+        const element = createComponent();
+
+        getDetail.emit(DETAIL_ACTIVE);
+        await Promise.resolve();
+
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        element.shadowRoot.querySelectorAll('.ba-toolbar .ba-btn')[0].click();
+        await flushPromises();
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(
+            'Check-in could not be saved.'
+        );
     });
 
     it('is accessible', async () => {

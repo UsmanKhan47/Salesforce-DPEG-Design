@@ -3,7 +3,15 @@ import getKpis from '@salesforce/apex/BrokerAssignmentController.getKpis';
 
 export default class BrokerAssignmentKpis extends LightningElement {
     k;
-    @wire(getKpis) wired({ data }) { if (data) this.k = data; }
+    loadError;
+    @wire(getKpis) wired({ data, error }) {
+        if (data) {
+            this.k = data;
+            this.loadError = undefined;
+        } else if (error) {
+            this.loadError = 'Couldn\'t load assignment KPIs.';
+        }
+    }
     get cards() {
         const k = this.k || {};
         return [

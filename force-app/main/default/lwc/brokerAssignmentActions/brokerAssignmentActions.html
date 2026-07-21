@@ -1,4 +1,11 @@
 <template>
+    <template if:true={loadError}>
+        <div class="ba-card ba-error" role="alert">
+            <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+            <span>{loadError}</span>
+        </div>
+    </template>
+
     <template if:true={hasData}>
         <template if:true={canReplace}>
             <div class="ba-card ba-actioncard">

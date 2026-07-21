@@ -1,4 +1,11 @@
 <template>
+    <template if:true={loadError}>
+        <div class="ba-card ba-error" role="alert">
+            <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+            <span>{loadError}</span>
+        </div>
+    </template>
+
     <template if:true={hasData}>
         <div class="ba-card ba-histcard">
             <div class="ba-histbody">
@@ -42,7 +49,7 @@
         <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="ba-note-heading" class="slds-modal slds-fade-in-open">
             <div class="slds-modal__container">
                 <header class="slds-modal__header">
-                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeNote}>
+                    <button class="slds-button slds-button_icon slds-modal__close" title="Close" onclick={closeNote}>
                         <lightning-icon icon-name="utility:close" size="small" variant="inverse"></lightning-icon>
                     </button>
                     <h2 id="ba-note-heading" class="slds-modal__title slds-hyphenate">Notes</h2>

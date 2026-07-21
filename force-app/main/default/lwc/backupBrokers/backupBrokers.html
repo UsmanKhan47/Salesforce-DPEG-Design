@@ -11,6 +11,9 @@
                     </div>
                 </div>
             </template>
+            <template if:true={loadError}>
+                <div class="empty-msg error-msg" role="alert">{loadError}</div>
+            </template>
             <template if:true={isEmpty}>
                 <div class="empty-msg">No backup brokers.</div>
             </template>

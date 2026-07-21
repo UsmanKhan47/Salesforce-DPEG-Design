@@ -10,13 +10,20 @@ export default class BrokerAssignmentNotes extends LightningElement {
     @api recordId;
     draft = '';
     saving = false;
+    loadError;
     _wired;
     _notes = [];
 
     @wire(getNotes, { recordId: '$recordId' })
     wired(result) {
         this._wired = result;
-        if (result.data) this._notes = result.data;
+        if (result.data) {
+            this._notes = result.data;
+            this.loadError = undefined;
+        } else if (result.error) {
+            this.loadError = (result.error?.body?.message) || 'Couldn\'t load notes.';
+            this._notes = [];
+        }
     }
 
     get notes() {
@@ -29,6 +36,7 @@ export default class BrokerAssignmentNotes extends LightningElement {
     }
     get count() { return this._notes.length; }
     get hasNotes() { return this._notes.length > 0; }
+    get showEmpty() { return !this.loadError && this._notes.length === 0; }
     get cannotPost() { return this.saving || !this.draft || !this.draft.trim(); }
 
     onDraftChange(event) { this.draft = event.target.value; }

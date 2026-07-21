@@ -43,7 +43,10 @@
                     </template>
                 </ul>
             </template>
-            <template if:false={hasNotes}>
+            <template if:true={loadError}>
+                <div class="ban-empty ban-error" role="alert">{loadError}</div>
+            </template>
+            <template if:true={showEmpty}>
                 <div class="ban-empty">No notes yet — add the first one above.</div>
             </template>
         </div>

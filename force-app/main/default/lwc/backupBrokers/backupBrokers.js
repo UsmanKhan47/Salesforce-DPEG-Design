@@ -5,9 +5,18 @@ import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 export default class BackupBrokers extends LightningElement {
     @api recordId;
     _data;
+    loadError;
 
     @wire(getSubmissions, { dispositionId: '$recordId' })
-    wired({ data }) { if (data) this._data = data; }
+    wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this.loadError = undefined;
+        } else if (error) {
+            this.loadError = 'Couldn\'t load backup brokers.';
+            this._data = [];
+        }
+    }
 
     get rows() {
         if (!this._data) return [];
@@ -22,5 +31,5 @@ export default class BackupBrokers extends LightningElement {
             }));
     }
 
-    get isEmpty() { return this.rows.length === 0; }
+    get isEmpty() { return !this.loadError && this.rows.length === 0; }
 }

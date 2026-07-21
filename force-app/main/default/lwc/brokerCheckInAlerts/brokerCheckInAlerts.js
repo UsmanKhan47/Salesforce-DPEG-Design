@@ -8,7 +8,15 @@ const TILES = [
 
 export default class BrokerCheckInAlerts extends LightningElement {
     a;
-    @wire(getAlerts) wired({ data }) { if (data) this.a = data; }
+    loadError;
+    @wire(getAlerts) wired({ data, error }) {
+        if (data) {
+            this.a = data;
+            this.loadError = undefined;
+        } else if (error) {
+            this.loadError = 'Couldn\'t load check-in alerts.';
+        }
+    }
     get tiles() {
         const a = this.a || {};
         return TILES.map(t => ({

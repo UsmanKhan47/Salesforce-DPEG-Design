@@ -129,13 +129,14 @@ describe('c-broker-assignment-history', () => {
         );
     });
 
-    it('ERROR BRANCH: stays empty when the wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error and no history card when the wire errors', async () => {
         const element = createComponent();
 
         getDetail.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.ba-histcard')).toBeNull();
+        expect(element.shadowRoot.querySelector('.ba-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

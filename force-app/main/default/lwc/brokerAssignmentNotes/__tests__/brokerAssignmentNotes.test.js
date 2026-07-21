@@ -135,13 +135,17 @@ describe('c-broker-assignment-notes', () => {
         );
     });
 
-    it('ERROR BRANCH: keeps the empty state when the notes wire errors', async () => {
+    it('ERROR BRANCH: shows a distinct error message when the notes wire errors', async () => {
         const element = createComponent();
 
         getNotes.error();
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.ban-empty')).not.toBeNull();
+        // The composer stays available; a dedicated error message replaces the
+        // "No notes yet" empty state.
+        const err = element.shadowRoot.querySelector('.ban-error');
+        expect(err).not.toBeNull();
+        expect(element.shadowRoot.querySelector('lightning-textarea')).not.toBeNull();
     });
 
     it('is accessible', async () => {

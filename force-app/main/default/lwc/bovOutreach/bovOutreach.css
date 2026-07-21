@@ -18,6 +18,7 @@
     gap: 12px;
 }
 .card-title { font-weight: var(--slds-g-font-weight-7, 700); font-size: var(--slds-g-font-scale-base, 13px); color: var(--slds-g-color-on-surface-2, #181818); }
+.error-card { padding: var(--slds-g-spacing-4, 16px) 20px; color: var(--slds-g-color-error-container-1, #8B1A1A); font-size: var(--slds-g-font-scale-neg-1, 12px); }
 .card-sub { font-size: 11px; color: var(--slds-g-color-neutral-base-60, #8a96a3); margin-top: 3px; }
 .matrix-badge {
     display: inline-flex;

@@ -16,6 +16,9 @@
             </div>
             <lightning-button variant="brand" label="New Assignment" icon-name="utility:add" onclick={newAssignment}></lightning-button>
         </div>
+        <template if:true={loadError}>
+            <div class="lst-error" role="alert">{loadError}</div>
+        </template>
         <c-list-datatable key-field="id" data={rows} columns={columns} column-widths-mode="fixed" hide-checkbox-column
             sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}></c-list-datatable>
         <div slot="footer" class="note">Records are never deleted — closed listings stay visible by changing status. Click any row to open it.</div>

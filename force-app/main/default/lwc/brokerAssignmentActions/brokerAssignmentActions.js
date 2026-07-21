@@ -1,6 +1,7 @@
 import { LightningElement, api, wire, track } from 'lwc';
 import { refreshApex } from '@salesforce/apex';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getDetail from '@salesforce/apex/BrokerAssignmentController.getDetail';
 import getBrokerOptions from '@salesforce/apex/BrokerAssignmentController.getBrokerOptions';
 import logCheckIn from '@salesforce/apex/BrokerAssignmentController.logCheckIn';
@@ -9,6 +10,7 @@ import replaceBroker from '@salesforce/apex/BrokerAssignmentController.replaceBr
 export default class BrokerAssignmentActions extends LightningElement {
     @api recordId;
     d;
+    loadError;
     _wire;
     @track replacing = false;
     @track repBrokerId;
@@ -20,6 +22,10 @@ export default class BrokerAssignmentActions extends LightningElement {
         this._wire = result;
         if (result.data) {
             this.d = result.data;
+            this.loadError = undefined;
+        } else if (result.error) {
+            this.loadError = (result.error?.body?.message) || 'Couldn\'t load this listing.';
+            this.d = undefined;
         }
     }
     @wire(getBrokerOptions) brokerOpts;
@@ -45,6 +51,12 @@ export default class BrokerAssignmentActions extends LightningElement {
         try {
             await logCheckIn({ assignmentId: this.recordId });
             await this.refresh();
+        } catch (e) {
+            this.dispatchEvent(new ShowToastEvent({
+                title: 'Log check-in failed',
+                message: (e?.body?.message) || 'Something went wrong. Please try again.',
+                variant: 'error'
+            }));
         } finally {
             this._saving = false;
         }
@@ -66,6 +78,12 @@ export default class BrokerAssignmentActions extends LightningElement {
             });
             this.replacing = false;
             await this.refresh();
+        } catch (e) {
+            this.dispatchEvent(new ShowToastEvent({
+                title: 'Replace broker failed',
+                message: (e?.body?.message) || 'Something went wrong. Please try again.',
+                variant: 'error'
+            }));
         } finally {
             this._saving = false;
         }

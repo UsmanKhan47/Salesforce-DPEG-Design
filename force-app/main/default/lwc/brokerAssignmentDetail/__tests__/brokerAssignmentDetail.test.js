@@ -213,13 +213,44 @@ describe('c-broker-assignment-detail', () => {
         });
     });
 
-    it('ERROR BRANCH: stays empty when the detail wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error and no tab card when the detail wire errors', async () => {
         const element = createComponent();
 
         getDetail.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.ba-tabcard')).toBeNull();
+        expect(element.shadowRoot.querySelector('.ba-error')).not.toBeNull();
+    });
+
+    it('REPLACE ERROR: surfaces an error toast and keeps the modal open when Apex rejects', async () => {
+        replaceBroker.mockRejectedValue({ body: { message: 'Replacement failed.' } });
+        const element = createComponent();
+
+        getDetail.emit(DETAIL);
+        getBrokerOptions.emit(BROKER_OPTIONS);
+        await Promise.resolve();
+
+        element.shadowRoot.querySelectorAll('.ba-toolbar .ba-btn')[1].click();
+        await Promise.resolve();
+
+        const comboboxes = element.shadowRoot.querySelectorAll('lightning-combobox');
+        comboboxes[0].dispatchEvent(
+            new CustomEvent('change', { detail: { value: BROKER_ID } })
+        );
+        await Promise.resolve();
+
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        element.shadowRoot.querySelector('.ba-btn--primary').click();
+        await flushPromises();
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe('Replacement failed.');
+        // Modal stays open so the user can retry.
+        expect(element.shadowRoot.querySelector('.ba-overlay')).not.toBeNull();
     });
 
     it('is accessible', async () => {

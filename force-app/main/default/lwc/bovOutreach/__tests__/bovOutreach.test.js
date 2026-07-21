@@ -100,6 +100,18 @@ describe('c-bov-outreach', () => {
         expect(pill.className).toContain('nda-signed');
     });
 
+    it('ERROR BRANCH: renders an error card instead of the summary when the wire errors', async () => {
+        const element = createComponent();
+
+        getOutreachSummary.error();
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelector('.card-title')).toBeNull();
+        const err = element.shadowRoot.querySelector('.error-card');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toBe("Couldn't load the BOV outreach summary.");
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 

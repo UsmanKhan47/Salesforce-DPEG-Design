@@ -12,6 +12,10 @@
             <span class="ca-title">Alerts</span>
         </div>
 
+        <template if:true={loadError}>
+            <div class="ca-error" role="alert">{loadError}</div>
+        </template>
+
         <!-- 2×2 tile grid -->
         <div class="ca-grid">
             <template for:each={tiles} for:item="t">

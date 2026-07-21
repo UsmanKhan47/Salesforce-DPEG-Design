@@ -1,4 +1,8 @@
 <template>
+    <template if:true={loadError}>
+        <div class="card error-card" role="alert">{loadError}</div>
+    </template>
+
     <template if:true={summary}>
         <div class="card">
             <div class="card-header">

@@ -151,6 +151,21 @@ describe('c-broker-assignment-list', () => {
         expect(() => btn.click()).not.toThrow();
     });
 
+    it('ERROR BRANCH: shows an error banner and an empty tracker when the wire errors', async () => {
+        const element = createComponent();
+
+        getAssignments.error();
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelector('.hdr-title').textContent).toBe(
+            'Broker Tracker (0)'
+        );
+        expect(datatable(element).data).toEqual([]);
+        const banner = element.shadowRoot.querySelector('.lst-error');
+        expect(banner).not.toBeNull();
+        expect(banner.textContent).toBe("Couldn't load broker assignments.");
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 

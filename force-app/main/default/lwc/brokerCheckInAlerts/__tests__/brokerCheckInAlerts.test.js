@@ -65,13 +65,16 @@ describe('c-broker-check-in-alerts', () => {
         expect(labels).toEqual(['7 Days Stale', '30 Days Stale']);
     });
 
-    it('ERROR BRANCH: keeps zero tiles when the wire errors', async () => {
+    it('ERROR BRANCH: keeps zero tiles and shows an error banner when the wire errors', async () => {
         const element = createComponent();
 
         getAlerts.error();
         await Promise.resolve();
 
         expect(tileValues(element)).toEqual(['0', '0']);
+        const banner = element.shadowRoot.querySelector('.ca-error');
+        expect(banner).not.toBeNull();
+        expect(banner.textContent).toBe("Couldn't load check-in alerts.");
     });
 
     it('is accessible', async () => {

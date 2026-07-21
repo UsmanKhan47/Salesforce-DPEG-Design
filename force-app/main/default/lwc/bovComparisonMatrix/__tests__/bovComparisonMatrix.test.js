@@ -120,7 +120,7 @@ describe('c-bov-comparison-matrix', () => {
         expect(table.data[1].status).toBe('Backup');
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: shows an error banner and keeps the count at zero', async () => {
         const element = createComponent();
 
         getSubmissions.error();
@@ -131,6 +131,10 @@ describe('c-bov-comparison-matrix', () => {
         expect(
             element.shadowRoot.querySelector('c-list-datatable').data
         ).toEqual([]);
+
+        const banner = element.shadowRoot.querySelector('.matrix-error');
+        expect(banner).not.toBeNull();
+        expect(banner.textContent).toBe("Couldn't load BOV submissions.");
     });
 
     it('populates the "View All" footer link via NavigationMixin.GenerateUrl', async () => {

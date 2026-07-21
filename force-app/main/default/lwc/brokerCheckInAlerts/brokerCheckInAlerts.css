@@ -30,6 +30,12 @@
     color: var(--slds-g-color-on-surface-2, #1A1714);
 }
 
+.ca-error {
+    margin-bottom: 10px;
+    color: var(--slds-g-color-error-container-1, #8B1A1A);
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+}
+
 /* 2×2 tile grid */
 .ca-grid {
     display: grid;

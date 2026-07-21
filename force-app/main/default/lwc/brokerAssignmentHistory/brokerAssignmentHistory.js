@@ -8,11 +8,16 @@ const NOTE_PREVIEW = 60;
 export default class BrokerAssignmentHistory extends LightningElement {
     @api recordId;
     d;
+    loadError;
 
     @wire(getDetail, { assignmentId: '$recordId' })
     wired(result) {
         if (result.data) {
             this.d = result.data;
+            this.loadError = undefined;
+        } else if (result.error) {
+            this.loadError = (result.error?.body?.message) || 'Couldn\'t load the broker history.';
+            this.d = undefined;
         }
     }
 

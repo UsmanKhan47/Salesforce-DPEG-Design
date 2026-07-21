@@ -2,6 +2,10 @@
     <lightning-card icon-name="standard:contract">
         <span slot="title">BOV Comparison Matrix ({count})</span>
 
+        <template if:true={loadError}>
+            <div class="matrix-error" role="alert">{loadError}</div>
+        </template>
+
         <c-list-datatable
             key-field="id"
             data={rows}
