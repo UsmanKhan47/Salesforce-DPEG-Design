@@ -1,22 +1,27 @@
 <template>
     <article class="la-card">
-        <div class="la-hd">
-            <span class="la-title">Listing Activity</span>
-            <span class="la-pill">
-                <span class="la-dot" style={pillDotStyle}></span>
-                <span class="la-pill-txt">{healthLabel}</span>
-            </span>
-        </div>
-        <div class="la-grid">
-            <template for:each={tiles} for:item="t">
-                <div key={t.key} class="la-tile">
-                    <lightning-icon icon-name={t.icon} size="small" style={t.iconStyle} class="la-tile-icon"></lightning-icon>
-                    <span class="la-tile-txt">
-                        <span class="la-tile-val" style={t.valStyle}>{t.value}</span>
-                        <span class="la-tile-lbl">{t.label}</span>
-                    </span>
-                </div>
-            </template>
-        </div>
+        <template lwc:if={hasError}>
+            <div class="la-error slds-text-color_error">Listing activity could not be loaded: {errorMessage}</div>
+        </template>
+        <template lwc:else>
+            <div class="la-hd">
+                <span class="la-title">Listing Activity</span>
+                <span class="la-pill">
+                    <span class="la-dot" style={pillDotStyle}></span>
+                    <span class="la-pill-txt">{healthLabel}</span>
+                </span>
+            </div>
+            <div class="la-grid">
+                <template for:each={tiles} for:item="t">
+                    <div key={t.key} class="la-tile">
+                        <lightning-icon icon-name={t.icon} size="small" style={t.iconStyle} class="la-tile-icon"></lightning-icon>
+                        <span class="la-tile-txt">
+                            <span class="la-tile-val" style={t.valStyle}>{t.value}</span>
+                            <span class="la-tile-lbl">{t.label}</span>
+                        </span>
+                    </div>
+                </template>
+            </div>
+        </template>
     </article>
 </template>

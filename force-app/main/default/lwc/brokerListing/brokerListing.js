@@ -6,9 +6,24 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 export default class BrokerListing extends LightningElement {
     @api recordId;
     listing;
+    error;
 
     @wire(getListing, { dispositionId: '$recordId' })
-    wired({ data }) { if (data) this.listing = data; }
+    wired({ data, error }) {
+        if (data) {
+            this.listing = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.listing = undefined;
+        }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
+    }
+    get showEmpty() { return !this.listing && !this.error; }
 
     get listDateLabel() { return this._fmtDate(this.listing?.listDate); }
     get cfoDateLabel()  { return this._fmtDate(this.listing?.callForOffersDate); }
@@ -24,10 +39,6 @@ export default class BrokerListing extends LightningElement {
     }
 
     get hasWeekLabel() { return !!this.listing?.weekLabel; }
-
-    handleReplaceBroker() {
-        console.log('Replace Broker — stub');
-    }
 
     _fmtDate(d) {
         if (!d) return '—';

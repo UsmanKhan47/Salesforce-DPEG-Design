@@ -16,8 +16,10 @@ export default class BrokerScorecard extends NavigationMixin(LightningElement) {
     wired({ data, error }) {
         if (data) {
             this._data = data;
+            this.error = undefined;
         } else if (error) {
             this.error = error;
+            this._data = [];
         }
     }
 
@@ -51,6 +53,17 @@ export default class BrokerScorecard extends NavigationMixin(LightningElement) {
 
     get hasCards() {
         return this.cards.length > 0;
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
+    }
+    get showEmpty() {
+        return !this.hasCards && !this.error;
     }
 
     viewListings() {

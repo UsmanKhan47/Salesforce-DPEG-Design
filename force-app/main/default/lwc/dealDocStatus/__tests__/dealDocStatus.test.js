@@ -181,17 +181,16 @@ describe('c-deal-doc-status', () => {
         });
     });
 
-    it('ERROR BRANCH: keeps the 3 always-on rows in their empty state on wire error', async () => {
+    it('ERROR BRANCH: renders an inline error state (not the doc rows) on wire error', async () => {
         const element = createComponent();
 
         getDocStatus.error();
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelectorAll('.doc').length).toBe(3);
-        const pills = [...element.shadowRoot.querySelectorAll('.pill')].map(
-            (el) => el.textContent
-        );
-        expect(pills).toEqual(['—', '—', '—']);
+        expect(element.shadowRoot.querySelectorAll('.doc').length).toBe(0);
+        const err = element.shadowRoot.querySelector('.dds-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

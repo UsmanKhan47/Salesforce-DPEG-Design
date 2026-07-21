@@ -1,6 +1,10 @@
 <template>
     <div class="slds-p-around_medium slds-is-relative qa-body">
-        <template if:false={hasData}>
+        <template if:true={loadError}>
+            <div class="qa-load-error slds-text-color_error" role="alert">This listing could not be loaded: {loadError}</div>
+        </template>
+
+        <template if:true={isLoading}>
             <div class="qa-loading">
                 <lightning-spinner alternative-text="Loading" size="small"></lightning-spinner>
             </div>

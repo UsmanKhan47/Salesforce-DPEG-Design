@@ -29,6 +29,13 @@ export default class BrokerReplaceQuickAction extends LightningElement {
     @wire(getBrokerOptions) brokerOpts;
 
     get hasData() { return !!(this._rec && this._rec.data); }
+    // A failed record/broker-options load, surfaced as a user-safe message instead
+    // of leaving the panel stuck on the loading spinner.
+    get loadError() {
+        const e = (this._rec && this._rec.error) || (this.brokerOpts && this.brokerOpts.error);
+        return e ? ((e.body && e.body.message) || 'Unexpected error') : '';
+    }
+    get isLoading() { return !this.hasData && !this.loadError; }
     get status() { return this.hasData ? getFieldValue(this._rec.data, STATUS) : ''; }
     get isActive() { return this.status === 'Active'; }
     get brokerName() { return (this.hasData && getFieldValue(this._rec.data, BROKER_NAME)) || '—'; }

@@ -10,7 +10,6 @@
                     <template if:true={hasWeekLabel}>
                         <span class="risk-badge"><span class="risk-dot"></span>{listing.weekLabel}</span>
                     </template>
-                    <button class="replace-btn" onclick={handleReplaceBroker}>Replace Broker</button>
                 </div>
             </div>
             <div class="cards-grid">
@@ -26,7 +25,10 @@
             </div>
         </div>
     </template>
-    <template if:false={listing}>
+    <template if:true={error}>
+        <div class="empty-card bl-error slds-text-color_error">Broker listing could not be loaded: {errorMessage}</div>
+    </template>
+    <template if:true={showEmpty}>
         <div class="empty-card">No broker listing on record.</div>
     </template>
 </template>

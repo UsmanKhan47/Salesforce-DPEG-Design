@@ -6,12 +6,22 @@ import getBrokerFirm from '@salesforce/apex/BrokerFirmController.getBrokerFirm';
 export default class BrokerFirmCard extends LightningElement {
     @api recordId;
     data;
+    error;
 
     @wire(getBrokerFirm, { opportunityId: '$recordId' })
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.data = undefined;
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
     }
 
     get hasFirm() {

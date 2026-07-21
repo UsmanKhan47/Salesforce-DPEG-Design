@@ -80,14 +80,16 @@ describe('c-broker-totals', () => {
         expect(counts).toEqual(['9', '4']);
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state when the wire errors', async () => {
         const element = createComponent();
 
         getBrokerTotals.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelectorAll('.tb-row').length).toBe(0);
-        expect(element.shadowRoot.querySelector('.tb-empty')).not.toBeNull();
+        const err = element.shadowRoot.querySelector('.tb-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

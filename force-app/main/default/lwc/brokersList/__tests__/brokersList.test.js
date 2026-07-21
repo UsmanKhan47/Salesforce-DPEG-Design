@@ -107,14 +107,16 @@ describe('c-brokers-list', () => {
         expect(table.data[4].volumeLabel).toBe('$250K');
     });
 
-    it('ERROR BRANCH: keeps the empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state (not the datatable) when the wire errors', async () => {
         const element = createComponent();
 
         getBrokerHub.error();
         await Promise.resolve();
 
-        const table = element.shadowRoot.querySelector('c-list-datatable');
-        expect(table.data).toEqual([]);
+        expect(element.shadowRoot.querySelector('c-list-datatable')).toBeNull();
+        const err = element.shadowRoot.querySelector('.bkl-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

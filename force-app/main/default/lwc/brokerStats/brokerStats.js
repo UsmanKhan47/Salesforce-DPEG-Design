@@ -11,12 +11,25 @@ const CARD_META = [
 
 export default class BrokerStats extends LightningElement {
     data;
+    error;
 
     @wire(getBrokerHub)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.data = undefined;
         }
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
     }
 
     get metrics() {

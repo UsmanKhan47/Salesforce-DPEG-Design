@@ -225,6 +225,18 @@ describe('c-broker-replace-quick-action', () => {
         expect(closeHandler).not.toHaveBeenCalled();
     });
 
+    it('WIRE ERROR: surfaces a load error instead of a perpetual spinner', async () => {
+        const element = createComponent();
+
+        getRecord.error();
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelector('.qa-loading')).toBeNull();
+        const err = element.shadowRoot.querySelector('.qa-load-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 

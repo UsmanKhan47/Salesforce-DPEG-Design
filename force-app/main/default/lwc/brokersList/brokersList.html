@@ -2,13 +2,18 @@
     <lightning-card icon-name="standard:contact">
         <span slot="title">Brokers ({count})</span>
 
-        <c-list-datatable
-            key-field="id"
-            data={rows}
-            columns={columns}
-            column-widths-mode="auto"
-            hide-checkbox-column>
-        </c-list-datatable>
+        <template lwc:if={hasError}>
+            <div class="bkl-error slds-text-color_error slds-p-horizontal_small slds-p-vertical_x-small">Brokers could not be loaded: {errorMessage}</div>
+        </template>
+        <template lwc:else>
+            <c-list-datatable
+                key-field="id"
+                data={rows}
+                columns={columns}
+                column-widths-mode="auto"
+                hide-checkbox-column>
+            </c-list-datatable>
+        </template>
 
         <div slot="footer" class="view-all-footer">
             <a href={listUrl} onclick={viewAll}>View All</a>

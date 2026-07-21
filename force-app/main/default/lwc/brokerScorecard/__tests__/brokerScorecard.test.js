@@ -145,7 +145,7 @@ describe('c-broker-scorecard', () => {
         });
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: renders a distinct error state (not the no-data message) when the wire errors', async () => {
         const element = createComponent();
 
         getScorecard.error();
@@ -154,7 +154,9 @@ describe('c-broker-scorecard', () => {
         expect(
             element.shadowRoot.querySelectorAll('.broker-card').length
         ).toBe(0);
-        expect(element.shadowRoot.querySelector('.empty-state')).not.toBeNull();
+        const err = element.shadowRoot.querySelector('.scorecard-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

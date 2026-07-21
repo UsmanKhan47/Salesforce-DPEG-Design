@@ -79,15 +79,17 @@ describe('c-broker-portfolio-status', () => {
         expect(counts).toEqual(['12', '5', '3']); // active, leased, disposed
     });
 
-    it('ERROR BRANCH: keeps the zeroed donut when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state (not the donut) when the wire errors', async () => {
         const element = createComponent();
 
         getPortfolio.error();
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.ps-pct').textContent).toBe(
-            '0%'
-        );
+        // The donut is replaced by a user-safe error message.
+        expect(element.shadowRoot.querySelector('.ps-pct')).toBeNull();
+        const err = element.shadowRoot.querySelector('.ps-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

@@ -55,7 +55,11 @@
             </div>
         </template>
 
-        <template if:false={hasCards}>
+        <template if:true={hasError}>
+            <div class="empty-state scorecard-error slds-text-color_error">Broker scorecard could not be loaded: {errorMessage}</div>
+        </template>
+
+        <template if:true={showEmpty}>
             <div class="empty-state">No broker scorecard data available.</div>
         </template>
     </div>

@@ -101,14 +101,16 @@ describe('c-broker-listing', () => {
         expect(element.shadowRoot.querySelector('.risk-badge')).toBeNull();
     });
 
-    it('ERROR BRANCH: keeps the empty card when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state (not the data card) when the wire errors', async () => {
         const element = createComponent();
 
         getListing.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.card')).toBeNull();
-        expect(element.shadowRoot.querySelector('.empty-card')).not.toBeNull();
+        const err = element.shadowRoot.querySelector('.bl-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

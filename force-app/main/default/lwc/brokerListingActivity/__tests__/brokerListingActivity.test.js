@@ -119,16 +119,17 @@ describe('c-broker-listing-activity', () => {
         ).toBe('On track');
     });
 
-    it('ERROR BRANCH: keeps the em-dash tiles when the record wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state (not the tiles) when the record wire errors', async () => {
         const element = createComponent();
 
         getRecord.error();
         await Promise.resolve();
 
-        const values = [
-            ...element.shadowRoot.querySelectorAll('.la-tile-val')
-        ].map((el) => el.textContent);
-        expect(values).toEqual(['—', '—', '—', '—']);
+        // Tiles are replaced by a user-safe error message.
+        expect(element.shadowRoot.querySelectorAll('.la-tile-val').length).toBe(0);
+        const err = element.shadowRoot.querySelector('.la-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

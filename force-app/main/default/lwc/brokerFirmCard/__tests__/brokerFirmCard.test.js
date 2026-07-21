@@ -119,16 +119,22 @@ describe('c-broker-firm-card', () => {
         expect(empty.textContent).toBe('No broker firm linked to this deal.');
     });
 
-    it('ERROR BRANCH: degrades gracefully (card not rendered) when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state (not a blank card) when the wire errors', async () => {
         const element = createComponent();
 
-        // getBrokerFirm.error() emits { data: undefined, error: < apex error> }.
-        // This component only assigns on data, so it must stay in its empty state
-        // rather than throw.
+        // getBrokerFirm.error() emits { data: undefined, error: <apex error> }.
+        // The component captures the error and renders a user-safe inline message
+        // instead of silently rendering nothing.
         getBrokerFirm.error();
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.card')).toBeNull();
+        // The deal-count grid is not rendered (no firm data).
+        expect(
+            element.shadowRoot.querySelectorAll('c-onboarding-card-child').length
+        ).toBe(0);
+        const err = element.shadowRoot.querySelector('.firm-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {

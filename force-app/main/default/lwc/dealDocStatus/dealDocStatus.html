@@ -3,6 +3,10 @@
         <span slot="title" class="card-title">Deal Summary</span>
 
         <div class="body">
+            <template lwc:if={hasError}>
+                <div class="dds-error slds-text-color_error">Deal summary could not be loaded: {errorMessage}</div>
+            </template>
+            <template lwc:else>
             <!-- NDA -->
             <div class="doc">
                 <div class="doc-head">
@@ -146,6 +150,7 @@
                         <div class="doc-meta">{contractMeta}</div>
                     </template>
                 </div>
+            </template>
             </template>
         </div>
     </lightning-card>

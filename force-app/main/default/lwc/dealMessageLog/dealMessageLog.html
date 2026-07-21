@@ -120,7 +120,10 @@
                     </div>
                 </template>
             </template>
-            <template if:false={hasMessages}>
+            <template if:true={hasLoadError}>
+                <p class="dml-load-error slds-text-color_error">Messages could not be loaded: {loadErrorMessage}</p>
+            </template>
+            <template if:true={showEmpty}>
                 <p class="dml-empty">No messages logged yet. Use Log Message to start the communication history.</p>
             </template>
             <div class="dml-foot-note">

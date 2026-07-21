@@ -10,7 +10,18 @@ const CIRC = 2 * Math.PI * 50;
 
 export default class BrokerPortfolioStatus extends LightningElement {
     p;
-    @wire(getPortfolio) wired({ data }) { if (data) this.p = data; }
+    error;
+    @wire(getPortfolio) wired({ data, error }) {
+        if (data) {
+            this.p = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.p = undefined;
+        }
+    }
+    get hasError() { return !!this.error; }
+    get errorMessage() { const e = this.error; return (e && e.body && e.body.message) || 'Unknown error'; }
     get pct() { const p = this.p || {}; return p.total ? Math.round(100 * p.active / p.total) : 0; }
     get dash() { const arc = (this.pct / 100) * CIRC; return `${arc.toFixed(1)} ${(CIRC - arc).toFixed(1)}`; }
     get active() { return (this.p && this.p.active) || 0; }

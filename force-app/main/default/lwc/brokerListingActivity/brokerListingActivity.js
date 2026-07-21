@@ -16,9 +16,24 @@ const iconVar = (c) => `--sds-c-icon-color-foreground-default:${c};--slds-c-icon
 export default class BrokerListingActivity extends LightningElement {
     @api recordId;
     record;
+    error;
 
     @wire(getRecord, { recordId: '$recordId', fields: [ACTIVE_DAYS, LAST_CHECKIN, DAYS_IDLE, LISTING_START] })
-    wired(result) { if (result.data) this.record = result.data; }
+    wired(result) {
+        if (result.data) {
+            this.record = result.data;
+            this.error = undefined;
+        } else if (result.error) {
+            this.error = result.error;
+            this.record = undefined;
+        }
+    }
+
+    get hasError() { return !!this.error; }
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
+    }
 
     get _idle() { return getFieldValue(this.record, DAYS_IDLE); }
 

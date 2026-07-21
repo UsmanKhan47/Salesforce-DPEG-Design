@@ -21,7 +21,10 @@
                 </template>
             </ul>
         </template>
-        <template if:false={hasRows}>
+        <template if:true={hasError}>
+            <div class="tb-empty tb-error slds-text-color_error">Broker totals could not be loaded: {errorMessage}</div>
+        </template>
+        <template if:true={showEmpty}>
             <div class="tb-empty">No brokers assigned yet.</div>
         </template>
     </article>

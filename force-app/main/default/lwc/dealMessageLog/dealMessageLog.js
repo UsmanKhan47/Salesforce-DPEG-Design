@@ -33,6 +33,9 @@ export default class DealMessageLog extends LightningElement {
     @api internalOnly = false;
     _wired;
     messages;
+    // Read error from the getMessages wire — kept separate from `error`, which is
+    // the composer's inline validation/save message.
+    loadError;
     adding = false;
     upMethod = 'Note';
     upDirection = 'Internal';
@@ -57,6 +60,10 @@ export default class DealMessageLog extends LightningElement {
         this._wired = result;
         if (result.data) {
             this.messages = result.data;
+            this.loadError = undefined;
+        } else if (result.error) {
+            this.loadError = result.error;
+            this.messages = undefined;
         }
     }
 
@@ -72,6 +79,16 @@ export default class DealMessageLog extends LightningElement {
     }
     get hasMessages() {
         return this.count > 0;
+    }
+    get hasLoadError() {
+        return !!this.loadError;
+    }
+    get loadErrorMessage() {
+        const e = this.loadError;
+        return (e && e.body && e.body.message) || 'Unknown error';
+    }
+    get showEmpty() {
+        return !this.hasMessages && !this.hasLoadError;
     }
 
     get entries() {

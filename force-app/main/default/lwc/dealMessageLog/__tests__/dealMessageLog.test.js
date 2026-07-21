@@ -211,6 +211,18 @@ describe('c-deal-message-log', () => {
         );
     });
 
+    it('WIRE ERROR: surfaces an inline load error (not the empty state) when getMessages errors', async () => {
+        const element = createComponent();
+
+        getMessages.error();
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelector('.dml-empty')).toBeNull();
+        const err = element.shadowRoot.querySelector('.dml-load-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
+    });
+
     it('respects the internalOnly / hideMethod @api flags (badges hidden)', async () => {
         const element = createComponent({
             recordId: RECORD_ID,

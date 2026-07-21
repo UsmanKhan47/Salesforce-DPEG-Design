@@ -75,14 +75,16 @@ describe('c-broker-stats', () => {
         ]);
     });
 
-    it('ERROR BRANCH: falls back to zeroed cards when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state (not the KPI cards) when the wire errors', async () => {
         const element = createComponent();
 
         getBrokerHub.error();
         await Promise.resolve();
 
-        const cards = element.shadowRoot.querySelectorAll('c-stat-card');
-        expect([...cards].map((c) => c.value)).toEqual(['0', '0', '0', '0']);
+        expect(element.shadowRoot.querySelectorAll('c-stat-card').length).toBe(0);
+        const err = element.shadowRoot.querySelector('.bs-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
     });
 
     it('is accessible', async () => {
