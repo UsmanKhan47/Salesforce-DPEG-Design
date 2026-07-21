@@ -31,6 +31,16 @@
     flex-shrink: 0;
 }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.wire-error {
+    margin: 0 20px 14px;
+    padding: 10px 12px;
+    border-radius: var(--slds-g-radius-border-2, 6px);
+    background: var(--slds-g-color-palette-red-95, #fdeaea);
+    color: var(--slds-g-color-palette-red-30, #b91c1c);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-palette-red-80, #f5c2c2);
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    font-weight: var(--slds-g-font-weight-6, 600);
+}
 .field-list {
     display: grid;
     grid-template-columns: 1fr 1fr;

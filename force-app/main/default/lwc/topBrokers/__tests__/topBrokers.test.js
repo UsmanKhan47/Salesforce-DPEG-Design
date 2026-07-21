@@ -97,13 +97,15 @@ describe('c-top-brokers', () => {
         expect(rows[1].className).not.toContain('row--lead');
     });
 
-    it('ERROR BRANCH: falls back to the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: renders a distinct error state (not the empty state) when the wire errors', async () => {
         const element = createComponent();
 
         getBrokerHub.error();
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.empty')).not.toBeNull();
+        // Error is surfaced distinctly — it must NOT masquerade as "no broker listings".
+        expect(element.shadowRoot.querySelector('.tb-error')).not.toBeNull();
+        expect(element.shadowRoot.querySelector('.empty')).toBeNull();
         expect(element.shadowRoot.querySelectorAll('.row').length).toBe(0);
     });
 

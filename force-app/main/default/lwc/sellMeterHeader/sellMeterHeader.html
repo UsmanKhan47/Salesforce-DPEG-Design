@@ -1,5 +1,8 @@
 <template>
     <div class="smh">
         <div class="smh__title">Portfolio &middot; Sell Meter &mdash; All Properties</div>
+        <template if:true={error}>
+            <div class="smh__error" role="alert">Portfolio could not be loaded: {errorMessage}</div>
+        </template>
     </div>
 </template>

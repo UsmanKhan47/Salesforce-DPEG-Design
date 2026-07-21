@@ -167,7 +167,7 @@ describe('c-wire-verification', () => {
         });
     });
 
-    it('ERROR BRANCH: falls back to the empty 0/6 state when the wire errors', async () => {
+    it('ERROR BRANCH: falls back to the empty 0/6 state + shows an inline error when the wire errors', async () => {
         const element = createComponent();
 
         getWire.error();
@@ -179,6 +179,39 @@ describe('c-wire-verification', () => {
         expect(
             element.shadowRoot.querySelector('.readonly-val').textContent
         ).toBe('Waiting for field 1 checkbox…');
+        // Inline read-error banner surfaces the failure instead of a silent blank.
+        expect(element.shadowRoot.querySelector('.wire-error')).not.toBeNull();
+    });
+
+    it('SAVE FAILURE: toasts a sticky error and re-enables the Save button on reject', async () => {
+        saveWire.mockRejectedValue({
+            body: { message: 'Wire verification could not be saved.' }
+        });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getWire.emit(WIRE);
+        await Promise.resolve();
+
+        element.shadowRoot.querySelector('.save-btn').click();
+        // Drain saveWire -> .catch (toast) -> .finally (isSaving=false) + re-render.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(saveWire).toHaveBeenCalledTimes(1);
+        // The anti-fraud save failed loudly — an error toast was raised.
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.mode).toBe('sticky');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(
+            'Wire verification could not be saved.'
+        );
+        // Button is re-enabled (label reset) so the user can retry — the form stays open.
+        expect(element.shadowRoot.querySelector('.save-btn').textContent.trim()).toBe(
+            'Save'
+        );
+        expect(element.shadowRoot.querySelector('.save-btn').disabled).toBe(false);
     });
 
     it('is accessible', async () => {

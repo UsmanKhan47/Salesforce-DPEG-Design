@@ -3,11 +3,16 @@ import getBrokerHub from '@salesforce/apex/BrokerController.getBrokerHub';
 
 export default class TopBrokers extends LightningElement {
     data;
+    error;
 
     @wire(getBrokerHub)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.data = undefined;
         }
     }
 
@@ -28,5 +33,19 @@ export default class TopBrokers extends LightningElement {
 
     get hasData() {
         return this.brokers.length > 0;
+    }
+
+    get hasError() {
+        return !!this.error && !this.hasData;
+    }
+
+    // Empty only when the wire genuinely returned no brokers — not when it errored.
+    get isEmpty() {
+        return !this.hasData && !this.hasError;
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
     }
 }

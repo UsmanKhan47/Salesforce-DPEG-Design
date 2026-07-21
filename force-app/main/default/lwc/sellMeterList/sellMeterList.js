@@ -39,12 +39,21 @@ export default class SellMeterList extends NavigationMixin(LightningElement) {
     _data;
     _page = 1;
     listUrl = '#';
+    error;
 
     @wire(getPortfolio)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this._data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
     }
 
     connectedCallback() {

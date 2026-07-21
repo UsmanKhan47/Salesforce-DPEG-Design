@@ -69,13 +69,15 @@ describe('c-sell-meter-header', () => {
         expect(title(element).textContent).toContain('Sell Meter');
     });
 
-    it('ERROR BRANCH: renders the banner without throwing when the wire errors', async () => {
+    it('ERROR BRANCH: renders the banner and an inline error note when the wire errors', async () => {
         const element = createComponent();
 
         getPortfolio.error();
         await Promise.resolve();
 
         expect(title(element)).not.toBeNull();
+        // Wire failure surfaces an inline error instead of failing silently.
+        expect(element.shadowRoot.querySelector('.smh__error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

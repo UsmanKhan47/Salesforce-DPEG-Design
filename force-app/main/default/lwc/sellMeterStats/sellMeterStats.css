@@ -7,6 +7,16 @@
     box-sizing: border-box;
 }
 
+.sms-error {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--slds-g-radius-border-2, 6px);
+    background: var(--slds-g-color-palette-red-95, #fdeaea);
+    color: var(--slds-g-color-palette-red-30, #b91c1c);
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    font-weight: var(--slds-g-font-weight-6, 600);
+}
+
 .cards-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

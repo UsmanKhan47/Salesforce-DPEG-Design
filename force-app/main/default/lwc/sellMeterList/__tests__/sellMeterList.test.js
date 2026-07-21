@@ -262,7 +262,7 @@ describe('c-sell-meter-list', () => {
         expect(findOrCreate).not.toHaveBeenCalled();
     });
 
-    it('ERROR BRANCH: empty datatable when the portfolio wire errors', async () => {
+    it('ERROR BRANCH: empty datatable + inline error banner when the portfolio wire errors', async () => {
         const element = createComponent();
 
         getPortfolio.error();
@@ -272,6 +272,8 @@ describe('c-sell-meter-list', () => {
         expect(
             element.shadowRoot.querySelector('span[slot="title"]').textContent
         ).toBe('Sell Meter (0)');
+        // Wire failure surfaces an inline error banner instead of a silent empty list.
+        expect(element.shadowRoot.querySelector('.sm-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

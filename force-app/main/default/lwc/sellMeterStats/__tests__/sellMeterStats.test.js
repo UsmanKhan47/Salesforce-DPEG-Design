@@ -83,7 +83,7 @@ describe('c-sell-meter-stats', () => {
         expect(cards(element)[3].value).toBe('$750K');
     });
 
-    it('ERROR BRANCH: keeps the default tiles when the wire errors', async () => {
+    it('ERROR BRANCH: keeps the default tiles and shows an inline error when the wire errors', async () => {
         const element = createComponent();
 
         getMeterSummary.error();
@@ -91,6 +91,8 @@ describe('c-sell-meter-stats', () => {
 
         const values = [...cards(element)].map((c) => c.value);
         expect(values).toEqual(['0', '0', '0', '$0']);
+        // Wire failure surfaces an inline error banner instead of a silent default state.
+        expect(element.shadowRoot.querySelector('.sms-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

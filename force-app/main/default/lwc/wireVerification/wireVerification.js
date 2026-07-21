@@ -1,5 +1,6 @@
 import { LightningElement, api, wire } from 'lwc';
 import { refreshApex } from '@salesforce/apex';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getWire from '@salesforce/apex/WireController.getWire';
 import saveWire from '@salesforce/apex/WireController.saveWire';
 
@@ -10,6 +11,7 @@ export default class WireVerification extends LightningElement {
     _wired;
     _wireData;
     isSaving = false;
+    error;
 
     // form state
     verbalChecked = false;
@@ -22,6 +24,7 @@ export default class WireVerification extends LightningElement {
     wiredWire(result) {
         this._wired = result;
         if (result.data) {
+            this.error = undefined;
             const d = result.data;
             this._wireData = d;
             this.verbalChecked = d.verbalVerificationCompleted || false;
@@ -29,7 +32,14 @@ export default class WireVerification extends LightningElement {
             this.verifierPhone = d.verifierPhone || '';
             this.wireSource    = d.wireInstructionsSource || '';
             this.confirmedAmount = d.confirmedWireAmount || null;
+        } else if (result.error) {
+            this.error = result.error;
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
     }
 
     get fieldsComplete()    { return this._wireData ? this._wireData.fieldsComplete : 0; }
@@ -67,6 +77,19 @@ export default class WireVerification extends LightningElement {
             confirmedAmount: this.confirmedAmount
         })
         .then(() => refreshApex(this._wired))
+        .catch((e) => {
+            // Anti-fraud control: a silent save failure must never look like a success.
+            // Surface the error and let .finally re-enable the Save button so the user can retry.
+            const message = (e && e.body && e.body.message) || 'Unexpected error';
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: 'Could not save the wire verification',
+                    message,
+                    variant: 'error',
+                    mode: 'sticky'
+                })
+            );
+        })
         .finally(() => { this.isSaving = false; });
     }
 }

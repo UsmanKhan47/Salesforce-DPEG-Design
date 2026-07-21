@@ -18,7 +18,11 @@
             </ul>
         </template>
 
-        <template if:false={hasData}>
+        <template if:true={hasError}>
+            <div class="tb-error" role="alert">Top brokers could not be loaded: {errorMessage}</div>
+        </template>
+
+        <template if:true={isEmpty}>
             <div class="empty">No broker listings yet.</div>
         </template>
     </lightning-card>

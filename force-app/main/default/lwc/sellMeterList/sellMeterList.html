@@ -2,6 +2,10 @@
     <lightning-card icon-name="standard:asset_object">
         <span slot="title">Sell Meter ({count})</span>
 
+        <template if:true={error}>
+            <div class="sm-error" role="alert">Sell meter list could not be loaded: {errorMessage}</div>
+        </template>
+
         <c-list-datatable
             key-field="id"
             data={rows}

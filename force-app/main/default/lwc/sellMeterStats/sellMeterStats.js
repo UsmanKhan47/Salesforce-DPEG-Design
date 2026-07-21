@@ -4,12 +4,21 @@ import getMeterSummary from '@salesforce/apex/SellMeterController.getMeterSummar
 
 export default class SellMeterStats extends LightningElement {
     data;
+    error;
 
     @wire(getMeterSummary)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
         }
+    }
+
+    get errorMessage() {
+        const e = this.error;
+        return (e && e.body && e.body.message) || 'Unknown error';
     }
 
     get metrics() {

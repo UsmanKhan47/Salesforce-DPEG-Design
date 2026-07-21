@@ -7,6 +7,10 @@
             <span class="progress-badge" style={progressBadgeStyle}><span class="badge-dot"></span>{fieldsComplete}/6 fields complete</span>
         </div>
 
+        <template if:true={error}>
+            <div class="wire-error" role="alert">Could not load the wire verification: {errorMessage}</div>
+        </template>
+
         <div class="field-list">
             <div class="field-card">
                 <div class="field-num">1</div>

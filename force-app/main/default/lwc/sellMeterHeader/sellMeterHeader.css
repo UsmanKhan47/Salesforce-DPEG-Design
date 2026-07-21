@@ -26,3 +26,8 @@
 .smh__sep {
     color: #c5cdd4;
 }
+.smh__error {
+    font-size: 12.5px;
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-palette-red-30, #b91c1c);
+}
