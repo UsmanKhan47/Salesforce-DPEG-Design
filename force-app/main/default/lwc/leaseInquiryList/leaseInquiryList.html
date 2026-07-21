@@ -11,13 +11,21 @@
         <div slot="actions" class="hdr-actions">
             <lightning-button variant="brand" label="New Inquiry" icon-name="utility:add" onclick={newInquiry}></lightning-button>
         </div>
-        <c-list-datatable
-            key-field="id"
-            data={rows}
-            columns={columns}
-            column-widths-mode="fixed"
-            hide-checkbox-column>
-        </c-list-datatable>
+        <template if:true={hasError}>
+            <div class="wire-error" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+                <span>Recent inquiries could not be loaded: {errorMessage}</span>
+            </div>
+        </template>
+        <template if:false={hasError}>
+            <c-list-datatable
+                key-field="id"
+                data={rows}
+                columns={columns}
+                column-widths-mode="fixed"
+                hide-checkbox-column>
+            </c-list-datatable>
+        </template>
         <div slot="footer" class="view-all-footer">
             <a href={listUrl} onclick={viewAll}>View All</a>
         </div>

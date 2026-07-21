@@ -4,7 +4,21 @@ import getHomeKpis from '@salesforce/apex/LeaseInquiryController.getHomeKpis';
 // Top KPI strip on the Lease Activity Tracker home page.
 export default class LeaseInquiryKpis extends LightningElement {
     k;
-    @wire(getHomeKpis) wired({ data }) { if (data) this.k = data; }
+    error;
+    @wire(getHomeKpis) wired({ data, error }) {
+        if (data) {
+            this.k = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.k = undefined;
+        }
+    }
+
+    get hasError() { return !!this.error; }
+    get errorMessage() {
+        return (this.error && this.error.body && this.error.body.message) || 'Unknown error';
+    }
 
     get cards() {
         const k = this.k || {};

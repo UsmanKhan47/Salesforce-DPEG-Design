@@ -106,7 +106,7 @@ describe('c-disposition-sidebar', () => {
         ).toBeNull();
     });
 
-    it('ERROR BRANCH: renders no sidebar child when the record wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state and no sidebar child when the record wire errors', async () => {
         const element = createComponent();
 
         getRecord.error();
@@ -115,6 +115,9 @@ describe('c-disposition-sidebar', () => {
         expect(
             element.shadowRoot.querySelector('c-disposition-offer')
         ).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('.wire-error')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {

@@ -7,7 +7,23 @@ const dot = (c) => `width:6px;height:6px;border-radius:50%;background:${c};flex-
 // Right-column widget: active deals that need a nudge (with the landlord, or aging).
 export default class LeaseAttention extends LightningElement {
     _data = [];
-    @wire(getAttention) wired({ data }) { if (data) this._data = data; }
+    _error;
+    @wire(getAttention) wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this._error = undefined;
+        } else if (error) {
+            this._error = error;
+            this._data = [];
+        }
+    }
+
+    get hasError() { return !!this._error; }
+    // Suppress the "nothing needs a nudge" copy when the read actually failed.
+    get showEmpty() { return !this.hasRows && !this.hasError; }
+    get errorMessage() {
+        return (this._error && this._error.body && this._error.body.message) || 'Unknown error';
+    }
 
     get rows() {
         return this._data.map((q) => {

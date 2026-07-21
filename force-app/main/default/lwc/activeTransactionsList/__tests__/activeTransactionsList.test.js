@@ -164,7 +164,7 @@ describe('c-active-transactions-list', () => {
         });
     });
 
-    it('ERROR BRANCH: keeps the empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error (not the datatable) when the wire errors', async () => {
         const element = createComponent();
 
         getActiveTransactions.error();
@@ -173,7 +173,8 @@ describe('c-active-transactions-list', () => {
         expect(
             element.shadowRoot.querySelector('span[slot="title"]').textContent
         ).toBe('Active Transactions (0)');
-        expect(datatable(element).data).toEqual([]);
+        expect(datatable(element)).toBeNull();
+        expect(element.shadowRoot.querySelector('.wire-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

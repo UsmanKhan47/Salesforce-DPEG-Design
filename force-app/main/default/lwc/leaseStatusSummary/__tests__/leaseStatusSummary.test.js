@@ -139,16 +139,15 @@ describe('c-lease-status-summary', () => {
         });
     });
 
-    it('ERROR BRANCH: keeps the muted placeholder when the wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error (not the muted placeholder) when the wire errors', async () => {
         const element = createComponent();
 
         getLeaseSummary.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('a.doc-name')).toBeNull();
-        expect(
-            element.shadowRoot.querySelector('.doc-name--muted')
-        ).not.toBeNull();
+        expect(element.shadowRoot.querySelector('.doc-name--muted')).toBeNull();
+        expect(element.shadowRoot.querySelector('.doc-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

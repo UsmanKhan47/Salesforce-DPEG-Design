@@ -46,13 +46,25 @@ const COLUMNS = [
 export default class ActiveTransactionsList extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
     _data;
+    _error;
     listUrl = '#';
 
     @wire(getActiveTransactions)
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this._data = data;
+            this._error = undefined;
+        } else if (error) {
+            this._error = error;
+            this._data = undefined;
         }
+    }
+
+    get hasError() {
+        return !!this._error;
+    }
+    get errorMessage() {
+        return (this._error && this._error.body && this._error.body.message) || 'Unknown error';
     }
 
     connectedCallback() {

@@ -11,6 +11,11 @@
             <span class="ps-title">Active Pipeline by Stage (last 5 years)</span>
         </div>
 
+        <template if:true={hasError}>
+            <div class="ps-error" role="alert">Pipeline could not be loaded: {errorMessage}</div>
+        </template>
+        <template if:false={hasError}>
+
         <!-- Donut + readout -->
         <div class="ps-top">
             <div class="ps-donut-wrap">
@@ -52,5 +57,7 @@
                 </div>
             </template>
         </div>
+
+        </template>
     </article>
 </template>

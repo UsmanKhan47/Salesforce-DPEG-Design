@@ -3,6 +3,10 @@
         <span slot="title" class="card-title">Lease Status</span>
 
         <div class="body">
+            <template if:true={hasError}>
+                <div class="doc-error" role="alert">Lease status could not be loaded: {errorMessage}</div>
+            </template>
+            <template if:false={hasError}>
             <div class="doc">
                 <div class="doc-head">
                     <span class="doc-left">
@@ -29,6 +33,7 @@
                     <div class="doc-meta doc-meta--empty">Created for legal once the inquiry reaches Lease Drafting</div>
                 </template>
             </div>
+            </template>
         </div>
     </lightning-card>
 </template>

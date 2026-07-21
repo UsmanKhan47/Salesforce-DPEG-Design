@@ -129,19 +129,50 @@ describe('c-disposition-closing-tasks', () => {
         expect(getClosingTasks).toHaveBeenCalledTimes(2);
     });
 
-    it('ERROR BRANCH: renders an empty checklist when the load fails', async () => {
+    it('ERROR BRANCH: renders an error state (not a blank list) when the load fails', async () => {
         getClosingTasks.mockRejectedValue({
             body: { message: 'No access' }
         });
 
         const element = createComponent();
+        for (let i = 0; i < 6; i++) {
+            await flushPromises();
+        }
+
+        expect(element.shadowRoot.querySelectorAll('.task-row').length).toBe(0);
+        // No misleading "0/0 complete" badge — an explicit error is shown instead.
+        expect(element.shadowRoot.querySelector('.progress-badge')).toBeNull();
+        const err = element.shadowRoot.querySelector('.task-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('No access');
+    });
+
+    it('WRITE ERROR: toasts and reloads (reverts) when setTaskDone fails', async () => {
+        getClosingTasks.mockResolvedValue(TASKS);
+        setTaskDone.mockRejectedValue({ body: { message: 'Record is locked' } });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
         await flushPromises();
         await flushPromises();
 
-        expect(element.shadowRoot.querySelectorAll('.task-row').length).toBe(0);
-        expect(
-            element.shadowRoot.querySelector('.progress-badge').textContent
-        ).toContain('0/0 complete');
+        const input = element.shadowRoot.querySelector('lightning-input');
+        input.checked = true;
+        input.dispatchEvent(new CustomEvent('change'));
+        for (let i = 0; i < 6; i++) {
+            await flushPromises();
+        }
+
+        expect(setTaskDone).toHaveBeenCalledTimes(1);
+        // Error toast surfaced to the user.
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(
+            'Record is locked'
+        );
+        // Optimistic checkbox reverted by reloading truth: initial load + revert.
+        expect(getClosingTasks).toHaveBeenCalledTimes(2);
     });
 
     it('is accessible', async () => {

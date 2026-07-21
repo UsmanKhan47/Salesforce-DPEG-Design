@@ -18,7 +18,12 @@
         </template>
 
         <div class="slds-p-horizontal_small slds-p-bottom_small">
-            <template lwc:if={hasPrimaryLoi}>
+            <template lwc:if={hasOppError}>
+                <p class="slds-text-color_error slds-p-vertical_x-small" role="alert">
+                    This deal could not be loaded: {oppErrorMessage}
+                </p>
+            </template>
+            <template lwc:elseif={hasPrimaryLoi}>
                 <!-- Entry form -->
                 <template lwc:if={editing}>
                     <div class="slds-box slds-box_x-small slds-m-bottom_small">
@@ -99,7 +104,12 @@
                 </template>
 
                 <!-- History, native related-list datatable (newest first) -->
-                <template lwc:if={hasOffers}>
+                <template lwc:if={hasOffersError}>
+                    <p class="slds-text-color_error slds-p-vertical_x-small" role="alert">
+                        Counter offers could not be loaded: {offersErrorMessage}
+                    </p>
+                </template>
+                <template lwc:elseif={hasOffers}>
                     <c-list-datatable
                         key-field="id"
                         data={rows}

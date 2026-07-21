@@ -115,14 +115,15 @@ describe('c-lease-attention', () => {
         expect(pillSpan(row).getAttribute('style')).toContain('#EBF9F1');
     });
 
-    it('ERROR BRANCH: keeps the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error (not the empty note) when the wire errors', async () => {
         const element = createComponent();
 
         getAttention.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelectorAll('.at-row').length).toBe(0);
-        expect(element.shadowRoot.querySelector('.at-empty')).not.toBeNull();
+        expect(element.shadowRoot.querySelector('.at-empty')).toBeNull();
+        expect(element.shadowRoot.querySelector('.at-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

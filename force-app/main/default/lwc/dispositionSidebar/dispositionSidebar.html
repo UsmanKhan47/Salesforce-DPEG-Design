@@ -1,4 +1,10 @@
 <template>
+    <template if:true={hasError}>
+        <div class="wire-error" role="alert">
+            <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+            <span>This disposition could not be loaded: {errorMessage}</span>
+        </div>
+    </template>
     <template if:true={isBovOutreach}>
         <c-bov-outreach record-id={recordId}></c-bov-outreach>
     </template>

@@ -196,13 +196,14 @@ describe('c-lease-inquiry-list', () => {
         });
     });
 
-    it('ERROR BRANCH: keeps an empty datatable when the wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error (not the datatable) when the wire errors', async () => {
         const element = createComponent();
 
         getRecentInquiries.error();
         await Promise.resolve();
 
-        expect(datatable(element).data).toEqual([]);
+        expect(datatable(element)).toBeNull();
+        expect(element.shadowRoot.querySelector('.wire-error')).not.toBeNull();
         expect(
             element.shadowRoot.querySelector('.hdr-title').textContent
         ).toBe('Recent Inquiries (0)');

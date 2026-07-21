@@ -173,7 +173,7 @@ describe('c-loi-counter-offer', () => {
         expect(element.shadowRoot.textContent).toContain('No counter offers yet');
     });
 
-    it('ERROR BRANCH: keeps the empty state when the Apex wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error (not the empty note) when the Apex wire errors', async () => {
         const element = createOnOpportunity();
 
         getRecord.emit(oppRecord({ loiId: LOI_ID }));
@@ -183,7 +183,12 @@ describe('c-loi-counter-offer', () => {
         expect(
             element.shadowRoot.querySelector('c-list-datatable')
         ).toBeNull();
-        expect(element.shadowRoot.textContent).toContain('No counter offers yet');
+        expect(element.shadowRoot.textContent).toContain(
+            'Counter offers could not be loaded'
+        );
+        expect(element.shadowRoot.textContent).not.toContain(
+            'No counter offers yet'
+        );
     });
 
     it('SAVE SUCCESS: submits the entered terms, refreshes the record, and toasts', async () => {

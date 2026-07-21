@@ -16,7 +16,21 @@ const CIRC = 2 * Math.PI * 50;
 // active pipeline that has reached LOI) + a stacked bar and legend by stage.
 export default class LeasePipelineByStage extends LightningElement {
     _data = [];
-    @wire(getPipelineByStage) wired({ data }) { if (data) this._data = data; }
+    _error;
+    @wire(getPipelineByStage) wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this._error = undefined;
+        } else if (error) {
+            this._error = error;
+            this._data = [];
+        }
+    }
+
+    get hasError() { return !!this._error; }
+    get errorMessage() {
+        return (this._error && this._error.body && this._error.body.message) || 'Unknown error';
+    }
 
     get total() { return this._data.reduce((a, s) => a + (s.count || 0), 0); }
     get reachedLoi() {

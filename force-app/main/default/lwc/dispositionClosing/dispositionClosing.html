@@ -1,4 +1,10 @@
 <template>
+    <template if:true={hasError}>
+        <div class="wire-error" role="alert">
+            <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+            <span>Closing summary could not be loaded: {errorMessage}</span>
+        </div>
+    </template>
     <template if:true={row}>
         <div class="card">
             <div class="card-header">

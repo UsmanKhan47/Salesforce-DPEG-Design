@@ -10,12 +10,24 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export default class LeaseStatusSummary extends NavigationMixin(LightningElement) {
     @api recordId;
     data;
+    error;
 
     @wire(getLeaseSummary, { inquiryId: '$recordId' })
-    wired({ data }) {
+    wired({ data, error }) {
         if (data) {
             this.data = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.data = undefined;
         }
+    }
+
+    get hasError() {
+        return !!this.error;
+    }
+    get errorMessage() {
+        return (this.error && this.error.body && this.error.body.message) || 'Unknown error';
     }
 
     get hasLease() {

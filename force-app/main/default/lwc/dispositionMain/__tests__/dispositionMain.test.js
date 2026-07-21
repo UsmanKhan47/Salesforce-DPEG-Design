@@ -121,7 +121,7 @@ describe('c-disposition-main', () => {
         ).not.toBeNull();
     });
 
-    it('ERROR BRANCH: renders no feature child when the record wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error state and no feature child when the record wire errors', async () => {
         const element = createComponent();
 
         getRecord.error();
@@ -133,6 +133,9 @@ describe('c-disposition-main', () => {
         expect(
             element.shadowRoot.querySelector('c-wire-verification')
         ).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('.wire-error')
+        ).not.toBeNull();
     });
 
     it('is accessible', async () => {

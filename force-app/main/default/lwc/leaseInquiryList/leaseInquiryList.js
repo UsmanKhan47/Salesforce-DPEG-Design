@@ -29,8 +29,22 @@ const COLUMNS = [
 export default class LeaseInquiryList extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
     _data = [];
+    _error;
     listUrl = '#';
-    @wire(getRecentInquiries) wired({ data }) { if (data) this._data = data; }
+    @wire(getRecentInquiries) wired({ data, error }) {
+        if (data) {
+            this._data = data;
+            this._error = undefined;
+        } else if (error) {
+            this._error = error;
+            this._data = [];
+        }
+    }
+
+    get hasError() { return !!this._error; }
+    get errorMessage() {
+        return (this._error && this._error.body && this._error.body.message) || 'Unknown error';
+    }
 
     connectedCallback() {
         this[NavigationMixin.GenerateUrl](this.listPageRef).then((url) => { this.listUrl = url; });

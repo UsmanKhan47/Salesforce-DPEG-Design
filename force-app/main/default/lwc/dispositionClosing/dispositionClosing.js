@@ -4,9 +4,23 @@ import getClosingSummary from '@salesforce/apex/DispositionController.getClosing
 export default class DispositionClosing extends LightningElement {
     @api recordId;
     row;
+    error;
 
     @wire(getClosingSummary, { dispositionId: '$recordId' })
-    wired({ data }) { if (data) this.row = data; }
+    wired({ data, error }) {
+        if (data) {
+            this.row = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.row = undefined;
+        }
+    }
+
+    get hasError() { return !!this.error; }
+    get errorMessage() {
+        return (this.error && this.error.body && this.error.body.message) || 'Unknown error';
+    }
 
     get psaLabel()             { return this.row?.psaExecuted ? 'Executed' : 'Pending'; }
     get titleLabel()           { return this.row?.titleCompany || 'TBD'; }

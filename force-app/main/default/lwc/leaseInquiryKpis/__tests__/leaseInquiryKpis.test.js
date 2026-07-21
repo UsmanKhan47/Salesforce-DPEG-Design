@@ -81,13 +81,14 @@ describe('c-lease-inquiry-kpis', () => {
         expect(cards(element).map((x) => x.value)).toEqual([4, 0, 0, 0]);
     });
 
-    it('ERROR BRANCH: keeps the zeroed cards when the wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error (not zeroed cards) when the wire errors', async () => {
         const element = createComponent();
 
         getHomeKpis.error();
         await Promise.resolve();
 
-        expect(cards(element).map((x) => x.value)).toEqual([0, 0, 0, 0]);
+        expect(cards(element).length).toBe(0);
+        expect(element.shadowRoot.querySelector('.wire-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

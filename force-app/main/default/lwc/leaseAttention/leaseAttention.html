@@ -24,7 +24,10 @@
                 </template>
             </div>
         </template>
-        <template if:false={hasRows}>
+        <template if:true={hasError}>
+            <div class="at-error" role="alert">Needs-attention list could not be loaded: {errorMessage}</div>
+        </template>
+        <template if:true={showEmpty}>
             <div class="at-empty">Nothing needs a nudge right now.</div>
         </template>
     </article>

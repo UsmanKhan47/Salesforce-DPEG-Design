@@ -2,13 +2,21 @@
     <lightning-card icon-name="standard:contract">
         <span slot="title">Active Transactions ({count})</span>
 
-        <c-list-datatable
-            key-field="id"
-            data={rows}
-            columns={columns}
-            column-widths-mode="auto"
-            hide-checkbox-column>
-        </c-list-datatable>
+        <template if:true={hasError}>
+            <div class="wire-error" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+                <span>Active transactions could not be loaded: {errorMessage}</span>
+            </div>
+        </template>
+        <template if:false={hasError}>
+            <c-list-datatable
+                key-field="id"
+                data={rows}
+                columns={columns}
+                column-widths-mode="auto"
+                hide-checkbox-column>
+            </c-list-datatable>
+        </template>
 
         <div slot="footer" class="view-all-footer">
             <a href={listUrl} onclick={viewAll}>View All</a>

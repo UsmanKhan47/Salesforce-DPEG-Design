@@ -124,6 +124,19 @@ describe('c-disposition-offer', () => {
         );
     });
 
+    it('ERROR BRANCH: shows an inline error (not the empty note) when the related-list wire errors', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.error();
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelectorAll('.offer-row').length).toBe(0);
+        expect(element.shadowRoot.querySelector('.empty-msg')).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('.wire-error')
+        ).not.toBeNull();
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 

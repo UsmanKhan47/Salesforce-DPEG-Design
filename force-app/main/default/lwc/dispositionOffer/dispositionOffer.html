@@ -12,7 +12,13 @@
                 </template>
             </div>
         </template>
-        <template if:false={hasOffers}>
+        <template if:true={hasError}>
+            <div class="wire-error" role="alert">
+                <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+                <span>Offers could not be loaded: {errorMessage}</span>
+            </div>
+        </template>
+        <template if:true={showEmpty}>
             <div class="empty-msg">No offers yet. 6-week clock active.</div>
         </template>
         <div class="log-btn-wrap">

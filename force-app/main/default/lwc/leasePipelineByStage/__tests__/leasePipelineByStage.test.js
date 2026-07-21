@@ -103,18 +103,17 @@ describe('c-lease-pipeline-by-stage', () => {
         ).toBe(3);
     });
 
-    it('ERROR BRANCH: degrades to the empty readout when the wire errors', async () => {
+    it('ERROR BRANCH: shows an inline error (not the donut) when the wire errors', async () => {
         const element = createComponent();
 
         getPipelineByStage.error();
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.ps-pct').textContent).toBe(
-            '0%'
-        );
+        expect(element.shadowRoot.querySelector('.ps-pct')).toBeNull();
         expect(
             element.shadowRoot.querySelectorAll('.ps-leg-row').length
         ).toBe(0);
+        expect(element.shadowRoot.querySelector('.ps-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

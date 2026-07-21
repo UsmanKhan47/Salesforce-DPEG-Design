@@ -93,13 +93,15 @@ describe('c-lead-channels', () => {
         expect(cards[1].value).toBe('0'); // reviewQueue undefined -> '0'
     });
 
-    it('ERROR BRANCH: stays in the empty state when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline error (not the tile card) when the wire errors', async () => {
         const element = createComponent();
 
         getFunnel.error();
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.card')).toBeNull();
+        expect(tiles(element).length).toBe(0);
+        expect(element.shadowRoot.querySelector('.wire-error')).not.toBeNull();
     });
 
     it('is accessible', async () => {

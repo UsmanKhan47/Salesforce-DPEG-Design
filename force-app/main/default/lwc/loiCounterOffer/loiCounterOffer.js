@@ -105,6 +105,8 @@ export default class LoiCounterOffer extends LightningElement {
     ballInCourt;
     offers = [];
     _wiredOffers;
+    oppError;
+    offersError;
 
     directionOptions = [
         { label: 'Seller countered us', value: 'Seller' },
@@ -124,10 +126,15 @@ export default class LoiCounterOffer extends LightningElement {
     }
 
     @wire(getRecord, { recordId: '$oppRecordId', fields: [PRIMARY_LOI], optionalFields: [LOI_BALL] })
-    wiredOpp({ data }) {
+    wiredOpp({ data, error }) {
         if (data) {
+            this.oppError = undefined;
             this.primaryLoiFromOpp = getFieldValue(data, PRIMARY_LOI);
             this.ballInCourt = getFieldValue(data, LOI_BALL);
+        } else if (error) {
+            this.oppError = error;
+            this.primaryLoiFromOpp = undefined;
+            this.ballInCourt = undefined;
         }
     }
 
@@ -135,6 +142,7 @@ export default class LoiCounterOffer extends LightningElement {
     wiredOffers(result) {
         this._wiredOffers = result;
         if (result.data) {
+            this.offersError = undefined;
             this.offers = result.data.map((o) => ({
                 id: o.Id,
                 name: o.Name,
@@ -146,7 +154,19 @@ export default class LoiCounterOffer extends LightningElement {
                 subsequentVersion: o.Subsequent_Version__c,
                 counterDate: o.Counter_Date__c || o.CreatedDate
             }));
+        } else if (result.error) {
+            this.offersError = result.error;
+            this.offers = [];
         }
+    }
+
+    get hasOppError() { return !!this.oppError; }
+    get oppErrorMessage() {
+        return (this.oppError && this.oppError.body && this.oppError.body.message) || 'Unknown error';
+    }
+    get hasOffersError() { return !!this.offersError; }
+    get offersErrorMessage() {
+        return (this.offersError && this.offersError.body && this.offersError.body.message) || 'Unknown error';
     }
 
     get hasPrimaryLoi() {

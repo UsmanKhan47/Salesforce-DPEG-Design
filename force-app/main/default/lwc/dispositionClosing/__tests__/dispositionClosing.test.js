@@ -99,6 +99,18 @@ describe('c-disposition-closing', () => {
         expect(cards[3].value).toBe('Not created'); //     Wire
     });
 
+    it('ERROR BRANCH: renders an inline error state and hides the card when the wire errors', async () => {
+        const element = createComponent();
+
+        getClosingSummary.error();
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelector('.card')).toBeNull();
+        const err = element.shadowRoot.querySelector('.wire-error');
+        expect(err).not.toBeNull();
+        expect(err.textContent).toContain('could not be loaded');
+    });
+
     it('is accessible', async () => {
         const element = createComponent();
 
