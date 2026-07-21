@@ -402,4 +402,53 @@ private class LeaseInquiryControllerTest {
         System.assertEquals(3, after.steps.size());
         System.assertEquals(true, after.steps[0].current, 'Draft is the current step');
     }
+
+    // ── Read-failure boundary coverage (ARCHITECTURE.md §5) ──────────────────────
+    // A valid-format but non-existent Id for the given type — the bare-user read throws on
+    // object access under WITH USER_MODE before any row match, so the Id need not resolve.
+    private static Id fakeId(Schema.SObjectType t) {
+        return Id.valueOf(t.getDescribe().getKeyPrefix() + '000000000000');
+    }
+
+    // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL against the custom
+    // Lease_Inquiry__c / Lease__c objects throws for a user with no access, exercising each
+    // read method's read-failure catch.
+    private static User bareUser() {
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(Alias = 'liread', Email = 'liread@example.com.invalid', EmailEncodingKey = 'UTF-8',
+            LastName = 'LeaseInqRead', LanguageLocaleKey = 'en_US', LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            Username = 'liread.' + DateTime.now().getTime() + Math.mod(Crypto.getRandomInteger(), 100000) + '@example.com.invalid');
+        insert u;
+        return u;
+    }
+
+    /**
+     * Covers the read-failure catch on all six read methods: under a bare Standard User,
+     * WITH USER_MODE on the custom-object queries throws and the controller maps it to a
+     * user-safe AuraHandledException. Its own method because bareUser() inserts a User (setup
+     * DML) and the reads do no record DML, so no MIXED_DML_OPERATION arises. getLog /
+     * getLeaseSummary are passed a fakeId so they reach the selector instead of the null
+     * early-return. The message is deliberately not asserted (unreliable in tests).
+     */
+    @isTest static void readCatchesThrowAuraHandledException() {
+        User u = bareUser();
+        Id fakeInquiryId = fakeId(Lease_Inquiry__c.SObjectType);
+        System.runAs(u) {
+            Test.startTest();
+            try { LeaseInquiryController.getLog(fakeInquiryId); Assert.fail('getLog should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseInquiryController.getHomeKpis(); Assert.fail('getHomeKpis should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseInquiryController.getRecentInquiries(); Assert.fail('getRecentInquiries should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseInquiryController.getPipelineByStage(); Assert.fail('getPipelineByStage should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseInquiryController.getAttention(); Assert.fail('getAttention should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            try { LeaseInquiryController.getLeaseSummary(fakeInquiryId); Assert.fail('getLeaseSummary should throw'); }
+            catch (AuraHandledException e) { Assert.isNotNull(e); }
+            Test.stopTest();
+        }
+    }
 }

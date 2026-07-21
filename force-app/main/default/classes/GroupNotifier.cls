@@ -7,6 +7,15 @@
  * Groups are kept flat by convention (no nested groups); user members are
  * resolved one level deep. A notification failure must never roll back the
  * calling transaction, so every failure path degrades to a debug warning.
+ *
+ * `without sharing` justification (ARCHITECTURE.md §2): this is an
+ * automation/notification utility invoked from triggers, services and flows for
+ * the acquisition deal lifecycle. It must resolve group/queue membership and send
+ * to the target record's watchers independently of whoever triggered the
+ * transaction — the audience of a deal-update notification is defined by the
+ * recipient group, not by the running user's sharing. Declared `without sharing`
+ * so membership resolution and delivery are not silently narrowed by the caller's
+ * record visibility. It performs no record DML and cannot leak data to the caller.
  */
 public without sharing class GroupNotifier {
 

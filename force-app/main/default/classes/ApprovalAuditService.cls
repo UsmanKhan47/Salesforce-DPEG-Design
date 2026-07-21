@@ -11,6 +11,16 @@
  *
  * Defensive posture: an audit-stamp failure must never roll back the approval
  * transaction that triggered it, so failures degrade to debug warnings.
+ *
+ * `without sharing` justification (ARCHITECTURE.md §2): this stamps the approving
+ * principal's identity, time and comments read from the approval history
+ * (ProcessInstanceStep, whose SOQL lives in the `without sharing` +
+ * WITH SYSTEM_MODE ProcessInstanceStepSelector.AuditReads) onto the gate audit
+ * fields. The audit must record the true approver and advance the gate regardless
+ * of who fires the after-save flow, so it must see the full approval trail and the
+ * target Opportunity / LOI / Underwriting records independently of the running
+ * user's sharing. Declared `without sharing` so a user who lacks sharing to a
+ * sibling deal record cannot corrupt or blank the audit stamp.
  */
 public without sharing class ApprovalAuditService {
 

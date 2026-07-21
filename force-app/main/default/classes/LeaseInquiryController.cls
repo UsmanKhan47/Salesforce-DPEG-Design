@@ -28,6 +28,12 @@ public with sharing class LeaseInquiryController {
     private static final String DML_FAILURE_MESSAGE =
         'This update could not be saved. Check your entry and try again, or contact your administrator.';
 
+    // Fixed, generic user-safe message for a failed read (ARCHITECTURE.md §5). Same policy as
+    // DML_FAILURE_MESSAGE: never interpolate platform text or exception detail into it — a
+    // selector failure (FLS/sharing) must not leak field API names or rule internals to the page.
+    private static final String READ_FAILURE_MESSAGE =
+        'This information could not be loaded. Refresh the page or contact your administrator.';
+
     public class LogView {
         @AuraEnabled public List<Entry> entries;
         @AuraEnabled public String stage;
@@ -47,28 +53,34 @@ public with sharing class LeaseInquiryController {
 
     @AuraEnabled(cacheable=true)
     public static LogView getLog(Id inquiryId) {
-        LogView v = new LogView();
-        v.entries = new List<Entry>();
-        if (inquiryId == null) {
+        try {
+            LogView v = new LogView();
+            v.entries = new List<Entry>();
+            if (inquiryId == null) {
+                return v;
+            }
+            Lease_Inquiry__c inq = LeaseInquirySelector.selectRequiredById(inquiryId);
+            v.stage = inq.Stage__c;
+            v.ballInCourt = inq.Ball_In_Court__c;
+            v.closed = inq.Status__c == 'Closed Won' || inq.Status__c == 'Closed Lost';
+            Integer idx = LeaseInquiryService.STAGES.indexOf(inq.Stage__c);
+            v.canAdvance = !v.closed && idx >= 0 && idx < LeaseInquiryService.STAGES.size() - 1;
+            v.nextStage = v.canAdvance ? LeaseInquiryService.STAGES[idx + 1] : null;
+            for (Lease_Activity__c a : LeaseActivitySelector.selectByInquiryId(inquiryId)) {
+                Entry e = new Entry();
+                e.id = a.Id;
+                e.details = a.Details__c;
+                e.ball = a.Ball_In_Court__c;
+                e.enteredBy = a.Logged_By__r != null ? a.Logged_By__r.Name : null;
+                e.entryDate = a.Entry_DateTime__c;
+                v.entries.add(e);
+            }
             return v;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseInquiryController.getLog on ' + inquiryId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        Lease_Inquiry__c inq = LeaseInquirySelector.selectRequiredById(inquiryId);
-        v.stage = inq.Stage__c;
-        v.ballInCourt = inq.Ball_In_Court__c;
-        v.closed = inq.Status__c == 'Closed Won' || inq.Status__c == 'Closed Lost';
-        Integer idx = LeaseInquiryService.STAGES.indexOf(inq.Stage__c);
-        v.canAdvance = !v.closed && idx >= 0 && idx < LeaseInquiryService.STAGES.size() - 1;
-        v.nextStage = v.canAdvance ? LeaseInquiryService.STAGES[idx + 1] : null;
-        for (Lease_Activity__c a : LeaseActivitySelector.selectByInquiryId(inquiryId)) {
-            Entry e = new Entry();
-            e.id = a.Id;
-            e.details = a.Details__c;
-            e.ball = a.Ball_In_Court__c;
-            e.enteredBy = a.Logged_By__r != null ? a.Logged_By__r.Name : null;
-            e.entryDate = a.Entry_DateTime__c;
-            v.entries.add(e);
-        }
-        return v;
     }
 
     /**
@@ -129,20 +141,26 @@ public with sharing class LeaseInquiryController {
 
     @AuraEnabled(cacheable=true)
     public static HomeKpis getHomeKpis() {
-        HomeKpis k = new HomeKpis();
-        Date today = Date.today();
-        Date yearStart = Date.newInstance(today.year(), 1, 1);
-        for (Lease_Inquiry__c q : LeaseInquirySelector.selectForKpis()) {
-            Boolean closed = q.Status__c == 'Closed Won' || q.Status__c == 'Closed Lost';
-            // Signed Leases (YTD): Closed Won with a Signed Date in the current calendar year.
-            if (q.Status__c == 'Closed Won' && q.Signed_Date__c != null && q.Signed_Date__c >= yearStart) k.signed++;
-            if (!closed) {
-                k.active++;
-                if (q.Ball_In_Court__c == 'Landlord') k.waitingLandlord++;
-                if (q.Stage_Start_Date__c != null && q.Stage_Start_Date__c.daysBetween(today) > 14) k.stalled++;
+        try {
+            HomeKpis k = new HomeKpis();
+            Date today = Date.today();
+            Date yearStart = Date.newInstance(today.year(), 1, 1);
+            for (Lease_Inquiry__c q : LeaseInquirySelector.selectForKpis()) {
+                Boolean closed = q.Status__c == 'Closed Won' || q.Status__c == 'Closed Lost';
+                // Signed Leases (YTD): Closed Won with a Signed Date in the current calendar year.
+                if (q.Status__c == 'Closed Won' && q.Signed_Date__c != null && q.Signed_Date__c >= yearStart) k.signed++;
+                if (!closed) {
+                    k.active++;
+                    if (q.Ball_In_Court__c == 'Landlord') k.waitingLandlord++;
+                    if (q.Stage_Start_Date__c != null && q.Stage_Start_Date__c.daysBetween(today) > 14) k.stalled++;
+                }
             }
+            return k;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseInquiryController.getHomeKpis: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        return k;
     }
 
     public class InquiryRow {
@@ -175,11 +193,17 @@ public with sharing class LeaseInquiryController {
 
     @AuraEnabled(cacheable=true)
     public static List<InquiryRow> getRecentInquiries() {
-        List<InquiryRow> rows = new List<InquiryRow>();
-        for (Lease_Inquiry__c q : LeaseInquirySelector.selectRecent()) {
-            rows.add(toRow(q));
+        try {
+            List<InquiryRow> rows = new List<InquiryRow>();
+            for (Lease_Inquiry__c q : LeaseInquirySelector.selectRecent()) {
+                rows.add(toRow(q));
+            }
+            return rows;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseInquiryController.getRecentInquiries: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        return rows;
     }
 
     public class StageCount {
@@ -189,43 +213,55 @@ public with sharing class LeaseInquiryController {
 
     @AuraEnabled(cacheable=true)
     public static List<StageCount> getPipelineByStage() {
-        Map<String, Integer> byStage = new Map<String, Integer>();
-        for (String s : LeaseInquiryService.STAGES) {
-            byStage.put(s, 0);
-        }
-        // Mirror Portfolio Status: only inquiries from the last 5 years.
-        Datetime fiveYearsAgo = Datetime.now().addYears(-5);
-        for (Lease_Inquiry__c q : LeaseInquirySelector.selectActiveStagesCreatedSince(fiveYearsAgo)) {
-            if (byStage.containsKey(q.Stage__c)) {
-                byStage.put(q.Stage__c, byStage.get(q.Stage__c) + 1);
+        try {
+            Map<String, Integer> byStage = new Map<String, Integer>();
+            for (String s : LeaseInquiryService.STAGES) {
+                byStage.put(s, 0);
             }
+            // Mirror Portfolio Status: only inquiries from the last 5 years.
+            Datetime fiveYearsAgo = Datetime.now().addYears(-5);
+            for (Lease_Inquiry__c q : LeaseInquirySelector.selectActiveStagesCreatedSince(fiveYearsAgo)) {
+                if (byStage.containsKey(q.Stage__c)) {
+                    byStage.put(q.Stage__c, byStage.get(q.Stage__c) + 1);
+                }
+            }
+            List<StageCount> out = new List<StageCount>();
+            for (String s : LeaseInquiryService.STAGES) {
+                StageCount sc = new StageCount();
+                sc.stage = s;
+                sc.count = byStage.get(s);
+                out.add(sc);
+            }
+            return out;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseInquiryController.getPipelineByStage: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        List<StageCount> out = new List<StageCount>();
-        for (String s : LeaseInquiryService.STAGES) {
-            StageCount sc = new StageCount();
-            sc.stage = s;
-            sc.count = byStage.get(s);
-            out.add(sc);
-        }
-        return out;
     }
 
     // Active deals needing attention: with the landlord, or aging (> 7 days in stage).
     // Oldest-in-stage first; capped at 6.
     @AuraEnabled(cacheable=true)
     public static List<InquiryRow> getAttention() {
-        List<InquiryRow> rows = new List<InquiryRow>();
-        Date today = Date.today();
-        for (Lease_Inquiry__c q : LeaseInquirySelector.selectActive()) {
-            Integer d = q.Stage_Start_Date__c != null ? q.Stage_Start_Date__c.daysBetween(today) : 0;
-            if (q.Ball_In_Court__c == 'Landlord' || d > 7) {
-                rows.add(toRow(q));
-                if (rows.size() == 6) {
-                    break;
+        try {
+            List<InquiryRow> rows = new List<InquiryRow>();
+            Date today = Date.today();
+            for (Lease_Inquiry__c q : LeaseInquirySelector.selectActive()) {
+                Integer d = q.Stage_Start_Date__c != null ? q.Stage_Start_Date__c.daysBetween(today) : 0;
+                if (q.Ball_In_Court__c == 'Landlord' || d > 7) {
+                    rows.add(toRow(q));
+                    if (rows.size() == 6) {
+                        break;
+                    }
                 }
             }
+            return rows;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseInquiryController.getAttention: '
+                + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        return rows;
     }
 
     // ───────────────── Lease status (legal team) for the record page ─────────────────
@@ -249,29 +285,35 @@ public with sharing class LeaseInquiryController {
 
     @AuraEnabled(cacheable=true)
     public static LeaseSummary getLeaseSummary(Id inquiryId) {
-        LeaseSummary s = new LeaseSummary();
-        if (inquiryId == null) {
+        try {
+            LeaseSummary s = new LeaseSummary();
+            if (inquiryId == null) {
+                return s;
+            }
+            Lease__c l = LeaseSelector.selectMostRecentByInquiryId(inquiryId);
+            if (l == null) {
+                return s;
+            }
+            s.exists = true;
+            s.leaseId = l.Id;
+            s.leaseName = l.Name;
+            s.stage = l.Stage__c;
+            s.legalOwner = l.Legal_Owner__r != null ? l.Legal_Owner__r.Name : null;
+            s.targetDate = l.Target_Execution_Date__c;
+            s.executedDate = l.Executed_Date__c;
+            Integer idx = LEASE_STAGES.indexOf(l.Stage__c);
+            for (Integer i = 0; i < LEASE_STAGES.size(); i++) {
+                LeaseStageStep st = new LeaseStageStep();
+                st.label = LEASE_STAGES[i];
+                st.done = i < idx;
+                st.current = i == idx;
+                s.steps.add(st);
+            }
             return s;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'LeaseInquiryController.getLeaseSummary on ' + inquiryId
+                + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(READ_FAILURE_MESSAGE);
         }
-        Lease__c l = LeaseSelector.selectMostRecentByInquiryId(inquiryId);
-        if (l == null) {
-            return s;
-        }
-        s.exists = true;
-        s.leaseId = l.Id;
-        s.leaseName = l.Name;
-        s.stage = l.Stage__c;
-        s.legalOwner = l.Legal_Owner__r != null ? l.Legal_Owner__r.Name : null;
-        s.targetDate = l.Target_Execution_Date__c;
-        s.executedDate = l.Executed_Date__c;
-        Integer idx = LEASE_STAGES.indexOf(l.Stage__c);
-        for (Integer i = 0; i < LEASE_STAGES.size(); i++) {
-            LeaseStageStep st = new LeaseStageStep();
-            st.label = LEASE_STAGES[i];
-            st.done = i < idx;
-            st.current = i == idx;
-            s.steps.add(st);
-        }
-        return s;
     }
 }

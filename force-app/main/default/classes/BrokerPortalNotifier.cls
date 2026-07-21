@@ -1,3 +1,16 @@
+/**
+ * Sends the in-app custom notification for a new Broker Portal lead to the
+ * Broker_Portal_Leads queue. Invoked from the guest/automation path behind the
+ * public Broker Portal submission (a flow after the guest Lead insert).
+ *
+ * `without sharing` justification (ARCHITECTURE.md §2): this runs in the guest
+ * user's context, which has no sharing access to the freshly-created Lead, the
+ * CustomNotificationType, or the internal queue Group. The reads here are already
+ * WITH SYSTEM_MODE selectors, but the class is declared `without sharing` so the
+ * notify path resolves and targets those records regardless of the (guest) running
+ * user's record visibility — a broker submission must always reach the internal
+ * queue. A notification failure never rolls back the lead transaction.
+ */
 public without sharing class BrokerPortalNotifier {
 
     private static final String NOTIF_TYPE_DEV_NAME = 'Broker_Portal_New_Lead';
