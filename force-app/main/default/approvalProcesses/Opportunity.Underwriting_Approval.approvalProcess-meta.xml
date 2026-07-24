@@ -19,11 +19,11 @@
         <allowDelegate>false</allowDelegate>
         <assignedApprover>
             <approver>
-                <name>nikhil.principal@dpeg-acq.demo</name>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
                 <type>user</type>
             </approver>
             <approver>
-                <name>test-aysz9meqvl23@example.com</name>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
                 <type>user</type>
             </approver>
             <whenMultipleApprovers>Unanimous</whenMultipleApprovers>

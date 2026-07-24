@@ -83,3 +83,448 @@ force-app/main/default/appMenus/AppSwitcher.appMenu-meta.xml
 # Standard org-wide NotificationTypeConfig carries a stale cross-reference id from the source
 # org that doesn't resolve in DPEG-Acq-5.
 force-app/main/default/notificationTypeConfig/NotificationTypeConfig.config-meta.xml
+
+# --- Non-portable / non-deployable content (dryrun4-report.json, usman-dpeg real-EE validation, 2026-07-21) ---
+# Scope: this org (usman-dpeg, 00Diw000000Fqw1EAC) is a real Enterprise Edition org, not source-tracked.
+# The repo was retrieved wholesale from a different org and carries ~322 object dirs; DPEG only owns
+# ~43 of them (the 33 custom __c objects + custom fields on a handful of standard objects). Everything
+# below is retrieved boilerplate for features/objects not present in this org's edition, verified by
+# cross-referencing dryrun4's 602 componentFailures against the repo (0 custom __c fields, no DPEG-named
+# listViews/webLinks in every excluded object dir).
+
+# --- Bucket A: retrieved standard-object boilerplate NOT part of this EE org edition/feature set ---
+# (Field Service, Asset lifecycle, PRM, D&B, Expense Mgmt, Anomaly/Threat event stores, etc.)
+# These sObjects do not resolve in this org at all ("does not resolve to a valid sObject type").
+force-app/main/default/objects/AccountBrand/**
+force-app/main/default/objects/AccountCleanInfo/**
+force-app/main/default/objects/AppointmentTopicTimeSlot/**
+force-app/main/default/objects/ApptBundleAggrDurDnscale/**
+force-app/main/default/objects/ApptBundleAggrPolicy/**
+force-app/main/default/objects/ApptBundleConfig/**
+force-app/main/default/objects/ApptBundlePolicy/**
+force-app/main/default/objects/ApptBundlePolicySvcTerr/**
+force-app/main/default/objects/ApptBundlePropagatePolicy/**
+force-app/main/default/objects/ApptBundleRestrictPolicy/**
+force-app/main/default/objects/ApptBundleSortPolicy/**
+force-app/main/default/objects/AssetAccountParticipant/**
+force-app/main/default/objects/AssetAction/**
+force-app/main/default/objects/AssetActionSource/**
+force-app/main/default/objects/AssetContactParticipant/**
+force-app/main/default/objects/AssetDowntimePeriod/**
+force-app/main/default/objects/AssetStatePeriod/**
+force-app/main/default/objects/AssetWarranty/**
+force-app/main/default/objects/AssignedResource/**
+force-app/main/default/objects/AttributeDefinition/**
+force-app/main/default/objects/AttributePicklist/**
+force-app/main/default/objects/AttributePicklistValue/**
+force-app/main/default/objects/ChannelProgram/**
+force-app/main/default/objects/ChannelProgramLevel/**
+force-app/main/default/objects/ChannelProgramMember/**
+force-app/main/default/objects/ContactCleanInfo/**
+force-app/main/default/objects/ContractLineOutcome/**
+force-app/main/default/objects/ContractLineOutcomeData/**
+force-app/main/default/objects/ConvEntryRelatedRecordCopy/**
+force-app/main/default/objects/ConversationApiLog/**
+force-app/main/default/objects/ConversationApiLogObjSum/**
+force-app/main/default/objects/ConversationEntryCopy/**
+force-app/main/default/objects/CreditMemo/**
+force-app/main/default/objects/CreditMemoInvApplication/**
+force-app/main/default/objects/CreditMemoLine/**
+force-app/main/default/objects/DandBCompany/**
+force-app/main/default/objects/DataMaskCustomValueLibrary/**
+force-app/main/default/objects/DelegatedAccount/**
+force-app/main/default/objects/DynamicDataCapture/**
+force-app/main/default/objects/Expense/**
+force-app/main/default/objects/ExpenseReport/**
+force-app/main/default/objects/ExpenseReportEntry/**
+force-app/main/default/objects/FinanceBalanceSnapshot/**
+force-app/main/default/objects/FinanceTransaction/**
+force-app/main/default/objects/GeolocationBasedAction/**
+force-app/main/default/objects/GisPrvdCnctrJobObjRun/**
+force-app/main/default/objects/Invoice/**
+force-app/main/default/objects/InvoiceLine/**
+force-app/main/default/objects/JobProfile/**
+force-app/main/default/objects/LeadCleanInfo/**
+force-app/main/default/objects/LegalEntity/**
+force-app/main/default/objects/MaintenanceAsset/**
+force-app/main/default/objects/MaintenancePlan/**
+force-app/main/default/objects/MaintenanceWorkRule/**
+force-app/main/default/objects/MessagingEndUser/**
+force-app/main/default/objects/MessagingSession/**
+force-app/main/default/objects/NetworkMember/**
+force-app/main/default/objects/NetworkMemberChunk/**
+force-app/main/default/objects/PartnerFundAllocation/**
+force-app/main/default/objects/PartnerFundClaim/**
+force-app/main/default/objects/PartnerFundRequest/**
+force-app/main/default/objects/PartnerMarketingBudget/**
+force-app/main/default/objects/PayGroup/**
+force-app/main/default/objects/PayPeriod/**
+force-app/main/default/objects/PaymentLineInvoice/**
+force-app/main/default/objects/PrivacyJobSession/**
+force-app/main/default/objects/PrivacyRTBFRequest/**
+force-app/main/default/objects/ProductConsumed/**
+force-app/main/default/objects/ProductConsumedState/**
+force-app/main/default/objects/ProductRequest/**
+force-app/main/default/objects/ProductRequestLineItem/**
+force-app/main/default/objects/ProductServiceCampaign/**
+force-app/main/default/objects/ProductServiceCampaignItem/**
+force-app/main/default/objects/ProductTransfer/**
+force-app/main/default/objects/ProductTransferState/**
+force-app/main/default/objects/ProductWarrantyTerm/**
+force-app/main/default/objects/RecordsetFilterCriteria/**
+force-app/main/default/objects/RecordsetFilterCriteriaRule/**
+force-app/main/default/objects/RecordsetFltrCritMonitor/**
+force-app/main/default/objects/ReportAnomalyEventStore/**
+force-app/main/default/objects/ResourceAbsence/**
+force-app/main/default/objects/ResourcePreference/**
+force-app/main/default/objects/ReturnOrder/**
+force-app/main/default/objects/ReturnOrderLineItem/**
+force-app/main/default/objects/SchedulingConstraint/**
+force-app/main/default/objects/SchedulingWorkspace/**
+force-app/main/default/objects/SchedulingWorkspaceTerritory/**
+force-app/main/default/objects/SerializedProduct/**
+force-app/main/default/objects/SerializedProductTransaction/**
+force-app/main/default/objects/ServiceAppointment/**
+force-app/main/default/objects/ServiceAppointmentCapacityUsage/**
+force-app/main/default/objects/ServiceCrew/**
+force-app/main/default/objects/ServiceCrewMember/**
+force-app/main/default/objects/ServiceReport/**
+force-app/main/default/objects/ServiceResource/**
+force-app/main/default/objects/ServiceResourceCapacity/**
+force-app/main/default/objects/ServiceResourcePreference/**
+force-app/main/default/objects/ServiceResourceSkill/**
+force-app/main/default/objects/ServiceTerritory/**
+force-app/main/default/objects/ServiceTerritoryLocation/**
+force-app/main/default/objects/ServiceTerritoryMember/**
+force-app/main/default/objects/Shift/**
+force-app/main/default/objects/ShiftPattern/**
+force-app/main/default/objects/ShiftPatternEntry/**
+force-app/main/default/objects/ShiftSchedulingOperation/**
+force-app/main/default/objects/ShiftTemplate/**
+force-app/main/default/objects/Shipment/**
+force-app/main/default/objects/SkillRequirement/**
+force-app/main/default/objects/SwarmMember/**
+force-app/main/default/objects/TimeSheet/**
+force-app/main/default/objects/TimeSheetEntry/**
+force-app/main/default/objects/TravelMode/**
+force-app/main/default/objects/WarrantyTerm/**
+force-app/main/default/objects/WorkBadge/**
+force-app/main/default/objects/WorkCapacityAvailability/**
+force-app/main/default/objects/WorkCapacityLimit/**
+force-app/main/default/objects/WorkCapacityUsage/**
+force-app/main/default/objects/WorkPlanSelectionRule/**
+force-app/main/default/objects/WorkType/**
+force-app/main/default/objects/WorkTypeGroup/**
+force-app/main/default/objects/WorkTypeGroupMember/**
+
+# --- Bucket B: standard objects that already exist in the org, with ZERO DPEG customization ---
+# (verified 0 custom __c fields and no DPEG-named listViews/webLinks in each dir)
+force-app/main/default/objects/Account/**
+force-app/main/default/objects/Asset/**
+force-app/main/default/objects/Campaign/**
+force-app/main/default/objects/Case/**
+force-app/main/default/objects/CommSubscriptionChannelType/**
+force-app/main/default/objects/Entitlement/**
+force-app/main/default/objects/Location/**
+force-app/main/default/objects/Product2/**
+force-app/main/default/objects/ProductTransfer/**
+force-app/main/default/objects/Shipment/**
+force-app/main/default/objects/ShipmentItem/**
+force-app/main/default/objects/TimeSlot/**
+force-app/main/default/objects/WorkOrder/**
+force-app/main/default/objects/WorkOrderLineItem/**
+force-app/main/default/objects/WorkPlan/**
+force-app/main/default/objects/WorkPlanTemplate/**
+force-app/main/default/objects/OperatingHours/**
+
+# --- Layouts (top-level layouts/ folder is flat, not nested under objects/<Name>/) for the same ---
+# boilerplate objects above, plus a few standard objects whose Layout fails independently of any
+# CustomObject/CustomField entry (the object itself already exists; only its Layout references a
+# missing related list/field). Account/Contact/Lead/Opportunity/Disposition__c layouts are
+# deliberately NOT excluded here - their one failure (FeedItem.ContentNote quick action) should
+# self-resolve now that Notes/ContentNote has been enabled in this org.
+force-app/main/default/layouts/AccountBrand-*
+force-app/main/default/layouts/ApiAnomalyEventStore-*
+force-app/main/default/layouts/ApptBundleConfig-*
+force-app/main/default/layouts/ApptBundlePolicy-*
+force-app/main/default/layouts/AssetAction-*
+force-app/main/default/layouts/AssetActionSource-*
+force-app/main/default/layouts/AssetStatePeriod-*
+force-app/main/default/layouts/AssignedResource-*
+force-app/main/default/layouts/Case-*
+force-app/main/default/layouts/ContractLineOutcome-*
+force-app/main/default/layouts/ContractLineOutcomeData-*
+force-app/main/default/layouts/CredentialStuffingEventStore-*
+force-app/main/default/layouts/CreditMemo-*
+force-app/main/default/layouts/CreditMemoLine-*
+force-app/main/default/layouts/DandBCompany-*
+force-app/main/default/layouts/DelegatedAccount-*
+force-app/main/default/layouts/DynamicDataCapture-*
+force-app/main/default/layouts/Expense-*
+force-app/main/default/layouts/ExpenseReport-*
+force-app/main/default/layouts/ExpenseReportEntry-*
+force-app/main/default/layouts/FinanceBalanceSnapshot-*
+force-app/main/default/layouts/FinanceTransaction-*
+force-app/main/default/layouts/FldSvcObjChg-*
+force-app/main/default/layouts/FldSvcObjChgDtl-*
+force-app/main/default/layouts/GuestUserAnomalyEventStore-*
+force-app/main/default/layouts/Invoice-*
+force-app/main/default/layouts/InvoiceLine-*
+force-app/main/default/layouts/JobProfile-*
+force-app/main/default/layouts/LegalEntity-*
+force-app/main/default/layouts/LoginAnomalyEventStore-*
+force-app/main/default/layouts/MaintenanceAsset-*
+force-app/main/default/layouts/MaintenancePlan-*
+force-app/main/default/layouts/MaintenanceWorkRule-*
+force-app/main/default/layouts/OperatingHours-*
+force-app/main/default/layouts/PaymentLineInvoice-*
+force-app/main/default/layouts/ProductConsumed-*
+force-app/main/default/layouts/ProductConsumedState-*
+force-app/main/default/layouts/ProductRequest-*
+force-app/main/default/layouts/ProductRequestLineItem-*
+force-app/main/default/layouts/ProductServiceCampaign-*
+force-app/main/default/layouts/ProductServiceCampaignItem-*
+force-app/main/default/layouts/ProductTransfer-*
+force-app/main/default/layouts/ProductTransferState-*
+force-app/main/default/layouts/RecordsetFilterCriteria-*
+force-app/main/default/layouts/RecordsetFilterCriteriaRule-*
+force-app/main/default/layouts/ReportAnomalyEventStore-*
+force-app/main/default/layouts/ResourceAbsence-*
+force-app/main/default/layouts/ResourcePreference-*
+force-app/main/default/layouts/ReturnOrder-*
+force-app/main/default/layouts/ReturnOrderLineItem-*
+force-app/main/default/layouts/SchedulingConstraint-*
+force-app/main/default/layouts/SchedulingObjective-*
+force-app/main/default/layouts/SchedulingRule-*
+force-app/main/default/layouts/SchedulingWorkspace-*
+force-app/main/default/layouts/SchedulingWorkspaceTerritory-*
+force-app/main/default/layouts/ServiceAppointment-*
+force-app/main/default/layouts/ServiceAppointmentCapacityUsage-*
+force-app/main/default/layouts/ServiceCrew-*
+force-app/main/default/layouts/ServiceCrewMember-*
+force-app/main/default/layouts/ServiceResource-*
+force-app/main/default/layouts/ServiceResourceCapacity-*
+force-app/main/default/layouts/ServiceResourcePreference-*
+force-app/main/default/layouts/ServiceResourceSkill-*
+force-app/main/default/layouts/ServiceTerritory-*
+force-app/main/default/layouts/ServiceTerritoryMember-*
+force-app/main/default/layouts/SessionHijackingEventStore-*
+force-app/main/default/layouts/Shift-*
+force-app/main/default/layouts/ShiftPattern-*
+force-app/main/default/layouts/ShiftPatternEntry-*
+force-app/main/default/layouts/ShiftSchedulingOperation-*
+force-app/main/default/layouts/ShiftTemplate-*
+force-app/main/default/layouts/SkillRequirement-*
+force-app/main/default/layouts/SwarmMember-*
+force-app/main/default/layouts/ThreatDetectionFeedback-*
+force-app/main/default/layouts/TimeSheet-*
+force-app/main/default/layouts/TimeSheetEntry-*
+force-app/main/default/layouts/TravelMode-*
+force-app/main/default/layouts/UniversalAnomalyEventStore-*
+force-app/main/default/layouts/WarrantyTerm-*
+force-app/main/default/layouts/WorkCapacityAvailability-*
+force-app/main/default/layouts/WorkCapacityLimit-*
+force-app/main/default/layouts/WorkCapacityUsage-*
+force-app/main/default/layouts/WorkOrder-*
+force-app/main/default/layouts/WorkOrderLineItem-*
+force-app/main/default/layouts/WorkPlan-*
+force-app/main/default/layouts/WorkPlanSelectionRule-*
+force-app/main/default/layouts/WorkPlanTemplate-*
+force-app/main/default/layouts/WorkType-*
+force-app/main/default/layouts/WorkTypeGroup-*
+# --- Sharing rules for boilerplate objects (64 failures on dryrun4, 2026-07-21) ---
+# Excluded surgically by exact file, NOT the whole sharingRules/ directory - the same directory
+# also holds 28 legitimate DPEG object sharing rules (Property__c, Transaction__c, LOI__c, etc.)
+# which all validated cleanly and must keep deploying. None of these 64 are DPEG objects.
+force-app/main/default/sharingRules/AccountBrand.sharingRules-meta.xml
+force-app/main/default/sharingRules/ApptBundleConfig.sharingRules-meta.xml
+force-app/main/default/sharingRules/ApptBundlePolicy.sharingRules-meta.xml
+force-app/main/default/sharingRules/AttributeDefinition.sharingRules-meta.xml
+force-app/main/default/sharingRules/AttributePicklist.sharingRules-meta.xml
+force-app/main/default/sharingRules/ChannelProgram.sharingRules-meta.xml
+force-app/main/default/sharingRules/CleanLeadBackup.sharingRules-meta.xml
+force-app/main/default/sharingRules/ContractLineOutcome.sharingRules-meta.xml
+force-app/main/default/sharingRules/ConvEntryRelatedRecordCopy.sharingRules-meta.xml
+force-app/main/default/sharingRules/ConversationApiLog.sharingRules-meta.xml
+force-app/main/default/sharingRules/ConversationEntryCopy.sharingRules-meta.xml
+force-app/main/default/sharingRules/CreditMemo.sharingRules-meta.xml
+force-app/main/default/sharingRules/DataMaskCustomValueLibrary.sharingRules-meta.xml
+force-app/main/default/sharingRules/DelegatedAccount.sharingRules-meta.xml
+force-app/main/default/sharingRules/DynamicDataCapture.sharingRules-meta.xml
+force-app/main/default/sharingRules/Expense.sharingRules-meta.xml
+force-app/main/default/sharingRules/ExpenseReport.sharingRules-meta.xml
+force-app/main/default/sharingRules/FinanceBalanceSnapshot.sharingRules-meta.xml
+force-app/main/default/sharingRules/FinanceTransaction.sharingRules-meta.xml
+force-app/main/default/sharingRules/GeolocationBasedAction.sharingRules-meta.xml
+force-app/main/default/sharingRules/Invoice.sharingRules-meta.xml
+force-app/main/default/sharingRules/JobProfile.sharingRules-meta.xml
+force-app/main/default/sharingRules/LegalEntity.sharingRules-meta.xml
+force-app/main/default/sharingRules/MaintenancePlan.sharingRules-meta.xml
+force-app/main/default/sharingRules/MaintenanceWorkRule.sharingRules-meta.xml
+force-app/main/default/sharingRules/MessagingEndUser.sharingRules-meta.xml
+force-app/main/default/sharingRules/MessagingSession.sharingRules-meta.xml
+force-app/main/default/sharingRules/NetworkMemberChunk.sharingRules-meta.xml
+force-app/main/default/sharingRules/PartnerFundAllocation.sharingRules-meta.xml
+force-app/main/default/sharingRules/PartnerFundClaim.sharingRules-meta.xml
+force-app/main/default/sharingRules/PartnerFundRequest.sharingRules-meta.xml
+force-app/main/default/sharingRules/PartnerMarketingBudget.sharingRules-meta.xml
+force-app/main/default/sharingRules/PayGroup.sharingRules-meta.xml
+force-app/main/default/sharingRules/PayPeriod.sharingRules-meta.xml
+force-app/main/default/sharingRules/PrivacyJobSession.sharingRules-meta.xml
+force-app/main/default/sharingRules/PrivacyObjectSession.sharingRules-meta.xml
+force-app/main/default/sharingRules/PrivacyRTBFRequest.sharingRules-meta.xml
+force-app/main/default/sharingRules/PrivacySessionRecordFailure.sharingRules-meta.xml
+force-app/main/default/sharingRules/ProductRequest.sharingRules-meta.xml
+force-app/main/default/sharingRules/ProductServiceCampaign.sharingRules-meta.xml
+force-app/main/default/sharingRules/RecordsetFilterCriteria.sharingRules-meta.xml
+force-app/main/default/sharingRules/RetentionStoreUsage.sharingRules-meta.xml
+force-app/main/default/sharingRules/ReturnOrder.sharingRules-meta.xml
+force-app/main/default/sharingRules/SchedulingConstraint.sharingRules-meta.xml
+force-app/main/default/sharingRules/SchedulingWorkspace.sharingRules-meta.xml
+force-app/main/default/sharingRules/SerializedProduct.sharingRules-meta.xml
+force-app/main/default/sharingRules/ServiceAppointment.sharingRules-meta.xml
+force-app/main/default/sharingRules/ServiceCrew.sharingRules-meta.xml
+force-app/main/default/sharingRules/ServiceResource.sharingRules-meta.xml
+force-app/main/default/sharingRules/ServiceResourcePreference.sharingRules-meta.xml
+force-app/main/default/sharingRules/Shift.sharingRules-meta.xml
+force-app/main/default/sharingRules/ShiftPattern.sharingRules-meta.xml
+force-app/main/default/sharingRules/ShiftSchedulingOperation.sharingRules-meta.xml
+force-app/main/default/sharingRules/ShiftTemplate.sharingRules-meta.xml
+force-app/main/default/sharingRules/SwarmMember.sharingRules-meta.xml
+force-app/main/default/sharingRules/TimeSheet.sharingRules-meta.xml
+force-app/main/default/sharingRules/TravelMode.sharingRules-meta.xml
+force-app/main/default/sharingRules/WarrantyTerm.sharingRules-meta.xml
+force-app/main/default/sharingRules/WorkCapacityAvailability.sharingRules-meta.xml
+force-app/main/default/sharingRules/WorkCapacityLimit.sharingRules-meta.xml
+force-app/main/default/sharingRules/WorkCapacityUsage.sharingRules-meta.xml
+force-app/main/default/sharingRules/WorkPlanSelectionRule.sharingRules-meta.xml
+force-app/main/default/sharingRules/WorkType.sharingRules-meta.xml
+force-app/main/default/sharingRules/WorkTypeGroup.sharingRules-meta.xml
+
+# --- Topics for Objects (53 failures, "Topics cant be enabled for this entityName") ---
+# Same rationale as sharingRules above: excluded surgically by exact file, NOT the whole
+# topicsForObjects/ directory - it also holds 33 legitimate DPEG object Topics settings.
+force-app/main/default/topicsForObjects/ApptBundleAggrDurDnscale.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ApptBundleAggrPolicy.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ApptBundleConfig.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ApptBundlePolicy.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ApptBundlePolicySvcTerr.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ApptBundlePropagatePolicy.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ApptBundleRestrictPolicy.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ApptBundleSortPolicy.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/AssetAccountParticipant.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/AssetContactParticipant.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/AssetDowntimePeriod.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/AssetWarranty.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ChannelProgram.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ChannelProgramLevel.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ContractLineOutcomeData.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/DynamicDataCapture.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/Expense.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ExpenseReport.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ExpenseReportEntry.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/JobProfile.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/MaintenanceAsset.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/MaintenancePlan.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/PartnerFundAllocation.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/PartnerFundClaim.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/PartnerFundRequest.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/PartnerMarketingBudget.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ProductConsumed.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ProductRequest.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ProductRequestLineItem.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ProductServiceCampaign.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ProductServiceCampaignItem.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ResourceAbsence.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ResourcePreference.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ReturnOrder.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ReturnOrderLineItem.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/SchedulingWorkspace.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/SchedulingWorkspaceTerritory.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ServiceAppointment.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ServiceCrew.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ServiceCrewMember.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ServiceResource.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ServiceResourceCapacity.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ServiceResourceSkill.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/ServiceTerritoryMember.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/Shift.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/TimeSheet.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/TimeSheetEntry.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/TravelMode.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/WarrantyTerm.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/WorkCapacityAvailability.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/WorkCapacityLimit.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/WorkCapacityUsage.topicsForObjects-meta.xml
+force-app/main/default/topicsForObjects/WorkPlanSelectionRule.topicsForObjects-meta.xml
+
+# --- Experience Cloud / DPEG Broker Portal site (skip entirely per user approval) ---
+# Every file under these directories belongs exclusively to the DPEG_Broker_Portal / "DPEG Broker
+# Portal" Experience Cloud site - none of it is core DPEG CRM metadata.
+force-app/main/default/digitalExperiences/**
+force-app/main/default/digitalExperienceConfigs/**
+force-app/main/default/sites/**
+force-app/main/default/siteDotComSites/**
+force-app/main/default/networks/**
+force-app/main/default/networkBranding/**
+force-app/main/default/navigationMenus/**
+force-app/main/default/audience/**
+force-app/main/default/moderation/**
+force-app/main/default/managedTopics/**
+force-app/main/default/userCriteria/**
+
+# Boilerplate community/self-registration email template - Name exceeds the 80-char limit
+# (platform-generated, not something DPEG authored or uses).
+force-app/main/default/email/unfiled$public/CommunityHeadlessForgotPasswordTemplate.email
+force-app/main/default/email/unfiled$public/CommunityHeadlessForgotPasswordTemplate.email-meta.xml
+
+# --- PRM/MDF sample content (not DPEG - retrieved org boilerplate) ---
+force-app/main/default/reports/prm_channel_reports_folder/**
+force-app/main/default/reports/prm_channel_reports_folder.reportFolder-meta.xml
+force-app/main/default/dashboards/prm_channel_dashboard_folder/**
+force-app/main/default/dashboards/prm_channel_dashboard_folder.dashboardFolder-meta.xml
+force-app/main/default/reportTypes/prm_*
+force-app/main/default/reportTypes/MDF_*
+
+# --- Standard app UiType overrides rejected by the Metadata API (UiType is not updateable) ---
+force-app/main/default/applications/standard__Marketing.app-meta.xml
+force-app/main/default/applications/standard__Platform.app-meta.xml
+force-app/main/default/applications/standard__Sales.app-meta.xml
+force-app/main/default/applications/standard__Service.app-meta.xml
+
+# --- Standard duplicate rules already present/active in this org ---
+force-app/main/default/duplicateRules/Account.Standard_Account_Duplicate_Rule.duplicateRule-meta.xml
+force-app/main/default/duplicateRules/Contact.Standard_Contact_Duplicate_Rule.duplicateRule-meta.xml
+force-app/main/default/duplicateRules/Lead.Standard_Lead_Duplicate_Rule.duplicateRule-meta.xml
+
+# --- Internal Salesforce-namespaced permission set - cannot be created via API in a non-sfdc org ---
+force-app/main/default/permissionsets/sfdcInternalInt__sfdc_scrt2.permissionset-meta.xml
+
+# --- Standard boilerplate QuickActions on Field-Service objects excluded above (quickActions/ is
+# its own flat top-level folder, needs its own entries separate from the objects/layouts excludes)
+force-app/main/default/quickActions/ServiceAppointment.SendEmail.quickAction-meta.xml
+force-app/main/default/quickActions/WorkOrder.SendEmail.quickAction-meta.xml
+force-app/main/default/quickActions/WorkOrderLineItem.SendEmail.quickAction-meta.xml
+
+# --- FieldRestrictionRule (feature not enabled in this org edition) ---
+force-app/main/default/fieldRestrictionRules/Rule1bb692f0e95bbb0fcbfa487f1eb58e785e5a12fabed4832122e919b7d220af70.rule-meta.xml
+force-app/main/default/fieldRestrictionRules/Ruleeceed79d48cbd49d279d55f8dbcc3bdf3b94354a2fe7b5b93f7654cbc9df03aa.rule-meta.xml
+
+# --- ProfilePasswordPolicy requires a <profile> reference; Profiles are excluded from this deploy
+# entirely (see the Profiles entry above) - this policy has nothing to attach to, same reasoning as
+# the existing ProfileSessionSetting exclusion above.
+force-app/main/default/profilePasswordPolicies/Read_Only_profilePasswordPolicy1637020333583.profilePasswordPolicy-meta.xml
+
+# --- Surgical standard-field excludes on objects DPEG genuinely extends (Contact/Lead/Opportunity/
+# Task/Event/User) - only the specific standard fields this org edition does not expose are
+# skipped; every DPEG custom field on these objects keeps deploying normally.
+force-app/main/default/objects/Contact/fields/CleanStatus.field-meta.xml
+force-app/main/default/objects/Lead/fields/CleanStatus.field-meta.xml
+force-app/main/default/objects/Lead/fields/CompanyDunsNumber.field-meta.xml
+force-app/main/default/objects/Lead/fields/DandbCompanyId.field-meta.xml
+force-app/main/default/objects/Lead/fields/PartnerAccountId.field-meta.xml
+force-app/main/default/objects/Opportunity/fields/PartnerAccountId.field-meta.xml
+force-app/main/default/objects/Task/fields/IsVisibleInSelfService.field-meta.xml
+force-app/main/default/objects/Event/fields/IsVisibleInSelfService.field-meta.xml
+force-app/main/default/objects/User/fields/JigsawImportLimitOverride.field-meta.xml
+force-app/main/default/objects/User/fields/PortalRole.field-meta.xml

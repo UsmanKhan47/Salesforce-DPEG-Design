@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Composed access for the Transaction team persona: Edit on Transaction + Critical Date + Task, View-only on Opportunity and Property Asset, View-only on Disposition, plus app/tab visibility for Transaction + Disposition.</description>
+    <label>DPEG Transaction Team</label>
+    <permissionSets>DPEG_Base_Access</permissionSets>
+    <permissionSets>DPEG_Apex_Access</permissionSets>
+    <permissionSets>DPEG_Transaction_Edit</permissionSets>
+    <permissionSets>DPEG_Task_Edit</permissionSets>
+    <permissionSets>DPEG_Opportunity_View</permissionSets>
+    <permissionSets>DPEG_PropertyAsset_View</permissionSets>
+    <permissionSets>DPEG_Disposition_View</permissionSets>
+    <permissionSets>DPEG_App_Transaction</permissionSets>
+    <permissionSets>DPEG_App_Disposition</permissionSets>
+</PermissionSetGroup>

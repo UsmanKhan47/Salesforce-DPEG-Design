@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <applicationVisibilities>
+        <application>Disposition</application>
+        <visible>true</visible>
+    </applicationVisibilities>
+    <description>App and tab visibility for the Disposition app. Assigned alongside DPEG_Disposition_Edit or DPEG_Disposition_View - grants no object/field access on its own.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>DPEG App Disposition</label>
+    <tabSettings>
+        <tab>Sell_Meter</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Disposition__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Broker_Hub</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>standard-report</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Disposition_Dashboard</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+</PermissionSet>

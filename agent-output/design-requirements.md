@@ -1,449 +1,350 @@
-# DESIGN REQUIREMENTS — ARCHITECTURE.md Full Conformance Program
+# DPEG — Role-Based Access Security Model (Design Requirements / Gate-1 Artifact)
 
-**Date:** 2026-07-15
-**Request type:** Migration / remediation program over existing code (NOT a new feature)
-**Scope decision:** MAXIMAL — "Full conformance, straight through" (user-accepted, with costs shown)
-**Authority:** `ARCHITECTURE.md`, `.claude/rules/apex-layering-rule.md`, `.claude/rules/bulk-test-rule.md`, `.claude/rules/invocable-rule.md`
+**Request type:** Declarative security-model build — **no Apex, no LWC.**
+**Target org:** `usman-dpeg` (Enterprise Edition, treated as UAT; direct fixes approved by user).
+**Routing:** `salesforce-solution-architect` (security design) → `salesforce-admin` (build).
+**Prepared by:** salesforce-design · **Date:** 2026-07-22
 
----
-
-## 🎯 WHAT USER REQUESTED
-
-Full conformance of the existing DPEG codebase to `ARCHITECTURE.md`. Four binding decisions (not re-litigated here):
-
-1. **Scope** = everything in the doc: Service/Selector/Domain/Trigger-handler layering, `WITH USER_MODE` on all queries, Jest for all LWC bundles, SLDS 2 tokens, 251-record bulk tests, 90%+ coverage per class.
-2. **Doc defects** = make code match the doc: CREATE `TestDataFactory.cls`; BUMP `sourceApiVersion` 62.0 → 67.0 as its own task with its own deploy + full test run.
-3. **Jest** = all LWC bundles, no exemptions.
-4. **FLS** = full FLS audit first, then the `WITH USER_MODE` sweep.
-
-**Imposed sequencing constraint (does not reduce scope):** the test safety net lands before the refactor that depends on it. Every phase independently deployable, org left working.
+> This is a **design / requirements** document only. No users, queues, permission sets, roles, sharing rules, or approval edits are created here, and no deploy is run. Gate-1 confirmation required before build.
 
 ---
 
-## ⚠️ INVENTORY CORRECTIONS (verified against the codebase this run)
+## 1. Objectives & Scope
 
-The inbound inventory was largely accurate, but **five figures are wrong or misleading** and they change scope, sequencing, and cost. Each is verified below.
+### Objective
+Stand up a **production-grade, least-privilege RBAC model** for two named users on the standard **Minimum Access – Salesforce** profile, composed entirely from OWD + Role Hierarchy + Sharing + Permission Sets/PSGs + a Queue, and reconcile the two Opportunity approval processes to the correct principal approver.
 
-| # | Claim | Verified reality | Impact |
-|---|-------|------------------|--------|
-| 1 | "45 non-test classes" to migrate | **35 team-owned.** 89 `.cls` total − 44 test = 45 non-test; **10 of those are Salesforce-generated Communities/Site boilerplate** (`MicrobatchSelfRegController`, `ForgotPasswordController`, `ChangePasswordController`, `SiteRegisterController`, `SiteLoginController`, `CommunitiesSelfRegConfirmController`, `CommunitiesSelfRegController`, `CommunitiesLandingController`, `CommunitiesLoginController`, `MyProfilePageController`). The inbound brief already declares boilerplate out of scope but applied the 45 figure anyway. Team-owned = 25 controllers + 7 services + 3 notifier/schedulable = **35**. | Layering scope −22% |
-| 2 | "The 4 triggers ARE already thin" | **3 of 4.** `LeadConvertTrigger`, `ContractReviewTrigger`, `OpportunityReviewTrigger` are thin. **`TaskRollupTrigger` is NOT** — lines 7–24 contain two `for` loops and null-filtering logic in the trigger body before calling `TaskRollupService.recalc`. | One trigger needs logic extraction, not just a handler interposed |
-| 3 | "85 SOQL queries" | **109 `SELECT` keywords across 36 non-test classes** (2 of them in boilerplate → ~107 in team code). The 85 figure is plausibly *query statements*; 109 counts subqueries separately. | Define the sweep unit before estimating; ~107 is the upper bound |
-| 4 | "33 objects" for the FLS matrix | **33 custom objects confirmed** ✅ — but they carry **463 custom fields**, and the repo contains **322 object folders** (mostly standard). The FLS matrix is 463 custom fields × 7 team permission sets, plus standard-object fields in use. | FLS phase is field-scale, not object-scale |
-| 5 | "10 permission sets"; "`DPEG_Admin_Access` is the likely home for gap closure" | **8 team permission sets** (2 are `sfdcInternalInt__*`, Salesforce-generated); **7 carry FLS**. `DPEG_Admin_Access` grants FLS on **exactly one field** (`Lease_Inquiry__c.OneDrive_URL__c`). It is a *tab-visibility* permission set, not an FLS home. | See the FLS finding below — it reshapes Phase 3 |
+### In scope
+- Two users: **Junior Dhanani** (junior acquisition analyst) and **Nikhil Dhanani** (principal).
+- **Acquisition queue** (Leads + a recommended set of acquisition custom objects) with Junior as member.
+- **Full least-privilege RBAC**: per-object OWD tightening, a DPEG role hierarchy, and sharing strategy.
+- A **new** permission-set / PSG architecture that composes exactly the required access (existing perm sets are unsuitable — see §7).
+- **Approval repoint** of `Opportunity.LOI_Approval` and `Opportunity.Underwriting_Approval` to Nikhil.
 
-### 🔴 The FLS finding that reshapes the program
+### Out of scope (explicit)
+- **Transaction / Property Management team editor personas** — deferred (only Junior + Nikhil now).
+- **Experience Cloud / Investor Portal** access and guest sharing.
+- **Sharing for the IR module** (Investor/Investment objects — never built; do not design for them).
+- **Modifying or deleting existing permission sets / users** — the new perm sets are strictly additive; existing personas must remain unaffected.
+- Apex, LWC, Flow, validation rules, field creation.
 
-The inbound brief correctly flags the FLS risk but **misidentifies the mechanism**. Evidence:
-
-- `force-app/main/default/profiles/**` is **`.forceignore`d** (`.forceignore` line 28). The stated reason: profiles are unportable; excluding them eliminates 394 deploy errors.
-- `Admin.profile-meta.xml` grants **1,537 `<fieldPermissions>`**.
-- All 7 team permission sets combined grant **590 `<field>` entries**.
-- `DPEG_Admin_Access`'s own description states it exists to restore *"tab visibility and FLS the Admin profile granted (Profiles excluded from deployment)"* — and it restores exactly **one** field.
-
-**Therefore: FLS in this org is overwhelmingly profile-granted, and profiles are not in source control and are not deployable from this repo.** Three consequences the plan must design around:
-
-1. **The FLS audit cannot be performed from the repo.** The repo does not contain the org's effective FLS. The audit must run against the **live org** (Tooling/Metadata API or `sf` FLS extract per profile + permission set), then be materialised into deployable permission sets.
-2. **`WITH USER_MODE` breakage will be invisible to admin smoke tests.** The dashboards work today for Admins because the Admin *profile* grants 1,537 field permissions. `USER_MODE` enforces FLS against the **running user**. Non-admin users (Property Management, Transactions, Acquisitions) rely on the 590 permission-set grants. **The dashboards will break for end users while continuing to work for whoever is testing.** Phase 3 acceptance MUST include verification as each non-admin persona, not as Admin.
-3. **The delta (1,537 profile grants vs 590 permission-set grants) is the FLS gap surface** — not zero, and not small. This is the quantified form of the documented "no FLS on sf-deployed custom fields" gotcha.
+### The 4 binding decisions (already made — do not re-litigate)
+1. **Junior** = Edit on Acquisition + Disposition; View-only on Transaction + Property Management.
+2. **Queue** = Acquisition queue owns Leads + acquisition objects; Junior is a member.
+3. **RBAC** = full least-privilege (OWD tighten + Role Hierarchy + Sharing), not simple perm-set-only control.
+4. **Approver** = Nikhil Dhanani is the principal approver on both Opportunity approval processes.
 
 ---
 
-## 🚧 WHERE FULL CONFORMANCE IS IMPOSSIBLE OR SELF-DEFEATING
+## 2. Ground-Truth Facts (verified against repo, 2026-07-22)
 
-The user has decided; scope is not softened. These are cases where a rule **cannot be satisfied** (not merely expensive), with evidence and the minimum amendment.
+These facts drive the design; the admin must re-verify the **live org** values before building (repo ≠ org in places, see risks).
 
-### 1. `TaskFanoutService` cannot pass a 251-record bulk test — and it *should* fail
+| Fact | Verified value |
+|------|----------------|
+| Custom objects | **33** (11 Acquisition, 2 Transaction, 5 Disposition, 15 Property Management) per ARCHITECTURE §1 |
+| OWD — 28 master objects | **`ReadWrite` (Public Read/Write)** — org-wide-open; no tightening deployed |
+| OWD — 5 detail objects | **`ControlledByParent`**: `Unit__c`, `Rent_Step__c`, `Lease_Activity__c`, `Renewal_Activity__c`, `Work_Order_Activity__c` — inherit master; **cannot** carry their own OWD |
+| Apps (4) | `Acquisition`, `Disposition`, `Transaction`, `Property_Management` |
+| Existing Acquisition queue | **None.** Only `Broker_Portal_Leads` (Lead only) exists in repo |
+| `LOI_Approval` approvers | `usman.khan.dpeg@avanzasolutions.com` **+** `aftab.ali.dpeg.usman@avanzasolutions.com`, **Unanimous** |
+| `Underwriting_Approval` approvers | Same two, **Unanimous**; description states *"Both principals (Ali + Nikhil) must approve"* |
+| Existing perm sets | `DPEG_Acquisitions` (346 FLS fields, Create/Edit/Delete broad), `Property_Management_Access` (183), `Transaction_App_Access` (44), `Acquisition_App_Access` (all-4-apps visibility), + dashboard/admin sets — all **edit/power-user scoped** |
+| FLS location | Effective FLS lives on **profiles**, which are `.forceignore`d — **FLS is NOT in the repo.** New perm sets must author FLS fresh (cannot copy from profiles) |
 
-- **Rule:** `bulk-test-rule.md` — "Service method with DML | **251** minimum".
-- **Evidence:** `TaskFanoutService.cls:49–98` accumulates `toInsert` across **every** Transaction in the batch and performs a single `insert toInsert;` at **line 94**. The fan-out is the Day-0 checklist (~75 Tasks per Transaction, CMDT-driven).
-- **Arithmetic:** 251 × 75 = **18,825 Task rows in one DML** vs the **10,000 DML rows/transaction** governor limit. Ceiling is ~133 Transactions.
-- **Verdict — NOT a doc defect.** This is the rule doing its job: it surfaces a genuine architectural defect (the already-flagged "unguarded DML volume"). **Do not amend the rule.** Fix the service: chunk the fan-out into a Queueable (`System.Finalizer` per the layering rule's anti-`@future` stance).
-- **Trap to avoid:** `TaskFanoutService` exposes `@TestVisible taskDefsOverride`. A test *can* inject a 2-def list and pass 251 Transactions — **artificially green while hiding the production limit break.** The bulk test must exercise production-representative def counts.
-- **⚠️ Sequencing consequence:** the TaskFanout re-architecture (Phase 7) must land **before or with** its 251-record bulk test (Phase 2). This is the one place the "tests before refactor" constraint inverts, and it is unavoidable.
-
-### 2. Guest portal vs `WITH USER_MODE` — the fix is not deployable from this repo
-
-- **Rule:** §2 — all SOQL in Selectors, `WITH USER_MODE`.
-- **Evidence:** `BrokerPortalController.cls:1` is `without sharing` and correct (public LWR guest site). Guest FLS lives on the **Guest User Profile** — and `.forceignore` lines 20–28 exclude all profiles, *explicitly naming* "DPEG Broker Portal Profile / Guest License User" as causing userLicense errors.
-- **Conflict:** routing broker-portal queries through a `WITH USER_MODE` Selector enforces FLS against the guest user, whose FLS is intentionally minimal, **cannot be granted from this repo**, and is manual org config.
-- **Minimum doc amendment:** §2 gains a narrow clause — *"Selectors serving the public/guest portal may use `AccessLevel.SYSTEM_MODE` with written justification in the class header, because guest FLS is managed on the Guest User Profile outside this repo. Guest-facing writes must field-allow-list explicitly."* Alternative (no amendment): grant guest FLS via a permission set assigned to the site guest user — must be **proven in the org first**; treat as a spike, not an assumption.
-
-### 3. 90% coverage + layering on Salesforce-generated boilerplate — self-defeating
-
-- 10 of the 45 non-test classes are platform-generated Site/Communities controllers. Refactoring them into Selector/Domain, or writing tests to hit 90% on Salesforce's own code, churns code the team does not own and the platform may regenerate.
-- **Minimum doc amendment:** §2 states coverage/layering targets apply to **team-owned** classes; Salesforce-generated Site/Communities boilerplate is exempt. (This also formalises the 45 → 35 correction and is consistent with the brief's own stance.)
-
-### 4. "0 LDS GraphQL" is **not** a defect by default — converting the 72 would violate the doc
-
-- §5 sets a data-access **priority**, and names imperative Apex as **correct** "when LDS cannot express the query (**complex joins, aggregates**, Plaid callout results)".
-- The KPI dashboards are `COUNT()` / `GROUP BY` aggregates — the doc's own listed exception. Converting them is self-defeating and would lose functionality.
-- **Genuine candidates are narrow:** multi-object *record* reads (`rentRoll`, `dispositionOffer`). Conformance target ≈ **2–8 components, not 72**.
-- ⚠️ **Uncertainty flagged:** UI-API GraphQL aggregate support is limited and version-dependent. **Validate per component with a spike before converting.** Do not mass-convert.
-
-### 5. Doc internal cross-references are broken (cheap, fold into the §2 doc PR)
-
-`ARCHITECTURE.md` §6 instructs contributors to update sections that **do not exist**:
-- "populate its entry under **§1 Current objects**" — §1 has no *Current objects* subsection.
-- "document it under **§4 Integration Architecture**" — Integration is **§3**; §4 is Experience Cloud Portal.
-- "add it to the **§2 Key Apex Services** table" — §2 has no *Key Apex Services* table.
-- §2 lists `TestDataFactory.cls` under *Reference Implementations* as though it exists; it does not (user already decided: create it).
-
-**Minimum amendment:** fix the section numbers and add the missing `§1 Current objects` / `§2 Key Apex Services` subsections (or delete the references). Bundle with the API-version fix.
-
-### 6. `UnitOfWork` is explicitly OUT of scope
-
-`apex-layering-rule.md` mandates UoW **"when the project has a `UnitOfWork` class"**. Verified: **none exists**. The rule is conditional, so conformance does **not** require creating one. Introducing UoW would be scope creep and is excluded. **A `TriggerHandler` base class, by contrast, IS required** — the rule mandates the one-line trigger form `new <Object>TriggerHandler().run();`, and no base class exists in `force-app` (only pattern docs in `.claude/skills/`). Creating it is a Phase 5 prerequisite.
-
-### 7. Minor: `@InvocableMethod` conformance is not quite clean
-
-The brief lists invocables as conformant. Strictly per `invocable-rule.md` (binding), `TaskFanoutService.fanOut(List<Id>)` is bulk-safe (List param ✅, `void` return ✅) but has **no `InputDTO` inner class with `@InvocableVariable` fields**, which the rule requires. Small and cheap — folded into Phase 7 with the fan-out re-architecture.
+**Boundary objects (note, no design impact):** `Property__c` is the acquisition target (Acquisition module) — distinct from `Property_Asset__c` (PM root). `NDA__c` spans Acquisition + Disposition (Junior edits it under either).
 
 ---
 
-## 📊 PHASED PROGRAM PLAN
+## 3. User Matrix (target end-state)
 
-Dependency-ordered. Every phase independently deployable and leaves the org working.
+Object groups: **ACQ** = {Opportunity, Lead, Property__c, LOI__c, Counter_Offer__c, Underwriting__c, Development_Feasibility_Review__c, Construction_Feasibility_Review__c, Contract_Review__c, PSA_Version__c, Deal_Message__c, Offering__c, NDA__c}. **DISP** = {Disposition__c, Disposition_Offer__c, BOV_Submission__c, Broker_Listing__c, Wire__c}. **TXN** = {Transaction__c, Critical_Date__c}. **PM** = the 15 Property-Management objects.
+
+| User | Group | Create | Read | Edit | Delete | FLS | Record visibility mechanism |
+|------|-------|:------:|:----:|:----:|:------:|-----|-----------------------------|
+| **Junior Dhanani** | ACQ | ✅ | ✅ | ✅ | ❌ | View+Edit | Owns + queue/team sharing (R/W); View All for read |
+| | DISP | ✅ | ✅ | ✅ | ❌ | View+Edit | Owns + team sharing (R/W); View All for read |
+| | TXN | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
+| | PM | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
+| | Apps | Acquisition, Disposition, Transaction | | | | | |
+| **Nikhil Dhanani** | ACQ | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
+| | DISP | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
+| | TXN | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
+| | PM | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
+| | Apps | All 4 | | | | | |
+| | Approval | Named approver on `LOI_Approval` + `Underwriting_Approval`; Read on Opportunity (via ACQ View) | | | | | |
+
+**Design notes**
+- **"Create/Read/Edit, no Delete"** for Junior is deliberate least-privilege — the request said *edit*, not *delete*.
+- **View All (read-all) is the mechanism** that delivers "view-only across records" cleanly under an OWD-Private model — it grants read to every record of an object without any sharing rule, and cannot grant edit. It is the right tool for a read-only principal and for Junior's Txn/PM view.
+- Junior is **not** granted **Modify All** anywhere (that would bypass sharing and defeat least-privilege). His edit on records he does not own comes from **sharing rules**, not Modify All.
+
+---
+
+## 4. OWD Matrix (Org-Wide Defaults)
+
+**Principle:** tighten every deal/financial/tenant **master** to **Private**; deliver read to view personas via **View All** perm-set flags and edit to Junior via **sharing rules**. Detail objects inherit their master (unchanged). This achieves least-privilege without any `Public Read-Only` tier — no object needs to be world-readable.
+
+| Object(s) | Current OWD | Target OWD | Rationale |
+|-----------|-------------|-----------|-----------|
+| **28 master custom objects** (all ACQ/DISP/TXN/PM masters) | `ReadWrite` (Public R/W) | **Private** | Deal, financial, wire, and tenant records must not be world-writable. Access granted back explicitly (auditable). |
+| `Unit__c`, `Rent_Step__c`, `Lease_Activity__c`, `Renewal_Activity__c`, `Work_Order_Activity__c` | `ControlledByParent` | **`ControlledByParent` (unchanged)** | Master-detail details cannot have an independent OWD — they follow the master. No action. |
+| **Opportunity** (standard) | *verify in org* | **Private (recommended)** — **decision required** | Consistent least-privilege for the deal root. **Blast radius:** affects all existing deals + `LeadConvertService`/assignment flows; regression-test first. If disruptive, keep current OWD and rely on Read object perm + View All for read personas. |
+| **Lead** (standard) | *verify in org* | **Private (recommended)** | Private + queue ownership is exactly why the Acquisition queue works — queue members auto-see queue-owned leads; assignment rules still route. |
+
+**Keep "Grant Access Using Hierarchies" = ON** on all Private custom objects so the role hierarchy backbone functions (principal sees subordinates' records). View All is the primary read mechanism for the two personas; hierarchy is the structural backbone and future-proofing.
+
+**Standard-object caveat:** OWD for standard objects (Opportunity, Lead) is managed in **Setup → Sharing Settings**, not reliably in `object-meta.xml`. The admin must read/set these in the org.
+
+---
+
+## 5. Role Hierarchy
+
+The 18 roles in the repo are the **out-of-box Salesforce sample set** (CEO, CFO, Sales teams…) — not DPEG-specific. Design a clean DPEG tree:
 
 ```
-P0 API uplift ──┬── P1 TestDataFactory ── P2 Bulk tests + coverage ──┐
-                │                              ▲                      │
-                │                              └── P7 LDV/DML fixes ──┤ (TaskFanout inverts)
-                │                                                     ▼
-                └── P3 FLS audit + permsets ───────────────► P4 Selectors + USER_MODE
-                    (parallel; ADMIN track)                           │
-                                                                      ▼
-                                                    P5 TriggerHandler + Domain
-                                                                      │
-                                                                      ▼
-                                              P6 Controllers + Service + error boundary
-                                                                      │
-                    P8 Jest ── P9 SLDS 2 ── P10 utils  (UI track, parallelisable) ◄──┘
+DPEG Principal            (Nikhil Dhanani)          ← top; grant-access-using-hierarchy reaches all below
+├── Acquisitions Lead     (unassigned — scaffold)
+│   └── Acquisitions Analyst   (Junior Dhanani)     ← assigned now
+├── Disposition Lead      (unassigned — deferred)
+├── Transactions Lead     (unassigned — deferred)
+└── Property Mgmt Lead    (unassigned — deferred)
+```
+
+**Build now (minimal to satisfy the 2 users):**
+- `DPEG_Principal` → assign **Nikhil**.
+- `Acquisitions_Analyst` (reporting to `DPEG_Principal`, optionally via an `Acquisitions_Lead` placeholder) → assign **Junior**.
+
+The lead/other-module roles are **designed but not built** (out of scope: Txn/PM/Disp team users are deferred). Add them when those personas exist.
+
+**Why hierarchy alone is not enough:** queue-owned and integration-owned (Yardi-mirror) records sit **outside** the role hierarchy — hierarchy will not surface them to Nikhil. This is why the two personas get **View All** (§3) rather than relying on hierarchy for read. Hierarchy is the backbone; View All is the guarantee.
+
+---
+
+## 6. Sharing Strategy (how each persona sees records under OWD Private)
+
+| Persona / need | Mechanism | Detail |
+|----------------|-----------|--------|
+| **Nikhil — read everything (4 modules)** | **View All** on every object (in his View perm sets) + top of role hierarchy | View All delivers org-wide read with no sharing rules; hierarchy is structural. No sharing rules required for Nikhil. |
+| **Junior — read all Txn + PM** | **View All** on TXN + PM objects (in his View perm sets) | No sharing rules required. |
+| **Junior — read all Acq + Disp** | **View All (read)** on ACQ + DISP objects (in his Edit perm sets) | Lets him *see* records he doesn't own; edit is separate (below). |
+| **Junior — edit Acq records he doesn't own** | **Owner-based sharing rule** | Records **owned by the Acquisition queue** → **Read/Write** to public group **`DPEG Acquisitions Team`**. Queue-owned records do **not** share up the hierarchy, so this rule is mandatory. |
+| **Junior — edit Disp records he doesn't own** | **Owner-based sharing rule** | Disposition has **no queue** in scope; records are user-owned. Rule: records owned by **`Role: Acquisitions Analyst and Subordinates`** → **R/W** to `DPEG Acquisitions Team`. If disposition records will be owned outside that role, extend to a criteria-based "all records" R/W rule (see Open Question 3). |
+
+**Public group to create:** `DPEG Acquisitions Team` = { Role **Acquisitions Analyst and Subordinates**, Role **DPEG Principal** }. Sharing rules grant **R/W**; each user's **object permission caps their effective access** (Junior R/W, Nikhil read-only), so one R/W rule serves both safely.
+
+**Critical gotcha (queue ownership ≠ hierarchy sharing):** a record owned by a **queue** has no role, so it is invisible to the role hierarchy — *including to the principal at the top*. Every module whose records are queue-owned needs an explicit owner-based sharing rule (or the viewers need View All). Nikhil is covered by View All; Junior's **edit** on queue-owned acq records requires the sharing rule above.
+
+---
+
+## 7. Permission-Set / PSG Plan (the crux)
+
+### Why the existing perm sets are unsuitable
+`DPEG_Acquisitions`, `Property_Management_Access`, `Transaction_App_Access` grant **Create/Edit/Delete + edit-FLS** across their objects — they are power-user/app sets. They **cannot** express "view-only on Transaction/PM." Reusing them would over-grant. **Do not modify them** (existing users depend on them). Build a clean, composable **new** set.
+
+### New atomic permission sets (functional — object CRUD + FLS)
+
+| # | Permission set | Objects | Object perms | FLS | View All |
+|---|----------------|---------|--------------|-----|:--------:|
+| 1 | `DPEG_Acquisition_Edit` | ACQ (13, incl. Opportunity, Lead) | C / R / U (no D) | Read + Edit | ✅ (read) |
+| 2 | `DPEG_Acquisition_View` | ACQ | R | Read | ✅ |
+| 3 | `DPEG_Disposition_Edit` | DISP (5) | C / R / U (no D) | Read + Edit | ✅ (read) |
+| 4 | `DPEG_Disposition_View` | DISP | R | Read | ✅ |
+| 5 | `DPEG_Transaction_View` | TXN (2) | R | Read | ✅ |
+| 6 | `DPEG_PropertyMgmt_View` | PM (15, incl. the 5 details) | R | Read | ✅ |
+
+### New app/tab-visibility permission sets
+
+| # | Permission set | Grants |
+|---|----------------|--------|
+| 7 | `DPEG_App_Acquisition` | App visibility + all Acquisition tabs |
+| 8 | `DPEG_App_Disposition` | App visibility + all Disposition tabs |
+| 9 | `DPEG_App_Transaction` | App visibility + all Transaction tabs |
+| 10 | `DPEG_App_PropertyMgmt` | App visibility + all PM tabs |
+
+### Approval-access permission set
+**Recommendation: do NOT create a separate one.** Approval *acting* rights come from being the **named approver** (a process assignment, not a permission) + **Read on Opportunity** — already delivered by `DPEG_Acquisition_View` (Read + View All on Opportunity). A standalone `DPEG_Approval_Principal` would be redundant. Create a thin one (View All on Opportunity only) **only if** you want approval visibility decoupled from module access (see Open Question 5 — flag for confirmation).
+
+### Permission Set Groups (compose per persona)
+
+| PSG | Members | Assigned to |
+|-----|---------|-------------|
+| `DPEG_Junior_Analyst_PSG` | 1 `Acquisition_Edit`, 3 `Disposition_Edit`, 5 `Transaction_View`, 6 `PropertyMgmt_View`, 7 `App_Acquisition`, 8 `App_Disposition`, 9 `App_Transaction` | **Junior** |
+| `DPEG_Principal_PSG` | 2 `Acquisition_View`, 4 `Disposition_View`, 5 `Transaction_View`, 6 `PropertyMgmt_View`, 7–10 all four App sets | **Nikhil** |
+
+A user is never assigned both `*_Edit` and `*_View` for the same module (Junior gets Edit, Nikhil gets View) — no conflict.
+
+### FLS is the bulk of the work (flag)
+Each `*_View` / `*_Edit` set must enumerate **FLS for every field** of its objects (33 objects carry **463 custom fields** + standard fields). FLS is **not in the repo** (profiles are forceignored). Practical build path:
+- **Source the field lists** from the existing perm sets (`DPEG_Acquisitions` = 346 fields, `Property_Management_Access` = 183, `Transaction_App_Access` = 44) — reuse the enumerations, set the edit flag per view/edit intent.
+- **Formula / roll-up / auto-number fields are read-only** → grant **Read FLS only** even in `*_Edit` sets (an edit-FLS on a formula field is invalid).
+- **Required & master-detail fields** cannot have Read FLS removed — grant Read.
+- **Missing FLS = "No such column" / blank fields** for the persona. This is invisible to an admin tester (admin passes via profile). **Acceptance test as each persona** (see §14 risks).
+
+---
+
+## 8. Acquisition Queue Specification
+
+**Create queue:** `Acquisition` (verify it doesn't already exist in the live org first — only `Broker_Portal_Leads` is in the repo).
+
+**Members:** **Junior Dhanani** (direct member). *(Optionally add the `Acquisitions Analyst` role instead of the user, for future members — recommend user-direct now for the 2-user scope.)*
+
+**Queue-enabled objects — recommendation:**
+
+| Object | Queue-own? | Rationale |
+|--------|:----------:|-----------|
+| **Lead** | ✅ **Yes** | Primary purpose — inbound acquisition-lead triage/intake (mirrors existing Broker Portal Leads pattern). |
+| **Property__c** | ✅ **Recommended** | Standalone acquisition target; a triage pool for sourced-but-unassigned targets before an analyst takes ownership. |
+| `Underwriting__c`, `LOI__c`, `Development_Feasibility_Review__c`, `Construction_Feasibility_Review__c`, `Contract_Review__c` | ⚠️ **Optional** | Only if DPEG wants a **pooled-review intake** model (analysts pick up unassigned reviews). Otherwise these are auto-created by Apex tied to a user-owned deal and should follow the deal owner. **Default: No.** |
+| `Counter_Offer__c`, `PSA_Version__c`, `Deal_Message__c` | ❌ **No** | Append-only logs / version children — no independent assignment; ownership should track the parent. |
+| `Offering__c`, `NDA__c` | ❌ **No** (default) | Documents tied to a deal/disposition; `NDA__c` also spans Disposition. Queue-own only if a legal-triage pool is wanted. |
+
+**Recommended minimal set: `Lead` + `Property__c`.** (See Open Question 2 for the optional pooled-review extension.)
+
+**Constraints the admin must respect:**
+- **Opportunity cannot be queue-owned** (standard Opportunity does not support queue ownership) — the deal itself is always user-owned.
+- All 11 acquisition custom objects are lookup-based (none are master-detail details), so all **have `OwnerId` and are queue-eligible** — the recommendation above is a *design* choice, not a technical limit.
+- The `Acquisition` queue on Lead **coexists** with `Broker_Portal_Leads`; ensure Lead assignment rules don't conflict.
+
+---
+
+## 9. Approval-Process Repoint
+
+**Goal:** Nikhil Dhanani becomes the principal approver on `Opportunity.LOI_Approval` and `Opportunity.Underwriting_Approval`.
+
+**Current repo state:** both processes name **two** approvers — `usman.khan.dpeg@avanzasolutions.com` (the ghost Nikhil placeholder) **+** `aftab.ali.dpeg.usman@avanzasolutions.com` ("Ali") — with **Unanimous**. The Underwriting description documents *"Both principals (Ali + Nikhil) must approve."*
+
+**Recommended repoint (matches documented two-principal design):**
+- Replace `usman.khan.dpeg@avanzasolutions.com` → **new Nikhil Dhanani user**.
+- **Keep** `aftab.ali.dpeg.usman@avanzasolutions.com` as co-approver; **keep Unanimous.**
+- Apply identically to both processes.
+
+> **Open Question 1** — the request says *"so Nikhil is the approver"* (singular). If the intent is **Nikhil as sole approver**, drop Ali and use a single-approver step instead. Repo shows 2/unanimous; confirm before building.
+
+**Operational sequence (admin — declarative gotchas):**
+1. **Verify the LIVE org** approver config first — repo may differ from org (drift noted).
+2. An **active** approval process's steps **cannot be edited** — **deactivate** each process, edit the approver, **reactivate**.
+3. Deactivation is **blocked by pending in-flight approval requests** — **recall** any pending submissions first.
+4. The approver must be an **active user with a Salesforce license** (Opportunity is a standard object) and **Read on Opportunity** — delivered by `DPEG_Acquisition_View`. Minimum Access – Salesforce is a Salesforce-licensed profile ✅.
+5. `recordEditability = AdminOnly` is unchanged — fine, since Nikhil is read-only anyway; he can still approve/reject as the named approver.
+
+---
+
+## 10. Users to Create
+
+Both on the standard **Minimum Access – Salesforce** profile.
+
+| Field | Junior Dhanani | Nikhil Dhanani |
+|-------|----------------|----------------|
+| Notification/activation email | `usmankhan-96@hotmail.com` | `usmanthehitman@gmail.com` |
+| Proposed username (must be globally unique) | `junior.dhanani@usmandpeg.uat` | `nikhil.dhanani@usmandpeg.uat` |
+| Alias | `jdhan` | `ndhan` |
+| Profile | Minimum Access – Salesforce | Minimum Access – Salesforce |
+| Role | `Acquisitions_Analyst` | `DPEG_Principal` |
+| Queue membership | `Acquisition` queue | — |
+| PSG | `DPEG_Junior_Analyst_PSG` | `DPEG_Principal_PSG` |
+| Approver on | — | `LOI_Approval`, `Underwriting_Approval` |
+
+Usernames are **globally unique across all Salesforce orgs** — if `@usmandpeg.uat` is taken, suffix (e.g., `.01`). Set locale/timezone/language to org defaults at creation.
+
+---
+
+## 11. Admin vs. Solution-Architect Split
+
+### 🟤 SOLUTION-ARCHITECT (design authority)
+- Finalize the **OWD matrix** (per-object target + the Opportunity/Lead standard-object decision).
+- Finalize the **role hierarchy** tree (which roles to build now vs. defer).
+- Specify **sharing rules** (owner/criteria, source owner, target group, grant level) and the **public group** definition.
+- Specify the **permission-set / PSG architecture** — object perms, View All flags, FLS scope per set, app/tab visibility, and the user→PSG mapping.
+- Decide the **approval repoint** shape (Nikhil sole vs. Nikhil + Ali unanimous) pending Open Question 1.
+- Produce the **queue spec** (final object list + members).
+
+### 🔵 ADMIN (build)
+- Create **roles**, **public group**, **2 users** (assign roles).
+- Set **OWD** per matrix (custom objects via `sharingModel`; standard objects in Sharing Settings).
+- Create **sharing rules**.
+- Create the **6 functional + 4 app permission sets** (with full FLS enumeration) and the **2 PSGs**; assign to users.
+- Create the **`Acquisition` queue** (+ Junior member, + queueSobjects).
+- **Repoint** the two approval processes (deactivate → edit approver → reactivate).
+- **Do not deploy** without Gate-3 confirmation; **do not modify** existing perm sets/users.
+
+---
+
+## 12. Recommended Build Order (dependency-driven)
+
+1. **Roles** (`DPEG_Principal`, `Acquisitions_Analyst`) — needed before users and role-based sharing.
+2. **Public group** `DPEG Acquisitions Team` (references the roles).
+3. **Users** (Junior → Acquisitions Analyst; Nikhil → DPEG Principal).
+4. **Permission sets + PSGs** (create + FLS enumeration).
+5. **OWD tightening** (custom masters → Private; Opportunity/Lead per decision). *Triggers sharing recalculation.*
+6. **Sharing rules** (after OWD Private + groups + roles exist).
+7. **Acquisition queue** (+ Junior member + queueSobjects).
+8. **Assign PSGs** to users.
+9. **Repoint approval processes** to Nikhil (recall pending → deactivate → edit → reactivate).
+10. **Persona acceptance test** — log in **as Junior** and **as Nikhil**; verify exact access; an admin smoke test proves nothing (FLS/USER_MODE gaps are invisible to admins).
+
+---
+
+## 13. Open Questions (for the user)
+
+1. **Approval approvers** — keep Ali as co-approver with Nikhil (**Unanimous**, matches the documented two-principal design), or make **Nikhil the sole approver**? *(Recommend: swap ghost → Nikhil, keep Ali, keep Unanimous.)*
+2. **Queue objects** — confirm the minimal set **`Lead` + `Property__c`**, or extend to the **pooled-review** objects (`Underwriting__c`, `LOI__c`, the two feasibility reviews, `Contract_Review__c`)? *(Recommend: minimal.)*
+3. **Junior's edit reach on Acq/Disp** — edit records owned by the **Acquisitions team + queue** (least-privilege sharing rules — recommended), or edit **literally every** acq/disp record (needs a criteria-based "all records" R/W rule)? *(Recommend: team + queue.)*
+4. **Opportunity OWD** — tighten standard **Opportunity to Private** for full least-privilege (blast radius on existing deals + lead-convert flows, regression-test), or keep current OWD and deliver read-only via object perm + View All? *(Recommend: keep current initially; revisit.)*
+5. **Approval-access perm set** — confirm we **fold** approval visibility into `DPEG_Acquisition_View` (recommended) rather than creating a standalone `DPEG_Approval_Principal`.
+6. **Usernames** — confirm `@usmandpeg.uat` scheme; suffix if globally taken.
+
+---
+
+## 14. Assumptions & Risks
+
+### Assumptions
+- Both users receive a **full Salesforce license** (Minimum Access – Salesforce) — required for standard-object apps + approvals. Confirm seat availability in the EE org.
+- Yardi-mirror objects (`Work_Order__c`, etc.) are **read-only by design** — view-only aligns; no write-back needed.
+- Existing perm sets/users are **left untouched**; the new model is purely additive.
+
+### Risks
+- **FLS enumeration is large and not in the repo** — 463 custom + standard fields must be authored fresh per perm set. Missing FLS = blank fields / "No such column," **invisible to admin testers**. → Enumerate from existing perm sets; **test as each persona**.
+- **OWD Private tightening changes visibility for ALL existing users/integrations** (and, with `WITH USER_MODE` selectors, can silently break dashboards/LWCs for non-admins). → Regression-test existing personas after the OWD change; USER_MODE breakage does not surface for admin testers.
+- **Queue ownership does not share up the role hierarchy** — even the principal won't see queue-owned records without View All or a sharing rule. Covered by design (View All + queue sharing rule), but easy to get wrong.
+- **Approval repoint** requires deactivating active processes; **blocked by pending approval requests** — recall first.
+- **Repo ≠ org drift** on approval approvers (repo shows 2; request describes 1) — verify the live org before editing.
+- **Property__c dual role** — Junior edits `Property__c` (Acquisition) but is view-only on PM; ensure this boundary (`Property__c` ≠ `Property_Asset__c`) is intended.
+- **Do not grant Modify All** to Junior — it would bypass sharing and break least-privilege.
+
+---
+
+## 15. Prompts for Specialist Agents
+
+### 🟤 Prompt for `salesforce-solution-architect`
+```
+Design (do not build) the DPEG least-privilege RBAC security model per agent-output/design-requirements.md.
+Deliver: (1) final per-object OWD matrix — 28 custom masters → Private, 5 details ControlledByParent unchanged,
+and a recommendation on Opportunity/Lead standard-object OWD with blast-radius note; (2) the DPEG role-hierarchy
+tree (build DPEG_Principal + Acquisitions_Analyst now; design the lead/module roles as deferred); (3) sharing-rule
+specs + the DPEG Acquisitions Team public group (queue-owned acq → R/W to group; disposition owner-based → R/W;
+note queue-ownership does NOT share up hierarchy); (4) the permission-set/PSG architecture — 6 functional sets
+(Acquisition/Disposition Edit+View, Transaction View, PropertyMgmt View) with View All read flags + FLS scope per
+set, 4 app-visibility sets, 2 PSGs, and the user→PSG map; approval visibility folded into Acquisition_View (no
+standalone approval set). Follow ARCHITECTURE §1 (object list), §2 (approval services), §4 (portal out of scope).
+Least-privilege: no Delete for Junior, no Modify All anywhere. Resolve nothing that is an Open Question — surface it.
+```
+
+### 🔵 Prompt for `salesforce-admin`
+```
+Build (metadata files only; DO NOT deploy) the DPEG RBAC model approved from agent-output/design-requirements.md,
+following the solution-architect's spec. Create: roles (DPEG_Principal, Acquisitions_Analyst); public group
+DPEG Acquisitions Team; 2 users on Minimum Access – Salesforce (Junior junior.dhanani@usmandpeg.uat →
+Acquisitions_Analyst; Nikhil nikhil.dhanani@usmandpeg.uat → DPEG_Principal; emails per doc §10); OWD changes
+(28 custom masters → Private; leave the 5 ControlledByParent details; Opportunity/Lead per the confirmed decision);
+sharing rules per spec; the 6 functional + 4 app permission sets WITH FULL FLS enumeration (source field lists from
+existing DPEG_Acquisitions/Property_Management_Access/Transaction_App_Access; Read-only FLS on formula/roll-up
+fields; no Delete for Junior; no Modify All); 2 PSGs + assignments; the Acquisition queue (Lead + Property__c,
+Junior as member). Repoint Opportunity.LOI_Approval + Opportunity.Underwriting_Approval to Nikhil per Open
+Question 1's resolution (deactivate → edit approver → reactivate; recall pending first). DO NOT modify existing
+perm sets or users. DO NOT deploy — hand off to salesforce-devops for Gate-3.
 ```
 
 ---
 
-### PHASE 0 — API version uplift 62.0 → 67.0 ✅ BUILT (not yet deployed)
-**Why first:** the doc's cited authority must agree with the repo before anything is measured against it. Re-versions all metadata.
-
-> **⚠️ AMENDED AFTER GATE 1 — this section is corrected, not as originally approved.** Three deviations, all user-approved:
-> 1. **Target is 67.0, not 66.0.** The org (`DPEG-Acq-5`) runs **67.0**; ARCHITECTURE.md's declared 66.0 was one release stale the day it was written. Corroborating evidence: 20 Salesforce-generated boilerplate files were *already* at 67.0 — the platform stamps at the org's version. Matching the org beats matching a stale doc.
-> 2. **The 82 LWC `.js-meta.xml` are EXCLUDED and deferred until after Phase 8 (Jest).** `RunLocalTests` is Apex-only; Jest starts from zero tooling; 10 components span 59.0→67.0 (eight releases); LWC `apiVersion` gates shadow-DOM rendering. They would have shipped with zero automated verification — violating this plan's own "safety net before the change" constraint. **The repo is therefore deliberately mixed-version. Do not "fix" it.**
-> 3. **The 23 Flows are INCLUDED** (missing from the original enumeration). They carry the same no-verification exposure as the LWC and more blast radius; the user accepted this knowingly. **Mandatory: written manual exercise script at deploy — `Transaction_Task_Fanout` first** (drives the ~75-task Day-0 fan-out via `TaskFanoutService`). `RunLocalTests` proves nothing about Flow behaviour.
-
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:** bump `sfdx-project.json` `sourceApiVersion` 62.0 → 67.0; align `<apiVersion>` in **69** `.cls-meta.xml`, **4** `.trigger-meta.xml`, **23** `.flow-meta.xml` — **99 files total** (96 metadata + `sfdx-project.json` + 2 root docs). LWC excluded per above; 20 boilerplate files left at 67.0 untouched. Full `RunLocalTests` run. Own deploy.
-- **🎯 Manual regression concentrates on ONE module — Disposition.** The 8 classes that jumped 59.0→67.0 (eight releases, double everything else) are `BovController`, `BrokerListingController`, `DispositionController`, `WireController` + their 4 tests — and the 10 highest-risk deferred LWCs are the *same feature*. Exercise Disposition hard.
-- **Verified post-build:** `git diff --numstat -- force-app` → every file exactly `1 1`; `git diff -U0` → zero non-`apiVersion` lines in `force-app`. The 23 Flow bodies are provably untouched.
-- **Complexity:** `salesforce-developer` (mechanical), **but** the 62→66 span is 4 releases — behaviour-change regression is real. Escalate to `salesforce-technical-architect` if the full test run surfaces platform-behaviour breaks.
-- **Risk:** this is the phase most likely to break something invisibly. Deploy alone, nothing else in the same PR.
-- **Effort: 4–6 days**
-
-### PHASE 1 — `TestDataFactory.cls`
-**Why here:** ARCHITECTURE.md §2 mandates it; every later test phase depends on it.
-
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:** create `force-app/main/default/classes/TestDataFactory.cls` covering 33 custom objects (463 fields — required-field graphs, relationship chains: Property → Property_Asset → Unit → Rent_Step; Opportunity → LOI → Counter_Offer; Transaction → Task) plus standard Account/Contact/Lead/Opportunity/Task. Guidance: `.claude/skills/sf-apex-test/references/test-data-factory.md`.
-- **Complexity:** `salesforce-technical-architect` — this is a cross-object schema design problem across 33 objects, not a code-typing task. A weak factory here poisons every later phase.
-- **Effort: 8–12 days**
-
-### PHASE 2 — Test safety net: factory migration, 251-record bulk tests, 90% coverage
-**Why here:** the imposed constraint — the net must exist before the layering refactor.
-
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:**
-  - Migrate all **44** existing test classes onto `TestDataFactory` (12–18d).
-  - **251-record bulk tests** per `bulk-test-rule.md`: 4 triggers (`TaskRollupTrigger` needs insert/update/delete/undelete), 7 services with DML, 1 schedulable (10–14d). ⚠️ `TaskFanoutService`'s bulk test depends on **P7** (see impossibility #1) — and must not be faked via `taskDefsOverride`.
-  - Lift coverage to **90%+ per class** across the **35 team-owned** classes (15–22d).
-- **Complexity:** `salesforce-unit-testing` for authoring; `salesforce-technical-architect` to adjudicate bulk tests that fail on governor limits — those failures are **findings, not test bugs**, and each needs a real architectural call.
-- **Effort: 37–54 days** ← largest Apex-side item
-
-### PHASE 3 — FLS audit + permission-set remediation ⭐ ADMIN TRACK, RUNS PARALLEL TO P1–P2
-**Why before P4:** two reviewers warned; the user chose audit-first. This is the phase that protects the working dashboards.
-
-- 🔵 **ADMIN (this is the bulk):**
-  - Extract effective FLS **from the live org** (not the repo — profiles are `.forceignore`d and the repo does not contain FLS truth).
-  - Produce a verifiable **per-object/per-field FLS matrix**: 463 custom fields × 7 team permission sets, plus standard-object fields in use. Reconcile against the **1,537 Admin-profile grants vs 590 permission-set grants** delta.
-  - Close every gap in deployable **permission sets** — distributed across `DPEG_Acquisitions` (346), `Property_Management_Access` (183), `Transaction_App_Access` (44), etc. **Not** `DPEG_Admin_Access` (it is a tab-visibility set with 1 field grant; the inbound brief's assumption is wrong).
-  - Decide and document the **guest-user FLS strategy** (impossibility #2) — spike whether a permission set on the site guest user works, since the Guest Profile is not deployable.
-- 🟢 **DEV:** none (permission-set metadata only).
-- **Complexity:** 🟤 **`salesforce-solution-architect`** — explicitly. 463 fields × 7 sets is a security-model design problem (§ "OWD+sharing+FLS strategy", "permission set group strategy"), not field-by-field admin ticking.
-- **🔴 Acceptance gate (non-negotiable):** verify as **each non-admin persona**, never as Admin. Admin passes regardless and proves nothing. Every KPI dashboard renders correct non-zero values for PM / Transactions / Acquisitions users **before** P4 begins.
-- **Effort: 12–18 days**
-
-### PHASE 4 — Selector extraction + `WITH USER_MODE` sweep
-**Depends on:** P2 (safety net) **and** P3 (FLS closed + persona-verified).
-
-- 🔵 **ADMIN:** none (but P3's permission sets must be deployed and verified first).
-- 🟢 **DEV:** create ~33 custom + ~5 standard Selectors (`.claude/skills/sf-apex/assets/selector.cls`, reference `AccountSelector.cls`). Move ~85 query statements / ~107 `SELECT` keywords out of 25 controllers + 7 services. Add `WITH USER_MODE`. **Dynamic queries** (`WorkOrderController.ROW_QUERY`, `LeaseRenewalController.ROW_QUERY`, `TaskFanoutService.cls:46`) use `Database.query(q, AccessLevel.USER_MODE)`. Re-point all callers. Guest-portal selectors per the P3 decision.
-- **Complexity:** ⚫ **`salesforce-technical-architect`** — selector granularity/method design across 38 objects is architecture; it sets the shape of the codebase for years.
-- **Effort: 20–28 days**
-
-### PHASE 5 — `TriggerHandler` base + handlers + Domain layer
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:** create the **`TriggerHandler` base class** (mandated, does not exist — see #6). Reduce all 4 triggers to `new <Object>TriggerHandler().run();` — **`TaskRollupTrigger` needs its loop/filter logic extracted** into handler/domain, the other 3 need handlers interposed only. Create Domain classes (~8–10 objects with real state rules: Opportunity, Contract_Review, Lease_Renewal, Lease_Inquiry, Work_Order, Onboarding, Transaction, LOI). Domain purity: zero SOQL, zero DML.
-- **Complexity:** ⚫ **`salesforce-technical-architect`** (domain boundary decisions). **No `UnitOfWork`** — out of scope per #6.
-- **Effort: 12–16 days**
-
-### PHASE 6 — Controller thinning + Service adoption + error boundary (paired)
-**Pair the two ends of the same wire**, per the brief's own observation.
-
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:** thin all 25 controllers to Service wrappers (§5: "Controllers must be thin wrappers around a Service class"); wire the LWC path through the 7 existing Services (currently bypassed). Add `AuraHandledException` to the ~54 of 75 `@AuraEnabled` methods lacking it, **and** in the same module add the missing `error` handling to the **57 of 82** components that destructure `{ data }` only — today a failed query silently renders `0` on KPI dashboards. Toast via `lightning/platformShowToastEvent`.
-- **Complexity:** `salesforce-developer` (pattern is settled by P4/P5).
-- **Effort: 18–25 days**
-
-### PHASE 7 — LDV + discrete defects ⚠️ PARTIALLY INVERTS AHEAD OF P2
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:**
-  - **`TaskFanoutService`** re-architecture: chunked Queueable + `System.Finalizer`; removes the unguarded `insert` at line 94. Add the `InputDTO`/`@InvocableVariable` inner class (#7). **Must precede/accompany its P2 bulk test.**
-  - **Unbounded full-table scans** — confirmed exactly as reported: `WorkOrderController.cls:22` and `LeaseRenewalController.cls:24` both `SELECT ... FROM <obj>` with **no WHERE/LIMIT** and count in an Apex loop. `Work_Order__c` is a Yardi mirror — row count is set externally. Convert to aggregate `COUNT()`/`GROUP BY` in Selectors.
-  - `ApprovalAuditService` silent-failure swallowing.
-- **Complexity:** ⚫ **`salesforce-technical-architect`** (LDV + async re-architecture).
-- **Effort: 5–8 days**
-
-### PHASE 8 — Jest from zero + `@sa11y` + accessibility fixes
-**Reality check: there is no `package.json` in this repo.** The toolchain is at absolute zero — not "0 tests", but 0 tests *and* 0 tooling.
-
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:** stand up `package.json` + `@salesforce/sfdx-lwc-jest` + `@sa11y/jest` + CI wiring (2–3d). Author **82 suites** (~0.5–1d each). Fix the **12 keyboard-inaccessible elements** (`rentRoll.html:55–67` `<th onclick>`/`<tr onclick>`; `dealDocStatus.html` 6× `<a onclick>` with no `href`) **in this phase**, so the `@sa11y` matchers pass rather than landing red.
-- **Note:** `.forceignore:9` excludes `**/__tests__/**` — Jest tests correctly never deploy; CI must run them separately from `sf project deploy`.
-- **Complexity:** `salesforce-developer` (volume, not architecture).
-- **Effort: 45–88 days** ← largest single item; user accepted ~6–10 weeks (30–50d), **true range is higher because tooling starts at zero**
-
-### PHASE 9 — SLDS 2 token migration
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:** replace **1,088 hardcoded hex across 137 files** with `--slds-g-*` tokens (today: 19 tokens in 9 bundles ≈ 11%). Run the SLDS linter; skill `.claude/skills/uplifting-components-to-slds2/`.
-- **⚠️ Not purely mechanical:** hex also lives in **`.js`** (e.g. `activeTransactionsList.js` ×15, `brokerAssignmentKpis.js` ×3, `brokerListing.js` ×4) — chart/donut colours computed in JS cannot consume CSS custom properties directly and need a real per-component approach. The "right mechanism, wrong value" mitigation holds for `.css` only.
-- **Complexity:** `salesforce-developer`; needs visual regression per component.
-- **Effort: 25–40 days**
-
-### PHASE 10 — `lwc/utils*` shared module
-- 🔵 **ADMIN:** none.
-- 🟢 **DEV:** create `lwc/utils*` (lowerCamelCase JS, no `.html`) per §5; consolidate the ~5 duplicated local formatters (`fmtMoney`, `money`, `fmtDate`) and re-point consumers.
-- **Complexity:** `salesforce-developer`.
-- **Effort: 3–5 days**
-
----
-
-## 💰 EFFORT SUMMARY — NOT FLATTERED
-
-| Phase | Work | Track | Agent | Days |
-|-------|------|-------|-------|------|
-| P0 | API 62→66 uplift | Dev | developer (→ tech-arch on regression) | 4–6 |
-| P1 | TestDataFactory | Dev | **technical-architect** | 8–12 |
-| P2 | Factory migration + 251 bulk + 90% cov | Dev | unit-testing + **technical-architect** | 37–54 |
-| P3 | FLS audit + permsets | **Admin** | **solution-architect** | 12–18 |
-| P4 | Selectors + USER_MODE | Dev | **technical-architect** | 20–28 |
-| P5 | TriggerHandler + Domain | Dev | **technical-architect** | 12–16 |
-| P6 | Controllers + error boundary | Dev | developer | 18–25 |
-| P7 | LDV + discrete defects | Dev | **technical-architect** | 5–8 |
-| P8 | Jest ×82 + sa11y + a11y fixes | Dev | developer | 45–88 |
-| P9 | SLDS 2 tokens | Dev | developer | 25–40 |
-| P10 | utils module | Dev | developer | 3–5 |
-| | | | **TOTAL** | **189–300 engineer-days** |
-
-### 🔴 The estimate does not match what was accepted
-
-- **189–300 engineer-days ≈ 38–60 engineer-weeks ≈ 9–14 engineer-months.**
-- The user accepted **"~2–3 months"**. For one engineer, 2–3 months ≈ 44–66 days — the program is **3–5× that**.
-- 2–3 months **elapsed** is only reachable with **~4 engineers working genuinely in parallel**, and even then it is tight: the Apex critical path (P0→P1→P2→P4→P5→P6) is **99–141 days** and is largely **serial by dependency** — it does not compress by adding people.
-- **What actually parallelises:** the UI track (P8/P9/P10 — 73–133d) is independent of the Apex track after P0, and P3 (Admin) runs alongside P1–P2. Staffing an LWC engineer + a solution architect from day 1 is what makes the calendar work.
-- **Honest read: 3–5 months elapsed with 4 engineers**, not 2–3. The user asked for an accurate number for planning; this is it.
-
----
-
-## 🔗 EXECUTION ORDER (dependency-critical)
-
-1. **P0** — alone, own deploy, full test run. Nothing else in the PR.
-2. **P1** — TestDataFactory. Blocks all test work.
-3. **P3** — *start now, parallel*, Admin/solution-architect track. Blocks P4.
-4. **P2** — safety net. Blocks P4. ⚠️ `TaskFanoutService`'s bulk test blocked by **P7**.
-5. **P7 (TaskFanout slice)** — must land before/with its P2 bulk test. **The one justified inversion.**
-6. **P4** — requires P2 green **and** P3 persona-verified. Never before both.
-7. **P5** → **P6** — sequential.
-8. **P7 (remainder)**, **P8**, **P9**, **P10** — UI track parallelisable from P0.
-
-**Hard gates:**
-- ❌ No `WITH USER_MODE` on any query until P3's FLS matrix is deployed **and verified as a non-admin persona**.
-- ❌ No layering refactor until P2 is green.
-- ❌ No `TaskFanoutService` bulk test using a shrunken `taskDefsOverride` to dodge the DML limit.
-
----
-
-## 📝 PROMPTS FOR SPECIALIST AGENTS
-
-Each phase is a separate invocation. Do not batch.
-
-### 🟤 PROMPT FOR salesforce-solution-architect (PHASE 3 — run early, parallel)
-```
-Design and implement the FLS remediation for DPEG ahead of a WITH USER_MODE sweep.
-
-CRITICAL CONTEXT — the repo does NOT contain the org's FLS truth:
-- force-app/main/default/profiles/** is .forceignore'd (line 28); profiles are not deployable here.
-- Admin.profile-meta.xml grants 1,537 <fieldPermissions>.
-- The 7 team permission sets grant 590 <field> entries combined.
-- DPEG_Admin_Access grants FLS on exactly ONE field (Lease_Inquiry__c.OneDrive_URL__c) — it is a
-  tab-visibility set. Do NOT treat it as the FLS home.
-- Real FLS homes: DPEG_Acquisitions (346), Property_Management_Access (183),
-  Transaction_App_Access (44), Disposition_Dashboard_Access (12), Acquisitions_Dashboard_Access (3),
-  Acquisition_Deal_Driver (1).
-
-Deliver:
-1. A per-object/per-field FLS matrix extracted from the LIVE org (not the repo): 463 custom fields
-   across 33 custom objects × 7 team permission sets, plus standard-object fields used by the 25
-   controllers. Reconcile the 1,537-vs-590 delta.
-2. Permission-set updates closing every gap, routed to the correct existing set.
-3. A guest-user FLS decision for the broker portal: the Guest User Profile is NOT deployable
-   (.forceignore lines 20-28 name it). Spike whether a permission set assigned to the site guest
-   user can carry guest FLS. Report the result — do not assume it works.
-
-ACCEPTANCE (non-negotiable): verify every KPI dashboard renders correct non-zero values as EACH
-non-admin persona (Property Management, Transactions, Acquisitions). Admin passes regardless and
-proves nothing — USER_MODE enforces FLS against the running user, and Admins are covered by
-profile grants that non-admins do not have.
-
-Use project conventions (ARCHITECTURE.md, API 67.0 after Phase 0). Do not deploy — create metadata
-files only. Do not add validation rules, new fields, or sharing rules; FLS + permission sets only.
-```
-
-### ⚫ PROMPT FOR salesforce-technical-architect (PHASE 1 — TestDataFactory)
-```
-Create force-app/main/default/classes/TestDataFactory.cls per ARCHITECTURE.md §2 (mandated as
-non-negotiable; the file does not currently exist).
-
-Cover the 33 custom objects (463 custom fields) plus standard Account/Contact/Lead/Opportunity/Task.
-Honour required-field graphs and relationship chains, including:
-  Property__c -> Property_Asset__c -> Unit__c -> Rent_Step__c
-  Opportunity -> LOI__c -> Counter_Offer__c
-  Transaction__c -> Task (via Transaction_Deal__c lookup, NOT WhatId)
-  Lease_Inquiry__c / Lease_Renewal__c / Work_Order__c (Yardi mirrors)
-
-Must support bulk creation of 251+ records per bulk-test-rule.md. Never @isTest(SeeAllData=true).
-Follow .claude/skills/sf-apex-test/references/test-data-factory.md and the templates in
-.claude/skills/sf-apex/assets/.
-
-Scope limit: the factory only. Do not refactor existing tests in this phase (that is Phase 2).
-Do not deploy — create the file only.
-```
-
-### ⚫ PROMPT FOR salesforce-technical-architect (PHASE 4 — Selectors + USER_MODE)
-```
-PRECONDITION — confirm before starting: Phase 3's FLS permission sets are DEPLOYED and verified as
-each non-admin persona, and Phase 2's tests are green. If either is unconfirmed, STOP and report.
-
-Extract all SOQL from 25 controllers + 7 services into Selector classes per
-.claude/rules/apex-layering-rule.md and ARCHITECTURE.md §2.
-
-- ~33 custom + ~5 standard Selectors. One object per selector; nothing else queries that object.
-- Method naming: selectByIds(Set<Id>), selectByStatus(String), etc.
-- Every query uses WITH USER_MODE.
-- Dynamic queries must use Database.query(q, AccessLevel.USER_MODE). Known dynamic sites:
-  WorkOrderController.ROW_QUERY, LeaseRenewalController.ROW_QUERY, TaskFanoutService.cls:46.
-- Guest-portal selectors (BrokerPortalController, without sharing, correct as-is) follow Phase 3's
-  guest-FLS decision — do not blanket-apply USER_MODE there without it.
-- Scope: 35 team-owned classes ONLY. The 10 Salesforce-generated Site/Communities boilerplate
-  classes (MicrobatchSelfReg, ForgotPassword, ChangePassword, SiteRegister, SiteLogin,
-  CommunitiesSelfRegConfirm, CommunitiesSelfReg, CommunitiesLanding, CommunitiesLogin,
-  MyProfilePage) are OUT OF SCOPE — do not touch.
-
-Templates: .claude/skills/sf-apex/assets/selector.cls; reference
-.claude/skills/sf-apex/references/AccountSelector.cls. API 67.0. Do NOT create a UnitOfWork —
-explicitly out of scope. Do not deploy.
-```
-
-### ⚫ PROMPT FOR salesforce-technical-architect (PHASE 7 — LDV + discrete defects)
-```
-Fix three confirmed defects. Note the TaskFanout item BLOCKS its Phase 2 bulk test — do it first.
-
-1. TaskFanoutService.cls:49-98 accumulates toInsert across every Transaction and does a single
-   `insert toInsert;` at line 94. At ~75 Tasks/Transaction, a 251-record bulk test = 18,825 DML rows
-   vs the 10,000/transaction limit. Re-architect to a chunked Queueable with System.Finalizer
-   (NOT @future, per apex-layering-rule.md). The bulk test must then pass at production-representative
-   CMDT def counts — do NOT shrink taskDefsOverride to dodge the limit; that hides the real break.
-   Also add the InputDTO inner class with @InvocableVariable fields per .claude/rules/invocable-rule.md
-   (fanOut currently takes a bare List<Id> with no DTO).
-
-2. Unbounded full-table scans — convert to aggregate COUNT()/GROUP BY inside Selectors:
-   - WorkOrderController.cls:22 — SELECT ... FROM Work_Order__c with no WHERE/LIMIT, counted in an
-     Apex loop. Work_Order__c is a Yardi mirror; row count is set externally and will hard-fail at scale.
-   - LeaseRenewalController.cls:24 — same pattern on Lease_Renewal__c.
-
-3. ApprovalAuditService — silent failure swallowing. It is `without sharing` (line 15); per
-   ARCHITECTURE.md §2 that is permitted only WITH written justification in the class header Javadoc.
-   Add the justification or change it.
-
-Also add justification Javadoc headers to the other unjustified `without sharing` classes:
-BrokerPortalNotifier.cls:1, GroupNotifier.cls:11. BrokerPortalController.cls:1 is `without sharing`
-and CORRECT (public guest portal) — it needs a justification header, NOT a change.
-
-API 67.0. Do not deploy.
-```
-
-### 🟢 PROMPT FOR salesforce-developer (PHASE 0 — API uplift)
-```
-Bump the project API version 62.0 -> 67.0 so ARCHITECTURE.md's cited authority agrees with the repo.
-
-- sfdx-project.json: sourceApiVersion 62.0 -> 67.0
-- Align <apiVersion> in ~89 .cls-meta.xml, 4 .trigger-meta.xml, and 82 LWC .js-meta.xml (~175 files).
-
-This is its own task with its own deploy and a full RunLocalTests run — nothing else in this PR.
-The 62->66 span is 4 releases; if the test run surfaces platform behaviour changes, STOP and report
-rather than patching around them. Do not deploy — prepare the change; devops handles deployment.
-```
-
-### 🟢 PROMPT FOR salesforce-developer (PHASE 8 — Jest)
-```
-Stand up LWC Jest testing from zero and author suites for all 82 LWC bundles per ARCHITECTURE.md §5.
-
-There is NO package.json in this repo — the toolchain does not exist yet. Create it:
-@salesforce/sfdx-lwc-jest + @sa11y/jest + CI wiring. Note .forceignore:9 excludes **/__tests__/**,
-so tests correctly never deploy; CI must run them separately from `sf project deploy`.
-
-Author __tests__/<component>.test.js for all 82 bundles, with @sa11y/jest accessibility matchers.
-
-Fix these 12 confirmed keyboard-accessibility defects IN THIS PHASE so the sa11y matchers pass
-rather than landing red:
-  - rentRoll.html:55-67 — <th onclick> and <tr onclick>
-  - dealDocStatus.html — 6x <a onclick> with no href
-
-Do not restyle components (that is Phase 9). Do not change Apex. Do not deploy.
-```
-
-### 🟢 PROMPT FOR salesforce-developer (PHASE 9 — SLDS 2)
-```
-Migrate LWC styling to SLDS 2 design tokens per ARCHITECTURE.md §5.
-
-Current: 1,088 hardcoded hex values across 137 files; only 19 --slds-g-* tokens in 9 bundles (~11%).
-Replace hex with --slds-g-* tokens. Run the SLDS linter before finishing.
-Skill: .claude/skills/uplifting-components-to-slds2/
-
-NOT purely mechanical — hex also appears in .js files (activeTransactionsList.js x15,
-brokerAssignmentKpis.js x3, brokerListing.js x4, and others), where chart/donut colours are computed
-in JS and cannot consume CSS custom properties directly. Those need a per-component approach; report
-any component where the token cannot be applied without changing rendered output.
-
-Most .css hex is already passed through correct SLDS hooks (right mechanism, wrong value) — preserve
-the hook, change the value. Visual regression per component. Do not change markup structure or Apex.
-Do not deploy.
-```
-
-*(Prompts for P2, P5, P6, P10 to be issued at their gates — each depends on the shape produced by its predecessor. Issuing them now would bake in assumptions that P1/P3/P4 have not yet settled.)*
-
----
-
-## ✅ EXPLICITLY OUT OF SCOPE (guarding against creep)
-
-- **`UnitOfWork`** — the layering rule is conditional ("if one exists"); none exists. Not required.
-- **The 10 Salesforce-generated Site/Communities boilerplate classes** — layering, coverage, `SeeAllData`/`without sharing` hits.
-- **Converting the 72 imperative-Apex LWCs to LDS/GraphQL** — the doc names aggregates as a legitimate Apex exception. Only ~2–8 genuine multi-object read candidates, spike-gated.
-- **Already-conformant items — do NOT churn:** zero SOQL/DML in loops; zero `@future`; triggers bulk-safe; no SOQL injection (bind variables throughout); `with sharing` on all 25 team controllers; zero clickable `<div>`s; zero `console.log`; presentational components genuinely stateless.
-- **New features, validation rules, sharing rules, objects, or fields** of any kind.
-
----
-
-## ❓ DECISIONS NEEDED BEFORE P3/P4 START
-
-1. **Guest-user FLS** (impossibility #2) — spike outcome determines whether broker-portal selectors get `USER_MODE` or a justified `SYSTEM_MODE` exemption. **Blocks P4's guest slice.**
-2. **Doc amendments** — approve the four minimum amendments (boilerplate exemption; guest-portal selector clause; §6 cross-reference fixes; `TestDataFactory` reference). ARCHITECTURE.md §6 requires doc updates in the same PR as the convention change.
-3. **Staffing** — 189–300 engineer-days vs the accepted "2–3 months". Confirm the 4-engineer parallel shape (Apex critical path 99–141d is serial and will not compress), or re-cut scope. **This is a planning fact surfaced for a decision, not a scope challenge.**
+*End of Gate-1 design artifact. Awaiting user confirmation (yes / no / changes) and resolution of the 6 open questions before routing to solution-architect + admin.*

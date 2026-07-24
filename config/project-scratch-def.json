@@ -15,6 +15,9 @@
     },
     "communitiesSettings": {
       "enableNetworksEnabled": true
+    },
+    "pathAssistantSettings": {
+      "pathAssistantEnabled": true
     }
   }
 }

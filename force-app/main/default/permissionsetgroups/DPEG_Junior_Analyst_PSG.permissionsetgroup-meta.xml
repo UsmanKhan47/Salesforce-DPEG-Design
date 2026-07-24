@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Composed access for the Junior Acquisitions Analyst persona: Edit on Acquisition + Disposition + Contact (brokers), View-only on Transaction + Property Management, plus Acquisition/Disposition/Transaction app+tab visibility (no PM app).</description>
+    <label>DPEG Junior Analyst PSG</label>
+    <permissionSets>DPEG_Base_Access</permissionSets>
+    <permissionSets>DPEG_Apex_Access</permissionSets>
+    <permissionSets>DPEG_Acquisition_Edit</permissionSets>
+    <permissionSets>DPEG_Disposition_Edit</permissionSets>
+    <permissionSets>DPEG_Transaction_View</permissionSets>
+    <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
+    <permissionSets>DPEG_Contact_Edit</permissionSets>
+    <permissionSets>DPEG_App_Acquisition</permissionSets>
+    <permissionSets>DPEG_App_Disposition</permissionSets>
+    <permissionSets>DPEG_App_Transaction</permissionSets>
+</PermissionSetGroup>

@@ -1,3 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
-
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <sharingCriteriaRules>
+        <fullName>Onboarding_PM_All_RW</fullName>
+        <accessLevel>Edit</accessLevel>
+        <label>Onboarding PM All RW</label>
+        <criteriaItems>
+            <field>Status__c</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Property_Mgmt_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+</SharingRules>

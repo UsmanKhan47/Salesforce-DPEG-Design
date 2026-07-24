@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Grants Lightning Experience User so every DPEG team member logs into Lightning, not Classic.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>DPEG Base Access</label>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>LightningExperienceUser</name>
+    </userPermissions>
+</PermissionSet>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Composed access for the Property Management team persona: Edit on the 13 editable PM objects + Contact (brokers), read-only carve-out on Work_Order__c/Activity via the View set, plus Property Management app/tab visibility.</description>
+    <label>DPEG Property Management Team</label>
+    <permissionSets>DPEG_Base_Access</permissionSets>
+    <permissionSets>DPEG_Apex_Access</permissionSets>
+    <permissionSets>DPEG_PropertyMgmt_Edit</permissionSets>
+    <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
+    <permissionSets>DPEG_Contact_Edit</permissionSets>
+    <permissionSets>DPEG_App_PropertyMgmt</permissionSets>
+</PermissionSetGroup>
