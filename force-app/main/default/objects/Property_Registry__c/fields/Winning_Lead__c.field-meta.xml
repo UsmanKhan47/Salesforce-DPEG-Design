@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Winning_Lead__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Winning Lead</label>
+    <description>The Lead that claimed this property first. Salesforce forbids Restrict/Cascade on lookups to Lead, so presence is enforced by the Winning_Lead_Required validation rule instead.</description>
+    <inlineHelpText>The first Lead to submit this property. Left blank only if that Lead was later deleted.</inlineHelpText>
+    <referenceTo>Lead</referenceTo>
+    <relationshipLabel>Property Registry</relationshipLabel>
+    <relationshipName>Property_Registry</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

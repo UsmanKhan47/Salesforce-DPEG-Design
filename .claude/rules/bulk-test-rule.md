@@ -42,3 +42,17 @@ Every batch test class must contain:
 | `Assert.areEqual(200, results.size(), ...)` | `Assert.areEqual(251, results.size(), ...)` |
 | Single-record trigger tests only | Always include a 251-record bulk scenario |
 | Bulk test with 1 record to "save time" | Use `@TestSetup` to share setup cost; always test at 251+ |
+
+## Exemption: Per-Transaction-Singleton Async Pipelines
+
+Added 2026-07-24 (Broker Protection code review, Suggestion 2; see `docs/2026-07-24-broker-protection.md`).
+
+A service method that is **structurally single-record-per-transaction** — no trigger, no loop over
+multiple records, invoked exactly once per async job (e.g. one inbound email → one `Queueable`
+execution → one claim) — is exempt from the 251-record mandate above. A 251-record test on such a
+method would not exercise any additional code path (there is no loop to force a second batch), and
+would itself risk tripping unrelated governor limits (e.g. 150 DML statements) while proving nothing.
+This exemption does **not** relax the "no SOQL/DML in loops" rule — it only removes the 251-record
+*volume* requirement for methods that are provably never called with more than one record per
+transaction. Example: `EmailToLeadService`, `LLMExtractionCalloutService`, `PropertyMatchingService`,
+`PropertyClaimService` (Broker Protection).

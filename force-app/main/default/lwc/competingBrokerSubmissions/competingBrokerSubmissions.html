@@ -1,0 +1,92 @@
+<template>
+    <lightning-card icon-name="standard:lead">
+        <span slot="title">Competing Broker Submissions ({count})</span>
+
+        <!-- ERROR: inline banner (a toast is also raised from the wire handler) -->
+        <template lwc:if={error}>
+            <div
+                class="lv-error slds-p-around_medium slds-text-color_error"
+                role="alert"
+            >
+                {errorMessageText}
+            </div>
+        </template>
+
+        <template lwc:else>
+            <!-- DATA: native related-list ("lv-*") table -->
+            <template lwc:if={hasSubmissions}>
+                <div class="lv-scroll">
+                    <table class="lv-table" aria-label="Competing broker submissions">
+                        <thead>
+                            <tr class="lv-head">
+                                <th scope="col" class="lv-th">Broker</th>
+                                <th scope="col" class="lv-th">Forwarded By</th>
+                                <th scope="col" class="lv-th">Property Address</th>
+                                <th scope="col" class="lv-th">Submitted</th>
+                                <th scope="col" class="lv-th">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={rows} for:item="row">
+                                <tr key={row.id} class={row.rowClass}>
+                                    <td class="lv-cell" data-label="Broker">
+                                        <span class="lv-name">{row.brokerName}</span>
+                                        <template lwc:if={row.brokerEmail}>
+                                            <lightning-formatted-email
+                                                class="lv-sub"
+                                                value={row.brokerEmail}
+                                            ></lightning-formatted-email>
+                                        </template>
+                                    </td>
+                                    <td class="lv-cell" data-label="Forwarded By">
+                                        <template lwc:if={row.forwardedByEmail}>
+                                            <lightning-formatted-email
+                                                value={row.forwardedByEmail}
+                                            ></lightning-formatted-email>
+                                        </template>
+                                        <template lwc:else>
+                                            <span class="lv-muted">—</span>
+                                        </template>
+                                    </td>
+                                    <td class="lv-cell" data-label="Property Address">
+                                        {row.propertyAddress}
+                                    </td>
+                                    <td class="lv-cell" data-label="Submitted">
+                                        <lightning-formatted-date-time
+                                            value={row.submittedDateTime}
+                                            year="numeric"
+                                            month="short"
+                                            day="2-digit"
+                                            hour="2-digit"
+                                            minute="2-digit"
+                                        ></lightning-formatted-date-time>
+                                    </td>
+                                    <td class="lv-cell" data-label="Status">
+                                        <lightning-badge
+                                            label={row.badgeLabel}
+                                            class={row.badgeClass}
+                                        ></lightning-badge>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </template>
+
+            <!-- EMPTY -->
+            <template lwc:else>
+                <div class="lv-empty" role="status">
+                    <lightning-icon
+                        icon-name="utility:info"
+                        size="small"
+                        class="lv-empty-icon"
+                    ></lightning-icon>
+                    <p class="lv-empty-text">
+                        No broker submissions are on record for this lead.
+                    </p>
+                </div>
+            </template>
+        </template>
+    </lightning-card>
+</template>

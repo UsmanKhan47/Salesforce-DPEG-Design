@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Winning_Submission__c</fullName>
+    <defaultValue>false</defaultValue>
+    <label>Is Winning Submission</label>
+    <description>True only on the row representing the property's original winner. Drives the Winner / Competing badge in the competingBrokerSubmissions LWC.</description>
+    <inlineHelpText>Checked only on the one submission row that claimed the property first.</inlineHelpText>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Checkbox</type>
+</CustomField>

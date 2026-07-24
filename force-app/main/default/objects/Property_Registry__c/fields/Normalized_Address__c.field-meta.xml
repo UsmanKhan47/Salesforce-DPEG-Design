@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Normalized_Address__c</fullName>
+    <externalId>false</externalId>
+    <label>Normalized Address</label>
+    <length>255</length>
+    <required>false</required>
+    <description>Same value as Property_Key__c today. Kept separate so the fuzzy-match corpus can diverge from the exact-match claim key later without touching the unique constraint.</description>
+    <inlineHelpText>Reserved for future fuzzy-match tuning. Currently mirrors Property_Key__c.</inlineHelpText>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

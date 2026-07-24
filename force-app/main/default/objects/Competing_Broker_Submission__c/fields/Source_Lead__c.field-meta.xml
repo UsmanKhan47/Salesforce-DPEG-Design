@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Source_Lead__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Source Lead</label>
+    <description>The Lead created for this specific inbound email. Equal to Winning_Lead__c on the winning submission row.</description>
+    <inlineHelpText>The Lead this individual inbound email produced, whether or not it went on to win.</inlineHelpText>
+    <referenceTo>Lead</referenceTo>
+    <relationshipLabel>Broker Submissions (Source)</relationshipLabel>
+    <relationshipName>Source_Broker_Submissions</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

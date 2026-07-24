@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Concurrency-control lock partition for race-safe property claiming. One row per coarse address cluster; a FOR UPDATE lock on the row serialises concurrent broker-submission claims for the same property so the fuzzy match-then-insert is atomic. Not a business object.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>false</enableReports>
+    <enableSearch>false</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <label>Property Claim Lock</label>
+    <nameField>
+        <displayFormat>PCL-{0000000}</displayFormat>
+        <label>Property Claim Lock Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Property Claim Locks</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Forwarded_By_Email__c</fullName>
+    <externalId>false</externalId>
+    <label>Forwarded By Email</label>
+    <required>false</required>
+    <description>The internal forwarder's email address (envelope from).</description>
+    <inlineHelpText>The internal employee who forwarded the broker email into the Email Service, not the broker.</inlineHelpText>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Email</type>
+</CustomField>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Audit trail of every inbound broker email that matched a property, including the winning submission itself. Deliberately NOT master-detail on Winning_Lead__c - cascade delete would silently wipe this trail if a winning Lead were deleted.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <label>Competing Broker Submission</label>
+    <nameField>
+        <displayFormat>CBS-{0000000}</displayFormat>
+        <label>Submission Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Competing Broker Submissions</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

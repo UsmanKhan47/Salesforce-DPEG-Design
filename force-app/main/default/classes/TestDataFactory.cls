@@ -2008,4 +2008,163 @@ public with sharing class TestDataFactory {
     public static Insurance_Policy__c createInsurancePolicy(Id propertyAssetId, Boolean doInsert) {
         return createInsurancePolicies(1, propertyAssetId, doInsert)[0];
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // BROKER PROTECTION (Property_Registry__c / Competing_Broker_Submission__c)
+    //
+    // Both objects carry an insert-scoped Winning_Lead_Required validation rule
+    // (AND(ISNEW(), ISBLANK(Winning_Lead__c))) — Winning_Lead__c is required on
+    // insert but may legally be nulled afterward (SetNull on Lead delete; also how
+    // PropertyMatchingService.findOrphanedRegistry's "orphan" row is simulated in
+    // tests: insert with a winner, then update Winning_Lead__c to null).
+    //
+    // Property_Registry__c.Property_Key__c is UNIQUE + case-insensitive, so the
+    // bulk factory method mints a counter-backed key per row; tests that need a
+    // caller-controlled key (exact-match / fuzzy-match / race-collision scenarios)
+    // use the explicit-key single-record overload instead.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Property_Registry__c winner rows, each with its own unique Property_Key__c
+     * (counter-backed) so bulk calls never collide on the unique index.
+     * @param count         Number of registry rows.
+     * @param winningLeadId Winning_Lead__c (required by the VR on insert).
+     * @param doInsert      Insert when true.
+     * @return Property_Registry__c rows.
+     */
+    public static List<Property_Registry__c> createPropertyRegistries(Integer count, Id winningLeadId, Boolean doInsert) {
+        requirePositive(count);
+        requireId(winningLeadId, 'winningLeadId (Property_Registry__c.Winning_Lead__c is required on insert)');
+        List<Property_Registry__c> registries = new List<Property_Registry__c>();
+        for (Integer i = 0; i < count; i++) {
+            String key = 'test property key ' + nextUnique();
+            registries.add(new Property_Registry__c(
+                Property_Key__c = key,
+                Normalized_Address__c = key,
+                Winning_Lead__c = winningLeadId,
+                Registered_DateTime__c = Datetime.now()
+            ));
+        }
+        insertIf(doInsert, registries);
+        return registries;
+    }
+
+    /** Single Property Registry with an auto-generated unique key. @param winningLeadId Winning_Lead__c (required). @param doInsert Insert when true. @return The registry row. */
+    public static Property_Registry__c createPropertyRegistry(Id winningLeadId, Boolean doInsert) {
+        return createPropertyRegistries(1, winningLeadId, doInsert)[0];
+    }
+
+    /**
+     * Single Property Registry with a caller-controlled Property_Key__c — needed
+     * for exact-match / fuzzy-match / unique-index-collision test scenarios where
+     * the test must control the key value directly rather than accept an
+     * auto-generated one.
+     * @param propertyKey   Exact Property_Key__c / Normalized_Address__c value.
+     * @param winningLeadId Winning_Lead__c (required by the VR on insert).
+     * @param doInsert      Insert when true.
+     * @return The registry row.
+     */
+    public static Property_Registry__c createPropertyRegistry(String propertyKey, Id winningLeadId, Boolean doInsert) {
+        requireId(winningLeadId, 'winningLeadId (Property_Registry__c.Winning_Lead__c is required on insert)');
+        Property_Registry__c registry = new Property_Registry__c(
+            Property_Key__c = propertyKey,
+            Normalized_Address__c = propertyKey,
+            Winning_Lead__c = winningLeadId,
+            Registered_DateTime__c = Datetime.now()
+        );
+        insertIf(doInsert, new List<Property_Registry__c>{ registry });
+        return registry;
+    }
+
+    /**
+     * Competing_Broker_Submission__c rows against one winning Lead. Submitted_DateTime__c
+     * ascends with index (starting 1 day ago) and Is_Winning_Submission__c is true only
+     * at index 0, so the factory's own "winner" row is also the chronologically-earliest
+     * one — matching the real invariant (selectByWinningLead orders ASC, earliest first).
+     * @param count         Number of submissions.
+     * @param winningLeadId Winning_Lead__c (required by the VR on insert).
+     * @param doInsert      Insert when true.
+     * @return Competing_Broker_Submission__c rows.
+     */
+    public static List<Competing_Broker_Submission__c> createCompetingBrokerSubmissions(
+        Integer count,
+        Id winningLeadId,
+        Boolean doInsert
+    ) {
+        requirePositive(count);
+        requireId(winningLeadId, 'winningLeadId (Competing_Broker_Submission__c.Winning_Lead__c is required on insert)');
+        Datetime base = Datetime.now().addDays(-1);
+        List<Competing_Broker_Submission__c> subs = new List<Competing_Broker_Submission__c>();
+        for (Integer i = 0; i < count; i++) {
+            Integer u = nextUnique();
+            subs.add(new Competing_Broker_Submission__c(
+                Winning_Lead__c = winningLeadId,
+                Source_Lead__c = winningLeadId,
+                Broker_Name__c = 'Test Broker ' + i,
+                Broker_Email__c = 'test.broker' + u + '@example.invalid',
+                Forwarded_By_Email__c = 'test.forwarder' + u + '@example.invalid',
+                Property_Address_Raw__c = i + ' Test Submission Street',
+                Submitted_DateTime__c = base.addMinutes(i),
+                Email_Subject__c = 'FW: Test property ' + i,
+                Is_Winning_Submission__c = (i == 0)
+            ));
+        }
+        insertIf(doInsert, subs);
+        return subs;
+    }
+
+    /** Single Competing Broker Submission (winning). @param winningLeadId Winning_Lead__c (required). @param doInsert Insert when true. @return The submission. */
+    public static Competing_Broker_Submission__c createCompetingBrokerSubmission(Id winningLeadId, Boolean doInsert) {
+        return createCompetingBrokerSubmissions(1, winningLeadId, doInsert)[0];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // BROKER PROTECTION — CONCURRENCY CONTROL (W4)
+    //
+    // Property_Claim_Lock__c is a pure lock-partition object: one row per COARSE
+    // address cluster (Cluster_Key__c is unique + externalId + required, no parent
+    // lookups). PropertyClaimService.claim() get-or-creates this row and takes a
+    // FOR UPDATE lock on it before deciding a winner. The bulk method mints a
+    // counter-backed key per row so concurrent factory calls in one transaction
+    // never collide on the unique index; the explicit-key overload is for tests
+    // that must control the exact cluster key (get-or-create / lock scenarios).
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Property_Claim_Lock__c rows, each with its own unique Cluster_Key__c
+     * (counter-backed) so bulk calls never collide on the unique index.
+     * @param count    Number of lock rows.
+     * @param doInsert Insert when true.
+     * @return Property_Claim_Lock__c rows.
+     */
+    public static List<Property_Claim_Lock__c> createPropertyClaimLocks(Integer count, Boolean doInsert) {
+        requirePositive(count);
+        List<Property_Claim_Lock__c> locks = new List<Property_Claim_Lock__c>();
+        for (Integer i = 0; i < count; i++) {
+            locks.add(new Property_Claim_Lock__c(
+                Cluster_Key__c = 'test cluster key ' + nextUnique()
+            ));
+        }
+        insertIf(doInsert, locks);
+        return locks;
+    }
+
+    /** Single Property Claim Lock with an auto-generated unique cluster key. @param doInsert Insert when true. @return The lock row. */
+    public static Property_Claim_Lock__c createPropertyClaimLock(Boolean doInsert) {
+        return createPropertyClaimLocks(1, doInsert)[0];
+    }
+
+    /**
+     * Single Property Claim Lock with a caller-controlled Cluster_Key__c — needed for
+     * get-or-create / FOR UPDATE lock-acquisition scenarios where the test must control
+     * the key value directly rather than accept an auto-generated one.
+     * @param clusterKey Exact Cluster_Key__c value.
+     * @param doInsert   Insert when true.
+     * @return The lock row.
+     */
+    public static Property_Claim_Lock__c createPropertyClaimLock(String clusterKey, Boolean doInsert) {
+        Property_Claim_Lock__c lockRow = new Property_Claim_Lock__c(Cluster_Key__c = clusterKey);
+        insertIf(doInsert, new List<Property_Claim_Lock__c>{ lockRow });
+        return lockRow;
+    }
 }

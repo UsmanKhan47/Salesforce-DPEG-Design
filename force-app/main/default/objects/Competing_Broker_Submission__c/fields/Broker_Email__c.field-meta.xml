@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Broker_Email__c</fullName>
+    <externalId>false</externalId>
+    <label>Broker Email</label>
+    <required>false</required>
+    <description>Broker email address as extracted from the original From: header.</description>
+    <inlineHelpText>Extracted by the LLM (or the regex fallback) from the email's From: header.</inlineHelpText>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Email</type>
+</CustomField>

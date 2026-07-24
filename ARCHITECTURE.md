@@ -133,6 +133,14 @@ A `—` in _Purpose_ means the object's `<description>` in its `.object-meta.xml
 | `Offering__c`                        | `Opportunity`                                     | —                                                                                                     |
 | `NDA__c` **†**                       | `Opportunity`, `Disposition__c`                   | Spans Acquisitions **and** Disposition.                                                              |
 
+**Lead Intake / Broker Protection** — race-safe inbound email→Lead claim ledger, rooted on `Lead` rather than the Opportunity/Property deal tree (added 2026-07-24, see `docs/2026-07-24-broker-protection.md`)
+
+| Object                          | Parent (lookup)                                      | Purpose                                                                                                                          |
+| -------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `Property_Registry__c`           | `Lead` (`Winning_Lead__c`)                            | Backend-only claim ledger. One row per distinct property; the unique, case-insensitive `Property_Key__c` enforces race-safe first-come-first-served registration at the database level. |
+| `Competing_Broker_Submission__c` | `Lead` (`Winning_Lead__c`, `Source_Lead__c`)           | Append-only audit trail of every inbound broker email that matched a property, including the winning submission itself. Deliberately not master-detail — cascade delete would silently wipe this trail. |
+| `Property_Claim_Lock__c`         | — (no lookup; concurrency partition, not a business object) | Pessimistic-lock partition object: one row per coarse address cluster, `FOR UPDATE`-locked to serialize concurrent same-property claims so the fuzzy match-then-insert is atomic. |
+
 **Transactions**
 
 | Object            | Parent (lookup)              | Purpose                                                                                                                 |
@@ -223,6 +231,21 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 | `TaskRollupService`           | `TaskRollupTrigger`                                | Rolls completed/overdue Task counts up to `Transaction__c` — drives the "N / 75" highlights tile.                                                        |
 | `OnboardingTaskRollupService` | Onboarding checklist Tasks                         | Recomputes `Onboarding__c` checklist rollups (total / complete / overdue / stalled / completion %).                                                      |
 | `ApprovalAuditService`        | after-save Flow (`@InvocableMethod`)               | Stamps approver identity and date from `ProcessInstanceStep` onto the Underwriting / LOI gates. `without sharing`.                                       |
+| `EmailToLeadService`          | `EmailToLeadHandler` (inbound Email Service handler) | Broker Protection: the only class that inserts/updates a Lead in the inbound email-to-Lead pipeline — creates the raw Lead and enqueues async extraction, then applies the LLM/regex-resolved broker/property details. |
+| `LLMExtractionCalloutService` | `ExtractAddressQueueable`                          | Broker Protection: mockable OpenAI callout wrapper extracting broker name/email, property address, and send time from a forwarded email (vision + text). Direct-callout §3 exception — see §3.3. |
+| `PropertyMatchingService`     | `ExtractAddressQueueable` (via `PropertyClaimService`) | Broker Protection: address normalization, Jaccard fuzzy matching, cluster-key derivation, and registry/orphan lookups behind the first-broker-wins claim decision. Read-only; no DML. |
+| `PropertyClaimService`        | `ExtractAddressQueueable`                          | Broker Protection: owns all `Property_Registry__c` / `Competing_Broker_Submission__c` DML — acquires the `Property_Claim_Lock__c` FOR UPDATE lock, then registers a winner or marks a duplicate. |
+
+**Broker Protection async-pipeline exception (added 2026-07-24):** `EmailToLeadService`,
+`LLMExtractionCalloutService`, `PropertyMatchingService`, and `PropertyClaimService` are
+single-record-per-transaction by design — one inbound email produces exactly one Lead and one
+`ExtractAddressQueueable` execution, with no trigger and no loop over multiple records. This is the
+accepted §2 exception for **per-transaction-singleton async pipelines** (code-review-approved; see
+`docs/2026-07-24-broker-protection.md`) — it does not relax the "no SOQL/DML in loops" rule, which
+these classes still satisfy, only the expectation of a `List<...>`-shaped signature. `CompetingSubmissionController`
+(the Lead-record-page read surface for this feature) is a thin `@AuraEnabled(cacheable=true)` controller
+over `CompetingBrokerSubmissionSelector` — no service layer was needed, per the P6 read-only-controller
+precedent below.
 
 ### Controller-support services (P6, completed 2026-07-19)
 
@@ -262,6 +285,19 @@ All external API credentials stored in Named Credentials (or ASB secrets vault f
 - Managed by System Administrators only
 - Rotatable without code changes
 - Audited in Setup Audit Trail
+
+### 3.3 Deliberate, Temporary Exception — Direct OpenAI Callout (Broker Protection)
+
+Broker Protection's LLM field-extraction step (`LLMExtractionCalloutService`) calls OpenAI **directly**
+via an `OpenAI_API` Named Credential + `OpenAI_Credential` External Credential, bypassing §3.1's
+ASB-only rule. This is intentional and temporary: **no ASB LLM-extraction spoke exists yet**, so there
+is nothing on the bus to route to. The exception is scoped and reversible — only the endpoint constant
+(and the Named Credential it targets) change when ASB exposes an LLM-extraction spoke; the public
+`extract(...)` signature and every downstream caller stay identical. Credentials are never hardcoded —
+the API key lives entirely in the `OpenAI_Credential` External Credential's `NamedPrincipal`
+authentication parameter, entered in Setup **post-deploy**. Full justification is in the class header
+of `LLMExtractionCalloutService.cls`; see `docs/2026-07-24-broker-protection.md` for the complete
+feature writeup.
 
 ---
 

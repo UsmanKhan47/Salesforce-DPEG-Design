@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Cluster_Key__c</fullName>
+    <caseSensitive>false</caseSensitive>
+    <externalId>true</externalId>
+    <label>Cluster Key</label>
+    <length>255</length>
+    <required>true</required>
+    <description>Coarse canonical address-cluster bucket key that co-locates fuzzy-equivalent addresses in a single lock partition (e.g. street number + first street-name token: '123 Main Street', '123 Main St' and '123 main street unit 4' all map to '123 main'). This is a COARSE lock partition, NOT the exact claim key - the exact/atomic dedup key is Property_Registry__c.Property_Key__c. Coarseness is intentional: it only affects lock contention, never correctness, and is what lets a FOR UPDATE lock on one row serialise all fuzzy variants of the same property.</description>
+    <inlineHelpText>Do not edit directly. Populated by the matching service from the normalized inbound property address as a coarse serialization bucket.</inlineHelpText>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

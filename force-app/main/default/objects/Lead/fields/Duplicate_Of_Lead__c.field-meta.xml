@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Duplicate_Of_Lead__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Duplicate Of Lead</label>
+    <description>Points to the winning Lead - the first broker to submit this property. Populated only when Is_Duplicate_Property__c is true.</description>
+    <inlineHelpText>The original Lead that claimed this property first.</inlineHelpText>
+    <referenceTo>Lead</referenceTo>
+    <relationshipLabel>Duplicate Property Leads</relationshipLabel>
+    <relationshipName>Duplicate_Property_Leads</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

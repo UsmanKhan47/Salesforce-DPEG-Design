@@ -1,0 +1,73 @@
+:host {
+    display: block;
+    color: var(--slds-g-color-neutral-base-10, #181818);
+}
+
+/* ===== Native related-list ("lv-*") table chrome ===== */
+.lv-scroll {
+    overflow-x: auto;
+}
+.lv-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.lv-head {
+    background: var(--slds-g-color-surface-container-1, #fafaf9);
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+}
+.lv-th {
+    text-align: left;
+    padding: var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-4, 16px);
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-neutral-base-30, #444444);
+    white-space: nowrap;
+}
+.lv-cell {
+    padding: var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-4, 16px);
+    font-size: var(--slds-g-font-scale-base, 13px);
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+    vertical-align: middle;
+}
+
+/* Broker cell: bold name over a muted email, related-list "record link" idiom */
+.lv-name {
+    display: block;
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-neutral-base-10, #181818);
+}
+.lv-sub {
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+}
+.lv-muted {
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+}
+
+/* Row hover + winning-submission accent stripe */
+.lv-row:hover {
+    background: var(--slds-g-color-surface-container-1, #f3f3f3);
+}
+.lv-row_winner {
+    background: var(--slds-g-color-surface-container-1, #fafaf9);
+    box-shadow: inset 3px 0 0 var(--slds-g-color-success-base-50, #2e844a);
+}
+
+/* ===== Empty state ===== */
+.lv-empty {
+    display: flex;
+    align-items: center;
+    gap: var(--slds-g-spacing-2, 8px);
+    padding: var(--slds-g-spacing-5, 20px) var(--slds-g-spacing-4, 16px);
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+}
+.lv-empty-text {
+    font-size: var(--slds-g-font-scale-base, 13px);
+    margin: 0;
+}
+
+/* ===== Error banner ===== */
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 13px);
+}

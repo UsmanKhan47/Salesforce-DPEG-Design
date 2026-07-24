@@ -1,350 +1,208 @@
-# DPEG — Role-Based Access Security Model (Design Requirements / Gate-1 Artifact)
+# Design Requirements — Broker Protection (Inbound Email-to-Lead Pipeline)
 
-**Request type:** Declarative security-model build — **no Apex, no LWC.**
-**Target org:** `usman-dpeg` (Enterprise Edition, treated as UAT; direct fixes approved by user).
-**Routing:** `salesforce-solution-architect` (security design) → `salesforce-admin` (build).
-**Prepared by:** salesforce-design · **Date:** 2026-07-22
-
-> This is a **design / requirements** document only. No users, queues, permission sets, roles, sharing rules, or approval edits are created here, and no deploy is run. Gate-1 confirmation required before build.
+Prepared by: salesforce-design agent
+Date: 2026-07-24
+Conformance basis: `ARCHITECTURE.md` (§1–§6), `CLAUDE.md` (orchestration + complexity routing), `.claude/rules/*`
+Standing decision (user-approved): **DPEG-conformant** — same runtime behavior as the pasted POC spec, rebuilt to DPEG standards.
 
 ---
 
-## 1. Objectives & Scope
+## 1. Overview
 
-### Objective
-Stand up a **production-grade, least-privilege RBAC model** for two named users on the standard **Minimum Access – Salesforce** profile, composed entirely from OWD + Role Hierarchy + Sharing + Permission Sets/PSGs + a Queue, and reconcile the two Opportunity approval processes to the correct principal approver.
+Multiple brokers independently email the same property to different internal people, who forward those emails into a Salesforce Email Service. This feature adds a **broker-protection layer** that:
+
+1. Detects whether an inbound property already has a Lead (the "winner" = first broker to submit it).
+2. Still creates a Lead per existing behavior, but marks a later duplicate submission dead and logs it for tracking only — never overwriting the winning Lead's data.
+3. Surfaces the full submission history (winner + competing brokers) in an LWC on the winning Lead's record page.
+4. Is **race-safe**: two emails for the same property within moments must never both win, enforced by a unique, case-insensitive external-ID key on a claim-ledger object, with a `DmlException` `DUPLICATE_VALUE` recovery path that re-reads the winner.
+
+Runtime pipeline: an inbound-email handler creates a Lead synchronously and enqueues an async Queueable that calls an LLM (OpenAI gpt-4o-mini, text or image/vision) to extract broker name/email, property address, and the original "Sent:" datetime from the forwarded body, with a regex fallback on the first "From:" line. The Queueable then runs the claim logic.
+
+This is a **from-scratch build** — none of the Apex, objects, or credentials exist yet (verified in-repo).
+
+---
+
+## 2. In Scope / Out of Scope
 
 ### In scope
-- Two users: **Junior Dhanani** (junior acquisition analyst) and **Nikhil Dhanani** (principal).
-- **Acquisition queue** (Leads + a recommended set of acquisition custom objects) with Junior as member.
-- **Full least-privilege RBAC**: per-object OWD tightening, a DPEG role hierarchy, and sharing strategy.
-- A **new** permission-set / PSG architecture that composes exactly the required access (existing perm sets are unsuitable — see §7).
-- **Approval repoint** of `Opportunity.LOI_Approval` and `Opportunity.Underwriting_Approval` to Nikhil.
+- 4 new Lead custom fields (2 for capture, 2 for duplicate marking).
+- 2 new backend custom objects: `Property_Registry__c` (claim ledger) and `Competing_Broker_Submission__c` (audit trail).
+- 1 External Credential + 1 Named Credential for the direct OpenAI callout (documented §3 exception).
+- 1 permission set (object/field access + external-credential principal access).
+- Apex: inbound-email handler, mockable callout service, Queueable, matching/claim service, 2 selectors, thin `@AuraEnabled` controller.
+- 1 LWC on the winning Lead record page + edit of the existing `Lead_Record_Page` FlexiPage.
+- Apex test classes (TestDataFactory-based, HttpCalloutMock, 251-record bulk on DML services, 90%+ team-owned coverage).
+- `ARCHITECTURE.md` updates in the **same PR** (§1, §2, §3).
 
-### Out of scope (explicit)
-- **Transaction / Property Management team editor personas** — deferred (only Junior + Nikhil now).
-- **Experience Cloud / Investor Portal** access and guest sharing.
-- **Sharing for the IR module** (Investor/Investment objects — never built; do not design for them).
-- **Modifying or deleting existing permission sets / users** — the new perm sets are strictly additive; existing personas must remain unaffected.
-- Apex, LWC, Flow, validation rules, field creation.
-
-### The 4 binding decisions (already made — do not re-litigate)
-1. **Junior** = Edit on Acquisition + Disposition; View-only on Transaction + Property Management.
-2. **Queue** = Acquisition queue owns Leads + acquisition objects; Junior is a member.
-3. **RBAC** = full least-privilege (OWD tighten + Role Hierarchy + Sharing), not simple perm-set-only control.
-4. **Approver** = Nikhil Dhanani is the principal approver on both Opportunity approval processes.
+### Out of scope (not requested / handled outside this metadata deploy)
+- The Email Service + inbound routing address itself (Setup → Email Services). This is **org configuration** that points at `EmailToLeadHandler`; it is not part of the portable metadata bundle. See Open Question 4.
+- The OpenAI API key value and the permission-set **assignment** — both are per-org, set **after** deploy, and do not travel with metadata (gotcha 8).
+- Any ASB LLM-extraction endpoint (does not exist today; the direct OpenAI credential is the interim, documented exception).
+- Write-back to any external system (§0 forbids it).
+- Custom-object related lists on the Lead page layout — do NOT block the deploy on this (gotcha 3); the LWC is the primary view.
+- Investor Relations / any object or field not in the component list.
 
 ---
 
-## 2. Ground-Truth Facts (verified against repo, 2026-07-22)
+## 3. Admin / Declarative Work
 
-These facts drive the design; the admin must re-verify the **live org** values before building (repo ≠ org in places, see risks).
+Routine declarative metadata. The schema is fully pre-designed below (no architecture decisions left open), which keeps it inside routine-admin scope.
 
-| Fact | Verified value |
-|------|----------------|
-| Custom objects | **33** (11 Acquisition, 2 Transaction, 5 Disposition, 15 Property Management) per ARCHITECTURE §1 |
-| OWD — 28 master objects | **`ReadWrite` (Public Read/Write)** — org-wide-open; no tightening deployed |
-| OWD — 5 detail objects | **`ControlledByParent`**: `Unit__c`, `Rent_Step__c`, `Lease_Activity__c`, `Renewal_Activity__c`, `Work_Order_Activity__c` — inherit master; **cannot** carry their own OWD |
-| Apps (4) | `Acquisition`, `Disposition`, `Transaction`, `Property_Management` |
-| Existing Acquisition queue | **None.** Only `Broker_Portal_Leads` (Lead only) exists in repo |
-| `LOI_Approval` approvers | `usman.khan.dpeg@avanzasolutions.com` **+** `aftab.ali.dpeg.usman@avanzasolutions.com`, **Unanimous** |
-| `Underwriting_Approval` approvers | Same two, **Unanimous**; description states *"Both principals (Ali + Nikhil) must approve"* |
-| Existing perm sets | `DPEG_Acquisitions` (346 FLS fields, Create/Edit/Delete broad), `Property_Management_Access` (183), `Transaction_App_Access` (44), `Acquisition_App_Access` (all-4-apps visibility), + dashboard/admin sets — all **edit/power-user scoped** |
-| FLS location | Effective FLS lives on **profiles**, which are `.forceignore`d — **FLS is NOT in the repo.** New perm sets must author FLS fresh (cannot copy from profiles) |
+### 3.1 Lead custom fields (4)
+| API name | Type | Notes |
+| --- | --- | --- |
+| `Email_Subject__c` | Text(255) | Capture. §1-conformant. |
+| `Forwarded_By__c` | Email | Capture — the internal forwarder's address. **See §1 naming flag, Open Question 5.** |
+| `Is_Duplicate_Property__c` | Checkbox, default **false** | §1 rule 4 (`Is_` prefix). Duplicate marking. |
+| `Duplicate_Of_Lead__c` | Lookup → Lead, deleteConstraint **SetNull** | Points a dead Lead at its winner. Lookup-to-Lead cannot be Restrict/Cascade (gotcha 1). |
 
-**Boundary objects (note, no design impact):** `Property__c` is the acquisition target (Acquisition module) — distinct from `Property_Asset__c` (PM root). `NDA__c` spans Acquisition + Disposition (Junior edits it under either).
+`Lead.Property_Address__c` (Text 255) already exists — reuse, do not recreate.
 
----
+### 3.2 Object `Property_Registry__c` — claim ledger (backend-only)
+- AutoNumber name: `PR-{0000000}`; sharingModel **ReadWrite**.
+- Fields:
+  - `Property_Key__c` — Text(255), **unique, caseSensitive=false, externalId=true, required**. This is the race-safety key.
+  - `Normalized_Address__c` — Text(255).
+  - `Winning_Lead__c` — Lookup → Lead, **SetNull**.
+  - `Registered_DateTime__c` — **DateTime** (§1 rule 6/9; NOT `_Date`).
+- Validation rule `Winning_Lead_Required`: `AND(ISNEW(), ISBLANK(Winning_Lead__c))` — insert-scoped stand-in for "required" (a SetNull lookup cannot be required).
 
-## 3. User Matrix (target end-state)
+### 3.3 Object `Competing_Broker_Submission__c` — audit trail
+- AutoNumber name: `CBS-{0000000}`; sharingModel **ReadWrite**.
+- **Deliberately NOT master-detail** — cascade delete would wipe the audit trail. Use lookups.
+- Fields:
+  - `Winning_Lead__c` — Lookup → Lead, SetNull.
+  - `Source_Lead__c` — Lookup → Lead, SetNull.
+  - `Broker_Name__c` — Text(255).
+  - `Property_Address_Raw__c` — Text(255).
+  - `Email_Subject__c` — Text(255).
+  - `Broker_Email__c` — Email.
+  - `Forwarded_By__c` — Email. **Same §1 naming flag as the Lead field (Open Question 5).**
+  - `Submitted_DateTime__c` — **DateTime** (§1 rule 6/9; NOT `_Date`).
+  - `Is_Winning_Submission__c` — Checkbox, default false (§1 rule 4).
+- Validation rule `Winning_Lead_Required`: same formula as 3.2.
 
-Object groups: **ACQ** = {Opportunity, Lead, Property__c, LOI__c, Counter_Offer__c, Underwriting__c, Development_Feasibility_Review__c, Construction_Feasibility_Review__c, Contract_Review__c, PSA_Version__c, Deal_Message__c, Offering__c, NDA__c}. **DISP** = {Disposition__c, Disposition_Offer__c, BOV_Submission__c, Broker_Listing__c, Wire__c}. **TXN** = {Transaction__c, Critical_Date__c}. **PM** = the 15 Property-Management objects.
+### 3.4 Permission set `Broker_Protection_Access`
+- `<description>` ≤ 255 chars (gotcha 7).
+- Object perms (R/C/E + viewAll) on both new objects.
+- FLS (read/edit) on every new custom field, **including the 4 Lead fields**.
+- External-credential principal access for `OpenAI_Credential`.
+- **Dependency:** the external-credential principal-access entry requires the External Credential (built in the integration stream, §4.1) to exist first — see Deploy Order.
+- FLS/assignment caveat: deployed fields land with **no FLS** until this perm set is deployed AND **assigned** in-org (per-org, post-deploy). USER_MODE breakage is invisible to admin testers — acceptance-test as a non-admin persona.
 
-| User | Group | Create | Read | Edit | Delete | FLS | Record visibility mechanism |
-|------|-------|:------:|:----:|:----:|:------:|-----|-----------------------------|
-| **Junior Dhanani** | ACQ | ✅ | ✅ | ✅ | ❌ | View+Edit | Owns + queue/team sharing (R/W); View All for read |
-| | DISP | ✅ | ✅ | ✅ | ❌ | View+Edit | Owns + team sharing (R/W); View All for read |
-| | TXN | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
-| | PM | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
-| | Apps | Acquisition, Disposition, Transaction | | | | | |
-| **Nikhil Dhanani** | ACQ | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
-| | DISP | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
-| | TXN | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
-| | PM | ❌ | ✅ | ❌ | ❌ | View | **View All** (read all) |
-| | Apps | All 4 | | | | | |
-| | Approval | Named approver on `LOI_Approval` + `Underwriting_Approval`; Read on Opportunity (via ACQ View) | | | | | |
-
-**Design notes**
-- **"Create/Read/Edit, no Delete"** for Junior is deliberate least-privilege — the request said *edit*, not *delete*.
-- **View All (read-all) is the mechanism** that delivers "view-only across records" cleanly under an OWD-Private model — it grants read to every record of an object without any sharing rule, and cannot grant edit. It is the right tool for a read-only principal and for Junior's Txn/PM view.
-- Junior is **not** granted **Modify All** anywhere (that would bypass sharing and defeat least-privilege). His edit on records he does not own comes from **sharing rules**, not Modify All.
-
----
-
-## 4. OWD Matrix (Org-Wide Defaults)
-
-**Principle:** tighten every deal/financial/tenant **master** to **Private**; deliver read to view personas via **View All** perm-set flags and edit to Junior via **sharing rules**. Detail objects inherit their master (unchanged). This achieves least-privilege without any `Public Read-Only` tier — no object needs to be world-readable.
-
-| Object(s) | Current OWD | Target OWD | Rationale |
-|-----------|-------------|-----------|-----------|
-| **28 master custom objects** (all ACQ/DISP/TXN/PM masters) | `ReadWrite` (Public R/W) | **Private** | Deal, financial, wire, and tenant records must not be world-writable. Access granted back explicitly (auditable). |
-| `Unit__c`, `Rent_Step__c`, `Lease_Activity__c`, `Renewal_Activity__c`, `Work_Order_Activity__c` | `ControlledByParent` | **`ControlledByParent` (unchanged)** | Master-detail details cannot have an independent OWD — they follow the master. No action. |
-| **Opportunity** (standard) | *verify in org* | **Private (recommended)** — **decision required** | Consistent least-privilege for the deal root. **Blast radius:** affects all existing deals + `LeadConvertService`/assignment flows; regression-test first. If disruptive, keep current OWD and rely on Read object perm + View All for read personas. |
-| **Lead** (standard) | *verify in org* | **Private (recommended)** | Private + queue ownership is exactly why the Acquisition queue works — queue members auto-see queue-owned leads; assignment rules still route. |
-
-**Keep "Grant Access Using Hierarchies" = ON** on all Private custom objects so the role hierarchy backbone functions (principal sees subordinates' records). View All is the primary read mechanism for the two personas; hierarchy is the structural backbone and future-proofing.
-
-**Standard-object caveat:** OWD for standard objects (Opportunity, Lead) is managed in **Setup → Sharing Settings**, not reliably in `object-meta.xml`. The admin must read/set these in the org.
+### 3.5 FlexiPage edit
+- Add the `competingBrokerSubmissions` LWC to the **existing** `Lead_Record_Page.flexipage-meta.xml` (verified present). This is an edit, not a create.
 
 ---
 
-## 5. Role Hierarchy
+## 4. Developer / Programmatic Work
 
-The 18 roles in the repo are the **out-of-box Salesforce sample set** (CEO, CFO, Sales teams…) — not DPEG-specific. Design a clean DPEG tree:
+Layering per `ARCHITECTURE.md` §2 + `.claude/rules/apex-layering-rule.md`: SOQL only in Selectors (all `WITH USER_MODE`); DML/orchestration in a Service; handler and controller are thin. **No UnitOfWork class exists** (verified) → multi-object DML goes directly in the Service, bulkified, no UoW. API version **67.0** on every `.cls-meta.xml` and `.js-meta.xml`.
 
-```
-DPEG Principal            (Nikhil Dhanani)          ← top; grant-access-using-hierarchy reaches all below
-├── Acquisitions Lead     (unassigned — scaffold)
-│   └── Acquisitions Analyst   (Junior Dhanani)     ← assigned now
-├── Disposition Lead      (unassigned — deferred)
-├── Transactions Lead     (unassigned — deferred)
-└── Property Mgmt Lead    (unassigned — deferred)
-```
+### 4.1 Integration credentials (declarative, but owned by the integration stream)
+- `OpenAI_Credential` — **External Credential**, Custom protocol.
+  - **AuthParameter is not valid under the Custom protocol** (gotcha 6) — store the key as a **NamedPrincipal** authentication parameter, referenced by an Authorization `AuthHeader` (`Bearer ...`).
+  - Self-reference syntax is fully qualified: `{!$Credential.OpenAI_Credential.API_Key}` (gotcha 5).
+- `OpenAI_API` — **Named Credential**, `SecuredEndpoint` → `https://api.openai.com`, **`allowMergeFieldsInHeader=true`** (else the `{!$Credential...}` header is sent literally → 401; gotcha 4).
+- The API key value is set **post-deploy**, never in metadata (gotcha 8).
 
-**Build now (minimal to satisfy the 2 users):**
-- `DPEG_Principal` → assign **Nikhil**.
-- `Acquisitions_Analyst` (reporting to `DPEG_Principal`, optionally via an `Acquisitions_Lead` placeholder) → assign **Junior**.
+### 4.2 Apex
+| Class | Layer | Responsibility / notes |
+| --- | --- | --- |
+| `EmailToLeadHandler` | Inbound handler (`Messaging.InboundEmailHandler`) | **Thin.** Build Lead + enqueue the Queueable via a service. From/name parsing, plaintext-vs-html body, image-attachment base64 extraction. No inline SOQL/DML business logic. |
+| `LLMExtractionCalloutService` | Service (callout wrapper) | Mockable OpenAI callout (vision + text); returns extracted map. **Class header must carry a written §3-exception justification** (direct OpenAI pending a future ASB extraction endpoint). No raw `Http().send()` in the Queueable. Mockable via `HttpCalloutMock`. |
+| `ExtractAddressQueueable` | Queueable (`Database.AllowsCallouts`) | Orchestrates: callout service → regex fallback → update Lead → claim logic via service. `@TestVisible` seam to force the race path. **No inline SOQL/DML** — delegate to service/selectors. |
+| `PropertyMatchingService` (+ claim-service split) | Service | `normalizeAddress`, Jaccard `calculateSimilarity`, `findMatchingRegistry` (exact on unique key + fuzzy ≥0.6 within 90-day lookback, **ignoring null-winner rows**), `findOrphanedRegistry` (adopt SetNull-orphaned claims), and the claim/duplicate/orphan-adopt DML orchestration (via selectors, no inline SOQL). **Race recovery on `DUPLICATE_VALUE` / `DUPLICATE_EXTERNAL_ID`** → re-read the winner. Methods accept collections; bulkified. |
+| `PropertyRegistrySelector` | Selector | All `Property_Registry__c` SOQL, `WITH USER_MODE`. Bind **Datetime** (not Date) for `Registered_DateTime__c` (gotcha 10). |
+| `CompetingBrokerSubmissionSelector` | Selector | All `Competing_Broker_Submission__c` SOQL, `WITH USER_MODE`. Order by `Submitted_DateTime__c`. |
+| `CompetingSubmissionController` | Controller (`@AuraEnabled cacheable`) | **Thin.** Delegates to selector/service; `WITH USER_MODE`; every failure → `AuraHandledException` via a private `ahe(String)` helper (repo-standard pattern, see `BrokerPortalController`). |
 
-The lead/other-module roles are **designed but not built** (out of scope: Txn/PM/Disp team users are deferred). Add them when those personas exist.
+### 4.3 LWC
+- `competingBrokerSubmissions` — on the winning Lead record page.
+  - Imperative Apex (justified: cross-object aggregate not expressible via LDS — allowed by §5 exception).
+  - Winner / Competing badge; ordered by `Submitted_DateTime__c`.
+  - SLDS 2 design tokens (no hardcoded hex); SLDS linter before deploy.
+  - `apiVersion` **67.0**.
+  - Jest + `@sa11y/jest` accessibility test required.
+  - Toast on error (`lightning/platformShowToastEvent`).
 
-**Why hierarchy alone is not enough:** queue-owned and integration-owned (Yardi-mirror) records sit **outside** the role hierarchy — hierarchy will not surface them to Nikhil. This is why the two personas get **View All** (§3) rather than relying on hierarchy for read. Hierarchy is the backbone; View All is the guarantee.
-
----
-
-## 6. Sharing Strategy (how each persona sees records under OWD Private)
-
-| Persona / need | Mechanism | Detail |
-|----------------|-----------|--------|
-| **Nikhil — read everything (4 modules)** | **View All** on every object (in his View perm sets) + top of role hierarchy | View All delivers org-wide read with no sharing rules; hierarchy is structural. No sharing rules required for Nikhil. |
-| **Junior — read all Txn + PM** | **View All** on TXN + PM objects (in his View perm sets) | No sharing rules required. |
-| **Junior — read all Acq + Disp** | **View All (read)** on ACQ + DISP objects (in his Edit perm sets) | Lets him *see* records he doesn't own; edit is separate (below). |
-| **Junior — edit Acq records he doesn't own** | **Owner-based sharing rule** | Records **owned by the Acquisition queue** → **Read/Write** to public group **`DPEG Acquisitions Team`**. Queue-owned records do **not** share up the hierarchy, so this rule is mandatory. |
-| **Junior — edit Disp records he doesn't own** | **Owner-based sharing rule** | Disposition has **no queue** in scope; records are user-owned. Rule: records owned by **`Role: Acquisitions Analyst and Subordinates`** → **R/W** to `DPEG Acquisitions Team`. If disposition records will be owned outside that role, extend to a criteria-based "all records" R/W rule (see Open Question 3). |
-
-**Public group to create:** `DPEG Acquisitions Team` = { Role **Acquisitions Analyst and Subordinates**, Role **DPEG Principal** }. Sharing rules grant **R/W**; each user's **object permission caps their effective access** (Junior R/W, Nikhil read-only), so one R/W rule serves both safely.
-
-**Critical gotcha (queue ownership ≠ hierarchy sharing):** a record owned by a **queue** has no role, so it is invisible to the role hierarchy — *including to the principal at the top*. Every module whose records are queue-owned needs an explicit owner-based sharing rule (or the viewers need View All). Nikhil is covered by View All; Junior's **edit** on queue-owned acq records requires the sharing rule above.
-
----
-
-## 7. Permission-Set / PSG Plan (the crux)
-
-### Why the existing perm sets are unsuitable
-`DPEG_Acquisitions`, `Property_Management_Access`, `Transaction_App_Access` grant **Create/Edit/Delete + edit-FLS** across their objects — they are power-user/app sets. They **cannot** express "view-only on Transaction/PM." Reusing them would over-grant. **Do not modify them** (existing users depend on them). Build a clean, composable **new** set.
-
-### New atomic permission sets (functional — object CRUD + FLS)
-
-| # | Permission set | Objects | Object perms | FLS | View All |
-|---|----------------|---------|--------------|-----|:--------:|
-| 1 | `DPEG_Acquisition_Edit` | ACQ (13, incl. Opportunity, Lead) | C / R / U (no D) | Read + Edit | ✅ (read) |
-| 2 | `DPEG_Acquisition_View` | ACQ | R | Read | ✅ |
-| 3 | `DPEG_Disposition_Edit` | DISP (5) | C / R / U (no D) | Read + Edit | ✅ (read) |
-| 4 | `DPEG_Disposition_View` | DISP | R | Read | ✅ |
-| 5 | `DPEG_Transaction_View` | TXN (2) | R | Read | ✅ |
-| 6 | `DPEG_PropertyMgmt_View` | PM (15, incl. the 5 details) | R | Read | ✅ |
-
-### New app/tab-visibility permission sets
-
-| # | Permission set | Grants |
-|---|----------------|--------|
-| 7 | `DPEG_App_Acquisition` | App visibility + all Acquisition tabs |
-| 8 | `DPEG_App_Disposition` | App visibility + all Disposition tabs |
-| 9 | `DPEG_App_Transaction` | App visibility + all Transaction tabs |
-| 10 | `DPEG_App_PropertyMgmt` | App visibility + all PM tabs |
-
-### Approval-access permission set
-**Recommendation: do NOT create a separate one.** Approval *acting* rights come from being the **named approver** (a process assignment, not a permission) + **Read on Opportunity** — already delivered by `DPEG_Acquisition_View` (Read + View All on Opportunity). A standalone `DPEG_Approval_Principal` would be redundant. Create a thin one (View All on Opportunity only) **only if** you want approval visibility decoupled from module access (see Open Question 5 — flag for confirmation).
-
-### Permission Set Groups (compose per persona)
-
-| PSG | Members | Assigned to |
-|-----|---------|-------------|
-| `DPEG_Junior_Analyst_PSG` | 1 `Acquisition_Edit`, 3 `Disposition_Edit`, 5 `Transaction_View`, 6 `PropertyMgmt_View`, 7 `App_Acquisition`, 8 `App_Disposition`, 9 `App_Transaction` | **Junior** |
-| `DPEG_Principal_PSG` | 2 `Acquisition_View`, 4 `Disposition_View`, 5 `Transaction_View`, 6 `PropertyMgmt_View`, 7–10 all four App sets | **Nikhil** |
-
-A user is never assigned both `*_Edit` and `*_View` for the same module (Junior gets Edit, Nikhil gets View) — no conflict.
-
-### FLS is the bulk of the work (flag)
-Each `*_View` / `*_Edit` set must enumerate **FLS for every field** of its objects (33 objects carry **463 custom fields** + standard fields). FLS is **not in the repo** (profiles are forceignored). Practical build path:
-- **Source the field lists** from the existing perm sets (`DPEG_Acquisitions` = 346 fields, `Property_Management_Access` = 183, `Transaction_App_Access` = 44) — reuse the enumerations, set the edit flag per view/edit intent.
-- **Formula / roll-up / auto-number fields are read-only** → grant **Read FLS only** even in `*_Edit` sets (an edit-FLS on a formula field is invalid).
-- **Required & master-detail fields** cannot have Read FLS removed — grant Read.
-- **Missing FLS = "No such column" / blank fields** for the persona. This is invisible to an admin tester (admin passes via profile). **Acceptance test as each persona** (see §14 risks).
+### 4.4 Tests (salesforce-unit-testing agent)
+- Extend the org-wide `TestDataFactory` (`force-app/main/default/classes/TestDataFactory.cls`) — **do not fork** or stand up a competing factory.
+- `Assert` class for all assertions.
+- `HttpCalloutMock` for `LLMExtractionCalloutService`.
+- `Test.startTest()/stopTest()` around the Queueable.
+- **251-record bulk coverage** for any service method that does DML (per `.claude/rules/bulk-test-rule.md`); assertion counts must match 251.
+- 90%+ per team-owned class.
+- Carry gotcha 9 into test design: do not call `queueable.execute(null)` immediately after an insert in the same anon-Apex/test block (uncommitted work pending, DML-before-callout) — enqueue or split executions.
 
 ---
 
-## 8. Acquisition Queue Specification
+## 5. Complexity-Routing Recommendation
 
-**Create queue:** `Acquisition` (verify it doesn't already exist in the live org first — only `Broker_Portal_Leads` is in the repo).
+Per `CLAUDE.md` complexity-routing gate:
 
-**Members:** **Junior Dhanani** (direct member). *(Optionally add the `Acquisitions Analyst` role instead of the user, for future members — recommend user-direct now for the 2-user scope.)*
+| Work bundle | Route to | Why |
+| --- | --- | --- |
+| **Declarative** — 4 Lead fields, 2 objects + fields + validation rules, permission set (object/field FLS), FlexiPage edit | 🔵 `salesforce-admin` | Routine field/object/validation-rule/permission-set/FlexiPage work; 2 objects is below the "5+ related objects / multi-object schema" solution-architect threshold; no OWD/sharing strategy to design. Schema is pre-specified. |
+| **Integration + programmatic** — External + Named Credential, `LLMExtractionCalloutService`, `EmailToLeadHandler`, `ExtractAddressQueueable`, `PropertyMatchingService` + claim service, 2 selectors, `CompetingSubmissionController` | ⚫ `salesforce-technical-architect` | External LLM callout, Named/External Credentials, async Queueable, race-safe DML with duplicate-key recovery, §3 integration-exception justification — all in the technical-architect list. |
+| **LWC** — `competingBrokerSubmissions` (+ Jest/sa11y) | ⚫ `salesforce-technical-architect` (per user framing) — *or* 🟢 `salesforce-developer` if parallelizing | The user grouped the LWC with the programmatic bundle → technical-architect owns it end-to-end. Routing note: a plain record-page LWC with a thin controller is standard complexity and **could** be delegated to `salesforce-developer`; if so, sequence it after the architect delivers `CompetingSubmissionController` + the selector it wires to. |
+| Test classes (all Apex) | 🟡 `salesforce-unit-testing` | Standard post-Apex step. |
 
-**Queue-enabled objects — recommendation:**
-
-| Object | Queue-own? | Rationale |
-|--------|:----------:|-----------|
-| **Lead** | ✅ **Yes** | Primary purpose — inbound acquisition-lead triage/intake (mirrors existing Broker Portal Leads pattern). |
-| **Property__c** | ✅ **Recommended** | Standalone acquisition target; a triage pool for sourced-but-unassigned targets before an analyst takes ownership. |
-| `Underwriting__c`, `LOI__c`, `Development_Feasibility_Review__c`, `Construction_Feasibility_Review__c`, `Contract_Review__c` | ⚠️ **Optional** | Only if DPEG wants a **pooled-review intake** model (analysts pick up unassigned reviews). Otherwise these are auto-created by Apex tied to a user-owned deal and should follow the deal owner. **Default: No.** |
-| `Counter_Offer__c`, `PSA_Version__c`, `Deal_Message__c` | ❌ **No** | Append-only logs / version children — no independent assignment; ownership should track the parent. |
-| `Offering__c`, `NDA__c` | ❌ **No** (default) | Documents tied to a deal/disposition; `NDA__c` also spans Disposition. Queue-own only if a legal-triage pool is wanted. |
-
-**Recommended minimal set: `Lead` + `Property__c`.** (See Open Question 2 for the optional pooled-review extension.)
-
-**Constraints the admin must respect:**
-- **Opportunity cannot be queue-owned** (standard Opportunity does not support queue ownership) — the deal itself is always user-owned.
-- All 11 acquisition custom objects are lookup-based (none are master-detail details), so all **have `OwnerId` and are queue-eligible** — the recommendation above is a *design* choice, not a technical limit.
-- The `Acquisition` queue on Lead **coexists** with `Broker_Portal_Leads`; ensure Lead assignment rules don't conflict.
+Not routed to `salesforce-solution-architect`: no multi-object OWD+sharing+FLS strategy, no ERD/subflow architecture, and the object count (2) is below the multi-object-schema threshold.
 
 ---
 
-## 9. Approval-Process Repoint
+## 6. ARCHITECTURE.md Updates Required (same PR — §6)
 
-**Goal:** Nikhil Dhanani becomes the principal approver on `Opportunity.LOI_Approval` and `Opportunity.Underwriting_Approval`.
-
-**Current repo state:** both processes name **two** approvers — `usman.khan.dpeg@avanzasolutions.com` (the ghost Nikhil placeholder) **+** `aftab.ali.dpeg.usman@avanzasolutions.com` ("Ali") — with **Unanimous**. The Underwriting description documents *"Both principals (Ali + Nikhil) must approve."*
-
-**Recommended repoint (matches documented two-principal design):**
-- Replace `usman.khan.dpeg@avanzasolutions.com` → **new Nikhil Dhanani user**.
-- **Keep** `aftab.ali.dpeg.usman@avanzasolutions.com` as co-approver; **keep Unanimous.**
-- Apply identically to both processes.
-
-> **Open Question 1** — the request says *"so Nikhil is the approver"* (singular). If the intent is **Nikhil as sole approver**, drop Ali and use a single-approver step instead. Repo shows 2/unanimous; confirm before building.
-
-**Operational sequence (admin — declarative gotchas):**
-1. **Verify the LIVE org** approver config first — repo may differ from org (drift noted).
-2. An **active** approval process's steps **cannot be edited** — **deactivate** each process, edit the approver, **reactivate**.
-3. Deactivation is **blocked by pending in-flight approval requests** — **recall** any pending submissions first.
-4. The approver must be an **active user with a Salesforce license** (Opportunity is a standard object) and **Read on Opportunity** — delivered by `DPEG_Acquisition_View`. Minimum Access – Salesforce is a Salesforce-licensed profile ✅.
-5. `recordEditability = AdminOnly` is unchanged — fine, since Nikhil is read-only anyway; he can still approve/reject as the named approver.
+1. **§1 → _Current objects_** — add both new objects under the **Acquisitions** module (they root on the Lead intake / deal tree):
+   - `Property_Registry__c` — Parent (lookup): `Lead`. Purpose: race-safe claim ledger for inbound property submissions (unique case-insensitive `Property_Key__c`).
+   - `Competing_Broker_Submission__c` — Parent (lookup): `Lead` (`Winning_Lead__c`, `Source_Lead__c`). Purpose: append-only audit trail of every broker submission for a property (winner + competitors); never cascade-deleted.
+   - Confirm both `.object-meta.xml` files carry a real `<description>` so the table cites source, not inference.
+2. **§2 → _Key Apex Services_** — add rows:
+   - `PropertyMatchingService` (+ claim service if split) — invoked from `ExtractAddressQueueable` — property normalization/similarity, registry claim, duplicate marking, orphan adoption, `DUPLICATE_VALUE` race recovery.
+   - `LLMExtractionCalloutService` — invoked from `ExtractAddressQueueable` — mockable OpenAI extraction callout wrapper (documented §3 exception).
+3. **§3 → Integration Architecture** — add a note that a **direct OpenAI Named Credential (`OpenAI_API`) + External Credential (`OpenAI_Credential`)** is a **deliberate, temporary exception** to the ASB-only rule, pending a future ASB LLM-extraction endpoint. Reference the class-header justification on `LLMExtractionCalloutService`.
 
 ---
 
-## 10. Users to Create
+## 7. Open Questions (with verified findings)
 
-Both on the standard **Minimum Access – Salesforce** profile.
-
-| Field | Junior Dhanani | Nikhil Dhanani |
-|-------|----------------|----------------|
-| Notification/activation email | `usmankhan-96@hotmail.com` | `usmanthehitman@gmail.com` |
-| Proposed username (must be globally unique) | `junior.dhanani@usmandpeg.uat` | `nikhil.dhanani@usmandpeg.uat` |
-| Alias | `jdhan` | `ndhan` |
-| Profile | Minimum Access – Salesforce | Minimum Access – Salesforce |
-| Role | `Acquisitions_Analyst` | `DPEG_Principal` |
-| Queue membership | `Acquisition` queue | — |
-| PSG | `DPEG_Junior_Analyst_PSG` | `DPEG_Principal_PSG` |
-| Approver on | — | `LOI_Approval`, `Underwriting_Approval` |
-
-Usernames are **globally unique across all Salesforce orgs** — if `@usmandpeg.uat` is taken, suffix (e.g., `.01`). Set locale/timezone/language to org defaults at creation.
+1. **LeadSource value — RESOLVED (recommendation).** The org `LeadSource.standardValueSet` already contains **`Email-to-Lead`** and **`Broker Portal`**; there is **no `Email – Broker`**. **Recommend reusing the existing `Email-to-Lead`** value for the inbound pipeline (zero metadata change; the portal keeps `Broker Portal`). Only add a new `Email – Broker` value if broker-vs-generic email segmentation is a hard reporting requirement — confirm before adding.
+2. **UnitOfWork — RESOLVED.** No `*UnitOfWork*` class exists in `force-app`. The layering rule is conditional ("when the project has a UnitOfWork class"). → multi-object DML lives directly in the Service, bulkified. No UoW to introduce. (The `TriggerHandler` base class exists, but this feature has no trigger, so it is not used.)
+3. **Lead record page FlexiPage — RESOLVED.** `force-app/main/default/flexipages/Lead_Record_Page.flexipage-meta.xml` **exists** → the LWC is added to it (edit, not create). (`Lead_Funnel.flexipage-meta.xml` also exists but is the funnel app page, not the record page.)
+4. **Email Service configuration — NEEDS DECISION.** `EmailToLeadHandler` is a `Messaging.InboundEmailHandler`, but the **inbound Email Service + its routing address** is org configuration (Setup → Email Services) that is not part of this portable metadata bundle. Confirm who provisions it and whether it should be scripted post-deploy. Flagged out-of-scope for the deploy above.
+5. **`Forwarded_By__c` naming — NEEDS DECISION (§1 conformance).** In this org the `<Role>_By__c` pattern denotes **role-named lookups to User/Contact** (`Requested_By__c`, `Approved_By__c` — §1 rule 3). An **Email** field named `Forwarded_By__c` risks being read as a lookup (§1 rule 9, type-suffix discipline). The sibling field on `Competing_Broker_Submission__c` uses `Broker_Email__c` (with the `_Email` suffix), so the naming is also internally inconsistent. **Recommend `Forwarded_By_Email__c`** on both objects for §1 conformance and disambiguation. Confirm before build (the spec supplied `Forwarded_By__c`).
 
 ---
 
-## 11. Admin vs. Solution-Architect Split
+## 8. Platform Gotchas (carry into implementation prompts)
 
-### 🟤 SOLUTION-ARCHITECT (design authority)
-- Finalize the **OWD matrix** (per-object target + the Opportunity/Lead standard-object decision).
-- Finalize the **role hierarchy** tree (which roles to build now vs. defer).
-- Specify **sharing rules** (owner/criteria, source owner, target group, grant level) and the **public group** definition.
-- Specify the **permission-set / PSG architecture** — object perms, View All flags, FLS scope per set, app/tab visibility, and the user→PSG mapping.
-- Decide the **approval repoint** shape (Nikhil sole vs. Nikhil + Ali unanimous) pending Open Question 1.
-- Produce the **queue spec** (final object list + members).
-
-### 🔵 ADMIN (build)
-- Create **roles**, **public group**, **2 users** (assign roles).
-- Set **OWD** per matrix (custom objects via `sharingModel`; standard objects in Sharing Settings).
-- Create **sharing rules**.
-- Create the **6 functional + 4 app permission sets** (with full FLS enumeration) and the **2 PSGs**; assign to users.
-- Create the **`Acquisition` queue** (+ Junior member, + queueSobjects).
-- **Repoint** the two approval processes (deactivate → edit approver → reactivate).
-- **Do not deploy** without Gate-3 confirmation; **do not modify** existing perm sets/users.
+1. A lookup to Lead **cannot** use Restrict/Cascade delete → deploy rejected. Use **SetNull** lookups + the insert-scoped `Winning_Lead_Required` validation rule as the "required" stand-in.
+2. SetNull means a deleted winner leaves a registry row with **null `Winning_Lead__c`** → the matching service must **ignore null-winner rows** (else the property is permanently unclaimable) and the Queueable must **adopt** such orphans.
+3. Custom-object related lists may fail to deploy onto standard-object layouts — **do not block the deploy** on it; the LWC is the primary view.
+4. Named Credential merge fields in headers require **`allowMergeFieldsInHeader=true`**, else `{!$Credential...}` is sent literally → 401.
+5. External-credential self-reference is fully qualified: `{!$Credential.OpenAI_Credential.API_Key}`.
+6. `AuthParameter` is **not valid** under the Custom external-credential protocol → store the key as a **NamedPrincipal** authentication parameter, referenced by the Authorization `AuthHeader` (`Bearer ...`).
+7. PermissionSet `<description>` max **255 chars**.
+8. The API key value **and** the permission-set **assignment** do **not** travel with metadata — per-org, set **after** deploy. (Also: deployed fields land with no FLS until the perm set is deployed and assigned; USER_MODE breakage is invisible to admin testers — acceptance-test as a non-admin persona.)
+9. Calling `queueable.execute(null)` right after an insert in the same anon-Apex/test block throws **"uncommitted work pending"** (DML before callout) → enqueue and let it run, or split executions.
+10. `Registered_DateTime__c` / `Submitted_DateTime__c` are **DateTime** → bind **Datetime** (not Date) in SOQL.
 
 ---
 
-## 12. Recommended Build Order (dependency-driven)
+## 9. Proposed Component / Deploy Order
 
-1. **Roles** (`DPEG_Principal`, `Acquisitions_Analyst`) — needed before users and role-based sharing.
-2. **Public group** `DPEG Acquisitions Team` (references the roles).
-3. **Users** (Junior → Acquisitions Analyst; Nikhil → DPEG Principal).
-4. **Permission sets + PSGs** (create + FLS enumeration).
-5. **OWD tightening** (custom masters → Private; Opportunity/Lead per decision). *Triggers sharing recalculation.*
-6. **Sharing rules** (after OWD Private + groups + roles exist).
-7. **Acquisition queue** (+ Junior member + queueSobjects).
-8. **Assign PSGs** to users.
-9. **Repoint approval processes** to Nikhil (recall pending → deactivate → edit → reactivate).
-10. **Persona acceptance test** — log in **as Junior** and **as Nikhil**; verify exact access; an admin smoke test proves nothing (FLS/USER_MODE gaps are invisible to admins).
+Dependency-ordered. Steps 1–5 are the metadata build; 6–8 follow the standard `CLAUDE.md` workflow.
 
----
+1. **Lead fields** (`Email_Subject__c`, `Forwarded_By__c`/`Forwarded_By_Email__c`, `Is_Duplicate_Property__c`, `Duplicate_Of_Lead__c`) — referenced by objects' FLS, Apex, and perm set. *(admin)*
+2. **New objects** `Property_Registry__c` + `Competing_Broker_Submission__c` (fields + validation rules) — referenced by selectors, service, controller, perm set. *(admin)*
+3. **External Credential `OpenAI_Credential` → Named Credential `OpenAI_API`** — required by the callout service and the perm set's principal access. *(technical-architect)*
+4. **Permission set `Broker_Protection_Access`** — references the new objects, new fields, and the External Credential (from step 3). Must come after 1–3. *(admin)*
+5. **Apex, in layer order** — DTOs/selectors (`PropertyRegistrySelector`, `CompetingBrokerSubmissionSelector`) → `LLMExtractionCalloutService` → `PropertyMatchingService`/claim service → `ExtractAddressQueueable` → `EmailToLeadHandler` → `CompetingSubmissionController`. *(technical-architect)*
+6. **Test classes** for all Apex (TestDataFactory, HttpCalloutMock, `Test.start/stopTest`, 251-record bulk on DML services, 90%+). *(unit-testing)*
+7. **LWC `competingBrokerSubmissions`** (+ Jest/sa11y) → then **edit `Lead_Record_Page` FlexiPage** to add it. Depends on `CompetingSubmissionController` (step 5). *(technical-architect, or developer if split)*
+8. **`ARCHITECTURE.md` update** (§1, §2, §3) — **same PR** as the build.
 
-## 13. Open Questions (for the user)
+Then the standard workflow: code-review → (devops deploy ‖ documentation).
 
-1. **Approval approvers** — keep Ali as co-approver with Nikhil (**Unanimous**, matches the documented two-principal design), or make **Nikhil the sole approver**? *(Recommend: swap ghost → Nikhil, keep Ali, keep Unanimous.)*
-2. **Queue objects** — confirm the minimal set **`Lead` + `Property__c`**, or extend to the **pooled-review** objects (`Underwriting__c`, `LOI__c`, the two feasibility reviews, `Contract_Review__c`)? *(Recommend: minimal.)*
-3. **Junior's edit reach on Acq/Disp** — edit records owned by the **Acquisitions team + queue** (least-privilege sharing rules — recommended), or edit **literally every** acq/disp record (needs a criteria-based "all records" R/W rule)? *(Recommend: team + queue.)*
-4. **Opportunity OWD** — tighten standard **Opportunity to Private** for full least-privilege (blast radius on existing deals + lead-convert flows, regression-test), or keep current OWD and deliver read-only via object perm + View All? *(Recommend: keep current initially; revisit.)*
-5. **Approval-access perm set** — confirm we **fold** approval visibility into `DPEG_Acquisition_View` (recommended) rather than creating a standalone `DPEG_Approval_Principal`.
-6. **Usernames** — confirm `@usmandpeg.uat` scheme; suffix if globally taken.
-
----
-
-## 14. Assumptions & Risks
-
-### Assumptions
-- Both users receive a **full Salesforce license** (Minimum Access – Salesforce) — required for standard-object apps + approvals. Confirm seat availability in the EE org.
-- Yardi-mirror objects (`Work_Order__c`, etc.) are **read-only by design** — view-only aligns; no write-back needed.
-- Existing perm sets/users are **left untouched**; the new model is purely additive.
-
-### Risks
-- **FLS enumeration is large and not in the repo** — 463 custom + standard fields must be authored fresh per perm set. Missing FLS = blank fields / "No such column," **invisible to admin testers**. → Enumerate from existing perm sets; **test as each persona**.
-- **OWD Private tightening changes visibility for ALL existing users/integrations** (and, with `WITH USER_MODE` selectors, can silently break dashboards/LWCs for non-admins). → Regression-test existing personas after the OWD change; USER_MODE breakage does not surface for admin testers.
-- **Queue ownership does not share up the role hierarchy** — even the principal won't see queue-owned records without View All or a sharing rule. Covered by design (View All + queue sharing rule), but easy to get wrong.
-- **Approval repoint** requires deactivating active processes; **blocked by pending approval requests** — recall first.
-- **Repo ≠ org drift** on approval approvers (repo shows 2; request describes 1) — verify the live org before editing.
-- **Property__c dual role** — Junior edits `Property__c` (Acquisition) but is view-only on PM; ensure this boundary (`Property__c` ≠ `Property_Asset__c`) is intended.
-- **Do not grant Modify All** to Junior — it would bypass sharing and break least-privilege.
-
----
-
-## 15. Prompts for Specialist Agents
-
-### 🟤 Prompt for `salesforce-solution-architect`
-```
-Design (do not build) the DPEG least-privilege RBAC security model per agent-output/design-requirements.md.
-Deliver: (1) final per-object OWD matrix — 28 custom masters → Private, 5 details ControlledByParent unchanged,
-and a recommendation on Opportunity/Lead standard-object OWD with blast-radius note; (2) the DPEG role-hierarchy
-tree (build DPEG_Principal + Acquisitions_Analyst now; design the lead/module roles as deferred); (3) sharing-rule
-specs + the DPEG Acquisitions Team public group (queue-owned acq → R/W to group; disposition owner-based → R/W;
-note queue-ownership does NOT share up hierarchy); (4) the permission-set/PSG architecture — 6 functional sets
-(Acquisition/Disposition Edit+View, Transaction View, PropertyMgmt View) with View All read flags + FLS scope per
-set, 4 app-visibility sets, 2 PSGs, and the user→PSG map; approval visibility folded into Acquisition_View (no
-standalone approval set). Follow ARCHITECTURE §1 (object list), §2 (approval services), §4 (portal out of scope).
-Least-privilege: no Delete for Junior, no Modify All anywhere. Resolve nothing that is an Open Question — surface it.
-```
-
-### 🔵 Prompt for `salesforce-admin`
-```
-Build (metadata files only; DO NOT deploy) the DPEG RBAC model approved from agent-output/design-requirements.md,
-following the solution-architect's spec. Create: roles (DPEG_Principal, Acquisitions_Analyst); public group
-DPEG Acquisitions Team; 2 users on Minimum Access – Salesforce (Junior junior.dhanani@usmandpeg.uat →
-Acquisitions_Analyst; Nikhil nikhil.dhanani@usmandpeg.uat → DPEG_Principal; emails per doc §10); OWD changes
-(28 custom masters → Private; leave the 5 ControlledByParent details; Opportunity/Lead per the confirmed decision);
-sharing rules per spec; the 6 functional + 4 app permission sets WITH FULL FLS enumeration (source field lists from
-existing DPEG_Acquisitions/Property_Management_Access/Transaction_App_Access; Read-only FLS on formula/roll-up
-fields; no Delete for Junior; no Modify All); 2 PSGs + assignments; the Acquisition queue (Lead + Property__c,
-Junior as member). Repoint Opportunity.LOI_Approval + Opportunity.Underwriting_Approval to Nikhil per Open
-Question 1's resolution (deactivate → edit approver → reactivate; recall pending first). DO NOT modify existing
-perm sets or users. DO NOT deploy — hand off to salesforce-devops for Gate-3.
-```
-
----
-
-*End of Gate-1 design artifact. Awaiting user confirmation (yes / no / changes) and resolution of the 6 open questions before routing to solution-architect + admin.*
+**Post-deploy, per-org manual steps (not in the metadata bundle):** set the OpenAI API key on the NamedPrincipal; assign `Broker_Protection_Access` to the relevant users; provision the inbound Email Service + routing address pointing at `EmailToLeadHandler` (Open Question 4); acceptance-test as a non-admin persona.

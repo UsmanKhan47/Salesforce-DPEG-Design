@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Winning_Lead__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Winning Lead</label>
+    <description>The Lead that owns this property. All submissions for a property hang off the winner, which is what the LWC queries. SetNull preserves the audit row if the Lead is deleted; presence enforced by the Winning_Lead_Required validation rule.</description>
+    <inlineHelpText>The winning Lead this submission's history rolls up under.</inlineHelpText>
+    <referenceTo>Lead</referenceTo>
+    <relationshipLabel>Competing Broker Submissions</relationshipLabel>
+    <relationshipName>Competing_Broker_Submissions</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>
