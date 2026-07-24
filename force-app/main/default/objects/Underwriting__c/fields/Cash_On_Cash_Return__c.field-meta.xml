@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Cash_on_Cash_Return__c</fullName>
+    <fullName>Cash_On_Cash_Return__c</fullName>
     <description>Year 1 levered cash yield on equity invested. Entered from the Excel model output.</description>
     <label>Cash on Cash Return</label>
     <precision>5</precision>

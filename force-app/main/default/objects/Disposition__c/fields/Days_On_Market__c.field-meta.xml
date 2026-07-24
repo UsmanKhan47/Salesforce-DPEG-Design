@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Days_on_Market__c</fullName>
+    <fullName>Days_On_Market__c</fullName>
     <externalId>false</externalId>
     <formula>IF(ISBLANK(Listing_Date__c), null, TODAY() - Listing_Date__c)</formula>
     <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
