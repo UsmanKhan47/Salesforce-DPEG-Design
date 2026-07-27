@@ -3,15 +3,15 @@
     <actionOnInsert>Allow</actionOnInsert>
     <actionOnUpdate>Allow</actionOnUpdate>
     <alertText>Duplicate Alert</alertText>
-    <description>Duplicate rule for lead records.</description>
+    <description>Duplicate Rule for Lead records.</description>
     <duplicateRuleFilter xsi:nil="true"/>
     <duplicateRuleMatchRules>
         <matchRuleSObjectType>Lead</matchRuleSObjectType>
         <matchingRule>Standard_Lead_Match_Rule_v1_0</matchingRule>
         <objectMapping xsi:nil="true"/>
     </duplicateRuleMatchRules>
-    <isActive>true</isActive>
-    <masterLabel>Standard Lead Duplicate Rule</masterLabel>
+    <isActive>false</isActive>
+    <masterLabel>Standard Lead duplicate rule</masterLabel>
     <operationsOnInsert>Alert</operationsOnInsert>
     <operationsOnInsert>Report</operationsOnInsert>
     <operationsOnUpdate>Report</operationsOnUpdate>
