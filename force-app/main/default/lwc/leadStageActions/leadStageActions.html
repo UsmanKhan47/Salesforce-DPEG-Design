@@ -1,0 +1,19 @@
+<template>
+    <!-- Terminal statuses (Disqualified / Converted) and the loading state expose no buttons. -->
+    <template lwc:if={hasButtons}>
+        <div class="stage-actions slds-p-around_x-small" role="group" aria-label="Lead stage actions">
+            <lightning-button-group>
+                <template for:each={buttons} for:item="button">
+                    <lightning-button
+                        key={button.value}
+                        label={button.label}
+                        variant={button.variant}
+                        data-value={button.value}
+                        disabled={button.disabled}
+                        onclick={handleClick}
+                    ></lightning-button>
+                </template>
+            </lightning-button-group>
+        </div>
+    </template>
+</template>

@@ -41,6 +41,12 @@
                 <identifier>runtime_sales_lead_pathAssistant</identifier>
             </componentInstance>
         </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>leadStageActions</componentName>
+                <identifier>leadStageActions</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>subheader</name>
         <type>Region</type>
     </flexiPageRegions>
@@ -463,12 +469,6 @@
                 <identifier>mainTabset</identifier>
             </componentInstance>
         </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentName>competingBrokerSubmissions</componentName>
-                <identifier>competingBrokerSubmissions</identifier>
-            </componentInstance>
-        </itemInstances>
         <name>main</name>
         <type>Region</type>
     </flexiPageRegions>
@@ -509,6 +509,12 @@
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentName>competingBrokerSubmissions</componentName>
+                <identifier>competingBrokerSubmissions</identifier>
+            </componentInstance>
+        </itemInstances>
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>

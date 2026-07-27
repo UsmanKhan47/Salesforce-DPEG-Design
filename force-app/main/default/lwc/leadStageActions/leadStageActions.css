@@ -1,0 +1,11 @@
+/*
+ * Layout only. Colors and button theming come from the SLDS 2 base components
+ * (lightning-button variants); no hardcoded colors. Spacing uses SLDS 2 global
+ * design tokens with safe fallbacks.
+ */
+.stage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    align-items: center;
+}
