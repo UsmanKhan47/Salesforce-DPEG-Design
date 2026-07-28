@@ -198,6 +198,42 @@ public with sharing class LeadSelector {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // BROKER PROTECTION — CONVERSION READ (PropertyMatchingService) — WITH USER_MODE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The conversion state of one Lead — backs
+     * PropertyMatchingService.resolveLiveRecord, which follows a converted Lead to the
+     * Opportunity (or Contact) it became so an inbound reply threads onto the LIVE deal
+     * record rather than the husk Lead left behind by conversion.
+     *
+     * USER_MODE: internal automation path (the inbound-email pipeline), and all three
+     * selected fields are standard system fields with no restrictive FLS. The guest-path
+     * SYSTEM_MODE methods below stay separate per the policy in the class header.
+     *
+     * NOT-FOUND CONTRACT — an empty List, never null: the caller treats "no row" the same
+     * as "not converted" and falls back to the original Id.
+     *
+     * @param leadId Lead Id whose conversion state to read; null returns an empty list.
+     * @return At most one Lead (Id, IsConverted, ConvertedOpportunityId,
+     *         ConvertedContactId); empty when `leadId` is null or no row matches.
+     * @example
+     * List<Lead> rows = LeadSelector.selectConversionById(leadId);
+     */
+    public static List<Lead> selectConversionById(Id leadId) {
+        if (leadId == null) {
+            return new List<Lead>();
+        }
+        return [
+            SELECT Id, IsConverted, ConvertedOpportunityId, ConvertedContactId
+            FROM Lead
+            WHERE Id = :leadId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // GUEST / AUTOMATION READ (BrokerPortalNotifier) — WITH SYSTEM_MODE
     // ═══════════════════════════════════════════════════════════════════════════
 

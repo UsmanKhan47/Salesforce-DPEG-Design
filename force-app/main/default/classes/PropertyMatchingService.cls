@@ -5,16 +5,27 @@
  * registration, or nothing. It never writes; PropertyClaimService owns all claim /
  * duplicate DML and calls back into these read helpers.
  *
+ * STAGING MODEL — this class also owns the two READ decisions that let the routing tree
+ * recognise an email that must NOT become a new Lead: findRecordByReplyHeaders (an RFC
+ * reply inside an existing conversation) and findBrokerSubmission (a repeat from a broker
+ * who already submitted the same property), plus the two pure helpers those need —
+ * computeThreadKey (the RFC conversation root) and resolveLiveRecord (a converted Lead's
+ * live Opportunity/Contact). They live here, next to normalizeAddress and
+ * calculateSimilarity, because repeat detection reuses the module's exact-then-Jaccard
+ * address comparison verbatim; splitting them out would fork that matching logic.
+ *
  * LAYER — Service (read side). Per ARCHITECTURE.md §2 all SOQL stays in the selectors:
  * this class never queries an SObject itself, it delegates every read to
- * PropertyRegistrySelector (now static). No DML, no callouts. normalizeAddress,
- * calculateSimilarity and deriveClusterKey are pure functions with no platform
- * dependency, so CHUNK 2/3 tests can assert them directly.
+ * PropertyRegistrySelector, CompetingBrokerSubmissionSelector, TaskSelector and
+ * LeadSelector. No DML, no callouts. normalizeAddress, calculateSimilarity,
+ * deriveClusterKey and computeThreadKey are pure functions with no platform dependency,
+ * so tests can assert them directly.
  *
- * SIGNATURE CONTRACT — the constants and the five public static methods are the exact
+ * SIGNATURE CONTRACT — the constants and the nine public static methods are the exact
  * bindings CHUNK 3 / the claim writer wire to (SIMILARITY_THRESHOLD, LOOKBACK_DAYS,
  * normalizeAddress, calculateSimilarity, findMatchingRegistry, findOrphanedRegistry,
- * deriveClusterKey). Do not rename or change their parameters/return types.
+ * deriveClusterKey, findBrokerSubmission, computeThreadKey, findRecordByReplyHeaders,
+ * resolveLiveRecord). Do not rename or change their parameters/return types.
  *
  * ✅ FUZZY DUAL-WINNER RACE — NOW CLOSED (W4). Previously race-safety was exact-string
  * only: the unique index on Property_Registry__c.Property_Key__c stopped two
@@ -244,6 +255,249 @@ public with sharing class PropertyMatchingService {
         List<Property_Registry__c> orphans =
             PropertyRegistrySelector.selectOrphanByPropertyKey(normalized);
         return orphans.isEmpty() ? null : orphans[0];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // STAGING-MODEL ROUTING READS — repeat detection + RFC reply threading.
+    //
+    // These four back branches (a) and (b) of ExtractAddressQueueable's routing tree,
+    // which run BEFORE any Lead is created. They exist so the pipeline can recognise an
+    // email it should NOT turn into a new Lead: a reply inside an existing conversation,
+    // or a follow-up from a broker who already submitted the same property. Like the
+    // methods above they are read-only — every write stays in PropertyClaimService.
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * REPEAT DETECTION — the earliest submission by `brokerEmail` for the same property as
+     * `normalizedAddress`, or null. A hit means this broker has already submitted this
+     * property, so the inbound email is a follow-up that belongs on the EXISTING Lead
+     * (`Source_Lead__c`) rather than becoming a second Lead competing with the broker's
+     * own earlier one.
+     *
+     * MATCHING IS DONE IN MEMORY, NOT IN SOQL, and that is forced by the schema:
+     * Competing_Broker_Submission__c stores only Property_Address_Raw__c — the address as
+     * the broker typed it. There is no normalized key column on this object (Property_Key__c
+     * lives on Property_Registry__c), so a SOQL equality filter would compare a normalized
+     * key against raw text and match almost nothing. Each candidate is therefore normalized
+     * here with the SAME normalizeAddress the claim path uses, and compared exact-first,
+     * then Jaccard — which gives repeat detection identical fuzzy tolerance to
+     * findMatchingRegistry rather than a stricter, inconsistent one.
+     *
+     * The candidate set is bounded by the selector: this broker's submissions only, within
+     * LOOKBACK_DAYS, LIMIT 200 — one query, no SOQL in the loop.
+     *
+     * Ordering matters: the selector returns oldest-first, so the exact-match short circuit
+     * returns the ORIGINAL submission (whose Source_Lead__c is the Lead to reuse) rather
+     * than a later repeat. Failing an exact match, the highest-scoring candidate at or above
+     * SIMILARITY_THRESHOLD wins; ties keep the oldest.
+     *
+     * @param brokerEmail       The broker's address (LLM-extracted, or the envelope From as
+     *                          the caller's fallback); blank returns null.
+     * @param normalizedAddress The normalized property address (from normalizeAddress);
+     *                          blank returns null.
+     * @return The matching Competing_Broker_Submission__c (with Source_Lead__c and
+     *         Winning_Lead__c populated), or null when this broker has not submitted this
+     *         property.
+     * @example
+     * Competing_Broker_Submission__c prior =
+     *     PropertyMatchingService.findBrokerSubmission(brokerEmail, normalized);
+     */
+    public static Competing_Broker_Submission__c findBrokerSubmission(
+            String brokerEmail, String normalizedAddress) {
+        if (String.isBlank(brokerEmail) || String.isBlank(normalizedAddress)) {
+            return null;
+        }
+
+        Datetime cutoff = Datetime.now().addDays(-LOOKBACK_DAYS);
+        Competing_Broker_Submission__c best = null;
+        Decimal bestScore = -1;
+
+        for (Competing_Broker_Submission__c candidate
+                : CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail(brokerEmail, cutoff)) {
+            if (candidate.Source_Lead__c == null) {
+                continue;
+            }
+            String candidateKey = normalizeAddress(candidate.Property_Address_Raw__c);
+            if (String.isBlank(candidateKey)) {
+                continue;
+            }
+            if (candidateKey == normalizedAddress) {
+                return candidate;
+            }
+            Decimal score = calculateSimilarity(normalizedAddress, candidateKey);
+            if (score >= SIMILARITY_THRESHOLD && score > bestScore) {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Derive the CONVERSATION ROOT Message-ID — the value stamped on every Task this
+     * pipeline logs (Task.Thread_Key__c), and the key that lets a later reply find the
+     * record its thread was routed to.
+     *
+     * RFC 5322 resolution order, and the reason for it: `References` accumulates the whole
+     * ancestry of a conversation in order, so its FIRST entry is the root and is identical
+     * on every message in the thread — including after a forward, because forwarding
+     * preserves References. That stability is the whole point: a thread key derived from
+     * the immediate parent would change with every reply. `In-Reply-To` (the immediate
+     * parent) is the fallback when References is absent, and this message's own Message-ID
+     * is the last resort — correct for the FIRST message in a thread, which is its own root.
+     *
+     * All three inputs may be blank (some forwarding paths strip headers entirely), in
+     * which case this returns blank/null and the caller simply stores no thread key.
+     *
+     * @param messageId  This message's RFC Message-ID.
+     * @param inReplyTo  RFC In-Reply-To header (the immediate parent).
+     * @param references RFC References header (whitespace-delimited ancestry).
+     * @return The root Message-ID with angle brackets stripped, or the message id itself,
+     *         or null when nothing usable was supplied.
+     * @example
+     * String threadKey = PropertyMatchingService.computeThreadKey(
+     *     messageId, inReplyTo, references);
+     */
+    public static String computeThreadKey(String messageId, String inReplyTo, String references) {
+        String root = firstMessageId(references);
+        if (String.isNotBlank(root)) {
+            return root;
+        }
+        root = firstMessageId(inReplyTo);
+        if (String.isNotBlank(root)) {
+            return root;
+        }
+        return stripAngleBrackets(messageId);
+    }
+
+    /**
+     * REPLY THREADING — the record a reply belongs to, found from the RFC headers it cites.
+     * When an internal user replies to (or inside) a thread the pipeline has already logged,
+     * this returns the record that thread was routed to so the reply is filed there instead
+     * of manufacturing a new Lead.
+     *
+     * Both `In-Reply-To` and `References` are mined for Message-IDs, because the two headers
+     * carry different slices of the same ancestry and mail clients are inconsistent about
+     * which they populate: In-Reply-To is the immediate parent, References is the full chain.
+     * Every id found is probed against BOTH Task threading fields (Thread_Key__c and
+     * Inbound_Message_Id__c) in one query.
+     *
+     * WhatId is preferred over WhoId because it holds the "main" business record — the
+     * Opportunity or custom object — whereas WhoId holds the person (Lead / Contact). When a
+     * Lead has been converted, the Task on the resulting Opportunity carries WhatId, and that
+     * deal is the right home for the reply.
+     *
+     * @param inReplyTo  RFC In-Reply-To header from the inbound email; may be blank.
+     * @param references RFC References header from the inbound email; may be blank.
+     * @return The WhatId (preferred) or WhoId of the newest Task in that thread, or null
+     *         when the email cites nothing or cites a thread this pipeline never logged.
+     * @example
+     * Id priorRecord =
+     *     PropertyMatchingService.findRecordByReplyHeaders(inReplyTo, references);
+     */
+    public static Id findRecordByReplyHeaders(String inReplyTo, String references) {
+        Set<String> cited = new Set<String>();
+        collectMessageIds(cited, inReplyTo);
+        collectMessageIds(cited, references);
+        if (cited.isEmpty()) {
+            return null;
+        }
+
+        List<Task> prior = TaskSelector.selectLatestByThreadOrMessageIds(cited);
+        if (prior.isEmpty()) {
+            return null;
+        }
+        Task match = prior[0];
+        return (match.WhatId != null) ? match.WhatId : match.WhoId;
+    }
+
+    /**
+     * Follow a converted Lead to the LIVE record it became, so an activity lands on the
+     * record people actually work rather than the husk Lead conversion leaves behind.
+     *
+     * Non-Lead ids are returned unchanged — the method is safe to call on any routing
+     * result, which is why the caller never has to type-check first. An unconverted Lead is
+     * also returned unchanged. A converted Lead resolves to its Opportunity when there is
+     * one (the deal is the useful record), else its Contact, else itself: conversion can
+     * legitimately produce no Opportunity ("Don't create an opportunity"), and the original
+     * Id is always a valid fallback.
+     *
+     * @param recordId Any record Id; null returns null.
+     * @return ConvertedOpportunityId, else ConvertedContactId, else `recordId` unchanged.
+     * @example
+     * Id liveRecord = PropertyMatchingService.resolveLiveRecord(foundRecordId);
+     */
+    public static Id resolveLiveRecord(Id recordId) {
+        if (recordId == null) {
+            return null;
+        }
+        if (recordId.getSObjectType() != Lead.SObjectType) {
+            return recordId;
+        }
+
+        List<Lead> rows = LeadSelector.selectConversionById(recordId);
+        if (rows.isEmpty() || rows[0].IsConverted != true) {
+            return recordId;
+        }
+        Lead converted = rows[0];
+        if (converted.ConvertedOpportunityId != null) {
+            return converted.ConvertedOpportunityId;
+        }
+        return (converted.ConvertedContactId != null) ? converted.ConvertedContactId : recordId;
+    }
+
+    /**
+     * The FIRST Message-ID in a whitespace-delimited RFC header value, angle brackets
+     * stripped. `References` is defined as a space-separated list in ancestry order, so its
+     * first token is the conversation root.
+     *
+     * @param headerValue A raw In-Reply-To / References header value; blank returns null.
+     * @return The first token with '&lt;' / '&gt;' removed, or null when there is none.
+     */
+    private static String firstMessageId(String headerValue) {
+        if (String.isBlank(headerValue)) {
+            return null;
+        }
+        for (String token : headerValue.trim().split('\\s+')) {
+            String cleaned = stripAngleBrackets(token);
+            if (String.isNotBlank(cleaned)) {
+                return cleaned;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Add every Message-ID in a whitespace-delimited RFC header value to `target`, angle
+     * brackets stripped. Used to build the full set of ids a reply cites across both
+     * In-Reply-To and References.
+     *
+     * @param target      The accumulating Set to add to (mutated in place).
+     * @param headerValue A raw In-Reply-To / References header value; blank adds nothing.
+     */
+    private static void collectMessageIds(Set<String> target, String headerValue) {
+        if (String.isBlank(headerValue)) {
+            return;
+        }
+        for (String token : headerValue.trim().split('\\s+')) {
+            String cleaned = stripAngleBrackets(token);
+            if (String.isNotBlank(cleaned)) {
+                target.add(cleaned);
+            }
+        }
+    }
+
+    /**
+     * Remove the angle brackets RFC 5322 wraps a Message-ID in ('&lt;id@host&gt;' -&gt;
+     * 'id@host') and trim. Stripping is what makes the two threading fields comparable: the
+     * same id can arrive bracketed in References and bare elsewhere, and an unstripped value
+     * would silently fail every equality match.
+     *
+     * @param raw A Message-ID token, bracketed or bare; null returns null.
+     * @return The bare id, trimmed; null when `raw` is null.
+     */
+    private static String stripAngleBrackets(String raw) {
+        return (raw == null) ? null : raw.replaceAll('[<>]', '').trim();
     }
 
     /**

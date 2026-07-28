@@ -60,4 +60,60 @@ public with sharing class CompetingBrokerSubmissionSelector {
             ORDER BY Submitted_DateTime__c ASC
         ];
     }
+
+    /**
+     * Recent submissions made by one broker — backs REPEAT detection
+     * (PropertyMatchingService.findBrokerSubmission), which asks "has this same broker
+     * already submitted this same property?" so a follow-up email threads onto the
+     * broker's existing Lead instead of creating a second one.
+     *
+     * NO PROPERTY FILTER IN SOQL — DELIBERATE, AND NOT AN OVERSIGHT.
+     * Competing_Broker_Submission__c stores only Property_Address_Raw__c (the address as
+     * the broker wrote it); it has no normalized Property_Key__c column — that field
+     * exists on Property_Registry__c, not here. Filtering `Property_Address_Raw__c = :key`
+     * would therefore compare a normalized key against raw text and miss every real match
+     * ('100 Main St.' vs '100 main st'). The caller normalizes each row's raw address in
+     * memory and applies the same exact-then-Jaccard comparison used everywhere else in
+     * the module, which additionally gives repeat detection the SAME fuzzy tolerance as
+     * the claim path for free. The recency window plus LIMIT 200 keep that in-memory scan
+     * bounded.
+     *
+     * BROKER MATCH IS TWO-SIDED: `Broker_Email__c = :brokerEmail` is the current shape,
+     * and `Source_Lead__r.Email = :brokerEmail` covers submissions written before
+     * Broker_Email__c was populated (it is nullable, and older rows left it blank), where
+     * the broker's address survives only on the Lead. SOQL `=` on text is
+     * case-insensitive, so no address casing normalization is needed here.
+     *
+     * `Source_Lead__c != null` is required, not cosmetic: the caller's whole purpose is to
+     * reuse that Lead, so a submission without one is unusable.
+     *
+     * @param brokerEmail The broker's email address to match; null/blank returns empty.
+     * @param cutoff      Inclusive lower bound on Submitted_DateTime__c (the recency
+     *                    window); null returns empty.
+     * @return Up to 200 submissions by that broker at/after `cutoff`, oldest first (so the
+     *         caller's exact-match short-circuit returns the ORIGINAL submission rather
+     *         than a later repeat); empty when nothing matches (never null).
+     * @example
+     * List<Competing_Broker_Submission__c> prior =
+     *     CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail(
+     *         brokerEmail, Datetime.now().addDays(-90));
+     */
+    public static List<Competing_Broker_Submission__c> selectRecentByBrokerEmail(
+            String brokerEmail, Datetime cutoff) {
+        if (String.isBlank(brokerEmail) || cutoff == null) {
+            return new List<Competing_Broker_Submission__c>();
+        }
+        return [
+            SELECT Id, Winning_Lead__c, Source_Lead__c, Broker_Name__c, Broker_Email__c,
+                   Forwarded_By_Email__c, Property_Address_Raw__c, Submitted_DateTime__c,
+                   Is_Winning_Submission__c
+            FROM Competing_Broker_Submission__c
+            WHERE Source_Lead__c != null
+              AND Submitted_DateTime__c >= :cutoff
+              AND (Broker_Email__c = :brokerEmail OR Source_Lead__r.Email = :brokerEmail)
+            WITH USER_MODE
+            ORDER BY Submitted_DateTime__c ASC
+            LIMIT 200
+        ];
+    }
 }

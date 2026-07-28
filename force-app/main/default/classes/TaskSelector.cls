@@ -318,4 +318,86 @@ public with sharing class TaskSelector {
             WITH USER_MODE
         ];
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Broker Protection (inbound-email staging model) — RFC threading queries.
+    // Both read the two External Id text fields Task.Inbound_Message_Id__c and
+    // Task.Thread_Key__c, which exist ONLY for this pipeline: the first is one
+    // email's RFC Message-ID (unique -> idempotency), the second is the
+    // conversation root shared by every message in a thread (-> reply matching).
+    // Consumers: InboundEmailActivityService.isAlreadyLogged and
+    // PropertyMatchingService.findRecordByReplyHeaders.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * The Task, if any, already logged for one inbound RFC Message-ID. Backs the
+     * IDEMPOTENCY probe at the top of ExtractAddressQueueable: a non-empty result
+     * means the platform is redelivering a message the pipeline already routed, and
+     * the whole routing tree must be skipped rather than producing a second Lead.
+     *
+     * Existence probe only — `SELECT Id` with `LIMIT 1` is all the caller needs
+     * (InboundEmailActivityService.isAlreadyLogged tests `.isEmpty()`). Do not widen
+     * the field set here; the reply-matching read below is the one that needs
+     * WhatId / WhoId.
+     *
+     * @param messageId RFC Message-ID to probe; null/blank returns an empty list.
+     * @return At most one Task carrying that Message-ID; an empty list when the
+     *         message has not been logged (never null).
+     * @example
+     * Boolean seen = !TaskSelector.selectByInboundMessageId(messageId).isEmpty();
+     */
+    public static List<Task> selectByInboundMessageId(String messageId) {
+        if (String.isBlank(messageId)) {
+            return new List<Task>();
+        }
+        return [
+            SELECT Id
+            FROM Task
+            WHERE Inbound_Message_Id__c = :messageId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
+
+    /**
+     * The most recent Task belonging to any of the supplied RFC Message-IDs, matched
+     * on EITHER threading key. Backs PropertyMatchingService.findRecordByReplyHeaders,
+     * which passes the whole ancestry cited by a reply's In-Reply-To + References
+     * headers and uses the returned Task's WhatId/WhoId as the record to thread onto.
+     *
+     * The OR across both fields is deliberate and neither half is redundant:
+     * `Thread_Key__c IN` catches any message in the same conversation (the root id is
+     * shared by every message in the thread), while `Inbound_Message_Id__c IN` catches
+     * the case where the reply cites a specific earlier message directly and that
+     * message happens to BE the thread root — whose own Thread_Key__c is itself, but
+     * whose ancestry the citing reply may express only as a Message-ID.
+     *
+     * ORDER BY CreatedDate DESC + LIMIT 1: a thread accumulates one Task per message,
+     * and they all resolve to the same routed record, so the newest is both correct
+     * and cheapest.
+     *
+     * FIELD SET IS DELIBERATE: WhatId and WhoId are what the caller returns; dropping
+     * either would raise System.SObjectException on that read.
+     *
+     * @param messageIds RFC Message-IDs cited by the reply (angle brackets already
+     *                   stripped by the caller); null/empty returns an empty list.
+     * @return At most one Task (Id, WhatId, WhoId, Thread_Key__c,
+     *         Inbound_Message_Id__c), newest first; an empty list when nothing in the
+     *         thread has been logged (never null).
+     * @example
+     * List<Task> prior = TaskSelector.selectLatestByThreadOrMessageIds(citedIds);
+     */
+    public static List<Task> selectLatestByThreadOrMessageIds(Set<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return new List<Task>();
+        }
+        return [
+            SELECT Id, WhatId, WhoId, Thread_Key__c, Inbound_Message_Id__c
+            FROM Task
+            WHERE Thread_Key__c IN :messageIds OR Inbound_Message_Id__c IN :messageIds
+            WITH USER_MODE
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+    }
 }

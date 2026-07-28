@@ -140,6 +140,9 @@ A `—` in _Purpose_ means the object's `<description>` in its `.object-meta.xml
 | `Property_Registry__c`           | `Lead` (`Winning_Lead__c`)                            | Backend-only claim ledger. One row per distinct property; the unique, case-insensitive `Property_Key__c` enforces race-safe first-come-first-served registration at the database level. |
 | `Competing_Broker_Submission__c` | `Lead` (`Winning_Lead__c`, `Source_Lead__c`)           | Append-only audit trail of every inbound broker email that matched a property, including the winning submission itself. Deliberately not master-detail — cascade delete would silently wipe this trail. |
 | `Property_Claim_Lock__c`         | — (no lookup; concurrency partition, not a business object) | Pessimistic-lock partition object: one row per coarse address cluster, `FOR UPDATE`-locked to serialize concurrent same-property claims so the fuzzy match-then-insert is atomic. |
+| `Inbound_Email_Staging__c`       | — (no lookup; `Result_Record_Id__c` is a plain Text pointer) | Durable landing record for every inbound broker email (added 2026-07-28). Written synchronously by `EmailToLeadHandler` BEFORE any Lead exists, so the raw body and every RFC header survive independently of routing. Deliberately not a lookup to Lead — the routing tree may resolve to a Lead, an Opportunity, a Contact, or nothing at all. Terminal state (`Status__c`, `Outcome__c`, `Result_Record_Id__c`, `Processed_DateTime__c`, `Error__c`) makes it both the pipeline's audit trail and its restart point. |
+
+**Custom fields on `Task` live on `Activity`, not `Task`.** `Task` and `Event` share one custom-field namespace, so every custom Task field in this repo — including Broker Protection's `Inbound_Message_Id__c` and `Thread_Key__c` (both External Id text) — is defined under `objects/Activity/fields/`. A field file placed under `objects/Task/fields/` is rejected by the Metadata API with the misleading error `Entity Enumeration Or ID: bad value for restricted picklist field: Task`, which then cascades as "Dependent class is invalid" across every Apex class that touches `TaskSelector`. Apex still references the field as `Task.Inbound_Message_Id__c` — only the metadata folder differs.
 
 **Transactions**
 
@@ -231,10 +234,24 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 | `TaskRollupService`           | `TaskRollupTrigger`                                | Rolls completed/overdue Task counts up to `Transaction__c` — drives the "N / 75" highlights tile.                                                        |
 | `OnboardingTaskRollupService` | Onboarding checklist Tasks                         | Recomputes `Onboarding__c` checklist rollups (total / complete / overdue / stalled / completion %).                                                      |
 | `ApprovalAuditService`        | after-save Flow (`@InvocableMethod`)               | Stamps approver identity and date from `ProcessInstanceStep` onto the Underwriting / LOI gates. `without sharing`.                                       |
-| `EmailToLeadService`          | `EmailToLeadHandler` (inbound Email Service handler) | Broker Protection: the only class that inserts/updates a Lead in the inbound email-to-Lead pipeline — creates the raw Lead and enqueues async extraction, then applies the LLM/regex-resolved broker/property details. |
+| `EmailToLeadService`          | `ExtractAddressQueueable` (routing tree)             | Broker Protection: the only class that inserts a Lead in the inbound email-to-Lead pipeline. Under the staging model (2026-07-28) it exposes a single `createLeadFromExtracted(...)` — the Lead is created ONCE, complete, and only by the routing branch that needs one. The old `createLeadAndEnqueue` / `applyExtractedDetails` insert-then-update pair is gone. |
+| `InboundEmailStagingService`  | `EmailToLeadHandler`, `ExtractAddressQueueable`      | Broker Protection: the only class that writes `Inbound_Email_Staging__c` — creates the durable landing row synchronously at the email boundary, then stamps its terminal state (Processed / Error, outcome label, routed record Id). Status writes are fail-soft by design. |
+| `InboundEmailActivityService` | `ExtractAddressQueueable`                            | Broker Protection: the only class that writes the inbound-email `Task` and the sole owner of RFC threading — stamps `Inbound_Message_Id__c` (idempotency) and `Thread_Key__c` (conversation root), and answers "has this Message-ID already been logged?". A Task is used rather than `EmailMessage` because Enhanced Email is not licensed in this org. |
 | `LLMExtractionCalloutService` | `ExtractAddressQueueable`                          | Broker Protection: mockable OpenAI callout wrapper extracting broker name/email, property address, and send time from a forwarded email (vision + text). Direct-callout §3 exception — see §3.3. |
 | `PropertyMatchingService`     | `ExtractAddressQueueable` (via `PropertyClaimService`) | Broker Protection: address normalization, Jaccard fuzzy matching, cluster-key derivation, and registry/orphan lookups behind the first-broker-wins claim decision. Read-only; no DML. |
 | `PropertyClaimService`        | `ExtractAddressQueueable`                          | Broker Protection: owns all `Property_Registry__c` / `Competing_Broker_Submission__c` DML — acquires the `Property_Claim_Lock__c` FOR UPDATE lock, then registers a winner or marks a duplicate. |
+
+**Broker Protection staging model (added 2026-07-28):** the pipeline no longer creates a Lead at the
+email boundary. `EmailToLeadHandler` parses the envelope, RFC headers and inline image, writes an
+`Inbound_Email_Staging__c` row, and enqueues `ExtractAddressQueueable(stagingId, imageBase64,
+imageMimeType)`. The queueable then runs a five-branch ROUTING TREE — Reply → Repeat → No-Property →
+Duplicate → Winner — and only branches (c)/(d)/(e) create a Lead; Reply and Repeat file the email onto
+an existing record instead. Every branch ends by logging a `Task` with both RFC threading keys and
+stamping the staging row. Deferring Lead creation is what makes reply threading, repeat detection and
+redelivery suppression expressible at all — each of those must be able to decide that no new Lead
+should exist. `InboundEmailFieldUtil` is a pure utility (not a service): it clips every externally
+sourced value to its field length and sanitizes anything bound to an Email field, so an over-long LLM
+answer cannot roll back a committed claim.
 
 **Broker Protection async-pipeline exception (added 2026-07-24):** `EmailToLeadService`,
 `LLMExtractionCalloutService`, `PropertyMatchingService`, and `PropertyClaimService` are

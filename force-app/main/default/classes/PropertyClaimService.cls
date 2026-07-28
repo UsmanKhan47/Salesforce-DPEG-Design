@@ -37,6 +37,25 @@
 public with sharing class PropertyClaimService {
 
     /**
+     * What a claim attempt actually did. Returned by claim() so the caller can report the
+     * TRUE result instead of assuming it: claim() decides winner-vs-duplicate internally,
+     * under the cluster lock, and a lock-wait timeout produces neither. Before this enum
+     * existed the caller had to guess from its own pre-claim read, which is stale by
+     * definition — the whole point of the lock is that the winner can change between that
+     * read and the claim.
+     *
+     * WINNER    — this Lead now holds the property registration.
+     * DUPLICATE — another Lead already held it; this one was flagged and logged as competing.
+     * UNCLAIMED — no claim was recorded (lock-wait timeout, or a duplicate key with neither
+     *             a live winner nor an adoptable orphan). The Lead survives as a normal,
+     *             unclaimed Lead and the situation is hand-recoverable.
+     */
+    public enum ClaimOutcome { WINNER, DUPLICATE, UNCLAIMED }
+
+    /** Competing_Broker_Submission__c destination field lengths. */
+    private static final Integer LEN_TEXT = 255;
+
+    /**
      * Claim `normalized` for `sourceLeadId`, race-safe against concurrent same-property
      * submissions. The winner decision is made while HOLDING a pessimistic FOR UPDATE lock
      * on the address cluster, so a competing claim for the same property is serialised behind
@@ -59,9 +78,12 @@ public with sharing class PropertyClaimService {
      * @param submittedOn     The email's original send time (Submitted_DateTime__c).
      * @param forwardedByEmail Internal user who forwarded the broker email.
      * @param emailSubject    The inbound email subject.
+     * @return What the claim actually did — WINNER, DUPLICATE, or UNCLAIMED. Callers that
+     *         do not care may ignore the value; ExtractAddressQueueable uses it to record
+     *         the true outcome on the staging row.
      */
-    public static void claim(Id sourceLeadId, String normalized, Map<String, String> extracted,
-                             Datetime submittedOn, String forwardedByEmail, String emailSubject) {
+    public static ClaimOutcome claim(Id sourceLeadId, String normalized, Map<String, String> extracted,
+                                     Datetime submittedOn, String forwardedByEmail, String emailSubject) {
         // (a) Coarse cluster key that co-locates fuzzy-equivalent addresses in one lock partition.
         String clusterKey = PropertyMatchingService.deriveClusterKey(normalized);
 
@@ -74,7 +96,7 @@ public with sharing class PropertyClaimService {
                 'PropertyClaimService.claim: could not acquire cluster lock "' + clusterKey
                 + '" (normalized "' + normalized + '"); leaving Lead ' + sourceLeadId
                 + ' unclaimed.');
-            return;
+            return ClaimOutcome.UNCLAIMED;
         }
 
         // (d) Holding the lock, the winner decision is authoritative: a concurrent same-cluster
@@ -83,9 +105,10 @@ public with sharing class PropertyClaimService {
         Property_Registry__c winner = PropertyMatchingService.findMatchingRegistry(normalized);
         if (winner != null) {
             markDuplicate(winner, sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject);
-            return;
+            return ClaimOutcome.DUPLICATE;
         }
-        registerWinner(sourceLeadId, normalized, extracted, submittedOn, forwardedByEmail, emailSubject);
+        return registerWinner(
+            sourceLeadId, normalized, extracted, submittedOn, forwardedByEmail, emailSubject);
     }
 
     /**
@@ -107,9 +130,12 @@ public with sharing class PropertyClaimService {
      * @param submittedOn     The email's original send time.
      * @param forwardedByEmail Internal user who forwarded the broker email.
      * @param emailSubject    The inbound email subject.
+     * @return WINNER when the registration (or orphan adoption) succeeded, DUPLICATE when
+     *         the key collision reconciled to an existing winner, UNCLAIMED when the key
+     *         exists but has neither a live winner nor an adoptable orphan.
      */
-    private static void registerWinner(Id sourceLeadId, String normalized, Map<String, String> extracted,
-                                       Datetime submittedOn, String forwardedByEmail, String emailSubject) {
+    private static ClaimOutcome registerWinner(Id sourceLeadId, String normalized, Map<String, String> extracted,
+                                               Datetime submittedOn, String forwardedByEmail, String emailSubject) {
         try {
             Property_Registry__c registry = new Property_Registry__c(
                 Property_Key__c = normalized,
@@ -122,6 +148,7 @@ public with sharing class PropertyClaimService {
                 sourceLeadId, sourceLeadId, extracted, submittedOn,
                 forwardedByEmail, emailSubject, true
             );
+            return ClaimOutcome.WINNER;
         } catch (DmlException de) {
             if (!isDuplicateValue(de)) {
                 // Not a duplicate-key collision — a genuine failure. Rethrow so the whole
@@ -134,7 +161,7 @@ public with sharing class PropertyClaimService {
             Property_Registry__c winner = PropertyMatchingService.findMatchingRegistry(normalized);
             if (winner != null) {
                 markDuplicate(winner, sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject);
-                return;
+                return ClaimOutcome.DUPLICATE;
             }
             Property_Registry__c orphan = PropertyMatchingService.findOrphanedRegistry(normalized);
             if (orphan != null) {
@@ -148,13 +175,14 @@ public with sharing class PropertyClaimService {
                     sourceLeadId, sourceLeadId, extracted, submittedOn,
                     forwardedByEmail, emailSubject, true
                 );
-            } else {
-                // Duplicate key but neither a live winner nor an orphan row — nothing safe to
-                // attach this submission to. Log and drop it.
-                System.debug(LoggingLevel.WARN,
-                    'PropertyClaimService.registerWinner: duplicate key "' + normalized + '" but no '
-                    + 'live winner and no orphan row found; skipping. sourceLeadId=' + sourceLeadId);
+                return ClaimOutcome.WINNER;
             }
+            // Duplicate key but neither a live winner nor an orphan row — nothing safe to
+            // attach this submission to. Log and drop it.
+            System.debug(LoggingLevel.WARN,
+                'PropertyClaimService.registerWinner: duplicate key "' + normalized + '" but no '
+                + 'live winner and no orphan row found; skipping. sourceLeadId=' + sourceLeadId);
+            return ClaimOutcome.UNCLAIMED;
         }
     }
 
@@ -247,9 +275,54 @@ public with sharing class PropertyClaimService {
     }
 
     /**
+     * Log a REPEAT submission: the same broker emailing again about a property they have
+     * already submitted. Inserts an audit row ONLY — no registry write, no duplicate flag
+     * on the Lead.
+     *
+     * This is deliberately NOT markDuplicate. A repeat is not a competing broker: the
+     * property is already claimed BY THIS BROKER, so flagging their own follow-up as
+     * Is_Duplicate_Property__c would mislabel the Lead and corrupt the duplicate reporting
+     * that the Broker-Protection dashboard reads. Nor is it a claim: re-running claim()
+     * would take the cluster lock and re-derive a winner that has not changed. All that is
+     * genuinely new is the fact that another email arrived, which is exactly one
+     * append-only audit row.
+     *
+     * The routing DECISION (that this email is a repeat) belongs to
+     * ExtractAddressQueueable; this method exists so the resulting DML still lands in the
+     * class that owns Competing_Broker_Submission__c writes.
+     *
+     * @param winningLeadId   The Lead that holds the property claim (from the prior
+     *                        submission); falls back to `sourceLeadId` when null.
+     * @param sourceLeadId    The existing Lead this repeat email is filed against.
+     * @param extracted       LLM-extracted fields stamped onto the submission.
+     * @param submittedOn     The email's original send time.
+     * @param forwardedByEmail Internal user who forwarded the broker email.
+     * @param emailSubject    The inbound email subject.
+     * @example
+     * PropertyClaimService.logRepeatSubmission(
+     *     prior.Winning_Lead__c, prior.Source_Lead__c, extracted, submittedOn, fwd, subject);
+     */
+    public static void logRepeatSubmission(Id winningLeadId, Id sourceLeadId,
+                                           Map<String, String> extracted, Datetime submittedOn,
+                                           String forwardedByEmail, String emailSubject) {
+        insert buildSubmission(
+            (winningLeadId == null) ? sourceLeadId : winningLeadId,
+            sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject, false
+        );
+    }
+
+    /**
      * Build (not insert) a Competing_Broker_Submission__c from the extracted fields.
      * `extracted` is null-coalesced so a missing map never NPEs on .get(); a missing key
      * simply yields null on its field.
+     *
+     * FIELD SAFETY IS LOAD-BEARING HERE, not decoration. Every value below originates from
+     * an LLM extraction or a raw email header — neither respects Salesforce field limits.
+     * Broker_Name__c / Property_Address_Raw__c / Email_Subject__c are Text(255) and the two
+     * address fields are Email(80) with a format check, so an over-long address or a
+     * "broker_email" that came back as a display name would throw on insert and roll back
+     * the ENTIRE claim for an otherwise valid email. Clipping and sanitizing here means the
+     * worst case is a blank field on the audit row instead of a lost registration.
      *
      * @param winningLeadId   Winning_Lead__c — the lead that holds the property claim.
      * @param sourceLeadId    Source_Lead__c — the lead this specific email produced.
@@ -267,12 +340,12 @@ public with sharing class PropertyClaimService {
         return new Competing_Broker_Submission__c(
             Winning_Lead__c = winningLeadId,
             Source_Lead__c = sourceLeadId,
-            Broker_Name__c = fields.get('broker_name'),
-            Broker_Email__c = fields.get('broker_email'),
-            Forwarded_By_Email__c = forwardedByEmail,
-            Property_Address_Raw__c = fields.get('property_address'),
+            Broker_Name__c = InboundEmailFieldUtil.clip(fields.get('broker_name'), LEN_TEXT),
+            Broker_Email__c = InboundEmailFieldUtil.sanitizeEmail(fields.get('broker_email')),
+            Forwarded_By_Email__c = InboundEmailFieldUtil.sanitizeEmail(forwardedByEmail),
+            Property_Address_Raw__c = InboundEmailFieldUtil.clip(fields.get('property_address'), LEN_TEXT),
             Submitted_DateTime__c = submittedOn,
-            Email_Subject__c = emailSubject,
+            Email_Subject__c = InboundEmailFieldUtil.clip(emailSubject, LEN_TEXT),
             Is_Winning_Submission__c = isWinner
         );
     }

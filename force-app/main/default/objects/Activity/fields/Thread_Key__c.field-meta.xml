@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Thread_Key__c</fullName>
+    <externalId>true</externalId>
+    <label>Thread Key</label>
+    <length>255</length>
+    <required>false</required>
+    <description>RFC References root Message-ID — conversation threading key. Shared across entire email thread.</description>
+    <type>Text</type>
+</CustomField>

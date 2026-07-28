@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Has_Image__c</fullName>
+    <externalId>false</externalId>
+    <label>Has Image</label>
+    <required>false</required>
+    <description>True if an image attachment was found</description>
+    <type>Checkbox</type>
+    <defaultValue>false</defaultValue>
+</CustomField>

@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Forwarded_By__c</fullName>
+    <externalId>false</externalId>
+    <label>Forwarded By</label>
+    <required>false</required>
+    <description>The monitored inbox that auto-forwarded this email (internal user email)</description>
+    <type>Email</type>
+</CustomField>

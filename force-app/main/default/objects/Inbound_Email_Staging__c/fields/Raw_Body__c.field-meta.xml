@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Raw_Body__c</fullName>
+    <description>Full raw body of the inbound broker email as received by the Email Service, before any parsing or extraction.</description>
+    <inlineHelpText>Verbatim email body text/HTML captured at intake. Not edited after processing.</inlineHelpText>
+    <label>Email Body</label>
+    <length>131072</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>10</visibleLines>
+</CustomField>
