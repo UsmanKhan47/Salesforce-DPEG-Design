@@ -4,6 +4,10 @@
     <description>Access for the Lead stage-advance buttons: Apex class access to the convert controller plus the Convert Leads user permission. Assign to reps who advance/convert Leads from the Lead record page.</description>
     <hasActivationRequired>false</hasActivationRequired>
     <classAccesses>
+        <apexClass>LeadActionPermissionController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>LeadConvertActionController</apexClass>
         <enabled>true</enabled>
     </classAccesses>

@@ -240,6 +240,7 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 | `LLMExtractionCalloutService` | `ExtractAddressQueueable`                          | Broker Protection: mockable OpenAI callout wrapper extracting broker name/email, property address, and send time from a forwarded email (vision + text). Direct-callout §3 exception — see §3.3. |
 | `PropertyMatchingService`     | `ExtractAddressQueueable` (via `PropertyClaimService`) | Broker Protection: address normalization, Jaccard fuzzy matching, cluster-key derivation, and registry/orphan lookups behind the first-broker-wins claim decision. Read-only; no DML. |
 | `PropertyClaimService`        | `ExtractAddressQueueable`                          | Broker Protection: owns all `Property_Registry__c` / `Competing_Broker_Submission__c` DML — acquires the `Property_Claim_Lock__c` FOR UPDATE lock, then registers a winner or marks a duplicate. |
+| `LeadActionPermissionService` | `LeadActionPermissionController`, `LeadConvertActionController` | Lead stage quick actions: the single source of truth for "may the running user drive Convert / Mark Under Review / Mark Qualified / Disqualify?". Accepts `Lead_Stage_Actions_Access` OR `Broker_Protection_Access`, resolves grants through permission set GROUPS as well as direct assignments, and bypasses for "Modify All Data". Exposes `hasLeadActionAccess()` (the cacheable UX gate) and `assertLeadActionAccess()` (the server-side enforcement used before `Database.convertLead`). Reads via `PermissionSetAssignmentSelector` + `PermissionSetGroupComponentSelector`; no DML. |
 
 **Broker Protection staging model (added 2026-07-28):** the pipeline no longer creates a Lead at the
 email boundary. `EmailToLeadHandler` parses the envelope, RFC headers and inline image, writes an
@@ -353,6 +354,28 @@ feature writeup.
 
 - Apex methods throw `AuraHandledException` (never raw exceptions).
 - LWC catches, displays user-safe message via toast (`lightning/platformShowToastEvent`).
+
+### Confirmation dialogs and permission gating (headless quick actions)
+
+Added 2026-07-29 with the Lead stage quick actions (`leadConvertAction`, `leadMarkUnderReview`,
+`leadMarkQualified`, `leadDisqualify`, sharing `c/leadStatusChange`).
+
+- **Confirmations use `lightning/confirm` (`LightningConfirm.open()`), never a toast.** A toast is
+  fire-and-forget and returns nothing, so it cannot carry a yes/no answer. `LightningConfirm.open()`
+  returns `Promise<boolean>` and renders into the platform's modal layer, which is what makes it the
+  only confirmation available to a HEADLESS quick action (`actionType: Action`, empty template).
+  Toasts remain correct for the success/error messages that follow.
+- **A headless quick action cannot be visually disabled from its own code.** It owns no button
+  markup — the platform's action bar renders the button — so there is no `disabled` attribute to
+  set. Hiding or graying an action for unauthorized users is a **Dynamic Actions visibility rule**
+  in App Builder (declarative), which needs a **Custom Permission** to bind to; the component
+  enforces the same rule at click time. Treat the two as complementary, not alternatives.
+- **Permission gating order is: check permission → confirm → act.** Never ask a user to confirm an
+  action they are not permitted to take. The client-side check is a UX gate; any action with an Apex
+  path must ALSO assert server-side (see `LeadConvertActionController`), because a client check is
+  bypassed by calling the `@AuraEnabled` method directly. Actions that write via LDS `updateRecord`
+  have no Apex in their path at all — CRUD/FLS is their only real enforcement.
+- A failed permission lookup **fails closed** (treated as denied), never open.
 
 ### Styling
 

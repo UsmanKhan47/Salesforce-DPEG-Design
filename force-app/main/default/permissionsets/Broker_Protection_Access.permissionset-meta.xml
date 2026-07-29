@@ -4,6 +4,10 @@
         <apexClass>CompetingSubmissionController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <classAccesses>
+        <apexClass>LeadActionPermissionController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <description>Broker protection: OpenAI credential principal plus access to the claim-ledger and submission-audit objects and the new Lead fields. Assign to the Email Service user and reps who see the submission history.</description>
     <externalCredentialPrincipalAccesses>
         <enabled>true</enabled>
