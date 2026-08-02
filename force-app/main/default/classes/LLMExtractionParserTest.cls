@@ -1,0 +1,449 @@
+/**
+ * Test class for LLMExtractionParser — one test per validation rule in design §3.4, plus the
+ * two response shapes and the confidence banding.
+ *
+ * WHY THIS CLASS IS PURE UNIT TESTS. The parser is a total function with no SOQL, no DML and no
+ * callouts, so every rule can be asserted directly on its output instead of inferred from a
+ * routed Lead three classes downstream. That matters because the parser is the ONLY thing
+ * standing between an untrusted language-model response and a DML statement: an unvalidated
+ * value reaching the restricted `Asset_Type__c` picklist throws
+ * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST and rolls back a committed claim.
+ *
+ * NO 251-RECORD BULK TEST, deliberately: the parser has no DML, no SOQL and no per-record loop
+ * over SObjects — it processes ONE response per call, bounded by the prompt's 10-property cap.
+ * See `.claude/rules/bulk-test-rule.md` (narrowed 2026-07-31) for what replaces the mandate in
+ * this module.
+ *
+ * ASSERTION STYLE: Assert.* — matches the sibling Broker-Protection test classes.
+ *
+ * @author Salesforce Technical Architect
+ */
+@isTest
+private class LLMExtractionParserTest {
+
+    /** Builds a one-property response with `key` set to `value`, as raw JSON. */
+    private static String propertyJson(String key, Object value) {
+        Map<String, Object> property = new Map<String, Object>{ 'property_address' => '100 Main St' };
+        property.put(key, value);
+        return JSON.serialize(new Map<String, Object>{
+            'properties' => new List<Object>{ property }
+        });
+    }
+
+    /** Parses a one-property response and returns that property. */
+    private static PropertyExtraction parseProperty(String key, Object value) {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson(key, value));
+        Assert.areEqual(1, result.properties.size(), 'The fixture should yield exactly one property');
+        return result.properties[0];
+    }
+
+    // ── response shape ────────────────────────────────────────────────────────
+
+    @isTest
+    static void parse_enrichedShape_readsEmailLevelAndProperties() {
+        String body = JSON.serialize(new Map<String, Object>{
+            'email_category' => 'acquisition_deal',
+            'is_acquisition_related' => true,
+            'confidence' => 0.92,
+            'broker_name' => 'Jane Broker',
+            'broker_email' => 'jane@brokerfirm.example.invalid',
+            'broker_company' => 'Brokerfirm LLC',
+            'sent_datetime' => '2026-07-01 10:00:00',
+            'deal_summary' => 'Two-asset portfolio.',
+            'properties' => new List<Object>{
+                new Map<String, Object>{ 'property_address' => '100 Main St' },
+                new Map<String, Object>{ 'property_address' => '200 Oak Ave' }
+            }
+        });
+
+        Test.startTest();
+        LLMExtractionResult result = LLMExtractionParser.parse(body);
+        Test.stopTest();
+
+        Assert.areEqual('acquisition_deal', result.emailCategory, 'email_category should be read from the closed set');
+        Assert.areEqual(true, result.isAcquisitionRelated, 'is_acquisition_related should be read');
+        Assert.areEqual('jane@brokerfirm.example.invalid', result.brokerEmail,
+            'broker_email is the claim engine input and must travel untouched');
+        Assert.areEqual('Brokerfirm LLC', result.brokerCompany, 'broker_company should be read');
+        Assert.areEqual(2, result.properties.size(), 'Both property objects should be parsed');
+        Assert.isFalse(result.usedLegacyShape, 'A response carrying a properties array is not the legacy shape');
+    }
+
+    @isTest
+    static void parse_legacyFourKeyShape_synthesizesOnePropertyAndFlagsIt() {
+        // This is the ROLLBACK LEVER made testable: reverting the prompt constant produces
+        // exactly this response, and the pipeline must keep working with no other code change.
+        String body = JSON.serialize(new Map<String, Object>{
+            'broker_name' => 'Jane Broker',
+            'broker_email' => 'jane@brokerfirm.example.invalid',
+            'property_address' => '100 Legacy St',
+            'sent_datetime' => '2026-07-01 10:00:00'
+        });
+
+        Test.startTest();
+        LLMExtractionResult result = LLMExtractionParser.parse(body);
+        Test.stopTest();
+
+        Assert.areEqual(1, result.properties.size(),
+            'A top-level property_address with no properties array must synthesize a one-element array');
+        Assert.areEqual('100 Legacy St', result.properties[0].propertyAddress,
+            'The synthesized property must carry the legacy address verbatim — it is the claim key');
+        Assert.isTrue(result.usedLegacyShape, 'The legacy shape should be flagged for diagnostics');
+    }
+
+    @isTest
+    static void parse_malformedJson_returnsEmptyResultAndNeverThrows() {
+        Test.startTest();
+        LLMExtractionResult result = LLMExtractionParser.parse('{"properties": [ truncated mid-obj');
+        Test.stopTest();
+
+        Assert.areEqual(0, result.properties.size(), 'An unparseable response must yield no properties');
+        Assert.isFalse(result.notes.isEmpty(), 'The parse failure must be recorded as a note, not swallowed');
+        Assert.areEqual(LLMExtractionParser.BAND_LOW, result.confidenceBand,
+            'A response that could not be parsed cannot be HIGH confidence');
+    }
+
+    @isTest
+    static void parse_blankResponse_returnsEmptyResultWithNote() {
+        Test.startTest();
+        LLMExtractionResult result = LLMExtractionParser.parse('');
+        Test.stopTest();
+
+        Assert.areEqual(0, result.properties.size(), 'A blank response must yield no properties');
+        Assert.isFalse(result.notes.isEmpty(), 'A blank response must be recorded as a note');
+    }
+
+    // ── confidence banding (C-8) ──────────────────────────────────────────────
+
+    @isTest
+    static void parse_confidenceAtHighThreshold_bandsHigh() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'confidence' => 0.85 }));
+        Assert.areEqual(LLMExtractionParser.BAND_HIGH, result.confidenceBand,
+            '0.85 is the inclusive lower bound of HIGH — the exact value the hard gate fires on');
+    }
+
+    @isTest
+    static void parse_confidenceJustBelowHigh_bandsMedium() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'confidence' => 0.84 }));
+        Assert.areEqual(LLMExtractionParser.BAND_MEDIUM, result.confidenceBand,
+            '0.84 must NOT reach HIGH, or the hard gate would fire one hundredth too early');
+    }
+
+    @isTest
+    static void parse_lowConfidence_bandsLow() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'confidence' => 0.4 }));
+        Assert.areEqual(LLMExtractionParser.BAND_LOW, result.confidenceBand, 'Below 0.60 bands LOW');
+    }
+
+    @isTest
+    static void parse_missingConfidence_bandsLow() {
+        LLMExtractionResult result = LLMExtractionParser.parse('{}');
+        Assert.areEqual(LLMExtractionParser.BAND_LOW, result.confidenceBand,
+            'A missing confidence must band LOW — never HIGH, which would let the gate suppress a Lead');
+    }
+
+    @isTest
+    static void parse_confidenceAsLabelString_isAccepted() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'confidence' => 'HIGH' }));
+        Assert.areEqual(LLMExtractionParser.BAND_HIGH, result.confidenceBand,
+            'A model that returns the old label instead of a number should still band correctly');
+    }
+
+    @isTest
+    static void parse_outOfRangeConfidence_bandsLowRatherThanClamping() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'confidence' => 4.2 }));
+        Assert.areEqual(LLMExtractionParser.BAND_LOW, result.confidenceBand,
+            'A nonsense confidence must not be clamped to 1.0 — that would hand the HARD GATE a certainty the model never asserted');
+    }
+
+    @isTest
+    static void parse_isAcquisitionRelatedAbsent_isNullNotFalse() {
+        LLMExtractionResult result = LLMExtractionParser.parse('{}');
+        Assert.isNull(result.isAcquisitionRelated,
+            '"The model did not say" must stay null: only an EXPLICIT false may ever gate a Lead away');
+    }
+
+    // ── currency (§3.4) ───────────────────────────────────────────────────────
+
+    @isTest
+    static void parse_currencyWithSuffixM_expandsToMillions() {
+        PropertyExtraction property = parseProperty('guidance_price', '$7.1M');
+        Assert.areEqual(7100000.00, property.guidancePrice,
+            '"$7.1M" must be expanded by APEX — asking the model to do arithmetic is asking it to hallucinate');
+    }
+
+    @isTest
+    static void parse_currencyWithSuffixK_expandsToThousands() {
+        PropertyExtraction property = parseProperty('noi', '450K');
+        Assert.areEqual(450000.00, property.noi, '"450K" should expand to 450000');
+    }
+
+    @isTest
+    static void parse_currencyWithCommasAndSymbol_isCleaned() {
+        PropertyExtraction property = parseProperty('guidance_price', '$1,250,000');
+        Assert.areEqual(1250000.00, property.guidancePrice, 'Currency symbols and separators should be stripped');
+    }
+
+    @isTest
+    static void parse_negativeCurrency_isRejectedWithNote() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('guidance_price', '-500000'));
+        Assert.isNull(result.properties[0].guidancePrice, 'A negative price must be rejected');
+        Assert.isFalse(result.notes.isEmpty(), 'The rejection must leave a note for a human to see on Deal_Notes__c');
+    }
+
+    @isTest
+    static void parse_nonNumericCurrency_isRejectedWithNote() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('noi', 'Market to Establish'));
+        Assert.isNull(result.properties[0].noi, 'An unpriced deal must yield null, not a crash');
+        Assert.isFalse(result.notes.isEmpty(), 'The unparseable value must be noted');
+    }
+
+    // ── percentage (§3.4) ─────────────────────────────────────────────────────
+
+    @isTest
+    static void parse_occupancyAsPercentageNumber_isKept() {
+        PropertyExtraction property = parseProperty('occupancy_pct', 88.0);
+        Assert.areEqual(88.00, property.occupancyPct,
+            'Occupancy 88.0 must survive intact — it also proves the field is Percent(5,2), since (3,2) caps at 9.99');
+    }
+
+    @isTest
+    static void parse_capRateWithPercentSign_isCleaned() {
+        PropertyExtraction property = parseProperty('cap_rate', '6.75%');
+        Assert.areEqual(6.75, property.capRate, 'A trailing % should be stripped, not rejected');
+    }
+
+    @isTest
+    static void parse_percentageAboveOneHundred_isRejected() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('occupancy_pct', 880));
+        Assert.isNull(result.properties[0].occupancyPct, 'A percentage above 100 is a mis-parse and must be rejected');
+        Assert.isFalse(result.notes.isEmpty(), 'The rejection must be noted');
+    }
+
+    @isTest
+    static void parse_fractionalOccupancy_isKeptAsIsNotDoubled() {
+        // Deliberately NO "if <= 1 assume a fraction" heuristic: 0.9 occupancy is plausible as a
+        // fraction AND 0.9% is implausible as a cap rate, so one heuristic cannot serve both.
+        PropertyExtraction property = parseProperty('occupancy_pct', 0.9);
+        Assert.areEqual(0.90, property.occupancyPct,
+            'A value inside 0-100 must be stored verbatim — guessing that it is a fraction would silently corrupt it');
+    }
+
+    // ── integers, years, WALT (§3.4) ──────────────────────────────────────────
+
+    @isTest
+    static void parse_buildingSfWithCommas_isCleaned() {
+        PropertyExtraction property = parseProperty('building_sf', '128,500');
+        Assert.areEqual(128500, property.buildingSf, 'Thousands separators should be stripped from integers');
+    }
+
+    @isTest
+    static void parse_twoDigitYearBuilt_expandsToLastCentury() {
+        PropertyExtraction property = parseProperty('year_built', 88);
+        Assert.areEqual(1988, property.yearBuilt,
+            'Brokers write "88/22"; APEX owns the expansion, pivoting on the current two-digit year');
+    }
+
+    @isTest
+    static void parse_twoDigitYearRenovated_expandsToThisCentury() {
+        PropertyExtraction property = parseProperty('year_renovated', 22);
+        Assert.areEqual(2022, property.yearRenovated, '22 is at or below the current two-digit year, so it is 2022');
+    }
+
+    @isTest
+    static void parse_fourDigitYear_isKept() {
+        PropertyExtraction property = parseProperty('year_built', 1974);
+        Assert.areEqual(1974, property.yearBuilt, 'A four-digit year should pass through untouched');
+    }
+
+    @isTest
+    static void parse_implausibleYear_isRejected() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('year_built', 1200));
+        Assert.isNull(result.properties[0].yearBuilt, 'A year before 1700 is a mis-parse');
+        Assert.isFalse(result.notes.isEmpty(), 'The rejection must be noted');
+    }
+
+    @isTest
+    static void parse_waltYears_isRoundedToOneDecimal() {
+        PropertyExtraction property = parseProperty('walt_years', 7.26);
+        Assert.areEqual(7.3, property.waltYears, 'WALT_Years__c is Number(4,1), so the value is rounded to 1 dp');
+    }
+
+    // ── lot size conversion (§0.11 / §3.4) ────────────────────────────────────
+
+    @isTest
+    static void parse_lotSizeInSquareFeetOnly_isConvertedByApex() {
+        String body = JSON.serialize(new Map<String, Object>{
+            'properties' => new List<Object>{
+                new Map<String, Object>{ 'property_address' => '1 Land Rd', 'lot_size_sf' => 43560 }
+            }
+        });
+
+        Test.startTest();
+        LLMExtractionResult result = LLMExtractionParser.parse(body);
+        Test.stopTest();
+
+        Assert.areEqual(1.00, result.properties[0].lotSizeAcres,
+            'APEX converts SF to acres (43,560 SF = 1 acre) precisely because the prompt forbids the model from deriving one number from another');
+    }
+
+    @isTest
+    static void parse_lotSizeInAcres_winsOverSquareFeet() {
+        String body = JSON.serialize(new Map<String, Object>{
+            'properties' => new List<Object>{
+                new Map<String, Object>{
+                    'property_address' => '1 Land Rd', 'lot_size_acres' => 2.5, 'lot_size_sf' => 999
+                }
+            }
+        });
+
+        Test.startTest();
+        LLMExtractionResult result = LLMExtractionParser.parse(body);
+        Test.stopTest();
+
+        Assert.areEqual(2.50, result.properties[0].lotSizeAcres,
+            'A stated acreage is what the email said and must beat any conversion');
+    }
+
+    // ── date (§3.4) ───────────────────────────────────────────────────────────
+
+    @isTest
+    static void parse_offerDueDateInRange_isParsed() {
+        Date expected = Date.today().addDays(21);
+        String iso = String.valueOf(expected).left(10);
+        PropertyExtraction property = parseProperty('offer_due_date', iso);
+        Assert.areEqual(expected, property.offerDueDate, 'A plausible yyyy-MM-dd deadline should parse');
+    }
+
+    @isTest
+    static void parse_offerDueDateFarInFuture_isRejected() {
+        String iso = String.valueOf(Date.today().addYears(5)).left(10);
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('offer_due_date', iso));
+        Assert.isNull(result.properties[0].offerDueDate,
+            'A deadline five years out is a mis-parse of some other date in the email');
+        Assert.isFalse(result.notes.isEmpty(), 'The rejection must be noted');
+    }
+
+    @isTest
+    static void parse_offerDueDateNotADate_isRejected() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('offer_due_date', 'next Friday'));
+        Assert.isNull(result.properties[0].offerDueDate,
+            'Relative phrasing is the PROMPT\'s job to resolve against sent_datetime; Apex must reject it, not guess');
+        Assert.isFalse(result.notes.isEmpty(), 'The rejection must be noted');
+    }
+
+    // ── closed-set picklists (§3.4, the restricted-picklist defence) ──────────
+
+    @isTest
+    static void parse_assetTypeOutOfSet_isNulledWithNote() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('asset_type', 'Spaceport'));
+        Assert.isNull(result.properties[0].assetType,
+            'An invented picklist value must never reach DML — a restricted picklist throws and rolls back the claim');
+        Assert.isFalse(result.notes.isEmpty(), 'The rejection must be noted');
+    }
+
+    @isTest
+    static void parse_assetTypeInSet_isKept() {
+        PropertyExtraction property = parseProperty('asset_type', 'Retail');
+        Assert.areEqual('Retail', property.assetType, 'An active picklist value should pass validation');
+    }
+
+    @isTest
+    static void parse_assetTypeWrongCase_resolvesToCanonicalValue() {
+        PropertyExtraction property = parseProperty('asset_type', 'retail');
+        Assert.areEqual('Retail', property.assetType,
+            'Case-insensitive matching resolves to the PICKLIST\'S OWN spelling, so it can never produce an invalid value');
+    }
+
+    @isTest
+    static void parse_dealTypeInSet_isKept() {
+        PropertyExtraction property = parseProperty('deal_type', 'Commercial');
+        Assert.areEqual('Commercial', property.dealType, 'Deal_Type__c should validate against its own picklist');
+    }
+
+    // ── URL + text (§3.4) ─────────────────────────────────────────────────────
+
+    @isTest
+    static void parse_longUrl_isNulledNotClipped() {
+        String longUrl = 'https://deals.example.invalid/' + ''.rightPad(300, 'x');
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('deal_room_link', longUrl));
+        Assert.isNull(result.properties[0].dealRoomLink,
+            'A clipped URL is a BROKEN URL that still looks valid, so an over-long one is dropped rather than truncated');
+        Assert.isFalse(result.notes.isEmpty(), 'The dropped link must be noted');
+    }
+
+    @isTest
+    static void parse_nonHttpUrl_isRejected() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('deal_room_link', 'ftp://example.invalid/om'));
+        Assert.isNull(result.properties[0].dealRoomLink, 'Only http/https links are accepted');
+    }
+
+    @isTest
+    static void parse_validUrl_isKept() {
+        PropertyExtraction property = parseProperty('deal_room_link', 'https://deals.example.invalid/om');
+        Assert.areEqual('https://deals.example.invalid/om', property.dealRoomLink, 'A valid https URL should pass');
+    }
+
+    @isTest
+    static void parse_overLongZoning_isClippedNotDropped() {
+        PropertyExtraction property = parseProperty('zoning', ''.rightPad(300, 'z'));
+        Assert.areEqual(100, property.zoning.length(),
+            'Text is CLIPPED rather than rejected: a shortened zoning code is still useful, and STRING_TOO_LONG would roll back the claim');
+    }
+
+    @isTest
+    static void parse_malformedListingBrokerEmail_isNulled() {
+        String body = JSON.serialize(new Map<String, Object>{
+            'listing_broker_email' => 'Jane Broker <not an address>'
+        });
+
+        Test.startTest();
+        LLMExtractionResult result = LLMExtractionParser.parse(body);
+        Test.stopTest();
+
+        Assert.isNull(result.listingBrokerEmail,
+            'A display name bound to an Email field would throw INVALID_EMAIL_ADDRESS, so it is sanitized to null');
+    }
+
+    @isTest
+    static void parse_unknownEmailCategory_fallsBackToOther() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'email_category' => 'spam_probably' }));
+        Assert.areEqual(LLMExtractionResult.CATEGORY_OTHER, result.emailCategory,
+            'An out-of-set category is coerced to other — it drives nothing but explainability, so it is never worth a note');
+    }
+
+    // ── the legacy map projection (the claim engine's contract) ───────────────
+
+    @isTest
+    static void toLegacyMap_alwaysCarriesExactlyTheFourKeys() {
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('asset_type', 'Retail'));
+
+        Test.startTest();
+        Map<String, String> legacy = result.toLegacyMap(result.properties[0]);
+        Test.stopTest();
+
+        Assert.areEqual(4, legacy.size(), 'The claim engine contract is exactly four keys — no more, no fewer');
+        Assert.areEqual('100 Main St', legacy.get('property_address'),
+            'property_address must be the per-property value, since that is what becomes the claim key');
+        Assert.areEqual('', legacy.get('broker_email'),
+            'An absent value must be an empty string, never null — that is the documented contract');
+    }
+
+    @isTest
+    static void toLegacyMap_nullProperty_yieldsBlankAddressNotAnException() {
+        LLMExtractionResult result = LLMExtractionParser.parse('{"broker_email":"jane@x.invalid"}');
+
+        Test.startTest();
+        Map<String, String> legacy = result.toLegacyMap(null);
+        Test.stopTest();
+
+        Assert.areEqual('', legacy.get('property_address'), 'A null property must yield a blank address, not an NPE');
+        Assert.areEqual('jane@x.invalid', legacy.get('broker_email'), 'The email-level values still travel');
+    }
+}

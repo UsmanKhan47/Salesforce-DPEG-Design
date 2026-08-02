@@ -27,9 +27,21 @@
  * message). An unexpected raw failure is left to propagate to the controller's fixed generic
  * (masked) catch, so no raw platform text is leaked (code-review W2).
  *
- * @see force-app/main/default/classes/StageAdvanceController.cls (thin caller)
+ * EXPLICIT-TARGET ALLOW-LIST: `advanceTo` accepts only the branch/off-ramp stages listed in
+ * ALLOWED_EXPLICIT_TARGETS. See that constant for the full rationale — in short, it used to write
+ * any non-blank string it was handed, which let a direct @AuraEnabled call reach any stage and skip
+ * every gate. This is a tightening only; no legitimate caller loses a transition.
+ *
+ * PERMISSION: the deal-driver check lives at the CONTROLLER boundary
+ * (OpportunityActionPermissionService.assertDealActionAccess in StageAdvanceController), not here.
+ * This service is also reached from OpportunityApprovalService's own entry point and from tests, and
+ * a service that silently refuses work based on the running user is far harder to reason about than
+ * one guarded at its public entry points.
+ *
+ * @see force-app/main/default/classes/StageAdvanceController.cls (thin caller + permission assert)
  * @see force-app/main/default/classes/OpportunityApprovalService.cls (approval submission)
  * @see force-app/main/default/classes/OpportunitySelector.cls (all SOQL)
+ * @see force-app/main/default/classes/OpportunityActionPermissionService.cls (the gate)
  */
 public with sharing class StageAdvanceService {
 
@@ -41,6 +53,45 @@ public with sharing class StageAdvanceService {
      * which the controller maps to a fixed generic message instead.
      */
     public class StageAdvanceException extends Exception {}
+
+    /**
+     * The ONLY stages `advanceTo` will write. This tightens a pre-existing loose coupling: the
+     * method used to accept any non-blank string straight from an @AuraEnabled parameter and write
+     * it, so any holder of StageAdvanceController access could move a deal to ANY stage — including
+     * 'Closed Won' or 'Dead/Pass' — skipping every hop in NEXT_STAGE and the signed-NDA gate with
+     * it. The declarative visibility rules that appear to constrain these buttons are a UX
+     * affordance only and are trivially bypassed by calling the Apex directly.
+     *
+     * Membership is limited to the BRANCH-and-OFF-RAMP targets that legitimately have no single
+     * derivable predecessor, which is the entire reason `advanceTo` exists alongside `advance`:
+     *   - 'Development Review'  — the Land branch off Under Review (dealSendToDevelopmentReview)
+     *   - 'Construction Review' — the Commercial branch off Under Review (dealSendToConstructionReview)
+     *   - 'About to Close'      — the optional PSA off-ramp (dealMoveToAboutToClose)
+     *   - 'Dead/Pass'           — pre-authorized for the deal off-ramp action (design doc D4). It is
+     *                             a real stage in BOTH business processes and is reachable from any
+     *                             active stage, so it can never be derived by NEXT_STAGE. Listed
+     *                             here so the eventual button needs no service change; nothing calls
+     *                             it with this value today.
+     *
+     * ⚠ Values are the DECODED runtime/API strings. 'Dead/Pass' is URL-encoded as 'Dead%2FPass' in
+     * BusinessProcess/picklist METADATA only — an Apex literal (and a visibility rule's rightValue)
+     * uses the decoded form. Getting this backwards yields a set that silently never matches.
+     *
+     * Forward hops that ARE derivable stay out of this set on purpose. They belong to `advance`,
+     * which reaches them through NEXT_STAGE and therefore cannot skip a step: routing every
+     * transition through an explicit target would re-open exactly the hole this set closes.
+     *
+     * ⚠ BEHAVIOUR CHANGE (strictly a tightening). Verified before landing: `advanceTo` has no Flow,
+     * process, or Apex caller anywhere in the repo — its only callers are the three headless LWC
+     * bundles, each passing a hardcoded constant from this set, plus the test classes. Adding a new
+     * explicit-target action means adding its stage here.
+     */
+    private static final Set<String> ALLOWED_EXPLICIT_TARGETS = new Set<String>{
+        'Development Review',
+        'Construction Review',
+        'About to Close',
+        'Dead/Pass'
+    };
 
     // Current stage -> the single primary next stage. Underwriting is absent because
     // that step is an approval submission, not a stage write.
@@ -88,19 +139,34 @@ public with sharing class StageAdvanceService {
     }
 
     /**
-     * Moves the deal to an explicit target stage (the branch actions off Under Review:
-     * Send to Development / Construction Review).
+     * Moves the deal to an explicit target stage — the branch actions off Under Review (Send to
+     * Development / Construction Review), the PSA off-ramp (Move to About to Close), and the
+     * pre-authorized Dead/Pass off-ramp.
+     *
+     * The target is validated against ALLOWED_EXPLICIT_TARGETS BEFORE the record is loaded, so a
+     * rejected target costs no query and reveals nothing about whether the record exists.
      *
      * @param recordId the Opportunity to advance (required)
-     * @param target   the explicit target StageName (required, non-blank)
+     * @param target   the explicit target StageName (required, non-blank, and one of
+     *                 ALLOWED_EXPLICIT_TARGETS)
      * @return a user-facing confirmation message
-     * @throws StageAdvanceException when target is blank, recordId is null, or the stage
-     *         write is blocked (the block's message is surfaced)
+     * @throws StageAdvanceException when target is blank, target is not an allowed explicit target,
+     *         recordId is null, or the stage write is blocked (the block's message is surfaced)
      * @throws System.QueryException when recordId matches no Opportunity
+     * @example
+     * String msg = StageAdvanceService.advanceTo(oppId, 'Development Review');
      */
     public static String advanceTo(Id recordId, String target) {
         if (String.isBlank(target)) {
             throw new StageAdvanceException('No target stage was provided.');
+        }
+        if (!ALLOWED_EXPLICIT_TARGETS.contains(target)) {
+            // Fixed wording that does NOT echo the rejected value back to the user: a legitimate
+            // caller can never reach this branch (every bundle passes a constant from the set), so
+            // the only way to hit it is a hand-crafted call, and reflecting attacker-supplied text
+            // into a toast has no upside.
+            throw new StageAdvanceException(
+                'That stage is not available from this action.');
         }
         return setStage(load(recordId), target);
     }

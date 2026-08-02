@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Listing_Broker_Name__c</fullName>
+    <description>Name of the listing broker, as stated in the broker email. Distinct from the forwarding broker captured on Broker_First__c / Forwarded_By_Email__c — a blast platform's sender is often not the listing broker.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Populated by LLM extraction from the inbound broker email; null when not stated in the email.</inlineHelpText>
+    <label>Listing Broker Name</label>
+    <length>120</length>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

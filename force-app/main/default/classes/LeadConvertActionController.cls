@@ -13,7 +13,13 @@
  * this controller. Only the irreversible Convert action needs Apex, because it runs
  * Database.convertLead.
  *
- * Failures are handled in two tiers, mirroring StageAdvanceController: a user-actionable convert
+ * Authorization: convertLead asserts the running user holds a Lead-action permission set (see
+ * LeadActionPermissionService) before doing anything. The LWC performs the same check to decide
+ * whether to act, but only this server-side assertion is enforcement — the client check can be
+ * bypassed by calling the Apex directly.
+ *
+ * Failures are handled in three tiers: an authorization denial (typed AccessDeniedException) is
+ * surfaced verbatim, then — mirroring StageAdvanceController — a user-actionable convert
  * failure (a DmlException — e.g. a missing "Convert Leads" permission, a validation-rule block, or an
  * already-converted Lead) has its message surfaced verbatim (via `ahe`) so the user sees the real
  * reason; any other, unexpected/system error (e.g. an error deep in the trigger-driven
@@ -47,16 +53,25 @@ public with sharing class LeadConvertActionController {
      * navigate to. Delegates to LeadConvertActionService.convert (bulk-shaped) and unwraps the
      * single result.
      *
+     * Gated by LeadActionPermissionService.assertLeadActionAccess() BEFORE any work: the LWC also
+     * checks the permission, but a client-side check is an affordance, not a control — this
+     * assertion is what actually stops an unauthorized caller invoking the Apex directly. It runs
+     * first so an unauthorized user never triggers the conversion cascade.
+     *
      * @param leadId the Lead to convert (the current record on the Lead page)
      * @return the Id of the Opportunity created by the conversion
-     * @throws AuraHandledException carrying the verbatim failure message on a user-actionable
+     * @throws AuraHandledException carrying the denial message when the running user lacks the
+     *         Lead-action permission sets; the verbatim failure message on a user-actionable
      *         DmlException (e.g. a missing "Convert Leads" permission, a validation-rule block, or an
-     *         already-converted Lead), or a fixed generic message on any unexpected/system error
+     *         already-converted Lead); or a fixed generic message on any unexpected/system error
      */
     @AuraEnabled
     public static Id convertLead(Id leadId) {
         try {
+            LeadActionPermissionService.assertLeadActionAccess();
             return LeadConvertActionService.convert(new List<Id>{ leadId })[0];
+        } catch (LeadActionPermissionService.AccessDeniedException e) {
+            throw ahe(e.getMessage());   // authorization denial: the user-safe message is the whole point
         } catch (DmlException e) {
             throw ahe(e.getMessage());   // user-safe convert failures (missing Convert Leads perm, validation, already-converted) surfaced verbatim
         } catch (Exception e) {

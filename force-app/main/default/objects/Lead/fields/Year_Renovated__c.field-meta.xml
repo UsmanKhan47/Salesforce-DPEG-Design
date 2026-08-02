@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Year_Renovated__c</fullName>
+    <description>Year the building was most recently renovated, as stated in the broker email. Apex normalizes 2-digit years (e.g., "22" to 2022) before storing.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Populated by LLM extraction from the inbound broker email; null when not stated in the email.</inlineHelpText>
+    <label>Year Renovated</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

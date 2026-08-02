@@ -64,8 +64,14 @@ public with sharing class CompetingBrokerSubmissionSelector {
     /**
      * Recent submissions made by one broker — backs REPEAT detection
      * (PropertyMatchingService.findBrokerSubmission), which asks "has this same broker
-     * already submitted this same property?" so a follow-up email threads onto the
-     * broker's existing Lead instead of creating a second one.
+     * already submitted this same property?" so a follow-up email is filed on the record the
+     * broker's EARLIER email already produced instead of creating a second Lead.
+     *
+     * WHICH record that is depends on the broker, and the caller decides it from the two Lead
+     * lookups on the rows returned here: the property's WINNER threads onto their own Lead
+     * (`Source_Lead__c`), while a COMPETING broker — who since 2026-07-31 receives no Lead at
+     * all — threads onto `Winning_Lead__c`. Both shapes are returned; see the NULL-SOURCE
+     * paragraph below.
      *
      * NO PROPERTY FILTER IN SOQL — DELIBERATE, AND NOT AN OVERSIGHT.
      * Competing_Broker_Submission__c stores only Property_Address_Raw__c (the address as
@@ -84,15 +90,35 @@ public with sharing class CompetingBrokerSubmissionSelector {
      * the broker's address survives only on the Lead. SOQL `=` on text is
      * case-insensitive, so no address casing normalization is needed here.
      *
-     * `Source_Lead__c != null` is required, not cosmetic: the caller's whole purpose is to
-     * reuse that Lead, so a submission without one is unusable.
+     * NULL-SOURCE ROWS ARE INCLUDED, NULL-WINNER ROWS ARE NOT. This is one filter swapped for
+     * another on 2026-07-31, and the asymmetry is the whole point.
+     *
+     * `Source_Lead__c != null` was REMOVED. It was justified as "the caller's whole purpose is
+     * to reuse that Lead, so a submission without one is unusable", and that justification
+     * expired: a COMPETING broker no longer receives a Lead at all, so every competing
+     * submission now legitimately carries a null Source_Lead__c. Keeping the filter would make
+     * a competing broker's follow-up email invisible to repeat detection, and the pipeline
+     * would treat each of their re-sends as a brand-new competing claim forever.
+     *
+     * `Winning_Lead__c != null` was ADDED in its place, and it is NOT cosmetic — it restores an
+     * invariant the old filter had been enforcing by accident. BOTH Lead lookups on this object
+     * are `deleteConstraint=SetNull`, so deleting or merging the winner's Lead leaves rows with
+     * BOTH lookups null. Such a row satisfies no caller: the repeat branch would call
+     * logRepeatSubmission(null, null, ...), whose insert then trips the Winning_Lead_Required
+     * validation rule, and the DmlException kills the email — Status 'Error', no Lead, no Task.
+     * Worse, it would ALSO defeat the module's orphan-adoption path: with the row filtered out
+     * the email correctly falls through to branch (e), where registerWinner adopts the orphaned
+     * registry key. So this filter is what keeps a deleted-winner property re-claimable rather
+     * than permanently poisoned. THE INVARIANT: every row this method returns has a non-null
+     * Winning_Lead__c; Source_Lead__c may legitimately be null.
      *
      * @param brokerEmail The broker's email address to match; null/blank returns empty.
      * @param cutoff      Inclusive lower bound on Submitted_DateTime__c (the recency
      *                    window); null returns empty.
      * @return Up to 200 submissions by that broker at/after `cutoff`, oldest first (so the
      *         caller's exact-match short-circuit returns the ORIGINAL submission rather
-     *         than a later repeat); empty when nothing matches (never null).
+     *         than a later repeat), every one carrying a non-null Winning_Lead__c; empty when
+     *         nothing matches (never null).
      * @example
      * List<Competing_Broker_Submission__c> prior =
      *     CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail(
@@ -108,7 +134,7 @@ public with sharing class CompetingBrokerSubmissionSelector {
                    Forwarded_By_Email__c, Property_Address_Raw__c, Submitted_DateTime__c,
                    Is_Winning_Submission__c
             FROM Competing_Broker_Submission__c
-            WHERE Source_Lead__c != null
+            WHERE Winning_Lead__c != null
               AND Submitted_DateTime__c >= :cutoff
               AND (Broker_Email__c = :brokerEmail OR Source_Lead__r.Email = :brokerEmail)
             WITH USER_MODE

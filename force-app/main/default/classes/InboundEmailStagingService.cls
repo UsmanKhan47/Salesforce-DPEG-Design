@@ -45,6 +45,8 @@ public with sharing class InboundEmailStagingService {
     /** Destination field lengths — every inbound value is clipped to these before DML. */
     private static final Integer LEN_LONG_TEXT = 131072;
     private static final Integer LEN_REFERENCES = 32768;
+    /** Routed_Record_Ids__c is LongTextArea(32768) — the N-result audit trail. */
+    private static final Integer LEN_ROUTED_IDS = 32768;
     private static final Integer LEN_ERROR = 32000;
     private static final Integer LEN_TEXT = 255;
     private static final Integer LEN_RECORD_ID = 18;
@@ -132,6 +134,89 @@ public with sharing class InboundEmailStagingService {
     }
 
     /**
+     * The full result of routing ONE inbound email, which since D1 can be N results rather
+     * than one. A DTO for the same reason StagingRequest is one: the alternative is a
+     * six-parameter stamp whose Id and String arguments are trivially transposable.
+     *
+     * WHY Result_Record_Id__c IS NOT WIDENED (C-16). It is Text(18) and holds exactly one
+     * Id; every existing consumer and the operations runbook read it that way. Rather than
+     * break them, it keeps its meaning — the PRIMARY routed record — and the complete
+     * N-result mapping lives in the new Routed_Record_Ids__c long text. A single-property
+     * email therefore stamps byte-identically to how it always has.
+     */
+    public class RoutingResult {
+        /** The PRIMARY routed record: first WINNER Lead, else first COMPETING winner, else
+         *  the REPLY/REPEAT target, else null. */
+        public Id resultRecordId;
+        /** Outcome__c label. For N = 1 this is today's label unchanged; for N > 1 it is the
+         *  'Multi-Property (N): ...' summary. */
+        public String outcome;
+        /** Routed_Record_Ids__c — one line per routed property, in PROCESSING order:
+         *  `&lt;normalized address&gt; | &lt;outcome&gt; | &lt;recordId&gt;`. The only place the full
+         *  mapping exists. Null for the single-result branches. */
+        public String routedRecordIds;
+        /** Property_Count__c — how many properties the extraction FOUND (pre-truncation).
+         *  When this exceeds the number of lines in routedRecordIds, the difference IS the
+         *  truncation signal. */
+        public Integer propertyCount;
+        /** Error__c text. Blank means the run succeeded; non-blank stamps Status 'Error'
+         *  while still recording whatever routing DID achieve. */
+        public String errorText;
+    }
+
+    /**
+     * Store the raw LLM response on the staging row (D3 tier 1), BEFORE any routing
+     * decision is taken.
+     *
+     * The ordering is the point: written first, the extraction survives every branch —
+     * including the ones that create no Lead (reply, repeat, competing, gated) and
+     * including an exception thrown later in the transaction. It is written through
+     * InboundEmailFieldUtil.clip because an over-long response would otherwise throw
+     * STRING_TOO_LONG and take the claim down with it.
+     *
+     * FAIL-SOFT, like the mark* methods: a failure to persist the audit copy must never
+     * cost the email its routing.
+     *
+     * @param stagingId  The staging row to stamp; null is a no-op.
+     * @param extractedJson The model's response verbatim, or a `{"skipped":"..."}` marker
+     *                      for the branches that deliberately skip the callout (C-6).
+     * @example
+     * InboundEmailStagingService.storeExtractedJson(stagingId, extraction.rawJson);
+     */
+    public static void storeExtractedJson(Id stagingId, String extractedJson) {
+        if (stagingId == null) {
+            return;
+        }
+        try {
+            update new Inbound_Email_Staging__c(
+                Id = stagingId,
+                Extracted_JSON__c = InboundEmailFieldUtil.clip(extractedJson, LEN_LONG_TEXT)
+            );
+        } catch (DmlException de) {
+            System.debug(LoggingLevel.ERROR,
+                'InboundEmailStagingService.storeExtractedJson: could not store the extraction for staging '
+                + stagingId + ': ' + de.getMessage());
+        }
+    }
+
+    /**
+     * Stamp the terminal state for a routing run that may have produced N results.
+     * Status is derived from the result: 'Error' when `errorText` is non-blank (the routing
+     * that DID succeed is still recorded alongside it), 'Processed' otherwise.
+     *
+     * @param stagingId The staging row to stamp; null is a no-op.
+     * @param result    The routing result; must not be null.
+     * @example
+     * InboundEmailStagingService.markRouted(stagingId, result);
+     */
+    public static void markRouted(Id stagingId, RoutingResult result) {
+        stamp(stagingId,
+            String.isBlank(result.errorText) ? STATUS_PROCESSED : STATUS_ERROR,
+            result.resultRecordId, result.outcome, result.errorText,
+            result.routedRecordIds, result.propertyCount);
+    }
+
+    /**
      * Stamp the terminal SUCCESS state: Status 'Processed', the routing outcome label,
      * the Id of the record the email was routed to, and the processed timestamp.
      *
@@ -141,7 +226,7 @@ public with sharing class InboundEmailStagingService {
      * @param outcome        The routing outcome label (see ExtractAddressQueueable's OUTCOME_* constants).
      */
     public static void markProcessed(Id stagingId, Id resultRecordId, String outcome) {
-        stamp(stagingId, STATUS_PROCESSED, resultRecordId, outcome, null);
+        stamp(stagingId, STATUS_PROCESSED, resultRecordId, outcome, null, null, null);
     }
 
     /**
@@ -155,7 +240,7 @@ public with sharing class InboundEmailStagingService {
      * @param outcome   The skip label (e.g. 'Duplicate Delivery (skipped)').
      */
     public static void markSkipped(Id stagingId, String outcome) {
-        stamp(stagingId, STATUS_PROCESSED, null, outcome, null);
+        stamp(stagingId, STATUS_PROCESSED, null, outcome, null, null, null);
     }
 
     /**
@@ -171,23 +256,25 @@ public with sharing class InboundEmailStagingService {
      * @param errorText      Type, message, line number and stack trace of the failure.
      */
     public static void markError(Id stagingId, Id resultRecordId, String outcome, String errorText) {
-        stamp(stagingId, STATUS_ERROR, resultRecordId, outcome, errorText);
+        stamp(stagingId, STATUS_ERROR, resultRecordId, outcome, errorText, null, null);
     }
 
     /**
-     * Single update path for all three terminal states. Swallows its own DmlException by
+     * Single update path for all terminal states. Swallows its own DmlException by
      * design — see the FAIL-SOFT note in the class header: this is the last statement of a
      * branch whose real work has already committed, and throwing here would misreport a
      * successful claim as an async failure.
      *
-     * @param stagingId      The staging row to stamp; null is a no-op.
-     * @param status         Status__c value ('Processed' or 'Error').
-     * @param resultRecordId Result_Record_Id__c (clipped to the field's 18 characters).
-     * @param outcome        Outcome__c label.
-     * @param errorText      Error__c text, or null on the success paths.
+     * @param stagingId       The staging row to stamp; null is a no-op.
+     * @param status          Status__c value ('Processed' or 'Error').
+     * @param resultRecordId  Result_Record_Id__c (clipped to the field's 18 characters).
+     * @param outcome         Outcome__c label.
+     * @param errorText       Error__c text, or null on the success paths.
+     * @param routedRecordIds Routed_Record_Ids__c — the full N-result audit, or null.
+     * @param propertyCount   Property_Count__c — properties found pre-truncation, or null.
      */
-    private static void stamp(Id stagingId, String status, Id resultRecordId,
-                              String outcome, String errorText) {
+    private static void stamp(Id stagingId, String status, Id resultRecordId, String outcome,
+                              String errorText, String routedRecordIds, Integer propertyCount) {
         if (stagingId == null) {
             return;
         }
@@ -199,6 +286,8 @@ public with sharing class InboundEmailStagingService {
                 Result_Record_Id__c = InboundEmailFieldUtil.clip(
                     resultRecordId == null ? null : String.valueOf(resultRecordId), LEN_RECORD_ID),
                 Error__c = InboundEmailFieldUtil.clip(errorText, LEN_ERROR),
+                Routed_Record_Ids__c = InboundEmailFieldUtil.clip(routedRecordIds, LEN_ROUTED_IDS),
+                Property_Count__c = propertyCount,
                 Processed_DateTime__c = Datetime.now()
             );
         } catch (DmlException de) {

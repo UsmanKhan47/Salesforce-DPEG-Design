@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Offer_Due_Date__c</fullName>
+    <description>Date offers are due for this deal, as stated in the broker email.</description>
+    <inlineHelpText>Populated by LLM extraction from the inbound broker email; null when not stated in the email.</inlineHelpText>
+    <label>Offer Due Date</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Date</type>
+</CustomField>

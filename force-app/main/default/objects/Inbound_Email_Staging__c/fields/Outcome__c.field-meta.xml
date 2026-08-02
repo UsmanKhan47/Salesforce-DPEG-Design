@@ -5,6 +5,6 @@
     <label>Outcome</label>
     <length>255</length>
     <required>false</required>
-    <description>Routing outcome label (e.g., 'New Lead (winner)', 'Competing Duplicate', 'Reply Thread')</description>
+    <description>Routing outcome label (e.g., 'New Lead (winner)', 'Competing Submission', 'Reply Thread'). Rows created before 2026-07-31 may carry the retired labels 'Competing Duplicate' / 'Competing Duplicate (race)'. Gate-related labels: 'Not Acquisition (gated)' (LLM classifier hard gate) and 'Not Acquisition (pre-filtered)' (deterministic envelope/header pre-filter, no LLM callout). Multi-property emails (2026-07-31+) use the prefix 'Multi-Property (N): ...' summarizing each property's outcome, and may carry the suffixes ' [truncated: X of M]' (more properties found than MAX_PROPERTIES) or ' [unclaimed: lock timeout]' (a property failed safe under lock contention).</description>
     <type>Text</type>
 </CustomField>

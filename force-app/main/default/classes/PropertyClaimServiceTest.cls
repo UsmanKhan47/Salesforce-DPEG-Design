@@ -2,11 +2,23 @@
  * Test class for PropertyClaimService: the first-broker-wins claim writer.
  *
  * NOTE on bulk-test scope (.claude/rules/bulk-test-rule.md): claim()/markDuplicate()
- * are deliberately single-record-per-invocation (one inbound email = one call, per
- * the class header). A 251-iteration same-transaction loop would misrepresent the
- * production invocation model (each email runs in its own async transaction) and
- * would risk the 150-DML-statement governor limit for no real coverage benefit.
- * See the Unit Testing report for this as an explicit open item for code review.
+ * are deliberately single-record-per-invocation — each call claims exactly ONE property.
+ *
+ * ⚠ CORRECTED 2026-07-31: the old framing here was "one inbound email = one call". That is
+ * NO LONGER TRUE. D1 multi-property extraction made ExtractAddressQueueable loop, so claim()
+ * is now invoked N TIMES PER TRANSACTION (N <= ExtractAddressQueueable.MAX_PROPERTIES = 10)
+ * — see PropertyClaimService's own header, which is authoritative. This class consequently
+ * lost its share of the per-transaction-singleton bulk exemption, which was narrowed the same
+ * day to LLMExtractionCalloutService alone.
+ *
+ * A 251-iteration same-transaction loop is STILL the wrong test, for a sharper reason than
+ * before: production cannot reach it. The queueable caps at 10 properties precisely because
+ * SOQL exhausts at roughly 14-24, so 251 claims in one transaction would trip the DML and SOQL
+ * governors long before exercising anything, and would encode a state the system cannot
+ * produce. The replacement volume coverage — 10-property routing, 15-property truncation,
+ * mixed outcomes, cluster-key ordering, and the governor-headroom assertions that make an
+ * added per-property query fail a test rather than production — lives in
+ * ExtractAddressQueueableTest, which is where the loop actually is.
  *
  * W4 (concurrency control) ADDITIONS — claim() now derives a coarse cluster key
  * (PropertyMatchingService.deriveClusterKey) and get-or-creates + FOR UPDATE-locks a
@@ -24,7 +36,32 @@
  * orphan) — under serialization a live winner is always caught by claim()'s own
  * pre-insert findMatchingRegistry call first, so DUPLICATE_VALUE can only ever
  * surface for the orphan case in single-threaded execution (the orphan branch itself
- * IS covered, via claim_orphanedKey_adoptsOrphanAndBecomesNewWinner).
+ * IS covered, via claim_orphanedKey_adoptsOrphanAndBecomesNewWinner); and
+ * (3) NEW WAIVER (2026-07-31) — the SELF-MATCH branch of isLostRaceAgainst *as reached
+ * from registerWinner's catch*. Reaching it requires the registry insert to succeed and
+ * the SUBMISSION insert to then throw a duplicate-value DmlException, so that the
+ * catch's findMatchingRegistry re-read finds our own uncommitted-but-unrolled-back
+ * registry row (there is no Savepoint around that try). Competing_Broker_Submission__c
+ * has no unique field, so that second failure cannot be forced single-threaded without
+ * a mock DML layer this module does not have. The GUARD ITSELF is covered — see
+ * claim_selfMatchOnFuzzyVariant_isNotALostRaceAndKeepsTheLead, which reaches the same
+ * predicate through claim()'s in-lock check, the other of its two call sites.
+ *
+ * 2026-07-31 — TWO CONTRACT CHANGES ARE ENCODED HERE.
+ *   1. markDuplicate NO LONGER WRITES TO THE LEAD. The assertions on
+ *      Is_Duplicate_Property__c / Duplicate_Of_Lead__c were not deleted, they were
+ *      INVERTED: they now assert the legacy fields stay UNWRITTEN. That is the direct
+ *      regression guard for the removal — re-introducing the update would turn these
+ *      red immediately, whereas deleting the assertions would let it slip back in
+ *      silently. (Contrast the orphan-adoption assertion in
+ *      ExtractAddressQueueableTest, which was removed rather than inverted because
+ *      there it proved nothing about the behaviour under test.)
+ *   2. claim() NOW RETURNS DUPLICATE_RACE, NOT DUPLICATE, on both lost-race paths.
+ *      Reaching a duplicate THROUGH claim() means the caller's own pre-read was stale,
+ *      which is a race by definition. The return value is asserted explicitly because
+ *      it is the caller's ONLY cue to delete the Lead it already created — an outcome
+ *      regression here would silently resurrect the duplicate-Lead behaviour one layer
+ *      up, in ExtractAddressQueueable, with nothing in this class turning red.
  *
  * @author Unit Testing Agent
  */
@@ -109,7 +146,7 @@ private class PropertyClaimServiceTest {
     // ── markDuplicate() ──────────────────────────────────────────────────────
 
     @isTest
-    static void markDuplicate_flagsLeadAndLogsNonWinningSubmission() {
+    static void markDuplicate_logsNonWinningSubmissionAndWritesNoLeadAtAll() {
         Lead winnerLead = TestDataFactory.createLead(true);
         Property_Registry__c registry = TestDataFactory.createPropertyRegistry('300 winner st', winnerLead.Id, true);
         Lead loserLead = TestDataFactory.createLead(true);
@@ -120,10 +157,6 @@ private class PropertyClaimServiceTest {
         );
         Test.stopTest();
 
-        Lead loserAfter = [SELECT Is_Duplicate_Property__c, Duplicate_Of_Lead__c FROM Lead WHERE Id = :loserLead.Id];
-        Assert.isTrue(loserAfter.Is_Duplicate_Property__c, 'The losing lead should be flagged as a duplicate property');
-        Assert.areEqual(winnerLead.Id, loserAfter.Duplicate_Of_Lead__c, 'Duplicate_Of_Lead__c should point at the winner');
-
         List<Competing_Broker_Submission__c> subs = [
             SELECT Winning_Lead__c, Source_Lead__c, Is_Winning_Submission__c
             FROM Competing_Broker_Submission__c
@@ -131,18 +164,58 @@ private class PropertyClaimServiceTest {
         ];
         Assert.areEqual(1, subs.size(), 'A non-winning submission should be logged for the losing lead');
         Assert.areEqual(winnerLead.Id, subs[0].Winning_Lead__c, 'The submission should roll up under the winning lead');
-        Assert.isFalse(subs[0].Is_Winning_Submission__c, 'A duplicate submission must never be flagged as the winner');
+        Assert.isFalse(subs[0].Is_Winning_Submission__c, 'A competing submission must never be flagged as the winner');
+
+        // REGRESSION GUARD (2026-07-31): markDuplicate must perform NO Lead DML. These two
+        // assertions are inverted from what they used to check — re-adding the
+        // `update new Lead(Is_Duplicate_Property__c = true, ...)` write turns them red.
+        Lead loserAfter = [SELECT Is_Duplicate_Property__c, Duplicate_Of_Lead__c FROM Lead WHERE Id = :loserLead.Id];
+        Assert.isFalse(loserAfter.Is_Duplicate_Property__c,
+            'The legacy duplicate flag must no longer be written — a competing claim is tracked by the submission row alone');
+        Assert.isNull(loserAfter.Duplicate_Of_Lead__c,
+            'Duplicate_Of_Lead__c is legacy and must stay null; nothing may write it');
 
         Lead winnerAfter = [SELECT Is_Duplicate_Property__c, Duplicate_Of_Lead__c, LastName FROM Lead WHERE Id = :winnerLead.Id];
-        Assert.isFalse(winnerAfter.Is_Duplicate_Property__c, 'The winner\'s Lead data must be untouched by marking a competitor as duplicate');
+        Assert.isFalse(winnerAfter.Is_Duplicate_Property__c, 'The winner\'s Lead data must be untouched');
         Assert.isNull(winnerAfter.Duplicate_Of_Lead__c, 'The winner should never itself be flagged as a duplicate');
         Assert.areEqual(winnerLead.LastName, winnerAfter.LastName, 'The winner\'s other fields should be unchanged');
+    }
+
+    @isTest
+    static void markDuplicate_nullSourceLead_logsSourcelessSubmissionAgainstWinner() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        Property_Registry__c registry = TestDataFactory.createPropertyRegistry('320 sourceless st', winnerLead.Id, true);
+
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+
+        Test.startTest();
+        // The shape ExtractAddressQueueable's competing branch now calls: no Lead was ever
+        // created for this broker, so there is no source Lead to point at.
+        PropertyClaimService.markDuplicate(
+            registry, null, extractedFields(), Datetime.now(), 'forwarder11@example.invalid', 'FW: also 320 Sourceless St'
+        );
+        Test.stopTest();
+
+        List<Competing_Broker_Submission__c> subs = [
+            SELECT Winning_Lead__c, Source_Lead__c, Is_Winning_Submission__c, Broker_Email__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Lead__c = :winnerLead.Id
+        ];
+        Assert.areEqual(1, subs.size(), 'A null sourceLeadId must still produce exactly one submission row');
+        Assert.isNull(subs[0].Source_Lead__c,
+            'Source_Lead__c is optional and null is the normal competing-broker shape — it must not be defaulted to the winner');
+        Assert.isFalse(subs[0].Is_Winning_Submission__c, 'A competing submission must never be flagged as the winner');
+        Assert.areEqual('jane@brokerfirm.example.invalid', subs[0].Broker_Email__c,
+            'With no Lead to hold it, the submission must carry the broker\'s address itself');
+
+        Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead],
+            'markDuplicate must never create a Lead, and with a null source it has none to touch either');
     }
 
     // ── claim(): duplicate-value race recovery ──────────────────────────────
 
     @isTest
-    static void claim_duplicateValueRace_recoversAsMarkDuplicate() {
+    static void claim_duplicateValueRace_returnsDuplicateRaceAndLogsCompetingSubmission() {
         Lead leadA = TestDataFactory.createLead(true);
         TestDataFactory.createPropertyRegistry('400 race st', leadA.Id, true); // leadA already won this key
         Lead leadB = TestDataFactory.createLead(true);
@@ -152,25 +225,38 @@ private class PropertyClaimServiceTest {
         // lock-then-findMatchingRegistry flow this is now caught by claim()'s own pre-insert
         // exact-key check (findMatchingRegistry finds leadA's registry BEFORE any insert is
         // attempted), rather than by a DUPLICATE_VALUE DmlException on the insert itself — the
-        // final reconciliation (leadB becomes a duplicate of leadA) is identical either way, so
-        // this test's outcome-level assertions are unchanged post-W4.
-        PropertyClaimService.claim(
+        // final reconciliation (leadB is recorded as competing under leadA) is identical either
+        // way, so this test's outcome-level assertions are unchanged post-W4.
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
             leadB.Id, '400 race st', extractedFields(), Datetime.now(), 'forwarder3@example.invalid', 'FW: race'
         );
         Test.stopTest();
 
+        // The load-bearing assertion: DUPLICATE_RACE, not DUPLICATE. It is the caller's ONLY
+        // signal that a Lead exists which should not, and therefore the only thing that makes
+        // ExtractAddressQueueable delete it.
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.DUPLICATE_RACE, outcome,
+            'A duplicate discovered inside claim() means the caller\'s pre-read was stale — that is a LOST RACE, and the caller must be told so it can delete the Lead it already created');
+
         Assert.areEqual(1, [SELECT COUNT() FROM Property_Registry__c WHERE Property_Key__c = '400 race st'],
             'Exactly one registry row should exist for the key — the race loser must not create a second row');
 
-        Lead leadBAfter = [SELECT Is_Duplicate_Property__c, Duplicate_Of_Lead__c FROM Lead WHERE Id = :leadB.Id];
-        Assert.isTrue(leadBAfter.Is_Duplicate_Property__c, 'The race-losing lead should be flagged as a duplicate');
-        Assert.areEqual(leadA.Id, leadBAfter.Duplicate_Of_Lead__c, 'It should be marked a duplicate of the race winner');
-
         List<Competing_Broker_Submission__c> subs = [
-            SELECT Is_Winning_Submission__c FROM Competing_Broker_Submission__c WHERE Source_Lead__c = :leadB.Id
+            SELECT Winning_Lead__c, Is_Winning_Submission__c
+            FROM Competing_Broker_Submission__c WHERE Source_Lead__c = :leadB.Id
         ];
         Assert.areEqual(1, subs.size(), 'A non-winning submission should be logged for the race loser');
+        Assert.areEqual(leadA.Id, subs[0].Winning_Lead__c, 'The submission should roll up under the race winner');
         Assert.isFalse(subs[0].Is_Winning_Submission__c, 'The race-recovered submission must not be flagged as the winner');
+        // Source_Lead__c is still stamped here because the Lead genuinely exists at this
+        // instant: deleting it is the CALLER's policy decision, not this claim engine's. The
+        // lookup's SetNull delete constraint clears it the moment the caller acts — asserted
+        // end-to-end in ExtractAddressQueueableTest's forceClaimRace test.
+
+        Lead leadBAfter = [SELECT Is_Duplicate_Property__c, Duplicate_Of_Lead__c FROM Lead WHERE Id = :leadB.Id];
+        Assert.isFalse(leadBAfter.Is_Duplicate_Property__c,
+            'The legacy duplicate flag must no longer be written on the race loser');
+        Assert.isNull(leadBAfter.Duplicate_Of_Lead__c, 'Duplicate_Of_Lead__c is legacy and must stay null');
     }
 
     // ── claim(): orphan adoption ─────────────────────────────────────────────
@@ -252,19 +338,17 @@ private class PropertyClaimServiceTest {
         // '123 main street suite 100' is a DIFFERENT exact Property_Key__c (no unique-index
         // collision) but shares the '123 main' coarse cluster AND scores exactly 0.6 similarity
         // against the winner (3 shared / 5 union tokens) — at the SIMILARITY_THRESHOLD.
-        PropertyClaimService.claim(
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
             secondLead.Id, '123 main street suite 100', extractedFields(), Datetime.now(),
             'forwarder7@example.invalid', 'FW: 123 Main Street Suite 100'
         );
         Test.stopTest();
 
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.DUPLICATE_RACE, outcome,
+            'A fuzzy variant resolving to an existing winner is still a claim the caller believed was free — it must report the lost race');
+
         Assert.areEqual(0, [SELECT COUNT() FROM Property_Registry__c WHERE Property_Key__c = '123 main street suite 100'],
             'A fuzzy variant that resolves to the existing winner must NOT create its own registry row');
-
-        Lead secondLeadAfter = [SELECT Is_Duplicate_Property__c, Duplicate_Of_Lead__c FROM Lead WHERE Id = :secondLead.Id];
-        Assert.isTrue(secondLeadAfter.Is_Duplicate_Property__c, 'The fuzzy-variant claimant should be flagged as a duplicate');
-        Assert.areEqual(winnerLead.Id, secondLeadAfter.Duplicate_Of_Lead__c,
-            'It should be marked a duplicate of the cluster\'s existing winner');
 
         List<Competing_Broker_Submission__c> subs = [
             SELECT Is_Winning_Submission__c, Winning_Lead__c FROM Competing_Broker_Submission__c WHERE Source_Lead__c = :secondLead.Id
@@ -273,11 +357,60 @@ private class PropertyClaimServiceTest {
         Assert.isFalse(subs[0].Is_Winning_Submission__c, 'The fuzzy-duplicate submission must not be flagged as the winner');
         Assert.areEqual(winnerLead.Id, subs[0].Winning_Lead__c, 'The submission should roll up under the existing winner');
 
+        Lead secondLeadAfter = [SELECT Is_Duplicate_Property__c, Duplicate_Of_Lead__c FROM Lead WHERE Id = :secondLead.Id];
+        Assert.isFalse(secondLeadAfter.Is_Duplicate_Property__c,
+            'The legacy duplicate flag must no longer be written on the fuzzy-variant claimant');
+        Assert.isNull(secondLeadAfter.Duplicate_Of_Lead__c, 'Duplicate_Of_Lead__c is legacy and must stay null');
+
         Lead winnerAfter = [SELECT Is_Duplicate_Property__c FROM Lead WHERE Id = :winnerLead.Id];
         Assert.isFalse(winnerAfter.Is_Duplicate_Property__c, 'The winner\'s Lead must be untouched by the fuzzy-duplicate recheck');
 
         Property_Registry__c registryAfter = [SELECT Winning_Lead__c FROM Property_Registry__c WHERE Id = :winnerRegistry.Id];
         Assert.areEqual(winnerLead.Id, registryAfter.Winning_Lead__c, 'The original winner registry must remain unchanged');
+    }
+
+    // ── claim(): SELF-MATCH is never a lost race (W1, 2026-07-31) ────────────
+    //
+    // The exact mirror of claim_fuzzyVariantInSameCluster_stillRoutesToMarkDuplicateUnderLock
+    // above, with ONE variable changed: the claimant is the SAME Lead that already holds the
+    // fuzzy-matched registration. That flips the correct answer completely. DUPLICATE_RACE is
+    // the caller's sole cue to DELETE the Lead it created, so reporting it on a self-match
+    // would delete the Lead that owns the registry row — orphaning the registration and
+    // destroying a live broker record. isLostRaceAgainst exists to make that impossible.
+
+    @isTest
+    static void claim_selfMatchOnFuzzyVariant_isNotALostRaceAndKeepsTheLead() {
+        Lead sameLead = TestDataFactory.createLead(true);
+        // This Lead already won '123 main street'.
+        TestDataFactory.createPropertyRegistry('123 main street', sameLead.Id, true);
+
+        Test.startTest();
+        // ...and now claims a fuzzy variant of it: a DIFFERENT exact Property_Key__c that
+        // scores exactly 0.6 (3 shared / 5 union tokens) against the row it already owns.
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
+            sameLead.Id, '123 main street suite 100', extractedFields(), Datetime.now(),
+            'forwarder12@example.invalid', 'FW: 123 Main Street Suite 100'
+        );
+        Test.stopTest();
+
+        Assert.areNotEqual(PropertyClaimService.ClaimOutcome.DUPLICATE_RACE, outcome,
+            'A claimant matching its OWN registration has lost no race — reporting DUPLICATE_RACE would make the caller delete the very Lead that holds the registry row');
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.WINNER, outcome,
+            'With the race check correctly declined, the claim falls through to registerWinner and the new key is free, so this is a straightforward win');
+
+        Assert.areEqual(1, [SELECT COUNT() FROM Lead WHERE Id = :sameLead.Id],
+            'The Lead must survive — this is the data-loss the guard prevents');
+
+        List<Property_Registry__c> owned = [
+            SELECT Property_Key__c FROM Property_Registry__c WHERE Winning_Lead__c = :sameLead.Id
+        ];
+        Assert.areEqual(2, owned.size(),
+            'Falling through registers the new key alongside the original: the same broker legitimately holding two fuzzy-related keys is a harmless outcome, unlike deleting their Lead');
+
+        Assert.areEqual(0, [
+            SELECT COUNT() FROM Competing_Broker_Submission__c
+            WHERE Winning_Lead__c = :sameLead.Id AND Is_Winning_Submission__c = false
+        ], 'No COMPETING submission may be logged against yourself');
     }
 
     // ── claim(): W4 idempotent lock get-or-create ────────────────────────────
@@ -288,10 +421,10 @@ private class PropertyClaimServiceTest {
         Lead secondLead = TestDataFactory.createLead(true);
 
         Test.startTest();
-        PropertyClaimService.claim(
+        PropertyClaimService.ClaimOutcome firstOutcome = PropertyClaimService.claim(
             firstLead.Id, '900 idempotent ave', extractedFields(), Datetime.now(), 'forwarder8@example.invalid', 'FW: first'
         );
-        PropertyClaimService.claim(
+        PropertyClaimService.ClaimOutcome secondOutcome = PropertyClaimService.claim(
             secondLead.Id, '900 idempotent ave', extractedFields(), Datetime.now(), 'forwarder9@example.invalid', 'FW: second'
         );
         Test.stopTest();
@@ -302,9 +435,9 @@ private class PropertyClaimServiceTest {
         Assert.areEqual(1, [SELECT COUNT() FROM Property_Claim_Lock__c WHERE Cluster_Key__c = '900 idempotent'],
             'W4: a repeat claim for the same cluster must reuse the existing lock row, never insert a duplicate');
 
-        Lead secondLeadAfter = [SELECT Is_Duplicate_Property__c FROM Lead WHERE Id = :secondLead.Id];
-        Assert.isTrue(secondLeadAfter.Is_Duplicate_Property__c,
-            'The second same-key claim should still be recognised as a duplicate of the first');
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.WINNER, firstOutcome, 'The first claim on a free key wins it');
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.DUPLICATE_RACE, secondOutcome,
+            'The second same-key claim should still be recognised as competing with the first, reported as a lost race');
     }
 
     // ── claim(): W4 blank cluster key fails safe ─────────────────────────────
@@ -320,10 +453,16 @@ private class PropertyClaimServiceTest {
         // false immediately on the blank-key check, so claim() logs a warning and returns without
         // any DML — the same fail-safe outcome as a lock-wait timeout, reached via a
         // deterministic path instead of one requiring a second concurrent transaction.
-        PropertyClaimService.claim(
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
             sourceLead.Id, '', extractedFields(), Datetime.now(), 'forwarder10@example.invalid', 'FW: blank address'
         );
         Test.stopTest();
+
+        // UNCLAIMED, emphatically NOT DUPLICATE_RACE: the caller deletes the Lead on
+        // DUPLICATE_RACE, so returning it here would destroy a legitimate broker submission
+        // that merely failed to take a lock. This is the assertion that keeps the two apart.
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.UNCLAIMED, outcome,
+            'A fail-safe claim must report UNCLAIMED — the Lead is legitimate and must never be deleted by the caller');
 
         Assert.areEqual(0, [SELECT COUNT() FROM Property_Registry__c WHERE Winning_Lead__c = :sourceLead.Id],
             'A blank normalized address must never create a registry row');
@@ -332,8 +471,8 @@ private class PropertyClaimServiceTest {
         Assert.areEqual(0, [SELECT COUNT() FROM Property_Claim_Lock__c],
             'A blank normalized address must never create a lock row — the blank-key check short-circuits before any DML');
 
-        Lead sourceLeadAfter = [SELECT Is_Duplicate_Property__c FROM Lead WHERE Id = :sourceLead.Id];
-        Assert.isFalse(sourceLeadAfter.Is_Duplicate_Property__c, 'The Lead should be left as a normal, unclaimed record — not flagged a duplicate');
+        Assert.areEqual(1, [SELECT COUNT() FROM Lead WHERE Id = :sourceLead.Id],
+            'The Lead should be left intact as a normal, unclaimed record — the fail-safe path must never cost a broker their Lead');
     }
 
     // ── claim(): non-duplicate DmlException propagates ──────────────────────

@@ -1,22 +1,44 @@
 /**
  * c-lead-mark-under-review — HEADLESS quick action (empty template).
  * ------------------------------------------------------------------
- * @api invoke() calls the REAL shared util c/leadStatusChange, which writes the Lead Status via LDS
- * updateRecord. The suite uses the real util (does NOT mock it) so it can assert the actual
+ * @api invoke() runs the shared pre-flight in c/leadStatusChange (permission check -> confirmation)
+ * and only then writes the Lead Status via LDS updateRecord.
+ *
+ * The suite uses the REAL c/leadStatusChange util (does NOT mock it) so it can assert the actual
  * updateRecord call shape, per the repo's LDS-write convention: updateRecord is pre-mocked as
  * jest.fn().mockResolvedValue({}) in the sfdx-lwc-jest lightning/uiRecordApi stub and asserted
- * directly; the error path is driven with mockRejectedValueOnce. The observable output is the
- * dispatched ShowToastEvent (headless = no DOM), captured with addEventListener — mirrors
- * c-advance-deal-stage.
+ * directly; the error path is driven with mockRejectedValueOnce. lightning/confirm's real stub
+ * throws on .open() by design, so the module is replaced with a jest.fn; the permission Apex is
+ * virtually mocked. The observable output is the dispatched ShowToastEvent (headless = no DOM),
+ * captured with addEventListener — mirrors c-advance-deal-stage.
  */
 import { createElement } from 'lwc';
 import LeadMarkUnderReview from 'c/leadMarkUnderReview';
 import { updateRecord } from 'lightning/uiRecordApi';
+import LightningConfirm from 'lightning/confirm';
+import hasLeadActionAccess from '@salesforce/apex/LeadActionPermissionController.hasLeadActionAccess';
+
+jest.mock('lightning/confirm', () => ({
+    __esModule: true,
+    default: { open: jest.fn() }
+}));
+
+jest.mock(
+    '@salesforce/apex/LeadActionPermissionController.hasLeadActionAccess',
+    () => ({ default: jest.fn() }),
+    { virtual: true }
+);
 
 const RECORD_ID = '00Q5g00000AbCdEEAV';
 const TARGET = 'Under Review';
+const NO_PERMISSION = "You don't have permission to perform this action.";
 
 describe('c-lead-mark-under-review', () => {
+    beforeEach(() => {
+        hasLeadActionAccess.mockResolvedValue(true);
+        LightningConfirm.open.mockResolvedValue(true);
+    });
+
     afterEach(() => {
         while (document.body.firstChild) {
             document.body.removeChild(document.body.firstChild);
@@ -33,7 +55,6 @@ describe('c-lead-mark-under-review', () => {
         return element;
     }
 
-    // A macrotask drains the invoke() -> util -> updateRecord promise chain plus the toast dispatch.
     const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 
     it('SUCCESS: invoke writes Status via LDS updateRecord and toasts success', async () => {
@@ -57,6 +78,70 @@ describe('c-lead-mark-under-review', () => {
         );
     });
 
+    it('CONFIRM: asks the under-review question before writing', async () => {
+        const element = createComponent();
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(LightningConfirm.open).toHaveBeenCalledTimes(1);
+        expect(LightningConfirm.open).toHaveBeenCalledWith({
+            message: 'Mark this lead as Under Review?',
+            label: 'Mark Under Review',
+            theme: 'info',
+            variant: 'header'
+        });
+    });
+
+    it('CANCELLED: a declined confirmation writes nothing and toasts nothing', async () => {
+        LightningConfirm.open.mockResolvedValue(false);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(updateRecord).not.toHaveBeenCalled();
+        expect(toastHandler).not.toHaveBeenCalled();
+    });
+
+    it('NO PERMISSION: toasts the denial, never confirms, never writes', async () => {
+        hasLeadActionAccess.mockResolvedValue(false);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(LightningConfirm.open).not.toHaveBeenCalled();
+        expect(updateRecord).not.toHaveBeenCalled();
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(NO_PERMISSION);
+    });
+
+    it('PERMISSION CHECK FAILS: fails closed — surfaces the real message and writes nothing', async () => {
+        hasLeadActionAccess.mockRejectedValue({
+            body: { message: 'Apex class access is not enabled.' }
+        });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(updateRecord).not.toHaveBeenCalled();
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(
+            'Apex class access is not enabled.'
+        );
+    });
+
     it('ERROR: surfaces the DML message as an error toast and does NOT toast success', async () => {
         updateRecord.mockRejectedValueOnce({
             body: { message: 'This field is required.' }
@@ -72,7 +157,6 @@ describe('c-lead-mark-under-review', () => {
         expect(updateRecord).toHaveBeenCalledWith({
             fields: { Status: TARGET, Id: RECORD_ID }
         });
-        // Exactly one toast (the error) — the success toast must not fire on the failure path.
         expect(toastHandler).toHaveBeenCalledTimes(1);
         expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
         expect(toastHandler.mock.calls[0][0].detail.message).toBe(
@@ -102,8 +186,6 @@ describe('c-lead-mark-under-review', () => {
 
         await Promise.resolve();
 
-        // Headless action: the empty shadow root is trivially accessible, but the assertion is kept
-        // so every suite proves the sa11y matcher is wired.
         await expect(element).toBeAccessible();
     });
 });

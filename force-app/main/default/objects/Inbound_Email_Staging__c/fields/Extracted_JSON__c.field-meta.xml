@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Extracted_JSON__c</fullName>
+    <description>The raw LLM extraction response, stored verbatim before any routing decision is made, so it survives every branch of the routing tree including the hard relevance gate. This is the D3 tier-1 audit record of exactly what the model returned.</description>
+    <inlineHelpText>Raw LLM response JSON. Written by the pipeline; not intended for direct editing.</inlineHelpText>
+    <label>Extracted JSON</label>
+    <length>131072</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>10</visibleLines>
+</CustomField>

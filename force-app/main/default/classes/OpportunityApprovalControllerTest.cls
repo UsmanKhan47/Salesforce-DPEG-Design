@@ -195,4 +195,73 @@ private class OpportunityApprovalControllerTest {
         Test.stopTest();
         System.assert(threw, 'An unexpected submission failure maps to an AuraHandledException');
     }
+
+    /**
+     * The server-side permission assertion (design doc F5). Submitting a deal into the principal
+     * approval is a deal-driver action — Deal_Driver__c's own description names "Submit for Approval
+     * on Underwriting/LOI" — but until this existed the only gate was the Dynamic Actions visibility
+     * rule, which a direct @AuraEnabled call bypasses entirely.
+     *
+     * Asserts the denial WORDING (unlike the sibling negative tests, which assert only that a throw
+     * happened): the AccessDeniedException clause is ordered ahead of the generic catch precisely so
+     * a denial is not masked as SUBMIT_FAILURE_MESSAGE, and only a message assertion can prove the
+     * ordering is right.
+     *
+     * MIXED DML: the test needs a non-setup Opportunity and a setup User in one transaction, so the
+     * User insert is wrapped in System.runAs(<the current user>) to open a fresh DML context.
+     */
+    @isTest
+    static void refusesAUserWhoIsNotADealDriver() {
+        Opportunity o = makeOpp();            // Stage = LOI, i.e. otherwise eligible
+        Id dealId = o.Id;
+        User bareUser = buildStandardUser('oacT');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert bareUser;
+        }
+
+        Test.startTest();
+        Boolean refused = false;
+        OpportunityActionPermissionService.clearCache();
+        System.runAs(bareUser) {
+            try {
+                OpportunityApprovalController.submitForApproval(dealId);
+            } catch (AuraHandledException e) {
+                refused = true;
+                Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE, e.getMessage(),
+                    'A denial must surface the agreed permission wording, NOT the generic submit-failure '
+                    + 'message — the AccessDeniedException catch is ordered ahead of the generic one for '
+                    + 'exactly this reason');
+            }
+        }
+        OpportunityActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'A non-deal-driver must be refused even on an otherwise eligible deal');
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :dealId],
+            'A refused submission must create NO approval instance — the assert must run before '
+            + 'Approval.process, not after it');
+    }
+
+    /**
+     * Builds (but does not insert) a bare Standard User for the permission-refusal test. Mirrors the
+     * helper in OpportunityActionPermissionServiceTest — User is a setup object whose required-field
+     * shape TestDataFactory deliberately does not cover.
+     */
+    private static User buildStandardUser(String tag) {
+        Profile standardProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        String unique = tag + String.valueOf(Datetime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        return new User(
+            FirstName = 'Std',
+            LastName = 'OppAppr',
+            Alias = 'oappr',
+            Email = 'std.oppappr@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = standardProfile.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+    }
 }

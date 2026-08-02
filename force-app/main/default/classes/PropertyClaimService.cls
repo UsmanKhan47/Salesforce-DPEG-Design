@@ -1,15 +1,48 @@
 /**
  * Broker-Protection claim writer (CHUNK 2). Owns ALL DML for the first-broker-wins
  * ledger: it either registers a brand-new winner (Property_Registry__c +
- * winning Competing_Broker_Submission__c) or records a losing broker as a duplicate
- * (flag the Lead + a non-winning Competing_Broker_Submission__c). One inbound broker
- * email = one call to claim(...), driven by CHUNK 3's queueable.
+ * winning Competing_Broker_Submission__c) or records a losing broker as a non-winning
+ * Competing_Broker_Submission__c against that winner. One inbound broker email = one
+ * call to claim(...), driven by CHUNK 3's queueable.
+ *
+ * ═══ NO LEAD IS FLAGGED, AND NO LEAD IS TOUCHED (changed 2026-07-31) ═══
+ * markDuplicate used to ALSO stamp Lead.Is_Duplicate_Property__c / Duplicate_Of_Lead__c on
+ * the losing broker's Lead. That write is gone, and this class now performs no Lead DML at
+ * all, for two independent reasons:
+ *   1. LEAD-TABLE POLLUTION — a competing broker no longer gets a Lead of their own, so
+ *      there is nothing left to flag. One junk duplicate-flagged Lead per competing broker
+ *      per property was polluting the Lead table for no reporting benefit; the
+ *      Competing_Broker_Submission__c row already carries the whole competing claim.
+ *   2. DUPLICATES_DETECTED / SAVEPOINT ROLLBACK — orgs commonly run Lead duplicate rules on
+ *      Email. Inserting a second Lead carrying the same broker address throws
+ *      DUPLICATES_DETECTED, the surrounding Savepoint rolls back the ENTIRE transaction, and
+ *      the inbound email's Task is silently lost. Not inserting competing Leads removes that
+ *      failure class structurally rather than defending against it.
+ * The two Lead fields are retained as LEGACY for historical rows; nothing writes them.
+ *
+ * ⚠ claim() IS NOW CALLED N TIMES PER TRANSACTION (2026-07-31, D1 multi-property). One
+ * inbound email can pitch several properties, and ExtractAddressQueueable loops over them —
+ * so the old "exactly one email = exactly one claim per transaction" premise is gone, and
+ * with it this class's share of the per-transaction-singleton bulk-test exemption (see
+ * `.claude/rules/bulk-test-rule.md`, narrowed the same day).
+ *
+ * 🔴 WHAT KEEPS THAT SAFE IS THE CALLER'S ITERATION ORDER, NOT ANYTHING IN THIS CLASS.
+ * Apex cannot release a row lock before commit, so a job claiming N properties holds N
+ * `Property_Claim_Lock__c` locks at once, and two concurrent multi-property emails sharing
+ * two properties would be an AB-BA deadlock. Salesforce does not report deadlocks — it
+ * reports UNABLE_TO_LOCK_ROW, which acquireClusterLock already swallows into
+ * ClaimOutcome.UNCLAIMED with only a System.debug, so the failure would be SILENT. The fix
+ * lives in ExtractAddressQueueable.buildWorkList: properties are visited in ascending
+ * deriveClusterKey order, so every transaction takes shared locks in the same relative order
+ * and no wait-for cycle can form. Do not "optimise" that sort away, and do not add a
+ * batch-locking method here — sorted lazy acquisition already removes the cycle at zero
+ * extra hold time.
  *
  * LAYER — Service (write side). All reads go through PropertyMatchingService /
  * PropertyRegistrySelector — this class contains NO SOQL. Its DML is deliberately
- * single-record-shaped because exactly one email is processed per invocation; the
- * insert/update statements are never inside a loop, so the layering "no DML in loops"
- * rule holds. The project has no UnitOfWork class (verified 2026-07-24), so direct
+ * single-record-shaped: each call claims exactly ONE property, and the insert/update
+ * statements are never inside a loop within this class, so the layering "no DML in loops"
+ * rule holds even though the CALLER now loops. The project has no UnitOfWork class (verified 2026-07-24), so direct
  * insert/update is the established repo pattern (cf. ContractExecutionService,
  * LeadConvertService).
  *
@@ -44,13 +77,27 @@ public with sharing class PropertyClaimService {
      * definition — the whole point of the lock is that the winner can change between that
      * read and the claim.
      *
-     * WINNER    — this Lead now holds the property registration.
-     * DUPLICATE — another Lead already held it; this one was flagged and logged as competing.
-     * UNCLAIMED — no claim was recorded (lock-wait timeout, or a duplicate key with neither
-     *             a live winner nor an adoptable orphan). The Lead survives as a normal,
-     *             unclaimed Lead and the situation is hand-recoverable.
+     * WINNER         — this Lead now holds the property registration.
+     * DUPLICATE_RACE — another Lead already held the property, discovered only AFTER the
+     *                  caller had already created a Lead and asked to claim. A competing
+     *                  submission was logged against the real winner. The caller is expected
+     *                  to DELETE the Lead it created (a losing broker gets no Lead), which is
+     *                  why this is a distinct outcome and not merely "duplicate": it is the
+     *                  only signal that a Lead exists which should not.
+     * UNCLAIMED      — no claim was recorded (lock-wait timeout, or a duplicate key with
+     *                  neither a live winner nor an adoptable orphan). The Lead survives as a
+     *                  normal, unclaimed Lead and the situation is hand-recoverable.
+     * DUPLICATE      — RESERVED; no path returns it today. Every duplicate reached THROUGH
+     *                  claim() is by definition a LOST RACE, because the caller only calls
+     *                  claim() after its own read said the property was free — so both
+     *                  duplicate paths below return DUPLICATE_RACE instead. Retained rather
+     *                  than deleted because removing a member of a public enum is a breaking
+     *                  change for any future caller that claims WITHOUT a pre-read (for which
+     *                  "duplicate, but nothing to clean up" would be the correct answer), and
+     *                  because ExtractAddressQueueable.toOutcomeLabel still maps it so the
+     *                  enum-to-label mapping stays total.
      */
-    public enum ClaimOutcome { WINNER, DUPLICATE, UNCLAIMED }
+    public enum ClaimOutcome { WINNER, DUPLICATE, DUPLICATE_RACE, UNCLAIMED }
 
     /** Competing_Broker_Submission__c destination field lengths. */
     private static final Integer LEN_TEXT = 255;
@@ -78,9 +125,11 @@ public with sharing class PropertyClaimService {
      * @param submittedOn     The email's original send time (Submitted_DateTime__c).
      * @param forwardedByEmail Internal user who forwarded the broker email.
      * @param emailSubject    The inbound email subject.
-     * @return What the claim actually did — WINNER, DUPLICATE, or UNCLAIMED. Callers that
-     *         do not care may ignore the value; ExtractAddressQueueable uses it to record
-     *         the true outcome on the staging row.
+     * @return What the claim actually did — WINNER, DUPLICATE_RACE, or UNCLAIMED.
+     *         ExtractAddressQueueable uses it to record the true outcome on the staging row
+     *         AND, on DUPLICATE_RACE, to delete the Lead it had already created: a broker who
+     *         loses the race gets no Lead, only a competing submission against the winner.
+     *         Callers must NOT treat UNCLAIMED as a loss — the Lead is legitimate there.
      */
     public static ClaimOutcome claim(Id sourceLeadId, String normalized, Map<String, String> extracted,
                                      Datetime submittedOn, String forwardedByEmail, String emailSubject) {
@@ -103,9 +152,16 @@ public with sharing class PropertyClaimService {
         // claim is blocked until this commits, so findMatchingRegistry sees any winner it has
         // already registered (exact OR fuzzy) and this claimant becomes that winner's duplicate.
         Property_Registry__c winner = PropertyMatchingService.findMatchingRegistry(normalized);
-        if (winner != null) {
+        if (isLostRaceAgainst(winner, sourceLeadId)) {
+            // A winner exists that the caller's own pre-read did not see => this claimant LOST
+            // the race. Report DUPLICATE_RACE, not DUPLICATE: the caller has already created a
+            // Lead for a broker who is not entitled to one, and that outcome is its only cue
+            // to remove it. `sourceLeadId` is still stamped on the submission because that
+            // Lead genuinely exists at this instant — deleting it is the CALLER's policy
+            // decision, not this claim engine's, and the lookup's SetNull delete constraint
+            // clears it the moment the caller acts.
             markDuplicate(winner, sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject);
-            return ClaimOutcome.DUPLICATE;
+            return ClaimOutcome.DUPLICATE_RACE;
         }
         return registerWinner(
             sourceLeadId, normalized, extracted, submittedOn, forwardedByEmail, emailSubject);
@@ -130,9 +186,10 @@ public with sharing class PropertyClaimService {
      * @param submittedOn     The email's original send time.
      * @param forwardedByEmail Internal user who forwarded the broker email.
      * @param emailSubject    The inbound email subject.
-     * @return WINNER when the registration (or orphan adoption) succeeded, DUPLICATE when
-     *         the key collision reconciled to an existing winner, UNCLAIMED when the key
-     *         exists but has neither a live winner nor an adoptable orphan.
+     * @return WINNER when the registration (or orphan adoption) succeeded, DUPLICATE_RACE
+     *         when the key collision reconciled to an existing winner (the caller's Lead must
+     *         then be deleted — see the ClaimOutcome doc), UNCLAIMED when the key exists but
+     *         has neither a live winner nor an adoptable orphan.
      */
     private static ClaimOutcome registerWinner(Id sourceLeadId, String normalized, Map<String, String> extracted,
                                                Datetime submittedOn, String forwardedByEmail, String emailSubject) {
@@ -159,9 +216,13 @@ public with sharing class PropertyClaimService {
             // already handled in claim(), so this is the ORPHAN case; re-check defensively,
             // then adopt the orphan.
             Property_Registry__c winner = PropertyMatchingService.findMatchingRegistry(normalized);
-            if (winner != null) {
+            if (isLostRaceAgainst(winner, sourceLeadId)) {
+                // Same reasoning as claim()'s in-lock check: a winner that is SOMEONE ELSE'S
+                // means the caller's pre-read was stale, so this is a LOST RACE and the
+                // caller's Lead must go. See the ClaimOutcome doc for why that is a distinct
+                // outcome — and see isLostRaceAgainst for why a SELF-match must not land here.
                 markDuplicate(winner, sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject);
-                return ClaimOutcome.DUPLICATE;
+                return ClaimOutcome.DUPLICATE_RACE;
             }
             Property_Registry__c orphan = PropertyMatchingService.findOrphanedRegistry(normalized);
             if (orphan != null) {
@@ -184,6 +245,45 @@ public with sharing class PropertyClaimService {
                 + 'live winner and no orphan row found; skipping. sourceLeadId=' + sourceLeadId);
             return ClaimOutcome.UNCLAIMED;
         }
+    }
+
+    /**
+     * True only when `winner` is a registration held by SOMEONE ELSE — i.e. a genuine lost
+     * race. The sole gate on returning ClaimOutcome.DUPLICATE_RACE, which is the sole trigger
+     * for the caller DELETING a Lead, so this predicate guards a destructive path and is
+     * deliberately conservative: when in doubt it answers "not a lost race", and the worst
+     * outcome is a Lead that survives when it could have been cleaned up.
+     *
+     * A SELF-MATCH IS NEVER A LOST RACE, and treating it as one destroys data. Two paths can
+     * hand this method a registration this very claimant already owns:
+     *
+     *   1. registerWinner's duplicate catch. There is NO Savepoint around the try block, so a
+     *      DmlException on the SUBMISSION insert does not roll back the REGISTRY row inserted
+     *      one statement earlier. The catch then re-runs findMatchingRegistry, which now finds
+     *      OUR OWN just-committed row. Without this guard the method would report a lost race,
+     *      the caller would delete the Lead that had in fact just WON, and the registry row
+     *      would be left orphaned — pointing at a deleted Lead, with the property key
+     *      unclaimable until someone adopts it by hand.
+     *   2. claim()'s in-lock check, via FUZZY matching. findMatchingRegistry falls back to
+     *      Jaccard similarity, so a claimant re-submitting a differently-worded variant of a
+     *      property they already registered ('123 main street' then '123 main street suite
+     *      100') matches their own row on a DIFFERENT exact key. Unreachable through
+     *      ExtractAddressQueueable today (branch (e) always claims with a freshly created
+     *      Lead), but claim() is public and this is the cheaper place to be safe than to rely
+     *      on every future caller minting a new Lead.
+     *
+     * Both callers fall through to the ordinary non-race handling when this returns false: a
+     * self-match in claim() proceeds to registerWinner (registering the new key is correct —
+     * the same broker may legitimately hold both), and in registerWinner's catch it continues
+     * to the orphan-adoption check and ultimately the logged UNCLAIMED fall-through, which
+     * leaves the Lead intact.
+     *
+     * @param winner       The registration findMatchingRegistry returned; null is not a race.
+     * @param sourceLeadId The Lead attempting this claim.
+     * @return true only when a DIFFERENT Lead holds the registration.
+     */
+    private static Boolean isLostRaceAgainst(Property_Registry__c winner, Id sourceLeadId) {
+        return winner != null && winner.Winning_Lead__c != sourceLeadId;
     }
 
     /**
@@ -247,14 +347,31 @@ public with sharing class PropertyClaimService {
     }
 
     /**
-     * Record `sourceLeadId` as a duplicate of an existing winner: flag the Lead
-     * (Is_Duplicate_Property__c, Duplicate_Of_Lead__c) and log a non-winning
-     * Competing_Broker_Submission__c against the winner's lead. Public so the queueable
-     * can also mark a duplicate directly when the caller's read already found the winner
+     * Record a COMPETING SUBMISSION against an existing winner: one non-winning
+     * Competing_Broker_Submission__c rolled up under `winner.Winning_Lead__c`. Public so the
+     * queueable can log a competing claim directly when its own read already found the winner
      * (i.e. without racing the insert).
      *
+     * NO LEAD IS WRITTEN — changed 2026-07-31. This method used to also stamp
+     * Is_Duplicate_Property__c / Duplicate_Of_Lead__c on the losing Lead; it performs no Lead
+     * DML at all now. See the class header for the two reasons (Lead-table pollution, and the
+     * DUPLICATES_DETECTED-rolls-back-the-Savepoint failure class). The submission row is the
+     * complete record of a competing claim.
+     *
+     * `sourceLeadId` IS OPTIONAL, AND NULL IS THE NORMAL COMPETING-BROKER SHAPE. A competing
+     * broker no longer receives a Lead, so their submission has no source Lead to point at —
+     * ExtractAddressQueueable's competing branch passes null deliberately, and the
+     * competingBrokerSubmissions LWC on the winning Lead renders those rows from
+     * Broker_Email__c / Broker_Name__c instead. A non-null value is passed only from the
+     * lost-race paths inside this class, where a Lead really does exist at that instant (the
+     * caller then deletes it, and Source_Lead__c's SetNull delete constraint clears the
+     * lookup). Because the submission may be the ONLY record of who the broker was,
+     * `extracted` must already carry a usable broker_email — the queueable backfills it from
+     * the envelope From address when the LLM returned nothing.
+     *
      * @param winner          The current winning Property_Registry__c row.
-     * @param sourceLeadId    The losing Lead for this inbound email.
+     * @param sourceLeadId    The Lead this inbound email produced, or NULL when no Lead was
+     *                        created for it (the normal competing-broker case).
      * @param extracted       LLM-extracted fields stamped onto the submission.
      * @param submittedOn     The email's original send time.
      * @param forwardedByEmail Internal user who forwarded the broker email.
@@ -263,11 +380,6 @@ public with sharing class PropertyClaimService {
     public static void markDuplicate(Property_Registry__c winner, Id sourceLeadId,
                                      Map<String, String> extracted, Datetime submittedOn,
                                      String forwardedByEmail, String emailSubject) {
-        update new Lead(
-            Id = sourceLeadId,
-            Is_Duplicate_Property__c = true,
-            Duplicate_Of_Lead__c = winner.Winning_Lead__c
-        );
         insert buildSubmission(
             winner.Winning_Lead__c, sourceLeadId, extracted, submittedOn,
             forwardedByEmail, emailSubject, false
@@ -279,13 +391,22 @@ public with sharing class PropertyClaimService {
      * already submitted. Inserts an audit row ONLY — no registry write, no duplicate flag
      * on the Lead.
      *
-     * This is deliberately NOT markDuplicate. A repeat is not a competing broker: the
-     * property is already claimed BY THIS BROKER, so flagging their own follow-up as
-     * Is_Duplicate_Property__c would mislabel the Lead and corrupt the duplicate reporting
-     * that the Broker-Protection dashboard reads. Nor is it a claim: re-running claim()
-     * would take the cluster lock and re-derive a winner that has not changed. All that is
-     * genuinely new is the fact that another email arrived, which is exactly one
+     * This is deliberately NOT markDuplicate, even though neither writes to a Lead any more.
+     * The distinction is the OUTCOME LABEL and the routing target, not the DML: a repeat is
+     * filed on the record the broker's earlier email already produced, whereas a competing
+     * submission is filed on someone else's winning Lead. Nor is a repeat a claim: re-running
+     * claim() would take the cluster lock and re-derive a winner that has not changed. All
+     * that is genuinely new is the fact that another email arrived, which is exactly one
      * append-only audit row.
+     *
+     * BOTH BROKERS' REPEATS LAND HERE, and `sourceLeadId` is what distinguishes them. The
+     * WINNER re-emailing passes their own Lead. A COMPETING broker re-emailing passes NULL —
+     * they never received a Lead, so their follow-up appends a source-less row under the same
+     * winner their first submission was filed under, and the email itself is logged on the
+     * winning Lead. Suppressing that row instead would be simpler but wrong:
+     * ARCHITECTURE.md §1 defines Competing_Broker_Submission__c as the append-only trail of
+     * EVERY inbound broker email that matched a property, and dropping the second one would
+     * erase the evidence that the broker chased the property twice.
      *
      * The routing DECISION (that this email is a repeat) belongs to
      * ExtractAddressQueueable; this method exists so the resulting DML still lands in the
@@ -293,7 +414,8 @@ public with sharing class PropertyClaimService {
      *
      * @param winningLeadId   The Lead that holds the property claim (from the prior
      *                        submission); falls back to `sourceLeadId` when null.
-     * @param sourceLeadId    The existing Lead this repeat email is filed against.
+     * @param sourceLeadId    The existing Lead this repeat email is filed against, or NULL
+     *                        when the repeating broker has none (a competing broker).
      * @param extracted       LLM-extracted fields stamped onto the submission.
      * @param submittedOn     The email's original send time.
      * @param forwardedByEmail Internal user who forwarded the broker email.
@@ -325,7 +447,9 @@ public with sharing class PropertyClaimService {
      * worst case is a blank field on the audit row instead of a lost registration.
      *
      * @param winningLeadId   Winning_Lead__c — the lead that holds the property claim.
-     * @param sourceLeadId    Source_Lead__c — the lead this specific email produced.
+     *                        Required by the Winning_Lead_Required validation rule on insert.
+     * @param sourceLeadId    Source_Lead__c — the lead this specific email produced, or null
+     *                        when it produced none (a competing broker gets no Lead).
      * @param extracted       LLM-extracted field map (may be null).
      * @param submittedOn     Submitted_DateTime__c — the email's original send time.
      * @param forwardedByEmail Forwarded_By_Email__c — internal forwarder.

@@ -138,7 +138,7 @@ A `—` in _Purpose_ means the object's `<description>` in its `.object-meta.xml
 | Object                          | Parent (lookup)                                      | Purpose                                                                                                                          |
 | -------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `Property_Registry__c`           | `Lead` (`Winning_Lead__c`)                            | Backend-only claim ledger. One row per distinct property; the unique, case-insensitive `Property_Key__c` enforces race-safe first-come-first-served registration at the database level. |
-| `Competing_Broker_Submission__c` | `Lead` (`Winning_Lead__c`, `Source_Lead__c`)           | Append-only audit trail of every inbound broker email that matched a property, including the winning submission itself. Deliberately not master-detail — cascade delete would silently wipe this trail. |
+| `Competing_Broker_Submission__c` | `Lead` (`Winning_Lead__c`, `Source_Lead__c`)           | Append-only audit trail of every inbound broker email that matched a property, including the winning submission itself. Deliberately not master-detail — cascade delete would silently wipe this trail. **The two lookups are not symmetric (2026-07-31):** `Winning_Lead__c` is always populated (enforced by the `Winning_Lead_Required` VR on insert), but `Source_Lead__c` is null BY DESIGN on a competing broker's row — they no longer receive a Lead, so this row plus `Broker_Email__c` is the only record of their claim. Only the winner's own row carries a source Lead. Both lookups are `SetNull`, so deleting the winner's Lead can null both; `CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail` filters those rows out to keep the property re-claimable via orphan adoption. |
 | `Property_Claim_Lock__c`         | — (no lookup; concurrency partition, not a business object) | Pessimistic-lock partition object: one row per coarse address cluster, `FOR UPDATE`-locked to serialize concurrent same-property claims so the fuzzy match-then-insert is atomic. |
 | `Inbound_Email_Staging__c`       | — (no lookup; `Result_Record_Id__c` is a plain Text pointer) | Durable landing record for every inbound broker email (added 2026-07-28). Written synchronously by `EmailToLeadHandler` BEFORE any Lead exists, so the raw body and every RFC header survive independently of routing. Deliberately not a lookup to Lead — the routing tree may resolve to a Lead, an Opportunity, a Contact, or nothing at all. Terminal state (`Status__c`, `Outcome__c`, `Result_Record_Id__c`, `Processed_DateTime__c`, `Error__c`) makes it both the pipeline's audit trail and its restart point. |
 
@@ -234,36 +234,285 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 | `TaskRollupService`           | `TaskRollupTrigger`                                | Rolls completed/overdue Task counts up to `Transaction__c` — drives the "N / 75" highlights tile.                                                        |
 | `OnboardingTaskRollupService` | Onboarding checklist Tasks                         | Recomputes `Onboarding__c` checklist rollups (total / complete / overdue / stalled / completion %).                                                      |
 | `ApprovalAuditService`        | after-save Flow (`@InvocableMethod`)               | Stamps approver identity and date from `ProcessInstanceStep` onto the Underwriting / LOI gates. `without sharing`.                                       |
-| `EmailToLeadService`          | `ExtractAddressQueueable` (routing tree)             | Broker Protection: the only class that inserts a Lead in the inbound email-to-Lead pipeline. Under the staging model (2026-07-28) it exposes a single `createLeadFromExtracted(...)` — the Lead is created ONCE, complete, and only by the routing branch that needs one. The old `createLeadAndEnqueue` / `applyExtractedDetails` insert-then-update pair is gone. |
+| `EmailToLeadService`          | `ExtractAddressQueueable` (routing tree)             | Broker Protection: the only class that inserts **or deletes** a Lead in the inbound email-to-Lead pipeline. Under the staging model (2026-07-28) it exposes a single `createLeadFromExtracted(...)` — the Lead is created ONCE, complete, and only by the routing branch that needs one. The old `createLeadAndEnqueue` / `applyExtractedDetails` insert-then-update pair is gone. **`deleteLead(Id)` was added 2026-07-31** for the lost-race path only: it must be called ONLY on `PropertyClaimService.ClaimOutcome.DUPLICATE_RACE` (never on `UNCLAIMED`, which is a legitimate Lead), and only with an Id this class minted earlier in the same transaction. `PropertyClaimService` now performs no Lead DML at all, so Lead writes in this module are wholly owned here. |
 | `InboundEmailStagingService`  | `EmailToLeadHandler`, `ExtractAddressQueueable`      | Broker Protection: the only class that writes `Inbound_Email_Staging__c` — creates the durable landing row synchronously at the email boundary, then stamps its terminal state (Processed / Error, outcome label, routed record Id). Status writes are fail-soft by design. |
-| `InboundEmailActivityService` | `ExtractAddressQueueable`                            | Broker Protection: the only class that writes the inbound-email `Task` and the sole owner of RFC threading — stamps `Inbound_Message_Id__c` (idempotency) and `Thread_Key__c` (conversation root), and answers "has this Message-ID already been logged?". A Task is used rather than `EmailMessage` because Enhanced Email is not licensed in this org. |
+| `InboundEmailActivityService` | `ExtractAddressQueueable`                            | Broker Protection: the only class that writes the inbound-email `Task` and the sole owner of RFC threading — stamps `Inbound_Message_Id__c` (idempotency) and `Thread_Key__c` (conversation root), and answers "has this Message-ID already been logged?". A Task is used rather than `EmailMessage`. **Corrected 2026-07-31 (twice — read the second):** the original reason ("Enhanced Email is not licensed in this org") is obsolete, since Enhanced Email is now enabled via Einstein Activity Capture setup. A first correction wrongly blamed Enhanced Email for reserving `TaskSubtype`; an in-org bisect falsified that — **`TaskSubtype = 'Email'` inserts fine here and is retained (it renders the email icon)**. The real defect was `Task.Type`, which **does not exist in Enhanced-Email-era org templates** (absent from FieldDefinition): it compiles in Apex but throws "fields being inaccessible on Sobject Task" at runtime, which is why the module's first-ever real executions in this org both failed. `Type` is now never set by this module and must not be re-added — classic-template orgs accept it, so a green run elsewhere proves nothing. The thread-anchor contract is unchanged, which matters because Change 2's EAC guard matches on those anchors. Migrating to EmailMessage-based logging is now possible but is deliberately a separate change. |
 | `LLMExtractionCalloutService` | `ExtractAddressQueueable`                          | Broker Protection: mockable OpenAI callout wrapper extracting broker name/email, property address, and send time from a forwarded email (vision + text). Direct-callout §3 exception — see §3.3. |
 | `PropertyMatchingService`     | `ExtractAddressQueueable` (via `PropertyClaimService`) | Broker Protection: address normalization, Jaccard fuzzy matching, cluster-key derivation, and registry/orphan lookups behind the first-broker-wins claim decision. Read-only; no DML. |
 | `PropertyClaimService`        | `ExtractAddressQueueable`                          | Broker Protection: owns all `Property_Registry__c` / `Competing_Broker_Submission__c` DML — acquires the `Property_Claim_Lock__c` FOR UPDATE lock, then registers a winner or marks a duplicate. |
 | `LeadActionPermissionService` | `LeadActionPermissionController`, `LeadConvertActionController` | Lead stage quick actions: the single source of truth for "may the running user drive Convert / Mark Under Review / Mark Qualified / Disqualify?". Accepts `Lead_Stage_Actions_Access` OR `Broker_Protection_Access`, resolves grants through permission set GROUPS as well as direct assignments, and bypasses for "Modify All Data". Exposes `hasLeadActionAccess()` (the cacheable UX gate) and `assertLeadActionAccess()` (the server-side enforcement used before `Database.convertLead`). Reads via `PermissionSetAssignmentSelector` + `PermissionSetGroupComponentSelector`; no DML. |
+| `OpportunityActionPermissionService` | `OpportunityActionPermissionController`, `StageAdvanceController`, `OpportunityApprovalController` | Opportunity stage quick actions: the single source of truth for "may the running user drive the deal actions?". Exposes `hasDealActionAccess()` (the cacheable UX gate) and `assertDealActionAccess()` (the server-side enforcement now asserted by `advance` / `advanceTo` / `submitForApproval`). Reads via `UserSelector` + `PermissionSetAssignmentSelector`; no DML. **The gate is TWO-FACTOR and is deliberately NOT the Lead-style membership check** — see below. |
+| `EmailThreadAnchorService` | `EmailCaptureQueueable`, `EmailThreadAdopterService`, `EmailThreadGuardService` | **The SHARED thread-anchor index** (added 2026-08-02 with the adopter): performs the ONE anchor read per queueable execution and the ONE bracket normalization, then hands both halves an `AnchorIndex` they consume with opposite polarity (`isAnchoredOn` for the guard, `resolveOpportunity` for the adopter). It exists so the two features normalize identifiers IDENTICALLY BY CONSTRUCTION rather than by convention. Read-only; no DML. Reads via `TaskSelector.selectThreadAnchorsByAnchorValues` + `EmailMessageSelector`. `with sharing`. |
+| `EmailThreadAdopterService` | `EmailCaptureQueueable` (via `EmailMessageTrigger`), and a one-off DevOps sweep | **EAC Thread Adopter** (added 2026-08-02): the MIRROR of the guard. EAC is the only system that sees the OUTBOUND half of a deal thread, but it associates by address, so the reply lands on the broker's Lead/Contact rather than the deal. This service re-points `EmailMessage.RelatedToId` to the Opportunity the thread's own pipeline anchor names — an RFC-header IDENTITY match, which beats EAC's address inference. Owns the only `RelatedToId` DML (`Database.update(..., false)`, one bulk statement) and performs **ZERO Task DML, ever** — the platform propagates the value onto the companion Task's `WhatId` by itself (measured, E2), which is what preserves the guard's structural guarantee. Reads via `EmailMessageSelector` + `TaskSelector`. **`without sharing`** (same justification as the guard: it must adopt onto EVERY resolved Opportunity, not the subset the automated principal can see). |
+| `EmailThreadGuardService` | `EmailCaptureQueueable` (via `EmailMessageTrigger`), and a one-off DevOps sweep | **EAC Thread Guard** (added 2026-08-02): undoes Einstein Activity Capture's address-based over-association on Leads. EAC is THREAD-BLIND — it staples every captured email onto every record whose address appears on it, so a brand-new unrelated conversation with a broker lands on that broker's deal Lead. No EAC setting can prevent it, so the guard runs *after* capture: an EAC-materialized email may stay on a Lead only if its `ThreadIdentifier`/`MessageIdentifier` matches a thread anchor the Broker Protection pipeline logged there (`Task.Thread_Key__c` / `Task.Inbound_Message_Id__c`). Anything unanchored is deleted with its companion timeline Task — **unless the capture also lives on a record outside `{Lead, User}`** (see the scope note below). Owns all DML in the feature (`Database.delete(..., false)` — the two deletes cascade into each other, so an already-gone row is SUCCESS). Reads via `EmailMessageSelector` + `EmailMessageRelationSelector` + `EmailThreadAnchorService`. **`without sharing`** (justified in the class header: it must clean EVERY Lead the capture landed on, not the subset the automated principal has sharing to). **Amended 2026-08-02 for the adopter:** it now runs SECOND (after the adopter, in the same job), consumes the shared anchor index, and its guard 4 is widened from "anchored on a related Lead" to "anchored on ANY record it lives on" — related Leads ∪ the `RelatedToId` record. Every one of those changes is KEEP-BIASED. |
 
 **Broker Protection staging model (added 2026-07-28):** the pipeline no longer creates a Lead at the
 email boundary. `EmailToLeadHandler` parses the envelope, RFC headers and inline image, writes an
 `Inbound_Email_Staging__c` row, and enqueues `ExtractAddressQueueable(stagingId, imageBase64,
 imageMimeType)`. The queueable then runs a five-branch ROUTING TREE — Reply → Repeat → No-Property →
-Duplicate → Winner — and only branches (c)/(d)/(e) create a Lead; Reply and Repeat file the email onto
-an existing record instead. Every branch ends by logging a `Task` with both RFC threading keys and
-stamping the staging row. Deferring Lead creation is what makes reply threading, repeat detection and
+Competing Submission → Winner. **Only branches (c) NO-PROPERTY and (e) WINNER create a Lead**
+(amended 2026-07-31): Reply and Repeat file the email onto an existing record, and branch (d)
+COMPETING SUBMISSION no longer creates one either — a competing broker gets no Lead at all, only a
+`Competing_Broker_Submission__c` against the winner with `Source_Lead__c = null`, with the email
+logged on the WINNING Lead (resolved through conversion). Branch (d) reads the registry BEFORE
+calling `createLead`, so no orphan Lead is ever minted. Branch (e) can still discover the race late:
+when `claim()` returns `DUPLICATE_RACE` the Lead it just created is DELETED via
+`EmailToLeadService.deleteLead` and the email is re-routed onto the winner exactly like branch (d).
+Staging outcome labels are `'Competing Submission'` (d) and `'Competing Submission (race)'` (e);
+both replace the retired `'Competing Duplicate'`, and rows stamped before 2026-07-31 keep the old
+label because `Outcome__c` is free Text and was deliberately not back-filled.
+`Lead.Is_Duplicate_Property__c` / `Duplicate_Of_Lead__c` are now LEGACY — no code path writes them.
+Every branch ends by logging a `Task` with both RFC threading keys and stamping the staging row. Deferring Lead creation is what makes reply threading, repeat detection and
 redelivery suppression expressible at all — each of those must be able to decide that no new Lead
 should exist. `InboundEmailFieldUtil` is a pure utility (not a service): it clips every externally
 sourced value to its field length and sanitizes anything bound to an Email field, so an over-long LLM
 answer cannot roll back a committed claim.
 
-**Broker Protection async-pipeline exception (added 2026-07-24):** `EmailToLeadService`,
-`LLMExtractionCalloutService`, `PropertyMatchingService`, and `PropertyClaimService` are
-single-record-per-transaction by design — one inbound email produces exactly one Lead and one
-`ExtractAddressQueueable` execution, with no trigger and no loop over multiple records. This is the
-accepted §2 exception for **per-transaction-singleton async pipelines** (code-review-approved; see
-`docs/2026-07-24-broker-protection.md`) — it does not relax the "no SOQL/DML in loops" rule, which
-these classes still satisfy, only the expectation of a `List<...>`-shaped signature. `CompetingSubmissionController`
+**EAC CAPTURE PIPELINE (guard + adopter) — the repo's FIRST standard-object trigger driven by an
+external capture system (guard added 2026-08-02; adopter added the same day).**
+`triggers/EmailMessageTrigger.trigger` is one line delegating to `EmailMessageTriggerHandler`, which
+enqueues **`EmailCaptureQueueable`** (renamed from `EmailThreadGuardQueueable` when the adopter
+landed — a class named "guard" that also adopts is a trap for the next reader). That one job does
+three things, in this order and for these reasons:
+
+```
+EmailCaptureQueueable.execute
+  ├─ EmailThreadAnchorService.index(messageIds)   ← ONE anchor read, ONE normalization
+  ├─ EmailThreadAdopterService.run(ids, index)    ← 1st: RelatedToId writes (own try/catch)
+  └─ EmailThreadGuardService.run(ids, index)      ← 2nd: deletes (unwrapped — failures must be loud)
+```
+
+1. **ONE INDEX, BUILT ONCE.** Both services ask the same question of the same anchor data with
+   opposite polarity, so sharing the index is what makes them normalize identifiers identically **by
+   construction** rather than by convention. `EmailThreadAnchorService.index(Set<Id>)` exists
+   specifically so the queueable holds no SOQL of its own.
+2. **ADOPTER BEFORE GUARD — always, live and in any sweep.** An Opportunity-anchored capture related
+   only to an unrelated same-address Lead is unanchored *on every Lead it lives on*; running the
+   guard first deletes it seconds before the adopter would have rescued it (finding P6), and a
+   deleted `EmailMessage` is not recoverable in Salesforce. The guard re-reads the messages, so it
+   observes the `RelatedToId` the adopter just wrote and keeps the row through its widened guard 4.
+   Pinned by `EmailThreadAdopterServiceTest.adoptedCaptureSurvivesAFullAdopterThenGuardPass`.
+3. **THE ADOPTER'S FAILURE IS ISOLATED; THE GUARD'S IS NOT.** The adopter call is wrapped in its own
+   `try/catch` so a new feature can never regress the deployed, destructive one. The guard is
+   deliberately unwrapped — its failure surfaces as a failed `AsyncApexJob`, and a silently disabled
+   guard is the failure mode the whole feature exists to avoid.
+4. **THE ENQUEUE COUNT STAYS AT EXACTLY ONE PER TRIGGER CHUNK.** Both halves share the job precisely
+   so the handler's cap math is unchanged; a second enqueue would halve the throughput ceiling that
+   protects EAC's own insert. A future third EmailMessage concern belongs inside that queueable.
+
+**The `RelatedToId` contention policy (D4)** is the adopter's whole decision surface, and the
+overwrite row is the point of the feature, not an oversight: EAC arrives having already inferred an
+Opportunity *thread-blindly through a matched Contact* (measured on both live captures), and address
+inference must lose to header identity exactly as it does in the inbound routing tree. Leaving a
+wrong Opportunity in place is worse than showing nothing.
+
+| current `RelatedToId` | anchor resolves an Opportunity | action |
+| --- | --- | --- |
+| `null` | yes | **write** |
+| an Opportunity, different | yes | **overwrite** |
+| an Opportunity, equal | yes | no-op (convergence) |
+| a **non**-Opportunity (Account, Case, `Property__c`, …) | yes | **leave alone** |
+| anything | no | **leave alone — never write null** |
+
+Plus the EAC fingerprint gate (companion `Task.CreatedBy.UserType == 'AutomatedProcess'`, the same
+test guard 3 makes): a composer/Agentforce send's `RelatedToId` was chosen by a human.
+
+**Adoption is CONVERGENT, which is why this feature ships no rollback code, no "adopted" marker
+field and no Finalizer.** The target state is a pure function of (anchors, identifiers); a second
+pass writes zero DML (`adoptionIsConvergent_secondPassWritesNothing`). Two consequences are written
+into the class header as invariants: **(a)** adoption churns the companion Task, so an adopted
+capture permanently loses the EAC fingerprint and is **adopted once** — known limitation L2 if EAC
+ever re-points `RelatedToId` in place, remedied by the sweep; **(b)** the adopter performs **no Task
+DML ever**, because the platform propagates `RelatedToId` onto the companion's `WhatId` itself
+(measured, E2) and because a Task write would destroy the guard's structural-unreachability
+guarantee.
+
+**🔴 The P4 bracket defect this closed.** The pipeline stores `Thread_Key__c` **unbracketed**
+(every `computeThreadKey` return path runs through `stripAngleBrackets`) and `Inbound_Message_Id__c`
+**bracketed** (the raw header), while EAC supplies bracketed identifiers — confirmed on both live
+anchor rows in `usman-dpeg` (experiment E3). The deployed guard compared raw values, so its
+`ThreadIdentifier ↔ Thread_Key__c` leg could never match and it was **running on one leg**: a reply
+whose thread root was logged as a mid-thread Task was deleted as unanchored.
+`EmailThreadAnchorService.normalize` is now the only bracket handling in either feature, and
+`TaskSelector.selectThreadAnchorsByAnchorValues` binds BOTH forms. Do not re-implement bracket
+handling anywhere else.
+
+**Two design steps were retired by experiment, not by opinion.** E1 (`Database.convertLead` on a
+Lead carrying an anchor Task) measured that standard conversion repoints `WhoId` to the Contact
+**and** stamps `WhatId` with the converted Opportunity on the pre-existing anchor — so the planned
+conversion-time carry-forward was dropped, and D2's chain step 2 ("WhoId is a Lead → resolve through
+conversion") is unreachable and unimplemented: an unconverted Lead has no Opportunity to adopt onto
+and must fail closed anyway. Failing closed on a Contact `WhoId` is retained and load-bearing — one
+Contact fronts many deals. `PropertyMatchingService.resolveLiveRecord` is deliberately NOT called
+per anchor; it reads per Id, which would be SOQL-in-a-loop.
+
+**Sweep discipline (D6).** Both services expose `run(Set<Id>)` for anonymous-Apex backfill.
+Order is **adopter sweep → guard sweep**, chunk at **≤ 1,000 message Ids**, and run `LAST_N_DAYS:1`
+first before widening. Convergence makes re-runs free; a guard sweep run first is not recoverable.
+
+**🔴 R1 — OPERATIONAL: the adopter FAILS SOFT, so watch for silence (added 2026-08-02).**
+`EmailMessage.RelatedToId` is the adopter's only write, and **`describe.updateable` reports TRUE for
+it and is WRONG** — that flag is what let the feature reach a deploy before the problem surfaced.
+Do not re-describe the field and call it verified. What is established is a *correlation*, not a
+mechanism: the write **commits at runtime** (twice on `usman-dpeg` 2026-08-02 against real capture
+`02siw0000005prVAAQ` — spike experiment 3a, set + revert, each readback-confirmed) but is **refused
+from `@isTest` against a test-created capture** (7 probes + the deploy fingerprint, always
+`INSUFFICIENT_ACCESS_OR_READONLY … fields=(RelatedToId)`; independent of Status, independent of
+relations, and not a whole-record lock — `Subject` updates fine). The two runs differ in more than
+one variable at once (test context *and* row provenance), so **which one is the mechanism is
+undetermined** and neither should be quoted as settled. Insert-time seeding does persist.
+
+The operational consequence: the adopter's entire failure surface is `allOrNone = false` plus a
+`System.debug`. If the runtime write is ever blocked the way the test context blocks it, the result
+is **zero adoptions and no durable signal** — no exception, no failed `AsyncApexJob`, nothing
+queryable. So:
+
+- **The L-check is RECURRING, not a launch gate.** The runtime proof ran as an *admin*; production
+  runs as whichever principal EAC committed under, and that residual is only closed by observing
+  real adoptions in the live pipeline.
+- **The symptom to watch is "adoptions = 0 across a period in which real EAC captures arrived."**
+  That is indistinguishable, from outside, from "nothing needed adopting" — which is exactly why it
+  has to be watched deliberately rather than waited for.
+- `EmailThreadAdopterService.lastRunFailureCodes` records the refusals but is **in-transaction only**
+  and does not survive the job; it exists for tests and debugging, not monitoring.
+- Tests therefore assert the **decision** (which rows, which target) through the `AdoptionWriter`
+  seam rather than committed state. `platformRefusesTheRelatedToIdUpdate_isTheDocumentedQuirk` is a
+  **two-way canary**: it reds on a *different* error, and it reds if the platform ever starts
+  permitting the update — at which point the seam can be dropped and committed-state assertions
+  restored.
+
+Five things about the trigger differ from every other trigger in this repo and are load-bearing:
+
+1. **The rows are not ours.** Einstein Activity Capture inserts them, in bulk, on its own schedule,
+   as a principal none of this repo's permission sets provision. The handler therefore keeps the
+   `Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()` check: EAC's batch size sets the
+   enqueue count, and an uncaught `LimitException` would roll back EAC's own insert. Skipping is
+   always safe because the guard is self-healing; throwing never is.
+2. **The work MUST be async.** `EmailMessageRelation` rows — the record of which Leads a capture
+   landed on — are written AFTER the `EmailMessage` in the same transaction, so a synchronous
+   after-insert check would find none and make the guard a permanent no-op. The queueable hop is
+   not a performance choice.
+3. **Every selector read on this path is `WITH SYSTEM_MODE`**, which for this feature is a
+   correctness requirement rather than a convenience: `USER_MODE` THROWS (it does not degrade) the
+   moment the automated principal lacks FLS, killing the queueable and silently disabling both
+   halves while EAC keeps polluting timelines. Same automation-path reasoning as
+   `LeadSelector.GuestReads` / `GroupMemberSelector`. ⚠ This makes the `TaskSelector` header's
+   former claim "there is NO guest/automation path on Task" obsolete; it has been amended in place,
+   and the class now mixes USER_MODE (all pre-existing methods) with SYSTEM_MODE (the two EAC
+   methods — `selectByIds` and `selectThreadAnchorsByAnchorValues`) deliberately.
+   `selectThreadAnchorsByAnchorValues` **replaced `selectThreadAnchorsByWhoIds`** when the adopter
+   landed: the guard could scope by the Leads a capture was related to, but the adopter asks the
+   opposite question ("which record does this thread belong to?") and has no record set to scope by
+   — the anchor is what NAMES the record. One query serves both; it stays selective because both
+   anchor fields are indexed External Ids. It also selects `WhatId`, which is the adopter's entire
+   resolution chain. `EmailMessageSelector.selectByIds` was widened with `RelatedToId` (the
+   adopter's write target and contention input, and the guard's widened guard-4 input) — that field
+   set carries a **DO NOT NARROW** contract.
+4. **Broker Protection's own pipeline Tasks are structurally out of reach.** The guard has exactly
+   one route to a Task — the Id on `EmailMessage.ActivityId` — and pipeline Tasks written by
+   `InboundEmailActivityService` are linked to no `EmailMessage` at all. The anchors the module
+   depends on therefore cannot be deleted by construction, not by convention
+   (`EmailThreadGuardServiceTest.pipelineAnchorTaskIsStructurallyUnreachable` pins this). Anyone
+   adding a second route to a Task destroys that guarantee. **The adopter does not weaken it:** the
+   anchor read feeds keep/adopt decisions only, its rows never enter a delete list, and the adopter
+   performs no Task DML at all.
+5. **⚠ THE CONDITION IS LEAD-SCOPED; THE REMEDY IS ORG-WIDE.** Deleting an `EmailMessage` removes it
+   from *every* record it was associated with, so "scope is Leads only" is a claim about what the
+   guard JUDGES, not about what a delete TOUCHES. Reconciling the two is review finding W1
+   (2026-08-02): the guard now deletes a capture only when it relates to **no record outside
+   `{Lead, User}`**. `EmailMessageRelationSelector.selectByMessageIds` therefore returns *every*
+   relation type (it is deliberately no longer Lead-filtered — the service must SEE a Contact
+   relation to protect it), and the Lead scoping happens in explicit Apex.
+   **`User` is excluded from "lives elsewhere" and that exclusion is load-bearing:** EAC writes a
+   User relation for the mailbox participants on essentially every capture, so counting it would
+   make the guard delete nothing, ever — a dead feature that still passes a smoke test. The
+   classification is an allow-list of ignorable types, so an unanticipated object type fails safe
+   (capture kept). Pinned by the matched pair
+   `captureAlsoLivingOnAContactIsKept` / `captureLivingOnlyOnLeadAndUserIsStillDeleted`, which
+   discriminate in opposite directions.
+
+The `.claude/rules/bulk-test-rule.md` per-transaction-singleton exemption does **not** cover either
+service: both are trigger-driven and EAC batch-inserts, so a literal 251-record bulk test exists for
+each — `EmailThreadGuardServiceTest.guardAt251Captures_isBulkSafe` (one bulk `EmailMessage` insert,
+one `run()` call) and `EmailThreadAdopterServiceTest.adopterAt251Captures_isBulkSafe` (one bulk
+insert driven through the REAL trigger path, asserting all 251 adopted, all 251 surviving the guard,
+a CONSTANT 7-query budget for the whole execution and exactly ONE adopter DML statement). Note also
+that the legacy "only 1 queueable per test transaction" rule does not hold in this org — the cap is
+50, as `ExtractAddressQueueableTest`'s 25-job test already demonstrates.
+
+⚠ **Governor assertions read `EmailCaptureQueueable.lastRunQueryCount` /
+`EmailThreadAdopterService.lastRun*`, never `Limits.*` after `Test.stopTest()`** (stopTest restores
+the pre-test counters, making the obvious assertion silently vacuous) — the
+`ExtractAddressQueueable.lastRunQueryCount` precedent. A second, subtler trap is recorded in
+`EmailThreadAdopterServiceTest`'s header: inserting an `EmailMessage` in a test fires the real
+trigger, so a real `EmailCaptureQueueable` runs at `stopTest()` and overwrites those statics with
+its own convergent (zero) pass — counter assertions must snapshot into locals *inside* the test
+block.
+
+**Broker Protection async-pipeline exception — ⚠ NARROWED 2026-07-31 (design C-18).** It once
+covered `EmailToLeadService`, `LLMExtractionCalloutService`, `PropertyMatchingService` and
+`PropertyClaimService` on the premise that each is single-record-per-transaction — "one inbound
+email produces exactly one Lead and one `ExtractAddressQueueable` execution, with no trigger and no
+loop over multiple records" (code-review-approved 2026-07-24; see
+`docs/2026-07-24-broker-protection.md`).
+
+**That premise died with D1 multi-property extraction.** `ExtractAddressQueueable.execute` now
+LOOPS, and `PropertyClaimService.claim` / `EmailToLeadService.createLeadFromExtracted` are invoked
+**N times per transaction** (N ≤ `ExtractAddressQueueable.MAX_PROPERTIES` = 10). The exemption
+therefore now applies to **`LLMExtractionCalloutService` ONLY** — still exactly one callout per job.
+
+**What replaces it for the reshaped classes:** a literal 251 remains both impossible and
+meaningless here — `System.enqueueJob` caps at 50 per transaction, and 251 properties in one email
+would exhaust SOQL at ~14–24 — so the mandate is replaced by explicit **volume and
+governor-headroom tests**: a 10-property email, a 15-property truncation case, a mixed-outcome
+email, lock-order determinism, and assertions on the query/DML counters the queueable records at
+the end of `execute()` (`lastRunQueryCount` / `lastRunDmlCount`). Those counters are captured
+inside the async context on purpose: `Test.stopTest()` restores the pre-test limit counters, so a
+`Limits.getQueries()` assertion written after it would be silently vacuous. See
+`.claude/rules/bulk-test-rule.md` and `agent-output/design-requirements.md` §7.
+
+The narrowed exemption still does not relax the "no SOQL/DML in loops" rule, which these classes
+continue to satisfy — every statement is one-per-property and the Task insert is bulked into a
+single DML. `CompetingSubmissionController`
 (the Lead-record-page read surface for this feature) is a thin `@AuraEnabled(cacheable=true)` controller
 over `CompetingBrokerSubmissionSelector` — no service layer was needed, per the P6 read-only-controller
 precedent below.
+
+**Opportunity deal-action gate is TWO-FACTOR — do not "align" it with the Lead gate (added
+2026-07-30):** `OpportunityActionPermissionService` asks the identical question the six deployed
+Dynamic Actions visibility rules on `Opportunity_Record_Page` ask — `{!$User.Deal_Driver__c} EQUAL
+true` — which requires BOTH **(a)** FLS read on `User.Deal_Driver__c`, granted only by the
+`Acquisition_Deal_Driver` permission set and enforced by `WITH USER_MODE` inside `UserSelector` (a
+user without that FLS makes the query THROW, which the service converts to `false`), AND **(b)** the
+field value `Deal_Driver__c = true` on the running user's own User record.
+
+This is why it does **not** reuse `LeadActionPermissionService.hasAnyPermissionSet(...)`, tidy as
+that would look: **membership and the flag are different questions.** A user holding
+`Acquisition_Deal_Driver` with `Deal_Driver__c = false` is denied today and would be GRANTED by a
+membership check — a silent widening of a live authorization boundary. Adding a permission-set name
+to this gate does not "also" grant access, it REPLACES a two-factor condition with a one-factor one
+for every holder. `OpportunityActionPermissionServiceTest.hasDealActionAccess_membershipWithoutTheFlag_isStillDenied`
+exists to go red if anyone tries.
+
+⚠ **The "Modify All Data" bypass is load-bearing, not a convenience, and its ORDER matters.**
+Measured on `usman-dpeg` 2026-07-30: a **System Administrator has no FLS read on
+`User.Deal_Driver__c`** — Metadata-API-deployed custom fields arrive with no field permissions for any
+profile, and Modify All Data is an OBJECT permission that confers no FLS. The selector therefore
+throws for a bare admin exactly as it does for a bare Standard User, so the Modify All Data check
+MUST run before the flag read or every administrator is locked out of the feature they just deployed.
+Corollary for UAT: **an admin smoke test proves nothing about this gate** — acceptance-test as a real
+deal-driver persona, and remember FLS truth lives in the org, not this repo (profiles are
+`.forceignore`d).
+
+**`StageAdvanceService.advanceTo` now has an explicit-target allow-list (added 2026-07-30).** It
+previously wrote any non-blank string handed to it, so a direct `@AuraEnabled` call could move a deal
+to ANY stage — `Closed Won` included — skipping every hop in `NEXT_STAGE` and the signed-NDA gate with
+it. Membership is limited to the branch/off-ramp targets that legitimately have no derivable
+predecessor: `Development Review`, `Construction Review`, `About to Close`, and `Dead/Pass`
+(pre-authorized for the future off-ramp action). Derivable forward hops stay out on purpose — they
+belong to `advance()`, which reaches them through `NEXT_STAGE` and so cannot skip a step. Adding a new
+explicit-target action means adding its stage to that set. Values are the **decoded** runtime strings:
+`Dead/Pass` is `Dead%2FPass` in BusinessProcess/picklist metadata only.
 
 ### Controller-support services (P6, completed 2026-07-19)
 
@@ -358,7 +607,30 @@ feature writeup.
 ### Confirmation dialogs and permission gating (headless quick actions)
 
 Added 2026-07-29 with the Lead stage quick actions (`leadConvertAction`, `leadMarkUnderReview`,
-`leadMarkQualified`, `leadDisqualify`, sharing `c/leadStatusChange`).
+`leadMarkQualified`, `leadDisqualify`, sharing `c/leadStatusChange`). Extended 2026-07-30 to the
+Opportunity stage quick actions (`advanceDealStage`, `dealSendToDevelopmentReview`,
+`dealSendToConstructionReview`, `dealMoveToAboutToClose`, `submitForApproval`, sharing
+`c/dealActionGuard`).
+
+**There are TWO guard utils and they must not be merged.** `c/leadStatusChange` is Lead-bound by
+contract (it imports `Lead.Status` schema and `LeadActionPermissionController`);
+`c/dealActionGuard` is the guard/confirm HALF of it, object-agnostic, and carries **no write helper at
+all**. That asymmetry is deliberate and load-bearing:
+
+| | Lead status actions | Opportunity stage actions |
+| --- | --- | --- |
+| Write path | LDS `updateRecord` | imperative Apex (`StageAdvanceController` / `OpportunityApprovalController`) |
+| `getRecordNotifyChange` | **MUST NOT** call it — `updateRecord` writes THROUGH the LDS cache, so the Path/highlights re-render on their own | **MUST** call it on success — Apex DML happens behind LDS's back, so without it the Path shows a stale stage |
+| Server-side enforcement | Convert only; the three status writes have no Apex in their path, so CRUD/FLS on `Lead.Status` is the real control | **every** action asserts the permission server-side |
+
+Opposite requirements. Do not "harmonize" them. Each Opportunity bundle keeps ownership of its own
+Apex call, toasts, and `getRecordNotifyChange`; the guard only decides whether the click proceeds.
+
+⚠ **`advanceDealStage` cannot name its target stage in the prompt.** One bundle backs five actions and
+the target is derived server-side in `StageAdvanceService.NEXT_STAGE`, so its confirmation is
+deliberately generic ("Advance this deal to the next stage?"). Do **not** `@wire getRecord` the stage
+and compute a nicer label — that duplicates the `NEXT_STAGE` map in JS, where it will drift from the
+Apex. If one action needs specific wording, split that action into its own bundle.
 
 - **Confirmations use `lightning/confirm` (`LightningConfirm.open()`), never a toast.** A toast is
   fire-and-forget and returns nothing, so it cannot carry a yes/no answer. `LightningConfirm.open()`

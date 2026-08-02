@@ -5,5 +5,7 @@
     <fields>My_Cap_Rate__c</fields>
     <fields>BP_Expiry__c</fields>
     <fields>Days_in_System__c</fields>
+    <fields>Offer_Due_Date__c</fields>
+    <fields>Asset_Type__c</fields>
     <label>Lead Highlights</label>
 </CompactLayout>

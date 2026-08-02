@@ -8,7 +8,7 @@
         <apexClass>LeadActionPermissionController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
-    <description>Broker protection: OpenAI credential principal plus access to the claim-ledger and submission-audit objects and the new Lead fields. Assign to the Email Service user and reps who see the submission history.</description>
+    <description>Broker protection: OpenAI credential principal plus access to the claim-ledger and submission-audit objects and the new Lead fields. Assign to the Email Service user and reps who see the submission history. VERIFY AFTER EVERY DEPLOY of this permission set: SELECT SobjectType, COUNT(Id) FROM FieldPermissions WHERE Parent.Name='Broker_Protection_Access' GROUP BY SobjectType must return Lead 27, Task 6, Inbound_Email_Staging__c 19, Competing_Broker_Submission__c 9, Property_Registry__c 3 (plus platform-managed Event mirrors of the Task/Activity rows) — a redeploy has been observed to silently drop the Activity-field rows, which breaks the Email Service context user's (Minimum Access profile) ability to see the standard fields the inbound-email pipeline stamps: on Task, Description/ActivityDate/WhoId/WhatId; on Lead, Description/Phone/Title. If Task.WhoId is missing after a deploy, it is expected — see the XML comment below; it is granted org-side only and must be re-verified/re-granted there, not via this file. Lead.Description/Phone/Title, by contrast, ARE declared below (same convention as DPEG_Acquisition_Edit's Lead.Email/Lead.LeadSource) and are expected to survive a redeploy; if the Lead count drops below 27 after a deploy, that is a regression, not the WhoId-style expected gap. ObjectPermissions must include UserExternalCredential read (1 row) — without it, any callout through the OpenAI Named Credential throws before sending, regardless of the stored key or header configuration.</description>
     <externalCredentialPrincipalAccesses>
         <enabled>true</enabled>
         <externalCredentialPrincipal>OpenAI_Credential-OpenAI_Principal</externalCredentialPrincipal>
@@ -23,6 +23,37 @@
         <field>Activity.Thread_Key__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.ActivityDate</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.Description</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.WhatId</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        Task.WhoId is deliberately NOT declared here, following the same convention as the
+        repo's only other standard-Task FLS permission set (DPEG_Task_Edit.permissionset-meta.xml),
+        which grants Task.ActivityDate / Task.Description / Task.WhatId but never Task.WhoId —
+        no permission set anywhere in this repo declares Task.WhoId or Activity.WhoId in metadata.
+        An org-side FieldPermissions row for Task.WhoId (Broker_Protection_Access, read+edit) was
+        created directly in the org on 2026-08-01 to unblock the live inbound-email pipeline (the
+        Email Service context user, Minimum Access profile, could not see Task.WhoId when the
+        pipeline logs an inbound-email Task). Re-verify this row after every deploy of this
+        permission set via:
+          SELECT Id FROM FieldPermissions WHERE Parent.Name='Broker_Protection_Access'
+            AND SobjectType='Task' AND Field='Task.WhoId'
+        If a future deploy of this file is confirmed NOT to clear the org-side WhoId row, this
+        comment can be replaced with a real <fieldPermissions> block — do not add one speculatively
+        without confirming Task.WhoId deploys cleanly via metadata first.
+    -->
     <fieldPermissions>
         <editable>true</editable>
         <field>Competing_Broker_Submission__c.Broker_Email__c</field>
@@ -150,6 +181,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Extracted_JSON__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Property_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Routed_Record_Ids__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.Duplicate_Of_Lead__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -171,6 +217,116 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Property_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.ADR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Building_SF__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Deal_Room_Link__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Guidance_Price_High__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Guidance_Price_Low__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Listing_Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Listing_Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Lot_Size_Acres__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.NOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Occupancy_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Offer_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Property_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Sale_Process__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Seller_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Unit_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.WALT_Years__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Year_Built__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Year_Renovated__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Zoning__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Description</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Phone</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Title</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -233,6 +389,17 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Task</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <!-- Required to USE the OpenAI Named Credential — without object read on UserExternalCredential
+         the callout throws before sending (found via debug log 2026-08-01). -->
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>UserExternalCredential</object>
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
 </PermissionSet>

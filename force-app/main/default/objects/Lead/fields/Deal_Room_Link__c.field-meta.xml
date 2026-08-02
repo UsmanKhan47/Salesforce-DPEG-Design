@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Deal_Room_Link__c</fullName>
+    <description>Link to the deal room / offering materials, as stated in the broker email. Matches the existing CoStar_Link__c / Placer_AI_Link__c convention.</description>
+    <inlineHelpText>Populated by LLM extraction from the inbound broker email; null when not stated in the email.</inlineHelpText>
+    <label>Deal Room Link</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Url</type>
+</CustomField>

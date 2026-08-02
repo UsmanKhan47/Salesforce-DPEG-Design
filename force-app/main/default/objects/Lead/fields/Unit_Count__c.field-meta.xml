@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Unit_Count__c</fullName>
+    <description>Number of units, or hotel keys for hospitality assets, as stated in the broker email.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Units, or hotel keys for hospitality. Populated by LLM extraction from the inbound broker email; null when not stated in the email.</inlineHelpText>
+    <label>Unit Count</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

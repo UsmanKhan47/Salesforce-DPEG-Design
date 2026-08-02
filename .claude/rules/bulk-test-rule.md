@@ -46,6 +46,8 @@ Every batch test class must contain:
 ## Exemption: Per-Transaction-Singleton Async Pipelines
 
 Added 2026-07-24 (Broker Protection code review, Suggestion 2; see `docs/2026-07-24-broker-protection.md`).
+**⚠ NARROWED 2026-07-31 — read "Narrowed scope" below before applying this to any Broker
+Protection class.**
 
 A service method that is **structurally single-record-per-transaction** — no trigger, no loop over
 multiple records, invoked exactly once per async job (e.g. one inbound email → one `Queueable`
@@ -54,5 +56,40 @@ method would not exercise any additional code path (there is no loop to force a 
 would itself risk tripping unrelated governor limits (e.g. 150 DML statements) while proving nothing.
 This exemption does **not** relax the "no SOQL/DML in loops" rule — it only removes the 251-record
 *volume* requirement for methods that are provably never called with more than one record per
-transaction. Example: `EmailToLeadService`, `LLMExtractionCalloutService`, `PropertyMatchingService`,
-`PropertyClaimService` (Broker Protection).
+transaction.
+
+### Narrowed scope (2026-07-31, design C-18)
+
+The exemption originally listed `EmailToLeadService`, `LLMExtractionCalloutService`,
+`PropertyMatchingService` and `PropertyClaimService`. **D1 multi-property extraction invalidated
+that premise for three of the four:** `ExtractAddressQueueable.execute` now loops over up to
+`MAX_PROPERTIES` (10) properties per email, so `PropertyClaimService.claim` and
+`EmailToLeadService.createLeadFromExtracted` are invoked **N times per transaction**, not once.
+
+| Class | Exempt? | Why |
+|---|---|---|
+| `LLMExtractionCalloutService` | ✅ **Yes** | Still exactly ONE callout per queueable execution. |
+| `ExtractAddressQueueable` | ❌ No | Now loops. Needs the volume tests below. |
+| `PropertyClaimService` | ❌ No | `claim()` runs once per property. |
+| `EmailToLeadService` | ❌ No | `createLeadFromExtracted()` runs once per property. |
+| `PropertyMatchingService` | ❌ No | Read helpers run once per property. |
+
+**A literal 251 is still both impossible and meaningless here, and that reasoning must be recorded
+in the test class header so review does not demand it:** `System.enqueueJob` caps at 50 calls per
+transaction, *and* 251 properties in one email would exhaust the SOQL limit at roughly 14–24
+properties. Testing a volume production cannot reach is the exact anti-pattern this exemption
+exists to prevent.
+
+**Required replacements for a de-exempted class** (design §7):
+1. a **MAX_PROPERTIES-volume test** — one email carrying 10 properties, all correctly routed;
+2. a **truncation test** — 15 properties, exactly 10 routed, the count and ` [truncated: X of M]`
+   suffix visible;
+3. **governor-headroom assertions** against a named budget — the highest-value test, because it
+   makes a future change that adds one query per property fail HERE instead of in production;
+4. a **mixed-outcome test** (winner + competing + repeat in one email);
+5. **ordering determinism** for anything whose iteration order is load-bearing (lock ordering).
+
+⚠ Assert governor headroom on counters captured INSIDE the async context (e.g.
+`ExtractAddressQueueable.lastRunQueryCount`), not on `Limits.getQueries()` after
+`Test.stopTest()` — stopTest restores the pre-test counters, so the obvious assertion is
+silently vacuous.

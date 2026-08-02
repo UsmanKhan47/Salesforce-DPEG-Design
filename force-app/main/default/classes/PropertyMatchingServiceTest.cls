@@ -224,4 +224,179 @@ private class PropertyMatchingServiceTest {
 
         Assert.isNull(result, 'An unregistered key has no orphan row');
     }
+
+    // ── findBrokerSubmission (REPEAT DETECTION) ──────────────────────────────
+    //
+    // Added 2026-07-31. This method had NO direct coverage, and the same change that
+    // needed these tests also changed its semantics: it used to skip candidates whose
+    // Source_Lead__c was null, and it no longer does, because a competing broker gets
+    // no Lead and every competing submission now legitimately carries a null source.
+    // Skipping them would make a competing broker's follow-up invisible to repeat
+    // detection, so each of their re-sends would be re-logged as a brand-new competing
+    // claim forever. findBrokerSubmission_nullSourceLead_isReturnedForACompetingBroker
+    // is the test that goes red if the filter is ever restored — in this method OR in
+    // CompetingBrokerSubmissionSelector, since either one alone reintroduces the bug
+    // (see CompetingBrokerSubmissionSelectorTest for the query-side twin).
+
+    private static final String BROKER = 'repeat.detect@example.invalid';
+
+    /**
+     * A submission with full control over the four fields repeat detection reads. Built
+     * (not inserted) so a test can insert its whole fixture in ONE DML.
+     */
+    private static Competing_Broker_Submission__c submission(
+            Id winningLeadId, Id sourceLeadId, String brokerEmail,
+            String rawAddress, Datetime submittedOn) {
+        Competing_Broker_Submission__c sub =
+            TestDataFactory.createCompetingBrokerSubmission(winningLeadId, false);
+        sub.Source_Lead__c = sourceLeadId;
+        sub.Is_Winning_Submission__c = (sourceLeadId != null && sourceLeadId == winningLeadId);
+        sub.Broker_Email__c = brokerEmail;
+        sub.Property_Address_Raw__c = rawAddress;
+        sub.Submitted_DateTime__c = submittedOn;
+        return sub;
+    }
+
+    @isTest
+    static void findBrokerSubmission_blankBrokerEmail_returnsNull() {
+        Assert.isNull(PropertyMatchingService.findBrokerSubmission(null, '100 main st'),
+            'A null broker email cannot identify a repeat');
+        Assert.isNull(PropertyMatchingService.findBrokerSubmission('   ', '100 main st'),
+            'A blank broker email cannot identify a repeat');
+    }
+
+    @isTest
+    static void findBrokerSubmission_blankAddress_returnsNull() {
+        Assert.isNull(PropertyMatchingService.findBrokerSubmission(BROKER, null),
+            'A null property address cannot identify a repeat');
+        Assert.isNull(PropertyMatchingService.findBrokerSubmission(BROKER, ''),
+            'An empty property address cannot identify a repeat');
+    }
+
+    @isTest
+    static void findBrokerSubmission_exactAddressMatch_returnsThatSubmission() {
+        Id leadId = createLead();
+        Competing_Broker_Submission__c prior =
+            submission(leadId, leadId, BROKER, '100 Main St.', Datetime.now().addDays(-2));
+        insert prior;
+
+        Test.startTest();
+        Competing_Broker_Submission__c result =
+            PropertyMatchingService.findBrokerSubmission(BROKER, '100 main st');
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'The broker\'s earlier submission for the same property should be found');
+        Assert.areEqual(prior.Id, result.Id,
+            'Matching is done in memory against the NORMALIZED raw address, so punctuation and casing must not defeat it');
+        Assert.areEqual(leadId, result.Source_Lead__c,
+            'A winner\'s own submission carries Source_Lead__c — the caller routes the repeat to that Lead');
+    }
+
+    @isTest
+    static void findBrokerSubmission_nullSourceLead_isReturnedForACompetingBroker() {
+        Id winnerLeadId = createLead();
+        // The shape branch (d) writes for a competing broker: rolled up under the winner,
+        // with NO Lead of their own. Before 2026-07-31 this row was skipped outright.
+        Competing_Broker_Submission__c competing =
+            submission(winnerLeadId, null, BROKER, '200 Competing Blvd', Datetime.now().addDays(-2));
+        insert competing;
+
+        Test.startTest();
+        Competing_Broker_Submission__c result =
+            PropertyMatchingService.findBrokerSubmission(BROKER, '200 competing blvd');
+        Test.stopTest();
+
+        Assert.isNotNull(result,
+            'A submission with a null Source_Lead__c must MATCH — it is the normal shape of a competing broker\'s claim, and skipping it would re-log every follow-up as a fresh competing claim forever');
+        Assert.areEqual(competing.Id, result.Id, 'The competing broker\'s own earlier row should be the match');
+        Assert.isNull(result.Source_Lead__c, 'The matched row genuinely has no source Lead');
+        Assert.areEqual(winnerLeadId, result.Winning_Lead__c,
+            'Winning_Lead__c must be populated so the caller can route the repeat onto the winning Lead instead');
+    }
+
+    @isTest
+    static void findBrokerSubmission_fuzzyMatchAboveThreshold_returnsBestCandidate() {
+        Id leadId = createLead();
+        // Candidate tokens {200,fuzzy,st,houston} (4); query tokens {200,fuzzy,st} (3);
+        // intersection 3, union 4 -> 0.75, above the 0.6 threshold and NOT an exact match.
+        Competing_Broker_Submission__c near =
+            submission(leadId, leadId, BROKER, '200 Fuzzy St Houston', Datetime.now().addDays(-2));
+        insert near;
+
+        Test.startTest();
+        Competing_Broker_Submission__c result =
+            PropertyMatchingService.findBrokerSubmission(BROKER, '200 fuzzy st');
+        Test.stopTest();
+
+        Assert.isNotNull(result,
+            'Repeat detection reuses the module\'s Jaccard tolerance, so a differently-worded version of the same address still counts as a repeat');
+        Assert.areEqual(near.Id, result.Id, 'The above-threshold candidate should be returned');
+    }
+
+    @isTest
+    static void findBrokerSubmission_belowThreshold_returnsNull() {
+        Id leadId = createLead();
+        insert submission(leadId, leadId, BROKER, '999 Elsewhere Ave', Datetime.now().addDays(-2));
+
+        Test.startTest();
+        Competing_Broker_Submission__c result =
+            PropertyMatchingService.findBrokerSubmission(BROKER, '100 main st');
+        Test.stopTest();
+
+        Assert.isNull(result,
+            'A different property by the same broker is a NEW submission, not a repeat — it must not be matched');
+    }
+
+    @isTest
+    static void findBrokerSubmission_multipleMatches_returnsTheOldest() {
+        Id originalLeadId = createLead();
+        Id laterLeadId = createLead();
+        // Same broker, same property, twice. The selector returns oldest-first and the exact
+        // match short-circuits on the first hit, so the ORIGINAL submission wins — that is
+        // what makes the caller route the repeat to the Lead the FIRST email produced rather
+        // than to a later follow-up's.
+        insert new List<Competing_Broker_Submission__c>{
+            submission(originalLeadId, originalLeadId, BROKER, '300 Oldest Way', Datetime.now().addDays(-10)),
+            submission(originalLeadId, laterLeadId, BROKER, '300 Oldest Way', Datetime.now().addDays(-1))
+        };
+
+        Test.startTest();
+        Competing_Broker_Submission__c result =
+            PropertyMatchingService.findBrokerSubmission(BROKER, '300 oldest way');
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'One of the two same-property submissions should match');
+        Assert.areEqual(originalLeadId, result.Source_Lead__c,
+            'Oldest-first ordering must return the ORIGINAL submission, not the later repeat');
+    }
+
+    @isTest
+    static void findBrokerSubmission_differentBroker_returnsNull() {
+        Id leadId = createLead();
+        insert submission(leadId, leadId, 'someone.else@example.invalid', '400 Other Broker Rd',
+            Datetime.now().addDays(-2));
+
+        Test.startTest();
+        Competing_Broker_Submission__c result =
+            PropertyMatchingService.findBrokerSubmission(BROKER, '400 other broker rd');
+        Test.stopTest();
+
+        Assert.isNull(result,
+            'A DIFFERENT broker submitting the same property is a competing claim, not a repeat — the two must never be confused');
+    }
+
+    @isTest
+    static void findBrokerSubmission_outsideLookbackWindow_returnsNull() {
+        Id leadId = createLead();
+        insert submission(leadId, leadId, BROKER, '500 Stale Ave',
+            Datetime.now().addDays(-(PropertyMatchingService.LOOKBACK_DAYS + 10)));
+
+        Test.startTest();
+        Competing_Broker_Submission__c result =
+            PropertyMatchingService.findBrokerSubmission(BROKER, '500 stale ave');
+        Test.stopTest();
+
+        Assert.isNull(result,
+            'A submission older than LOOKBACK_DAYS is outside the recency window and must not make a new email a repeat');
+    }
 }

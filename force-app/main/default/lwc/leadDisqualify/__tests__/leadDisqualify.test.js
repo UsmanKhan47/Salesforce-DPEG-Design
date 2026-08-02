@@ -1,21 +1,44 @@
 /**
  * c-lead-disqualify — HEADLESS quick action (empty template).
  * -----------------------------------------------------------
- * @api invoke() calls the REAL shared util c/leadStatusChange, which writes Status='Disqualified'
- * via LDS updateRecord. This is the many->one off-ramp (valid from New/Under Review/Qualified,
- * always writing 'Disqualified'), so the target is hardcoded and asserted directly. The suite uses
- * the real util so it can assert the actual updateRecord call shape (pre-mocked
- * jest.fn().mockResolvedValue({}) in the lightning/uiRecordApi stub; error path via
- * mockRejectedValueOnce). Observable output is the dispatched ShowToastEvent (headless = no DOM).
+ * @api invoke() runs the shared pre-flight in c/leadStatusChange (permission check -> confirmation)
+ * and only then writes Status='Disqualified' via LDS updateRecord. This is the many->one off-ramp
+ * (valid from New/Under Review/Qualified, always writing 'Disqualified'), so the target is
+ * hardcoded and asserted directly.
+ *
+ * The suite uses the REAL c/leadStatusChange util so it asserts the actual updateRecord call shape
+ * (pre-mocked jest.fn().mockResolvedValue({}) in the lightning/uiRecordApi stub; error path via
+ * mockRejectedValueOnce). lightning/confirm's real stub throws on .open() by design, so the module
+ * is replaced with a jest.fn; the permission Apex is virtually mocked. Observable output is the
+ * dispatched ShowToastEvent (headless = no DOM).
  */
 import { createElement } from 'lwc';
 import LeadDisqualify from 'c/leadDisqualify';
 import { updateRecord } from 'lightning/uiRecordApi';
+import LightningConfirm from 'lightning/confirm';
+import hasLeadActionAccess from '@salesforce/apex/LeadActionPermissionController.hasLeadActionAccess';
+
+jest.mock('lightning/confirm', () => ({
+    __esModule: true,
+    default: { open: jest.fn() }
+}));
+
+jest.mock(
+    '@salesforce/apex/LeadActionPermissionController.hasLeadActionAccess',
+    () => ({ default: jest.fn() }),
+    { virtual: true }
+);
 
 const RECORD_ID = '00Q5g00000AbCdEEAV';
 const TARGET = 'Disqualified';
+const NO_PERMISSION = "You don't have permission to perform this action.";
 
 describe('c-lead-disqualify', () => {
+    beforeEach(() => {
+        hasLeadActionAccess.mockResolvedValue(true);
+        LightningConfirm.open.mockResolvedValue(true);
+    });
+
     afterEach(() => {
         while (document.body.firstChild) {
             document.body.removeChild(document.body.firstChild);
@@ -52,6 +75,70 @@ describe('c-lead-disqualify', () => {
         expect(toastHandler.mock.calls[0][0].detail.variant).toBe('success');
         expect(toastHandler.mock.calls[0][0].detail.message).toBe(
             `Lead moved to ${TARGET}.`
+        );
+    });
+
+    it('CONFIRM: asks the disqualify question with the warning theme before writing', async () => {
+        const element = createComponent();
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(LightningConfirm.open).toHaveBeenCalledTimes(1);
+        expect(LightningConfirm.open).toHaveBeenCalledWith({
+            message: 'Are you sure you want to disqualify this lead?',
+            label: 'Disqualify Lead',
+            theme: 'warning',
+            variant: 'header'
+        });
+    });
+
+    it('CANCELLED: a declined confirmation writes nothing and toasts nothing', async () => {
+        LightningConfirm.open.mockResolvedValue(false);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(updateRecord).not.toHaveBeenCalled();
+        expect(toastHandler).not.toHaveBeenCalled();
+    });
+
+    it('NO PERMISSION: toasts the denial, never confirms, never writes', async () => {
+        hasLeadActionAccess.mockResolvedValue(false);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(LightningConfirm.open).not.toHaveBeenCalled();
+        expect(updateRecord).not.toHaveBeenCalled();
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(NO_PERMISSION);
+    });
+
+    it('PERMISSION CHECK FAILS: fails closed — surfaces the real message and writes nothing', async () => {
+        hasLeadActionAccess.mockRejectedValue({
+            body: { message: 'Apex class access is not enabled.' }
+        });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        await element.invoke();
+        await flushPromises();
+
+        expect(updateRecord).not.toHaveBeenCalled();
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(
+            'Apex class access is not enabled.'
         );
     });
 

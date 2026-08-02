@@ -3,8 +3,8 @@
     <fullName>Duplicate_Of_Lead__c</fullName>
     <deleteConstraint>SetNull</deleteConstraint>
     <label>Duplicate Of Lead</label>
-    <description>Points to the winning Lead - the first broker to submit this property. Populated only when Is_Duplicate_Property__c is true.</description>
-    <inlineHelpText>The original Lead that claimed this property first.</inlineHelpText>
+    <description>LEGACY as of 2026-07-31 — no longer written by any code path (competing brokers no longer receive a Lead). Retained for historical data only. Formerly pointed to the winning Lead - the first broker to submit this property. Populated only when Is_Duplicate_Property__c is true.</description>
+    <inlineHelpText>LEGACY — was the original Lead that claimed this property first; no longer written as of 2026-07-31.</inlineHelpText>
     <referenceTo>Lead</referenceTo>
     <relationshipLabel>Duplicate Property Leads</relationshipLabel>
     <relationshipName>Duplicate_Property_Leads</relationshipName>

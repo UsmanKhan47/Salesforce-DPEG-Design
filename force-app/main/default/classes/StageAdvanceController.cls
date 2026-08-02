@@ -21,6 +21,20 @@
  * messages the service re-wraps as a StageAdvanceException so they surface verbatim here. An
  * unexpected failure (e.g. a missing/inaccessible Opportunity, or an unexpected approval
  * failure) maps to a fixed, generic message with no exception detail concatenated into it.
+ *
+ * ── PERMISSION (server-side, first statement in every method) ──────────────────
+ * Both methods open with OpportunityActionPermissionService.assertDealActionAccess(). Until this
+ * existed the gate was purely the Dynamic Actions visibility rule on the Highlights Panel, which is
+ * a UX AFFORDANCE ONLY — any user with Opportunity edit access and class access could call these
+ * @AuraEnabled methods directly and drive a deal through every stage. The assert asks the exact
+ * same question the visibility rules ask (`Deal_Driver__c = true` on the running user, with the
+ * documented "Modify All Data" bypass), so no user gains or loses access; what changes is that the
+ * rule is now enforced rather than merely displayed.
+ *
+ * The assert runs INSIDE the try with its own catch clause, ahead of the StageAdvanceException and
+ * generic clauses. That ordering matters: an AccessDeniedException reaching the generic catch would
+ * be masked as "This deal could not be loaded", telling the user to refresh the page over a
+ * permissions problem. Its own clause surfaces the agreed denial wording instead.
  */
 public with sharing class StageAdvanceController {
 
@@ -35,10 +49,25 @@ public with sharing class StageAdvanceController {
         return ex;
     }
 
+    /**
+     * Moves the deal to the primary next stage for its current stage, or — from Underwriting —
+     * submits it into the principal LOI approval.
+     *
+     * @param recordId the Opportunity to advance
+     * @return a user-facing confirmation message
+     * @throws AuraHandledException when the running user is not a deal driver, when there is no next
+     *         step, when a validation rule blocks the write (its message is surfaced), or — with a
+     *         fixed generic message — on an unexpected failure.
+     */
     @AuraEnabled
     public static String advance(Id recordId) {
         try {
+            OpportunityActionPermissionService.assertDealActionAccess();
             return StageAdvanceService.advance(recordId);
+        } catch (OpportunityActionPermissionService.AccessDeniedException e) {
+            // Not a deal driver. Surface the agreed denial wording verbatim — identical to what the
+            // LWC shows for the client-side gate, so one condition never produces two phrasings.
+            throw ahe(e.getMessage());
         } catch (StageAdvanceService.StageAdvanceException e) {
             // "No next step" / the surfaced signed-NDA validation message / a re-wrapped
             // user-actionable approval-submission message.
@@ -50,12 +79,29 @@ public with sharing class StageAdvanceController {
         }
     }
 
+    /**
+     * Moves the deal to an explicit target stage — the branch actions off Under Review, the PSA
+     * off-ramp, and the pre-authorized Dead/Pass off-ramp.
+     *
+     * @param recordId the Opportunity to advance
+     * @param target   the explicit target StageName; must be one of
+     *                 StageAdvanceService.ALLOWED_EXPLICIT_TARGETS
+     * @return a user-facing confirmation message
+     * @throws AuraHandledException when the running user is not a deal driver, when the target is
+     *         blank or not an allowed explicit target, when a validation rule blocks the write, or —
+     *         with a fixed generic message — on an unexpected failure.
+     */
     @AuraEnabled
     public static String advanceTo(Id recordId, String target) {
         try {
+            OpportunityActionPermissionService.assertDealActionAccess();
             return StageAdvanceService.advanceTo(recordId, target);
+        } catch (OpportunityActionPermissionService.AccessDeniedException e) {
+            // Not a deal driver — see advance() above.
+            throw ahe(e.getMessage());
         } catch (StageAdvanceService.StageAdvanceException e) {
-            // Blank target / no record / the surfaced validation message.
+            // Blank target / target outside the allow-list / no record / the surfaced validation
+            // message.
             throw ahe(e.getMessage());
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'StageAdvanceController.advanceTo on ' + recordId

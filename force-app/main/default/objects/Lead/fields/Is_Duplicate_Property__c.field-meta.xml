@@ -3,8 +3,8 @@
     <fullName>Is_Duplicate_Property__c</fullName>
     <defaultValue>false</defaultValue>
     <label>Is Duplicate Property</label>
-    <description>Set by ExtractAddressQueueable when the property on this Lead has already been claimed by an earlier broker submission. Dead Lead - kept for traceability only.</description>
-    <inlineHelpText>Checked when another broker registered this property first. This Lead does not compete with the winning Lead.</inlineHelpText>
+    <description>LEGACY as of 2026-07-31 — no longer written by any code path (competing brokers no longer receive a Lead). Retained for historical data only. Formerly set by ExtractAddressQueueable when the property on this Lead had already been claimed by an earlier broker submission. Dead Lead - kept for traceability only.</description>
+    <inlineHelpText>LEGACY — was checked when another broker registered this property first; no longer written as of 2026-07-31.</inlineHelpText>
     <trackFeedHistory>false</trackFeedHistory>
     <type>Checkbox</type>
 </CustomField>

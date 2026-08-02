@@ -38,9 +38,12 @@ async Queueable that calls OpenAI (vision-capable, text or image) to extract the
 the property address, and the original "Sent:" time, with a regex fallback on the first `From:` line
 when the LLM misses a field. The Queueable normalizes the address and runs a claim against a
 backend-only ledger (`Property_Registry__c`): the first normalized/near-duplicate address to claim a
-property wins (stays a live, usable Lead); every subsequent claim for that property is marked
-`Is_Duplicate_Property__c` and pointed at the winner via `Duplicate_Of_Lead__c`, never touching the
-winner's data. Every submission — winning or not — is also logged to an append-only audit object,
+property wins (stays a live, usable Lead); a later broker's claim for that property gets **no Lead of
+its own** (changed 2026-07-31) — it is recorded as a non-winning `Competing_Broker_Submission__c`
+against the winner (`Source_Lead__c = null`) and its email is logged on the winning Lead, never
+touching the winner's data. (`Lead.Is_Duplicate_Property__c` / `Duplicate_Of_Lead__c`, described below,
+are the retired fields this replaced — see `docs/2026-07-31-competing-broker-no-lead.md`.) Every
+submission — winning or not — is also logged to an append-only audit object,
 `Competing_Broker_Submission__c`, which a new LWC (`competingBrokerSubmissions`) renders as a timeline
 on the winning Lead's record page. Concurrent same-property submissions are serialized behind a
 pessimistic row lock (`Property_Claim_Lock__c`) so two near-simultaneous claims cannot both win.
@@ -93,9 +96,11 @@ ASB-only integration rule).
    - **No existing winner** → `registerWinner`: insert a new `Property_Registry__c` row
      (`Property_Key__c` = the normalized address, unique) + a winning `Competing_Broker_Submission__c`.
    - **Existing winner found** (exact key match, or fuzzy Jaccard ≥ 0.6 within a 90-day lookback) →
-     `markDuplicate`: flag the new Lead (`Is_Duplicate_Property__c = true`,
-     `Duplicate_Of_Lead__c = <winner>`) and insert a non-winning `Competing_Broker_Submission__c`
-     against the winner's Lead. The winning Lead itself is never written to.
+     `markDuplicate`: insert a non-winning `Competing_Broker_Submission__c` against the winner's Lead
+     with `Source_Lead__c = null` — **no Lead is created for the competing broker** (changed
+     2026-07-31; see `docs/2026-07-31-competing-broker-no-lead.md`). The winning Lead itself is never
+     written to. (`markDuplicate` used to also flag the new Lead `Is_Duplicate_Property__c = true` /
+     `Duplicate_Of_Lead__c = <winner>` — both fields are now LEGACY; see the field table below.)
 6. **`competingBrokerSubmissions` LWC**, placed on the `Lead_Record_Page` FlexiPage, wires
    **`CompetingSubmissionController.getSubmissions`** (thin `@AuraEnabled(cacheable=true)` controller
    over `CompetingBrokerSubmissionSelector.selectByWinningLead`) to render every submission tied to the
@@ -148,11 +153,9 @@ Broker A forwards  ──►  EmailToLeadHandler
                                                                          │   = true                  │
                                                                          └─────────────────────────┘
 
-Broker B forwards  ──►  EmailToLeadHandler ──► EmailToLeadService ──► INSERT Lead B (raw)
-"123 Main Street"                                                          │
-  (moments later)                                                          ▼ enqueueJob
-                                                              ExtractAddressQueueable(B)
-                                                                            │
+Broker B forwards  ──►  EmailToLeadHandler ──► ExtractAddressQueueable(B)
+"123 Main Street"                                          │        (changed 2026-07-31: NO Lead is
+  (moments later)                                           │         created for Broker B at all)
                                                           (same extract/regex/apply steps)
                                                                             │
                                                                             ▼
@@ -166,14 +169,16 @@ Broker B forwards  ──►  EmailToLeadHandler ──► EmailToLeadService �
                                                               = Lead A found
                                                           (d) markDuplicate
                                                                             │
-                                                    ┌───────────────────────┴─────────────────────┐
-                                                    ▼                                               ▼
-                                     UPDATE Lead B                                   INSERT Competing_Broker_
-                                     Is_Duplicate_Property__c = true                 Submission__c CBS-0000002
-                                     Duplicate_Of_Lead__c = Lead A                    Winning_Lead__c = Lead A
-                                     (Lead A is NEVER written to)                     Source_Lead__c = Lead B
-                                                                                       Is_Winning_Submission__c
-                                                                                        = false
+                                                                            ▼
+                                                              INSERT Competing_Broker_
+                                                              Submission__c CBS-0000002
+                                                              Winning_Lead__c = Lead A
+                                                              Source_Lead__c = null   ← Broker B has
+                                                                                        no Lead of their own
+                                                              Is_Winning_Submission__c = false
+                                                              (Lead A is NEVER written to; Broker B's
+                                                               email Task is logged on Lead A instead
+                                                               of a Lead of its own)
 
                                                                             ┌─────────────────────────────┐
                                                                             │ competingBrokerSubmissions   │
@@ -181,9 +186,13 @@ Broker B forwards  ──►  EmailToLeadHandler ──► EmailToLeadService �
                                                                             │ (via CompetingSubmission-     │
                                                                             │ Controller.getSubmissions)     │
                                                                             │  Winner:    Lead A / Broker A │
-                                                                            │  Competing: Lead B / Broker B │
+                                                                            │  Competing: (no Lead) / Broker B│
                                                                             └─────────────────────────────┘
 ```
+
+*Diagram updated 2026-07-31 for the no-Lead competing-broker behavior; see
+`docs/2026-07-31-competing-broker-no-lead.md` for the full routing tree and the destructive lost-race
+path this diagram does not show.*
 
 ---
 
@@ -203,8 +212,8 @@ Broker B forwards  ──►  EmailToLeadHandler ──► EmailToLeadService �
 |---|---|---|---|
 | `Lead` | `Email_Subject__c` | Text(255) | Subject line of the inbound broker email that created this Lead. |
 | `Lead` | `Forwarded_By_Email__c` | Email | The internal forwarder's email address (not the broker's), from the inbound envelope. Named `_Email` (not `_By__c`) so it is not mistaken for a §1 role-lookup. |
-| `Lead` | `Is_Duplicate_Property__c` | Checkbox, default `false` | Set by `ExtractAddressQueueable`/`PropertyClaimService` when this Lead's property was already claimed by an earlier submission. Kept for traceability only — this is a "dead" Lead. |
-| `Lead` | `Duplicate_Of_Lead__c` | Lookup → Lead, `deleteConstraint=SetNull` | Points a duplicate Lead at its winner. Populated only when `Is_Duplicate_Property__c = true`. Lookup-to-Lead cannot use Restrict/Cascade, hence `SetNull` + the insert-scoped validation rule below standing in for "required." |
+| `Lead` | `Is_Duplicate_Property__c` | Checkbox, default `false` | **LEGACY as of 2026-07-31** — no longer written by any code path (a competing broker no longer receives a Lead to flag; see `docs/2026-07-31-competing-broker-no-lead.md`). Retained for historical data only. Formerly set by `ExtractAddressQueueable`/`PropertyClaimService` when this Lead's property was already claimed by an earlier submission. |
+| `Lead` | `Duplicate_Of_Lead__c` | Lookup → Lead, `deleteConstraint=SetNull` | **LEGACY as of 2026-07-31** — no longer written by any code path. Retained for historical data only. Formerly populated only when `Is_Duplicate_Property__c = true`. Lookup-to-Lead cannot use Restrict/Cascade, hence `SetNull` + the insert-scoped validation rule below standing in for "required." |
 | `Property_Registry__c` | `Property_Key__c` | Text(255), **unique, case-insensitive, `externalId=true`, required** | The atomic claim key — normalized property address. This uniqueness constraint is the database-level race-safety backstop for exact-match collisions. |
 | `Property_Registry__c` | `Normalized_Address__c` | Text(255) | The same normalized address, stored for fuzzy-match comparison (`PropertyMatchingService.calculateSimilarity`). |
 | `Property_Registry__c` | `Winning_Lead__c` | Lookup → Lead, `SetNull` | The Lead that currently holds this claim. Null when the winner was deleted (an "orphaned" registration — see Race-Safety Design). |
@@ -361,9 +370,10 @@ them travel with the metadata deploy.
    `EmailToLeadHandler`. This is org configuration, not portable metadata.
 4. **Acceptance-test end-to-end as a non-admin persona** — forward two emails for the same property
    (exact and near-duplicate wording) through the live routing address and confirm: the first Lead is
-   the winner, the second is flagged `Is_Duplicate_Property__c` and points at the winner via
-   `Duplicate_Of_Lead__c`, and both submissions appear on the winning Lead's `competingBrokerSubmissions`
-   panel.
+   the winner, the second broker gets **no Lead of their own** (a non-winning
+   `Competing_Broker_Submission__c` with `Source_Lead__c = null` logged against the winner — changed
+   2026-07-31, see `docs/2026-07-31-competing-broker-no-lead.md`), and both submissions appear on the
+   winning Lead's `competingBrokerSubmissions` panel.
 
 ---
 

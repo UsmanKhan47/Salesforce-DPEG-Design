@@ -5,12 +5,18 @@
  * PHASE 2 SIGNATURE CHANGE THIS REWRITE TRACKS: the old two-call shape
  * (createLeadAndEnqueue inserts a bare Lead from the envelope, then a later
  * applyExtractedDetails update fills in the LLM's answers) collapsed into ONE
- * method, createLeadFromExtracted(extracted, fromName, fromAddress, emailSubject,
- * rawBody, forwardedByEmail), which builds and inserts a COMPLETE Lead in a single
+ * method, createLeadFromExtracted(...), which builds and inserts a COMPLETE Lead in a single
  * DML statement once extraction has already happened, and returns its Id. There is
  * no enqueue call in this class any more — EmailToLeadHandler owns that — so this
- * class covers ONLY createLeadFromExtracted (and its private applyName helper,
- * exercised through that one public entry point).
+ * class covers createLeadFromExtracted (and its private applyName helper, exercised
+ * through that one public entry point), plus deleteLead (added 2026-07-31 for the
+ * lost-race path — see the class header).
+ *
+ * DELETELEAD DIRECT COVERAGE (added 2026-07-31): deleteLead was previously exercised
+ * only indirectly, through ExtractAddressQueueableTest's forceClaimRace scenario
+ * (an integration-level test of the whole routing tree). The tests below isolate the
+ * method itself: it removes exactly the targeted Lead and leaves others untouched,
+ * and a null id is a no-op rather than a NullPointerException.
  *
  * ASSERTION STYLE: Assert.* — matches the sibling Broker-Protection test classes in
  * this exact module (PropertyClaimServiceTest, PropertyMatchingServiceTest), which
@@ -28,12 +34,56 @@ private class EmailToLeadServiceTest {
         };
     }
 
+    /**
+     * Adapter for the pre-2026-07-31 positional call shape.
+     *
+     * `createLeadFromExtracted` now takes a `LeadRequest` DTO instead of a map plus five strings
+     * (design §1.7 — the enrichment would otherwise have produced a ~25-parameter signature). The
+     * NAME/EMAIL/COMPANY precedence, whitespace handling and field-length behaviour these tests
+     * assert are unchanged, so the assertions below are kept verbatim and only the marshalling
+     * moved here. That is deliberate: rewriting the assertions at the same time as the signature
+     * would have destroyed the evidence that the behaviour did not change.
+     *
+     * @param extracted        Legacy four-key map; null is tolerated exactly as before.
+     * @param fromName         Envelope display name.
+     * @param fromAddress      Envelope From address.
+     * @param emailSubject     Inbound subject.
+     * @param rawBody          Raw email body.
+     * @param forwardedByEmail Monitored inbox that forwarded the email.
+     * @return The Id of the inserted Lead.
+     */
+    private static Id createLeadFrom(Map<String, String> extracted, String fromName, String fromAddress,
+                                     String emailSubject, String rawBody, String forwardedByEmail) {
+        Map<String, String> fields = (extracted == null) ? new Map<String, String>() : extracted;
+        EmailToLeadService.LeadRequest request = new EmailToLeadService.LeadRequest();
+        request.brokerName = fields.get('broker_name');
+        request.brokerEmail = fields.get('broker_email');
+        request.propertyAddress = fields.get('property_address');
+        request.fromName = fromName;
+        request.fromAddress = fromAddress;
+        request.emailSubject = emailSubject;
+        request.rawBody = rawBody;
+        request.forwardedByEmail = forwardedByEmail;
+        return EmailToLeadService.createLeadFromExtracted(request);
+    }
+
+    /** A request carrying only the enrichment fields under test, with the required minimum. */
+    private static EmailToLeadService.LeadRequest enrichedRequest() {
+        EmailToLeadService.LeadRequest request = new EmailToLeadService.LeadRequest();
+        request.brokerName = 'Jane Broker';
+        request.brokerEmail = 'jane@brokerfirm.example.invalid';
+        request.fromAddress = 'jane@brokerfirm.example.invalid';
+        request.emailSubject = 'FW: enrichment';
+        request.rawBody = 'body';
+        return request;
+    }
+
     // ── name splitting (applyName, via broker_name / fromName precedence) ───────
 
     @isTest
     static void createLeadFromExtracted_singleTokenBrokerName_setsLastNameOnly() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Smith', 'smith@brokerfirm.example.invalid', '100 Main St'),
             'Fallback Name', 'fallback@example.invalid', 'FW: 100 Main St', 'body text', null);
         Test.stopTest();
@@ -46,7 +96,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_twoTokenBrokerName_splitsFirstAndLastName() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'jane@brokerfirm.example.invalid', '100 Main St'),
             null, 'jane@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -59,7 +109,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_threeTokenBrokerName_joinsTailIntoLastName() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Mary Jane Watson', 'mary@example.invalid', null),
             null, 'mary@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -72,7 +122,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_brokerNameTrailingSpace_collapsesToSingleTokenLastName() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane ', 'jane.trailing@example.invalid', null),
             null, 'jane.trailing@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -85,7 +135,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_brokerNameDoubleSpace_splitsFirstAndLastNameNotBlank() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane  Broker', 'jane.double@example.invalid', null),
             null, 'jane.double@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -98,7 +148,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_nullBrokerNameAndFromName_defaultsLastNameToUnknown() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith(null, null, null),
             null, 'anon@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -111,7 +161,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_blankBrokerName_fallsBackToEnvelopeFromName() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('', '', null),
             'Envelope Sender', 'sender@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -126,7 +176,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_brokerEmailPresent_takesPrecedenceOverFromAddress() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'llm.broker@example.invalid', null),
             'Jane Broker', 'envelope.from@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -138,7 +188,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_blankBrokerEmail_fallsBackToFromAddress() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', '', null),
             'Jane Broker', 'envelope.from@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -153,7 +203,7 @@ private class EmailToLeadServiceTest {
         // address) rather than writing it to the Email field and throwing
         // INVALID_EMAIL_ADDRESS and rolling back the whole claim.
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'not an email address', null),
             'Jane Broker', 'envelope.from@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -166,7 +216,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_bothEmailsBlank_leavesEmailNull() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', '', null),
             'Jane Broker', '', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -180,7 +230,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_propertyAddressPresent_stampsPropertyAddress() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'jane@example.invalid', '100 Main St, Houston, TX'),
             null, 'jane@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -192,7 +242,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_blankPropertyAddress_leavesPropertyAddressBlank() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'jane@example.invalid', ''),
             null, 'jane@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -206,7 +256,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_forwardedByPresent_stampsForwardedByEmail() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'jane@example.invalid', null),
             null, 'jane@example.invalid', 'FW: subject', 'body', 'forwarder@example.invalid');
         Test.stopTest();
@@ -218,7 +268,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_blankForwardedBy_leavesForwardedByBlank() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'jane@example.invalid', null),
             null, 'jane@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
@@ -232,7 +282,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_allFieldsPresent_stampsCompanyLeadSourceStatusSubjectDescription() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'jane@example.invalid', '100 Main St'),
             null, 'jane@example.invalid', 'FW: 100 Main St', 'The raw email body', 'forwarder@example.invalid');
         Test.stopTest();
@@ -250,7 +300,7 @@ private class EmailToLeadServiceTest {
     @isTest
     static void createLeadFromExtracted_nullExtractedMap_doesNotThrowAndFallsBackToEnvelope() {
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             null, 'Envelope Name', 'envelope@example.invalid', 'FW: subject', 'body', null);
         Test.stopTest();
 
@@ -266,7 +316,7 @@ private class EmailToLeadServiceTest {
         String longBody = ''.rightPad(33000, 'y');
 
         Test.startTest();
-        Id leadId = EmailToLeadService.createLeadFromExtracted(
+        Id leadId = createLeadFrom(
             extractedWith('Jane Broker', 'jane@example.invalid', null),
             null, 'jane@example.invalid', longSubject, longBody, null);
         Test.stopTest();
@@ -274,5 +324,246 @@ private class EmailToLeadServiceTest {
         Lead created = [SELECT Email_Subject__c, Description FROM Lead WHERE Id = :leadId];
         Assert.areEqual(255, created.Email_Subject__c.length(), 'An over-long subject should be clipped to 255 characters, not throw STRING_TOO_LONG');
         Assert.areEqual(32000, created.Description.length(), 'An over-long body should be clipped to 32000 characters, not throw STRING_TOO_LONG');
+    }
+
+    // ── enrichment: the deal-screening block (2026-07-31) ────────────────────
+
+    @isTest
+    static void createLeadFromExtracted_typedPropertyValues_areStampedVerbatim() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        PropertyExtraction property = new PropertyExtraction();
+        property.propertyName = 'Royal Inn';
+        property.assetType = 'Retail';
+        property.dealType = 'Commercial';
+        property.guidancePrice = 7100000;
+        property.capRate = 6.75;
+        property.noi = 479250;
+        property.occupancyPct = 88.00;
+        property.buildingSf = 128500;
+        property.unitCount = 96;
+        property.yearBuilt = 1988;
+        property.yearRenovated = 2022;
+        property.lotSizeAcres = 3.25;
+        property.waltYears = 7.3;
+        property.zoning = 'C-2';
+        property.sellerEntity = 'Royal Holdings LP';
+        property.dealRoomLink = 'https://deals.example.invalid/royal';
+        property.offerDueDate = Date.today().addDays(14);
+        request.property = property;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [
+            SELECT Property_Name__c, Asset_Type__c, Deal_Type__c, Guidance_Price__c, Guidance_Cap_Rate__c,
+                   NOI__c, Occupancy_Pct__c, Building_SF__c, Unit_Count__c, Year_Built__c, Year_Renovated__c,
+                   Lot_Size_Acres__c, WALT_Years__c, Zoning__c, Seller_Entity__c, Deal_Room_Link__c,
+                   Offer_Due_Date__c
+            FROM Lead WHERE Id = :leadId
+        ];
+        Assert.areEqual('Royal Inn', created.Property_Name__c, 'Property_Name__c should be stamped');
+        Assert.areEqual('Retail', created.Asset_Type__c, 'A parser-validated picklist value should be written as-is');
+        Assert.areEqual(7100000, created.Guidance_Price__c, 'Guidance_Price__c should be stamped');
+        Assert.areEqual(6.75, created.Guidance_Cap_Rate__c, 'Guidance_Cap_Rate__c should be stamped');
+        Assert.areEqual(88.00, created.Occupancy_Pct__c,
+            'Occupancy 88.00 must survive — this also fails loudly if Occupancy_Pct__c ships as Percent(3,2), which caps at 9.99');
+        Assert.areEqual(1988, created.Year_Built__c, 'Year_Built__c should be stamped');
+        Assert.areEqual(3.25, created.Lot_Size_Acres__c, 'Lot_Size_Acres__c should be stamped');
+        Assert.areEqual('https://deals.example.invalid/royal', created.Deal_Room_Link__c, 'Deal_Room_Link__c should be stamped');
+        Assert.areEqual(Date.today().addDays(14), created.Offer_Due_Date__c, 'Offer_Due_Date__c should be stamped');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_brokerCompanyPresent_replacesThePlaceholder() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.brokerCompany = 'Brokerfirm LLC';
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Assert.areEqual('Brokerfirm LLC', [SELECT Company FROM Lead WHERE Id = :leadId].Company,
+            'An extracted broker_company should replace the placeholder Company');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_brokerCompanyBlank_keepsThePlaceholder() {
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Assert.areEqual('Unknown - Via Email', [SELECT Company FROM Lead WHERE Id = :leadId].Company,
+            'Company is REQUIRED, so a blank broker_company must fall back to the placeholder and never write blank');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_brokerContactBlock_isStamped() {
+        // ⚠ This test deliberately does NOT query Lead.MobilePhone. That field does not exist in
+        // this org (newer org template retired it; the repo's field-meta snapshot is stale, same
+        // as Task.Type) — selecting it would fail the query, and STAMPING it failed every Lead
+        // insert in the pipeline until 2026-07-31. See EmailToLeadService.applyBrokerBlock.
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.brokerPhone = '214-555-0100';
+        request.brokerMobile = '214-555-0199';
+        request.brokerTitle = 'Managing Director';
+        request.listingBrokerName = 'Alex Lister';
+        request.listingBrokerEmail = 'alex@listingco.example.invalid';
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [
+            SELECT Phone, Title, Listing_Broker_Name__c, Listing_Broker_Email__c, Email, Deal_Notes__c
+            FROM Lead WHERE Id = :leadId
+        ];
+        Assert.areEqual('214-555-0100', created.Phone,
+            'With both numbers extracted, the OFFICE line wins Phone');
+        Assert.areEqual('Managing Director', created.Title, 'Title should be stamped from broker_title');
+        Assert.areEqual('Alex Lister', created.Listing_Broker_Name__c, 'Listing_Broker_Name__c should be stamped');
+        Assert.areEqual('alex@listingco.example.invalid', created.Listing_Broker_Email__c,
+            'The LISTING broker is a separate field and must never overwrite the claim-engine broker');
+        Assert.areEqual('jane@brokerfirm.example.invalid', created.Email,
+            'Lead.Email must still be the SENDING broker — repointing it at the listing broker would re-attribute every claim');
+        Assert.isTrue(created.Deal_Notes__c.contains('Mobile: 214-555-0199'),
+            'The mobile must not be silently dropped just because Lead.MobilePhone does not exist — it lands on Deal_Notes__c where the person working the Lead will see it');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_cellOnlyBroker_putsTheMobileInPhone() {
+        // A broker signature with only a cell number is common. Before the MobilePhone removal
+        // that number went to a field that does not exist; now it must reach Phone, or the Lead
+        // would carry NO reachable number at all.
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.brokerMobile = '214-555-0199';
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [SELECT Phone, Deal_Notes__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual('214-555-0199', created.Phone,
+            'With no office line, the mobile must fall through to Phone so the broker stays reachable');
+        Assert.isTrue(created.Deal_Notes__c == null || !created.Deal_Notes__c.contains('Mobile:'),
+            'When the mobile IS the Phone there is nothing to duplicate onto Deal_Notes__c');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_noPhoneNumbersAtAll_leavesPhoneNull() {
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Assert.isNull([SELECT Phone FROM Lead WHERE Id = :leadId].Phone,
+            'No extracted number must leave Phone null rather than writing an empty string');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_extractionNotes_landOnDealNotes() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.dealSummary = 'Roof replaced 2021. Reported NOI 500k, adjusted 479k.';
+        request.extractionNotes = new List<String>{ 'cap_rate "six point five" was ignored: not a number.' };
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        String notes = [SELECT Deal_Notes__c FROM Lead WHERE Id = :leadId].Deal_Notes__c;
+        Assert.isTrue(notes.contains('Roof replaced 2021'), 'The narrative should lead Deal_Notes__c');
+        Assert.isTrue(notes.contains('-- Extraction notes --'),
+            'Rejected values must be filed under a header so a reader can tell "the model said nothing" from "we refused to store it"');
+        Assert.isTrue(notes.contains('cap_rate'), 'The rejection reason itself must reach the record');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_spilloverNote_landsOnDealNotes() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.spilloverNote = 'Additional properties in this email (not routed):\n- Bass Inn (no usable address)';
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Assert.isTrue([SELECT Deal_Notes__c FROM Lead WHERE Id = :leadId].Deal_Notes__c.contains('Bass Inn'),
+            'A property the pipeline could not route must still be visible to the human working the deal (C-1)');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_parseConfidence_isStampedForTheReviewQueue() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.parseConfidence = LLMExtractionParser.BAND_LOW;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Assert.areEqual('LOW', [SELECT Parse_Confidence__c FROM Lead WHERE Id = :leadId].Parse_Confidence__c,
+            'The soft gate is expressed as Parse_Confidence__c = LOW, which is what feeds the existing Review_Queue list view');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_nullProperty_leavesTheScreeningFieldsBlank() {
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Lead created = [SELECT Property_Name__c, NOI__c, Asset_Type__c FROM Lead WHERE Id = :leadId];
+        Assert.isNull(created.Property_Name__c, 'A no-property Lead (branch c) must leave the screening block unset');
+        Assert.isNull(created.NOI__c, 'A no-property Lead must not invent financials');
+        Assert.isNull(created.Asset_Type__c, 'A no-property Lead must not invent a classification');
+    }
+
+    // ── deleteLead (lost-race cleanup) ───────────────────────────────────────
+
+    @isTest
+    static void deleteLead_existingLead_removesOnlyTheTargetedLead() {
+        Lead racer = TestDataFactory.createLead(true);
+        Lead untouched = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        EmailToLeadService.deleteLead(racer.Id);
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Lead WHERE Id = :racer.Id],
+            'The targeted Lead must be deleted');
+        Assert.areEqual(1, [SELECT COUNT() FROM Lead WHERE Id = :untouched.Id],
+            'An unrelated Lead must never be touched by deleteLead');
+    }
+
+    @isTest
+    static void deleteLead_nullId_isANoOpAndDoesNotThrow() {
+        Lead untouched = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        EmailToLeadService.deleteLead(null);
+        Test.stopTest();
+
+        Assert.areEqual(1, [SELECT COUNT() FROM Lead WHERE Id = :untouched.Id],
+            'A null leadId must be a no-op — no Lead should be deleted and no exception should propagate');
+    }
+
+    @isTest
+    static void deleteLead_leadWithSubmissionReference_clearsSourceLeadViaSetNull() {
+        // Mirrors the real lost-race shape: a submission was written against this Lead
+        // (PropertyClaimService.markDuplicate) BEFORE the caller decided to delete it.
+        // The lookup's SetNull delete constraint — not any code in this class — is what
+        // clears Source_Lead__c; this test proves deleteLead does not need to (and must
+        // not have to) clean that reference up itself.
+        Lead racer = TestDataFactory.createLead(true);
+        Lead winner = TestDataFactory.createLead(true);
+        Competing_Broker_Submission__c sub = TestDataFactory.createCompetingBrokerSubmission(winner.Id, false);
+        sub.Source_Lead__c = racer.Id;
+        sub.Is_Winning_Submission__c = false;
+        insert sub;
+
+        Test.startTest();
+        EmailToLeadService.deleteLead(racer.Id);
+        Test.stopTest();
+
+        Competing_Broker_Submission__c subAfter = [SELECT Source_Lead__c FROM Competing_Broker_Submission__c WHERE Id = :sub.Id];
+        Assert.isNull(subAfter.Source_Lead__c,
+            'Deleting the racer\'s Lead should clear Source_Lead__c on its submission via the lookup\'s SetNull delete constraint');
+        Assert.areEqual(0, [SELECT COUNT() FROM Lead WHERE Id = :racer.Id], 'The racer\'s Lead must be gone');
     }
 }

@@ -3,8 +3,8 @@
     <fullName>Source_Lead__c</fullName>
     <deleteConstraint>SetNull</deleteConstraint>
     <label>Source Lead</label>
-    <description>The Lead created for this specific inbound email. Equal to Winning_Lead__c on the winning submission row.</description>
-    <inlineHelpText>The Lead this individual inbound email produced, whether or not it went on to win.</inlineHelpText>
+    <description>Null is the NORMAL shape for a competing broker's submission — only the winner's own row carries a Source Lead, since competing brokers no longer receive a Lead. Also null when a previously-linked Lead was deleted (SetNull). When populated, equal to Winning_Lead__c on the winning submission row.</description>
+    <inlineHelpText>The winner's own submission links to their Lead; a competing broker's submission has none (null is normal). Also null if a previously-linked Lead was deleted.</inlineHelpText>
     <referenceTo>Lead</referenceTo>
     <relationshipLabel>Broker Submissions (Source)</relationshipLabel>
     <relationshipName>Source_Broker_Submissions</relationshipName>

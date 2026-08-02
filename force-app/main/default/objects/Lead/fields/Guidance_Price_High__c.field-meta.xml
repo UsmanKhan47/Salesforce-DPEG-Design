@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Guidance_Price_High__c</fullName>
+    <description>High end of a guidance price range, as stated in the broker email. Currency(18,2), matching the existing single-value Guidance_Price__c.</description>
+    <inlineHelpText>Populated by LLM extraction from the inbound broker email; null when not stated in the email.</inlineHelpText>
+    <label>Guidance Price High</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Currency</type>
+</CustomField>

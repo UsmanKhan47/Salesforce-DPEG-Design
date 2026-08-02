@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lot_Size_Acres__c</fullName>
+    <description>Lot size in acres. The LLM reports whichever unit (acres or square feet) the email actually states; when only square feet is stated, Apex converts to acres (divided by 43,560) rather than the model guessing. Canonical unit = acres, per ARCHITECTURE.md §1 rule 9.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Populated by LLM extraction from the inbound broker email; null when not stated in the email.</inlineHelpText>
+    <label>Lot Size (Acres)</label>
+    <precision>10</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

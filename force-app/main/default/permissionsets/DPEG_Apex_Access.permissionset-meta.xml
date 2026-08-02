@@ -60,6 +60,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>OpportunityActionPermissionController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>OpportunityApprovalController</apexClass>
         <enabled>true</enabled>
     </classAccesses>

@@ -1,0 +1,177 @@
+/**
+ * Broker-Protection LLM extraction — ONE property pitched by an inbound broker email.
+ *
+ * A pure data carrier produced by LLMExtractionParser from one element of the response's
+ * `properties` array. Every numeric/date/picklist member has already been coerced and
+ * VALIDATED by the parser, so a non-null value here is safe to write to its destination
+ * field and a null means "the email did not say, or said something unusable" — never
+ * "not parsed yet". The parser records the reason for every null it produces in
+ * LLMExtractionResult.notes, which the writer appends to Deal_Notes__c.
+ *
+ * ═══ WHY THIS TYPE SORTS ITSELF (the deadlock fix — design §1.2) ═══
+ * compareTo orders properties by (clusterKey ASC, normalizedAddress ASC). That total
+ * order is LOAD-BEARING, not cosmetic. PropertyClaimService.claim() takes a FOR UPDATE
+ * row lock per property and Apex cannot release a row lock before commit, so a queueable
+ * claiming N properties holds N locks simultaneously. Two concurrent multi-property emails
+ * sharing two properties are a textbook AB-BA deadlock — and Salesforce does not report
+ * deadlocks, it reports UNABLE_TO_LOCK_ROW, which acquireClusterLock already swallows into
+ * ClaimOutcome.UNCLAIMED with only a System.debug. Broker protection would fail SILENTLY on
+ * exactly the multi-property blasts this feature exists to support.
+ *
+ * Visiting shared clusters in the same relative order in every transaction makes a
+ * wait-for cycle impossible: the loser simply blocks on the first shared key and proceeds
+ * once the winner commits. Two rules the sort depends on, both easy to get wrong:
+ *   1. The keys are derived ONLY from the address
+ *      (PropertyMatchingService.deriveClusterKey(normalizeAddress(raw))) — NEVER from the
+ *      LLM's array order, which is not stable across transactions.
+ *   2. De-duplication happens on normalizedAddress, NEVER on clusterKey. deriveClusterKey
+ *      is deliberately coarse ('<number> <firstAlphaToken>'), so two genuinely different
+ *      buildings can share a key ('123 Main St, Dallas' and '123 Main St, Houston' both
+ *      derive '123 main'). Re-locking the same row inside one transaction is a no-op, so
+ *      sharing a key is safe; collapsing on it would silently drop a real property.
+ *
+ * `normalizedAddress` / `clusterKey` are populated by ExtractAddressQueueable when it
+ * builds the work-list, not by the parser — the parser has no routing knowledge and the
+ * keys are a routing concern. Both are null on a freshly parsed instance.
+ *
+ * LAYER — DTO. No SOQL, no DML, no callouts, no platform dependency beyond Date/Decimal.
+ *
+ * @see LLMExtractionParser.cls (the only producer)
+ * @see LLMExtractionResult.cls (the email-level envelope that holds these)
+ * @see ExtractAddressQueueable.cls (populates the sort keys and consumes the order)
+ */
+public class PropertyExtraction implements Comparable {
+
+    // ── identity ─────────────────────────────────────────────────────────────
+
+    /** `property_name` — the marketed name ('Royal Inn'); the matching signal for a
+     *  name-only deal that carries no street address. Text(255). */
+    public String propertyName;
+
+    /** `property_address` — LEGACY KEY, the claim engine's input, verbatim as extracted.
+     *  Normalizing this string produces Property_Registry__c.Property_Key__c, which IS the
+     *  claim identity. Do not "clean" it here; normalizeAddress owns that. */
+    public String propertyAddress;
+
+    // ── classification (validated against the live picklists at runtime) ─────
+
+    /** `asset_type` — an ACTIVE value of Lead.Asset_Type__c, or null. */
+    public String assetType;
+
+    /** `deal_type` — an ACTIVE value of Lead.Deal_Type__c ('Land' / 'Commercial'), or null. */
+    public String dealType;
+
+    /** `sale_process` — an ACTIVE value of Lead.Sale_Process__c, or null. */
+    public String saleProcess;
+
+    // ── economics ────────────────────────────────────────────────────────────
+
+    /** `guidance_price` — asking price, Currency(18,2). */
+    public Decimal guidancePrice;
+
+    /** `guidance_price_low` — bottom of a quoted price RANGE, Currency(18,2). */
+    public Decimal guidancePriceLow;
+
+    /** `guidance_price_high` — top of a quoted price RANGE, Currency(18,2). */
+    public Decimal guidancePriceHigh;
+
+    /** `cap_rate` — a PERCENTAGE number (6.75 means 6.75%, never 0.0675). */
+    public Decimal capRate;
+
+    /** `noi` — net operating income, Currency(18,2). Adjusted NOI when the email quotes both. */
+    public Decimal noi;
+
+    /** `occupancy_pct` — a PERCENTAGE number (88.0 means 88%, never 0.88). */
+    public Decimal occupancyPct;
+
+    /** `adr` — average daily rate, hospitality only, Currency(10,2). */
+    public Decimal adr;
+
+    // ── physical ─────────────────────────────────────────────────────────────
+
+    /** `building_sf` — rentable building area in square feet, Number(18,0). */
+    public Decimal buildingSf;
+
+    /** `lot_size_acres` — land area in ACRES. When the email quoted square feet instead,
+     *  the parser (never the model) converts by dividing by 43,560. Number(10,2). */
+    public Decimal lotSizeAcres;
+
+    /** `unit_count` — apartment units, or hotel keys for hospitality. Number(18,0). */
+    public Decimal unitCount;
+
+    /** `year_built` — four-digit year; the parser expands a two-digit '88' to 1988. */
+    public Integer yearBuilt;
+
+    /** `year_renovated` — four-digit year; same two-digit expansion as yearBuilt. */
+    public Integer yearRenovated;
+
+    /** `walt_years` — weighted average lease term remaining, in years, Number(4,1). */
+    public Decimal waltYears;
+
+    /** `zoning` — zoning designation as quoted, Text(100). */
+    public String zoning;
+
+    // ── process ──────────────────────────────────────────────────────────────
+
+    /** `seller_entity` — the selling ownership entity, Text(255). */
+    public String sellerEntity;
+
+    /** `deal_room_link` — http/https URL to the deal room or OM download. Never clipped:
+     *  a truncated URL is a broken link that still looks valid, so an over-long one is
+     *  nulled instead. */
+    public String dealRoomLink;
+
+    /** `offer_due_date` — the call-for-offers deadline. Relative phrasing ('offers due
+     *  TODAY') is resolved by the PROMPT against sent_datetime, never by Apex. */
+    public Date offerDueDate;
+
+    // ── routing keys (populated by ExtractAddressQueueable, not by the parser) ─
+
+    /** PropertyMatchingService.normalizeAddress(propertyAddress) — the claim key, and the
+     *  de-duplication key for the work-list. Null until the queueable computes it. */
+    public String normalizedAddress;
+
+    /** PropertyMatchingService.deriveClusterKey(normalizedAddress) — the lock partition and
+     *  the PRIMARY sort key. Null until the queueable computes it. */
+    public String clusterKey;
+
+    /**
+     * Total order over (clusterKey, normalizedAddress) — the lock-acquisition order that
+     * prevents AB-BA deadlocks between concurrent multi-property emails. See the class
+     * header for why this is load-bearing.
+     *
+     * Nulls sort FIRST so an un-keyed instance can never be silently interleaved among
+     * keyed ones; in practice the queueable only sorts fully-keyed instances, because the
+     * work-list excludes properties whose normalized address is blank.
+     *
+     * @param other The PropertyExtraction to compare against.
+     * @return -1, 0 or 1 per the Comparable contract.
+     * @example
+     * List&lt;PropertyExtraction&gt; workList = ...; workList.sort(); // cluster-key order
+     */
+    public Integer compareTo(Object other) {
+        PropertyExtraction that = (PropertyExtraction) other;
+        Integer byCluster = compareStrings(this.clusterKey, that.clusterKey);
+        return (byCluster != 0) ? byCluster : compareStrings(this.normalizedAddress, that.normalizedAddress);
+    }
+
+    /**
+     * Null-safe String ordering: null sorts before any value, equal values return 0.
+     *
+     * @param left  First value (may be null).
+     * @param right Second value (may be null).
+     * @return -1, 0 or 1.
+     */
+    private static Integer compareStrings(String left, String right) {
+        if (left == right) {
+            return 0;
+        }
+        if (left == null) {
+            return -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        return left.compareTo(right);
+    }
+}

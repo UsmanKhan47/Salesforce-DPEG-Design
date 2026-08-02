@@ -50,6 +50,16 @@
                 <default>false</default>
                 <label>Mixed-Use</label>
             </value>
+            <value>
+                <fullName>Hospitality</fullName>
+                <default>false</default>
+                <label>Hospitality</label>
+            </value>
+            <value>
+                <fullName>Medical Office</fullName>
+                <default>false</default>
+                <label>Medical Office</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

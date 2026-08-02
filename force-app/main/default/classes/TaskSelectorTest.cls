@@ -554,6 +554,228 @@ private class TaskSelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Broker Protection (inbound-email staging model) — RFC threading queries.
+    // Added 2026-07-31: TaskSelector gained these two methods with the Phase 3 staging
+    // model, and selectLatestByThreadOrMessageIds gained a `, Id DESC` tie-break with the
+    // D1 multi-property redesign (design C-3). Both were previously exercised only
+    // indirectly through ExtractAddressQueueableTest; the direct selector-level coverage
+    // below closes that gap, in particular for the tie-break, which is the single most
+    // load-bearing new ordering rule this session's change depends on (R7).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectByInboundMessageId_existingMessageId_returnsTheTask() {
+        Task t = new Task(Subject = 'Inbound email', Status = 'Completed', TaskSubtype = 'Email',
+            Inbound_Message_Id__c = 'msg-selector-1@example.invalid');
+        insert t;
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectByInboundMessageId('msg-selector-1@example.invalid');
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'A Task carrying this Message-ID should be found');
+        Assert.areEqual(t.Id, rows[0].Id, 'The matching Task should be returned');
+    }
+
+    @isTest
+    static void selectByInboundMessageId_blankOrUnmatched_returnsEmpty() {
+        Test.startTest();
+        List<Task> forBlank = TaskSelector.selectByInboundMessageId('');
+        List<Task> forNull = TaskSelector.selectByInboundMessageId(null);
+        List<Task> forUnmatched = TaskSelector.selectByInboundMessageId('never-logged@example.invalid');
+        Test.stopTest();
+
+        Assert.areEqual(0, forBlank.size(), 'A blank Message-ID short-circuits to empty without querying');
+        Assert.areEqual(0, forNull.size(), 'A null Message-ID short-circuits to empty without querying');
+        Assert.areEqual(0, forUnmatched.size(), 'A Message-ID nothing has logged returns empty, not an error');
+    }
+
+    @isTest
+    static void selectLatestByThreadOrMessageIds_matchesOnThreadKey() {
+        Task viaThreadKey = new Task(Subject = 'root', Status = 'Completed', TaskSubtype = 'Email',
+            Inbound_Message_Id__c = 'root-msg@example.invalid', Thread_Key__c = 'root-msg@example.invalid');
+        insert viaThreadKey;
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectLatestByThreadOrMessageIds(
+            new Set<String>{ 'root-msg@example.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'A single logged Task in the thread should be found');
+        Assert.areEqual(viaThreadKey.Id, rows[0].Id,
+            'Matches on Thread_Key__c, the conversation root every message in a thread shares');
+    }
+
+    @isTest
+    static void selectLatestByThreadOrMessageIds_matchesOnInboundMessageIdWhenNotTheThreadRoot() {
+        // The OR's second half: a reply can cite a specific earlier message's Message-ID
+        // directly, distinct from matching on Thread_Key__c.
+        Task cited = new Task(Subject = 'cited directly', Status = 'Completed', TaskSubtype = 'Email',
+            Inbound_Message_Id__c = 'cited-msg@example.invalid', Thread_Key__c = 'some-other-root@example.invalid');
+        insert cited;
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectLatestByThreadOrMessageIds(
+            new Set<String>{ 'cited-msg@example.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'A reply citing this exact Message-ID should still find the Task');
+        Assert.areEqual(cited.Id, rows[0].Id, 'Matches on Inbound_Message_Id__c even though it is not this Task\'s own Thread_Key__c');
+    }
+
+    @isTest
+    static void selectLatestByThreadOrMessageIds_nullOrEmpty_returnsEmpty() {
+        Test.startTest();
+        List<Task> forNull = TaskSelector.selectLatestByThreadOrMessageIds(null);
+        List<Task> forEmpty = TaskSelector.selectLatestByThreadOrMessageIds(new Set<String>());
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'A null message-id set short-circuits to empty, not null');
+        Assert.areEqual(0, forEmpty.size(), 'An empty message-id set short-circuits to empty, not null');
+    }
+
+    /**
+     * C-3 / R7: N Tasks logged for one multi-property email are inserted in ONE bulk DML and
+     * therefore share a CreatedDate to the millisecond, so `CreatedDate DESC` alone leaves the
+     * winner UNDEFINED. This is the selector-level proof of the `, Id DESC` tie-break added
+     * 2026-07-31 — see the method's own Javadoc. (End-to-end coverage of the full ascending-
+     * priority insert contract lives in ExtractAddressQueueableTest.)
+     */
+    @isTest
+    static void selectLatestByThreadOrMessageIds_tiedCreatedDate_idDescBreaksTheTie() {
+        List<Task> sameThread = new List<Task>{
+            new Task(Subject = 'lower priority', Status = 'Completed', TaskSubtype = 'Email',
+                Inbound_Message_Id__c = 'tie-msg-1@example.invalid', Thread_Key__c = 'tie-root@example.invalid'),
+            new Task(Subject = 'higher priority', Status = 'Completed', TaskSubtype = 'Email',
+                Inbound_Message_Id__c = 'tie-msg-2@example.invalid', Thread_Key__c = 'tie-root@example.invalid')
+        };
+        // ONE bulk DML — the mechanism that produces the tied CreatedDate this tie-break exists for.
+        insert sameThread;
+        List<Task> requeried = [SELECT Id, CreatedDate FROM Task WHERE Id IN :sameThread ORDER BY CreatedDate ASC];
+        Assert.areEqual(requeried[0].CreatedDate, requeried[1].CreatedDate,
+            'Precondition: both Tasks must share a CreatedDate, or this test proves nothing about the tie-break');
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectLatestByThreadOrMessageIds(
+            new Set<String>{ 'tie-root@example.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'LIMIT 1 returns exactly one row');
+        Assert.areEqual(sameThread[1].Id, rows[0].Id,
+            'With a tied CreatedDate, `, Id DESC` must resolve the winner to the Task inserted SECOND '
+            + '(the higher Id) — without this tie-break the result is undefined, which is exactly '
+            + 'what silently breaks reply threading for a multi-property email (design C-3)');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // EAC Thread Guard (added 2026-08-02) — the two WITH SYSTEM_MODE reads.
+    // Behavioural coverage of the guard itself lives in EmailThreadGuardServiceTest;
+    // these are the selector-level proofs of the two contracts that class depends on:
+    // that selectByIds returns the CreatedBy.UserType fingerprint, and that
+    // selectThreadAnchorsByAnchorValues matches on BOTH threading keys and BOTH bracket
+    // forms, scoped by anchor VALUE rather than by the
+    // Leads it was handed.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectByIds_returnsTheCreatedByUserTypeFingerprint() {
+        Task companion = new Task(Subject = 'EAC companion', Status = 'Completed', TaskSubtype = 'Email');
+        insert companion;
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectByIds(new Set<Id>{ companion.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The companion Task should be returned');
+        Assert.isNotNull(rows[0].CreatedBy, 'CreatedBy must be traversed, or the guard cannot fingerprint anything');
+        Assert.isNotNull(rows[0].CreatedBy.UserType, 'The fingerprint field itself must be populated');
+        Assert.areNotEqual('AutomatedProcess', rows[0].CreatedBy.UserType,
+            'A Task created by the running user reports a real user type — NOT AutomatedProcess, '
+            + 'which is precisely why the guard needs a test seam to reach its delete path');
+    }
+
+    @isTest
+    static void selectByIds_nullOrEmpty_returnsEmpty() {
+        Test.startTest();
+        List<Task> forNull = TaskSelector.selectByIds(null);
+        List<Task> forEmpty = TaskSelector.selectByIds(new Set<Id>());
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'A null Id set short-circuits to empty without querying');
+        Assert.areEqual(0, forEmpty.size(), 'An empty Id set short-circuits to empty without querying');
+    }
+
+    /**
+     * Replaces the by-Lead test: the method is now scoped BY ANCHOR VALUE, because the
+     * adopter has no record set to scope by — the anchor is what NAMES the record.
+     */
+    @isTest
+    static void selectThreadAnchorsByAnchorValues_matchesOnEitherThreadingKey() {
+        List<Lead> leads = TestDataFactory.createLeads(2, true);
+        insert new List<Task>{
+            new Task(WhoId = leads[0].Id, Subject = 'root', Status = 'Completed', TaskSubtype = 'Email',
+                Thread_Key__c = 'guard-root@example.invalid', Inbound_Message_Id__c = 'guard-root@example.invalid'),
+            new Task(WhoId = leads[0].Id, Subject = 'later message', Status = 'Completed', TaskSubtype = 'Email',
+                Thread_Key__c = 'guard-other-root@example.invalid', Inbound_Message_Id__c = 'guard-msg-2@example.invalid'),
+            new Task(WhoId = leads[1].Id, Subject = 'unmatched', Status = 'Completed', TaskSubtype = 'Email',
+                Thread_Key__c = 'guard-unrelated@example.invalid', Inbound_Message_Id__c = 'guard-elsewhere@example.invalid')
+        };
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectThreadAnchorsByAnchorValues(
+            new Set<String>{ 'guard-root@example.invalid', 'guard-msg-2@example.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(2, rows.size(),
+            'Both halves of the OR must match: one anchor on Thread_Key__c (the conversation root) '
+            + 'and one on Inbound_Message_Id__c (a specific cited message). The third Task carries '
+            + 'neither requested value and must not leak in');
+    }
+
+    /**
+     * 🔴 THE P4/E3 FIX. The pipeline stores Thread_Key__c UNBRACKETED and
+     * Inbound_Message_Id__c BRACKETED (measured on both live anchor rows in usman-dpeg
+     * 2026-08-02), while EAC supplies bracketed identifiers. The selector binds BOTH forms,
+     * so a NORMALIZED (unbracketed) candidate finds an anchor stored either way. Before this,
+     * the ThreadIdentifier leg could never match and the guard ran on one leg only.
+     */
+    @isTest
+    static void selectThreadAnchorsByAnchorValues_matchesBothBracketForms() {
+        Lead broker = TestDataFactory.createLead(true);
+        insert new List<Task>{
+            new Task(WhoId = broker.Id, Subject = 'unbracketed anchor', Status = 'Completed',
+                TaskSubtype = 'Email', Thread_Key__c = 'bracket-probe@example.invalid'),
+            new Task(WhoId = broker.Id, Subject = 'bracketed anchor', Status = 'Completed',
+                TaskSubtype = 'Email', Inbound_Message_Id__c = '<bracket-probe@example.invalid>')
+        };
+
+        Test.startTest();
+        List<Task> rows = TaskSelector.selectThreadAnchorsByAnchorValues(
+            new Set<String>{ 'bracket-probe@example.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(2, rows.size(),
+            'ONE normalized candidate must find the anchor stored UNBRACKETED (Thread_Key__c) AND '
+            + 'the one stored BRACKETED (Inbound_Message_Id__c). Binding a single form is exactly '
+            + 'the live defect this replaces');
+    }
+
+    @isTest
+    static void selectThreadAnchorsByAnchorValues_nullOrEmptyInput_returnsEmpty() {
+        Test.startTest();
+        List<Task> forNull = TaskSelector.selectThreadAnchorsByAnchorValues(null);
+        List<Task> forEmpty = TaskSelector.selectThreadAnchorsByAnchorValues(new Set<String>());
+        List<Task> forBlank = TaskSelector.selectThreadAnchorsByAnchorValues(new Set<String>{ '', '   ' });
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'A null value set short-circuits to empty without querying');
+        Assert.areEqual(0, forEmpty.size(), 'An empty value set short-circuits to empty without querying');
+        Assert.areEqual(0, forBlank.size(),
+            'Blank candidates are dropped before binding, so the query is skipped rather than run '
+            + 'with an all-blank filter');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

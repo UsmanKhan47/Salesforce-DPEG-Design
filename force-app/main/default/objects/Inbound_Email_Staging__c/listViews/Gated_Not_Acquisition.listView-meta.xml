@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Gated_Not_Acquisition</fullName>
+    <columns>NAME</columns>
+    <columns>From_Address__c</columns>
+    <columns>Subject__c</columns>
+    <columns>Outcome__c</columns>
+    <columns>Processed_DateTime__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Outcome__c</field>
+        <operation>startsWith</operation>
+        <value>Not Acquisition</value>
+    </filters>
+    <label>Gated: Not Acquisition</label>
+</ListView>

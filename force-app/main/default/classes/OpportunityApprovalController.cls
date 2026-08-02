@@ -13,6 +13,17 @@
  *   - any other (unexpected) failure maps to a FIXED generic message with no exception
  *     detail concatenated into it, so raw Approval.process / platform text is no longer
  *     leaked to the user (code-review W2).
+ *
+ * ── PERMISSION (server-side, first statement in the method) ────────────────────
+ * The method opens with OpportunityActionPermissionService.assertDealActionAccess(). Submitting a
+ * deal into the principal approval is a deal-driver action — the Deal_Driver__c field description
+ * names "Submit for Approval on Underwriting/LOI" explicitly — but until this existed the only gate
+ * was the Dynamic Actions visibility rule, which any direct @AuraEnabled call bypasses. The assert
+ * asks the same question the visibility rules ask, so no user gains or loses access.
+ *
+ * The AccessDeniedException clause is ordered ahead of the generic catch on purpose: a denial
+ * falling through to the generic clause would be masked as "could not be submitted... contact your
+ * administrator", which hides the actual reason.
  */
 public with sharing class OpportunityApprovalController {
 
@@ -21,10 +32,25 @@ public with sharing class OpportunityApprovalController {
     private static final String SUBMIT_FAILURE_MESSAGE =
         'The deal could not be submitted for approval. Refresh the page or contact your administrator.';
 
+    /**
+     * Submits the deal (or the parent deal of an LOI / Underwriting / Contract Review record) into
+     * the principal approval process.
+     *
+     * @param recordId the record whose parent deal is submitted
+     * @return a user-facing confirmation message
+     * @throws AuraHandledException when the running user is not a deal driver, when a user-actionable
+     *         approval rule blocks the submission (its guidance is surfaced), or — with a fixed
+     *         generic message — on an unexpected failure.
+     */
     @AuraEnabled
     public static String submitForApproval(Id recordId) {
         try {
+            OpportunityActionPermissionService.assertDealActionAccess();
             return OpportunityApprovalService.submitForApproval(recordId);
+        } catch (OpportunityActionPermissionService.AccessDeniedException e) {
+            // Not a deal driver. Surface the agreed denial wording verbatim — identical to what the
+            // LWC shows for the client-side gate.
+            throw ahe(e.getMessage());
         } catch (OpportunityApprovalService.ApprovalException e) {
             // User-actionable rule violation — surface the guidance verbatim.
             throw ahe(e.getMessage());

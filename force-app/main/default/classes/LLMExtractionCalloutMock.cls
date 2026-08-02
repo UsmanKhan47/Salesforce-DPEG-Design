@@ -76,4 +76,55 @@ public class LLMExtractionCalloutMock implements HttpCalloutMock {
         String content = fenced ? '```json\n' + json + '\n```' : json;
         return successBody(content);
     }
+
+    /**
+     * A success body in the ENRICHED (post-2026-07-31) contract: email-level keys plus a
+     * `properties` array. The caller supplies both halves so a test can express exactly the
+     * shape it needs — a gate case, a multi-property blast, a bad numeric value.
+     *
+     * Note that `extractionBody` above still produces the LEGACY four-key shape, and that is
+     * deliberately kept: LLMExtractionParser synthesizes a one-element `properties` array from a
+     * top-level `property_address`, so every pre-existing routing test continues to exercise the
+     * real code path AND doubles as living proof that the one-line prompt rollback works.
+     *
+     * @param emailLevel Email-level keys (broker identity, confidence, deal_summary, ...).
+     * @param properties One map per property object.
+     * @return The serialized response body.
+     * @example
+     * LLMExtractionCalloutMock.enrichedBody(
+     *     new Map&lt;String, Object&gt;{ 'broker_email' =&gt; 'jane@x.invalid' },
+     *     new List&lt;Map&lt;String, Object&gt;&gt;{ new Map&lt;String, Object&gt;{ 'property_address' =&gt; '1 A St' } });
+     */
+    public static String enrichedBody(Map<String, Object> emailLevel,
+                                      List<Map<String, Object>> properties) {
+        Map<String, Object> payload = new Map<String, Object>();
+        if (emailLevel != null) {
+            payload.putAll(emailLevel);
+        }
+        payload.put('properties', (properties == null) ? new List<Map<String, Object>>() : properties);
+        return successBody(JSON.serialize(payload));
+    }
+
+    /**
+     * Convenience for the volume / truncation / ordering tests: an enriched body carrying one
+     * bare property object per supplied address, with a fixed broker identity.
+     *
+     * @param brokerEmail The broker address every property is attributed to.
+     * @param addresses   Property addresses, in the order the model "returned" them — which the
+     *                    queueable must NOT trust for lock ordering.
+     * @return The serialized response body.
+     */
+    public static String propertiesBody(String brokerEmail, List<String> addresses) {
+        List<Map<String, Object>> properties = new List<Map<String, Object>>();
+        for (String address : addresses) {
+            properties.add(new Map<String, Object>{ 'property_address' => address });
+        }
+        return enrichedBody(new Map<String, Object>{
+            'broker_name' => 'Volume Broker',
+            'broker_email' => brokerEmail,
+            'is_acquisition_related' => true,
+            'confidence' => 0.95,
+            'sent_datetime' => ''
+        }, properties);
+    }
 }

@@ -29,8 +29,19 @@
  * so USER_MODE returns rows for the internal personas here. Custom Task fields
  * (Task_Group__c, Task_Sequence__c, Task_Owner_Label__c, Verbal_Verification_*,
  * Verified_By__c/At__c, Verification_Phone__c) rely on the deployed permsets
- * (P3: custom-field FLS gap = 0). There is NO guest/automation path on Task, so
- * NO `SYSTEM_MODE` appears here.
+ * (P3: custom-field FLS gap = 0).
+ *
+ * ⚠ AMENDED 2026-08-02 — the statement "There is NO guest/automation path on Task,
+ * so NO `SYSTEM_MODE` appears here" was true when written and is NO LONGER TRUE.
+ * Enabling Einstein Activity Capture introduced exactly such a path: EAC inserts an
+ * EmailMessage, EmailMessageTrigger enqueues EmailCaptureQueueable, and
+ * EmailThreadGuardService / EmailThreadAdopterService read Task as whichever
+ * principal EAC committed under
+ * (the connected-mailbox user, or Automated Process) — a principal this repo's
+ * permission sets never provision. The two EAC-guard methods at the BOTTOM of this
+ * class are therefore `WITH SYSTEM_MODE`, each with its own justification; every
+ * other method in this class remains `WITH USER_MODE` and is unchanged. Do not
+ * "harmonize" the two groups — they answer questions for different principals.
  *
  * NOT-FOUND CONTRACT is per-caller (pilot WireSelector pattern):
  *   - list reads (checklist / open-reminders) : missing rows are normal ->
@@ -372,9 +383,19 @@ public with sharing class TaskSelector {
      * message happens to BE the thread root — whose own Thread_Key__c is itself, but
      * whose ancestry the citing reply may express only as a Message-ID.
      *
-     * ORDER BY CreatedDate DESC + LIMIT 1: a thread accumulates one Task per message,
-     * and they all resolve to the same routed record, so the newest is both correct
-     * and cheapest.
+     * ORDER BY CreatedDate DESC, Id DESC + LIMIT 1: a thread accumulates one Task per
+     * message, and they all resolve to the same routed record, so the newest is both
+     * correct and cheapest.
+     *
+     * ⚠ THE `, Id DESC` TIE-BREAK IS NOT COSMETIC (added 2026-07-31 with multi-property
+     * routing, design C-3). One inbound email can now route to SEVERAL records, and
+     * InboundEmailActivityService inserts those N Tasks in ONE bulk DML — so they share a
+     * CreatedDate to the millisecond and `CreatedDate DESC` alone leaves the winner
+     * UNDEFINED. The caller inserts them in ASCENDING PRIORITY (no-property &lt; repeat &lt;
+     * competing &lt; winner), so the highest-priority record gets the highest Id, and this
+     * tie-break lands a later reply on the deal DPEG actually owns rather than on an
+     * arbitrary row. Removing either half — the ordering here or the insert order there —
+     * silently reintroduces the ambiguity.
      *
      * FIELD SET IS DELIBERATE: WhatId and WhoId are what the caller returns; dropping
      * either would raise System.SObjectException on that read.
@@ -396,8 +417,143 @@ public with sharing class TaskSelector {
             FROM Task
             WHERE Thread_Key__c IN :messageIds OR Inbound_Message_Id__c IN :messageIds
             WITH USER_MODE
-            ORDER BY CreatedDate DESC
+            ORDER BY CreatedDate DESC, Id DESC
             LIMIT 1
+        ];
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // EAC CAPTURE PIPELINE (added 2026-08-02) — WITH SYSTEM_MODE.
+    //
+    // Both methods below back the EAC capture pipeline — EmailThreadGuardService
+    // (deletes) and, since the adopter landed, EmailThreadAnchorService /
+    // EmailThreadAdopterService (RelatedToId writes) — which runs in a wholly
+    // automated context: an Einstein Activity Capture write inserts an
+    // EmailMessage, EmailMessageTrigger enqueues EmailCaptureQueueable, and
+    // the queueable executes as the principal EAC committed under. That principal
+    // holds none of this repo's permission sets.
+    //
+    // `WITH USER_MODE` DOES NOT DEGRADE GRACEFULLY HERE — it THROWS the moment a
+    // selected field is inaccessible, killing the queueable. The guard would then
+    // be silently disabled: no error surfaces anywhere a human looks, while EAC
+    // keeps stapling unrelated conversations onto deal Leads. That is why these
+    // two reads are SYSTEM_MODE and the rest of this class is not.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The companion Tasks EAC auto-creates alongside its captured EmailMessages,
+     * loaded by the Ids the platform stamped on `EmailMessage.ActivityId`. Backs the
+     * EAC FINGERPRINT test in EmailThreadGuardService: a companion created by the
+     * Automated Process user is an EAC materialization; one created by a real user is
+     * a deliberate composer/Agentforce send and is never touched.
+     *
+     * `CreatedBy.UserType` is the whole point of this method and is why SYSTEM_MODE is
+     * mandatory rather than merely convenient: it is a cross-object read into User, and
+     * User.UserType is not readable by every principal. Under USER_MODE this query is
+     * one FLS gap away from throwing — see the block comment above.
+     *
+     * ⚠ SCOPE NOTE FOR REVIEWERS. This method is the ONLY way the guard can reach a
+     * Task, and it can only be handed Ids harvested from `EmailMessage.ActivityId`.
+     * Broker Protection's own pipeline Tasks are created by
+     * InboundEmailActivityService and are linked to no EmailMessage at all, so no
+     * EmailMessage.ActivityId can ever point at one. The thread anchors this feature
+     * depends on are therefore structurally out of the guard's reach — proven by
+     * EmailThreadGuardServiceTest.pipelineAnchorTaskIsStructurallyUnreachable.
+     *
+     * @param taskIds Companion Task Ids (from EmailMessage.ActivityId); null/empty-safe.
+     * @return Matching Tasks with Id and CreatedBy.UserType populated; an empty list
+     *         when the input is null/empty or the rows are already gone (never null).
+     * @example
+     * Map<Id, Task> companions = new Map<Id, Task>(TaskSelector.selectByIds(taskIds));
+     */
+    public static List<Task> selectByIds(Set<Id> taskIds) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return new List<Task>();
+        }
+        return [
+            SELECT Id, CreatedBy.UserType
+            FROM Task
+            WHERE Id IN :taskIds
+            WITH SYSTEM_MODE
+        ];
+    }
+
+    /**
+     * The Broker-Protection thread anchors matching any of the supplied identifiers,
+     * **found BY ANCHOR VALUE rather than by record** (replaced selectThreadAnchorsByWhoIds
+     * 2026-08-02). Backs the SHARED index in EmailThreadAnchorService, which both the
+     * adopter and the guard consume.
+     *
+     * ⚠ WHY BY VALUE, NOT BY RECORD. The guard only ever asked "is this capture anchored on
+     * a Lead it is related to?", so scoping by `WhoId IN :leadIds` was sufficient. The
+     * adopter asks the opposite question — "which record does this thread belong to?" — and
+     * has no record set to scope by; the anchor is what NAMES the record. One query must
+     * serve both, so the scope is the identifier set. It stays selective because BOTH anchor
+     * fields are indexed External Ids.
+     *
+     * ⚠ BOTH BRACKET FORMS ARE BOUND, and this is the fix for a live defect (P4/E3). The
+     * pipeline stores `Thread_Key__c` UNBRACKETED and `Inbound_Message_Id__c` BRACKETED
+     * (measured on both live anchor rows in `usman-dpeg` 2026-08-02), while EAC supplies
+     * bracketed identifiers. Binding only one form silently halves the match surface — which
+     * is exactly what the deployed guard was doing. Callers pass NORMALIZED (unbracketed)
+     * values; this method re-brackets them itself so the caller never handles brackets.
+     *
+     * WhatId is now selected as well as WhoId: post-conversion anchors carry the Opportunity
+     * there (verified by experiment E1 — conversion stamps `WhatId` on the existing anchor
+     * Task), and that is the adopter's entire resolution chain.
+     *
+     * Both halves of the OR are load-bearing, for the same reason they are in
+     * selectLatestByThreadOrMessageIds above: `Thread_Key__c` matches any message in
+     * the conversation (every message shares the root id), while
+     * `Inbound_Message_Id__c` matches the case where the capture cites the thread ROOT
+     * directly — a root whose own Thread_Key__c is itself, but which a capture may
+     * express only as a Message-ID.
+     *
+     * ⚠ SYSTEM_MODE IS A CORRECTNESS REQUIREMENT, NOT A CONVENIENCE. Thread_Key__c and
+     * Inbound_Message_Id__c are custom fields whose FLS is granted by permission sets
+     * the automated EAC principal does not hold. A USER_MODE failure here does not
+     * merely narrow the result — it aborts the queueable, and every subsequent capture
+     * stays on the Lead unexamined. (The inverse failure mode is worse still and is
+     * why this must never be "softened" to a filtered read: a query that returned ZERO
+     * anchors instead of throwing would make every genuine reply look unanchored and
+     * DELETE it.)
+     *
+     * ORDER BY CreatedDate DESC, Id DESC is load-bearing, not cosmetic: one Message-ID can
+     * carry N anchor Tasks across N records (multi-property routing), but `RelatedToId`
+     * holds ONE Id. The caller takes FIRST-WINS, which reuses the pipeline's own tie-break
+     * from selectLatestByThreadOrMessageIds — the epilogue inserts in ASCENDING priority, so
+     * the deal DPEG actually owns carries the highest Id and wins here.
+     *
+     * @param anchorValues NORMALIZED (unbracketed) RFC identifiers carried by the captures
+     *                     under examination; null/empty-safe.
+     * @return Anchor Tasks with Id, WhoId, WhatId, Thread_Key__c and Inbound_Message_Id__c
+     *         populated, newest/highest-priority first; an empty list when the input is
+     *         null/empty or nothing anchors these identifiers (never null).
+     * @example
+     * List<Task> anchors = TaskSelector.selectThreadAnchorsByAnchorValues(normalizedIds);
+     */
+    public static List<Task> selectThreadAnchorsByAnchorValues(Set<String> anchorValues) {
+        if (anchorValues == null || anchorValues.isEmpty()) {
+            return new List<Task>();
+        }
+        // Bind BOTH bracket forms so a stored value in either shape matches (P4/E3).
+        Set<String> bothForms = new Set<String>();
+        for (String value : anchorValues) {
+            if (String.isBlank(value)) {
+                continue;
+            }
+            bothForms.add(value);
+            bothForms.add('<' + value + '>');
+        }
+        if (bothForms.isEmpty()) {
+            return new List<Task>();
+        }
+        return [
+            SELECT Id, WhoId, WhatId, Thread_Key__c, Inbound_Message_Id__c
+            FROM Task
+            WHERE Thread_Key__c IN :bothForms OR Inbound_Message_Id__c IN :bothForms
+            WITH SYSTEM_MODE
+            ORDER BY CreatedDate DESC, Id DESC
         ];
     }
 }

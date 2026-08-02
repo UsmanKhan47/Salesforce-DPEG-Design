@@ -42,6 +42,17 @@
  * unchanged (the inner fuzzy match still distinguishes genuinely different buildings that
  * happen to share a coarse cluster).
  *
+ * ⚠ deriveClusterKey GAINED A SECOND JOB ON 2026-07-31 (D1 multi-property). It is still the
+ * lock-partition key, but ExtractAddressQueueable now ALSO sorts a multi-property email's
+ * work-list by it, so that concurrent jobs acquire shared locks in the same relative order
+ * and cannot deadlock. Two consequences for anyone changing this method:
+ *   • it must stay a PURE function of the normalized address — a key that varied with the
+ *     LLM's array order, or with anything else per-transaction, would silently break the
+ *     ordering guarantee while still looking correct;
+ *   • the caller de-duplicates on the NORMALIZED ADDRESS, never on this key. Two genuinely
+ *     different buildings sharing a coarse key is expected and safe (re-locking the same row
+ *     inside one transaction is a no-op); collapsing on it would drop a real property.
+ *
  * ⚠ RESIDUAL (bounded by design): the lock only serialises claims that derive the SAME
  * cluster key. Two addresses that are fuzzy-similar yet derive DIFFERENT cluster keys
  * would not serialise and could still both win. That is why deriveClusterKey is
@@ -270,9 +281,22 @@ public with sharing class PropertyMatchingService {
     /**
      * REPEAT DETECTION — the earliest submission by `brokerEmail` for the same property as
      * `normalizedAddress`, or null. A hit means this broker has already submitted this
-     * property, so the inbound email is a follow-up that belongs on the EXISTING Lead
-     * (`Source_Lead__c`) rather than becoming a second Lead competing with the broker's
-     * own earlier one.
+     * property, so the inbound email is a follow-up that belongs on an EXISTING record rather
+     * than becoming a second Lead.
+     *
+     * WHICH record depends on which broker is repeating, and the caller resolves it from the
+     * two lookups on the row returned here:
+     *   • `Source_Lead__c` populated — the WINNER re-emailing about the property they claimed.
+     *     Their follow-up belongs on their own Lead.
+     *   • `Source_Lead__c` NULL — a COMPETING broker re-emailing. Since 2026-07-31 a competing
+     *     broker receives no Lead of their own, so there is nothing of theirs to append to and
+     *     the follow-up belongs on `Winning_Lead__c` — the Lead that actually holds the
+     *     property — alongside their submission row.
+     * Null-source rows are therefore MATCHED, not skipped. Both this method and
+     * CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail used to exclude them; both
+     * exclusions were removed together, because either one alone would have made a competing
+     * broker's follow-up invisible to repeat detection and turned every re-send into a fresh
+     * competing claim.
      *
      * MATCHING IS DONE IN MEMORY, NOT IN SOQL, and that is forced by the schema:
      * Competing_Broker_Submission__c stores only Property_Address_Raw__c — the address as
@@ -295,9 +319,9 @@ public with sharing class PropertyMatchingService {
      *                          the caller's fallback); blank returns null.
      * @param normalizedAddress The normalized property address (from normalizeAddress);
      *                          blank returns null.
-     * @return The matching Competing_Broker_Submission__c (with Source_Lead__c and
-     *         Winning_Lead__c populated), or null when this broker has not submitted this
-     *         property.
+     * @return The matching Competing_Broker_Submission__c (Winning_Lead__c always populated;
+     *         Source_Lead__c populated only for the winner's own submissions), or null when
+     *         this broker has not submitted this property.
      * @example
      * Competing_Broker_Submission__c prior =
      *     PropertyMatchingService.findBrokerSubmission(brokerEmail, normalized);
@@ -314,9 +338,9 @@ public with sharing class PropertyMatchingService {
 
         for (Competing_Broker_Submission__c candidate
                 : CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail(brokerEmail, cutoff)) {
-            if (candidate.Source_Lead__c == null) {
-                continue;
-            }
+            // NOTE: a null Source_Lead__c is NOT a skip condition. It is the normal shape of a
+            // competing broker's submission, and matching it is what makes their follow-up a
+            // Repeat instead of an endlessly-recurring new competing claim.
             String candidateKey = normalizeAddress(candidate.Property_Address_Raw__c);
             if (String.isBlank(candidateKey)) {
                 continue;

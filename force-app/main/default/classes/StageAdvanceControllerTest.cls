@@ -166,12 +166,92 @@ private class StageAdvanceControllerTest {
             Assert.isNotNull(e, 'advance read failure maps to AuraHandledException');
         }
         try {
-            StageAdvanceController.advanceTo(deletedId, 'Under Review');
+            // The target must be an ALLOWED explicit target ('Development Review'). The previous
+            // 'Under Review' is now rejected by the D7 allow-list before the record is loaded, so
+            // this assertion would have kept passing while no longer reaching the read-failure catch
+            // it exists to cover.
+            StageAdvanceController.advanceTo(deletedId, 'Development Review');
             Assert.fail('advanceTo on a deleted deal should throw an AuraHandledException');
         } catch (AuraHandledException e) {
             Assert.isNotNull(e, 'advanceTo read failure maps to AuraHandledException');
         }
         Test.stopTest();
+    }
+
+    /**
+     * The server-side permission assertion (design doc F5). Until this existed the deal-driver gate
+     * was purely the Dynamic Actions visibility rule, which is a UX affordance — a user with
+     * Opportunity edit access and class access could call these @AuraEnabled methods directly and
+     * drive a deal through every stage.
+     *
+     * Runs as a bare Standard User (no Acquisition_Deal_Driver, no Modify All Data) and asserts BOTH
+     * methods refuse AND that nothing was written.
+     *
+     * MIXED DML: this test needs a non-setup record (Opportunity) AND a setup record (User) in one
+     * transaction, which normally raises MIXED_DML_OPERATION. Wrapping the User insert in
+     * System.runAs(<the current user>) opens a fresh DML context and is the supported way to do both.
+     * The refusal calls themselves perform no DML at all — that is the point of the assertions.
+     */
+    @isTest
+    static void bothMethodsRefuseAUserWhoIsNotADealDriver() {
+        Opportunity o = newOpp('New');
+        Id dealId = o.Id;
+        User bareUser = buildStandardUser('sacT');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert bareUser;   // setup DML, isolated from the Opportunity DML above
+        }
+
+        Test.startTest();
+        Integer refusals = 0;
+        OpportunityActionPermissionService.clearCache();
+        System.runAs(bareUser) {
+            try {
+                StageAdvanceController.advance(dealId);
+            } catch (AuraHandledException e) {
+                refusals++;
+                Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE, e.getMessage(),
+                    'advance must surface the agreed denial wording — not the generic read-failure message, '
+                    + 'which would tell the user to refresh the page over a permissions problem');
+            }
+            try {
+                StageAdvanceController.advanceTo(dealId, 'Development Review');
+            } catch (AuraHandledException e) {
+                refusals++;
+                Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE, e.getMessage(),
+                    'advanceTo must surface the agreed denial wording');
+            }
+        }
+        OpportunityActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.areEqual(2, refusals, 'BOTH @AuraEnabled entry points must refuse a non-deal-driver');
+        Assert.areEqual('New',
+            [SELECT StageName FROM Opportunity WHERE Id = :dealId].StageName,
+            'A refused call must not write: the stage must still be New. A changed stage here would mean '
+            + 'the assert ran after the DML instead of before it');
+    }
+
+    /**
+     * Builds (but does not insert) a bare Standard User for the permission-refusal test. Mirrors the
+     * helper in OpportunityActionPermissionServiceTest — User is a setup object whose required-field
+     * shape TestDataFactory deliberately does not cover.
+     */
+    private static User buildStandardUser(String tag) {
+        Profile standardProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        String unique = tag + String.valueOf(Datetime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        return new User(
+            FirstName = 'Std',
+            LastName = 'StageAdv',
+            Alias = 'sadv',
+            Email = 'std.stageadv@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = standardProfile.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
     }
 
     // Proves an already-pending approval surfaces its message through advance: the second
