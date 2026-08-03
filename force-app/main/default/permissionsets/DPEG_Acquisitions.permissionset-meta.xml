@@ -1248,6 +1248,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Deal_Room_Link__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.Deal_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1279,6 +1284,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Guidance_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Guidance_Price_High__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Guidance_Price_Low__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1323,6 +1338,16 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Listing_Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Listing_Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.Loan_Required__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1343,7 +1368,17 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Offer_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.OneDrive_Folder_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Parse_Confidence__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1397,8 +1432,18 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Property_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Rejection_Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Sale_Process__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1523,6 +1568,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.ADR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Annual_NOI__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1578,6 +1628,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Lot_Size_Acres__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Market_Cap_Rate__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1589,6 +1644,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Occupancy_Pct__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1618,6 +1678,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Seller_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Square_Footage__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1633,12 +1698,27 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Unit_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Visitor_Demographics__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.WALT_Years__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Year_Built__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Year_Renovated__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1649,6 +1729,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.Zip__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Zoning__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

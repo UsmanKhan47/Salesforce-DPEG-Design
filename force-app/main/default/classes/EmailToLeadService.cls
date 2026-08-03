@@ -77,8 +77,10 @@ public with sharing class EmailToLeadService {
 
     /** Placeholder Company for a Lead born from an email (Company is a required Lead field).
      *  Since the enrichment it is a FALLBACK rather than a constant: the extraction's
-     *  `broker_company` wins when present. Never write blank — Company is required. */
-    private static final String COMPANY_PLACEHOLDER = 'Unknown - Via Email';
+     *  `broker_company` wins when present. Never write blank — Company is required.
+     *  PUBLIC (was private, 2026-08-02): LeadConvertMatchService reads it to decide that a Lead
+     *  carrying this placeholder must NOT match an Account by name — see that class's D1b note. */
+    public static final String COMPANY_PLACEHOLDER = 'Unknown - Via Email';
 
     /** LeadSource stamped on every email-intake Lead — the pipeline's provenance marker. */
     private static final String LEAD_SOURCE = 'Email-to-Lead';

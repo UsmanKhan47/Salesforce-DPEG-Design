@@ -409,6 +409,49 @@ private class OpportunityActionPermissionServiceTest {
      *
      * @param tag short per-test token keeping Username unique across methods in one run
      */
+    /**
+     * ⚠ COMPANION REGRESSION PIN to the 2026-08-03 Lead-action incident. That incident was reported
+     * against the Lead quick actions, but the root cause sat in PermissionSetAssignmentSelector,
+     * which THIS service also consumes — `hasModifyAllData()` calls it OUTSIDE the try/catch that
+     * guards the Deal_Driver__c read, so under the old `WITH USER_MODE` a Minimum Access user made
+     * this gate THROW rather than deny, and the Opportunity actions failed the same way with
+     * "Unable to verify your permissions". No code in this service changed; it inherits the
+     * selector fix.
+     *
+     * The expected answer here is FALSE, not true: a bare Minimum Access user is legitimately not a
+     * deal driver. The regression being pinned is THROW-vs-DENY. A gate that throws is not a
+     * stricter gate — it is a broken one, and it denies the admin-bypass path too.
+     *
+     * ⚠ DO NOT downgrade this to buildStandardUser: Standard User can read the setup entity and so
+     * passes under either mode, which is exactly the blind spot that let this reach production —
+     * every other runAs test in this class uses Standard User.
+     */
+    @isTest
+    static void hasDealActionAccess_minimumAccessUser_deniesWithoutThrowing() {
+        User minimumAccessUser = buildUserOnProfile('Minimum Access - Salesforce', 'oapsMin');
+        insert minimumAccessUser;
+
+        Test.startTest();
+        Boolean allowed;
+        String thrown = null;
+        OpportunityActionPermissionService.clearCache();
+        System.runAs(minimumAccessUser) {
+            try {
+                allowed = OpportunityActionPermissionService.hasDealActionAccess();
+            } catch (Exception e) {
+                thrown = e.getTypeName() + ': ' + e.getMessage();
+            }
+        }
+        Test.stopTest();
+
+        Assert.isNull(thrown,
+            'The deal-action gate must DENY a Minimum Access user, not THROW. A throw reproduces the '
+            + '2026-08-03 root cause reaching this service too. Observed: ' + thrown);
+        Assert.isFalse(allowed,
+            'A bare Minimum Access user is not a deal driver and holds no Modify All Data, so the '
+            + 'two-factor gate must return false');
+    }
+
     private static User buildStandardUser(String tag) {
         return buildUserOnProfile('Standard User', tag);
     }

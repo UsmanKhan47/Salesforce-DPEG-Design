@@ -328,6 +328,165 @@ private class ContactSelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // selectByEmails  (LeadConvertMatchService — Smart Lead Conversion, 2026-08-02)
+    //
+    // The consumer's own suite (LeadConvertMatchServiceTest) exercises this query through
+    // matchForConversion end to end, including the D2 oldest-wins tie-break. These are the
+    // direct selector-level proofs of the two contracts that class depends on: the
+    // AccountId != null filter, and the null/empty-input short-circuit that no existing test
+    // (at the selector OR the service layer) reaches — every LeadConvertMatchServiceTest
+    // fixture supplies a non-blank Lead.Email, so the emails set handed to this method is
+    // never actually empty in that suite.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectByEmails_exactEmailMatchWithAccount_returnsTheContact() {
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = TestDataFactory.createContact(firm.Id, false);
+        broker.Email = 'selector.broker@firm.invalid';
+        insert broker;
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectByEmails(new Set<String>{ 'selector.broker@firm.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The exactly-matching, account-having Contact should be returned');
+        Assert.areEqual(broker.Id, rows[0].Id, 'The matching Contact should be returned');
+        Assert.areEqual(firm.Id, rows[0].AccountId,
+            'AccountId is selected — it is what the caller carries forward as the conversion target Account');
+        Assert.isNotNull(rows[0].CreatedDate, 'CreatedDate is selected — it drives the D2 oldest-wins ordering');
+    }
+
+    /**
+     * `AccountId != null` IS THE FILTER, NOT A DEFENSIVE CHECK (ContactSelector's own header).
+     * An orphan Contact sharing the same email must never come back, or the caller would hand
+     * Database.LeadConvert.setContactId a Contact with no Account, which convertLead rejects.
+     */
+    @isTest
+    static void selectByEmails_matchingContactWithNoAccount_isExcluded() {
+        Contact orphan = TestDataFactory.createContact(null, false);
+        orphan.Email = 'orphan.selector@firm.invalid';
+        insert orphan;
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectByEmails(new Set<String>{ 'orphan.selector@firm.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(0, rows.size(),
+            'An account-less Contact must never be returned — Database.LeadConvert.setContactId requires an Account');
+    }
+
+    /** SOQL Email comparison is case-insensitive by default; see AccountSelector's identical note. */
+    @isTest
+    static void selectByEmails_caseInsensitiveMatch_stillReturnsTheContact() {
+        Account firm = TestDataFactory.createAccount(true);
+        Contact broker = TestDataFactory.createContact(firm.Id, false);
+        broker.Email = 'Mixed.Case.Selector@Firm.Invalid';
+        insert broker;
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectByEmails(new Set<String>{ 'mixed.case.selector@firm.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'A differently-cased candidate must still match');
+        Assert.areEqual(broker.Id, rows[0].Id, 'The matching Contact should be returned');
+    }
+
+    /**
+     * D2 — oldest wins, `ORDER BY CreatedDate ASC, Id ASC`, mirroring
+     * AccountSelectorTest.selectByNames_multipleRowsSameName_ordersOldestFirst and
+     * LeadConvertMatchServiceTest.matchForConversion_multipleContactsSameEmail_oldestWins: the
+     * older Contact is inserted SECOND (higher Id) and then aged, so an Id-only or
+     * insert-order-only sort would return the wrong row first.
+     */
+    @isTest
+    static void selectByEmails_multipleRowsSameEmail_ordersOldestFirst() {
+        // Both seeds are duplicate-shaped and must allow-save — the same defence-in-depth already
+        // applied inline by a prior wave in selectEarliestByAccountId_accountWithContacts_* above,
+        // now consolidated into TestDataFactory.insertAllowingDuplicates:
+        //   • the two Accounts, because createAccounts stamps every row BillingCity='Houston' /
+        //     BillingState='TX' and the standard Account rule matches fuzzy-name + city/state, so
+        //     ANY two factory Accounts in one transaction match each other;
+        //   • the two Contacts, because sharing an Email is the entire point of this tie-break.
+        // Neither weakens the assertions: the rows, Ids and CreatedDates are untouched.
+        Account firmA = TestDataFactory.createAccount(false);
+        Account firmB = TestDataFactory.createAccount(false);
+        TestDataFactory.insertAllowingDuplicates(new List<Account>{ firmA, firmB });
+
+        String sharedEmail = 'ambiguous.selector@firm.invalid';
+        Contact newer = TestDataFactory.createContact(firmA.Id, false);
+        newer.Email = sharedEmail;
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ newer }); // first -> lower Id, recent CreatedDate
+        Contact older = TestDataFactory.createContact(firmB.Id, false);
+        older.Email = sharedEmail;
+        TestDataFactory.insertAllowingDuplicates(new List<Contact>{ older }); // second -> higher Id
+        Test.setCreatedDate(older.Id, Datetime.now().addYears(-2));
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectByEmails(new Set<String>{ sharedEmail });
+        Test.stopTest();
+
+        Assert.areEqual(2, rows.size(), 'Both same-email Contacts should be returned — no LIMIT here, the caller applies it');
+        Assert.areEqual(older.Id, rows[0].Id,
+            'CreatedDate ASC must put the OLDER row first even though it has the HIGHER Id');
+        Assert.areEqual(newer.Id, rows[1].Id, 'The newer row sorts second');
+    }
+
+    @isTest
+    static void selectByEmails_noMatch_returnsEmpty() {
+        Account firm = TestDataFactory.createAccount(true);
+        TestDataFactory.createContact(firm.Id, true);
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectByEmails(new Set<String>{ 'nobody.matches@firm.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(0, rows.size(), 'An email nothing matches returns an empty list, not null');
+    }
+
+    /**
+     * GAP CLOSED (unit-testing agent pass, 2026-08-03). Neither this selector's own suite nor
+     * LeadConvertMatchServiceTest previously exercised this branch: every match-service fixture
+     * supplies a non-blank Lead.Email, so `emails` handed to selectByEmails is never actually
+     * empty anywhere else in the app's test suite.
+     */
+    @isTest
+    static void selectByEmails_nullOrEmptyInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Contact> forNull = ContactSelector.selectByEmails(null);
+        List<Contact> forEmpty = ContactSelector.selectByEmails(new Set<String>());
+        Integer after = Limits.getQueries();
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'A null email set short-circuits to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'An empty email set short-circuits to an empty list, not null');
+        Assert.areEqual(0, after - before, 'Neither call should spend a query — the empty-set guard runs before the SOQL');
+    }
+
+    /**
+     * Bulk-safety at data volume, per this repo's standing selector-layer convention — see
+     * selectBrokersRankedByClosedVolume_251Brokers_returnsAll above — independent of, and in
+     * addition to, the SERVICE-level 251 proof in
+     * LeadConvertMatchServiceTest.matchForConversion_at251Leads_isBulkSafe.
+     */
+    @isTest
+    static void selectByEmails_251DistinctEmailsWithAccounts_returnsAll() {
+        Account firm = TestDataFactory.createAccount(true);
+        List<Contact> brokers = TestDataFactory.createContacts(BULK_N, firm.Id, true);
+        Set<String> emails = new Set<String>();
+        for (Contact c : brokers) {
+            emails.add(c.Email);
+        }
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectByEmails(emails);
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, rows.size(), 'All 251 distinctly-emailed, account-having Contacts must be returned in one query');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

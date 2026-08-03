@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Listing_Broker_Email__c</fullName>
+    <description>Email address of the listing broker, carried from Lead.Listing_Broker_Email__c at conversion. Display only.</description>
+    <inlineHelpText>Carried from the Lead at conversion; null when not stated in the email.</inlineHelpText>
+    <label>Listing Broker Email</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Email</type>
+</CustomField>

@@ -34,10 +34,34 @@
  * LeadConvertActionControllerTest green without assigning permission sets to the test-running user.
  *
  * ── FAIL-CLOSED ───────────────────────────────────────────────────────────────
- * Nothing here swallows an exception. If a selector throws (e.g. a setup-object access failure
- * under WITH USER_MODE), it propagates to the controller, which converts it to an
- * AuraHandledException; the LWC then treats a failed check exactly like a denied one. The action is
- * blocked, never wrongly permitted.
+ * Nothing here swallows an exception. If a selector throws, it propagates to the controller, which
+ * converts it to an AuraHandledException; the LWC then treats a failed check exactly like a denied
+ * one. The action is blocked, never wrongly permitted. That remains true and is still the right
+ * behaviour for a GENUINE failure.
+ *
+ * ⚠ BUT FAIL-CLOSED WAS FIRING ROUTINELY, NOT EXCEPTIONALLY (fixed 2026-08-03). Both selectors this
+ * class calls used to run `WITH USER_MODE`, and BOTH throw for a user on the Minimum Access profile
+ * — including the first one, which reads only the user's OWN assignment rows. A correctly
+ * provisioned non-admin therefore hit the controller's catch-all on every click and saw "Unable to
+ * verify your permissions", never the real answer. Fail-closed was doing exactly what it promised
+ * and the promise was the wrong one: it denied a user their granted feature while protecting
+ * nothing. Both selectors are now `WITH SYSTEM_MODE`, each justified in its own header with the
+ * measured profile matrix. This class is unchanged in shape — the throw is gone at the source.
+ *
+ * WHY THE LOAD ORDER WAS NOT REORDERED TO "SHORT-CIRCUIT ON A DIRECT MATCH". It was considered:
+ * the incident user held a qualifying set DIRECTLY, so answering from the first query and skipping
+ * group expansion would also have avoided the second throw. It is rejected because
+ * loadRunningUserGrants builds a GENERIC, transaction-scoped cache of every name the user holds,
+ * which hasAnyPermissionSet(...) then answers ANY question against. A short-circuit that stopped
+ * early would populate that cache with a PARTIAL name set, and the next caller asking about a
+ * DIFFERENT permission set in the same transaction would get a wrong (false-negative) answer from
+ * poisoned cache state — turning a visible failure into a silent one. Cache completeness is the
+ * invariant; the fix belongs at the selector, and that is where it was made.
+ *
+ * ⚠ TEST-PROFILE TRAP, recorded so this class is not "verified" wrongly again: a runAs proof built
+ * on the STANDARD USER profile passes under either mode — Standard User can read both setup
+ * entities. Only Minimum Access reproduces the fault, and that is the profile the real personas
+ * use. Any future USER_MODE/SYSTEM_MODE claim about this path must be tested on Minimum Access.
  *
  * ── BULKIFICATION ─────────────────────────────────────────────────────────────
  * `hasAnyPermissionSet` accepts a COLLECTION of permission set names, and the underlying reads are
@@ -92,12 +116,20 @@ public with sharing class LeadActionPermissionService {
     private static Boolean cachedHasModifyAllData;
 
     /**
-     * Test seam. The controller's AuraHandledException catch exists for a real failure mode (a
-     * setup-object access failure under WITH USER_MODE), but that mode cannot be provoked
-     * deterministically from a test — PermissionSetAssignment is readable by every user for their
-     * own rows, so even a bare Standard User does not make the selector throw. This flag is the only
-     * deterministic way to reach that catch, and without it the controller would sit far below the
-     * 90% bar on an uncoverable branch.
+     * Test seam. The controller's AuraHandledException catch exists for a real failure mode, but
+     * that mode cannot be provoked deterministically from a test, so this flag is the only way to
+     * reach the catch — without it the controller would sit far below the 90% bar on an uncoverable
+     * branch.
+     *
+     * ⚠ THE ORIGINAL JUSTIFICATION HERE WAS FACTUALLY WRONG AND IS CORRECTED (2026-08-03). It said:
+     * "PermissionSetAssignment is readable by every user for their own rows, so even a bare Standard
+     * User does not make the selector throw." Measured on DPEG-Acq-5, the Standard User HALF is true
+     * but the REASON is false — a Minimum Access user reading their OWN rows under USER_MODE threw
+     * `System.QueryException: sObject type 'PermissionSetAssignment' is not supported`. That wrong
+     * reason is exactly what let the live defect through: it made a Standard-User runAs look like
+     * sufficient proof. Both selectors now run SYSTEM_MODE, so neither throws for any profile — the
+     * seam is therefore MORE necessary than before, not less, because the genuine failure mode is
+     * now unreachable by construction rather than merely hard to reach.
      *
      * It is `private` + `@TestVisible` (so no production class can set it) AND additionally gated on
      * Test.isRunningTest(), so production behavior is provably unchanged. Repo precedent:

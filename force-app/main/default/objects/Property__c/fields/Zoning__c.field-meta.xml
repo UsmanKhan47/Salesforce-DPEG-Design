@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Zoning__c</fullName>
+    <description>Zoning designation for the property, carried from Lead.Zoning__c at conversion.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Carried from the Lead at conversion; null when not stated in the email.</inlineHelpText>
+    <label>Zoning</label>
+    <length>100</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

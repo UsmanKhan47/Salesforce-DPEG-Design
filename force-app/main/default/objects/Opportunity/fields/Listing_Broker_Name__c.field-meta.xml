@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Listing_Broker_Name__c</fullName>
+    <description>Name of the listing broker, carried from Lead.Listing_Broker_Name__c at conversion. The listing broker is often a different person from the submitting broker (see the OpportunityContactRole "Broker" for the submitting broker).</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Carried from the Lead at conversion; null when not stated in the email.</inlineHelpText>
+    <label>Listing Broker Name</label>
+    <length>120</length>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -318,17 +318,34 @@ private class BrokerPortalServiceTest {
 
     @IsTest
     static void submitDeal_insertFails_propagatesDmlException() {
-        // A Lead with the same broker identity trips this org's active Lead duplicate
-        // rule (Block), so the portal insert fails with a DmlException the service must
-        // NOT swallow (the controller maps it to a generic message).
-        Lead blocker = TestDataFactory.createLead(false);
-        blocker.FirstName = 'Jane';
-        blocker.LastName = 'Broker';
-        blocker.Company = 'Acme Realty';
-        blocker.Email = 'jane@acme.com';
-        blocker.Property_Address__c = '456 Blocker Rd';
-        blocker.Status = 'New';
-        insert blocker;
+        // WHAT THIS PINS: submitDeal's bare `insert l` must let a DmlException PROPAGATE —
+        // the service must not swallow it, because the controller's generic catch is what
+        // turns it into a user-safe message for an unauthenticated guest. The specific
+        // reason the insert fails is irrelevant to that contract.
+        //
+        // ⚠ MECHANISM CHANGED 2026-08-03 — this test was previously seeded with a
+        // same-identity "blocker" Lead and relied on "this org's active Lead duplicate rule
+        // (Block)". That mechanism never worked and cannot work:
+        //   1. Standard_Lead_Duplicate_Rule is isActive=FALSE in the repo (deactivated in
+        //      commit e1f5a9f, 2026-07-25, because it was blocking the inbound email
+        //      pipeline) and IsActive=false live on usman-dpeg.
+        //   2. Even when active it is actionOnInsert=Allow / operationsOnInsert=Alert,Report
+        //      — an ALERT rule, never a Block rule. The old comment's "(Block)" was wrong
+        //      about the org's own configuration.
+        // So the blocker Lead inserted fine, the portal Lead inserted fine, nothing threw,
+        // and the assertion failed. Never couple a test to org-level duplicate rules: they
+        // are configuration, changeable in Setup by anyone, and not enforced by this code.
+        //
+        // The failure is now forced through the @TestVisible queue seam that production
+        // already exposes for exactly this kind of deterministic test control (see the same
+        // seam used by submitDeal_queueNotConfigured_rejected). A Contact Id is a
+        // syntactically valid Id that Lead.OwnerId cannot accept — only a User or a Queue —
+        // so `insert l` fails with an un-mockable, org-independent DmlException at precisely
+        // the line under test. It is non-null, so the earlier "queue not configured"
+        // SubmissionException branch is deliberately NOT the thing being exercised.
+        Contact notAValidOwner = TestDataFactory.createContact(null, true);
+        BrokerPortalService.queueResolved = true;
+        BrokerPortalService.cachedQueueId = notAValidOwner.Id;
 
         Boolean threwDml = false;
         Test.startTest();

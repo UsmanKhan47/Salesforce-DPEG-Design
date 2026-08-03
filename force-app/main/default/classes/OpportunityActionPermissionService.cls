@@ -59,6 +59,34 @@
  *     that a genuine fault reads as a fault instead of as "you lack permission".
  * Nothing here can return `true` by accident: every path to `true` requires positive evidence.
  *
+ * ── ⚠ THIS SERVICE CARRIED THE 2026-08-03 PERMISSION-GATE BUG TOO (fixed, zero code change here) ──
+ * The incident was reported against the LEAD quick actions ("Unable to verify your permissions" for
+ * a Minimum Access persona), but the root cause was in PermissionSetAssignmentSelector, which THIS
+ * service also consumes — so the Opportunity deal actions failed identically for the same users.
+ * Measured on DPEG-Acq-5: `PermissionSetAssignment ... WITH USER_MODE` THROWS `System.QueryException`
+ * for a Minimum Access user (System Administrator and Standard User both pass, which is why no test
+ * caught it — every runAs proof in this repo used Standard User).
+ *
+ * ⚠ THE SELECTOR READ IN hasModifyAllData() SITS DELIBERATELY OUTSIDE THE try/catch. That catch, in
+ * computeDealActionAccess(), wraps ONLY the UserSelector Deal_Driver__c read, where a QueryException
+ * genuinely MEANS "factor (a) unmet" and converting it to `false` is the correct reading. The
+ * assignment read is a different question and must not be silently swallowed the same way. Under the
+ * old USER_MODE that placement meant a Minimum Access user made this gate THROW instead of DENY —
+ * and a gate that throws is not a stricter gate, it is a broken one, because it takes the
+ * administrator bypass down with it.
+ *
+ * Both selectors now run `WITH SYSTEM_MODE` (each justified in its own header), so this service is
+ * fixed with NO code change — it inherits the fix. Pinned by
+ * OpportunityActionPermissionServiceTest.hasDealActionAccess_minimumAccessUser_deniesWithoutThrowing,
+ * which asserts DENY-not-THROW.
+ *
+ * ⛔ RESIDUAL, AND IT IS A TRACKED FOLLOW-UP — DO NOT "FIX" IT MID-INCIDENT. A genuine future
+ * selector failure still propagates out of hasModifyAllData(), reaching
+ * OpportunityActionPermissionController's catch and denying with the generic message — a different
+ * posture from the Lead gate's. That asymmetry is now KNOWN and ACCEPTED, not accidental. Changing
+ * it means re-opening the two-factor gate's failure semantics, which is a deliberate design decision
+ * with its own review, not a drive-by edit attached to an unrelated change.
+ *
  * ── BULKIFICATION ─────────────────────────────────────────────────────────────
  * The 251-record mandate in .claude/rules/bulk-test-rule.md does not apply. This is a
  * per-transaction-singleton question about ONE user (the running user) with no record collection,

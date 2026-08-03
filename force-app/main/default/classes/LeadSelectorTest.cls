@@ -333,6 +333,77 @@ private class LeadSelectorTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // selectMatchKeysByIds  (LeadConvertMatchService — Smart Lead Conversion, 2026-08-02)
+    //
+    // LeadConvertMatchServiceTest exercises this query end to end through
+    // matchForConversion. These are the direct selector-level proofs of the field
+    // contract and the null/empty short-circuit.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectMatchKeysByIds_returnsEmailAndCompany() {
+        Lead l = TestDataFactory.createLead(false);
+        l.Email = 'selector.matchkey@example.invalid';
+        l.Company = 'Selector Match Key Co';
+        insertWithDupBypass(new List<Lead>{ l });
+
+        Test.startTest();
+        List<Lead> rows = LeadSelector.selectMatchKeysByIds(new Set<Id>{ l.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The requested Lead should be returned');
+        Assert.areEqual('selector.matchkey@example.invalid', rows[0].Email,
+            'Email is selected — the Contact match key');
+        Assert.areEqual('Selector Match Key Co', rows[0].Company,
+            'Company is selected — the Account match key');
+    }
+
+    @isTest
+    static void selectMatchKeysByIds_scopedToRequestedIds() {
+        List<Lead> leads = TestDataFactory.createLeads(2, false);
+        insertWithDupBypass(leads);
+
+        Test.startTest();
+        List<Lead> rows = LeadSelector.selectMatchKeysByIds(new Set<Id>{ leads[0].Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'Only the requested Lead should be returned, not every Lead in the org');
+        Assert.areEqual(leads[0].Id, rows[0].Id, 'The returned row should be the requested Lead');
+    }
+
+    @isTest
+    static void selectMatchKeysByIds_nullOrEmptyInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Lead> forNull = LeadSelector.selectMatchKeysByIds(null);
+        List<Lead> forEmpty = LeadSelector.selectMatchKeysByIds(new Set<Id>());
+        Integer after = Limits.getQueries();
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'A null Id set short-circuits to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'An empty Id set short-circuits to an empty list, not null');
+        Assert.areEqual(0, after - before, 'Neither call should spend a query — the empty-set guard runs before the SOQL');
+    }
+
+    /**
+     * Bulk-safety at data volume, per this repo's standing selector-layer convention —
+     * independent of, and in addition to, the SERVICE-level 251 proof in
+     * LeadConvertMatchServiceTest.matchForConversion_at251Leads_isBulkSafe.
+     */
+    @isTest
+    static void selectMatchKeysByIds_251Leads_returnsAll() {
+        List<Lead> leads = TestDataFactory.createLeads(BULK_N, false);
+        insertWithDupBypass(leads);
+        Set<Id> leadIds = new Map<Id, Lead>(leads).keySet();
+
+        Test.startTest();
+        List<Lead> rows = LeadSelector.selectMatchKeysByIds(leadIds);
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, rows.size(), 'All 251 requested Leads must be returned in one query');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════════════
 

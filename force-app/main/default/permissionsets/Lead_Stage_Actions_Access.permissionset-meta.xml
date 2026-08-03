@@ -11,6 +11,23 @@
         <apexClass>LeadConvertActionController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+        Contact.Email and Lead.Email (read-only) are required by LeadConvertMatchService — without
+        read on these fields, its USER_MODE-scoped duplicate-contact matching during Lead conversion
+        silently degrades and can mint duplicate Contacts (Gate-2 W1, 2026-08-03). Both rows were
+        created directly in the org 2026-08-03 (user-approved); declared here so the repo matches
+        the org.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Email</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Email</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <objectPermissions>
         <object>Account</object>
         <allowRead>true</allowRead>

@@ -14,6 +14,12 @@
  *     controller; SYSTEM_MODE + without sharing, nested class below).
  *   • BrokerFirmController.getBrokerFirm -> selectEarliestByAccountId (P4 cleanup
  *     wave G — Opportunity sidebar broker person; internal, USER_MODE, Name-only).
+ *   • LeadConvertMatchService.matchForConversion -> selectByEmails (Smart Lead
+ *     Conversion, 2026-08-02 — resolves the existing broker Contact so converting a
+ *     repeat broker attaches instead of duplicating; internal, USER_MODE). This is
+ *     the FIRST outer-class method here that reads the FLS-permissionable
+ *     Contact.Email, so it is the first that can throw on FLS for a legitimate
+ *     internal user — its caller owns the fail-soft.
  *
  * MODE — mixed, per method (each method's ApexDoc restates its own mode):
  *   • selectBrokersOrderedByName uses `WITH USER_MODE` (API 67). Design §5
@@ -169,6 +175,64 @@ public with sharing class ContactSelector {
             LIMIT 1
         ];
         return contacts.isEmpty() ? null : contacts[0];
+    }
+
+    /**
+     * Contacts whose Email exactly matches one of the supplied addresses AND that belong to an
+     * Account — backs LeadConvertMatchService's broker match on Lead.Email (Smart Lead
+     * Conversion), so converting a repeat broker attaches to the Contact they already are rather
+     * than minting a duplicate.
+     *
+     * INTERNAL PATH, NOT GUEST. This lives on the OUTER class (with sharing, USER_MODE) and is
+     * deliberately NOT a sibling of GuestReads.selectBrokerPriorityByEmailSystem below. That one
+     * is the public Broker-Portal guest read and is without-sharing/SYSTEM_MODE for reasons that
+     * do not apply here: this read runs for a signed-in user clicking Convert on a Lead record.
+     * Do not "consolidate" the two — they answer different questions under different trust models.
+     *
+     * `AccountId != null` IS A FILTER, NOT A DEFENSIVE CHECK. Salesforce requires the conversion
+     * target Contact to belong to the Account being converted into (LeadConvert.setContactId is
+     * only valid alongside a setAccountId for that Contact's own Account). Excluding orphans in
+     * the QUERY means the caller has no special case to forget: an account-less Contact simply
+     * never matches, and that Lead takes the ordinary create-a-new-Contact path. Accepted
+     * consequence (design L1): a broker whose only Contact has no Account still gets a duplicate.
+     *
+     * CASE-INSENSITIVITY IS THE PLATFORM'S. SOQL string comparison on Email fields is
+     * case-insensitive by default, so `WHERE Email IN :emails` already means "case-insensitive
+     * exact". Do NOT add LOWER() — invalid here and unnecessary. The caller still lower-cases its
+     * Map keys, because Apex Map keys ARE case-sensitive.
+     *
+     * ORDERING IS LOAD-BEARING (design D2, oldest-wins), identical to AccountSelector.selectByNames:
+     * `CreatedDate ASC, Id ASC` lets the caller take the first row per email as the winner.
+     * CreatedDate alone is not a total order (same-transaction rows share it), so `Id ASC` is the
+     * tiebreak that keeps the pick deterministic across conversions. No LIMIT — this is a bulk
+     * read for N Leads and a LIMIT would drop other emails' rows.
+     *
+     * MODE — `WITH USER_MODE`. Contact.Email IS FLS-permissionable, so unlike the Name-only
+     * methods above this query genuinely CAN throw for a user without read on it. USER_MODE
+     * throws rather than degrading; that is handled by the sole caller, which catches
+     * QueryException and falls back to no-match so conversion never regresses (see
+     * LeadConvertMatchService's fail-soft section). Left to propagate here by design.
+     *
+     * @param emails Broker email addresses to resolve (the converting Leads' Email values); null
+     *               or empty returns an empty list WITHOUT querying.
+     * @return Matching Contacts with an Account (Id, Email, AccountId, CreatedDate) ordered
+     *         CreatedDate ASC, Id ASC; an empty list when the input is null/empty or nothing
+     *         matches (never null).
+     * @throws System.QueryException when the running user lacks read on Contact or Contact.Email.
+     * @example
+     * List<Contact> brokers = ContactSelector.selectByEmails(new Set<String>{ 'broker@firm.com' });
+     */
+    public static List<Contact> selectByEmails(Set<String> emails) {
+        if (emails == null || emails.isEmpty()) {
+            return new List<Contact>();
+        }
+        return [
+            SELECT Id, Email, AccountId, CreatedDate
+            FROM Contact
+            WHERE Email IN :emails AND AccountId != null
+            WITH USER_MODE
+            ORDER BY CreatedDate ASC, Id ASC
+        ];
     }
 
     /**

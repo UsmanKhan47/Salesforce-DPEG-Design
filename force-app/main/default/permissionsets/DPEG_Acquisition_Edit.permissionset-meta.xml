@@ -161,6 +161,17 @@
         <field>Construction_Feasibility_Review__c.Upgrades_Required__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        Required by LeadConvertMatchService — without read on Contact.Email, its USER_MODE
+        duplicate-contact matching during Lead conversion silently degrades and can mint duplicate
+        Contacts (Gate-2 W1, 2026-08-03). Row created directly in the org 2026-08-03 (user-approved).
+        Lead.Email is already declared below (existing grant, unchanged).
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Email</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Contract_Review__c.Asset_Type__c</field>
@@ -868,6 +879,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Deal_Room_Link__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.Deal_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -903,6 +919,16 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Guidance_Price_High__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Guidance_Price_Low__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.Hold_Period__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -919,6 +945,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Lead_Approved_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Listing_Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Listing_Broker_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -963,7 +999,17 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Offer_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.OneDrive_Folder_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Parse_Confidence__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1017,8 +1063,18 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Property_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Rejection_Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Sale_Process__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1069,6 +1125,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.ADR__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1128,6 +1189,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Lot_Size_Acres__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Market_Cap_Rate__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1139,6 +1205,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Occupancy_Pct__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1168,6 +1239,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Seller_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Square_Footage__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1183,12 +1259,27 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Unit_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Visitor_Demographics__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.WALT_Years__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Year_Built__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Year_Renovated__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1199,6 +1290,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.Zip__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Zoning__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1430,4 +1526,12 @@
         <object>NDA__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <recordTypeVisibilities>
+        <recordType>Opportunity.Commercial</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Opportunity.Land</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
 </PermissionSet>

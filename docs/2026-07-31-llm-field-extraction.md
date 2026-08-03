@@ -730,3 +730,281 @@ Three items surfaced by the investigation but explicitly out of scope for this c
   separate design decision, not a corollary of this fix.
 - **O3** — the existing 2023-stamped Orion `Competing_Broker_Submission__c` row is not corrected by this
   change. No backfill was requested and none is proposed.
+
+---
+
+## 2026-08-03 — Extraction completeness (deploys 0Afiw000000Dmy5CAC validate / 0Afiw000000Dn4XCAS)
+
+**Scope:** `ExtractAddressQueueable.cls` (FIX 1's subject composition; FIX 2's first-property
+stamping) and the `ENRICHED_EXTRACTION_RULES` block of `LLMExtractionCalloutService.cls` (one new
+paragraph). No schema change, no new fields, no new objects, no permission-set change — every field
+FIX 2 stamps already exists and is already stamped on WINNER Leads, so the FLS a persona needs is
+already granted. **Source:** `agent-output/design-requirements-extraction-completeness.md`; both
+classes' own headers carry the same story as the shipped, deployed truth; `ExtractAddressQueueableTest.cls`.
+
+### The Eden Prairie trigger
+
+The email that forced this change put essentially the whole deal in its SUBJECT:
+
+```
+Offers Due: August 18th | Eden Prairie Apartments | 432-Unit Value-Add Community | Suburban Chicago
+```
+
+**The model never saw it.** `ExtractAddressQueueable.extractOrDegrade` called
+`LLMExtractionCalloutService.extract` with `staging.Raw_Body__c` only — body, never subject.
+`staging.Subject__c` was already read three other places in the same class (submission audit rows,
+`Lead.Email_Subject__c`, the logged Task's subject), but none of those three is the LLM callout.
+Measured consequences on that email:
+
+| Value | Returned | Where the truth actually was |
+|---|---|---|
+| `email_category` | `other` | `Offers Due:` LEADS the subject |
+| `confidence` | `0.0` | — |
+| `unit_count` | `null` | `432-Unit`, subject-only |
+| `property_address` | `''` | `Suburban Chicago`, subject-only |
+| `property_name` | short-form | full name in the subject |
+
+`property_address = ''` collapsed the work-list to empty, which routed the email to branch (c)
+NO-PROPERTY: no claim key, no registry row, no first-broker-wins protection. Worse, every
+per-property field the model **did** extract — `property_name`, `unit_count`, everything —
+**died in the staging JSON**, because branch (c) passed `property = null` into `createLead`. The
+only surviving trace anywhere on the Lead was the Deal Notes footnote `- Eden Prairie (no usable
+address)`.
+
+There is also a structural reason this class of fact was invisible on **every** available channel,
+not just the text one. The pipeline's only non-text input is a single optional inline image, read
+by the model's vision capability, and the prompt's own `property_name` rule scopes what vision is
+asked to read narrowly: "typically the subject line, the first sentence of the body, or **the
+headline** of an attached flyer image" — the headline, not the flyer's full text. A fact printed
+in a flyer's corner (a market tag, a unit count, a due date set apart from the headline) sits
+outside what the vision channel is even asked to extract, exactly the same shape of gap as a fact
+that lives only in the subject: body-text extraction reads the body, vision reads (at most) a
+headline, and neither one is the Subject line. Eden Prairie's facts happened to fall precisely into
+that gap — invisible to text extraction because they weren't in the body, and not recoverable by
+naming the image differently, because the facts here were never in an image at all.
+
+Two independent defects, therefore two fixes: **FIX 1 reduces how often FIX 2 fires; FIX 2 is the
+safety net for what is left.**
+
+### FIX 1 — prepend the subject, compose at the queueable, clip can't touch it
+
+`ExtractAddressQueueable` gained a pure, `@TestVisible private static` function:
+
+```apex
+String buildLlmText(String subject, String body)
+```
+
+**Exact format:** `'Subject: ' + oneLineSubject + '\n\n' + body`, where `oneLineSubject` collapses
+every CR/LF run in the subject to a single space. Two rules make this a strict superset of the
+previous behavior rather than a change to every email:
+
+- **Blank or null subject returns the body BYTE-IDENTICALLY** — no `Subject:` line, no leading
+  newline, no trim. This is the compatibility guarantee, pinned by
+  `buildLlmText_blankSubject_returnsTheBodyByteIdentically`, and it is also the rollback lever (see
+  the UAT section below).
+- **Blank or null body returns `'Subject: X'` alone** — no trailing separator, no NPE.
+
+**Prepend-then-clip is the reason this works at all.**
+`LLMExtractionCalloutService.buildRequestBody` clips the text handed to the model to
+`MAX_INPUT_CHARS` (40,000) via `InboundEmailFieldUtil.clip`, which is `substring(0, n)` — it
+truncates the **tail** and preserves the **head**. Composing the subject line at the front of the
+string, and doing so **before** the callout, is what makes the subject survive that clip
+unconditionally; composing it inside the callout service, after the clip ran, could silently drop
+it on a long forward. The cost is bounded and small: the prepended block displaces at most
+~270 characters of quoted history from the tail of a > 40,000-character body (`Subject__c` is
+`Text(255)`, already clipped at `InboundEmailStagingService.createStaging`) — the same trade C-15
+already accepted for the body clip itself, an order of magnitude smaller.
+
+**Why composition lives at the queueable, not the callout service.** `LLMExtractionCalloutService`'s
+own header states the §3 ASB exception is "scoped and reversible: only this class's endpoint
+constant … change; the public `extract(...)` signature, the request-shaping, and every downstream
+caller stay identical." A 4-argument `extract(subject, body, image, mime)` would break that promise
+in the same class that documents it, and would touch three other test classes for no benefit —
+composition at the queueable call site is strictly cheaper and does not disturb the seam. The
+routing-tree block in `ExtractAddressQueueable`'s header was updated to say so at step 4: the LLM
+callout's "text input is the SUBJECT LINE + the body (2026-08-03, FIX 1 — see `buildLlmText`) …
+Composed HERE, not in the callout service, and BEFORE the callout so the 40,000-char clip … can
+never drop it."
+
+### The security story: two paths, defended differently
+
+The subject is set by whoever sent the email — **it is attacker-controlled**, and `buildLlmText`'s
+own header treats it that way throughout. The composed text has exactly two consumers, and they are
+defended by two different mechanisms with two different strengths; conflating them is the mistake to
+avoid.
+
+**The deterministic path is hard-closed by construction.** `applyRegexFallback` and
+`applyEnvelopeEmailFallback` never see the composed text at all — they read `staging.Raw_Body__c`
+and the envelope directly, exactly as before this change. What used to be a design choice is now
+stated as a **prohibition** in the class header: these two methods "MUST continue to read
+`staging.Raw_Body__c` and the envelope, NEVER the composed text." The reason is concrete:
+`FROM_LINE_PATTERN` is `(?im)^\s*From:\s*(.+)$`, anchored to the start of a line. Routing subject
+text through that regex would make a `^From:` injection **deterministic** — a broker's claim
+re-attributed by anyone who can set a subject line. This is the one control here that is actually
+enforceable in Apex, and it is why the two inputs must never be "unified."
+
+**The LLM path is soft-mitigated, twice, and neither measure is absolute:**
+
+1. **Structural.** The CR/LF collapse in `buildLlmText` emits the subject as exactly one line, so
+   any `From:` embedded inside it is mid-line and is not a `From:` **line** to a model told the
+   outermost/earliest such line is authoritative.
+2. **Semantic.** The enriched prompt paragraph forbids the Subject line as a source for
+   `broker_name`, `broker_email` and `sent_datetime` outright.
+
+**The reviewer's finding, stated precisely, is why measure 2 exists at all.** Measure 1 closes
+`From:` injection, but it does **not** close the symmetric `Sent:` exposure — and prepending the
+subject actually **inverts** that one. Because the subject now sits at the HEAD of the composed
+text, it occupies exactly the position the legacy rule's "outermost / earliest `Sent:` line" points
+to. A subject shaped like `FW: Sent: Monday — 123 Main St` therefore presents the **earliest** `Sent:`
+token in the entire input — not by attack, just by ordinary forwarded-subject debris. The damage is
+not cosmetic: a fabricated `sent_datetime` reaches
+`Competing_Broker_Submission__c.Submitted_DateTime__c`, the 90-day recency filter behind repeat
+detection (`CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail`) — a submission stamped
+outside that window is invisible to the lookup, so a broker's own genuine follow-up re-routes as a
+fresh **competing** claim instead of a repeat. That is an arbitration defect, and it is exactly the
+class of failure the 2026-08-02 prompt-tuning pass had already fought once for the un-prepended
+input.
+
+The fix is a prohibition placed in the same enriched paragraph that did the widening: the Subject
+line is **never** a source for `broker_name`, `broker_email` or `sent_datetime`, and a `From:`/
+`Sent:` fragment inside it is transport debris rather than a header line — "whatever its position in
+the text," the clause written specifically to defeat the head-of-input inversion. This also hardens
+the `From:` route semantically, on top of the structural collapse, so the two routes are now defended
+independently rather than by one mechanism standing in for both. Neither mitigation is described as
+"the" control in the code: the structural collapse is a hard, Apex-verifiable fact; the prompt clause
+is soft, unverifiable in a test, and checked only live (UAT cases D and D′, below).
+
+### FIX 2 — stamp the first property instead of passing null
+
+`EmailToLeadService.LeadRequest.property` and `applyPropertyBlock` already did exactly the right
+thing — stamp all twenty deal-screening fields and deliberately never write `Property_Address__c`.
+Branch (c) was simply passing `null` into that mechanism. FIX 2 is "stop passing null," and
+`EmailToLeadService.cls` needed **no change at all** — the whole fix lives in
+`ExtractAddressQueueable.routeNoProperty`.
+
+- **First-property stamping.** `routeNoProperty` picks `stampable = firstProperty(extraction.properties)`
+  — the first non-null element in the **model's own array order**, or `null` when the extraction
+  named nothing. No ordering guarantee is claimed or needed here: the class header's warning that the
+  model's array order "is not stable across transactions" governs **lock ordering** (the AB-BA
+  deadlock fix for the per-property loop), and branch (c) takes no lock and derives no claim key, so
+  that warning simply does not apply to it.
+- **`claimableAddress(property)` — the invariant enforced, not inherited.**
+  `PropertyMatchingService.normalizeAddress` strips every non-alphanumeric character, so a raw value
+  like `'###'` or `'—'` is non-blank while its normalized form is empty. Without a guard, that
+  punctuation would land straight in `Lead.Property_Address__c` — the very field the claim key is
+  derived from. `claimableAddress` returns the **raw** address only when it normalizes non-blank,
+  otherwise `null`, which encodes a standalone, statable invariant: **`Lead.Property_Address__c` only
+  ever holds an address that could have produced a claim key.** It never fabricates an address and
+  never synthesizes one from `property_name` or the subject.
+- **Footer exclusion.** `buildSpilloverNote` gained a third parameter, `PropertyExtraction exclude`,
+  compared by **object identity** (`PropertyExtraction` defines no `equals()`, and two distinct
+  properties in one email can legitimately share every field value, so a value comparison would be
+  wrong). `routeProperties` passes `null` (unchanged behavior); `routeNoProperty` passes the property
+  it just stamped. Without this, the Deal Notes footer would read "Additional properties in this
+  email (not routed): - Eden Prairie (no usable address)" on the very Lead whose Property Name reads
+  "Eden Prairie" — a visible self-contradiction on the exact record this fix exists to improve. In the
+  common single-addressless-property case the note becomes empty and no footer prints at all.
+  For the multi-addressless-property case the exclusion still leaves the other properties correctly
+  footnoted.
+- **`OUTCOME_NO_ADDRESS = 'New Lead (property, no address)'`** — a new label, distinct from
+  `OUTCOME_NO_PROPERTY` for the same reason `OUTCOME_NO_PROPERTY_LLM_DOWN` is distinct: the
+  follow-up differs. These are Leads carrying a full deal-screening block with **no**
+  first-broker-wins claim, and an admin must be able to list exactly that population in order to
+  chase an address. `Outcome__c` is free Text and historical rows are **not** back-filled, the same
+  precedent as the retired `'Competing Duplicate'` label. LLM-down still wins the label precedence
+  (it cannot actually collide with `OUTCOME_NO_ADDRESS`, since a degraded extraction's `properties`
+  list is always empty, but the precedence is coded explicitly so it stays true if that ever
+  changes).
+- **The residual, stated honestly (D16).** An address-less property **cannot** claim. A blank
+  `Property_Key__c` would collide with every other addressless email on the registry's unique index,
+  and claiming on a synthesized key would mean writing a guess into a permanent, unique-keyed ledger.
+  So a `New Lead (property, no address)` Lead carries the deal facts but takes **no claim**: any
+  broker who later submits the same property **with** an address wins it outright. The only
+  mitigation this change makes possible is human — chase the address, then let the next email claim
+  it. Nothing about FIX 2 attempts a claim, now or ever.
+
+### The T14 incident — a test that passed for the wrong reason
+
+`execute_hardGatedEmailWithAnAddresslessProperty_stillCreatesNoLead` targets the LLM **hard gate**
+(D2: `is_acquisition_related = false` AND confidence ≥ 0.85), which is judged **after** the callout
+runs — it must prove FIX 2 does not resurrect a Lead the relevance gate suppressed.
+
+The first version of this test used a sender of `noreply-news@example.invalid`. Compacted (separators
+stripped, lower-cased) that local part is `noreplynews`, which **contains** `noreply` — so the email
+was caught by the **deterministic pre-filter** (`routePrologueWithoutCallout` / `SENDER_CONTAINS`)
+before the LLM was ever asked. The headline assertion — "no Lead was created" — still passed. But it
+was proving the pre-filter works, not that the hard gate does, and the new `OUTCOME_NO_ADDRESS` label
+was never actually given a chance to leak into the wrong branch's test. That is the classic
+passes-for-the-wrong-reason shape, and it was only catchable at all because the two branches carry
+**distinct** outcome labels — a single shared "no Lead, no outcome to check" test would have hidden
+the mistake completely. That distinctness is the 2026-07-31 relevance-gate work
+(`OUTCOME_PRE_FILTERED` vs. `OUTCOME_NOT_ACQUISITION`) paying for itself in an entirely different
+change, weeks later.
+
+The fix was two-part. First, the sender was changed to an ordinary human address
+(`dana.reed@brokerfirm.example.invalid`) that genuinely traverses callout → gate. Second, and more
+durable, the test now asserts — **before** the outcome assertion — that `Extracted_JSON__c` is
+non-blank and does **not** contain `"skipped"`. A pre-filter hit stores
+`{"skipped":"pre-filter","reason":"sender:..."}` and never calls out at all, so if this fixture ever
+drifts back into pre-filter territory (a sender rename, a `SENDER_CONTAINS` token change), the test
+now fails **at that assertion**, with an explanatory message naming the actual cause, instead of
+silently re-testing the wrong branch and reporting a false green.
+
+### UAT: Eden Prairie re-send and the recurring D / D′ check
+
+**No Apex test can prove the model's behavior** — the callout is mocked and the model is
+non-deterministic, same posture as every prompt change in this file. Two live checks matter most.
+
+**Case A — Eden Prairie re-send.** Forward the ORIGINAL Eden Prairie email fresh, with a new
+Message-ID (asking the platform to redeliver the original is skipped by the Message-ID idempotency
+guard and proves nothing). **This case RAN on 2026-08-03** (staging `a0aiw000000NzQzAAK`, Lead
+`00Qiw000000RxdVEAS`), and the actual result diverged from the prediction above in one respect —
+recorded here as observed, not as originally forecast.
+
+- **Achieved.** `email_category = call_for_offers` at `confidence = 1.0` (was `other` @ `0.0` on the
+  original, pre-fix run); `unit_count = 432`, read from the subject; `property_name = "Eden Prairie
+  Apartments"` — the full form, not the short one the original run returned; `offer_due_date =
+  2026-08-18`; `Parse_Confidence__c = HIGH`. FIX 2's stamping path put every one of those fields onto
+  the Lead.
+- **Diverged.** `property_address` came back **empty**, not `Suburban Chicago` as predicted — the
+  model treated the bare market descriptor as not an address; it surfaces instead inside the
+  extraction's own `deal_summary`, as "suburban area of Chicago." Routing therefore landed on branch
+  (c) NO-PROPERTY under FIX 2, `Outcome__c = New Lead (property, no address)`, **not** branch (e)
+  WINNER: no `Property_Registry__c` row, no `Competing_Broker_Submission__c`, no first-broker-wins
+  claim taken.
+
+**Assessment.** This conservatism reads as protective, not as a defect to chase down. `'suburban
+chicago'` would be a dangerously generic claim key — a bare two/three-token market descriptor that
+fuzzy-collides (0.6 Jaccard) with every later suburban-Chicago submission, which would hand one
+broker's early, vague email a claim over an entire region's worth of unrelated future deals. A
+region-level fallback key (treating a bare market/city descriptor as claimable when no street
+address exists) was considered for exactly this case and is **recommended against**, for that same
+reason. D16's residual applies to this Lead as it stands: it carries the full deal-screening block
+and no first-broker-wins protection until a real street address surfaces, and the
+`New Lead (property, no address)` outcome label is what makes it findable and chaseable in the
+meantime.
+
+**Case D / D′ — no key drift, checked from both directions.** Both live in
+`agent-output/design-requirements-extraction-completeness.md` §6.5; D′ was added at the class-header
+level because §6.5 predates the reviewer's Sent:-inversion finding above.
+
+- **D** — re-send a previously-processed email that already owns a registry row **and** states its
+  address in the BODY. Its new `property_address` must normalize to the **same** `Property_Key__c`,
+  landing on branch (d) COMPETING (or (b) REPEAT if the same broker within 90 days). A **new**
+  registry row means the key drifted — roll back FIX 1.
+- **D′** — the body states address **A**, and the subject states a **different** address **B**. The
+  extracted `property_address` must normalize to **A** — the BODY wins. D confirms nothing drifted
+  for an email the subject doesn't contest; D′ is the only scenario that actually **exercises** the
+  body-over-subject precedence clause. Without D′, that clause — the whole safety argument for why
+  FIX 1 cannot re-key an existing claim — is untested in the one direction that matters.
+
+**These are marked RECURRING, not one-off sign-off.** Re-run both D and D′ after any model-version
+change, and after any future edit to the enriched block — there is no deterministic Apex control for
+prompt behavior, and the model's behavior can move under a version bump without a single line of this
+repository changing.
+
+**The rollback lever is the blank-subject byte-identity guarantee**, and it is provable, not merely
+believed: `buildLlmText_blankSubject_returnsTheBodyByteIdentically` pins that a blank subject
+reproduces the pre-FIX-1 input exactly. Reverting `extractOrDegrade` to call
+`LLMExtractionCalloutService.extract` with `staging.Raw_Body__c` alone is therefore a proven full
+restoration of the previous behavior, not an approximation of one.

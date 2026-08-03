@@ -85,6 +85,173 @@
  * claim values. Editing the legacy block would have broken both protection 1 and the
  * one-line rollback in protection 3 above.
  *
+ * ═══ CONVERSION ENRICHMENT S4, 2026-08-03 — broker_company FROM THE EMAIL DOMAIN ═══
+ * One rule added, again ENRICHED-BLOCK ONLY (LEGACY_EXTRACTION_RULES and LEGACY_RESPONSE_FORMAT
+ * are untouched, so protections 1 and 3 both stand): when the email states no company anywhere,
+ * broker_company MAY be inferred from the DOMAIN of broker_email — never from a free/consumer
+ * mailbox domain, and never with a division/team/region suffix appended. A stated company always
+ * wins; the rule only fills a value that would otherwise be empty. It carries the same explicit
+ * deferral sentence the BROKER vs LISTING BROKER and sent_datetime paragraphs use, because it
+ * READS broker_email and must not be read as redefining it. broker_company is already a key in
+ * the enriched response schema, so there is NO schema change.
+ *
+ * ⚠ THIS IS THE FIRST PROMPT CHANGE WHOSE OUTPUT FEEDS AN ATTACHMENT DECISION.
+ * broker_company flows into EmailToLeadService.buildLead -> Lead.Company, and since Smart Lead
+ * Conversion Lead.Company is an ACCOUNT MATCH KEY (LeadConvertMatchService.collectMatchKeys ->
+ * AccountSelector.selectByNames). This paragraph therefore participates in deciding WHICH FIRM a
+ * deal is attributed to — it is no longer display-only. Two things are load-bearing if you edit
+ * it: (a) the "never append a division, team, region, market or group name" clause — "JLL" vs
+ * "JLL Capital Markets" is exactly the fragmentation exact-name matching cannot bridge; (b) the
+ * free-mail blocklist, which is what stops hotmail.com becoming a brokerage. The failure mode is
+ * recoverable (a slightly-off firm name mints a second Account a human can merge), which is why
+ * domain inference beats the 'Unknown - Via Email' placeholder it replaces. NO downstream code
+ * change accompanies it — traced end to end in
+ * agent-output/design-requirements-conversion-enrichment.md §6.3.
+ *
+ * ⚠ THE FREE-MAIL BLOCKLIST DIVERGES FROM DESIGN §6.2 — REVIEWER-MANDATED HARDENING, 2026-08-03.
+ * §6.2's wording is otherwise carried verbatim, but its blocklist named only webmail providers and
+ * then relied on the catch-all "any other consumer mailbox provider ... never from a domain that is
+ * not a company's own domain". That leaves ISP mailboxes wide open, because an ISP domain IS a real
+ * company's own domain: under the preceding "use the registrable part of the domain" sentence,
+ * comcast.net yields "Comcast", att.net yields "AT&T". Those are precisely the values that must
+ * never be produced — Lead.Company feeds AccountSelector.selectByNames, and BrokerFirmController
+ * then aggregates every deal on that Account as ONE firm's, so a single leaked ISP domain pools
+ * unrelated independent brokers into a "Comcast" brokerage. That is the same defect D1b's
+ * placeholder guard exists to prevent, arriving by a different route. Two additions close it:
+ * the named ISP/consumer domains, and an explicit "an ISP/telecom/cable/webmail/portal domain is
+ * never the firm, even when its name is a real company" rule with concrete counter-examples. A
+ * third sentence resolves ambiguity toward EMPTY — but is scoped to the mailbox-provider question
+ * only, deliberately, so it does not suppress the unknown-but-genuine brokerage domain
+ * (orion-realty.com -> "Orion Realty") that is the whole point of S4.
+ *
+ * ═══ EXTRACTION COMPLETENESS FIX 1, 2026-08-03 — THE INPUT NOW CARRIES A Subject: LINE ═══
+ * The text handed to `extract(...)` is no longer the raw body alone: `ExtractAddressQueueable
+ * .buildLlmText` prepends `Subject: <subject, CR/LF collapsed to one space>` and a blank line.
+ * NOTHING IN THIS CLASS CHANGED TO ACHIEVE THAT — not the signature, not buildRequestBody, not
+ * MAX_INPUT_CHARS — because the composition happens at the queueable call site, which keeps the
+ * §3 ASB re-homing promise in this header literally true. One enriched paragraph was added
+ * (FIRST in the block, because it describes the SHAPE of the input and everything after depends
+ * on it) telling the model the line exists and may be read for any value. Without it the legacy
+ * rule "property_address is any property address found anywhere in the BODY" would license the
+ * model to ignore a subject-only market like "Suburban Chicago" — which is the exact email that
+ * motivated the fix.
+ *
+ * ⚠ LEGACY_EXTRACTION_RULES AND LEGACY_RESPONSE_FORMAT ARE AGAIN UNTOUCHED. Note the legacy
+ * block's opening sentence ("The content below is the body of a broker email") is now slightly
+ * imprecise — that is ACCEPTED, not overlooked: editing it would break the byte-pin and the
+ * one-line rollback lever, and the enriched paragraph corrects the shape explicitly.
+ *
+ * ═══ 🔴 WHY THE PARAGRAPH NARROWS broker_name / broker_email / sent_datetime BACK OUT ═══
+ * The CR/LF collapse in `buildLlmText` closes `From:` INJECTION structurally — a one-line subject
+ * can never contain a line that BEGINS `From:`. It does NOT close the symmetric `Sent:` exposure,
+ * and prepending actually INVERTS it: the subject now sits at the HEAD of the composed text, which
+ * is exactly where the legacy rule's "OUTERMOST / EARLIEST Sent: line" points. A subject such as
+ * `FW: Sent: Monday — 123 Main St` therefore presents the EARLIEST `Sent:` token in the whole
+ * input. The damage is not cosmetic: a fabricated `sent_datetime` flows to
+ * `Competing_Broker_Submission__c.Submitted_DateTime__c`, which is the 90-day recency filter behind
+ * REPEAT DETECTION — a submission stamped outside that window is invisible, so the broker's own
+ * follow-up re-routes as a fresh COMPETING claim. That is an arbitration defect, and it is reachable
+ * by accident (forwarded-subject debris), not only by an attacker.
+ *
+ * The fix is a prohibition in the same paragraph that did the widening: the Subject line is NEVER a
+ * source for broker_name, broker_email or sent_datetime, and a `From:`/`Sent:` fragment inside it is
+ * transport debris rather than a header line "whatever its position in the text" — the clause that
+ * defeats the head-of-input inversion specifically. Note this ALSO hardens the `From:` route
+ * SEMANTICALLY, on top of the structural collapse, so the two routes are now defended
+ * independently rather than by one mechanism.
+ *
+ * ⚠ Read that alongside the prohibition in `ExtractAddressQueueable.buildLlmText`: the DETERMINISTIC
+ * path (applyRegexFallback / applyEnvelopeEmailFallback) is hard-closed BY CONSTRUCTION because it
+ * never sees the composed text at all, whereas this LLM path is SOFT-mitigated — collapse plus
+ * prompt narrowing. Do not describe either mitigation as "the" control; they defend different paths
+ * and only one of them is enforceable in Apex.
+ *
+ * 🔴 BODY-OVER-SUBJECT PRECEDENCE IS WHY THIS CANNOT RE-KEY AN EXISTING CLAIM. The paragraph
+ * widens where `property_address` may be found, and `property_address` is one of the two values
+ * the first-broker-wins ledger arbitrates on. The precedence clause bounds that exactly: the
+ * subject may only ADD an address where the body stated none. Every existing
+ * Property_Registry__c row was keyed from a body-derived address, so those emails extract
+ * unchanged; the behaviour change is confined to emails that today yield NO key at all, where
+ * there is nothing to regress against. Do not weaken or drop that clause — it is the whole
+ * safety argument, and it is only observable live (UAT cases D and D′ below).
+ *
+ * ═══ ⚠ UAT D / D′ ARE RECURRING CHECKS, NOT ONE-OFF SIGN-OFF ═══
+ * Both live in agent-output/design-requirements-extraction-completeness.md §6.5; D′ is added here
+ * because §6.5 predates the reviewer's W1 finding.
+ *   • D  — re-send a previously-processed email that already owns a registry row AND states its
+ *          address in the BODY. Its new property_address must normalize to the SAME
+ *          Property_Key__c, landing on branch (d) COMPETING (or (b) REPEAT). A NEW registry row
+ *          means the key drifted → roll back FIX 1.
+ *   • D′ — the body states address A and the subject states a DIFFERENT address B. The extracted
+ *          property_address must normalize to A. THIS IS THE ONLY SCENARIO THAT ACTUALLY
+ *          EXERCISES THE PRECEDENCE CLAUSE — D confirms nothing drifted, D′ confirms the rule
+ *          that prevents drift is being obeyed. Without D′ the clause is untested in both
+ *          directions.
+ * 🔁 RE-RUN BOTH AFTER ANY MODEL-VERSION CHANGE (and after any edit to this block). There is NO
+ * deterministic control for a prompt rule — no Apex test can assert it, and the model's behaviour
+ * can move under a version bump without a single line of this repo changing. The rollback lever is
+ * one line and is guaranteed by a unit test: blank-subject byte-identity means reverting
+ * `extractOrDegrade` to `staging.Raw_Body__c` restores the previous input exactly
+ * (ExtractAddressQueueableTest.buildLlmText_blankSubject_returnsTheBodyByteIdentically).
+ *
+ * ═══ INTAKE RULES V2, 2026-08-03 — U2 (category_confidence) AND U3 (stated firm wins) ═══
+ * Two edits, BOTH ENRICHED-BLOCK ONLY. LEGACY_EXTRACTION_RULES and LEGACY_RESPONSE_FORMAT are
+ * untouched again, so protections 1 and 3 both stand and no fixture pin is re-pinned.
+ *
+ *   U2 — one sentence appended to the CLASSIFICATION paragraph and one key added to the
+ *   response schema: `category_confidence`.
+ *
+ *   🔴 THE SUPPRESSION RULE ITSELF IS CATEGORICAL AND LIVES ENTIRELY IN APEX: an email classified
+ *   `call_for_offers` produces no Lead, unconditionally (ExtractAddressQueueable
+ *   .isCallForOffersGated). `category_confidence` is NOT gated on. It is parsed and stored so it
+ *   rides along in `Extracted_JSON__c` as TUNING DATA — the only evidence available if that
+ *   suppression later proves too aggressive. An earlier draft gated on it behind a Custom Metadata
+ *   threshold; that machinery was deleted, because the business rule needs no dial and a toggle
+ *   that ships OFF is a feature that has never run.
+ *
+ *   WHAT THE SENTENCE IS STILL FOR, AND WHY IT STAYS: most of its text does not describe a
+ *   confidence at all — it DEFINES THE CATEGORY'S BOUNDARY (a one-recipient offering, an
+ *   off-market or exclusive introduction, or anything inviting a direct conversation is NOT
+ *   call_for_offers). Now that the category ALONE decides whether a Lead exists, that boundary is
+ *   the single highest-leverage sentence in this block: a model that over-applies
+ *   `call_for_offers` silently suppresses real broker submissions. Sharpen this wording before
+ *   reaching for a threshold.
+ *
+ *   🔴 U2 DEGRADES CORRECTLY BY CONSTRUCTION. A legacy-shape response (the one-line rollback
+ *   lever) and an LLM degrade both carry NO `email_category` at all; the parser coerces that to
+ *   'other', which the gate ignores. Reverting this block silently DISABLES the suppression rather
+ *   than stranding it on — the safe direction.
+ *
+ *   U3 — the `broker_company` paragraph's opening is REPLACED (everything from
+ *   `kevin.girard@jll.com gives "JLL"` onward, including the whole free-mail blocklist and the
+ *   reviewer-mandated ISP hardening, is carried verbatim and unchanged). Three things changed
+ *   and one of them is load-bearing:
+ *     (a) FRAMING — the paragraph used to be headed "WHEN THE EMAIL DOES NOT NAME THE FIRM", so
+ *         its own "use it exactly as written" sentence read as an exception to inference rather
+ *         than as precedence. It is now "STATED ALWAYS BEATS INFERRED", with inference bounded
+ *         by an explicit "ONLY if no firm is stated anywhere" clause. That clause is what
+ *         confines the behaviour change to emails where a firm IS stated.
+ *     (b) FOOTER — the letterhead / disclaimer / address-block / copyright line is now named
+ *         explicitly, including on an attached flyer image. That is where blast platforms and
+ *         free-mail-sending brokers put the firm, and it was the one place the old wording did
+ *         not look. The winning shape is a footer-only firm on a free-mail domain: today that
+ *         yields EMPTY -> COMPANY_PLACEHOLDER -> no Account match; now it yields the real firm.
+ *     (c) 🔴 THE DIVISION-STRIP RULE NOW APPLIES TO STATED NAMES, NOT ONLY INFERRED ONES. This
+ *         is the highest-value line in U3 and the reason (a) is safe. Lead.Company is an ACCOUNT
+ *         MATCH KEY (LeadConvertMatchService.collectMatchKeys -> AccountSelector.selectByNames),
+ *         and a FOOTER STATES THE DIVISION far more often than the clean firm — "JLL Capital
+ *         Markets", "CBRE | Investment Properties", "Marcus & Millichap IPA". Making stated names
+ *         win WITHOUT extending the strip rule would have fed division strings straight into
+ *         Account matching and minted a second Account per division: U3 would have caused the
+ *         exact fragmentation the S4 header names as load-bearing. Do not weaken it.
+ *     A "several firms" clause resolves the blast-platform case (sender's firm wins; the other
+ *     firm goes to deal_summary), which keeps broker_company tied to broker_email's owner.
+ *
+ * ⚠ BOTH EDITS TOUCH THIS BLOCK, SO UAT D AND D′ BELOW ARE MANDATORY RE-RUNS — they are declared
+ * recurring checks after ANY edit here, not one-off sign-off. U3 additionally needs cases F
+ * (footer-only firm on a free-mail domain) and F′ (a stated "JLL Capital Markets" must yield
+ * "JLL"), which are the only way (c) can be verified at all.
+ *
  * ⚠ THE REQUEST BODY IS NO LONGER CONSTANT ACROSS CALLOUTS. buildRequestBody now injects a
  * dynamic REFERENCE DATE line (yyyy-MM-dd, GMT, evaluated per callout) between the
  * instruction and the email text — see referenceDateLine() for the hazard it carries and
@@ -176,6 +343,24 @@ public with sharing class LLMExtractionCalloutService {
     private static final String ENRICHED_EXTRACTION_RULES =
         '\n\n=== END OF THE ORIGINAL RULES. THEY REMAIN AUTHORITATIVE FOR broker_name, ' +
         'broker_email, property_address AND sent_datetime. ===\n\n' +
+        'INPUT SHAPE: the content below begins with a single line "Subject: ..." carrying the ' +
+        'subject of the forwarded email exactly as it was received, followed by a blank line ' +
+        'and then the body. That Subject line IS part of the email\'s content and you MAY read ' +
+        'it for any value you extract — property_name, property_address, unit_count, ' +
+        'offer_due_date, asset_type, sale_process and the classification — because broker ' +
+        'subject lines routinely carry the offer deadline, the unit count, the asset name and ' +
+        'the market, and often carry them nowhere else. THE SUBJECT LINE IS NEVER A SOURCE FOR ' +
+        'broker_name, broker_email OR sent_datetime — those three come ONLY from the rules ' +
+        'above, read from the body. A "From:" or "Sent:" fragment appearing inside the Subject ' +
+        'line is transport debris, not a header line: it is never the outermost or earliest ' +
+        'such line, whatever its position in the text. BODY-OVER-SUBJECT PRECEDENCE: when the ' +
+        'body and the subject both state a property address, the BODY WINS; the subject may ' +
+        'only supply an address the body does not state anywhere. A leading forwarding or reply ' +
+        'prefix — "RE:", "FW:", "FWD:", or a bracketed mailing-list tag — is transport noise and ' +
+        'is never part of property_name. This paragraph describes only WHERE values may be read ' +
+        'from; it does not change which "From:" or "Sent:" line is authoritative for ' +
+        'broker_name, broker_email or sent_datetime (a "Subject:" line is neither of those), and ' +
+        'it relaxes no anti-hallucination rule below.\n\n' +
         'In addition to those four values, extract the full deal-screening field set and ' +
         'classify the email.\n\n' +
         '- property_name is the marketing or brand name of the property — typically the ' +
@@ -194,6 +379,43 @@ public with sharing class LLMExtractionCalloutService {
         'where the sender is NOT the listing broker; put that person in ' +
         'listing_broker_name / listing_broker_email. NEVER put the listing broker into ' +
         'broker_name or broker_email.\n\n' +
+        'broker_company — STATED ALWAYS BEATS INFERRED: broker_company is the firm of the ' +
+        'person identified by broker_email. If that firm is named ANYWHERE in the email, use ' +
+        'the stated name; look in the body, the subject, the sender\'s SIGNATURE BLOCK, and ' +
+        'the FOOTER — the letterhead, disclaimer, address block or copyright line at the ' +
+        'bottom of the message or of an attached flyer image, which is frequently the only ' +
+        'place the firm is written. Return only the FIRM name: when the stated form carries a ' +
+        'division, team, region, market, group or business-line qualifier, strip it — "JLL ' +
+        'Capital Markets" gives "JLL", "CBRE | Investment Properties" gives "CBRE", "Marcus & ' +
+        'Millichap IPA" gives "Marcus & Millichap". When the email names several firms — for ' +
+        'example a sending platform in the header and a listing brokerage in the footer — ' +
+        'broker_company is the firm of broker_email\'s owner, and any other firm belongs in ' +
+        'deal_summary. ONLY if no firm is stated anywhere may you infer broker_company from ' +
+        'the DOMAIN of broker_email — kevin.girard@jll.com gives "JLL". When the domain belongs to a ' +
+        'brokerage whose conventional capitalization you recognise, use that conventional ' +
+        'form (for example JLL, CBRE, Cushman & Wakefield, Marcus & Millichap, Newmark, ' +
+        'Colliers, Avison Young, Lee & Associates, Berkadia, Walker & Dunlop, Eastdil ' +
+        'Secured, NorthMarq, Matthews, Institutional Property Advisors). Otherwise use the ' +
+        'registrable part of the domain with ordinary capitalization and no suffix — ' +
+        'orion-realty.com gives "Orion Realty". Return only the FIRM name the domain ' +
+        'implies; never append a division, team, region, market or group name. NEVER infer ' +
+        'a company from a free or consumer mailbox domain — gmail.com, googlemail.com, ' +
+        'hotmail.com, outlook.com, live.com, msn.com, yahoo.com, ymail.com, aol.com, ' +
+        'icloud.com, me.com, mac.com, proton.me, protonmail.com, gmx.com, gmx.net, ' +
+        'zoho.com, mail.com, yandex.com, comcast.net, verizon.net, att.net, ' +
+        'sbcglobal.net, bellsouth.net, cox.net, charter.net, earthlink.net, ' +
+        'optonline.net, rr.com, roadrunner.com, windstream.net, frontier.com, aim.com, ' +
+        'juno.com, or any other consumer mailbox provider — and never from a domain that ' +
+        'is not a company\'s own domain. In those cases leave broker_company EMPTY. AN ' +
+        'INTERNET-SERVICE-PROVIDER, TELECOM, CABLE, WEBMAIL OR PORTAL DOMAIN IS NEVER THE ' +
+        'BROKER\'S FIRM, even when its name is a real company: comcast.net must not give ' +
+        '"Comcast", att.net must not give "AT&T", verizon.net must not give "Verizon", and ' +
+        'sbcglobal.net must not give "SBC Global". If you cannot tell whether a domain is a ' +
+        'business\'s own domain or a mailbox provider, treat it as a mailbox provider and ' +
+        'leave broker_company EMPTY — an empty value is always safe, whereas a wrong firm ' +
+        'name silently groups unrelated brokers under one company. This ' +
+        'rule reads broker_email only as a source for broker_company; it does not change ' +
+        'how broker_name, broker_email, property_address or sent_datetime are determined.\n\n' +
         'sent_datetime WHEN NO DATE IS STATED: the rules above remain authoritative for ' +
         'which line sent_datetime is taken from. This adds only one restriction on ' +
         'whether it may be filled at all. It must come from explicit content — a "Sent:" ' +
@@ -237,10 +459,19 @@ public with sharing class LLMExtractionCalloutService {
         'commercial real-estate property for potential acquisition, and false for ' +
         'automated notifications, forwarding confirmations, out-of-office replies and ' +
         'newsletters. confidence is a number from 0 to 1 expressing how certain you are ' +
-        'of is_acquisition_related.\n\n' +
+        'of is_acquisition_related. ' +
+        'category_confidence is a number from 0 to 1 expressing how certain you are of ' +
+        'email_category SPECIFICALLY — it is a SEPARATE judgement from confidence, which ' +
+        'concerns is_acquisition_related only. Return category_confidence above 0.85 only ' +
+        'when the email is unambiguously of that category on its face. A property offering ' +
+        'sent to one recipient, an off-market or exclusive introduction, or any email that ' +
+        'invites a direct conversation is NOT call_for_offers; call_for_offers means a ' +
+        'marketed campaign inviting offers from the market at large, typically with a stated ' +
+        'offer deadline and a mass or list send.\n\n' +
         'Respond ONLY with a single JSON object in exactly this shape, with no other ' +
         'text:\n' +
         '{"email_category": "other", "is_acquisition_related": true, "confidence": 0.0, ' +
+        '"category_confidence": 0.0, ' +
         '"broker_name": "", "broker_email": "", "broker_company": "", "broker_phone": "", ' +
         '"broker_mobile": "", "broker_title": "", "listing_broker_name": "", ' +
         '"listing_broker_email": "", "sent_datetime": "", "deal_summary": "", ' +

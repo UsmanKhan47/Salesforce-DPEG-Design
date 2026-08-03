@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Parse_Confidence__c</fullName>
+    <description>The LLM extraction's confidence in the deal-screening fields carried onto this Opportunity at conversion, mirrored from Lead.Parse_Confidence__c. The analyst's "should I trust the rest of this?" signal.</description>
+    <inlineHelpText>Carried from the Lead at conversion. HIGH/MEDIUM/LOW.</inlineHelpText>
+    <label>Parse Confidence</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>HIGH</fullName>
+                <default>false</default>
+                <label>HIGH</label>
+            </value>
+            <value>
+                <fullName>MEDIUM</fullName>
+                <default>false</default>
+                <label>MEDIUM</label>
+            </value>
+            <value>
+                <fullName>LOW</fullName>
+                <default>false</default>
+                <label>LOW</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

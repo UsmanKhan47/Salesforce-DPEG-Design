@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Seller_Entity__c</fullName>
+    <description>Name of the selling entity, as quoted in the broker email and carried from Lead.Seller_Entity__c at conversion. Deliberately Text, not a lookup — there is no Seller object, and this is a free-text name as stated by the broker, not a reference to a Salesforce record. Per ARCHITECTURE.md §1 rule 9's Text exception.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Carried from the Lead at conversion; null when not stated in the email.</inlineHelpText>
+    <label>Seller Entity</label>
+    <length>255</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

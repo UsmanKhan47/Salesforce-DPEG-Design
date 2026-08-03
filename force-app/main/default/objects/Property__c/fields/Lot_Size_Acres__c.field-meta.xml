@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lot_Size_Acres__c</fullName>
+    <description>Lot size in acres, carried from Lead.Lot_Size_Acres__c at conversion. The existing Lot_Size__c field is square feet, entered from the Offering Memorandum by an analyst — this field is NOT derived from that one, and conversion never writes to Lot_Size__c (deriving SF from acres is forbidden by this module's anti-hallucination rules).</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Carried from the Lead at conversion; null when not stated in the email. Distinct from Lot Size (which is square feet, from the OM).</inlineHelpText>
+    <label>Lot Size (Acres)</label>
+    <precision>10</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

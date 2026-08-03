@@ -20,17 +20,42 @@
  *           live Opportunity. NO LEAD, and ** NO CALLOUT ** (C-6).
  *    3. DETERMINISTIC PRE-FILTER (noreply / mailer-daemon / auto-submitted headers)
  *           -> gated. NO LEAD, NO CLAIM, ** NO CALLOUT **. Task still logged.
- *    4. LLM CALLOUT — exactly one per job, still.
+ *    4. LLM CALLOUT — exactly one per job, still. Its text input is the SUBJECT LINE + the
+ *           body (2026-08-03, FIX 1 — see buildLlmText): brokers routinely put the offer
+ *           deadline, the unit count, the asset name and the market in the subject and nowhere
+ *           else. Composed HERE, not in the callout service, and BEFORE the callout so the
+ *           40,000-char clip (which preserves the head) can never drop it. A blank subject
+ *           returns the body byte-identically.
  *    5. Extracted_JSON__c written VERBATIM, before any routing decision (D3).
- *    6. Regex + envelope broker fallbacks (email-level, unchanged).
+ *    6. Regex + envelope broker fallbacks, then SENDER-FIRST BROKER IDENTITY (email-level).
+ *           2026-08-03, intake-rules-v2 / U1: the envelope From_Address__c IS THE BROKER and
+ *           OUTRANKS any body-extracted identity; whoever the BODY names is demoted to the
+ *           listing contact. Every email in this pipeline is a forward from DPEG's
+ *           coordinator, so From_Address__c already carries the ORIGINAL SENDER and
+ *           Forwarded_By__c carries the coordinator. Guarded by the paste-forward test
+ *           (From == Forwarded_By, or a blank/malformed From) which falls back to the
+ *           body-extracted identity. See applySenderFirstBrokerIdentity.
  *    7. RELEVANCE GATE (D2, tiered):
  *           HARD (is_acquisition_related = false AND confidence >= 0.85)
  *                -> NO LEAD, NO CLAIM, Task logged, outcome recorded.
  *           SOFT (false but less certain) -> continue, Parse_Confidence__c = LOW,
  *                and STILL CLAIM.
+ *    7b. CALL-FOR-OFFERS GATE (2026-08-03, intake-rules-v2 / U2). email_category is
+ *           'call_for_offers' -> NO LEAD, NO CLAIM, Task logged. Unconditional: DPEG does not
+ *           work marketed call-for-offers campaigns. Nothing is lost — the staging row keeps
+ *           the raw body and the full Extracted_JSON__c, and the Gated_Call_For_Offers list
+ *           view is how the population is found. Deliberately POST-CALLOUT: see the
+ *           SENDER_CONTAINS block for why a pre-callout blast filter is still prohibited.
  *    8. Build the property work-list: drop blank addresses, de-duplicate on the NORMALIZED
  *           address, SORT by cluster key, truncate to MAX_PROPERTIES.
  *           Empty work-list -> (c) NO-PROPERTY: ONE Lead, no claim, done.
+ *           (c) STAMPS THE FIRST PROPERTY'S DEAL BLOCK when the email named one it could not
+ *           address (2026-08-03, FIX 2). Same LeadRequest.property / applyPropertyBlock path
+ *           the winner branch uses; Property_Address__c stays null, enforced by
+ *           claimableAddress(). Outcome is OUTCOME_NO_ADDRESS rather than OUTCOME_NO_PROPERTY.
+ *           ⚠ STILL NO CLAIM — see routeNoProperty's residual note: these Leads have no
+ *           first-broker-wins protection, and a later broker submitting the same property WITH
+ *           an address wins it outright.
  *
  *   PER-PROPERTY LOOP (each property, in sorted order, isolated by try/catch)
  *    (b) REPEAT    — the same broker has already submitted THIS property inside the lookback
@@ -163,6 +188,9 @@
  * LLMExtractionCalloutService, the dedicated callout wrapper — this class implements
  * Database.AllowsCallouts so that boundary can run here and be mocked via HttpCalloutMock.
  *
+ * There is NO configuration read of any kind — intake-rules-v2's rules are both unconditional, so
+ * the Custom Metadata accessor an earlier draft introduced was deleted rather than shipped dark.
+ *
  * `with sharing` is declared for standards conformance (ARCHITECTURE.md §2). It is functionally
  * a no-op here because the class performs no SOQL/DML directly — the classes it delegates to
  * enforce their own sharing.
@@ -217,6 +245,16 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      *  worth re-extracting once the outage clears, and an admin needs to be able to list
      *  exactly them. */
     public static final String OUTCOME_NO_PROPERTY_LLM_DOWN = 'New Lead (no property) — LLM unavailable';
+    /** Branch (c) reached with a NAMED property the pipeline could not address. Distinct from
+     *  OUTCOME_NO_PROPERTY for the same reason OUTCOME_NO_PROPERTY_LLM_DOWN is — THE FOLLOW-UP
+     *  DIFFERS. These Leads carry the full deal-screening block (name, units, price, due date,
+     *  asset type …) but hold NO first-broker-wins claim, because an addressless property cannot
+     *  produce a Property_Key__c; a later broker who submits the same property WITH an address
+     *  wins it outright. An admin must be able to list exactly this population in order to chase
+     *  the address, which is the only mitigation that exists. Outcome__c is free Text and
+     *  historical rows are deliberately NOT back-filled — same precedent as the retired
+     *  'Competing Duplicate' label. Added 2026-08-03 (extraction-completeness FIX 2, D11). */
+    public static final String OUTCOME_NO_ADDRESS = 'New Lead (property, no address)';
     /** Branch (d): a different broker already holds the property. Renamed from the retired
      *  'Competing Duplicate' on 2026-07-31, when the branch stopped creating a duplicate Lead —
      *  there is no longer a duplicate of anything, only a competing submission. Rows stamped
@@ -241,6 +279,27 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     public static final String OUTCOME_NOT_ACQUISITION = 'Not Acquisition (gated)';
     /** Deterministic pre-filter hit: an automated sender or an auto-reply header. */
     public static final String OUTCOME_PRE_FILTERED = 'Not Acquisition (pre-filtered)';
+
+    /**
+     * U2 CALL-FOR-OFFERS GATE (intake-rules-v2): the model classified the email as a marketed
+     * call-for-offers campaign. NO LEAD, NO CLAIM, Task still logged, staging row written in full.
+     *
+     * 🔴 THE PREFIX IS LOAD-BEARING TWICE OVER. DO NOT RENAME THIS WITHOUT READING BOTH.
+     *   1. It must NOT start with 'Not Acquisition'. A call-for-offers blast IS
+     *      acquisition-related — DPEG simply does not work them — so filing it under that prefix
+     *      would be semantically wrong AND would silently pollute the deployed
+     *      `Gated_Not_Acquisition` list view, whose filter is
+     *      `Outcome__c startsWith 'Not Acquisition'`.
+     *   2. It MUST start with 'Not Routed'. The `Gated_Call_For_Offers` list view filters
+     *      `Outcome__c startsWith 'Not Routed'`, so any future sibling label intended for that
+     *      view has to share this prefix, and any change to this string breaks a deployed view
+     *      with no compile error and no failing test outside this module.
+     *
+     * `Outcome__c` is free Text and historical rows are deliberately NOT back-filled — the same
+     * precedent as the retired 'Competing Duplicate' label: the staging object is an audit trail
+     * of what the pipeline actually did at the time.
+     */
+    public static final String OUTCOME_CALL_FOR_OFFERS = 'Not Routed (call for offers)';
     /** Stable, filterable prefix for a multi-property summary, e.g.
      *  'Multi-Property (3): 1 New Lead (winner), 1 Competing Submission, 1 Repeat'. */
     public static final String OUTCOME_MULTI_PREFIX = 'Multi-Property';
@@ -258,6 +317,16 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      */
     private static final String JSON_SKIPPED_REPLY = '{"skipped":"reply"}';
     private static final String JSON_SKIPPED_LLM = '{"skipped":"llm-unavailable"}';
+
+    /**
+     * The label `buildLlmText` puts in front of the subject. Deliberately the exact RFC token the
+     * model already reads inside forwarded header blocks, so the composed text reads as a
+     * continuous email header block rather than as prompt scaffolding. `EMAIL SUBJECT:` /
+     * `=== SUBJECT ===` framing was considered and rejected for that reason. The enriched prompt
+     * paragraph in LLMExtractionCalloutService names this exact string — change one and you must
+     * change the other.
+     */
+    private static final String SUBJECT_LABEL = 'Subject: ';
 
     /**
      * Task-insert and primary-record PRIORITY (C-3). One email can route to several records;
@@ -311,6 +380,21 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * The asymmetry is what settles it: a false positive here is a broker's LOST CLAIM, and the
      * only signal that it happened would be the broker telling us months later. That is not
      * reversible, and it is not observable, so the pattern is not worth its cost.
+     *
+     * ⚠ AMENDED, NOT CONTRADICTED, 2026-08-03 (intake-rules-v2 / U2). THIS PROHIBITION STILL
+     * STANDS FOR THE PRE-CALLOUT FILTER. intake-rules-v2 introduced a business rule that reads
+     * like its opposite — mass-marketed call-for-offers blasts should not become Leads — and the
+     * two are reconciled by the sentence three paragraphs up: "Bulk mail must reach the LLM and be
+     * classified there." The new suppression (`isCallForOffersGated`) runs AFTER THE CALLOUT, on
+     * the model's own `email_category` + `category_confidence`, behind an admin toggle that ships
+     * OFF. That is precisely what this comment asked for.
+     *
+     * 🔴 SO: DO NOT ADD `bulk`, `List-Unsubscribe`, OR ANY OTHER BLAST SIGNAL TO SENDER_CONTAINS /
+     * SENDER_EXACT / the header pre-filter, and do not read U2 as licence to. A pre-callout blast
+     * suppression would deny bulk mail the tiered gate that is supposed to judge it and would
+     * re-open the "lost claim, unobservable" failure this prohibition exists for. If pre-callout
+     * suppression is ever genuinely wanted, it is a different change with a materially worse risk
+     * profile and must be raised as one.
      */
     private static final Set<String> SENDER_CONTAINS = new Set<String>{
         'noreply', 'donotreply', 'mailerdaemon', 'postmaster'
@@ -329,11 +413,24 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     private static final String STATUS_PROCESSED = 'Processed';
 
     /** First "From:" line of a forwarded email — the OUTERMOST/EARLIEST (original broker)
-     *  line, consistent with the LLM extraction prompt. Multiline + case-insensitive. */
+     *  line, consistent with the LLM extraction prompt. Multiline + case-insensitive.
+     *  Read ONLY by applyRegexFallback. */
     private static final Pattern FROM_LINE_PATTERN = Pattern.compile('(?im)^\\s*From:\\s*(.+)$');
 
     /** Email-address regex used by the regex fallback (matches the LLM's own contract). */
     private static final String EMAIL_REGEX = '[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}';
+
+    /**
+     * Length of `Lead.Listing_Broker_Name__c`, applied by `demoteBodyBroker` when it moves an
+     * UNCLIPPED `broker_name` into the listing-contact slot.
+     *
+     * ⚠ IT IS NOT 255. `LLMExtractionParser` clips `listing_broker_name` to 120 on the way in, so
+     * `EmailToLeadService.applyBrokerBlock`'s 255-character clip has never had anything over-long
+     * to catch. U1 is the first code path that puts a value into that slot WITHOUT passing
+     * through the parser's clip, so it has to carry the destination's real length itself or a
+     * 121-character broker name becomes a STRING_TOO_LONG that rolls back a committed claim.
+     */
+    private static final Integer LEN_LISTING_BROKER_NAME = 120;
 
     /**
      * TEST-ONLY seam. When true, execute() skips the pre-claim registry lookup in branch (d)
@@ -467,11 +564,23 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
 
             applyRegexFallback(extraction);
             applyEnvelopeEmailFallback(extraction);
+            // U1 SENDER-FIRST IDENTITY (intake-rules-v2). LAST of the three identity steps and
+            // BEFORE both gates: it must run even for an email that is about to be gated, so the
+            // demotion note still reaches the staging audit trail.
+            applySenderFirstBrokerIdentity(extraction);
 
             if (isHardGated(extraction)) {
                 // D2 HARD GATE. No Lead, no claim — but the Task is still logged by finish(),
                 // or a redelivery of this same message would re-run the whole pipeline.
                 outcomes.add(new RoutingOutcome(OUTCOME_NOT_ACQUISITION, null, null, PRIORITY_NO_PROPERTY));
+                finish();
+                return;
+            }
+
+            if (isCallForOffersGated(extraction)) {
+                // U2 CALL-FOR-OFFERS GATE. Same shape as the hard gate immediately above, and
+                // deliberately so — no Lead, no claim, Task still logged by finish().
+                outcomes.add(new RoutingOutcome(OUTCOME_CALL_FOR_OFFERS, null, null, PRIORITY_NO_PROPERTY));
                 finish();
                 return;
             }
@@ -548,8 +657,17 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      */
     private LLMExtractionResult extractOrDegrade() {
         try {
+            // FIX 1 (2026-08-03): the model is handed the SUBJECT LINE + the body, composed here.
+            // Composed at THIS call site, not inside the callout service, because that service's
+            // header promises the §3 ASB re-homing changes "only this class's endpoint constant …
+            // the public extract(...) signature … stays identical" — that promise is the seam, and
+            // a 4-arg extract() would break it for nothing.
+            // ⚠ THE PREPEND MUST HAPPEN BEFORE THE CALLOUT. buildRequestBody clips the text to
+            // MAX_INPUT_CHARS with substring(0, n), which preserves the HEAD — so composing here
+            // makes the subject survive the 40,000-character clip UNCONDITIONALLY. Composing
+            // inside the service, after the clip, would silently drop it on a long forward.
             LLMExtractionResult extraction = new LLMExtractionCalloutService()
-                .extract(staging.Raw_Body__c, imageBase64, imageMimeType);
+                .extract(buildLlmText(staging.Subject__c, staging.Raw_Body__c), imageBase64, imageMimeType);
             if (extraction != null) {
                 return extraction;
             }
@@ -573,6 +691,81 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         LLMExtractionResult degraded = LLMExtractionResult.emptyResult();
         degraded.rawJson = JSON_SKIPPED_LLM;
         return degraded;
+    }
+
+    /**
+     * FIX 1 (2026-08-03) — compose the text handed to the model: the email's SUBJECT as a single
+     * labelled line, a blank line, then the raw body verbatim.
+     *
+     * ═══ WHY THIS EXISTS ═══
+     * The subject routinely carries the whole deal. The triggering incident's subject was
+     * "Offers Due: August 18th | Eden Prairie Apartments | 432-Unit Value-Add Community |
+     * Suburban Chicago" — the due date, the name, the unit count and the market, none of which
+     * appeared in the body. The model never saw it, so the email extracted no address at all,
+     * routed to branch (c), and took NO first-broker-wins claim.
+     *
+     * ═══ 🔴 THE SUBJECT IS ATTACKER-CONTROLLED. TWO PATHS, DEFENDED DIFFERENTLY. ═══
+     * A subject is set by whoever sent the email, so everything below treats it as hostile input.
+     * The two consumers of that text are defended by DIFFERENT mechanisms with DIFFERENT strengths,
+     * and conflating them is the mistake to avoid:
+     *
+     *   ▸ THE DETERMINISTIC PATH IS HARD-CLOSED BY CONSTRUCTION — it never sees this string.
+     *     🔴 PROHIBITION: `applyRegexFallback`, `applyEnvelopeEmailFallback` and
+     *     `applySenderFirstBrokerIdentity` MUST continue to read `staging.Raw_Body__c` and the
+     *     envelope, NEVER the composed text. The subject is
+     *     attacker-controlled; routing it through a line-anchored regex (FROM_LINE_PATTERN is
+     *     `(?im)^\s*From:\s*(.+)$`) would make `^From:` injection DETERMINISTIC — a broker's claim
+     *     re-attributed by anyone who can set a subject line. This is the one control here that is
+     *     actually enforceable in Apex. Do not "unify" the two inputs.
+     *     ⚠ `applySenderFirstBrokerIdentity` WAS ADDED TO THIS LIST 2026-08-03. It reads no body
+     *     text at all — only `From_Address__c` and `Forwarded_By__c` — and that is precisely the
+     *     property to preserve: its inputs come from the TRANSPORT layer, which the sender of the
+     *     message cannot forge into our envelope. Give it a body- or subject-derived input and the
+     *     broker identity becomes attacker-selectable again.
+     *
+     *   ▸ THE LLM PATH IS SOFT-MITIGATED — two independent measures, neither absolute:
+     *       1. STRUCTURAL: the CR/LF collapse below emits the subject as exactly ONE line, so any
+     *          `From:` inside it is mid-line and is not a From: LINE to a model told the
+     *          outermost/earliest such line is authoritative. Do not "improve" this by preserving
+     *          the subject's own line breaks.
+     *       2. SEMANTIC: the enriched prompt paragraph forbids the Subject line as a source for
+     *          broker_name, broker_email and sent_datetime outright.
+     *     ⚠ Measure 1 alone is NOT sufficient, and must not be described as "the" control. It
+     *     closes `From:` injection but NOT the symmetric `Sent:` exposure — prepending INVERTS
+     *     that one, because the subject now sits at the HEAD of the input, exactly where
+     *     "outermost / earliest Sent: line" points. A fabricated `sent_datetime` reaches
+     *     `Competing_Broker_Submission__c.Submitted_DateTime__c`, the 90-day filter behind repeat
+     *     detection, so a broker's own follow-up re-routes as a competing claim. Measure 2 is what
+     *     closes it, and it is a PROMPT rule — soft by nature, verified live (UAT D/D′), never by
+     *     an Apex test. Removing either measure re-opens a live arbitration defect.
+     *
+     * ═══ THE BLANK-SUBJECT CASE IS THE COMPATIBILITY GUARANTEE ═══
+     * A blank or null subject returns the body BYTE-IDENTICALLY — no label, no leading newline.
+     * That is what makes FIX 1 a strict superset of the previous behaviour rather than a change
+     * to every email, and it is pinned by
+     * ExtractAddressQueueableTest.buildLlmText_blankSubject_returnsTheBodyByteIdentically.
+     *
+     * `@TestVisible` and pure for the same reason `buildWorkList` is: a prompt's EFFECT is not
+     * unit-testable (the model is mocked and non-deterministic), but its INPUT is, and this
+     * composition is the only part of FIX 1 that can be asserted deterministically.
+     *
+     * @param subject The staged email subject; blank/null yields the body untouched.
+     * @param body    The staged raw body; blank/null yields the subject line alone.
+     * @return The text content for the LLM. Never null unless both inputs are null-or-blank, in
+     *         which case the body is returned as-is.
+     * @example
+     * String text = ExtractAddressQueueable.buildLlmText('FW: 432 units', 'From: jane@x ...');
+     * // -> 'Subject: FW: 432 units\n\nFrom: jane@x ...'
+     */
+    @TestVisible
+    private static String buildLlmText(String subject, String body) {
+        if (String.isBlank(subject)) {
+            return body;   // BYTE-IDENTICAL to today. Do not add a label, a newline or a trim.
+        }
+        String oneLineSubject = subject.replaceAll('[\\r\\n]+', ' ');
+        return String.isBlank(body)
+            ? SUBJECT_LABEL + oneLineSubject
+            : SUBJECT_LABEL + oneLineSubject + '\n\n' + body;
     }
 
     /**
@@ -618,7 +811,9 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
                 }
             }
         }
-        pendingSpillover = buildSpilloverNote(extraction.properties, overflow);
+        // exclude = null: nothing is stamped on this path, so every unroutable property is
+        // footnoted. routeNoProperty recomputes this with the property it stamps excluded.
+        pendingSpillover = buildSpilloverNote(extraction.properties, overflow, null);
 
         if (workList.isEmpty()) {
             routeNoProperty(extraction);
@@ -657,14 +852,103 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * Lead-table pollution the 2026-07-31 change removed. Unaddressable entries alongside
      * addressable ones become the spillover note instead.
      *
+     * ═══ FIX 2 (2026-08-03) — THE LEAD NOW CARRIES THE FIRST PROPERTY'S DEAL BLOCK ═══
+     * It used to pass `null` into createLead, so every field the model DID extract — property
+     * name, unit count, price, NOI, due date, asset type — died in the staging JSON, and the Lead
+     * converted into an unnamed Property with no deal facts. It now stamps the FIRST property, via
+     * the SAME `LeadRequest.property` / `applyPropertyBlock` path the winner branch uses, so there
+     * is exactly one field-mapping rule set and no second one to drift. `EmailToLeadService` needed
+     * no change at all: `applyPropertyBlock` already never writes the address.
+     *
+     * ⚠ NO ORDERING GUARANTEE IS CLAIMED HERE, AND NONE IS NEEDED. "First" means
+     * `extraction.properties[0]` — the MODEL's own array order. The class header's warning that
+     * that order "is not stable across transactions" governs LOCK ORDERING, where cross-transaction
+     * stability is a correctness requirement; branch (c) takes no lock and derives no claim key, so
+     * nothing here is order-sensitive. The model also lists the headline property first, and
+     * `buildSpilloverNote` walks the same order, so the stamped property and the footnote list stay
+     * consistent by construction. Do NOT later "harden" this by coupling it to `buildWorkList`'s
+     * cluster-key sort — that would be a second ordering rule maintained for no benefit.
+     *
+     * ⚠ RESIDUAL, STATED (D16): an addressless property CANNOT claim — a blank Property_Key__c
+     * would collide with every other addressless email on the registry's unique index, and claiming
+     * on a synthesized key would write a guess into a permanent ledger. So these Leads carry the
+     * deal facts and NO first-broker-wins protection: a later broker who submits the same property
+     * WITH an address wins it outright. The only mitigation is human, which is what
+     * OUTCOME_NO_ADDRESS exists to make possible.
+     *
      * @param extraction The parsed extraction.
      */
     private void routeNoProperty(LLMExtractionResult extraction) {
-        Id leadId = createLead(extraction, null);
+        PropertyExtraction stampable = firstProperty(extraction.properties);
+        // Recomputed EXCLUDING the property we are about to stamp: leaving it in would print
+        // "Additional properties in this email (not routed): - Eden Prairie (no usable address)"
+        // on the very Lead whose Property Name reads "Eden Prairie". Overflow is empty by
+        // construction here — branch (c) is reached only when the work-list is empty, so there are
+        // no addressable candidates and nothing can have overflowed MAX_PROPERTIES.
+        pendingSpillover = buildSpilloverNote(
+            extraction.properties, new List<PropertyExtraction>(), stampable);
+
+        Id leadId = createLead(extraction, stampable);
         Boolean llmUnavailable = JSON_SKIPPED_LLM.equals(extraction.rawJson);
-        outcomes.add(new RoutingOutcome(
-            llmUnavailable ? OUTCOME_NO_PROPERTY_LLM_DOWN : OUTCOME_NO_PROPERTY,
-            leadId, null, PRIORITY_NO_PROPERTY));
+        // LLM-DOWN WINS the label. Per LLMExtractionResult.emptyResult() a degraded extraction
+        // carries an EMPTY properties list, so `stampable` is null and the two can never actually
+        // collide — but the precedence is coded explicitly so it stays true if that ever changes.
+        String label = llmUnavailable
+            ? OUTCOME_NO_PROPERTY_LLM_DOWN
+            : (stampable == null ? OUTCOME_NO_PROPERTY : OUTCOME_NO_ADDRESS);
+        outcomes.add(new RoutingOutcome(label, leadId, null, PRIORITY_NO_PROPERTY));
+    }
+
+    /**
+     * The first non-null property in the model's own array order, or null when the email carried
+     * none. Branch (c) fires only when the work-list is empty, so in branch (c) EVERY property is
+     * addressless — there is no mixed case to reason about and no "best" candidate to choose.
+     *
+     * @param properties The parsed properties; null/empty is tolerated.
+     * @return The property to stamp, or null.
+     */
+    private static PropertyExtraction firstProperty(List<PropertyExtraction> properties) {
+        if (properties == null) {
+            return null;
+        }
+        for (PropertyExtraction property : properties) {
+            if (property != null) {
+                return property;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The property's address ONLY when it could actually have produced a claim key — i.e. when
+     * `PropertyMatchingService.normalizeAddress` returns something non-blank. Otherwise null.
+     *
+     * ⚠ DO NOT SIMPLIFY THIS TO `property.propertyAddress`. FIX 2 stamps properties that
+     * `buildWorkList` REJECTED, and buildWorkList rejects on the NORMALIZED form — normalizeAddress
+     * strips every non-alphanumeric, so a raw value of `'###'` or `'—'` is non-blank while its
+     * normalized form is empty. Without this guard that punctuation would land in
+     * Lead.Property_Address__c, on the exact field the claim key is derived from.
+     *
+     * The invariant it encodes is worth stating on its own:
+     *   ▸ Lead.Property_Address__c only ever holds an address that COULD have produced a claim key.
+     *
+     * Branches (b)/(d)/(e) are unaffected — their properties normalize non-blank by construction,
+     * which is how they reached those branches at all — so this is a pure guard rather than a
+     * behaviour change on any claim path. The RAW address is returned, never the normalized form:
+     * `execute_newUnclaimedProperty_...` pins that a winner Lead stamps the address VERBATIM.
+     *
+     * Never fabricate an address, never synthesize one from property_name, never copy the subject.
+     *
+     * @param property The property being stamped; null is tolerated.
+     * @return The raw address when it normalizes non-blank, otherwise null.
+     */
+    private static String claimableAddress(PropertyExtraction property) {
+        if (property == null) {
+            return null;
+        }
+        return String.isBlank(PropertyMatchingService.normalizeAddress(property.propertyAddress))
+            ? null
+            : property.propertyAddress;
     }
 
     /**
@@ -864,7 +1148,7 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         EmailToLeadService.LeadRequest request = new EmailToLeadService.LeadRequest();
         request.brokerName = extraction.brokerName;
         request.brokerEmail = extraction.brokerEmail;
-        request.propertyAddress = (property == null) ? null : property.propertyAddress;
+        request.propertyAddress = claimableAddress(property);
         request.fromName = staging.From_Name__c;
         request.fromAddress = staging.From_Address__c;
         request.emailSubject = staging.Subject__c;
@@ -903,17 +1187,27 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * Extracted_JSON__c regardless — this note simply puts them where a human working the deal
      * will actually see them.
      *
+     * ⚠ `exclude` (added 2026-08-03, FIX 2 / D13) is the ONE property whose block branch (c) has
+     * stamped onto the Lead. It must not also appear under "not routed" — that would print
+     * "- Eden Prairie (no usable address)" on the very Lead whose Property Name reads
+     * "Eden Prairie", a visible self-contradiction on the exact record FIX 2 exists to improve.
+     * In the common single-property case the note becomes empty and no footer is emitted at all.
+     * Comparison is by OBJECT IDENTITY: PropertyExtraction defines no equals(), so `==` on a
+     * user-defined type is a reference comparison — which is what is wanted, because two distinct
+     * properties in one email can legitimately carry identical field values.
+     *
      * @param extracted All parsed properties, in the model's order.
      * @param overflow  Addressable candidates beyond the cap.
+     * @param exclude   The property already stamped onto the Lead; null when nothing was stamped.
      * @return The note, or null when everything was routed.
      */
     private static String buildSpilloverNote(List<PropertyExtraction> extracted,
-                                             List<PropertyExtraction> overflow) {
+                                             List<PropertyExtraction> overflow,
+                                             PropertyExtraction exclude) {
         List<String> lines = new List<String>();
         if (extracted != null) {
             for (PropertyExtraction property : extracted) {
-                if (property == null
-                        || String.isNotBlank(PropertyMatchingService.normalizeAddress(property.propertyAddress))) {
+                if (!isFootnotable(property, exclude)) {
                     continue;
                 }
                 String label = String.isNotBlank(property.propertyName)
@@ -930,6 +1224,22 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         return lines.isEmpty()
             ? null
             : 'Additional properties in this email (not routed):\n' + String.join(lines, '\n');
+    }
+
+    /**
+     * Whether a parsed property belongs in the "not routed" footer: it exists, it is NOT the one
+     * already stamped onto the Lead (D13, identity comparison — PropertyExtraction defines no
+     * equals(), and two properties in one email can legitimately share every field value), and its
+     * address does not normalize to a usable claim key.
+     *
+     * @param property The candidate; null is tolerated.
+     * @param exclude  The property stamped onto the Lead, or null.
+     * @return true when the property should be footnoted.
+     */
+    private static Boolean isFootnotable(PropertyExtraction property, PropertyExtraction exclude) {
+        return property != null
+            && property != exclude
+            && String.isBlank(PropertyMatchingService.normalizeAddress(property.propertyAddress));
     }
 
     /**
@@ -1271,6 +1581,11 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      *      carry an X-Forwarded-For header (e.g. the employee forwards a message that had
      *      already been auto-forwarded once) resolves Forwarded_By__c to the monitored inbox,
      *      so From != Forwarded_By and this fallback still fires with the employee's address.
+     *      ⚠ SUPERSEDED BY U1, NOT INHERITED. On that email U1 now runs and sets the identity
+     *      from the same envelope address, so the mis-attribution is U1's `From != Forwarded_By`
+     *      judgement rather than this method's — the same judgement, made once, in
+     *      `senderIsOurOwnForwarder()`. Stated explicitly so review does not read this as an
+     *      independent second gap.
      *   2. FALSE POSITIVE — a correct address discarded. EmailToLeadHandler sets
      *      Forwarded_By__c to the envelope From whenever NO forwarding header is found, and
      *      that covers two different situations, not one: a manual forward (From = the
@@ -1284,11 +1599,35 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      *      adjudication record, a gap invites a human to read the raw email while a confident
      *      wrong value never gets questioned.
      *
-     * POSSIBLE FUTURE SHARPENING (deliberately NOT done here): suppress only when
-     * applyRegexFallback actually found a "From:" line that yielded no address — a quoted
-     * "From:" block is positive evidence of a forward, which a direct email does not have.
-     * That would recover case 2 without weakening case 1's protection. Left alone because it
-     * is a behaviour change and this note was written post-review; raise it as its own change.
+     * ✅ BOTH RESIDUAL GAPS ARE NOW MOOT — SUPERSEDED BY `applySenderFirstBrokerIdentity` (U1,
+     * intake-rules-v2, 2026-08-03). This paragraph used to propose a body-shape sharpening ("a
+     * quoted From: block is positive evidence of a forward") and ask for it to be raised as its own
+     * change. It WAS raised — and the investigation that followed showed the premise was wrong for
+     * this workflow: EVERY inbound email here is a forward from DPEG's coordinator, so a
+     * body-shape test is always true and would never have fired. U1 shipped as a flat precedence
+     * rule instead: the envelope `From_Address__c` IS the broker and outranks the body, guarded by
+     * the same `From == Forwarded_By` test this method already used.
+     *
+     * ⚠ WHAT THAT MEANS FOR THIS METHOD, STATED PLAINLY: U1 runs immediately after it and sets
+     * `brokerEmail` from the same envelope address whenever this method would have, so on the
+     * overwhelming majority of emails this fallback is now REDUNDANT — it fills a blank that U1 is
+     * about to overwrite with the IDENTICAL VALUE. That redundancy is HARMLESS by construction:
+     * the two read the same field, apply the same `senderIsOurOwnForwarder()` suppression, and
+     * produce the same answer, so there is no interleaving in which one can contradict the other.
+     *
+     * 🔴 IT IS RETAINED DELIBERATELY. Three reasons, in ascending order of importance:
+     *   • it still fires for a non-blank but MALFORMED `From_Address__c`, which U1's
+     *     `sanitizeEmail` guard rejects — so the two are not quite co-extensive;
+     *   • both gaps 1 and 2 above are now unreachable in practice, because U1 decides the identity
+     *     regardless of what the body looks like, so nothing depends on this method's judgement;
+     *   • DELETING CODE FROM A CLAIM-KEY PATH FOR TIDINESS, INSIDE A CHANGE THAT HAS ALREADY MOVED
+     *     THAT PATH, IS NOT A TRADE WORTH MAKING. `broker_email` is one of the two values the
+     *     first-broker-wins ledger arbitrates on; U1 already changed how it is decided. Stacking a
+     *     cosmetic removal on top means that if anything regresses, there are two candidate causes
+     *     instead of one. If this method should go, it should go in its own commit, on its own
+     *     evidence.
+     * Its suppression and U1's paste-forward guard are now ONE expression — `senderIsOurOwnForwarder()`
+     * — so the two can never disagree about who our own forwarder is.
      *
      * WHY HERE, AND NOT THREADED DOWNSTREAM. The alternative was passing `fromAddress` through
      * claim() -> markDuplicate() / logRepeatSubmission() -> buildSubmission(): five signature
@@ -1303,11 +1642,438 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         if (String.isNotBlank(extraction.brokerEmail) || String.isBlank(staging.From_Address__c)) {
             return;
         }
-        // Manual forward: From is the internal forwarder, not the broker. Leave it blank.
-        if (staging.From_Address__c.equalsIgnoreCase(staging.Forwarded_By__c)) {
+        // The "original sender" is really our own forwarder, so it is not the broker. Leave it
+        // blank. SHARED PREDICATE — see senderIsOurOwnForwarder(); U1's paste-forward guard asks
+        // the identical question and must never drift from this one.
+        if (senderIsOurOwnForwarder()) {
             return;
         }
         extraction.brokerEmail = staging.From_Address__c;
+    }
+
+    /**
+     * U1 (intake-rules-v2) — THE ENVELOPE SENDER IS THE BROKER. IT OUTRANKS THE BODY.
+     *
+     * ═══ 🔴 THE WORKFLOW THIS IMPLEMENTS — READ THIS BEFORE CHANGING ANYTHING HERE ═══
+     * EVERY inbound email reaches this pipeline the same way, confirmed against live staging data
+     * 2026-08-03: a broker emails DPEG's coordinator, and the coordinator forwards that message to
+     * the Salesforce email service. `EmailToLeadHandler` resolves the two roles from the RFC
+     * headers and records them separately, on every row:
+     *   • `From_Address__c`  = the ORIGINAL SENDER — i.e. THE BROKER;
+     *   • `Forwarded_By__c`  = the coordinator who forwarded it.
+     * So the broker's identity is already sitting on the staging row, extracted from the transport
+     * layer, before the model is ever asked. The model's `broker_email` is a guess read out of
+     * prose; the envelope is a fact. When they disagree, the fact wins — and whoever the BODY
+     * names is an offer-submission contact, which is what `listing_broker_*` is for.
+     *
+     * This is what the reported defect actually was: an email whose body named a broker at a large
+     * firm produced a Lead — and a CLAIM — for that person, rather than for the broker who really
+     * sent it. No body-shape heuristic is involved and none is wanted: an earlier draft of U1
+     * gated on "does the body look like a forward?", which on this workflow is ALWAYS true (the
+     * coordinator's client quotes the original), so that version would never have fired and would
+     * have fixed nothing.
+     *
+     * ═══ THE GUARDS — EACH `return` IS A DOCUMENTED REASON NOT TO OVERRIDE ═══
+     *   1. NO USABLE ENVELOPE SENDER. `sanitizeEmail(From_Address__c)` came back null, so there is
+     *      nothing to override WITH. Fall back to the body-extracted identity.
+     *      ⚠ IN PRACTICE THIS FIRES ONLY FOR A **BLANK** ADDRESS, AND THE REASON IS WORTH KNOWING
+     *      (established 2026-08-03 when a test asserting the malformed case could not even be set
+     *      up). Two independent facts close the malformed route:
+     *        (a) `Inbound_Email_Staging__c.From_Address__c` is an **Email-TYPE** field, so the
+     *            platform validates format at DML — a value like `'not-an-address'` cannot be
+     *            persisted at all;
+     *        (b) more decisively, `InboundEmailStagingService.createStaging` already writes it as
+     *            `InboundEmailFieldUtil.sanitizeEmail(request.fromAddress)`. Anything malformed was
+     *            turned into NULL at the write boundary, so every value that reaches this line has
+     *            ALREADY passed the identical check. The call here is idempotent and can only
+     *            newly reject a value that is blank.
+     *      🔴 DO NOT "SIMPLIFY" THIS TO `String.isBlank(staging.From_Address__c)`. `sanitizeEmail`
+     *      is a SHARED utility whose contract is deliberately broader than this caller's — it also
+     *      guards LLM output, which is NOT pre-sanitized — and the null-return here is the correct
+     *      expression of "give me a usable address or nothing". Narrowing it would couple this
+     *      guard to the current write path, so re-ordering or relaxing that write would silently
+     *      let a malformed address become a broker identity. Defensive is right here; it simply is
+     *      not testable THROUGH THIS FIELD, which is why the test covers blank only.
+     *   2. 🔴 PASTE-FORWARD GUARD — `From_Address__c` EQUALS `Forwarded_By__c`. That equality is
+     *      this module's own tell, set by `EmailToLeadHandler`: when no forwarding header proves an
+     *      original sender, it falls back to the envelope From for BOTH fields. So "they are equal"
+     *      means "the original sender could not be resolved, and this address is really OUR OWN
+     *      FORWARDER" — a pasted-in forward, or a message the coordinator composed. Making that
+     *      address the broker would attribute the claim to DPEG's own staff: silent, authoritative
+     *      and unrecoverable. The body-extracted identity is used instead.
+     *      ⚠ THE SAME PREDICATE ALREADY GOVERNS `applyEnvelopeEmailFallback` (W2). It is expressed
+     *      ONCE, in `senderIsOurOwnForwarder()`, and both callers use it — one semantic rule, one
+     *      expression. Do not re-inline it.
+     *   3. 🔴 THE MODEL ALREADY AGREED. LOAD-BEARING — DO NOT "SIMPLIFY THIS AWAY". When the model
+     *      names the same address the envelope carries (the common good case), NOTHING changes:
+     *      company, phone, title and mobile are all kept, and U3's footer-extracted firm survives
+     *      to become `Lead.Company`. Without this guard every ordinary email would be stripped of
+     *      its contact block for no reason. The demotion therefore only ever runs when the two
+     *      identities GENUINELY DIFFER — the only case where the extracted contact block describes
+     *      somebody other than the person this Lead is for.
+     *
+     * ═══ COST ═══
+     * ZERO SOQL and ZERO DML — pure in-memory mutation of an already-loaded DTO, and no
+     * configuration read of any kind. The `lastRunQueryCount` / `lastRunDmlCount` budgets are
+     * untouched, which is asserted rather than assumed.
+     *
+     * ⚠ IT IS AN ARBITRATION CHANGE, BUT IT RE-KEYS NOTHING. `broker_email` feeds repeat detection
+     * and `Competing_Broker_Submission__c.Broker_Email__c`, so who wins a dispute can change. It
+     * does NOT touch `property_address`, so no `Property_Key__c` moves and no existing claim is
+     * re-keyed. A submission recorded BEFORE U1 under a body-named broker will not match as a
+     * repeat afterwards and routes as a competing submission instead — accepted (the trail is
+     * append-only, so nothing is lost). Do NOT "fix" that with a second `findBrokerSubmission`
+     * lookup on the demoted address: that is +1 SOQL PER PROPERTY INSIDE THE LOOP, up to +10 per
+     * email, against a budget this class asserts, for a shrinking historical population.
+     *
+     * ═══ 🔴 RESIDUAL 1 — BLAST PLATFORMS. "THE ENVELOPE IS THE BROKER" IS NOT UNQUALIFIED. ═══
+     * A broker submitting through RCM, Crexi or Buildout can reach us with an envelope From of
+     * the PLATFORM (`listings@buildout.com`) rather than their own address. U1 then keys EVERY
+     * broker on that platform to ONE identity, and two specific things break:
+     *   • REPEAT DETECTION MISFIRES ACROSS BROKERS. Two DIFFERENT brokers blasting THE SAME
+     *     property through the same platform: `findBrokerSubmission(platformAddress, thatProperty)`
+     *     matches the FIRST broker's row, so the second broker's genuine COMPETING submission is
+     *     filed as the first broker's REPEAT — and they lose their claim record entirely.
+     *   • THE AUDIT ROW CANNOT IDENTIFY ANYONE. `Competing_Broker_Submission__c.Broker_Email__c`
+     *     holds the platform address for every broker on it, so the one record that exists to
+     *     adjudicate a dispute names a mailer, not a person.
+     * PARTIAL MITIGATIONS, neither sufficient: `noreply@`-shaped platform senders are caught by
+     * SENDER_CONTAINS before the callout, and the lookup is per-PROPERTY, so damage cannot cross
+     * properties. But `listings@`-shaped senders reach U1 untouched.
+     * ⚠ THIS IS EXPECTED TRAFFIC, NOT AN EDGE CASE. The SENDER_CONTAINS block's own
+     * `Precedence: bulk` ruling calls a legitimate blast platform's listing announcement "the
+     * highest-value email this pipeline exists to capture". So read "the envelope IS the broker"
+     * as true of the coordinator-forward workflow it was designed for, NOT as a universal claim.
+     * If this starts costing claims, the fix is a platform-sender list that stands U1 down (the
+     * shape guard 2 already provides), not a body-shape heuristic.
+     *
+     * ═══ RESIDUAL 2 — SENDING ON SOMEONE'S BEHALF (accepted) ═══
+     * An assistant or analyst emailing for a broker becomes the Lead, and that firm's submissions
+     * fragment across two addresses. Accepted deliberately: for an ARBITRATION KEY, deterministic
+     * beats accurate-on-average. A rule that is always the envelope can be reasoned about, argued
+     * from, and corrected by hand; a rule that is "usually the sender, unless the prose suggests
+     * otherwise" cannot be audited at all — and guessing wrong there is exactly the defect U1 was
+     * raised to fix.
+     *
+     * @param extraction The extraction to mutate in place.
+     */
+    private void applySenderFirstBrokerIdentity(LLMExtractionResult extraction) {
+        String sender = InboundEmailFieldUtil.sanitizeEmail(staging.From_Address__c);
+        if (sender == null) {
+            return;
+        }
+        if (senderIsOurOwnForwarder()) {
+            return;
+        }
+        if (sender.equalsIgnoreCase(extraction.brokerEmail)) {
+            return;
+        }
+        demoteBodyBroker(extraction, sender);
+    }
+
+    /**
+     * TRUE when the envelope's "original sender" is really OUR OWN FORWARDER rather than a broker.
+     *
+     * `EmailToLeadHandler` sets `Forwarded_By__c` to the monitored inbox when a forwarding header
+     * proves an original sender, and falls back to the envelope From when it cannot. So equality
+     * between the two fields is not a coincidence — it is the module's own signal that the sender
+     * could not be resolved to anyone but ourselves.
+     *
+     * ⚠ SHARED BY TWO CALLERS ON PURPOSE: `applySenderFirstBrokerIdentity`'s paste-forward guard
+     * and `applyEnvelopeEmailFallback`'s suppression ask the identical question, and both exist to
+     * stop the same failure — attributing a broker's claim to DPEG's own staff. One rule, one
+     * expression, so they can never drift apart.
+     *
+     * ═══ 🔴 PROHIBITION — THIS GUARD DEPENDS ON CODE IN ANOTHER CLASS ═══
+     * It works ONLY because `EmailToLeadHandler` NEVER LEAVES `forwardedBy` NULL:
+     *
+     *     request.forwardedBy = (monitoredInbox != null) ? monitoredInbox : email.fromAddress;
+     *
+     * (EmailToLeadHandler, ~line 128 — the `: email.fromAddress` fallback is the load-bearing
+     * half.) Remove that fallback and `Forwarded_By__c` becomes null on exactly the emails this
+     * guard is for; `From_Address__c.equalsIgnoreCase(null)` then returns FALSE, and the guard
+     * SILENTLY STOPS FIRING. The consequences are the ones the guard exists to prevent, arriving
+     * with no exception, no error row and no failing test outside this module: on every
+     * paste-forward the internal forwarder becomes the broker, takes the claim, and lands on the
+     * adjudication record as the submitting party. If you ever change how `Forwarded_By__c` is
+     * populated, change this predicate in the same commit.
+     *
+     * @return true when From_Address__c is present and equals Forwarded_By__c, case-insensitively.
+     */
+    private Boolean senderIsOurOwnForwarder() {
+        return String.isNotBlank(staging.From_Address__c)
+            && staging.From_Address__c.equalsIgnoreCase(staging.Forwarded_By__c);
+    }
+
+    /**
+     * Swap the envelope sender into the broker identity and demote whoever the BODY named to the
+     * listing-contact fields, recording every discarded value in one note.
+     *
+     * ═══ 🔴 WHY THE CONTACT BLOCK IS CLEARED RATHER THAN CARRIED OVER ═══
+     * `brokerPhone`, `brokerMobile` and `brokerTitle` describe the BODY-NAMED PERSON, not the
+     * person this Lead is for, so they are always cleared — a colleague does not share a direct
+     * line or a job title. `brokerCompany` is not cosmetic either: it flows to `Lead.Company` ->
+     * `LeadConvertMatchService.collectMatchKeys` -> `AccountSelector.selectByNames`, so keeping it
+     * across firms would ATTRIBUTE THE DEAL TO THE BODY-NAMED BROKER'S FIRM'S ACCOUNT. Clearing it
+     * drops `Lead.Company` to `EmailToLeadService.COMPANY_PLACEHOLDER`, which
+     * `LeadConvertMatchService` (D1b) DELIBERATELY EXCLUDES from Account matching — the correct,
+     * recoverable outcome. The firm name is not lost, it is in the note, one click from a human.
+     *
+     * ═══ THE ONE EXCEPTION: SAME-FIRM (TEAM-BLAST) SENDS KEEP THE COMPANY ═══
+     * When the envelope sender and the body-named broker share an email DOMAIN, they are
+     * colleagues, so the firm is correct for BOTH and clearing it would throw away a good value
+     * for no reason. `colleague@jll.com` forwarding an internal note that names
+     * `mark.stern@jll.com` is a real and common shape, and the whole hazard above — attributing
+     * the deal to somebody ELSE'S firm — does not exist when there is only one firm. So
+     * `brokerCompany` (and only `brokerCompany`) survives a same-domain demotion.
+     *
+     * ⚠ Domain equality is a proxy for "same firm", not a proof of it, and it is deliberately the
+     * CONSERVATIVE proxy: it can only ever RETAIN a company that the domain already implies, and
+     * a free-mail sender (`hotmail.com`) never matches a brokerage domain, so the incident shape
+     * still clears. It is not used for anything except this retention.
+     *
+     * `brokerName` becomes the envelope display name, or NULL when there is none. Null is
+     * correct and needs no new plumbing: `EmailToLeadService.createLeadFromExtracted` already
+     * falls back `brokerName -> fromName -> 'Unknown'`, and `createLead` already passes
+     * `fromName = staging.From_Name__c`.
+     *
+     * ═══ THE LISTING CONTACT IS FILL-IF-BLANK ONLY ═══
+     * A populated `listingBrokerEmail` is an EXPLICIT model call (the blast-platform shape:
+     * sender is not the listing broker) and overwriting it destroys information. `listingBrokerName`
+     * is filled independently, and only when it too is blank, for the same reason — a model that
+     * named a listing broker without an address still made a call worth keeping.
+     *
+     * ⚠ BOTH DEMOTED VALUES ARE RE-SANITIZED ON THE WAY IN, and that is not belt-and-braces.
+     * `brokerEmail` travels UNSANITIZED by contract (LLMExtractionParser keeps the claim values
+     * verbatim) while `listingBrokerEmail` is sanitized by the parser and lands on an Email
+     * field, and `brokerName` is UNCLIPPED while `Listing_Broker_Name__c` is Text(120). Moving a
+     * value between those two slots without re-applying the destination's rules is how an
+     * over-long name or a malformed address becomes a DmlException that rolls back a committed
+     * claim. (Note `EmailToLeadService.applyBrokerBlock` clips `listingBrokerName` to 255, not
+     * 120 — today that is harmless only because the PARSER clips to 120 first, an invariant this
+     * method must not be the one to break.)
+     *
+     * @param extraction The extraction to mutate in place.
+     * @param sender     The sanitized envelope sender that becomes the broker identity.
+     */
+    private void demoteBodyBroker(LLMExtractionResult extraction, String sender) {
+        Boolean sameFirm = isSameFirmDomain(sender, extraction.brokerEmail);
+
+        // ⚠ THE NOTE IS COMPOSED FIRST, WHILE THE VALUES STILL EXIST. Everything below this line
+        // destroys the inputs it reads, so moving this call after the clears would silently emit a
+        // note naming nothing — and that note is the ONLY record of the discarded contact block.
+        String note = buildDemotionNote(extraction, sender, sameFirm);
+
+        String oldName = extraction.brokerName;
+        String oldEmail = extraction.brokerEmail;
+
+        extraction.brokerEmail = sender;
+        extraction.brokerName = String.isNotBlank(staging.From_Name__c) ? staging.From_Name__c : null;
+        if (!sameFirm) {
+            extraction.brokerCompany = null;
+        }
+        extraction.brokerPhone = null;
+        extraction.brokerMobile = null;
+        extraction.brokerTitle = null;
+
+        if (String.isBlank(extraction.listingBrokerEmail)) {
+            extraction.listingBrokerEmail = InboundEmailFieldUtil.sanitizeEmail(oldEmail);
+        }
+        if (String.isBlank(extraction.listingBrokerName)) {
+            extraction.listingBrokerName =
+                InboundEmailFieldUtil.clip(oldName, LEN_LISTING_BROKER_NAME);
+        }
+
+        extraction.addNote(note);
+    }
+
+    /**
+     * The demotion note. It must name EVERY value the demotion is about to discard, because this
+     * note is the ONLY route back for a human: the contact block is cleared in memory and never
+     * reaches a field. `LLMExtractionResult.addNote` lands it on `Deal_Notes__c` under
+     * '-- Extraction notes --'.
+     *
+     * ⚠ CALL THIS BEFORE MUTATING `extraction` — it reads the values it reports.
+     *
+     * @param extraction The extraction, still carrying the body-named broker's contact block.
+     * @param sender     The envelope sender that is taking over the broker identity.
+     * @param sameFirm   True when sender and body-named broker share a domain, so the company is
+     *                   RETAINED and must not be reported as discarded.
+     * @return The note text; never blank.
+     */
+    private static String buildDemotionNote(LLMExtractionResult extraction, String sender,
+                                            Boolean sameFirm) {
+        String named = joinNonBlank(
+            new List<String>{ extraction.brokerName, extraction.brokerEmail }, ' ');
+        // The company is listed as discarded ONLY when it actually is. Naming a value the record
+        // still carries would send someone hunting for data that never left.
+        String detail = joinNonBlank(new List<String>{
+            sameFirm ? null : extraction.brokerCompany,
+            extraction.brokerTitle, extraction.brokerPhone, extraction.brokerMobile }, ', ');
+
+        String note = 'Sender-first identity: no forwarded-message block was found, so this Lead is'
+            + ' the envelope sender (' + sender + ').';
+        if (String.isBlank(named) && String.isBlank(detail)) {
+            // A direct send the model read nothing from — there is no demoted contact to report,
+            // but the identity decision itself is still worth recording on the record.
+            return note + ' The body named no other contact.';
+        }
+        note += ' The body named ' + (String.isBlank(named) ? 'an unnamed contact' : named);
+        if (String.isNotBlank(detail)) {
+            note += ' (' + detail + ')';
+        }
+        note += ' — recorded as the listing contact.';
+        if (sameFirm && String.isNotBlank(extraction.brokerCompany)) {
+            note += ' Both addresses are at the same firm, so the company ('
+                + extraction.brokerCompany.trim() + ') was kept.';
+        }
+        return note;
+    }
+
+    /**
+     * Whether two addresses sit on the SAME email domain — the proxy for "these two people are
+     * colleagues", used ONLY to decide whether `brokerCompany` survives a demotion.
+     *
+     * ⚠ IT IS A PROXY, AND DELIBERATELY THE CONSERVATIVE ONE. It can only ever RETAIN a firm name
+     * the sender's own domain already implies, so the worst case is that a Lead keeps a company it
+     * would otherwise have lost. Both the incident shape (a free-mail sender against a brokerage
+     * domain) and the blast-platform shape (a platform domain against a brokerage domain) fail to
+     * match and still clear, which is what makes the exception safe to grant.
+     *
+     * @param first  The first address; null/blank yields false.
+     * @param second The second address; null/blank yields false.
+     * @return true when both carry a domain and the two domains match case-insensitively.
+     */
+    private static Boolean isSameFirmDomain(String first, String second) {
+        String firstDomain = emailDomain(first);
+        String secondDomain = emailDomain(second);
+        return firstDomain != null && secondDomain != null
+            && firstDomain.equalsIgnoreCase(secondDomain);
+    }
+
+    /**
+     * The domain part of an email address, or null when there is not one.
+     *
+     * Reads the LAST '@' rather than the first: on a malformed multi-'@' value the trailing
+     * component is the one a mail system would route on, and splitting on the first '@' would let
+     * `a@jll.com@evil.invalid` claim to be at JLL.
+     *
+     * @param address The address to read; null/blank returns null.
+     * @return The lower-cased domain, or null.
+     */
+    private static String emailDomain(String address) {
+        if (String.isBlank(address)) {
+            return null;
+        }
+        Integer at = address.lastIndexOf('@');
+        if (at < 0 || at == address.length() - 1) {
+            return null;
+        }
+        return address.substring(at + 1).trim().toLowerCase();
+    }
+
+    /**
+     * Join the non-blank entries of `parts` with `separator`.
+     *
+     * @param parts     The candidate values; nulls and blanks are skipped.
+     * @param separator The separator to place between kept values.
+     * @return The joined text, or '' when nothing was kept.
+     */
+    private static String joinNonBlank(List<String> parts, String separator) {
+        List<String> kept = new List<String>();
+        for (String part : parts) {
+            if (String.isNotBlank(part)) {
+                kept.add(part.trim());
+            }
+        }
+        return String.join(kept, separator);
+    }
+
+    /**
+     * U2 (intake-rules-v2) — A CALL-FOR-OFFERS EMAIL PRODUCES NO LEAD. Unconditionally.
+     *
+     * One condition, deliberately: `email_category == 'call_for_offers'`. DPEG does not work
+     * mass-marketed call-for-offers campaigns, so a Lead for one is never wanted — the rule is a
+     * business fact, not a tuning problem, and it is stated here exactly as the user stated it.
+     *
+     * ═══ 🔴 THE STAGING ROW PRESERVES THE EMAIL. IT DOES NOT PRESERVE THE CLAIM. ═══
+     * An earlier version of this comment said "nothing is lost". That OVERSTATES it, and the
+     * difference is the whole risk of an unconditional rule, so state it precisely:
+     *   • WHAT SURVIVES: the `Inbound_Email_Staging__c` row is written in full BEFORE any routing
+     *     decision (D3 tier 1) and is never deleted — raw body, every RFC header, and the complete
+     *     `Extracted_JSON__c` with every property named, verbatim. `finish()` still runs, so the
+     *     Task is still logged: MANDATORY, not cosmetic, because an unlogged Message-ID means a
+     *     platform redelivery re-runs the entire pipeline.
+     *   • 🔴 WHAT DOES NOT: no Lead means NO REGISTRY CLAIM. If a genuinely EXCLUSIVE listing is
+     *     confidently misclassified as `call_for_offers`, that property stays unclaimed — and a
+     *     second broker who later submits it under any other classification WINS IT OUTRIGHT. The
+     *     first broker's protection is gone, and restoring it is MANUAL REGISTRY SURGERY, not a
+     *     staging re-read. Recoverability here is "a human can reconstruct what happened", not
+     *     "the pipeline can undo it".
+     * ⚠ `Gated_Call_For_Offers` is therefore an ACTIVE WATCH, not an archive. Someone has to read
+     * it, because a wrong call is only visible there and only reversible while the property is
+     * still unclaimed.
+     *
+     * ═══ ⚠ A POLICY INCONSISTENCY, RECORDED HONESTLY ═══
+     * D2's HARD gate — the module's PRIMARY relevance signal — suppresses a Lead only on
+     * `is_acquisition_related = false` AND `confidence >= 0.85`. This gate suppresses on the
+     * CATEGORY ALONE, with no confidence requirement at all, which is STRICTER than the module
+     * permits for a stronger signal. That is not an oversight and not an argument for adding a
+     * threshold here on consistency grounds: it is the user's explicit instruction ("if email is
+     * related to call for offers then we must not store it as a lead, simple"), taken literally
+     * because the business rule is categorical. It is written down so the asymmetry is a decision
+     * on the record rather than something a future reader discovers and quietly "fixes".
+     *
+     * ═══ ⚠ WHY category_confidence IS PARSED BUT DELIBERATELY NOT GATED ON ═══
+     * The model returns `category_confidence` and the parser reads it into
+     * `LLMExtractionResult.categoryConfidence`, but NO branch here consults it. That is a decision,
+     * not an omission:
+     *   • the rule the business asked for is categorical, and adding a threshold would create a
+     *     population of "probably a call for offers, so we made a Lead anyway" that nobody asked
+     *     for and nobody would work;
+     *   • the value costs nothing to keep — it rides along in `Extracted_JSON__c` on every row —
+     *     and it is the ONLY evidence available if suppression later proves too aggressive. Query
+     *     the gated staging rows, read the distribution, and a threshold can be introduced later
+     *     from data rather than from a guess.
+     * An earlier draft gated on it behind a Custom Metadata toggle. That was removed with the rest
+     * of the configuration: a toggle that ships OFF is a feature that has never run, and the
+     * user's rule needs no dial. If a threshold is ever reintroduced, gate on THIS field —
+     * never on `confidence`, which measures certainty about `is_acquisition_related`, and a
+     * call-for-offers blast IS acquisition-related, so `confidence` carries no discrimination here
+     * at all.
+     *
+     * ═══ FAIL OPEN EVERYWHERE ELSE ═══
+     * `emailCategory` defaults to `CATEGORY_OTHER` and the parser coerces any unrecognised value to
+     * it, so a garbled, absent or legacy-shape classification can NEVER reach this gate. That is
+     * also what keeps the prompt's one-line rollback lever safe: the pre-enrichment response
+     * carries no `email_category`, so reverting the prompt silently disables this rule rather than
+     * stranding it on.
+     *
+     * ═══ WHY EMAIL-LEVEL AND NOT PER-PROPERTY ═══
+     * `email_category` is an email-level value. Evaluating it inside the per-property loop would
+     * interleave a classification decision with the cluster-lock ordering the deadlock fix depends
+     * on, for no gain.
+     *
+     * ═══ WHY THERE IS NO CLAIM, AND WHY THAT IS THE RIGHT ANSWER ═══
+     * Not a trade-off — `Property_Registry__c.Winning_Lead_Required` is
+     * `AND(ISNEW(), ISBLANK(Winning_Lead__c))`, and `Competing_Broker_Submission__c` carries the
+     * identical rule, so a claim row CANNOT BE INSERTED without a Lead. It would also be harmful
+     * if it were possible: registering a blast would make the FIRST BLAST the winner of that
+     * property, and a later broker with a genuine EXCLUSIVE would then route to branch (d),
+     * receive no Lead, and have their email logged against the blast — a silent total loss of a
+     * real submission, inverting the module's whole purpose. An exclusive beating a blast is the
+     * desired arbitration.
+     *
+     * ⚠ STILL POST-CALLOUT, AND THAT IS NON-NEGOTIABLE. See the `SENDER_CONTAINS` block: bulk mail
+     * must reach the LLM and be classified there. A pre-callout blast filter would suppress on a
+     * header rather than on the model's reading of the email, and its false positives would be
+     * invisible lost claims.
+     *
+     * @param extraction The parsed extraction.
+     * @return true when the email must produce no Lead and no claim.
+     */
+    private static Boolean isCallForOffersGated(LLMExtractionResult extraction) {
+        return LLMExtractionResult.CATEGORY_CALL_FOR_OFFERS.equals(extraction.emailCategory);
     }
 
     /**

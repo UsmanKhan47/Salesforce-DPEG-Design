@@ -155,6 +155,57 @@ public with sharing class TestDataFactory {
         }
     }
 
+    /**
+     * Inserts records that are DELIBERATELY duplicate-shaped, telling the org's duplicate rules to
+     * alert-but-save instead of blocking.
+     *
+     * ── WHY THIS EXISTS (added 2026-08-03) ────────────────────────────────────────────────────
+     * `Standard_Account_Duplicate_Rule` and `Standard_Contact_Duplicate_Rule` are ACTIVE BY DESIGN
+     * in this org and are deliberately left that way (they protect every UI-driven creation path;
+     * see the D4 discussion in LeadConvertActionService). They are `actionOnInsert=Allow` /
+     * `operationsOnInsert=Alert,Report` — "warn a human, let them continue" — but Apex DML has no
+     * surface on which to render an alert, so the platform degrades "Alert" into a hard
+     * DUPLICATES_DETECTED and the insert fails.
+     *
+     * That bites any test that must SEED duplicate-shaped rows on purpose — a tie-break test needs
+     * two Accounts with the same Name, or two Contacts with the same Email, and cannot be written
+     * any other way. `DuplicateRuleHeader.allowSave` is the platform's supported mechanism for
+     * exactly this, and unlike lead conversion (where the setters on Database.LeadConvert are
+     * required because DML options do not reach the records conversion creates) a PLAIN insert DOES
+     * honour it.
+     *
+     * ⚠ SCOPE — this is NOT related to Smart Lead Conversion's D4 bypass. That bypass covers
+     * records created BY A CONVERSION only; it does nothing for ordinary test seeding. Two separate
+     * mechanisms, two separate reasons.
+     *
+     * ⚠ IT DOES NOT WEAKEN ANY ASSERTION. `allowSave` only suppresses the duplicate BLOCK at insert
+     * time; it changes nothing about the rows themselves, so a tie-break test still gets exactly
+     * the two same-named / same-emailed rows it asked for and still discriminates on CreatedDate
+     * and Id. `optAllOrNone` stays TRUE so a genuine failure (bad field, validation rule, missing
+     * required value) still throws loudly — this helper suppresses duplicate alerts, not errors.
+     *
+     * ⚠ FUZZY MATCHING IS WIDER THAN "IDENTICAL". The standard Account rule matches on a FUZZY
+     * name, so names differing only by a trailing counter — which is exactly what
+     * `createAccounts` generates ('Test Account 0-1' vs 'Test Account 0-2') — can match each other.
+     * Two separate `createAccount(true)` calls in one transaction are therefore already enough to
+     * trip it. Prefer genuinely dissimilar names where the test does not care about the value; use
+     * this helper where it does.
+     *
+     * @param records the duplicate-shaped records to insert; null/empty is a no-op.
+     * @example
+     * List<Account> firms = TestDataFactory.createAccounts(2, false);
+     * TestDataFactory.insertAllowingDuplicates(firms);
+     */
+    public static void insertAllowingDuplicates(List<SObject> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Database.DMLOptions dml = new Database.DMLOptions();
+        dml.DuplicateRuleHeader.AllowSave = true;
+        dml.optAllOrNone = true;   // a REAL failure must still throw; only duplicate alerts are suppressed
+        Database.insert(records, dml);
+    }
+
     private static void requirePositive(Integer count) {
         if (count == null || count < 1) {
             throw new TestDataFactoryException('count must be a positive integer; received: ' + count);

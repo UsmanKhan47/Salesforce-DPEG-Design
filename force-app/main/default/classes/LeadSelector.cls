@@ -12,6 +12,12 @@
  *   - BrokerPortalController (guest LWR deal-intake controller: open-duplicate
  *     detection by property address). SYSTEM_MODE + without sharing —
  *     GuestReads.selectOpenDuplicatesByAddressSystem (nested class below).
+ *   - PropertyMatchingService.resolveLiveRecord (inbound-email reply threading:
+ *     follows a converted Lead to the record it became). USER_MODE —
+ *     selectConversionById.
+ *   - LeadConvertMatchService.matchForConversion (Smart Lead Conversion,
+ *     2026-08-02: reads Email + Company as the attach-to-existing match keys).
+ *     USER_MODE — selectMatchKeysByIds.
  *
  * ⚠ ADDED-METHOD NOTE (flagged to the orchestrator, accepted). The P4 cleanup-wave
  * task directed BrokerPortalController's Lead site to "reuse selectByIdsSystem".
@@ -230,6 +236,47 @@ public with sharing class LeadSelector {
             WHERE Id = :leadId
             WITH USER_MODE
             LIMIT 1
+        ];
+    }
+
+    /**
+     * The match keys of the Leads about to be converted — backs
+     * LeadConvertMatchService.matchForConversion (Smart Lead Conversion), which uses Email to
+     * find the broker's existing Contact and Company to find their existing brokerage-firm
+     * Account, so conversion ATTACHES instead of minting duplicates.
+     *
+     * These two fields are the whole contract. Email is this module's durable broker identity
+     * (Competing_Broker_Submission__c.Broker_Email__c, selectRecentByBrokerEmail,
+     * GuestReads.selectBrokerPriorityByEmailSystem all key on it) and Company is the firm name.
+     * Nothing else is selected because nothing else participates in matching — in particular the
+     * person NAME is deliberately absent: it is LLM-extracted from a forwarded signature block and
+     * is the least stable value on these Leads, so it is neither a requirement nor a widener
+     * (design D1a). Do not add it here to "improve" matching.
+     *
+     * USER_MODE: internal, user-initiated path (a user clicking Convert), so the §2 default
+     * applies — not the guest/automation SYSTEM_MODE reads below. Lead.Company is required (and
+     * so not FLS-restrictable) but Lead.Email IS FLS-permissionable, so this CAN throw for a user
+     * without read on it. USER_MODE throws rather than degrading; the caller catches
+     * QueryException and falls back to no-match so conversion never regresses for a user who can
+     * convert today. Left to propagate here by design.
+     *
+     * @param leadIds The Leads about to be converted; null/empty returns an empty list WITHOUT
+     *                querying.
+     * @return Leads with Id, Email, Company populated; an empty list when the input is null or
+     *         empty (never null).
+     * @throws System.QueryException when the running user lacks read on Lead.Email.
+     * @example
+     * List<Lead> keys = LeadSelector.selectMatchKeysByIds(new Set<Id>{ leadId });
+     */
+    public static List<Lead> selectMatchKeysByIds(Set<Id> leadIds) {
+        if (leadIds == null || leadIds.isEmpty()) {
+            return new List<Lead>();
+        }
+        return [
+            SELECT Id, Email, Company
+            FROM Lead
+            WHERE Id IN :leadIds
+            WITH USER_MODE
         ];
     }
 

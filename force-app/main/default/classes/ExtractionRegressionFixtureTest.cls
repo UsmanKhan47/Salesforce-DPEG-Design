@@ -35,6 +35,15 @@
  * punctuation. Adding a fixture when a NEW email shape appears in production is the intended
  * maintenance action, and it costs one entry in `fixtures()`.
  *
+ * ⚠ 2026-08-03 — A SIXTH FIXTURE WAS ADDED (intake-rules-v2 / U1): an email whose body names a
+ * DIFFERENT contact from the one the envelope carries. That is the maintenance action described
+ * above, taken for the first time, and it is purely ADDITIVE — not one of the five entries above
+ * changed, and no pin was re-pinned. It matters because it is the shape behind the reported
+ * defect: the model reads an offer-submission contact out of the prose and returns them as
+ * `broker_email`, so the corpus now carries the case where the model's answer and the envelope
+ * disagree. What it pins here is still only the PARSER contract — U1's precedence rule is decided
+ * from the envelope, which the model never sees and this corpus does not model.
+ *
  * @author Salesforce Technical Architect
  * @see LLMExtractionCalloutService.cls (the prompt constants pinned here)
  * @see LLMExtractionParser.cls (the contract under test)
@@ -136,7 +145,40 @@ private class ExtractionRegressionFixtureTest {
                 'Sent: Friday, July 5, 2026 11:00 AM\n\n' +
                 'Confidential: the Royal Inn portfolio is coming to market.',
                 legacy('dana@brokerfirm.example.invalid', ''),
-                enriched('dana@brokerfirm.example.invalid', ''))
+                enriched('dana@brokerfirm.example.invalid', '')),
+            // ── FIXTURE 6, ADDED 2026-08-03 (intake-rules-v2 / U1, design D-5) ──────────────
+            //
+            // ADDED, NOT RE-PINNED. The header above names this as the corpus's INTENDED
+            // maintenance action — "adding a fixture when a NEW email shape appears in production
+            // ... costs one entry in fixtures()" — and it is additive by construction: the five
+            // entries above are untouched, so every existing assertion sees exactly what it saw
+            // before, and nameOnlyFixture_producesNoClaimKeyAndThereforeNoClaim's fixtures()[4]
+            // index still resolves to the same fixture.
+            //
+            // 🔴 THE SHAPE IS THE ONE THE REPORTED DEFECT ARRIVED IN: the body names an
+            // OFFER-SUBMISSION CONTACT at a large firm, so the model returns that person as
+            // `broker_email` even though somebody else sent the email. Every fixture above happens
+            // to name the actual sender, which is exactly why this failure class went
+            // unrepresented in the corpus while it was producing Leads for the wrong broker.
+            //
+            // What it pins here is the PARSER contract only, like every other entry: both response
+            // shapes must still yield the identical broker_email and the identical normalized
+            // claim key. U1 is deliberately NOT exercised through this corpus — it decides from
+            // the ENVELOPE, which the model never sees and a response fixture cannot express, so
+            // the model's answer here is the body-named contact under BOTH contracts and it is
+            // ExtractAddressQueueable that substitutes the sender afterwards. Keeping that
+            // separation is the point: if these two responses ever diverge, the defect is in the
+            // parser, not in U1.
+            new Fixture(
+                'body names a different contact from the sender',
+                'Hi team,\n\n' +
+                'A contact passed this along — 1750 Preston Rd, Plano TX 75093 is quietly available.\n' +
+                'The listing contact is Mark Stern at JLL Capital Markets, ' +
+                'mark.stern@jll.example.invalid, 214-555-0100.\n\n' +
+                'Thanks,\n' +
+                'Usman',
+                legacy('mark.stern@jll.example.invalid', '1750 Preston Rd, Plano TX 75093'),
+                enriched('mark.stern@jll.example.invalid', '1750 Preston Rd, Plano TX 75093'))
         };
     }
 

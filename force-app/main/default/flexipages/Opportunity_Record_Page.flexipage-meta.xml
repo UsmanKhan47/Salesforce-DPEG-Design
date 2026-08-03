@@ -1088,6 +1088,36 @@
                 <identifier>RecordProperty_rAsking_Price_cField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Zoning__c</fieldItem>
+                <identifier>RecordProperty_rZoning_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Seller_Entity__c</fieldItem>
+                <identifier>RecordProperty_rSeller_Entity_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Lot_Size_Acres__c</fieldItem>
+                <identifier>RecordProperty_rLot_Size_Acres_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Year_Renovated__c</fieldItem>
+                <identifier>RecordProperty_rYear_Renovated_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Unit_Count__c</fieldItem>
+                <identifier>RecordProperty_rUnit_Count_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-dc2cc896-1e61-4d9a-ae6a-c56342861e9a</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -1118,6 +1148,36 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Lead_Approved_By__c</fieldItem>
                 <identifier>RecordLead_Approved_By_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Annual_NOI__c</fieldItem>
+                <identifier>RecordProperty_rAnnual_NOI_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Year_Built__c</fieldItem>
+                <identifier>RecordProperty_rYear_Built_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.Occupancy_Pct__c</fieldItem>
+                <identifier>RecordProperty_rOccupancy_Pct_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.WALT_Years__c</fieldItem>
+                <identifier>RecordProperty_rWALT_Years_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Property__r.ADR__c</fieldItem>
+                <identifier>RecordProperty_rADR_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-d06d7c84-8864-47e1-b080-be6f68587424</name>

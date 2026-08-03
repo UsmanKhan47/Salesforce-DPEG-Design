@@ -65,11 +65,20 @@ public with sharing class LLMExtractionParser {
     /** Lower bound of the MEDIUM band. */
     public static final Decimal CONFIDENCE_MEDIUM_MIN = 0.60;
 
-    /** `email_category` closed set. An unrecognised value is coerced to 'other' rather than
-     *  rejected — the category drives nothing but explainability, so it is never worth a note. */
+    /**
+     * `email_category` closed set. An unrecognised value is coerced to 'other' rather than
+     * rejected.
+     *
+     * ⚠ AMENDED 2026-08-03 (intake-rules-v2 / U2): the old comment said the category "drives
+     * nothing but explainability, so it is never worth a note". Since U2 that is only true of
+     * SIX of the seven values — `call_for_offers` is now the first condition of a gate that can
+     * suppress a Lead entirely. Coercing an unrecognised value to 'other' remains right and is
+     * the FAIL-OPEN direction (a garbled category can never reach the gate); what changed is
+     * that this set is no longer purely diagnostic.
+     */
     private static final Set<String> EMAIL_CATEGORIES = new Set<String>{
-        'acquisition_deal', 'call_for_offers', 'reply', 'system_notification',
-        'newsletter', 'out_of_office', 'other'
+        'acquisition_deal', LLMExtractionResult.CATEGORY_CALL_FOR_OFFERS, 'reply',
+        'system_notification', 'newsletter', 'out_of_office', LLMExtractionResult.CATEGORY_OTHER
     };
 
     // ── numeric bounds, each matched to its DESTINATION FIELD's precision ─────
@@ -187,6 +196,14 @@ public with sharing class LLMExtractionParser {
         result.isAcquisitionRelated = toBoolean(root.get('is_acquisition_related'));
         result.confidence = toConfidence(root.get('confidence'));
         result.confidenceBand = toBand(root.get('confidence'), result.confidence);
+        // `category_confidence` (intake-rules-v2 / U2) reuses toConfidence UNCHANGED — same
+        // [0, 1] contract, same never-throws coercion, same null-not-clamped rule. It gets NO
+        // band (nothing writes it to a picklist) and NO note on absence (a legacy-shape response
+        // legitimately carries no such key).
+        // ⚠ NOTHING GATES ON IT. U2's call-for-offers rule is categorical; this value is parsed
+        // purely so it lands in Extracted_JSON__c as tuning data — see
+        // LLMExtractionResult.categoryConfidence for why that is a decision rather than dead code.
+        result.categoryConfidence = toConfidence(root.get('category_confidence'));
 
         // The four legacy values travel untouched except for whitespace: broker_email and
         // property_address ARE the claim identity, and any "cleaning" here would change it.
@@ -625,10 +642,15 @@ public with sharing class LLMExtractionParser {
     }
 
     /**
-     * Coerce `confidence` to a number in [0, 1]. A value outside the range, or a
+     * Coerce a confidence-shaped value to a number in [0, 1]. A value outside the range, or a
      * non-numeric one, returns null (which bands to LOW) rather than being clamped:
      * clamping a nonsense confidence to 1.0 would hand the HARD GATE a value the model
      * never asserted.
+     *
+     * SERVES BOTH `confidence` AND `category_confidence` (intake-rules-v2 / U2). One coercion
+     * for one contract: both keys are documented to the model as "a number from 0 to 1", and both
+     * must fail toward null rather than toward a value the model never asserted. A second, subtly
+     * different coercion for the newer key is exactly how the two would drift apart.
      *
      * @param raw The raw value.
      * @return The confidence, or null.

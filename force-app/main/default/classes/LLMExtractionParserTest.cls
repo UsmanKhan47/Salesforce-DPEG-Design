@@ -168,6 +168,99 @@ private class LLMExtractionParserTest {
             '"The model did not say" must stay null: only an EXPLICIT false may ever gate a Lead away');
     }
 
+    // ── category_confidence (intake-rules-v2 / U2) ────────────────────────────
+    //
+    // ⚠ NOTHING GATES ON THIS FIELD. U2's call-for-offers rule is CATEGORICAL — the category alone
+    // decides whether a Lead exists — and this value is parsed purely so it lands in
+    // Extracted_JSON__c as TUNING DATA, the only evidence available if that suppression later
+    // proves too aggressive. These tests therefore pin a PARSING contract, not a gate.
+    //
+    // They still matter, and more than they look: if a threshold is ever introduced it must gate
+    // on THIS field and never on `confidence`, and it will inherit exactly the coercion asserted
+    // below. `confidence` measures certainty about is_acquisition_related, and a call-for-offers
+    // blast IS acquisition-related, so `confidence` carries no discrimination here whatsoever.
+
+    @isTest
+    static void parse_categoryConfidencePresent_isRead() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'category_confidence' => 0.91 }));
+        Assert.areEqual(0.91, result.categoryConfidence,
+            'category_confidence must be read as a number and not a band — it is stored for later '
+            + 'analysis, so it is the VALUE that has to survive');
+    }
+
+    @isTest
+    static void parse_categoryConfidenceAbsent_isNull() {
+        LLMExtractionResult result = LLMExtractionParser.parse('{}');
+        Assert.isNull(result.categoryConfidence,
+            '🔴 ABSENT MUST NEVER BE READ AS CERTAIN. Nothing gates on this today, but any future '
+            + 'threshold inherits this default — and a null silently read as 1.0 would suppress '
+            + 'real broker Leads on a missing key');
+    }
+
+    @isTest
+    static void parse_categoryConfidenceOutOfRange_isNullNotClamped() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'category_confidence' => 4.2 }));
+        Assert.isNull(result.categoryConfidence,
+            'A nonsense value must not be clamped to 1.0 — that would record a certainty the model '
+            + 'never asserted, and poison the very data this field is kept for');
+    }
+
+    @isTest
+    static void parse_categoryConfidenceNonNumeric_isNull() {
+        LLMExtractionResult result = LLMExtractionParser.parse(
+            JSON.serialize(new Map<String, Object>{ 'category_confidence' => 'very high' }));
+        Assert.isNull(result.categoryConfidence,
+            'A model that answers in prose yields null. Note this deliberately differs from '
+            + '`confidence`, which accepts a literal HIGH/MEDIUM/LOW label — that tolerance exists '
+            + 'to feed a PICKLIST band, and there is no band here to feed');
+    }
+
+    @isTest
+    static void parse_confidenceAndCategoryConfidence_areIndependent() {
+        // The shape U2 exists for: a blast that is confidently acquisition-related while its
+        // CATEGORY is uncertain. The two values must never move together, because that is exactly
+        // the confusion that would make someone reach for the wrong one when tuning.
+        LLMExtractionResult result = LLMExtractionParser.parse(JSON.serialize(new Map<String, Object>{
+            'email_category' => 'call_for_offers',
+            'is_acquisition_related' => true,
+            'confidence' => 0.99,
+            'category_confidence' => 0.40
+        }));
+
+        Assert.areEqual(0.99, result.confidence, 'confidence is read from its own key');
+        Assert.areEqual(LLMExtractionParser.BAND_HIGH, result.confidenceBand,
+            'and still bands HIGH — a blast IS acquisition-related, which is precisely why '
+            + 'confidence could never discriminate call_for_offers from a genuine exclusive');
+        Assert.areEqual(0.40, result.categoryConfidence,
+            'while category_confidence stays LOW and independent');
+        Assert.areEqual(LLMExtractionResult.CATEGORY_CALL_FOR_OFFERS, result.emailCategory,
+            'and the CATEGORY — the only thing U2 actually reads — is taken from the closed set');
+    }
+
+    @isTest
+    static void parse_legacyShape_carriesNoCategoryOrCategoryConfidence() {
+        // THE ROLLBACK LEVER, from U2's side. Reverting the prompt constant produces exactly this
+        // response, and the important half is the CATEGORY: with none present it defaults to
+        // 'other', so the gate cannot fire and reverting the prompt DISABLES the suppression
+        // rather than stranding it on.
+        LLMExtractionResult result = LLMExtractionParser.parse(JSON.serialize(new Map<String, Object>{
+            'broker_name' => 'Jane Broker',
+            'broker_email' => 'jane@brokerfirm.example.invalid',
+            'property_address' => '100 Legacy St',
+            'sent_datetime' => '2026-07-01 10:00:00'
+        }));
+
+        Assert.isTrue(result.usedLegacyShape, 'Precondition: this is the legacy four-key shape');
+        Assert.areEqual(LLMExtractionResult.CATEGORY_OTHER, result.emailCategory,
+            '🔴 THE ROLLBACK IS SAFE BECAUSE OF THIS LINE: no category means "other", which the U2 '
+            + 'gate ignores, so a prompt revert can never leave suppression running on responses '
+            + 'that cannot express a category');
+        Assert.isNull(result.categoryConfidence,
+            'and the tuning value is simply absent, as it is on every legacy-shape response');
+    }
+
     // ── currency (§3.4) ───────────────────────────────────────────────────────
 
     @isTest

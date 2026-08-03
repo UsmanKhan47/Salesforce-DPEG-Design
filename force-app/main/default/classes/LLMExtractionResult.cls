@@ -31,6 +31,15 @@ public class LLMExtractionResult {
      *  parser's tests and any future dashboard bind to the constant, not a retyped literal. */
     public static final String CATEGORY_OTHER = 'other';
 
+    /**
+     * `email_category` value for a MASS-MARKETED call-for-offers campaign — the only category
+     * any code branches on. Public for the same reason CATEGORY_OTHER is: intake-rules-v2 added
+     * a suppression gate keyed on this exact string
+     * (ExtractAddressQueueable.isCallForOffersGated), and a retyped literal in a second class
+     * would drift from the parser's closed set without a single test failing.
+     */
+    public static final String CATEGORY_CALL_FOR_OFFERS = 'call_for_offers';
+
     // ── raw + diagnostics ────────────────────────────────────────────────────
 
     /**
@@ -53,8 +62,15 @@ public class LLMExtractionResult {
 
     // ── classification / gate inputs ─────────────────────────────────────────
 
-    /** `email_category` — one of the closed set, else 'other'. Stored only inside
-     *  Extracted_JSON__c; it drives nothing except the gate's explainability. */
+    /**
+     * `email_category` — one of the closed set, else 'other'.
+     *
+     * ⚠ AMENDED 2026-08-03 (intake-rules-v2 / U2). This used to say the value "drives nothing
+     * except the gate's explainability". That is no longer true: `call_for_offers` is now the
+     * SOLE condition of ExtractAddressQueueable's call-for-offers gate, so this ONE value decides
+     * that an email produces no Lead and no claim. The other six categories still branch nowhere.
+     * An unrecognised value is coerced to 'other' by the parser, which is the fail-open direction.
+     */
     public String emailCategory = CATEGORY_OTHER;
 
     /**
@@ -76,6 +92,37 @@ public class LLMExtractionResult {
      * claim.
      */
     public String confidenceBand = LLMExtractionParser.BAND_LOW;
+
+    /**
+     * `category_confidence` as the model returned it: a number in [0, 1]. Null when absent or
+     * unparseable. Added 2026-08-03 (intake-rules-v2 / U2, design F3).
+     *
+     * 🔴 NOTHING GATES ON THIS FIELD, AND THAT IS DELIBERATE — IT IS TUNING DATA.
+     * U2's call-for-offers rule is CATEGORICAL: `email_category == 'call_for_offers'` produces no
+     * Lead, full stop. This value is parsed anyway because it rides along in `Extracted_JSON__c`
+     * on every staging row at zero runtime cost, and it is the ONLY evidence available if that
+     * suppression later proves too aggressive: query the gated rows, read the distribution, and a
+     * threshold can then be introduced from data instead of from a guess.
+     *
+     * 🔴 IF A THRESHOLD IS EVER INTRODUCED, GATE ON THIS FIELD AND NEVER ON `confidence`.
+     * `confidence` answers "how certain are you of is_acquisition_related"; this answers "how
+     * certain are you of email_category". A call-for-offers blast IS acquisition-related, so its
+     * `confidence` is HIGH and so is a genuine exclusive's — `confidence` carries no
+     * discrimination here at all, and gating on it would produce a guardrail that looks
+     * two-factor and behaves one-factor. That is the exact failure shape ARCHITECTURE.md §2
+     * records for the Opportunity deal-action gate ("membership and the flag are different
+     * questions").
+     *
+     * ⚠ NO BAND IS DERIVED FROM IT, deliberately. `confidenceBand` exists because
+     * Parse_Confidence__c is a RESTRICTED picklist that must never receive an out-of-set value;
+     * this number is written to no field at all, so a second band would have no consumer.
+     *
+     * ⚠ NULL MEANS "the model did not say". Absent, unparseable or out-of-range all resolve to
+     * null — never to zero and never clamped upward — so any future gate inherits a fail-open
+     * default. A legacy-shape response (the one-line prompt rollback) and an LLM degrade both
+     * produce null here.
+     */
+    public Decimal categoryConfidence;
 
     // ── broker identity (the forwarding / original broker — claim engine input) ─
 

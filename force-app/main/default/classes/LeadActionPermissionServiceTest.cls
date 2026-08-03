@@ -373,6 +373,75 @@ private class LeadActionPermissionServiceTest {
      *                    'System Administrator' for the Modify All Data bypass case)
      * @param tag short per-test token keeping Username unique across methods in one run
      */
+    /**
+     * ⚠ REGRESSION PIN FOR THE 2026-08-03 PRODUCTION INCIDENT. This is the exact live shape that
+     * broke: a non-admin on the MINIMUM ACCESS profile, holding a qualifying permission set
+     * DIRECTLY, who is ALSO assigned an unrelated permission set GROUP. Clicking Convert produced
+     * "Unable to verify your permissions" — the controller's catch-all — because BOTH selectors ran
+     * `WITH USER_MODE` and BOTH throw for that profile (measured: the assignment read throws too,
+     * even though it reads only the user's own rows).
+     *
+     * ⚠ THE PROFILE IS THE WHOLE POINT — DO NOT "SIMPLIFY" THIS TO buildStandardUser. Standard User
+     * can read both setup entities and passes under either mode, so a Standard-User version of this
+     * test is GREEN EVEN WITH THE BUG PRESENT. That false assurance is precisely why the defect
+     * reached production: every existing runAs proof in this class uses Standard User.
+     *
+     * The group is deliberately unrelated to the qualifying sets, mirroring production (neither
+     * qualifying set is a group member today) — so this proves the fix, not a lucky group expansion.
+     */
+    @isTest
+    static void hasLeadActionAccess_minimumAccessUserWithDirectSetAndAGroup_returnsTrueWithoutThrowing() {
+        // Arrange — Junior's shape.
+        User juniorLike = buildUserOnProfile('Minimum Access - Salesforce', 'lapsMin');
+        insert juniorLike;
+
+        Id leadPermSetId = [SELECT Id FROM PermissionSet WHERE Name = :LEAD_ACTION_PERM_SET LIMIT 1].Id;
+
+        // An unrelated group, exactly as DPEG_Junior_Analyst_PSG is unrelated to the qualifying sets.
+        PermissionSet unrelated = new PermissionSet(
+            Name = 'Laps_Unrelated_' + String.valueOf(Math.abs(Crypto.getRandomInteger())),
+            Label = 'LAPS Unrelated Set'
+        );
+        insert unrelated;
+        PermissionSetGroup psGroup = new PermissionSetGroup(
+            DeveloperName = 'LapsMinGroup' + String.valueOf(Datetime.now().getTime()).right(9),
+            MasterLabel = 'LAPS Min Access Group'
+        );
+        insert psGroup;
+        insert new PermissionSetGroupComponent(
+            PermissionSetGroupId = psGroup.Id,
+            PermissionSetId = unrelated.Id
+        );
+        Test.calculatePermissionSetGroup(psGroup.Id);
+
+        insert new List<PermissionSetAssignment>{
+            new PermissionSetAssignment(AssigneeId = juniorLike.Id, PermissionSetId = leadPermSetId),
+            new PermissionSetAssignment(AssigneeId = juniorLike.Id, PermissionSetGroupId = psGroup.Id)
+        };
+
+        // Act
+        Test.startTest();
+        Boolean allowed;
+        String thrown = null;
+        LeadActionPermissionService.clearCache();
+        System.runAs(juniorLike) {
+            try {
+                allowed = LeadActionPermissionService.hasLeadActionAccess();
+            } catch (Exception e) {
+                thrown = e.getTypeName() + ': ' + e.getMessage();
+            }
+        }
+        Test.stopTest();
+
+        // Assert — no throw is half the contract; the RIGHT ANSWER is the other half.
+        Assert.isNull(thrown,
+            'The permission check must not THROW for a Minimum Access user. A throw here reproduces the '
+            + '2026-08-03 incident, where it surfaced as "Unable to verify your permissions". Observed: ' + thrown);
+        Assert.isTrue(allowed,
+            'A Minimum Access user holding ' + LEAD_ACTION_PERM_SET + ' DIRECTLY must be granted access, '
+            + 'even while also assigned an unrelated permission set group');
+    }
+
     private static User buildUserOnProfile(String profileName, String tag) {
         Profile targetProfile = [SELECT Id FROM Profile WHERE Name = :profileName LIMIT 1];
         String unique = tag + String.valueOf(Datetime.now().getTime())

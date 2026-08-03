@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Deal_Room_Link__c</fullName>
+    <description>Link to the deal room / offering materials, carried from Lead.Deal_Room_Link__c at conversion. Distinct from OneDrive_Folder_URL__c, DPEG's own document folder — this is the broker's data room.</description>
+    <inlineHelpText>Carried from the Lead at conversion; null when not stated in the email.</inlineHelpText>
+    <label>Deal Room Link</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Url</type>
+</CustomField>

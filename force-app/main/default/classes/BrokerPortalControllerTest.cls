@@ -252,18 +252,27 @@ private class BrokerPortalControllerTest {
 
     @IsTest
     static void submitDeal_insertFails_surfacesGenericAhe() {
-        // A Lead with the same broker identity trips this org's active Lead duplicate
-        // rule (Block); the service's insert throws a DmlException that the thinned
-        // controller must map to a user-safe AuraHandledException (never a raw DML
-        // string to the unauthenticated guest).
-        Lead blocker = TestDataFactory.createLead(false);
-        blocker.FirstName = 'Jane';
-        blocker.LastName = 'Broker';
-        blocker.Company = 'Acme Realty';
-        blocker.Email = 'jane@acme.com';
-        blocker.Property_Address__c = '456 Blocker Rd';
-        blocker.Status = 'New';
-        insert blocker;
+        // WHAT THIS PINS: when the service's insert throws a DmlException, the thinned
+        // controller must map it to a user-safe AuraHandledException — never a raw DML
+        // string to an unauthenticated guest. The reason the insert fails is irrelevant
+        // to that contract.
+        //
+        // ⚠ MECHANISM CHANGED 2026-08-03 — this test previously seeded a same-identity
+        // "blocker" Lead and relied on "this org's active Lead duplicate rule (Block)".
+        // That never worked: Standard_Lead_Duplicate_Rule is isActive=false in the repo
+        // (deactivated in e1f5a9f, 2026-07-25) AND live on usman-dpeg, and even when active
+        // it is actionOnInsert=Allow / operationsOnInsert=Alert,Report — an ALERT rule, not
+        // a Block rule. Both inserts succeeded, nothing threw, and the assertion failed.
+        // See BrokerPortalServiceTest.submitDeal_insertFails_propagatesDmlException for the
+        // full finding.
+        //
+        // The failure is now forced through the @TestVisible queue seam production already
+        // exposes: a Contact Id is a valid Id that Lead.OwnerId cannot accept (only a User
+        // or a Queue), so the service's insert throws an org-independent DmlException, which
+        // is exactly the input this controller contract consumes.
+        Contact notAValidOwner = TestDataFactory.createContact(null, true);
+        BrokerPortalService.queueResolved = true;
+        BrokerPortalService.cachedQueueId = notAValidOwner.Id;
 
         Boolean threw = false;
         Test.startTest();

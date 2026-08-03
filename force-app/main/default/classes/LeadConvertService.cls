@@ -1,7 +1,7 @@
 /**
  * Runs on lead conversion (from LeadConvertTrigger). Conversion is the approval to
  * underwrite (no separate lead-approval gate), so the converting user is stamped on
- * the Opportunity as Lead Approved By. Beyond that, two jobs in one transaction:
+ * the Opportunity as Lead Approved By. Beyond that, four jobs in one transaction:
  *
  *   1. Deal type / record type — carries the lead's Deal Type onto the new
  *      Opportunity and sets the matching Opportunity record type (Land or
@@ -15,40 +15,184 @@
  *      and link it to the Opportunity (Opportunity.Property__c), copying the
  *      seller's asking price and cap rate (from the lead's Guidance fields)
  *      plus the address, asset type, and Placer/CoStar links carried on the lead.
+ *
+ *   3. CONVERSION ENRICHMENT (S1, 2026-08-03) — the deal-screening field set the
+ *      Broker-Protection extraction pipeline writes onto the Lead used to DIE at
+ *      conversion: the Opportunity arrived nearly empty. Conversion now SPLITS that
+ *      set by meaning — DEAL-PROCESS facts (guidance range, offer due date, sale
+ *      process, deal room, listing broker, parse confidence) go to the Opportunity;
+ *      PHYSICAL PROPERTY facts (SF, NOI, units, occupancy, year built/renovated,
+ *      lot acres, WALT, ADR, zoning, seller entity) go to the Property__c. Neither
+ *      object gets the other half — that split IS the design, not an oversight.
+ *
+ *   4. BROKER CONTACT ROLE (S2, 2026-08-03) — the submitting broker becomes visible
+ *      on the deal as a primary OpportunityContactRole with Role = 'Broker'.
+ *
+ * ═══ THE OCR IS A READ-THEN-WRITE, NEVER A BLIND INSERT ═══
+ * ⚠ STANDARD LEAD CONVERSION ALREADY CREATES AN OpportunityContactRole for the converted
+ * Contact — IsPrimary = true, Role BLANK. Inserting our own row would therefore leave the
+ * deal with TWO rows for one Contact and a second primary (Salesforce permits one primary
+ * per Opportunity, so the insert either demotes the platform's row or fails; either way the
+ * deal ends up wrong). So we read the existing rows through OpportunityContactRoleSelector
+ * and UPDATE the matching (Opportunity, Contact) row, inserting only when none exists. That
+ * is correct whether or not the platform creates the row — it does not depend on undocumented
+ * conversion behaviour — and it is naturally idempotent if this path ever re-runs.
+ *
+ * ═══ BULK SHAPE IS A CONTRACT: 2 SOQL, 3 DML (≤4 WORST CASE), CONSTANT ═══
+ *   SOQL 1 — RecordTypeSelector (Land / Commercial)
+ *   SOQL 2 — OpportunityContactRoleSelector (the rows conversion already created)
+ *   DML  1 — Database.insert(properties, false)
+ *   DML  2 — update updates                       (all-or-none, deliberately — see below)
+ *   DML  3 — Database.update(roleUpdates, false)  ┐ the contact-role write, PARTITIONED.
+ *   DML  4 — Database.insert(roleInserts, false)  ┘ Each is isEmpty()-guarded, and standard
+ *            conversion always creates the role row, so the ORDINARY case is all-updates and
+ *            spends exactly ONE statement here — 3 DML total. A batch mixing deals that have a
+ *            conversion-created role with deals that do not would spend both, i.e. 4. That
+ *            mixed batch is not reachable through this path (conversion behaves uniformly), so
+ *            the bound is ≤4 rather than 3 purely as an honest statement of the code.
+ *
+ *   ⚠ WHY NOT ONE upsert: partitioning costs one conditional statement and removes an unknown.
+ *   insert and update on OpportunityContactRole are certainly supported — the platform creates
+ *   and edits these rows itself during conversion — whereas upsert support on this standard
+ *   junction is not something this codebase has ever exercised. A runtime DML failure here does
+ *   not fail politely: it is raised inside a Lead after-update trigger and takes the whole
+ *   conversion with it.
+ *
+ * Constant regardless of batch size; nothing here queries or writes inside a loop. Picklist
+ * getDescribe() calls are DESCRIBES, not queries, and consume no query limit.
+ * LeadConvertServiceTest.bulkConversion251LeadsCreatesPropertiesAndStampsOpportunities drives
+ * 251 conversions in two convertLead chunks — so this service fires TWICE in one transaction
+ * — and asserts the per-invocation bound. A future change that adds one query per Lead must
+ * fail there, not in production.
+ *
+ * ═══ WHY EVERY RESTRICTED PICKLIST WRITE IS DESCRIBE-GUARDED ═══
+ * `update updates` is ALL-OR-NONE and stays that way: the structural fields (RecordTypeId,
+ * Property__c link, Lead_Approved_By__c) must land or the conversion is broken. But picklist
+ * values bypass the compile checker — a code-first deploy goes green and then throws at
+ * runtime — so ONE illegal value on ONE Lead would roll back the stamping for EVERY Lead in
+ * the chunk, structural fields included. activePicklistValues() removes that failure mode at
+ * source by dropping any value the target picklist does not actually offer, which keeps the
+ * all-or-none guarantee affordable. The Property insert keeps Database.insert(..., false) for
+ * the same reason it always had it: one bad Property must never roll back the conversion.
+ *
+ * ═══ FLS POSTURE — READ THIS BEFORE ASSUMING A BLANK FIELD IS A FAILED STAMP ═══
+ * This service's DML runs in SYSTEM MODE and Trigger.new is not FLS-filtered, so a missing FLS
+ * grant does NOT block the stamp — the data lands. FLS is required only so the persona can SEE
+ * the values; without it the highlight panel renders blank, silently. Verify as a real persona,
+ * never as an admin (a System Administrator has no FLS on Metadata-API-deployed custom fields —
+ * ARCHITECTURE.md §2). A blank field for the persona means a missing FLS grant, not a failed
+ * stamp: query the row directly to tell the two apart.
+ *
+ * @see force-app/main/default/classes/OpportunityContactRoleSelector.cls
+ * @see agent-output/design-requirements-conversion-enrichment.md (S1-S4, D-a..D-g)
  */
 public with sharing class LeadConvertService {
 
+    /** OpportunityContactRole.Role value identifying the submitting broker on a deal (S2). */
+    private static final String BROKER_ROLE = 'Broker';
+
+    /** Opportunity.Name is a Text field, max 120 characters. */
+    private static final Integer OPPORTUNITY_NAME_MAX = 120;
+
+    /** Property__c.Name is a Text field, max 80 characters. */
+    private static final Integer PROPERTY_NAME_MAX = 80;
+
+    // ── ACTIVE VALUES OF EVERY RESTRICTED PICKLIST THIS CLASS WRITES ────────────────────────────
+    // Resolved once per transaction and reused. getDescribe() is a DESCRIBE, not a query — it
+    // consumes no SOQL limit — so the memoization is to keep the per-record stamping methods free
+    // of picklist plumbing, not to save a limit. Holding them here rather than threading them
+    // through every method as parameters is what keeps buildProperty / applyDealFields about the
+    // record they are stamping.
+    private static Set<String> assetTypeValuesCache;
+    private static Set<String> saleProcessValuesCache;
+    private static Set<String> parseConfidenceValuesCache;
+    private static Set<String> contactRoleValuesCache;
+
+    /** Active values on Property__c.Asset_Type__c. */
+    private static Set<String> assetTypeValues() {
+        if (assetTypeValuesCache == null) {
+            assetTypeValuesCache = activePicklistValues(Property__c.Asset_Type__c);
+        }
+        return assetTypeValuesCache;
+    }
+
+    /** Active values on Opportunity.Sale_Process__c. */
+    private static Set<String> saleProcessValues() {
+        if (saleProcessValuesCache == null) {
+            saleProcessValuesCache = activePicklistValues(Opportunity.Sale_Process__c);
+        }
+        return saleProcessValuesCache;
+    }
+
+    /** Active values on Opportunity.Parse_Confidence__c. */
+    private static Set<String> parseConfidenceValues() {
+        if (parseConfidenceValuesCache == null) {
+            parseConfidenceValuesCache = activePicklistValues(Opportunity.Parse_Confidence__c);
+        }
+        return parseConfidenceValuesCache;
+    }
+
+    /** Active values on OpportunityContactRole.Role (the ContactRole standard value set). */
+    private static Set<String> contactRoleValues() {
+        if (contactRoleValuesCache == null) {
+            contactRoleValuesCache = activePicklistValues(OpportunityContactRole.Role);
+        }
+        return contactRoleValuesCache;
+    }
+
     /**
      * Called from the Lead after-update trigger. For each lead that just
-     * converted (and created an Opportunity), build its Property and stamp the
-     * Opportunity's Property link, Deal Type, and RecordTypeId.
+     * converted (and created an Opportunity): build its Property, stamp the
+     * Opportunity's Property link / Deal Type / RecordTypeId plus the deal-process
+     * field set, and put the converted Contact on the deal as the primary Broker.
      */
     public static void stampConvertedOpportunities(List<Lead> newLeads, Map<Id, Lead> oldMap) {
-        // Leads that just converted in this transaction, keyed by the Opportunity created.
+        Map<Id, Lead> oppToLead = justConvertedByOpportunity(newLeads, oldMap);
+        if (oppToLead.isEmpty()) {
+            return;
+        }
+        // 1. Build one Property per converted deal and link it back to its Opportunity.  [DML 1]
+        Map<Id, Id> oppToPropertyId = createProperties(oppToLead);
+        // 2. Stamp every Opportunity: structural fields plus the deal-process set.  [SOQL 1, DML 2]
+        List<Opportunity> updates = buildOpportunityUpdates(oppToLead, oppToPropertyId);
+        update updates;
+        // 3. Put the converted Contact on the deal as the primary Broker.  [SOQL 2, DML 3]
+        stampBrokerContactRoles(oppToLead);
+    }
+
+    /**
+     * The leads that just converted in this transaction (IsConverted false -> true) AND produced
+     * an Opportunity, keyed by that Opportunity. The false->true edge is what makes the stamp fire
+     * exactly once per lead, so nothing downstream needs its own re-entry guard.
+     */
+    private static Map<Id, Lead> justConvertedByOpportunity(List<Lead> newLeads, Map<Id, Lead> oldMap) {
         Map<Id, Lead> oppToLead = new Map<Id, Lead>();
         for (Lead l : newLeads) {
             Lead prior = (oldMap == null) ? null : oldMap.get(l.Id);
             Boolean justConverted = l.IsConverted && (prior == null || !prior.IsConverted);
-            if (!justConverted) {
-                continue;
-            }
-            if (l.ConvertedOpportunityId != null) {
+            if (justConverted && l.ConvertedOpportunityId != null) {
                 oppToLead.put(l.ConvertedOpportunityId, l);
             }
         }
-        if (oppToLead.isEmpty()) {
-            return;
-        }
+        return oppToLead;
+    }
 
-        // 1. Build one Property per converted deal; track which Opportunity each belongs to.
-        Set<String> allowedAssetTypes = assetTypePicklistValues();
+    /**
+     * Inserts one Property per converted deal and returns Opportunity Id -> new Property Id for
+     * the deals whose insert succeeded.
+     *
+     * allOrNone = false: a single bad Property must never roll back the whole conversion. The cost
+     * is that a failed row simply leaves Opportunity.Property__c null (and with it the
+     * Property_Address__c formula blank) rather than raising — deliberate, and the same posture
+     * the class has had since it was written.
+     */
+    private static Map<Id, Id> createProperties(Map<Id, Lead> oppToLead) {
         List<Property__c> properties = new List<Property__c>();
         List<Id> propertyOppIds = new List<Id>(); // parallel to `properties`
         for (Id oppId : oppToLead.keySet()) {
-            properties.add(buildProperty(oppToLead.get(oppId), allowedAssetTypes));
+            properties.add(buildProperty(oppToLead.get(oppId)));
             propertyOppIds.add(oppId);
         }
-        // allOrNone = false: a single bad Property must never roll back the whole conversion.
         Map<Id, Id> oppToPropertyId = new Map<Id, Id>();
         Database.SaveResult[] saves = Database.insert(properties, false);
         for (Integer i = 0; i < saves.size(); i++) {
@@ -56,15 +200,25 @@ public with sharing class LeadConvertService {
                 oppToPropertyId.put(propertyOppIds[i], saves[i].getId());
             }
         }
+        return oppToPropertyId;
+    }
 
-        // 2. Resolve Opportunity record types by developer name (Land / Commercial).
+    /**
+     * One update record per converted Opportunity: the STRUCTURAL fields (approver, Property link,
+     * deal type, record type) plus the deal-process field set. Returned rather than written so the
+     * caller keeps the single `update` statement visible at the top level — that statement is
+     * all-or-none by design, which is why every picklist write below it is describe-guarded.
+     */
+    private static List<Opportunity> buildOpportunityUpdates(
+        Map<Id, Lead> oppToLead,
+        Map<Id, Id> oppToPropertyId
+    ) {
         Map<String, Id> rtByName = new Map<String, Id>();
         for (RecordType rt : RecordTypeSelector.selectByObjectAndDeveloperNames(
                 'Opportunity', new Set<String>{ 'Land', 'Commercial' })) {
             rtByName.put(rt.DeveloperName, rt.Id);
         }
 
-        // 3. One update per Opportunity: link the Property and stamp deal type / record type.
         List<Opportunity> updates = new List<Opportunity>();
         for (Id oppId : oppToLead.keySet()) {
             Lead l = oppToLead.get(oppId);
@@ -81,25 +235,85 @@ public with sharing class LeadConvertService {
                     o.RecordTypeId = rtId;
                 }
             }
+            applyDealFields(o, l);
             updates.add(o);
         }
-        update updates;
+        return updates;
+    }
+
+    /**
+     * Copies the lead's DEAL-PROCESS field set onto the Opportunity (S1). The physical
+     * property facts deliberately do NOT come here — they go to the Property__c in
+     * buildProperty. Every target field mirrors its Lead source's type, length, precision
+     * and scale exactly, and InboundEmailFieldUtil already clipped the Lead values at the
+     * email boundary, so nothing needs re-clipping here.
+     *
+     * Every field on a freshly created Opportunity is empty at this instant, so there is no
+     * "don't clobber the analyst" branch — adding one would be untestable dead code today and
+     * would mask a real bug tomorrow.
+     */
+    private static void applyDealFields(Opportunity o, Lead l) {
+        // ⚠ Asking_Price__c is the aggregation column behind OpportunitySelector
+        // .aggregateOpenPipeline (open-pipeline value KPI) and the ordering key of
+        // selectTopByAskingPrice. Stamping it makes email-born deals count toward both for
+        // the first time — correct, but a visible jump on the next dashboard refresh.
+        o.Asking_Price__c = l.Guidance_Price__c;
+        // A RANGE-PRICED DEAL LEAVES Asking_Price__c NULL, DELIBERATELY. The extraction prompt's
+        // own rule fills guidance_price_low/high and leaves guidance_price null for a range, and
+        // synthesizing a midpoint here would FABRICATE a price — the exact behaviour this module
+        // forbids everywhere else. Such a deal contributes 0 to the pipeline KPI until an analyst
+        // fills it in. Accepted and pinned by LeadConvertServiceTest.
+        o.Guidance_Price_Low__c = l.Guidance_Price_Low__c;
+        o.Guidance_Price_High__c = l.Guidance_Price_High__c;
+        // F1 (approved at Gate 1, 2026-08-03): the cap-rate twin of Asking_Price__c. Without it
+        // the deal shows a price and no cap rate — an asymmetric pair that reads as a defect.
+        o.Guidance_Cap_Rate__c = l.Guidance_Cap_Rate__c;
+        o.Offer_Due_Date__c = l.Offer_Due_Date__c;
+        o.Deal_Room_Link__c = l.Deal_Room_Link__c;
+        o.Listing_Broker_Name__c = l.Listing_Broker_Name__c;
+        o.Listing_Broker_Email__c = l.Listing_Broker_Email__c;
+        // Restricted picklists — see the class header. An unknown value is DROPPED, never pushed.
+        o.Sale_Process__c = picklistValueOrNull(l.Sale_Process__c, saleProcessValues());
+        o.Parse_Confidence__c = picklistValueOrNull(l.Parse_Confidence__c, parseConfidenceValues());
+
+        // D-f (approved at Gate 1, 2026-08-03) — NAME THE DEAL AFTER THE PROPERTY.
+        // The platform derives Opportunity.Name from Lead.Company, which for an email-born deal
+        // is either 'Unknown - Via Email' or (after the S4 prompt rule) the broker's FIRM — so
+        // every deal from one firm would share one plausible-looking name. Naming from the
+        // property makes the deal identifiable. Post-convert only: LeadConvertActionService and
+        // Database.LeadConvert.setOpportunityName are untouched. When the lead carries neither a
+        // property name nor an address we leave Name unassigned, which preserves whatever the
+        // platform derived rather than blanking a required field.
+        String dealName = clip(
+            firstNonBlank(new List<String>{ l.Property_Name__c, l.Property_Address__c }),
+            OPPORTUNITY_NAME_MAX
+        );
+        if (dealName != null) {
+            o.Name = dealName;
+        }
     }
 
     /**
      * Builds (does not insert) the Property for a converted lead, copying the fields the
-     * lead carries. Asset type is only set when the lead's value exists on Property's
-     * restricted picklist, so an unexpected value can't fail the insert.
+     * lead carries — the address block, the seller's asking terms, the market links, and
+     * (S1) the PHYSICAL property facts the extraction pipeline pulled from the email.
+     * Asset type is only set when the lead's value exists on Property's restricted picklist,
+     * so an unexpected value can't fail the insert.
      */
-    private static Property__c buildProperty(Lead l, Set<String> allowedAssetTypes) {
+    private static Property__c buildProperty(Lead l) {
         String address = String.isNotBlank(l.Property_Address__c) ? l.Property_Address__c : l.Street;
-        String name = firstNonBlank(new List<String>{ address, l.Company, l.Name });
+        // NAME PRECEDENCE (S1): a marketing name beats the address. Previously the address always
+        // won, so a named asset converted as "1400 Royal Lane, Dallas TX" instead of "Orion
+        // ParkView". The address is still on Address__c and on the Property tab, so nothing
+        // becomes unfindable — but conversion-born Property names DO read differently from here
+        // on, and existing records are deliberately not back-filled.
+        String name = firstNonBlank(new List<String>{
+            l.Property_Name__c, l.Property_Address__c, l.Street, l.Company, l.Name
+        });
         if (name == null) {
             name = 'Property';
         }
-        if (name.length() > 80) { // Name is a Text field, max 80 chars
-            name = name.substring(0, 80);
-        }
+        name = clip(name, PROPERTY_NAME_MAX);
 
         Property__c p = new Property__c();
         p.Name = name;
@@ -112,10 +326,132 @@ public with sharing class LeadConvertService {
         p.Cap_Rate_Asking__c = l.Guidance_Cap_Rate__c;
         p.Placer_URL__c = l.Placer_AI_Link__c;
         p.CoStar_URL__c = l.CoStar_Link__c;
-        if (String.isNotBlank(l.Asset_Type__c) && allowedAssetTypes.contains(l.Asset_Type__c)) {
-            p.Asset_Type__c = l.Asset_Type__c;
-        }
+        p.Asset_Type__c = picklistValueOrNull(l.Asset_Type__c, assetTypeValues());
+
+        // ── S1: physical property facts, carried from the lead ──────────────────────────────
+        // Existing Property fields whose semantics already match the lead's, extended rather
+        // than duplicated (Square_Footage__c is documented as building GLA; Annual_NOI__c is the
+        // §1 rule-5 periodic-amount name for NOI).
+        p.Square_Footage__c = l.Building_SF__c;
+        p.Annual_NOI__c = l.NOI__c;
+        p.Year_Built__c = l.Year_Built__c;
+        // New Property fields mirroring their lead sources exactly.
+        p.Unit_Count__c = l.Unit_Count__c;
+        p.Occupancy_Pct__c = l.Occupancy_Pct__c;   // the SUBJECT asset's stated occupancy —
+                                                   // never Occupancy_Rate_Market__c, which is the
+                                                   // Placer/CoStar market benchmark.
+        p.Year_Renovated__c = l.Year_Renovated__c;
+        p.Lot_Size_Acres__c = l.Lot_Size_Acres__c;
+        p.WALT_Years__c = l.WALT_Years__c;
+        p.ADR__c = l.ADR__c;
+        p.Zoning__c = l.Zoning__c;
+        p.Seller_Entity__c = l.Seller_Entity__c;
+        // ⚠ NEVER WRITE Property__c.Lot_Size__c HERE. It is SQUARE FEET, entered from the
+        // Offering Memorandum; we hold ACRES only (LLMExtractionParser canonicalizes lot_size_sf
+        // into acres and stores nothing else). Computing SF = acres x 43,560 would derive one
+        // number from another — forbidden by this module's anti-hallucination contract — and
+        // would overwrite an analyst's OM figure with a machine estimate.
         return p;
+    }
+
+    /**
+     * S2 — put each converted Contact on its new Opportunity as the primary Broker.
+     *
+     * READ-THEN-WRITE, never a blind insert: standard conversion has already created a primary
+     * OpportunityContactRole for this Contact with a blank Role (see the class header). One
+     * selector read for the whole converted set, then ONE bulk statement per partition —
+     * SOQL 2 of 2, DML 3 (≤4), constant regardless of batch size. The partition is deliberate
+     * and is explained in the class header: upsert would be one statement instead of two, but
+     * its support on this standard junction is the one unknown in this method, and a DML failure
+     * raised inside a Lead after-update trigger rolls back the entire conversion.
+     *
+     * The 'Broker' role value is DESCRIBE-GUARDED for the same reason the field picklists are:
+     * OpportunityContactRole.Role is driven by the ContactRole standard value set, so a value
+     * missing from the target org would throw at runtime — and here that would roll back the
+     * whole conversion, not just the role. When the value is absent we skip the step entirely
+     * (no read, no write) and conversion proceeds untouched; the visible symptom is a broker with
+     * no role on the Contact Roles list, which is exactly what the persona UAT checks.
+     */
+    private static void stampBrokerContactRoles(Map<Id, Lead> oppToLead) {
+        if (!contactRoleValues().contains(BROKER_ROLE)) {
+            return;
+        }
+        Map<Id, Id> oppToContactId = convertedContactByOpportunity(oppToLead);
+        if (oppToContactId.isEmpty()) {
+            return;
+        }
+        Map<String, OpportunityContactRole> existingByPair = existingRolesByPair(oppToContactId.keySet());
+
+        // PARTITION by whether conversion already left us a row. Doing this in the loop — rather
+        // than handing one mixed list to upsert — is what keeps every DML statement below an
+        // operation the platform certainly supports on this junction.
+        List<OpportunityContactRole> roleUpdates = new List<OpportunityContactRole>();
+        List<OpportunityContactRole> roleInserts = new List<OpportunityContactRole>();
+        for (Id oppId : oppToContactId.keySet()) {
+            Id contactId = oppToContactId.get(oppId);
+            OpportunityContactRole prior = existingByPair.get(pairKey(oppId, contactId));
+            if (prior == null) {
+                roleInserts.add(new OpportunityContactRole(
+                    OpportunityId = oppId,
+                    ContactId = contactId,
+                    Role = BROKER_ROLE,
+                    IsPrimary = true
+                ));
+                continue;
+            }
+            // Update the row conversion already made: name the role, and claim primary only when
+            // it is not already primary (Salesforce allows one primary per Opportunity, so
+            // re-asserting it is pointless churn that could demote a deliberate choice).
+            OpportunityContactRole edit = new OpportunityContactRole(Id = prior.Id, Role = BROKER_ROLE);
+            if (prior.IsPrimary != true) {
+                edit.IsPrimary = true;
+            }
+            roleUpdates.add(edit);
+        }
+        // ONE bulk statement per partition, each isEmpty()-guarded so an empty list never spends a
+        // DML. The update comes first because it is the ordinary path: conversion creates the row,
+        // so roleInserts is normally empty and this method normally costs exactly one statement.
+        // allOrNone = false on both, for the same reason as the Property insert — one bad role row
+        // must never roll back a completed conversion.
+        if (!roleUpdates.isEmpty()) {
+            Database.update(roleUpdates, false);
+        }
+        if (!roleInserts.isEmpty()) {
+            Database.insert(roleInserts, false);
+        }
+    }
+
+    /**
+     * Converted Opportunity Id -> converted Contact Id, skipping any lead that produced no
+     * Contact. LastName is required on a Lead so a Contact is always produced in practice, but the
+     * null check costs nothing and keeps the pairing total.
+     */
+    private static Map<Id, Id> convertedContactByOpportunity(Map<Id, Lead> oppToLead) {
+        Map<Id, Id> oppToContactId = new Map<Id, Id>();
+        for (Id oppId : oppToLead.keySet()) {
+            Id contactId = oppToLead.get(oppId).ConvertedContactId;
+            if (contactId != null) {
+                oppToContactId.put(oppId, contactId);
+            }
+        }
+        return oppToContactId;
+    }
+
+    /**
+     * The contact-role rows that already exist on the converted Opportunities, keyed by
+     * (Opportunity, Contact). ONE selector call for the whole set — SOQL 2 of 2.
+     */
+    private static Map<String, OpportunityContactRole> existingRolesByPair(Set<Id> opportunityIds) {
+        Map<String, OpportunityContactRole> existingByPair = new Map<String, OpportunityContactRole>();
+        for (OpportunityContactRole r : OpportunityContactRoleSelector.selectByOpportunityIds(opportunityIds)) {
+            existingByPair.put(pairKey(r.OpportunityId, r.ContactId), r);
+        }
+        return existingByPair;
+    }
+
+    /** Stable composite key for an (Opportunity, Contact) pair. */
+    private static String pairKey(Id opportunityId, Id contactId) {
+        return String.valueOf(opportunityId) + '|' + String.valueOf(contactId);
     }
 
     private static String firstNonBlank(List<String> values) {
@@ -127,10 +463,29 @@ public with sharing class LeadConvertService {
         return null;
     }
 
-    // Active values on Property.Asset_Type__c, so we never push a value its restricted picklist rejects.
-    private static Set<String> assetTypePicklistValues() {
+    /** Truncates to a field's maximum length; null in, null out. */
+    private static String clip(String value, Integer maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
+    }
+
+    /** The lead's value when the target picklist actually offers it, otherwise null. */
+    private static String picklistValueOrNull(String value, Set<String> allowedValues) {
+        return (String.isNotBlank(value) && allowedValues.contains(value)) ? value : null;
+    }
+
+    /**
+     * Active values on any picklist, so we never push a value a restricted picklist rejects.
+     * Generalized from the original assetTypePicklistValues() when S1 added two more restricted
+     * picklist writes — see the class header for why guarding at source is what lets
+     * `update updates` stay all-or-none. getDescribe() is a describe call, not a query: it
+     * consumes no SOQL limit, so calling it once per picklist per invocation is free.
+     */
+    private static Set<String> activePicklistValues(Schema.SObjectField field) {
         Set<String> values = new Set<String>();
-        for (Schema.PicklistEntry e : Property__c.Asset_Type__c.getDescribe().getPicklistValues()) {
+        for (Schema.PicklistEntry e : field.getDescribe().getPicklistValues()) {
             if (e.isActive()) {
                 values.add(e.getValue());
             }

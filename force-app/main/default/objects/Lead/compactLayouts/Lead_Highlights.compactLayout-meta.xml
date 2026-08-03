@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Lead_Highlights</fullName>
+    <fields>Property_Address__c</fields>
     <fields>Guidance_Price__c</fields>
-    <fields>My_Cap_Rate__c</fields>
-    <fields>BP_Expiry__c</fields>
-    <fields>Days_in_System__c</fields>
-    <fields>Offer_Due_Date__c</fields>
+    <fields>Guidance_Cap_Rate__c</fields>
+    <fields>NOI__c</fields>
+    <fields>Occupancy_Pct__c</fields>
+    <fields>Building_SF__c</fields>
     <fields>Asset_Type__c</fields>
+    <fields>Offer_Due_Date__c</fields>
+    <fields>BP_Expiry__c</fields>
+    <fields>Parse_Confidence__c</fields>
     <label>Lead Highlights</label>
 </CompactLayout>

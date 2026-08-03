@@ -227,7 +227,9 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 
 | Service                       | Invoked from                                       | Responsibility                                                                                                                                          |
 | ----------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LeadConvertService`          | `LeadConvertTrigger`                               | Lead conversion: carries Deal Type onto the Opportunity and sets the matching record type (Land/Commercial); stamps Lead Approved By; creates the `Property__c` and links it to the Opportunity. |
+| `LeadConvertService`          | `LeadConvertTrigger`                               | Lead conversion: carries Deal Type onto the Opportunity and sets the matching record type (Land/Commercial); stamps Lead Approved By; creates the `Property__c` and links it to the Opportunity. **Extended 2026-08-03 (Conversion Enrichment S1/S2):** it now also carries the LLM-extracted deal-screening field set off the Lead, **split by meaning** — deal-process facts (`Asking_Price__c` ← `Guidance_Price__c`, guidance low/high, `Guidance_Cap_Rate__c`, offer due date, sale process, deal room, listing broker name/email, parse confidence) to the **Opportunity**; physical property facts (SF, NOI, units, occupancy, year built/renovated, lot **acres**, WALT, ADR, zoning, seller entity) to the **`Property__c`** — names the deal and the Property after the property (marketing name → address) rather than after `Lead.Company`, and creates the primary **`Broker` `OpportunityContactRole`** for the converted Contact via **read-then-write** (standard conversion already makes that row with a blank Role, so a blind insert would duplicate the broker and the primary). Three invariants are load-bearing and test-pinned: **2 SOQL / 3 DML per invocation regardless of batch size** (the contact-role write is PARTITIONED into an `isEmpty()`-guarded update + insert rather than one `upsert`, so the worst case is 4 — but conversion always creates the role row, making the ordinary path all-updates and therefore exactly one statement; `upsert` was rejected because its support on this standard junction is unverified and a DML failure inside a Lead after-update trigger takes the whole conversion with it); every restricted-picklist write (`Sale_Process__c`, `Parse_Confidence__c`, `Asset_Type__c`, `OpportunityContactRole.Role`) is **describe-guarded** so one illegal value cannot roll back the all-or-none `update updates` and with it the structural `RecordTypeId`/`Property__c` link; and `Property__c.Lot_Size__c` (square feet, OM-entered) is **never written** — deriving SF from acres is forbidden. Its DML is **system mode** and `Trigger.new` is not FLS-filtered, so a missing FLS grant does **not** block the stamp — it only makes the value invisible to the persona. |
+| `LeadConvertActionService`    | `LeadConvertActionController` (Lead "Convert" quick action) | **The ONLY class in the app that runs `Database.convertLead`.** Runs the standard conversion for one or more Leads and returns the new Opportunity Ids index-aligned to the input. Added to this table 2026-08-02 — its absence was a pre-existing §6 gap. Since 2026-08-02 it also (a) applies the `LeadConvertMatchService` decision via `setContactId`/`setAccountId` and (b) sets `setBypassContactDedupeCheck`/`setBypassAccountDedupeCheck` on **every** conversion — see the D4 note below. |
+| `LeadConvertMatchService`     | `LeadConvertActionService.convert()`               | **Smart Lead Conversion** (2026-08-02): decides what a conversion should ATTACH to, so a repeat broker reuses their existing Contact + firm Account instead of minting duplicates. Read-only, zero DML, exactly **3 SOQL regardless of N** (lead keys / Contacts by email / Accounts by name) via `LeadSelector` + `ContactSelector` + the new `AccountSelector`. Contact matches on **`Email` alone** and WINS, dictating the Account (a Salesforce constraint); Account-name matching is reachable only when no Contact matched **and** `Company != EmailToLeadService.COMPANY_PLACEHOLDER`. Oldest-wins (`CreatedDate ASC, Id ASC`). **Fails soft**: a denied `USER_MODE` read degrades to no-match (`lastRunDegraded`) so conversion is never worse than before the feature. |
 | `OpportunityReviewService`    | `OpportunityReviewTrigger`                         | Creates review children (Development / Construction / Contract Review) on stage entry or an Input-Needed flip. Idempotent — never a second review of one type. |
 | `ContractExecutionService`    | `ContractReviewTrigger`                            | PSA execution handoff: stamps the Opportunity (Contract Signed, Day 0), creates the `Transaction__c` (idempotent), notifies Transactions / IR / Due Diligence. |
 | `TaskFanoutService`           | `Transaction_Task_Fanout` Flow (`@InvocableMethod`) | Day-0 fan-out: creates the ~75-task Transaction checklist from `Task_Group_Def__mdt` + `Transaction_Task_Def__mdt`.                                      |
@@ -237,7 +239,7 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 | `EmailToLeadService`          | `ExtractAddressQueueable` (routing tree)             | Broker Protection: the only class that inserts **or deletes** a Lead in the inbound email-to-Lead pipeline. Under the staging model (2026-07-28) it exposes a single `createLeadFromExtracted(...)` — the Lead is created ONCE, complete, and only by the routing branch that needs one. The old `createLeadAndEnqueue` / `applyExtractedDetails` insert-then-update pair is gone. **`deleteLead(Id)` was added 2026-07-31** for the lost-race path only: it must be called ONLY on `PropertyClaimService.ClaimOutcome.DUPLICATE_RACE` (never on `UNCLAIMED`, which is a legitimate Lead), and only with an Id this class minted earlier in the same transaction. `PropertyClaimService` now performs no Lead DML at all, so Lead writes in this module are wholly owned here. |
 | `InboundEmailStagingService`  | `EmailToLeadHandler`, `ExtractAddressQueueable`      | Broker Protection: the only class that writes `Inbound_Email_Staging__c` — creates the durable landing row synchronously at the email boundary, then stamps its terminal state (Processed / Error, outcome label, routed record Id). Status writes are fail-soft by design. |
 | `InboundEmailActivityService` | `ExtractAddressQueueable`                            | Broker Protection: the only class that writes the inbound-email `Task` and the sole owner of RFC threading — stamps `Inbound_Message_Id__c` (idempotency) and `Thread_Key__c` (conversation root), and answers "has this Message-ID already been logged?". A Task is used rather than `EmailMessage`. **Corrected 2026-07-31 (twice — read the second):** the original reason ("Enhanced Email is not licensed in this org") is obsolete, since Enhanced Email is now enabled via Einstein Activity Capture setup. A first correction wrongly blamed Enhanced Email for reserving `TaskSubtype`; an in-org bisect falsified that — **`TaskSubtype = 'Email'` inserts fine here and is retained (it renders the email icon)**. The real defect was `Task.Type`, which **does not exist in Enhanced-Email-era org templates** (absent from FieldDefinition): it compiles in Apex but throws "fields being inaccessible on Sobject Task" at runtime, which is why the module's first-ever real executions in this org both failed. `Type` is now never set by this module and must not be re-added — classic-template orgs accept it, so a green run elsewhere proves nothing. The thread-anchor contract is unchanged, which matters because Change 2's EAC guard matches on those anchors. Migrating to EmailMessage-based logging is now possible but is deliberately a separate change. |
-| `LLMExtractionCalloutService` | `ExtractAddressQueueable`                          | Broker Protection: mockable OpenAI callout wrapper extracting broker name/email, property address, and send time from a forwarded email (vision + text). Direct-callout §3 exception — see §3.3. |
+| `LLMExtractionCalloutService` | `ExtractAddressQueueable`                          | Broker Protection: mockable OpenAI callout wrapper extracting broker name/email, property address, and send time from a forwarded email (vision + text). Direct-callout §3 exception — see §3.3. **Its text input is the SUBJECT LINE + the body (+ image) since 2026-08-03** — `ExtractAddressQueueable.buildLlmText` prepends `Subject: <CR/LF collapsed>` and a blank line at the QUEUEABLE call site, so `extract(String, String, String)`, `buildRequestBody` and `MAX_INPUT_CHARS` are all unchanged and the §3.3 re-homing promise stays literally true. Composing before the callout is what makes the subject survive the 40,000-char clip (which preserves the head); a blank subject returns the body byte-identically. The matching enriched-block paragraph carries **body-over-subject precedence**, which is what prevents the widened address search from re-keying any claim that already exists. |
 | `PropertyMatchingService`     | `ExtractAddressQueueable` (via `PropertyClaimService`) | Broker Protection: address normalization, Jaccard fuzzy matching, cluster-key derivation, and registry/orphan lookups behind the first-broker-wins claim decision. Read-only; no DML. |
 | `PropertyClaimService`        | `ExtractAddressQueueable`                          | Broker Protection: owns all `Property_Registry__c` / `Competing_Broker_Submission__c` DML — acquires the `Property_Claim_Lock__c` FOR UPDATE lock, then registers a winner or marks a duplicate. |
 | `LeadActionPermissionService` | `LeadActionPermissionController`, `LeadConvertActionController` | Lead stage quick actions: the single source of truth for "may the running user drive Convert / Mark Under Review / Mark Qualified / Disqualify?". Accepts `Lead_Stage_Actions_Access` OR `Broker_Protection_Access`, resolves grants through permission set GROUPS as well as direct assignments, and bypasses for "Modify All Data". Exposes `hasLeadActionAccess()` (the cacheable UX gate) and `assertLeadActionAccess()` (the server-side enforcement used before `Database.convertLead`). Reads via `PermissionSetAssignmentSelector` + `PermissionSetGroupComponentSelector`; no DML. |
@@ -245,6 +247,19 @@ The 7 services currently in `force-app/main/default/classes/`. Per §6, **add a 
 | `EmailThreadAnchorService` | `EmailCaptureQueueable`, `EmailThreadAdopterService`, `EmailThreadGuardService` | **The SHARED thread-anchor index** (added 2026-08-02 with the adopter): performs the ONE anchor read per queueable execution and the ONE bracket normalization, then hands both halves an `AnchorIndex` they consume with opposite polarity (`isAnchoredOn` for the guard, `resolveOpportunity` for the adopter). It exists so the two features normalize identifiers IDENTICALLY BY CONSTRUCTION rather than by convention. Read-only; no DML. Reads via `TaskSelector.selectThreadAnchorsByAnchorValues` + `EmailMessageSelector`. `with sharing`. |
 | `EmailThreadAdopterService` | `EmailCaptureQueueable` (via `EmailMessageTrigger`), and a one-off DevOps sweep | **EAC Thread Adopter** (added 2026-08-02): the MIRROR of the guard. EAC is the only system that sees the OUTBOUND half of a deal thread, but it associates by address, so the reply lands on the broker's Lead/Contact rather than the deal. This service re-points `EmailMessage.RelatedToId` to the Opportunity the thread's own pipeline anchor names — an RFC-header IDENTITY match, which beats EAC's address inference. Owns the only `RelatedToId` DML (`Database.update(..., false)`, one bulk statement) and performs **ZERO Task DML, ever** — the platform propagates the value onto the companion Task's `WhatId` by itself (measured, E2), which is what preserves the guard's structural guarantee. Reads via `EmailMessageSelector` + `TaskSelector`. **`without sharing`** (same justification as the guard: it must adopt onto EVERY resolved Opportunity, not the subset the automated principal can see). |
 | `EmailThreadGuardService` | `EmailCaptureQueueable` (via `EmailMessageTrigger`), and a one-off DevOps sweep | **EAC Thread Guard** (added 2026-08-02): undoes Einstein Activity Capture's address-based over-association on Leads. EAC is THREAD-BLIND — it staples every captured email onto every record whose address appears on it, so a brand-new unrelated conversation with a broker lands on that broker's deal Lead. No EAC setting can prevent it, so the guard runs *after* capture: an EAC-materialized email may stay on a Lead only if its `ThreadIdentifier`/`MessageIdentifier` matches a thread anchor the Broker Protection pipeline logged there (`Task.Thread_Key__c` / `Task.Inbound_Message_Id__c`). Anything unanchored is deleted with its companion timeline Task — **unless the capture also lives on a record outside `{Lead, User}`** (see the scope note below). Owns all DML in the feature (`Database.delete(..., false)` — the two deletes cascade into each other, so an already-gone row is SUCCESS). Reads via `EmailMessageSelector` + `EmailMessageRelationSelector` + `EmailThreadAnchorService`. **`without sharing`** (justified in the class header: it must clean EVERY Lead the capture landed on, not the subset the automated principal has sharing to). **Amended 2026-08-02 for the adopter:** it now runs SECOND (after the adopter, in the same job), consumes the shared anchor index, and its guard 4 is widened from "anchored on a related Lead" to "anchored on ANY record it lives on" — related Leads ∪ the `RelatedToId` record. Every one of those changes is KEEP-BIASED. |
+
+**⚠ THREE SIMILARLY-NAMED LEAD-CONVERSION CLASSES — know which one you are editing (2026-08-02).**
+`LeadConvertActionService` **runs** `Database.convertLead`; `LeadConvertMatchService` **decides what
+it attaches to** (before, read-only); `LeadConvertService` **stamps the Opportunity and creates the
+`Property__c`** (after, via `LeadConvertTrigger`). Each class header carries this same map.
+`AccountSelector` (new, 2026-08-02) is the **first and only Account SOQL in the application** — there
+was none before it; every future Account read belongs there.
+`OpportunityContactRoleSelector` (new, 2026-08-03) is likewise the **first `OpportunityContactRole`
+SOQL — and the first `OpportunityContactRole` handling of any kind — in the application**; every
+future read belongs there. Its single method `selectByOpportunityIds(Set<Id>)` is what makes
+`LeadConvertService`'s broker-role write a read-then-write instead of a blind insert, and it is
+called **once per invocation for the whole converted set** (it is SOQL 2 of that service's 2-SOQL
+contract). Never call it per record.
 
 **Broker Protection staging model (added 2026-07-28):** the pipeline no longer creates a Lead at the
 email boundary. `EmailToLeadHandler` parses the envelope, RFC headers and inline image, writes an
@@ -261,12 +276,137 @@ when `claim()` returns `DUPLICATE_RACE` the Lead it just created is DELETED via
 Staging outcome labels are `'Competing Submission'` (d) and `'Competing Submission (race)'` (e);
 both replace the retired `'Competing Duplicate'`, and rows stamped before 2026-07-31 keep the old
 label because `Outcome__c` is free Text and was deliberately not back-filled.
+**Branch (c) now STAMPS the first property's deal block (2026-08-03, extraction-completeness FIX 2).**
+It used to pass `property = null` into `createLead`, so on an email that named an asset the pipeline
+could not address, every extracted deal fact — property name, unit count, price, NOI, offer due date,
+asset type — died in `Extracted_JSON__c` and the Lead converted into an unnamed Property with no data.
+It now passes `extraction.properties[0]` (the MODEL's own order — no ordering guarantee is claimed or
+needed, since branch (c) takes no lock and derives no claim key) through the SAME
+`LeadRequest.property` / `applyPropertyBlock` path the winner branch uses, so `EmailToLeadService` is
+unchanged. The stamped property is excluded from the Deal-Notes "additional properties (not routed)"
+footer, and a new outcome label `'New Lead (property, no address)'` (`OUTCOME_NO_ADDRESS`) separates
+this population from the genuinely-nothing case — LLM-down still wins the label. ⚠ **Still NO claim:**
+an addressless property cannot produce a `Property_Key__c`, so these Leads have no first-broker-wins
+protection and a later broker submitting the same property WITH an address wins it outright; the label
+exists so a human can list them and chase the address. `Lead.Property_Address__c` is held null by a
+`claimableAddress()` guard rather than by luck — it encodes the invariant that **that field only ever
+holds an address that could have produced a claim key** (a raw `'###'` is non-blank but normalizes to
+empty). Branches (a)/(b)/(d)/(e) and the HARD relevance gate are untouched.
 `Lead.Is_Duplicate_Property__c` / `Duplicate_Of_Lead__c` are now LEGACY — no code path writes them.
 Every branch ends by logging a `Task` with both RFC threading keys and stamping the staging row. Deferring Lead creation is what makes reply threading, repeat detection and
 redelivery suppression expressible at all — each of those must be able to decide that no new Lead
 should exist. `InboundEmailFieldUtil` is a pure utility (not a service): it clips every externally
 sourced value to its field length and sanitizes anything bound to an Email field, so an over-long LLM
 answer cannot roll back a committed claim.
+
+**INTAKE RULES V2 (added 2026-08-03) — two unconditional email-level rules ahead of the loop.**
+Both run once per email, before `routeProperties`. Neither adds a query, a DML or any
+configuration read: there is no Custom Metadata, no toggle and no threshold anywhere in this
+feature.
+
+1. **THE ENVELOPE SENDER IS THE BROKER (U1) — `ExtractAddressQueueable.applySenderFirstBrokerIdentity`.**
+   🔴 **This rule only makes sense once the actual workflow is understood, so state it first:**
+   EVERY inbound email reaches this pipeline as broker → DPEG's coordinator → the Salesforce email
+   service. `EmailToLeadHandler` already separates the two roles on every staging row —
+   `From_Address__c` is the **ORIGINAL SENDER (the broker)** and `Forwarded_By__c` is the
+   coordinator. So the broker's identity is a **transport fact** already on the row, while the
+   model's `broker_email` is a guess read out of prose. **When they disagree, the envelope wins,**
+   and whoever the body named is demoted to `Listing_Broker_Name__c` / `Listing_Broker_Email__c`
+   (fill-if-blank, per field). That is the reported defect: an email whose body named an
+   offer-submission contact at a large firm produced a Lead **and a claim** for that person rather
+   than for the broker who sent it.
+   **Three guards, each a reason not to override:** no usable envelope sender (blank or malformed —
+   `sanitizeEmail` rejects it); the **paste-forward guard**; or the model already named the sender,
+   in which case nothing is demoted and the contact block (including U3's footer-extracted firm)
+   survives untouched.
+   ⚠ **The paste-forward guard is `From_Address__c == Forwarded_By__c`, and it needs no
+   configuration.** `EmailToLeadHandler` falls back to the envelope From for BOTH fields when no
+   forwarding header proves an original sender, so equality is the module's own tell that the
+   "sender" is really *our own forwarder* — a pasted-in forward, or a message the coordinator
+   composed. Promoting that address would credit DPEG's own staff with a broker's claim. The
+   identical test already governed `applyEnvelopeEmailFallback`, so it is now expressed **once**,
+   in `senderIsOurOwnForwarder()`, and both callers share it.
+   ⚠ **Do not reintroduce a body-shape test.** An earlier draft gated U1 on "does the body look
+   like a forward?" (a quoted `From:` block or a client separator). On this workflow that is
+   **always true**, so it would never have fired and would have fixed nothing — the mistake is
+   recorded here because the reasoning looks compelling right up until you check the data.
+   On demotion `brokerPhone` / `brokerMobile` / `brokerTitle` are cleared (a colleague shares no
+   direct line or title) and so is `brokerCompany`, **except when the two addresses share a
+   domain** — same firm, so the company is correct for both and clearing it would lose an Account
+   match for nothing. 🔴 Cross-firm the clear is mandatory: `brokerCompany` reaches `Lead.Company`
+   → `LeadConvertMatchService.collectMatchKeys` → `AccountSelector.selectByNames`, so keeping it
+   would attribute the deal to the **body-named contact's firm's Account**; dropping to
+   `COMPANY_PLACEHOLDER` is correct because D1b deliberately excludes it from matching. Every
+   discarded value is named in one `Deal_Notes__c` note — the only route back for a human. It **is
+   an arbitration change** (`broker_email` drives repeat detection and
+   `Competing_Broker_Submission__c.Broker_Email__c`) but **re-keys nothing**: `property_address` is
+   untouched, so no `Property_Key__c` moves.
+   ⚠ **Branch (b)'s second `findBrokerSubmission` lookup is NOT dead code — do not delete it.**
+   Its guard `!fromAddress.equalsIgnoreCase(brokerEmail)` is now an exact complement of U1's
+   applicability: **false** precisely when U1 applied (it set `brokerEmail := fromAddress`, so the
+   first lookup already searches the envelope address), and **true** precisely on the
+   **paste-forward** shape, where guard 2 skipped U1 and `brokerEmail` is still the body-named
+   value. It is therefore as alive as paste-forwards are, and removing it would silently strip the
+   envelope lookup from the only branch that still needs one.
+   🔴 **RESIDUAL — BLAST PLATFORMS. "The envelope IS the broker" is NOT unqualified.** A broker
+   submitting through RCM / Crexi / Buildout can arrive with an envelope From of the **platform**
+   (`listings@buildout.com`), so U1 keys every broker on that platform to one identity. Two
+   concrete failures: (a) two DIFFERENT brokers blasting THE SAME property through it —
+   `findBrokerSubmission(platformAddress, thatProperty)` matches the first broker's row, so the
+   second broker's genuine competing submission is filed as the first's **repeat** and they lose
+   their claim record; (b) `Competing_Broker_Submission__c.Broker_Email__c` holds the platform
+   address for everyone, so the adjudication record cannot say who submitted. Partially mitigated
+   — `noreply@`-shaped platform senders are caught by `SENDER_CONTAINS` pre-callout, and the
+   per-property comparison prevents cross-property damage — but `listings@`-shaped senders reach
+   U1 untouched. **This is expected traffic:** the `Precedence: bulk` ruling calls a blast
+   platform's listing announcement the highest-value email this pipeline exists to capture. The
+   eventual fix is a platform-sender list that stands U1 down, never a body-shape heuristic.
+   **Residual (accepted) — sending on someone's behalf:** an assistant emailing for a broker
+   becomes the Lead and that firm's submissions fragment across addresses. Accepted because for an
+   arbitration key **deterministic beats accurate-on-average** — an always-the-envelope rule can be
+   audited and corrected; "usually the sender unless the prose suggests otherwise" cannot.
+2. **A CALL-FOR-OFFERS EMAIL PRODUCES NO LEAD (U2) — `ExtractAddressQueueable.isCallForOffersGated`.**
+   One condition: `email_category == 'call_for_offers'`. DPEG does not work marketed
+   call-for-offers campaigns, so a Lead for one is never wanted. It mirrors the D2 hard gate
+   exactly — `finish()` still logs the Task (mandatory: an unlogged Message-ID means a platform
+   redelivery re-runs the whole pipeline) and `Extracted_JSON__c` is already written verbatim
+   beforehand.
+   🔴 **The staging row preserves the EMAIL. It does not preserve the CLAIM.** The row is never
+   deleted and keeps the raw body, every RFC header and the complete extraction — every property
+   named, verbatim. But **no Lead means no registry claim**: if a genuinely exclusive listing is
+   confidently misclassified as `call_for_offers`, that property stays unclaimed, and a second
+   broker who later submits it under any other classification **wins it outright**. Restoring the
+   first broker's protection is **manual registry surgery**, not a staging re-read. So
+   `Gated_Call_For_Offers` is an **active watch, not an archive** — a wrong call is only visible
+   there and only reversible while the property is still unclaimed.
+   ⚠ **Policy inconsistency, recorded rather than hidden:** D2's HARD gate — the module's *primary*
+   relevance signal — requires `is_acquisition_related = false` **AND** `confidence >= 0.85`, while
+   U2 hard-gates on the category alone with no confidence requirement, i.e. **stricter than the
+   module permits for a stronger signal**. Accepted on the user's explicit instruction ("if email
+   is related to call for offers then we must not store it as a lead, simple") because the business
+   rule is categorical. Written down so a future reader treats it as a decision, not a defect to
+   quietly "fix".
+   ⚠ **`category_confidence` is parsed and stored but NOTHING GATES ON IT.** It is a new
+   enriched-block prompt key (legacy constants untouched; no fixture pin re-pinned) that rides
+   along in `Extracted_JSON__c` at zero runtime cost, kept solely as **tuning data** in case the
+   suppression later proves too aggressive. If a threshold is ever introduced, gate on **that**
+   field and never on `confidence` — `confidence` measures certainty about
+   `is_acquisition_related`, and a call-for-offers blast **is** acquisition-related, so it carries
+   no discrimination here at all. That is the same failure shape recorded above for the
+   Opportunity deal-action gate.
+   **Fails open by construction:** the parser coerces any unrecognised `email_category` to
+   `'other'`, and a legacy-shape response (the one-line prompt rollback) carries none at all — so
+   reverting the prompt silently **disables** this rule rather than stranding it on.
+   **No claim is taken, and that is not a trade-off:** `Property_Registry__c.Winning_Lead_Required`
+   forbids inserting a registry row without a Lead, and registering a blast would make the *first
+   blast* the winner, sending a later broker with a genuine exclusive to branch (d) with no Lead —
+   inverting the module's purpose. Label `OUTCOME_CALL_FOR_OFFERS = 'Not Routed (call for offers)'`;
+   🔴 it must **not** start with `'Not Acquisition'` (that list view's filter) and **must** start
+   with `'Not Routed'` (the `Gated_Call_For_Offers` filter).
+   ⚠ **Still deliberately POST-CALLOUT.** The `SENDER_CONTAINS` prohibition on `Precedence: bulk`
+   stands for the pre-callout filter and was amended, not contradicted: bulk mail must reach the
+   LLM and be judged there, where a wrong call is visible, rather than vanishing as an
+   unobservable lost claim.
 
 **EAC CAPTURE PIPELINE (guard + adopter) — the repo's FIRST standard-object trigger driven by an
 external capture system (guard added 2026-08-02; adopter added the same day).**

@@ -33,18 +33,67 @@
  * ── MODE ──────────────────────────────────────────────────────────────────────
  * `with sharing` per ARCHITECTURE.md §2 (mandatory on every selector).
  *
- * `WITH USER_MODE` per ARCHITECTURE.md §2 / .claude/rules. PermissionSetAssignment is a setup
- * entity whose access is not granted through profile object permissions — every user can read
- * their OWN assignments — so USER_MODE is not expected to restrict this query. ⚠ VERIFY IN ORG:
- * if USER_MODE ever throws here for a non-admin, the gate fails CLOSED (the action is blocked,
- * never silently allowed), which is the correct direction for a security check but would be a
- * visible regression worth catching in UAT with a non-admin user.
+ * `WITH SYSTEM_MODE` (changed from USER_MODE 2026-08-03).
+ *
+ * ✅ THIS CLASS'S OWN "VERIFY IN ORG" NOTE PREDICTED THE INCIDENT AND WAS RIGHT. It read: "every
+ * user can read their OWN assignments — so USER_MODE is not expected to restrict this query.
+ * ⚠ VERIFY IN ORG: if USER_MODE ever throws here for a non-admin, the gate fails CLOSED ... a
+ * visible regression worth catching in UAT with a non-admin user." It threw, and the regression was
+ * caught in UAT on 2026-08-03: a Minimum Access persona holding the qualifying permission sets
+ * DIRECTLY was refused the Lead Convert action with "Unable to verify your permissions".
+ *
+ * ⚠ THE STANDING ASSUMPTION "every user can read their own assignments" IS FALSE UNDER USER_MODE.
+ * Measured on DPEG-Acq-5 — the query is `WHERE AssigneeId = :UserInfo.getUserId()`, i.e. the user's
+ * OWN rows, and it still throws:
+ *
+ *   | Principal                      | WITH USER_MODE               |
+ *   | System Administrator           | OK — 8 rows                  |
+ *   | Standard User                  | OK — 2 rows                  |
+ *   | Minimum Access - Salesforce    | THROWS System.QueryException |
+ *
+ * Verbatim: `System.QueryException: sObject type 'PermissionSetAssignment' is not supported.`
+ * Reading your own rows is not the question USER_MODE asks — it asks whether the PRINCIPAL may see
+ * the setup ENTITY at all, and Minimum Access may not.
+ *
+ * ⚠ THIS SELECTOR, NOT THE GROUP ONE, IS WHAT ACTUALLY FAILED FIRST. LeadActionPermissionService
+ * calls this before any group expansion, so fixing only PermissionSetGroupComponentSelector would
+ * have left the incident fully intact. Standard User passing is why it was never caught: the repo's
+ * runAs tests use Standard User, the real personas are on Minimum Access.
+ *
+ * WHY SYSTEM_MODE IS CORRECT HERE: this is a filtered read of the RUNNING USER'S OWN assignment
+ * rows, used to answer "what am I allowed to do". It is scoped by `AssigneeId = current user` in the
+ * WHERE clause, so system mode widens nothing — it cannot return another user's grants. Granting a
+ * user the ability to discover their own permissions is not a privilege escalation; refusing it
+ * merely breaks the features they were correctly provisioned for. Same reasoning as the sibling
+ * PermissionSetGroupComponentSelector and the EAC guard's automation-path selectors: USER_MODE that
+ * THROWS rather than degrades produces silent feature disablement, which secures nothing.
+ *
+ * The gates built on this still fail closed for GENUINE failures — no consumer swallows exceptions;
+ * LeadActionPermissionController and the Opportunity equivalent convert anything propagating into a
+ * denial.
+ *
+ * ── ⛔ PROHIBITION: NEVER PARAMETERIZE THE ASSIGNEE, AND NEVER ADD A BULK VARIANT ──────────────
+ * DO NOT add a method that takes an assignee/user Id parameter, and DO NOT add a bulk variant that
+ * accepts a Set<Id> of users. This is a SECURITY constraint, not a style or bulkification opinion.
+ *
+ * Since 2026-08-03 this class runs `WITH SYSTEM_MODE`, so the platform no longer checks anything
+ * about the caller. THE HARD-CODED `WHERE AssigneeId = :UserInfo.getUserId()` IS NOW THE ONLY
+ * CONTROL ON THIS CLASS. A parameterized or bulk variant would remove it, letting any authenticated
+ * user enumerate ANY other user's permission set assignments — i.e. read the org's entire security
+ * model, including who holds Modify All Data. Under the previous USER_MODE such a method would at
+ * least have been checked by the platform; that backstop is gone, deliberately, and this
+ * prohibition is what replaces it.
+ *
+ * If a genuine need to read another user's assignments ever arises, it belongs in a SEPARATE,
+ * explicitly-named selector method with its own authorization gate and its own justification — not
+ * as a parameter added to this one.
  *
  * ── BULKIFICATION ─────────────────────────────────────────────────────────────
  * The 251-record mandate in .claude/rules/bulk-test-rule.md does not apply: this selector performs
  * one query for one user (the running user) per transaction, with no loop and no per-record work.
  * It is the same per-transaction-singleton shape the rule already exempts. There is no
- * collection-shaped behavior at this layer to bulk-test.
+ * collection-shaped behavior at this layer to bulk-test — and per the prohibition above, there must
+ * never be any.
  *
  * @see force-app/main/default/classes/PermissionSetGroupComponentSelector.cls (group expansion)
  * @see force-app/main/default/classes/LeadActionPermissionService.cls (consumer)
@@ -86,7 +135,9 @@ public with sharing class PermissionSetAssignmentSelector {
                    PermissionSetGroupId
             FROM PermissionSetAssignment
             WHERE AssigneeId = :runningUserId
-            WITH USER_MODE
+            // SYSTEM_MODE, scoped to the running user's OWN rows by the WHERE clause above — see
+            // the MODE section in the class header for the measured reason USER_MODE cannot be used.
+            WITH SYSTEM_MODE
         ];
     }
 }
