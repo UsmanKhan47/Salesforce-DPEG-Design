@@ -77,6 +77,27 @@ private class PropertyClaimServiceTest {
         };
     }
 
+    /**
+     * Convert a Lead and hand back its Opportunity — the fixture behind every WINNER ANCHOR test.
+     *
+     * ⚠ THE OPPORTUNITY CASCADE IS DELIBERATELY NOT SUPPRESSED. `setDoNotCreateOpportunity(true)`
+     * throws UNKNOWN_EXCEPTION on this org, and the plain conversion is the shape already proven
+     * safe by LeadConvertServiceTest (single and 251-record bulk). Copying that pattern rather
+     * than inventing a lighter one is the point — the Opportunity it produces is exactly what the
+     * anchor is supposed to point at.
+     *
+     * @param leadToConvert The Lead to convert; must already be inserted.
+     * @return The Id of the Opportunity conversion created.
+     */
+    private static Id convertAndGetOpportunity(Lead leadToConvert) {
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(leadToConvert.Id);
+        lc.setConvertedStatus([SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel);
+        Database.LeadConvertResult result = Database.convertLead(lc);
+        Assert.isTrue(result.isSuccess(), 'The fixture Lead must convert for the winner-anchor tests to mean anything');
+        return result.getOpportunityId();
+    }
+
     // ── claim(): first winner ────────────────────────────────────────────────
 
     @isTest
@@ -152,8 +173,11 @@ private class PropertyClaimServiceTest {
         Lead loserLead = TestDataFactory.createLead(true);
 
         Test.startTest();
+        // winningRecordId == the winner's own Lead: that Lead is OPEN, so the row anchors on
+        // Winning_Lead__c exactly as it always has (see PropertyClaimService's WINNER ANCHOR note).
         PropertyClaimService.markDuplicate(
-            registry, loserLead.Id, extractedFields(), Datetime.now(), 'forwarder2@example.invalid', 'FW: also 300 Winner St'
+            registry, loserLead.Id, winnerLead.Id, extractedFields(), Datetime.now(),
+            'forwarder2@example.invalid', 'FW: also 300 Winner St'
         );
         Test.stopTest();
 
@@ -192,7 +216,8 @@ private class PropertyClaimServiceTest {
         // The shape ExtractAddressQueueable's competing branch now calls: no Lead was ever
         // created for this broker, so there is no source Lead to point at.
         PropertyClaimService.markDuplicate(
-            registry, null, extractedFields(), Datetime.now(), 'forwarder11@example.invalid', 'FW: also 320 Sourceless St'
+            registry, null, winnerLead.Id, extractedFields(), Datetime.now(),
+            'forwarder11@example.invalid', 'FW: also 320 Sourceless St'
         );
         Test.stopTest();
 
@@ -210,6 +235,281 @@ private class PropertyClaimServiceTest {
 
         Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead],
             'markDuplicate must never create a Lead, and with a null source it has none to touch either');
+    }
+
+    // ══ WINNER ANCHOR — converted winners (2026-08-03) ══════════════════════
+    //
+    // Closes W3, carried since 2026-07-31 (docs/2026-07-31-competing-broker-no-lead.md,
+    // docs/2026-07-31-llm-field-extraction.md): every prior test used an UNCONVERTED Lead as the
+    // winner, so no test ever wrote a Lead lookup at a converted Lead. Production did, on
+    // 2026-08-03, and the platform rejected the insert — staging row a0aiw000000OCckAAG.
+    //
+    // ═══ 🔴 READ THIS BEFORE "FIXING" THE FIRST TEST BELOW ═══
+    // It was written as a FALSIFIABILITY GUARD asserting that the platform REJECTS a lookup set to
+    // a converted Lead. It ran on 2026-08-03 and the insert SUCCEEDED — so it has been REFRAMED to
+    // pin what actually happens, rather than deleted or weakened into a tautology.
+    //
+    // WHAT WE KNOW, AND HOW WE KNOW IT:
+    //   • AT RUNTIME THE WRITE FAILS. The evidence is the production incident, not a unit test:
+    //     staging row a0aiw000000OCckAAG on `usman-dpeg` (2026-08-03T15:21:57Z), Outcome__c
+    //     'Error (System.DmlException)', Property_Count__c 1, and NO Competing_Broker_Submission__c
+    //     row written. Branch (b) is forced on that data (the prior submission matches on an exact
+    //     normalized address inside the lookback window), and the ONLY DML it performs is this
+    //     insert. The identical write had SUCCEEDED a day earlier, when the Lead was still open.
+    //   • IN @isTest THE SAME WRITE IS ACCEPTED. Pinned below.
+    //
+    // ⚠ THIS IS A TEST-CONTEXT ASYMMETRY, AND THIS MODULE ALREADY HAS ONE: `EmailMessage.RelatedToId`
+    // is updatable at runtime but REFUSED from test context. This is the same shape, inverted —
+    // enforced at runtime, unenforced in tests.
+    //
+    // 🔴 THE CONSEQUENCE FOR REVIEW, STATED PLAINLY: the winner-anchor design CANNOT be falsified
+    // by an Apex test in this org. A green suite is therefore not evidence that the restriction is
+    // real, and a red one would not be evidence that it is not. Genuine falsification requires
+    // running the insert as ANONYMOUS APEX in a scratch org, outside test context. Until someone
+    // does that, the live incident is the evidence — and it is the reason this hotfix exists.
+    //
+    // ⚠ RESIDUAL, DELIBERATELY NOT HIDDEN: the production exception's exact StatusCode was never
+    // captured, because `Error__c` was NULL on that row — that gap IS the defect-2 half of this
+    // change. The root cause is therefore established by ELIMINATION (the only DML on the path;
+    // every other field clipped or sanitized; the Winning_Lead_Required VR satisfied; and record
+    // access ruled out, because the running user Junior Dhanani OWNS the converted Lead), not by a
+    // captured message. Strong, but not proof. Defect 2 is what makes the NEXT occurrence
+    // self-diagnosing: if the cause is something else, the staging row will now say so in one query.
+
+    @isTest
+    static void platform_lookupToAConvertedLead_isNotEnforcedInTestContext() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        Id opportunityId = convertAndGetOpportunity(winnerLead);
+        Assert.isNotNull(opportunityId, 'Conversion must produce an Opportunity for the anchor to have a target');
+        // ⚠ THE PRECONDITION IS VERIFIED AGAINST THE DATABASE, not the stale in-memory Lead the
+        // factory returned. Without this, a fixture that silently failed to convert would make the
+        // assertion below pass for entirely the wrong reason — which is the first thing anyone
+        // should suspect when a test claims a platform rule is not enforced.
+        Assert.isTrue([SELECT IsConverted FROM Lead WHERE Id = :winnerLead.Id].IsConverted,
+            'PRECONDITION: the Lead must genuinely be converted at the moment of the insert below, '
+            + 'or this test pins nothing at all');
+
+        Boolean threw = false;
+        String actualMessage;
+        Test.startTest();
+        try {
+            // THE EXACT PRODUCTION SHAPE: BOTH Lead lookups point at the converted Lead, because on
+            // a winner's own row Source_Lead__c equals Winning_Lead__c. Setting both removes the
+            // one remaining way to explain the runtime/test difference as a field-level quirk.
+            insert new Competing_Broker_Submission__c(
+                Winning_Lead__c = winnerLead.Id,
+                Source_Lead__c = winnerLead.Id,
+                Broker_Email__c = 'jane@brokerfirm.example.invalid',
+                Property_Address_Raw__c = '100 Main St, Houston, TX',
+                Submitted_DateTime__c = Datetime.now(),
+                Is_Winning_Submission__c = false
+            );
+        } catch (DmlException de) {
+            threw = true;
+            actualMessage = de.getMessage();
+        }
+        Test.stopTest();
+
+        // 🔴 THIS ASSERTION DOES NOT VALIDATE THE FIX, AND ITS FAILURE WOULD NOT INVALIDATE IT.
+        // The previous version of this test asserted the opposite and claimed that failing here
+        // "INVALIDATES THE FIX". That claim was WRONG and is corrected here: the design rests on
+        // the runtime evidence recorded in the section header, not on this test. What this pins is
+        // a CONTEXT QUIRK, documented where someone will actually meet it.
+        //
+        // If this ever goes RED — Salesforce enforcing the restriction inside @isTest too — that is
+        // GOOD NEWS, not a regression: the premise would become directly testable, and this test
+        // should be converted back into a genuine falsifiability guard asserting the rejection and
+        // its StatusCode. Do not simply delete it.
+        Assert.isFalse(threw,
+            'PINNED QUIRK: in @isTest the platform ACCEPTS a lookup set to a converted Lead, even though '
+            + 'it rejects the identical write at runtime (production incident, staging row '
+            + 'a0aiw000000OCckAAG). If this is now throwing, Salesforce has closed the gap — turn this '
+            + 'back into a falsifiability guard rather than deleting it. Message: ' + actualMessage);
+
+        // Asserts the row was genuinely PERSISTED, not merely that nothing threw — otherwise this
+        // test would also pass if the insert had been silently skipped.
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM Competing_Broker_Submission__c WHERE Winning_Lead__c = :winnerLead.Id
+        ], 'and the row really is persisted against the converted Lead in test context');
+    }
+
+    @isTest
+    static void markDuplicate_convertedWinner_anchorsOnTheOpportunityAndNullsBothLeadLookups() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        Property_Registry__c registry =
+            TestDataFactory.createPropertyRegistry('800 converted winner st', winnerLead.Id, true);
+        Id opportunityId = convertAndGetOpportunity(winnerLead);
+
+        Test.startTest();
+        // Exactly what ExtractAddressQueueable branch (d) now passes: the registry still names the
+        // (now converted) Lead, and the caller supplies what that Lead resolves to today.
+        PropertyClaimService.markDuplicate(
+            registry, null, opportunityId, extractedFields(), Datetime.now(),
+            'forwarder30@example.invalid', 'FW: also 800 Converted Winner St'
+        );
+        Test.stopTest();
+
+        List<Competing_Broker_Submission__c> subs = [
+            SELECT Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c, Is_Winning_Submission__c,
+                   Broker_Email__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Opportunity__c = :opportunityId
+        ];
+        Assert.areEqual(1, subs.size(),
+            'A competing submission against a CONVERTED winner must still be written — losing the audit row is '
+            + 'the failure this change exists to remove');
+        Assert.areEqual(opportunityId, subs[0].Winning_Opportunity__c,
+            'The anchor moves to the Opportunity, which is the record that actually holds the deal now');
+        Assert.isNull(subs[0].Winning_Lead__c,
+            'EXACTLY ONE ANCHOR: writing the converted Lead alongside it is what the platform rejects');
+        Assert.isNull(subs[0].Source_Lead__c, 'A competing broker still receives no Lead of their own');
+        Assert.areEqual('jane@brokerfirm.example.invalid', subs[0].Broker_Email__c,
+            'The row remains the only record of who this broker was, so their address must survive the anchor swap');
+    }
+
+    @isTest
+    static void markDuplicate_winnerResolvesToAContactOnly_skipsTheSubmissionRatherThanThrowing() {
+        // THE DOCUMENTED RESIDUAL, DIRECTLY PINNED (buildSubmission's third branch). A winning
+        // Lead converted to a Contact with NO Opportunity can be anchored to neither
+        // Winning_Lead__c (converted, rejected by the platform) nor Winning_Opportunity__c (none
+        // exists) — inserting anyway would fail Winning_Lead_Required and abort the WHOLE
+        // property's routing branch, which is the exact failure this change exists to remove, so
+        // buildSubmission returns null and insertSubmission is a deliberate no-op.
+        //
+        // Close to UNREACHABLE via a real conversion in this org — LeadConvertService always
+        // produces an Opportunity here (setDoNotCreateOpportunity(true) throws) — so this drives
+        // the branch directly with a real Contact standing in for whatever resolveLiveRecord would
+        // have returned on an org where the shape is reachable, rather than skipping the branch
+        // entirely for want of a fixture.
+        Lead winnerLead = TestDataFactory.createLead(true);
+        Property_Registry__c registry =
+            TestDataFactory.createPropertyRegistry('700 contact only ave', winnerLead.Id, true);
+        Contact standInContact = new Contact(LastName = 'Stand-In Contact');
+        insert standInContact;
+
+        Integer subsBefore = [SELECT COUNT() FROM Competing_Broker_Submission__c];
+
+        Test.startTest();
+        // No try/catch: a DmlException here would itself be the regression this test exists to
+        // catch — the whole point of the residual is that the row is skipped, never thrown.
+        PropertyClaimService.markDuplicate(
+            registry, null, standInContact.Id, extractedFields(), Datetime.now(),
+            'forwarder36@example.invalid', 'FW: also 700 Contact Only Ave'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(subsBefore, [SELECT COUNT() FROM Competing_Broker_Submission__c],
+            'A winner that resolves to neither a Lead nor an Opportunity must be SKIPPED, not thrown. '
+            + 'Losing one audit row is strictly better than losing the whole property\'s routing — and '
+            + 'the caller (ExtractAddressQueueable) still logs the email\'s Task regardless');
+    }
+
+    @isTest
+    static void logRepeatSubmission_convertedWinner_anchorsOnTheOpportunity() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        Id opportunityId = convertAndGetOpportunity(winnerLead);
+
+        Test.startTest();
+        // Branch (b)'s shape once the winner has converted: the prior row still names the Lead,
+        // and the queueable passes the resolved live record alongside it.
+        PropertyClaimService.logRepeatSubmission(
+            winnerLead.Id, winnerLead.Id, opportunityId, extractedFields(), Datetime.now(),
+            'forwarder31@example.invalid', 'FW: following up again'
+        );
+        Test.stopTest();
+
+        List<Competing_Broker_Submission__c> subs = [
+            SELECT Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Opportunity__c = :opportunityId
+        ];
+        Assert.areEqual(1, subs.size(), 'A repeat on a converted winner must still append its audit row');
+        Assert.isNull(subs[0].Winning_Lead__c, 'The converted Lead must not be written');
+        Assert.isNull(subs[0].Source_Lead__c,
+            'Source_Lead__c is the SAME converted Lead here, so it is equally unwritable and is nulled too');
+    }
+
+    @isTest
+    static void logRepeatSubmission_priorRowAlreadyAnchoredOnAnOpportunity_keepsThatAnchor() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        Id opportunityId = convertAndGetOpportunity(winnerLead);
+
+        Test.startTest();
+        // The SECOND follow-up: by now the prior row itself has a null Winning_Lead__c and an
+        // Opportunity anchor, so the caller passes winningLeadId = null. The old
+        // `(winningLeadId == null) ? sourceLeadId : winningLeadId` fallback would have thrown a
+        // perfectly good Opportunity anchor away here and written a Lead-shaped row.
+        PropertyClaimService.logRepeatSubmission(
+            null, null, opportunityId, extractedFields(), Datetime.now(),
+            'forwarder32@example.invalid', 'FW: third email on this one'
+        );
+        Test.stopTest();
+
+        Competing_Broker_Submission__c sub = [
+            SELECT Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Opportunity__c = :opportunityId
+        ];
+        Assert.areEqual(opportunityId, sub.Winning_Opportunity__c,
+            'A null winningLeadId no longer means "fall back to the source Lead" — it means the anchor is the Opportunity');
+        Assert.isNull(sub.Winning_Lead__c, 'and no Lead lookup is written at all');
+    }
+
+    @isTest
+    static void logRepeatSubmission_neitherAnchorSupplied_fallsBackToTheSourceLead() {
+        // THE PREVIOUSLY-WORKING PATH, DIRECTLY PINNED FOR THE FIRST TIME. Before 2026-08-03 the
+        // fallback fired whenever winningLeadId alone was null; it is now NARROWED to fire only
+        // when winningRecordId is ALSO null, because an Opportunity-anchored prior row
+        // legitimately has a null winningLeadId too (see the test immediately above). Neither the
+        // pre-2026-08-03 nor the current logRepeatSubmission had a DIRECT unit test of this
+        // fallback shape — ExtractAddressQueueable's own call site always resolves a live winner
+        // before calling in, so the fallback is dead code from the pipeline's perspective and is
+        // preserved purely for other direct callers. This closes that gap rather than merely
+        // confirming the narrowing didn't regress something that was already covered.
+        Lead sourceLead = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.logRepeatSubmission(
+            null, sourceLead.Id, null, extractedFields(), Datetime.now(),
+            'forwarder35@example.invalid', 'FW: direct caller supplying neither anchor'
+        );
+        Test.stopTest();
+
+        Competing_Broker_Submission__c sub = [
+            SELECT Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c
+            FROM Competing_Broker_Submission__c
+            WHERE Source_Lead__c = :sourceLead.Id
+        ];
+        Assert.areEqual(sourceLead.Id, sub.Winning_Lead__c,
+            'With NEITHER anchor supplied, the method must still fall back to the source Lead — the '
+            + 'pre-2026-08-03 behaviour, preserved for callers other than the queueable');
+        Assert.isNull(sub.Winning_Opportunity__c, 'and the Opportunity anchor stays untouched');
+    }
+
+    @isTest
+    static void claim_winnerLeadCannotBeConvertedYet_soTheWinningRowStillAnchorsOnTheLead() {
+        Lead sourceLead = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.claim(
+            sourceLead.Id, '850 fresh winner st', extractedFields(), Datetime.now(),
+            'forwarder33@example.invalid', 'FW: 850 Fresh Winner St'
+        );
+        Test.stopTest();
+
+        Competing_Broker_Submission__c sub = [
+            SELECT Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c, Is_Winning_Submission__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Lead__c = :sourceLead.Id
+        ];
+        // REGRESSION GUARD. registerWinner passes the Lead as its own live record WITHOUT a
+        // resolve query, on the reasoning that a Lead created seconds earlier cannot be converted
+        // yet. This proves that shortcut still produces the Lead-anchored row, and it is also the
+        // assertion that goes red if someone routes the winning row through the Opportunity branch.
+        Assert.areEqual(sourceLead.Id, sub.Winning_Lead__c,
+            'The WINNING row is written at claim time, when the Lead is by construction still open — it must anchor on the Lead');
+        Assert.isNull(sub.Winning_Opportunity__c, 'EXACTLY ONE ANCHOR: an open winner has no Opportunity to point at');
+        Assert.isTrue(sub.Is_Winning_Submission__c, 'and it is still the winning submission');
     }
 
     // ── claim(): duplicate-value race recovery ──────────────────────────────

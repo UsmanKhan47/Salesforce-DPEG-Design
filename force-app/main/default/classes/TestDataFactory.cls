@@ -218,6 +218,28 @@ public with sharing class TestDataFactory {
         }
     }
 
+    /**
+     * Reject an Id that is not of the expected SObject type.
+     *
+     * Added 2026-08-03 alongside the Competing_Broker_Submission__c winner anchor, which is the
+     * factory's first method taking TWO Id parameters that differ only in which object they point
+     * at (`winningLeadId`, `winningOpportunityId`). Positional Ids of the same Apex type are
+     * trivially transposable at a call site and would compile silently — the same hazard
+     * EmailToLeadService.LeadRequest's Javadoc cites for its DTO. Checking the prefix turns a
+     * transposition into an immediate, named failure instead of a confusing DML error.
+     *
+     * @param value    The Id to check; null is allowed (use requireId for presence).
+     * @param expected The SObject type it must belong to.
+     * @param label    Parameter name for the error message.
+     */
+    private static void requireSObjectType(Id value, Schema.SObjectType expected, String label) {
+        if (value != null && value.getSObjectType() != expected) {
+            throw new TestDataFactoryException(
+                label + ' must be a ' + expected + ' Id but was a ' + value.getSObjectType()
+                + ' Id. Check the argument order.');
+        }
+    }
+
     /** Thrown when the factory is asked for something it cannot legally build. */
     public class TestDataFactoryException extends Exception {}
 
@@ -2083,6 +2105,15 @@ public with sharing class TestDataFactory {
      * @param doInsert      Insert when true.
      * @return Property_Registry__c rows.
      */
+    /**
+     * ⚠ THIS GUARD IS STILL CORRECT — DO NOT "HARMONIZE" IT WITH THE SUBMISSION FACTORY.
+     * Checked 2026-08-03 when Competing_Broker_Submission__c gained its Opportunity anchor.
+     * Property_Registry__c deliberately did NOT: its `Winning_Lead__c` is only ever written with
+     * a Lead created milliseconds earlier (which cannot be converted yet) or re-pointed on an
+     * orphan row whose lookup is already null, so it is never exposed to the converted-Lead
+     * rejection and its own Winning_Lead_Required VR is unchanged. Requiring the Lead here
+     * remains the accurate rule. See PropertyClaimService.registerWinner's prohibition note.
+     */
     public static List<Property_Registry__c> createPropertyRegistries(Integer count, Id winningLeadId, Boolean doInsert) {
         requirePositive(count);
         requireId(winningLeadId, 'winningLeadId (Property_Registry__c.Winning_Lead__c is required on insert)');
@@ -2132,8 +2163,15 @@ public with sharing class TestDataFactory {
      * ascends with index (starting 1 day ago) and Is_Winning_Submission__c is true only
      * at index 0, so the factory's own "winner" row is also the chronologically-earliest
      * one — matching the real invariant (selectByWinningLead orders ASC, earliest first).
+     * ⚠ THE WINNER ANCHOR IS SPLIT ACROSS TWO FIELDS (2026-08-03). A submission names its winner
+     * as EITHER `Winning_Lead__c` (the winning Lead is still open) OR `Winning_Opportunity__c`
+     * (it has been converted — the platform rejects a lookup SET to a converted Lead). These
+     * Lead-only overloads build the FIRST shape and keep their original guard; use the
+     * `winningOpportunityId` overloads below for the second. See PropertyClaimService's WINNER
+     * ANCHOR note and the widened Winning_Lead_Required validation rule.
+     *
      * @param count         Number of submissions.
-     * @param winningLeadId Winning_Lead__c (required by the VR on insert).
+     * @param winningLeadId Winning_Lead__c (required on this overload).
      * @param doInsert      Insert when true.
      * @return Competing_Broker_Submission__c rows.
      */
@@ -2142,14 +2180,62 @@ public with sharing class TestDataFactory {
         Id winningLeadId,
         Boolean doInsert
     ) {
-        requirePositive(count);
         requireId(winningLeadId, 'winningLeadId (Competing_Broker_Submission__c.Winning_Lead__c is required on insert)');
+        return createCompetingBrokerSubmissions(count, winningLeadId, null, doInsert);
+    }
+
+    /**
+     * Competing_Broker_Submission__c rows against a winner named by EITHER anchor.
+     *
+     * ═══ WHY THIS OVERLOAD EXISTS ═══
+     * The Lead-only signature above encoded "Winning_Lead__c is required on insert", which was
+     * true until 2026-08-03 and is now only HALF the rule. It rejected the exact shape the
+     * winner-anchor fix introduces — an Opportunity-anchored row with both Lead lookups null —
+     * and no test could build a post-conversion submission at all.
+     *
+     * 🔴 THE GUARD IS NOT REMOVED, IT IS RESTATED TO MATCH THE VALIDATION RULE: at least one
+     * anchor must be supplied. Dropping the check entirely would let a test build a row the org
+     * would reject, turning a clear factory error into a confusing DML failure at the call site —
+     * which is the whole reason this factory validates rather than trusting its callers.
+     *
+     * ⚠ AN OPPORTUNITY-ANCHORED ROW GETS `Source_Lead__c = null` TOO, and that is the real
+     * production shape rather than a simplification: per that field's contract a persisted
+     * `Source_Lead__c` is either null or equal to `Winning_Lead__c`, so once the winner is
+     * converted it is the same unwritable Lead.
+     *
+     * @param count                Number of submissions.
+     * @param winningLeadId        Winning_Lead__c, or null when anchoring on the Opportunity.
+     * @param winningOpportunityId Winning_Opportunity__c, or null when anchoring on the Lead.
+     * @param doInsert             Insert when true.
+     * @return Competing_Broker_Submission__c rows.
+     * @throws TestDataFactoryException when neither anchor is supplied, or when an Id is of the
+     *         wrong SObject type (the two parameters are adjacent and same-typed).
+     */
+    public static List<Competing_Broker_Submission__c> createCompetingBrokerSubmissions(
+        Integer count,
+        Id winningLeadId,
+        Id winningOpportunityId,
+        Boolean doInsert
+    ) {
+        requirePositive(count);
+        if (winningLeadId == null && winningOpportunityId == null) {
+            throw new TestDataFactoryException(
+                'A Competing_Broker_Submission__c needs a winner anchor: supply winningLeadId '
+                + '(open winner) OR winningOpportunityId (converted winner). The '
+                + 'Winning_Lead_Required validation rule rejects a row with neither.');
+        }
+        requireSObjectType(winningLeadId, Lead.SObjectType, 'winningLeadId');
+        requireSObjectType(winningOpportunityId, Opportunity.SObjectType, 'winningOpportunityId');
+
         Datetime base = Datetime.now().addDays(-1);
         List<Competing_Broker_Submission__c> subs = new List<Competing_Broker_Submission__c>();
         for (Integer i = 0; i < count; i++) {
             Integer u = nextUnique();
             subs.add(new Competing_Broker_Submission__c(
                 Winning_Lead__c = winningLeadId,
+                Winning_Opportunity__c = winningOpportunityId,
+                // Null on the Opportunity path: the source Lead is the same converted Lead, which
+                // is equally unwritable. Only the Lead-anchored shape carries one.
                 Source_Lead__c = winningLeadId,
                 Broker_Name__c = 'Test Broker ' + i,
                 Broker_Email__c = 'test.broker' + u + '@example.invalid',
@@ -2164,9 +2250,29 @@ public with sharing class TestDataFactory {
         return subs;
     }
 
-    /** Single Competing Broker Submission (winning). @param winningLeadId Winning_Lead__c (required). @param doInsert Insert when true. @return The submission. */
+    /** Single Competing Broker Submission (winning), anchored on an OPEN Lead. @param winningLeadId Winning_Lead__c (required). @param doInsert Insert when true. @return The submission. */
     public static Competing_Broker_Submission__c createCompetingBrokerSubmission(Id winningLeadId, Boolean doInsert) {
         return createCompetingBrokerSubmissions(1, winningLeadId, doInsert)[0];
+    }
+
+    /**
+     * Single Competing Broker Submission anchored on EITHER a Lead or an Opportunity — the
+     * post-conversion shape. Pass exactly one; see the bulk overload for the full rationale.
+     *
+     * @param winningLeadId        Winning_Lead__c, or null when anchoring on the Opportunity.
+     * @param winningOpportunityId Winning_Opportunity__c, or null when anchoring on the Lead.
+     * @param doInsert             Insert when true.
+     * @return The submission.
+     * @example
+     * // A submission written after the winning Lead was converted:
+     * TestDataFactory.createCompetingBrokerSubmission(null, opportunityId, true);
+     */
+    public static Competing_Broker_Submission__c createCompetingBrokerSubmission(
+        Id winningLeadId,
+        Id winningOpportunityId,
+        Boolean doInsert
+    ) {
+        return createCompetingBrokerSubmissions(1, winningLeadId, winningOpportunityId, doInsert)[0];
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

@@ -175,6 +175,48 @@ private class CompetingBrokerSubmissionSelectorTest {
             'A row with a null Winning_Lead__c must NEVER be returned. It satisfies no caller: repeat detection would file a follow-up against nothing, and the resulting insert trips the Winning_Lead_Required VR and kills the email. Excluding it is also what lets the property fall through to orphan adoption and stay claimable');
     }
 
+    // ── WINNER ANCHOR: Opportunity-anchored rows (2026-08-03) ───────────────
+    //
+    // 🔴 THE QUERY-SIDE HALF OF THE WINNER-ANCHOR FIX, AND THE ONE THAT FAILS SILENTLY.
+    // A submission written after the winning Lead was CONVERTED carries Winning_Opportunity__c
+    // and a NULL Winning_Lead__c, because the platform rejects a lookup SET to a converted Lead.
+    // The old `WHERE Winning_Lead__c != null` filter would drop exactly those rows — with no
+    // exception and no failing test elsewhere — and repeat detection would then treat the WINNING
+    // broker's own follow-ups as fresh COMPETING claims against themselves, forever.
+    //
+    // Note what this test does NOT relax: the null-winner exclusion above still holds. The
+    // invariant is "at least one anchor", not "no filter".
+
+    @isTest
+    static void selectRecentByBrokerEmail_opportunityAnchoredRows_areReturned() {
+        // Account deliberately null: this query never traverses the Opportunity, and skipping the
+        // Account also skips the org's live Account duplicate rule, which fires on two
+        // factory-built Accounts in one transaction.
+        Opportunity winningOpportunity = TestDataFactory.createOpportunity(null, true);
+
+        // The Opportunity-anchored overload — the Lead-only one rejects this shape BY DESIGN, and
+        // correctly so: a row with no anchor at all trips the Winning_Lead_Required VR.
+        Competing_Broker_Submission__c sub =
+            TestDataFactory.createCompetingBrokerSubmission(null, winningOpportunity.Id, false);
+        sub.Broker_Email__c = BROKER;
+        sub.Submitted_DateTime__c = Datetime.now().addDays(-2);
+        sub.Is_Winning_Submission__c = false;
+        insert sub;
+
+        Test.startTest();
+        List<Competing_Broker_Submission__c> results =
+            CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail(BROKER, cutoff());
+        Test.stopTest();
+
+        Assert.areEqual(1, results.size(),
+            'A row anchored on Winning_Opportunity__c must be returned. It is the ONLY shape a submission can '
+            + 'take once the winner has converted, so filtering on Winning_Lead__c alone makes every '
+            + 'post-conversion follow-up invisible to repeat detection');
+        Assert.areEqual(winningOpportunity.Id, results[0].Winning_Opportunity__c,
+            'and Winning_Opportunity__c must be SELECTED, or the caller has no live record to route the email to');
+        Assert.isNull(results[0].Winning_Lead__c, 'EXACTLY ONE ANCHOR: the converted Lead is never written');
+    }
+
     @isTest
     static void selectRecentByBrokerEmail_matchesViaSourceLeadEmail() {
         Lead winner = [SELECT Id FROM Lead LIMIT 1];

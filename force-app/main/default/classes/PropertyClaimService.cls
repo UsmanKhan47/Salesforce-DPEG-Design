@@ -20,6 +20,50 @@
  *      failure class structurally rather than defending against it.
  * The two Lead fields are retained as LEGACY for historical rows; nothing writes them.
  *
+ * ═══ 🔴 THE WINNER ANCHOR — EXACTLY ONE OF TWO LOOKUPS, NEVER BOTH, NEVER NEITHER ═══
+ * Added 2026-08-03 after a production failure on `usman-dpeg` (staging row a0aiw000000OCckAAG).
+ * Every Competing_Broker_Submission__c must name the record that holds the property claim, and
+ * that record changes identity when the deal becomes real:
+ *
+ *   • winner Lead is OPEN      -> `Winning_Lead__c`        = the Lead    (`Source_Lead__c` as before)
+ *   • winner Lead is CONVERTED -> `Winning_Opportunity__c` = its Opportunity, BOTH Lead lookups null
+ *
+ * WHY, AND IT IS A PLATFORM RULE RATHER THAN A PREFERENCE: **at runtime, a Lead lookup cannot be
+ * SET to a converted Lead.** The platform rejects the insert with a DmlException, so a repeat or a
+ * competing submission arriving AFTER the winner was
+ * converted threw, the property's whole routing branch was abandoned, and the
+ * inbound email landed with no Task target and no audit row.
+ *
+ * ⚠ TWO HONEST CAVEATS, BOTH ESTABLISHED 2026-08-03 — do not restate this rule more confidently
+ * than the evidence supports:
+ *   1. THE EXACT StatusCode WAS NEVER CAPTURED. `Error__c` was NULL on the incident row (the gap
+ *      the defect-2 change closes), so the cause is established by ELIMINATION — the only DML on
+ *      that path, every other field clipped or sanitized, the VR satisfied, record access ruled
+ *      out because the running user owned the Lead, and the identical write succeeding a day
+ *      earlier while the Lead was still open. `CANNOT_UPDATE_CONVERTED_LEAD` is the expected code
+ *      but has NOT been observed here; do not assert it anywhere.
+ *   2. THE RESTRICTION IS NOT ENFORCED IN `@isTest`. The same insert SUCCEEDS in test context, so
+ *      no Apex test in this org can falsify this rule — see
+ *      PropertyClaimServiceTest.platform_lookupToAConvertedLead_isNotEnforcedInTestContext, which
+ *      pins that quirk. Genuine falsification needs anonymous Apex in a scratch org.
+ *
+ * Note the shape of that bug: the
+ * winning row inserted at claim time is always safe (the Lead was created seconds earlier and
+ * cannot be converted yet), so the failure only appears on the SECOND email about a property —
+ * which is exactly when the audit trail matters most and exactly why no test caught it.
+ *
+ * 🔴 CONSEQUENCES FOR ANY FUTURE READER OF THIS OBJECT — DO NOT ASSUME `Winning_Lead__c`:
+ *   • `CompetingBrokerSubmissionSelector.selectRecentByBrokerEmail` admits BOTH anchors. If it
+ *     ever filters on `Winning_Lead__c != null` alone again, every follow-up on a converted
+ *     winner's property stops matching as a REPEAT and is re-filed as a COMPETING claim — the
+ *     winning broker recorded as a competitor against themselves, silently.
+ *   • The row is written by ONE method (`buildSubmission`) so the rule has one home. Callers pass
+ *     the ALREADY-RESOLVED live record rather than a flag, which keeps the SOQL count flat — see
+ *     that method and `resolveWinnerRecord`.
+ *
+ * This closes the W3 residual carried since 2026-07-31 (docs/2026-07-31-competing-broker-no-lead.md,
+ * docs/2026-07-31-llm-field-extraction.md).
+ *
  * ⚠ claim() IS NOW CALLED N TIMES PER TRANSACTION (2026-07-31, D1 multi-property). One
  * inbound email can pitch several properties, and ExtractAddressQueueable loops over them —
  * so the old "exactly one email = exactly one claim per transaction" premise is gone, and
@@ -39,7 +83,7 @@
  * extra hold time.
  *
  * LAYER — Service (write side). All reads go through PropertyMatchingService /
- * PropertyRegistrySelector — this class contains NO SOQL. Its DML is deliberately
+ * PropertyRegistrySelector / LeadSelector — this class contains NO SOQL. Its DML is deliberately
  * single-record-shaped: each call claims exactly ONE property, and the insert/update
  * statements are never inside a loop within this class, so the layering "no DML in loops"
  * rule holds even though the CALLER now loops. The project has no UnitOfWork class (verified 2026-07-24), so direct
@@ -160,7 +204,8 @@ public with sharing class PropertyClaimService {
             // Lead genuinely exists at this instant — deleting it is the CALLER's policy
             // decision, not this claim engine's, and the lookup's SetNull delete constraint
             // clears it the moment the caller acts.
-            markDuplicate(winner, sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject);
+            markDuplicate(winner, sourceLeadId, resolveWinnerRecord(winner.Winning_Lead__c),
+                extracted, submittedOn, forwardedByEmail, emailSubject);
             return ClaimOutcome.DUPLICATE_RACE;
         }
         return registerWinner(
@@ -172,6 +217,30 @@ public with sharing class PropertyClaimService {
      * row (Registered_DateTime__c = claim time, NOT the email's submitted time) and a winning
      * Competing_Broker_Submission__c. Called only while the cluster lock is held and after
      * findMatchingRegistry found no live winner.
+     *
+     * ═══ 🔴 WHY Property_Registry__c IS NOT EXPOSED TO THE CONVERTED-LEAD DEFECT — AND HOW TO
+     *     KEEP IT THAT WAY (investigated 2026-08-03) ═══
+     * `Property_Registry__c.Winning_Lead__c` is a Lead lookup exactly like the submission's, and
+     * in steady state it FREQUENTLY holds a CONVERTED Lead — that is the normal end state of a
+     * won property, and live rows on `usman-dpeg` are already in it. It is nonetheless safe,
+     * because of WHICH rows the module writes, not because of anything about the field:
+     *
+     *   • THE INSERT below always names a Lead created milliseconds earlier by the caller's
+     *     branch (e). Nothing in that transaction converts it, so it cannot be converted yet.
+     *   • THE ORPHAN UPDATE below always targets a row whose `Winning_Lead__c` is NULL —
+     *     `PropertyRegistrySelector.selectOrphanByPropertyKey` filters `Winning_Lead__c = null`
+     *     by construction — and re-points it at the same freshly created Lead.
+     *
+     * These two statements are the ONLY DML against this object in the entire codebase.
+     *
+     * 🔴 THE PROHIBITION: DO NOT ADD A THIRD. Any future `update` of a registry row that is
+     * merely LIVE (a "last touched" stamp, a status field, a re-key, a merge/cleanup tool) would
+     * be updating a row whose lookup may hold a converted Lead — and the platform may reject the
+     * whole DML over a lookup the update never touched. That would fail on exactly the
+     * long-running, successful properties, which is the population least likely to appear in a
+     * test fixture. If such an update is ever genuinely needed, this object needs the same split
+     * anchor the submission just received; raise it as its own change rather than discovering it
+     * in production the way the submission's twin was discovered.
      *
      * The unique index on Property_Key__c remains the innermost backstop: if the exact key
      * already exists — which, under W4 serialization, means an ORPHANED row whose winner was
@@ -201,10 +270,13 @@ public with sharing class PropertyClaimService {
                 Registered_DateTime__c = Datetime.now()
             );
             insert registry;
-            insert buildSubmission(
-                sourceLeadId, sourceLeadId, extracted, submittedOn,
+            // The winner anchor is the Lead itself, with NO resolve query: this Lead was
+            // inserted by the caller seconds ago and cannot have been converted yet, so passing
+            // it as its own live record is both correct and free. See buildSubmission.
+            insertSubmission(buildSubmission(
+                sourceLeadId, sourceLeadId, sourceLeadId, extracted, submittedOn,
                 forwardedByEmail, emailSubject, true
-            );
+            ));
             return ClaimOutcome.WINNER;
         } catch (DmlException de) {
             if (!isDuplicateValue(de)) {
@@ -221,7 +293,8 @@ public with sharing class PropertyClaimService {
                 // means the caller's pre-read was stale, so this is a LOST RACE and the
                 // caller's Lead must go. See the ClaimOutcome doc for why that is a distinct
                 // outcome — and see isLostRaceAgainst for why a SELF-match must not land here.
-                markDuplicate(winner, sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject);
+                markDuplicate(winner, sourceLeadId, resolveWinnerRecord(winner.Winning_Lead__c),
+                    extracted, submittedOn, forwardedByEmail, emailSubject);
                 return ClaimOutcome.DUPLICATE_RACE;
             }
             Property_Registry__c orphan = PropertyMatchingService.findOrphanedRegistry(normalized);
@@ -232,10 +305,10 @@ public with sharing class PropertyClaimService {
                 orphan.Normalized_Address__c = normalized;
                 orphan.Registered_DateTime__c = Datetime.now();
                 update orphan;
-                insert buildSubmission(
-                    sourceLeadId, sourceLeadId, extracted, submittedOn,
+                insertSubmission(buildSubmission(
+                    sourceLeadId, sourceLeadId, sourceLeadId, extracted, submittedOn,
                     forwardedByEmail, emailSubject, true
-                );
+                ));
                 return ClaimOutcome.WINNER;
             }
             // Duplicate key but neither a live winner nor an orphan row — nothing safe to
@@ -369,21 +442,32 @@ public with sharing class PropertyClaimService {
      * `extracted` must already carry a usable broker_email — the queueable backfills it from
      * the envelope From address when the LLM returned nothing.
      *
+     * ⚠ THE WINNER ANCHOR IS THE CALLER'S TO SUPPLY (2026-08-03). `winner.Winning_Lead__c` may
+     * by now be a CONVERTED Lead — the winning broker's deal went live between their claim and
+     * this competing email — and a Lead lookup cannot be set to one. `winningRecordId` carries
+     * what that Lead resolves to today, which the queueable has ALREADY computed for the Task
+     * target, so the rule costs no extra query on the branch that fires most. See the class
+     * header's WINNER ANCHOR note and buildSubmission.
+     *
      * @param winner          The current winning Property_Registry__c row.
      * @param sourceLeadId    The Lead this inbound email produced, or NULL when no Lead was
      *                        created for it (the normal competing-broker case).
+     * @param winningRecordId What `winner.Winning_Lead__c` resolves to NOW — itself when the Lead
+     *                        is still open, its Opportunity/Contact once converted
+     *                        (PropertyMatchingService.resolveLiveRecord).
      * @param extracted       LLM-extracted fields stamped onto the submission.
      * @param submittedOn     The email's original send time.
      * @param forwardedByEmail Internal user who forwarded the broker email.
      * @param emailSubject    The inbound email subject.
      */
     public static void markDuplicate(Property_Registry__c winner, Id sourceLeadId,
-                                     Map<String, String> extracted, Datetime submittedOn,
-                                     String forwardedByEmail, String emailSubject) {
-        insert buildSubmission(
-            winner.Winning_Lead__c, sourceLeadId, extracted, submittedOn,
+                                     Id winningRecordId, Map<String, String> extracted,
+                                     Datetime submittedOn, String forwardedByEmail,
+                                     String emailSubject) {
+        insertSubmission(buildSubmission(
+            winner.Winning_Lead__c, sourceLeadId, winningRecordId, extracted, submittedOn,
             forwardedByEmail, emailSubject, false
-        );
+        ));
     }
 
     /**
@@ -412,25 +496,46 @@ public with sharing class PropertyClaimService {
      * ExtractAddressQueueable; this method exists so the resulting DML still lands in the
      * class that owns Competing_Broker_Submission__c writes.
      *
+     * ⚠ THIS IS THE METHOD THE 2026-08-03 PRODUCTION FAILURE THREW FROM, and the reason is
+     * structural rather than unlucky: a repeat is BY DEFINITION a second email about a property
+     * someone already won, so it is the first write whose winner Lead has had time to be
+     * converted — and a Lead lookup cannot be set to a converted Lead. `winningRecordId` is what
+     * that Lead resolves to now; the queueable computes it once and uses it for both this row and
+     * the Task target. See the class header's WINNER ANCHOR note.
+     *
      * @param winningLeadId   The Lead that holds the property claim (from the prior
      *                        submission); falls back to `sourceLeadId` when null.
      * @param sourceLeadId    The existing Lead this repeat email is filed against, or NULL
      *                        when the repeating broker has none (a competing broker).
+     * @param winningRecordId What the winning Lead resolves to NOW — itself when still open, its
+     *                        Opportunity/Contact once converted
+     *                        (PropertyMatchingService.resolveLiveRecord).
      * @param extracted       LLM-extracted fields stamped onto the submission.
      * @param submittedOn     The email's original send time.
      * @param forwardedByEmail Internal user who forwarded the broker email.
      * @param emailSubject    The inbound email subject.
      * @example
-     * PropertyClaimService.logRepeatSubmission(
-     *     prior.Winning_Lead__c, prior.Source_Lead__c, extracted, submittedOn, fwd, subject);
+     * PropertyClaimService.logRepeatSubmission(prior.Winning_Lead__c, prior.Source_Lead__c,
+     *     liveWinnerId, extracted, submittedOn, fwd, subject);
      */
-    public static void logRepeatSubmission(Id winningLeadId, Id sourceLeadId,
+    public static void logRepeatSubmission(Id winningLeadId, Id sourceLeadId, Id winningRecordId,
                                            Map<String, String> extracted, Datetime submittedOn,
                                            String forwardedByEmail, String emailSubject) {
-        insert buildSubmission(
-            (winningLeadId == null) ? sourceLeadId : winningLeadId,
-            sourceLeadId, extracted, submittedOn, forwardedByEmail, emailSubject, false
-        );
+        Id anchorLeadId = winningLeadId;
+        Id anchorRecordId = winningRecordId;
+        if (anchorLeadId == null && anchorRecordId == null) {
+            // NEITHER anchor supplied — the pre-2026-08-03 "fall back to the Lead this repeat is
+            // filed against" behaviour, preserved for direct callers. ⚠ The null-winningLeadId
+            // test alone is NOT sufficient any more: a prior row anchored on an OPPORTUNITY also
+            // has a null winningLeadId, and falling back to sourceLeadId there would discard a
+            // perfectly good anchor and write a Lead-shaped row instead.
+            anchorLeadId = sourceLeadId;
+            anchorRecordId = resolveWinnerRecord(sourceLeadId);
+        }
+        insertSubmission(buildSubmission(
+            anchorLeadId, sourceLeadId, anchorRecordId,
+            extracted, submittedOn, forwardedByEmail, emailSubject, false
+        ));
     }
 
     /**
@@ -446,24 +551,51 @@ public with sharing class PropertyClaimService {
      * the ENTIRE claim for an otherwise valid email. Clipping and sanitizing here means the
      * worst case is a blank field on the audit row instead of a lost registration.
      *
-     * @param winningLeadId   Winning_Lead__c — the lead that holds the property claim.
-     *                        Required by the Winning_Lead_Required validation rule on insert.
-     * @param sourceLeadId    Source_Lead__c — the lead this specific email produced, or null
-     *                        when it produced none (a competing broker gets no Lead).
+     * ═══ 🔴 THE WINNER ANCHOR IS DECIDED HERE, AND ONLY HERE ═══
+     * `winningRecordId` is what `winningLeadId` resolves to NOW. Comparing the two is the whole
+     * conversion test — no extra query, no IsConverted flag threaded through four signatures:
+     *
+     *   • equal (or `winningRecordId` null)  -> the Lead is OPEN. Write `Winning_Lead__c` and
+     *                                           `Source_Lead__c` exactly as before this change.
+     *   • different, and an Opportunity      -> the Lead is CONVERTED. Write
+     *                                           `Winning_Opportunity__c` and leave BOTH Lead
+     *                                           lookups null, because the platform rejects a
+     *                                           lookup SET to a converted Lead
+     *                                           (CANNOT_UPDATE_CONVERTED_LEAD).
+     *   • different, and NOT an Opportunity  -> converted to a Contact only. There is nowhere to
+     *                                           anchor the row; returns null (see below).
+     *
+     * ⚠ `Source_Lead__c` IS NULLED TOO ON THE CONVERTED PATH, AND IT COSTS NOTHING. Per the
+     * field's own description a persisted `Source_Lead__c` is either null or EQUAL to
+     * `Winning_Lead__c`, so on the converted path it is the same converted Lead and equally
+     * unwritable. The one shape where they genuinely differ is the lost-race path, where the
+     * source Lead is deleted moments later and SetNull would blank the lookup anyway.
+     *
+     * ⚠ RETURNING NULL IS A DELIBERATE, NARROW DEGRADATION — a Lead converted to a Contact with
+     * NO Opportunity. Neither lookup can be populated, so the row would fail the
+     * Winning_Lead_Required validation rule; inserting it anyway would throw and abandon the
+     * whole property's routing, which is the exact failure this change exists to remove. Losing
+     * one audit row is strictly better than losing the email, and the caller logs it. It is also
+     * close to unreachable here: LeadConvertService always produces an Opportunity in this org
+     * (Database.LeadConvert.setDoNotCreateOpportunity(true) throws on it).
+     *
+     * @param winningLeadId   The Lead that holds the property claim.
+     * @param sourceLeadId    The lead this specific email produced, or null when it produced
+     *                        none (a competing broker gets no Lead).
+     * @param winningRecordId What `winningLeadId` resolves to now (itself / Opportunity / Contact).
      * @param extracted       LLM-extracted field map (may be null).
      * @param submittedOn     Submitted_DateTime__c — the email's original send time.
      * @param forwardedByEmail Forwarded_By_Email__c — internal forwarder.
      * @param emailSubject    Email_Subject__c — the inbound email subject.
      * @param isWinner        Is_Winning_Submission__c — true for the winning submission.
-     * @return The unsaved Competing_Broker_Submission__c.
+     * @return The unsaved Competing_Broker_Submission__c, or NULL when the winner can be
+     *         anchored to neither a Lead nor an Opportunity.
      */
     private static Competing_Broker_Submission__c buildSubmission(
-            Id winningLeadId, Id sourceLeadId, Map<String, String> extracted,
+            Id winningLeadId, Id sourceLeadId, Id winningRecordId, Map<String, String> extracted,
             Datetime submittedOn, String forwardedByEmail, String emailSubject, Boolean isWinner) {
         Map<String, String> fields = (extracted == null) ? new Map<String, String>() : extracted;
-        return new Competing_Broker_Submission__c(
-            Winning_Lead__c = winningLeadId,
-            Source_Lead__c = sourceLeadId,
+        Competing_Broker_Submission__c row = new Competing_Broker_Submission__c(
             Broker_Name__c = InboundEmailFieldUtil.clip(fields.get('broker_name'), LEN_TEXT),
             Broker_Email__c = InboundEmailFieldUtil.sanitizeEmail(fields.get('broker_email')),
             Forwarded_By_Email__c = InboundEmailFieldUtil.sanitizeEmail(forwardedByEmail),
@@ -472,6 +604,55 @@ public with sharing class PropertyClaimService {
             Email_Subject__c = InboundEmailFieldUtil.clip(emailSubject, LEN_TEXT),
             Is_Winning_Submission__c = isWinner
         );
+
+        if (winningRecordId == null || winningRecordId == winningLeadId) {
+            row.Winning_Lead__c = winningLeadId;
+            row.Source_Lead__c = sourceLeadId;
+            return row;
+        }
+        if (winningRecordId.getSObjectType() == Opportunity.SObjectType) {
+            row.Winning_Opportunity__c = winningRecordId;
+            return row;
+        }
+        System.debug(LoggingLevel.WARN,
+            'PropertyClaimService.buildSubmission: winning Lead ' + winningLeadId
+            + ' is converted with no Opportunity (resolved to ' + winningRecordId
+            + '); the submission row has nothing to anchor to and is skipped.');
+        return null;
+    }
+
+    /**
+     * Insert a submission row, tolerating the one case buildSubmission cannot build.
+     *
+     * A null row means "the winner could be anchored to neither a Lead nor an Opportunity" — see
+     * buildSubmission. Skipping is the data-preserving answer: the alternative is a validation
+     * failure that aborts the property's whole routing branch and costs the email its Task.
+     *
+     * @param row The row to insert; null is a deliberate no-op.
+     */
+    private static void insertSubmission(Competing_Broker_Submission__c row) {
+        if (row == null) {
+            return;
+        }
+        insert row;
+    }
+
+    /**
+     * What a winning Lead resolves to today — itself while open, its Opportunity/Contact once
+     * converted. A thin, named delegation to PropertyMatchingService.resolveLiveRecord so the
+     * conversion question has ONE answer across the module.
+     *
+     * ⚠ ONE SOQL. Call it only where the caller does not already hold the answer:
+     * ExtractAddressQueueable's branches (b) and (d) resolve the live record for the Task target
+     * anyway and PASS IT IN, which is what keeps this fix flat on the per-property query budget
+     * the queueable asserts. The two call sites here are the lost-race paths, which are rare and
+     * have no pre-resolved value to reuse.
+     *
+     * @param winningLeadId The winning Lead; null returns null.
+     * @return The live record Id, or null.
+     */
+    private static Id resolveWinnerRecord(Id winningLeadId) {
+        return PropertyMatchingService.resolveLiveRecord(winningLeadId);
     }
 
     /**

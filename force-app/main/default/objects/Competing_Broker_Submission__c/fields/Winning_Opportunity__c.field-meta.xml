@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Winning_Opportunity__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Winning Opportunity</label>
+    <description>The winner AFTER lead conversion. Written instead of Winning_Lead__c when the winning Lead is converted, because a lookup to a converted Lead is rejected by the platform (CANNOT_UPDATE_CONVERTED_LEAD). Exactly one of Winning_Lead__c / Winning_Opportunity__c is populated on any row.</description>
+    <inlineHelpText>The winning Opportunity this submission's history rolls up under, once the winning Lead has been converted.</inlineHelpText>
+    <referenceTo>Opportunity</referenceTo>
+    <relationshipLabel>Broker Submissions (Opportunity)</relationshipLabel>
+    <relationshipName>Opportunity_Broker_Submissions</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

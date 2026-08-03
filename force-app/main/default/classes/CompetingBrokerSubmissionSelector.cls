@@ -35,6 +35,18 @@ public with sharing class CompetingBrokerSubmissionSelector {
      * Submitted_DateTime__c ASC puts the earliest (winning) submission at the top so
      * the timeline reads in chronological order.
      *
+     * ⚠ LEAD-ANCHORED ROWS ONLY, AND THAT IS A KNOWN, REPORTED GAP (2026-08-03) — NOT AN
+     * OVERSIGHT, AND DELIBERATELY NOT WIDENED HERE. Since the winner-anchor change, a submission
+     * written after the winning Lead was converted carries `Winning_Opportunity__c` and a NULL
+     * `Winning_Lead__c`, so it is invisible to this method. The consequence is UI-side: a
+     * converted winner's competing-broker trail stops growing on the Lead-page component, and
+     * post-conversion rows have no read path at all until the timeline is given an Opportunity
+     * surface. Closing it is NOT a one-line widen — `selectByWinningLead(Id)` takes a Lead Id
+     * from a Lead record page, and a converted Lead's page is unreachable (it redirects), so the
+     * fix is a sibling `selectByWinningOpportunity`, a controller method, and placing the
+     * component on the Opportunity flexipage. Filed separately; do not bolt an OR onto this
+     * method and call it done, because nothing would then be passing an Opportunity Id.
+     *
      * @param leadId Winning_Lead__c Id whose submissions to read; null returns an
      *               empty list.
      * @return Competing_Broker_Submission__c rows (Id, Broker_Name__c,
@@ -109,15 +121,33 @@ public with sharing class CompetingBrokerSubmissionSelector {
      * Worse, it would ALSO defeat the module's orphan-adoption path: with the row filtered out
      * the email correctly falls through to branch (e), where registerWinner adopts the orphaned
      * registry key. So this filter is what keeps a deleted-winner property re-claimable rather
-     * than permanently poisoned. THE INVARIANT: every row this method returns has a non-null
-     * Winning_Lead__c; Source_Lead__c may legitimately be null.
+     * than permanently poisoned.
+     *
+     * ═══ 🔴 THE FILTER IS NOW ANCHOR-AGNOSTIC (2026-08-03) — DO NOT NARROW IT BACK ═══
+     * It reads `(Winning_Lead__c != null OR Winning_Opportunity__c != null)`. A submission written
+     * after the winning Lead was CONVERTED anchors on `Winning_Opportunity__c` instead, because
+     * the platform rejects a lookup SET to a converted Lead (see
+     * PropertyClaimService's WINNER ANCHOR note). Restoring `Winning_Lead__c != null` alone would
+     * compile, deploy and pass every existing test while silently breaking arbitration: once a
+     * property's winner converts, that broker's own follow-ups stop matching as REPEATS, fall
+     * through to branch (d), and the WINNING broker is recorded as a COMPETING broker against
+     * themselves — with no exception, no error row, and nothing in the UI to show for it.
+     *
+     * THE INVARIANT, RESTATED: every row this method returns carries at least one winner anchor
+     * — `Winning_Lead__c` OR `Winning_Opportunity__c`, never both, never neither.
+     * `Source_Lead__c` may legitimately be null, and is ALWAYS null on an Opportunity-anchored row.
+     *
+     * ⚠ CALLERS MUST READ BOTH ANCHORS. `ExtractAddressQueueable`'s repeat branch prefers
+     * `Winning_Opportunity__c` when present (it is already a live record and needs no resolve)
+     * and falls back to resolving `Winning_Lead__c`. A caller that reads only the Lead gets null
+     * and loses the Task target.
      *
      * @param brokerEmail The broker's email address to match; null/blank returns empty.
      * @param cutoff      Inclusive lower bound on Submitted_DateTime__c (the recency
      *                    window); null returns empty.
      * @return Up to 200 submissions by that broker at/after `cutoff`, oldest first (so the
      *         caller's exact-match short-circuit returns the ORIGINAL submission rather
-     *         than a later repeat), every one carrying a non-null Winning_Lead__c; empty when
+     *         than a later repeat), every one carrying a non-null winner anchor; empty when
      *         nothing matches (never null).
      * @example
      * List<Competing_Broker_Submission__c> prior =
@@ -130,11 +160,11 @@ public with sharing class CompetingBrokerSubmissionSelector {
             return new List<Competing_Broker_Submission__c>();
         }
         return [
-            SELECT Id, Winning_Lead__c, Source_Lead__c, Broker_Name__c, Broker_Email__c,
-                   Forwarded_By_Email__c, Property_Address_Raw__c, Submitted_DateTime__c,
-                   Is_Winning_Submission__c
+            SELECT Id, Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c, Broker_Name__c,
+                   Broker_Email__c, Forwarded_By_Email__c, Property_Address_Raw__c,
+                   Submitted_DateTime__c, Is_Winning_Submission__c
             FROM Competing_Broker_Submission__c
-            WHERE Winning_Lead__c != null
+            WHERE (Winning_Lead__c != null OR Winning_Opportunity__c != null)
               AND Submitted_DateTime__c >= :cutoff
               AND (Broker_Email__c = :brokerEmail OR Source_Lead__r.Email = :brokerEmail)
             WITH USER_MODE

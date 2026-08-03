@@ -2,8 +2,8 @@
 <ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Winning_Lead_Required</fullName>
     <active>true</active>
-    <description>Insert-scoped stand-in for a required lookup (Salesforce rejects Restrict/Cascade on lookups to Lead). Scoped to ISNEW() so nulling the lookup when a Lead is deleted does not block the delete.</description>
-    <errorConditionFormula>AND(ISNEW(), ISBLANK(Winning_Lead__c))</errorConditionFormula>
+    <description>Insert-scoped stand-in for a required lookup; ISNEW()-scoped so SetNull on Lead delete is not blocked. A row must name a winner as either a Lead (open) or an Opportunity (converted) - the platform rejects a lookup set to a converted Lead.</description>
+    <errorConditionFormula>AND(ISNEW(), ISBLANK(Winning_Lead__c), ISBLANK(Winning_Opportunity__c))</errorConditionFormula>
     <errorDisplayField>Winning_Lead__c</errorDisplayField>
-    <errorMessage>Winning Lead is required on a broker submission.</errorMessage>
+    <errorMessage>A broker submission must name a winner as either a Lead (pre-conversion) or an Opportunity (post-conversion).</errorMessage>
 </ValidationRule>

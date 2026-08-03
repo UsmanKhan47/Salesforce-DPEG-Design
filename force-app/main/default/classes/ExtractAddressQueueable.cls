@@ -204,6 +204,15 @@
  * blanket failure. Re-throwing would instead hand the platform an async failure with no
  * record of the work that did commit.
  *
+ * ⚠ THAT PROMISE WAS ONLY HALF-KEPT UNTIL 2026-08-03, AND THE GAP COST AN INCIDENT. The
+ * PER-PROPERTY isolation catch recorded the exception TYPE in the Outcome__c label and threw the
+ * message, line and stack away, because it could not reach finish()'s stamp — so staging row
+ * a0aiw000000OCckAAG read `Outcome__c = 'Error (System.DmlException)'` with `Error__c` NULL and
+ * `Status__c = 'Processed'`. Both catches now funnel through describeFailure() into the
+ * `routingErrors` member, which finish() persists; see routingErrorText() for why a partial
+ * failure now correctly stamps Status 'Error', and why the Message-ID guard — not the Status
+ * guard — is what keeps a redelivery from re-running the pipeline.
+ *
  * @see EmailToLeadHandler.cls (creates the staging row and enqueues this job)
  * @see LLMExtractionCalloutService.cls (the mocked callout boundary)
  * @see PropertyMatchingService.cls / PropertyClaimService.cls (the first-broker-wins engine)
@@ -442,6 +451,26 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     @TestVisible private static Boolean forceClaimRace = false;
 
     /**
+     * TEST-ONLY seam for the ERROR-CAPTURE contract. When true, routeProperty throws a
+     * DmlException before doing anything else, so the per-property isolation catch — and the
+     * Error__c persistence it now owns — can be asserted deterministically.
+     *
+     * WHY A SEAM RATHER THAN A REAL DEFECT. The catch's job is to persist ANY failure, so its
+     * test must not be coupled to whichever bug happens to produce one today: the
+     * converted-winner defect it was found through is now FIXED, and reusing that scenario would
+     * leave the error-capture assertion silently unexercised the moment it was. Every other
+     * input to this pipeline is clipped or sanitized by design, so there is no naturally
+     * reachable failure left to lean on.
+     *
+     * ⚠ IT THROWS RATHER THAN PERFORMING A FAILING DML, and that is a layering requirement, not
+     * a shortcut: this class contains NO DML of its own (see the LAYER note in the class header),
+     * and a seam that inserted a deliberately-invalid row would break that invariant in the one
+     * class whose header promises it. Same precedent and same prohibition as forceClaimRace:
+     * NEVER set this outside a test class.
+     */
+    @TestVisible private static Boolean forceRouteFailure = false;
+
+    /**
      * TEST-ONLY TELEMETRY for the governor-headroom assertions (design §7 item 3).
      *
      * WHY THIS EXISTS RATHER THAN A `Limits.getQueries()` ASSERTION IN THE TEST: Test.stopTest()
@@ -474,6 +503,17 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * failed, the staging row records both the outcomes reached and the error.
      */
     private final List<RoutingOutcome> outcomes = new List<RoutingOutcome>();
+    /**
+     * Every failure this run hit, formatted by describeFailure — type, message, line and stack.
+     *
+     * ⚠ HELD AS A MEMBER FOR THE SAME REASON `outcomes` IS, AND THE REASON IS A PAST INCIDENT.
+     * The per-property isolation catch in routeProperties cannot reach finish()'s stamp, so it
+     * used to record only `e.getTypeName()` inside the Outcome__c label and DISCARD the message,
+     * the line and the stack. Staging row a0aiw000000OCckAAG (2026-08-03) is what that costs:
+     * `Outcome__c = 'Error (System.DmlException)'` with `Error__c` NULL, which took a full
+     * code-read to diagnose instead of one query. Anything added here is persisted by finish().
+     */
+    private final List<String> routingErrors = new List<String>();
     /** Properties the extraction FOUND, pre-truncation and pre-de-duplication. */
     private Integer propertyCount = 0;
     /** Addressable, de-duplicated candidates — the denominator of the truncation suffix. */
@@ -588,13 +628,15 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             routeProperties(extraction);
             finish();
         } catch (Exception e) {
-            String errorText = e.getTypeName() + ' | ' + e.getMessage()
-                + ' | line ' + e.getLineNumber() + ' | ' + e.getStackTraceString();
+            String errorText = describeFailure(e);
+            routingErrors.add(errorText);
             System.debug(LoggingLevel.ERROR,
                 'ExtractAddressQueueable.execute failed for staging ' + stagingId + ': ' + errorText);
             // `outcomes` carries whatever routing achieved BEFORE the failure, so a successful
             // claim followed by a failed Task insert is recorded as both rather than discarded.
-            InboundEmailStagingService.markRouted(stagingId, buildResult(errorText));
+            // `routingErrors` likewise carries any PER-PROPERTY failure the loop already isolated,
+            // so an email that lost one property and then died in the epilogue reports both.
+            InboundEmailStagingService.markRouted(stagingId, buildResult(routingErrorText()));
         } finally {
             lastRunQueryCount = Limits.getQueries();
             lastRunDmlCount = Limits.getDmlStatements();
@@ -827,9 +869,14 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             } catch (Exception e) {
                 // PER-PROPERTY ISOLATION — see the class header. One property must never roll
                 // back another's committed claim, so the failure is recorded and the loop goes on.
+                // ⚠ THE LABEL IS NOT THE RECORD OF THE FAILURE. Outcome__c gets only the
+                // exception TYPE (it is a 255-char reporting field a list view filters on); the
+                // message, line and stack go to Error__c via routingErrors — see that member.
+                String errorText = describeFailure(e);
+                routingErrors.add('property "' + property.normalizedAddress + '": ' + errorText);
                 System.debug(LoggingLevel.ERROR,
                     'ExtractAddressQueueable: property "' + property.normalizedAddress
-                    + '" failed to route for staging ' + stagingId + ': ' + e.getMessage());
+                    + '" failed to route for staging ' + stagingId + ': ' + errorText);
                 outcomes.add(new RoutingOutcome(
                     OUTCOME_ERROR + ' (' + e.getTypeName() + ')',
                     null, property.normalizedAddress, PRIORITY_NO_PROPERTY));
@@ -1007,6 +1054,11 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      */
     private RoutingOutcome routeProperty(LLMExtractionResult extraction, PropertyExtraction property,
                                          Datetime submittedOn) {
+        if (forceRouteFailure) {
+            // TEST-ONLY. See the forceRouteFailure seam — this exists so the per-property
+            // isolation catch's Error__c persistence is provable without depending on a live bug.
+            throw new DmlException('Simulated per-property routing failure.');
+        }
         String normalized = property.normalizedAddress;
         Map<String, String> extracted = extraction.toLegacyMap(property);
         String fromAddress = staging.From_Address__c;
@@ -1027,13 +1079,27 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             prior = PropertyMatchingService.findBrokerSubmission(fromAddress, normalized);
         }
         if (prior != null) {
+            // 🔴 RESOLVE BEFORE WRITING (2026-08-03). The winner's Lead may have been CONVERTED
+            // since it took the claim — a repeat is the FIRST write that can encounter that, by
+            // definition — and a Lead lookup cannot be SET to a converted Lead. The resolved
+            // record is needed by the write AND by the routing outcome, so it is computed ONCE,
+            // here, and the query budget is unchanged: this is the same single resolveLiveRecord
+            // call the branch already made, only moved above the DML.
+            //
+            // BOTH ANCHORS ARE READ, and the Opportunity one is preferred because it is ALREADY a
+            // live record — resolving it would be a query spent to learn nothing. A prior row is
+            // Opportunity-anchored exactly when it was itself written after the winner converted,
+            // so this is also the cheaper branch on every subsequent email about that property.
+            Id liveWinner = (prior.Winning_Opportunity__c != null)
+                ? prior.Winning_Opportunity__c
+                : PropertyMatchingService.resolveLiveRecord(prior.Winning_Lead__c);
             // The audit row is appended for BOTH kinds of repeat: Competing_Broker_Submission__c
             // is the append-only trail of every inbound email that matched a property
             // (ARCHITECTURE.md §1), so a competing broker's second email is recorded as
             // faithfully as the winner's. prior.Source_Lead__c carries through, which means a
             // competing broker's repeat appends another source-less row under the same winner.
             PropertyClaimService.logRepeatSubmission(
-                prior.Winning_Lead__c, prior.Source_Lead__c, extracted, submittedOn,
+                prior.Winning_Lead__c, prior.Source_Lead__c, liveWinner, extracted, submittedOn,
                 forwardedBy, emailSubject);
             // A WINNER re-emailing goes back to their own Lead. A COMPETING broker has no Lead
             // of their own (branch (d) never made one), so their follow-up lands on the WINNING
@@ -1041,8 +1107,16 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             Id repeatTarget = (prior.Source_Lead__c != null)
                 ? prior.Source_Lead__c
                 : prior.Winning_Lead__c;
-            return new RoutingOutcome(OUTCOME_REPEAT,
-                PropertyMatchingService.resolveLiveRecord(repeatTarget), normalized, PRIORITY_REPEAT);
+            // Reuse `liveWinner` whenever the repeat target IS the winning anchor — which covers
+            // every persisted shape: Source_Lead__c is null or equal to Winning_Lead__c per that
+            // field's contract, and an Opportunity-anchored row has NO Lead at all, so
+            // `repeatTarget` is null and `liveWinner` (the Opportunity) is the only target there
+            // is. The second resolve exists only for the S4 transient window and is the one place
+            // this branch can spend an extra query.
+            Id liveTarget = (repeatTarget == null || repeatTarget == prior.Winning_Lead__c)
+                ? liveWinner
+                : PropertyMatchingService.resolveLiveRecord(repeatTarget);
+            return new RoutingOutcome(OUTCOME_REPEAT, liveTarget, normalized, PRIORITY_REPEAT);
         }
 
         // (d) COMPETING SUBMISSION — a different broker already holds this property, so this
@@ -1065,11 +1139,14 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         Property_Registry__c existing =
             forceClaimRace ? null : PropertyMatchingService.findMatchingRegistry(normalized);
         if (existing != null) {
+            // Resolved BEFORE the write for the same reason branch (b) does it, and at the same
+            // cost — one call, used by both the submission's winner anchor and the outcome. A
+            // competing email arriving after the winner converted is the second shape that hit
+            // the 2026-08-03 CANNOT_UPDATE_CONVERTED_LEAD failure.
+            Id liveWinner = PropertyMatchingService.resolveLiveRecord(existing.Winning_Lead__c);
             PropertyClaimService.markDuplicate(
-                existing, null, extracted, submittedOn, forwardedBy, emailSubject);
-            return new RoutingOutcome(OUTCOME_DUPLICATE,
-                PropertyMatchingService.resolveLiveRecord(existing.Winning_Lead__c),
-                normalized, PRIORITY_COMPETING);
+                existing, null, liveWinner, extracted, submittedOn, forwardedBy, emailSubject);
+            return new RoutingOutcome(OUTCOME_DUPLICATE, liveWinner, normalized, PRIORITY_COMPETING);
         }
 
         // (e) WINNER — unclaimed property. claim() reports what it actually did (a concurrent
@@ -1257,7 +1334,49 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             orderedTaskTargets(), staging.Subject__c, staging.Raw_Body__c,
             staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c);
 
-        InboundEmailStagingService.markRouted(stagingId, buildResult(null));
+        // routingErrorText() is null on the clean path, which is what keeps Status__c 'Processed'
+        // byte-for-byte as before. When the loop DID isolate a per-property failure it is non-null,
+        // and markRouted then derives Status__c 'Error' — see routingErrorText for why that
+        // status change is correct rather than incidental.
+        InboundEmailStagingService.markRouted(stagingId, buildResult(routingErrorText()));
+    }
+
+    /**
+     * One formatter for every failure this class reports, so the per-property catch and the
+     * execute()-level catch can never drift into describing the same exception differently.
+     *
+     * @param e The caught exception.
+     * @return 'Type | message | line N | stack', the shape Error__c has always carried.
+     */
+    private static String describeFailure(Exception e) {
+        return e.getTypeName() + ' | ' + e.getMessage()
+            + ' | line ' + e.getLineNumber() + ' | ' + e.getStackTraceString();
+    }
+
+    /**
+     * Everything that failed this run, or null when nothing did.
+     *
+     * ═══ WHY A PARTIAL FAILURE NOW STAMPS Status__c 'Error' (2026-08-03) ═══
+     * `InboundEmailStagingService.markRouted` derives Status__c from this value: blank means
+     * 'Processed', non-blank means 'Error'. So wiring the per-property failures in here changes
+     * a partially-failed email from 'Processed' to 'Error'. That is deliberate and it is what
+     * this class's ERROR MODEL header has always promised ("the failure is written back to that
+     * row (Status 'Error' plus the full stack trace) ALONGSIDE whatever outcome had already been
+     * reached") — the code simply did not do it for the per-property catch, which is how staging
+     * row a0aiw000000OCckAAG came to read 'Processed' over a DmlException.
+     *
+     * ⚠ IT ALSO MAKES THE ROW RE-RUNNABLE, AND THAT IS SAFE — but only because of a guard in
+     * ANOTHER method. execute()'s first idempotency check short-circuits on Status__c
+     * 'Processed', so an 'Error' row no longer skips there. The SECOND guard is what still
+     * blocks a genuine redelivery: `InboundEmailActivityService.isAlreadyLogged(Message_Id__c)`
+     * — and finish() logs that Task even when routing produced no record at all, precisely so
+     * the Message-ID is always recorded. Do not "tidy" the unattached-Task insert away; it is
+     * what keeps this status change from re-minting Leads on redelivery.
+     *
+     * @return The joined failure text, or null when the run had none.
+     */
+    private String routingErrorText() {
+        return routingErrors.isEmpty() ? null : String.join(routingErrors, '\n\n');
     }
 
     /**

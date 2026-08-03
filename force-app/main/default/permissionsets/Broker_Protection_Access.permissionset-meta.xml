@@ -8,7 +8,42 @@
         <apexClass>LeadActionPermissionController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
-    <description>Broker protection: OpenAI credential principal plus access to the claim-ledger and submission-audit objects and the new Lead fields. Assign to the Email Service user and reps who see the submission history. VERIFY AFTER EVERY DEPLOY of this permission set: SELECT SobjectType, COUNT(Id) FROM FieldPermissions WHERE Parent.Name='Broker_Protection_Access' GROUP BY SobjectType must return Lead 28, Task 6, Contact 1, Inbound_Email_Staging__c 19, Competing_Broker_Submission__c 9, Property_Registry__c 3 (plus platform-managed Event mirrors of the Task/Activity rows) — a redeploy has been observed to silently drop the Activity-field rows, which breaks the Email Service context user's (Minimum Access profile) ability to see the standard fields the inbound-email pipeline stamps: on Task, Description/ActivityDate/WhoId/WhatId; on Lead, Description/Phone/Title. If Task.WhoId is missing after a deploy, it is expected — see the XML comment below; it is granted org-side only and must be re-verified/re-granted there, not via this file. Lead.Description/Phone/Title, by contrast, ARE declared below (same convention as DPEG_Acquisition_Edit's Lead.Email/Lead.LeadSource) and are expected to survive a redeploy; if the Lead count drops below 27 after a deploy, that is a regression, not the WhoId-style expected gap. ObjectPermissions must include UserExternalCredential read (1 row) — without it, any callout through the OpenAI Named Credential throws before sending, regardless of the stored key or header configuration.</description>
+    <!--
+        ⚠ THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        `PermissionSet.Description` is capped at 255 characters. The text below had grown to
+        ~1600 and made this file UNDEPLOYABLE from source — every deploy that included it failed
+        with "Description: data value too large", which is how it was found (2026-08-03, during
+        the winner-anchor change that had to add one fieldPermissions entry here). The content is
+        operationally important, so it was moved rather than trimmed; a comment is repo-only and
+        is never sent to the Metadata API, so it can be as long as it needs to be.
+        🔴 Do not paste this back into <description>.
+
+        VERIFY AFTER EVERY DEPLOY of this permission set:
+            SELECT SobjectType, COUNT(Id) FROM FieldPermissions
+            WHERE Parent.Name = 'Broker_Protection_Access' GROUP BY SobjectType
+        must return Lead 28, Task 6, Contact 1, Inbound_Email_Staging__c 19,
+        Competing_Broker_Submission__c 10, Property_Registry__c 3 (plus platform-managed Event
+        mirrors of the Task/Activity rows).
+        ⚠ Competing_Broker_Submission__c moved 9 -> 10 on 2026-08-03 with Winning_Opportunity__c,
+        the post-conversion winner anchor. A count of 9 after this change means the new field's
+        FLS did not land, and the inbound pipeline will read a null anchor on every
+        converted-winner property.
+
+        A redeploy has been observed to silently drop the Activity-field rows, which breaks the
+        Email Service context user's (Minimum Access profile) ability to see the standard fields
+        the inbound-email pipeline stamps: on Task, Description/ActivityDate/WhoId/WhatId; on
+        Lead, Description/Phone/Title. If Task.WhoId is missing after a deploy, it is expected —
+        see the XML comment below; it is granted org-side only and must be re-verified/re-granted
+        there, not via this file. Lead.Description/Phone/Title, by contrast, ARE declared below
+        (same convention as DPEG_Acquisition_Edit's Lead.Email/Lead.LeadSource) and are expected
+        to survive a redeploy; if the Lead count drops below 27 after a deploy, that is a
+        regression, not the WhoId-style expected gap.
+
+        ObjectPermissions must include UserExternalCredential read (1 row) — without it, any
+        callout through the OpenAI Named Credential throws before sending, regardless of the
+        stored key or header configuration.
+    -->
+    <description>Broker protection: OpenAI credential principal plus access to the claim-ledger and submission-audit objects. Assign to the Email Service user and reps who see the submission history. Post-deploy FLS verification steps: see the XML comment in this file.</description>
     <externalCredentialPrincipalAccesses>
         <enabled>true</enabled>
         <externalCredentialPrincipal>OpenAI_Credential-OpenAI_Principal</externalCredentialPrincipal>
@@ -97,6 +132,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Competing_Broker_Submission__c.Winning_Lead__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Competing_Broker_Submission__c.Winning_Opportunity__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

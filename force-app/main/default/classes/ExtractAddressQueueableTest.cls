@@ -2210,6 +2210,66 @@ private class ExtractAddressQueueableTest {
         Assert.isTrue(created.Deal_Notes__c.contains('214-555-0199'), 'and the discarded mobile');
     }
 
+    // ⚠ RE-ADDED 2026-08-03. This test existed after the Intake Rules V2 verification pass but was
+    // absent from the "Broker Protection wave 3" commit (1d573f5) that landed this file's current
+    // shape — apparently lost when that wave was consolidated/rewritten, not a deliberate removal.
+    // The underlying gap it closes (LEN_LISTING_BROKER_NAME=120) is still real and unchanged in
+    // production, so it is restored here rather than re-derived from scratch.
+    @isTest
+    static void envelopeBroker_overLongBodyNamedContactName_clipsRatherThanThrowing() {
+        // 🔴 THE LATENT CLIP MISMATCH (LEN_LISTING_BROKER_NAME). `brokerName` travels UNCLIPPED off
+        // LLMExtractionParser — only `listing_broker_name` is clipped there, never `broker_name` —
+        // but `demoteBodyBroker` is the FIRST code path that moves a body-named `brokerName` into
+        // `Listing_Broker_Name__c` (Text(120)) WITHOUT passing back through the parser's own clip.
+        // If demoteBodyBroker ever dropped its own `InboundEmailFieldUtil.clip` call, a body-named
+        // contact with a 121+ character name would throw STRING_TOO_LONG on DML and roll back an
+        // otherwise-successful claim — silently, since nothing about the inbound email looks unusual.
+        String overLongName = 'Alexander Bartholomew Christopherson-Fitzgerald Montgomery Wellington '
+            + 'the Third, Senior Managing Director of Institutional Capital Markets and Investment Sales';
+        Assert.isTrue(overLongName.length() > 120,
+            'Precondition: the fixture name must actually exceed Listing_Broker_Name__c\'s length, or '
+            + 'the assertions below prove nothing about clipping');
+
+        Inbound_Email_Staging__c staging = insertForwardedByCoordinator(
+            'usmankhan-96@hotmail.example.invalid',
+            'Deal for you',
+            'Hi team — take a look at this one and let me know. Thanks.',
+            'msg-u1-overlong-name@example.invalid');
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'acquisition_deal',
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'broker_name' => overLongName,
+                'broker_email' => 'mark.stern@jll.example.invalid',
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{ 'property_address' => '920 Overlong Name Way' }
+            })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Status__c, Error__c, Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual('Processed', updatedStaging.Status__c,
+            'The claim must NOT roll back on a STRING_TOO_LONG — a demoted name over 120 characters '
+            + 'must be CLIPPED, never thrown. Actual Error__c: ' + updatedStaging.Error__c);
+        Assert.isNull(updatedStaging.Error__c, 'and no error should be recorded on the staging row');
+        Assert.isNotNull(updatedStaging.Result_Record_Id__c, 'the Lead must still have been created');
+
+        Lead created = [
+            SELECT Listing_Broker_Name__c FROM Lead WHERE Id = :updatedStaging.Result_Record_Id__c
+        ];
+        Assert.areEqual(120, created.Listing_Broker_Name__c.length(),
+            'The demoted name must be clipped to EXACTLY the field length, matching '
+            + 'InboundEmailFieldUtil.clip\'s contract');
+        Assert.areEqual(overLongName.substring(0, 120), created.Listing_Broker_Name__c,
+            'and the clip must preserve the HEAD of the name (substring(0, n)), never the tail');
+    }
+
     @isTest
     static void envelopeBroker_modelAlreadyNamedTheSender_changesNothing() {
         // 🔴 THE DISCRIMINATION TEST. On a well-extracted email the model and the envelope name the
@@ -2823,5 +2883,354 @@ private class ExtractAddressQueueableTest {
             'and it is filed on the conversation it continues');
         Assert.isTrue(updatedStaging.Extracted_JSON__c.contains('reply'),
             'The skip marker proves no callout was made, so the gate was structurally unreachable');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // WINNER ANCHOR + ERROR CAPTURE, 2026-08-03 — the production-incident section
+    //
+    // Reproduces staging row a0aiw000000OCckAAG on usman-dpeg: a broker's follow-up about a
+    // property whose winning Lead had been CONVERTED earlier the same day. Branch (b) tried to
+    // write an audit row pointing at the converted Lead, the platform rejected it
+    // (CANNOT_UPDATE_CONVERTED_LEAD), the per-property catch swallowed the message, and the email
+    // landed with `Outcome__c = 'Error (System.DmlException)'`, `Error__c` NULL and no Task target.
+    //
+    // WHY NO TEST CAUGHT IT, recorded here so the gap is not re-opened: the whole suite built its
+    // winner with TestDataFactory.createLead(true) — an OPEN Lead — and this class contained not a
+    // single Database.convertLead call. The "winner is unavailable" case was modelled exactly once,
+    // as DELETED (execute_priorSubmissionWinnerLeadDeleted_...), which documents the very same
+    // failure signature through the other door. This section is the second door.
+    //
+    // NO NEW VOLUME TEST IS TRIGGERED. The anchor change adds ZERO per-property queries on the
+    // branches that fire — branches (b) and (d) resolve the live record once and now pass it to
+    // the write instead of only to the outcome — so none of the governor budgets above move. A
+    // literal 251 remains impossible here for the reasons in the class header.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Convert a Lead and hand back its Opportunity.
+     *
+     * ⚠ THE OPPORTUNITY CASCADE IS DELIBERATELY NOT SUPPRESSED —
+     * setDoNotCreateOpportunity(true) throws UNKNOWN_EXCEPTION on this org. The plain conversion
+     * is the shape LeadConvertServiceTest already proves safe, and its Opportunity is precisely
+     * what the winner anchor must point at.
+     *
+     * @param leadToConvert An inserted Lead.
+     * @return The Id of the Opportunity that conversion created.
+     */
+    private static Id convertAndGetOpportunity(Lead leadToConvert) {
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(leadToConvert.Id);
+        lc.setConvertedStatus([SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel);
+        Database.LeadConvertResult result = Database.convertLead(lc);
+        Assert.isTrue(result.isSuccess(), 'The fixture Lead must convert for these tests to mean anything');
+        return result.getOpportunityId();
+    }
+
+    /**
+     * The extraction shape the live incident produced: an envelope sender who IS the broker (U1
+     * demotes to them), a body naming a DIFFERENT broker at a DIFFERENT domain (so the
+     * cross-domain company clear fires and Company falls back to the placeholder), and one fully
+     * populated property.
+     *
+     * @param address The property address to pitch.
+     */
+    private static void setIncidentShapeMock(String address) {
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'broker_name' => 'Marco Zando',
+                'broker_email' => 'marco@nx3commercial.example.invalid',
+                'broker_company' => 'NX3',
+                'broker_phone' => '973-558-1723',
+                'listing_broker_name' => '',
+                'listing_broker_email' => '',
+                'email_category' => 'other',
+                'category_confidence' => 0.9,
+                'is_acquisition_related' => true,
+                'confidence' => 0.95,
+                'sent_datetime' => ''
+            }, new List<Map<String, Object>>{
+                new Map<String, Object>{
+                    'property_address' => address,
+                    'property_name' => 'Shops at Botanica',
+                    'noi' => 1646296,
+                    'occupancy_pct' => 100,
+                    'building_sf' => 55873,
+                    'lot_size_acres' => 5.41,
+                    'year_built' => 2026,
+                    'walt_years' => 9.6,
+                    'sale_process' => 'On-Market Listing'
+                }
+            })));
+    }
+
+    // ── (b) REPEAT onto a CONVERTED winner — THE ACCEPTANCE TEST ────────────
+    //
+    // This is the incident, reproduced. It FAILS before the winner-anchor change (DmlException,
+    // no audit row, no Task target) and passes after.
+
+    @isTest
+    static void execute_repeatWhenWinnerLeadHasBeenConverted_filesOnTheOpportunityAndStillWritesTheAuditRow() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        TestDataFactory.createPropertyRegistry('15301 sw 127th avenue miami fl', winnerLead.Id, true);
+
+        // The winner's OWN submission, written while the Lead was still open — the row branch (b)
+        // will match on. This is exactly CBS-0000012 in the incident.
+        Competing_Broker_Submission__c priorSub =
+            TestDataFactory.createCompetingBrokerSubmission(winnerLead.Id, false);
+        priorSub.Source_Lead__c = winnerLead.Id;
+        priorSub.Is_Winning_Submission__c = true;
+        priorSub.Broker_Email__c = 'jane.broker@example.invalid';
+        priorSub.Property_Address_Raw__c = '15301 SW 127th Avenue, Miami, FL';
+        priorSub.Submitted_DateTime__c = Datetime.now().addDays(-1);
+        insert priorSub;
+
+        // THE EVENT THAT MADE THE BUG REACHABLE: a human converted the winner during UAT.
+        Id opportunityId = convertAndGetOpportunity(winnerLead);
+
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+        Integer subsBefore = [SELECT COUNT() FROM Competing_Broker_Submission__c];
+
+        // Envelope sender = the broker (with a display name, as the incident had); the BODY names
+        // a different broker at a different domain, so U1 demotes and the company is cleared.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'jane.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'Shops at Botanica - Miami FL', 'Following up on Shops at Botanica.',
+            'msg-converted-winner-repeat@example.invalid', null, null);
+        setIncidentShapeMock('15301 SW 127th Avenue, Miami, FL');
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Status__c, Outcome__c, Error__c, Result_Record_Id__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_REPEAT, updatedStaging.Outcome__c,
+            'The follow-up is a REPEAT. Before the winner-anchor change this read "Error (System.DmlException)" '
+            + 'because the audit-row insert pointed at a converted Lead');
+        Assert.isNull(updatedStaging.Error__c,
+            'and it must now complete cleanly — a non-null Error__c here means the anchor swap did not take');
+        Assert.areEqual('Processed', updatedStaging.Status__c, 'A clean repeat still stamps Processed');
+        Assert.areEqual(opportunityId, updatedStaging.Result_Record_Id__c,
+            'A converted winner routes to the OPPORTUNITY that now holds the deal, never to the husk Lead');
+
+        Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead],
+            'A repeat never creates a Lead, converted winner or not');
+        Assert.areEqual(subsBefore + 1, [SELECT COUNT() FROM Competing_Broker_Submission__c],
+            'THE AUDIT ROW IS THE POINT: the append-only trail must survive the winner converting');
+
+        Competing_Broker_Submission__c appended = [
+            SELECT Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c, Broker_Email__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Opportunity__c = :opportunityId
+        ];
+        Assert.areEqual(opportunityId, appended.Winning_Opportunity__c, 'The new row anchors on the Opportunity');
+        Assert.isNull(appended.Winning_Lead__c, 'EXACTLY ONE ANCHOR — the converted Lead is never written');
+        Assert.areEqual('jane.broker@example.invalid', appended.Broker_Email__c,
+            'U1 still applies: the ENVELOPE sender is the broker of record, not the body-named contact');
+
+        Task logged = [
+            SELECT WhoId, WhatId FROM Task
+            WHERE Inbound_Message_Id__c = 'msg-converted-winner-repeat@example.invalid'
+        ];
+        Assert.areEqual(opportunityId, logged.WhatId,
+            'The email itself is filed on the live Opportunity (WhatId, not WhoId — it is no longer a Lead)');
+
+        // NO NEW QUERY BUDGET CONSTANT HERE, DELIBERATELY. The two existing headroom tests
+        // (10-property winner, single-property U1) already guard the shared prologue/epilogue and
+        // the winner path, and this change adds NOTHING to branch (b)'s count: the single
+        // resolveLiveRecord call the branch always made was MOVED above the DML and its result
+        // reused, rather than a second lookup being added. Introducing a fresh budget constant
+        // that no one had measured would be a number invented to be asserted.
+    }
+
+    // ── (b) REPEAT again, once the prior row is ITSELF Opportunity-anchored ──
+    //
+    // 🔴 THIS IS THE TEST THAT PROVES THE SELECTOR WIDEN IS LOAD-BEARING. The third email finds a
+    // prior row whose Winning_Lead__c is NULL. Restore
+    // `WHERE Winning_Lead__c != null` in CompetingBrokerSubmissionSelector and this test goes red
+    // with the exact production symptom: the winning broker's own follow-up stops matching as a
+    // repeat, falls through to branch (d), and is recorded as a COMPETING claim against themselves.
+
+    @isTest
+    static void execute_repeatWhenPriorRowIsOpportunityAnchored_isStillARepeatNotACompetingClaim() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        TestDataFactory.createPropertyRegistry('900 anchored ave', winnerLead.Id, true);
+        Id opportunityId = convertAndGetOpportunity(winnerLead);
+
+        // The row a PREVIOUS post-conversion follow-up already wrote: Opportunity-anchored, both
+        // Lead lookups null.
+        insert new Competing_Broker_Submission__c(
+            Winning_Opportunity__c = opportunityId,
+            Broker_Email__c = 'anchored.broker@example.invalid',
+            Broker_Name__c = 'Anchored Broker',
+            Property_Address_Raw__c = '900 Anchored Ave',
+            Submitted_DateTime__c = Datetime.now().addDays(-1),
+            Is_Winning_Submission__c = false
+        );
+
+        Integer subsBefore = [SELECT COUNT() FROM Competing_Broker_Submission__c];
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'anchored.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            '900 Anchored Ave - third email', 'Any movement here?',
+            'msg-anchored-repeat@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Anchored Broker', 'broker_email' => 'anchored.broker@example.invalid',
+            'property_address' => '900 Anchored Ave', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Outcome__c, Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_REPEAT, updatedStaging.Outcome__c,
+            'An Opportunity-anchored prior row must still be visible to repeat detection. If this reads '
+            + '"Competing Submission", the selector is filtering on Winning_Lead__c alone again and the '
+            + 'WINNING broker is being recorded as a competitor against themselves');
+        Assert.areEqual(opportunityId, updatedStaging.Result_Record_Id__c,
+            'and the repeat routes to the Opportunity named by the prior row, with no resolve query needed');
+        Assert.areEqual(subsBefore + 1, [SELECT COUNT() FROM Competing_Broker_Submission__c],
+            'The trail keeps growing under the same Opportunity');
+    }
+
+    // ── (d) COMPETING SUBMISSION onto a CONVERTED winner ────────────────────
+
+    @isTest
+    static void execute_competingSubmissionWhenWinnerLeadHasBeenConverted_filesOnTheOpportunityAndCreatesNoLead() {
+        Lead winnerLead = TestDataFactory.createLead(true);
+        TestDataFactory.createPropertyRegistry('950 competing converted rd', winnerLead.Id, true);
+        Id opportunityId = convertAndGetOpportunity(winnerLead);
+
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+
+        // A DIFFERENT broker, so there is no prior submission to match and branch (b) is skipped.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'rival.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: 950 Competing Converted Rd', 'Presenting 950 Competing Converted Rd.',
+            'msg-competing-converted@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Rival Broker', 'broker_email' => 'rival.broker@example.invalid',
+            'property_address' => '950 Competing Converted Rd', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Status__c, Outcome__c, Error__c, Result_Record_Id__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_DUPLICATE, updatedStaging.Outcome__c,
+            'Branch (d) carries the identical defect and must be fixed by the identical anchor rule');
+        Assert.isNull(updatedStaging.Error__c, 'with no DmlException left behind');
+        Assert.areEqual(opportunityId, updatedStaging.Result_Record_Id__c,
+            'A competing broker\'s email is filed on the winner\'s live Opportunity');
+        Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead],
+            'A competing broker still receives no Lead — the 2026-07-31 contract is unchanged');
+
+        Competing_Broker_Submission__c logged = [
+            SELECT Winning_Lead__c, Winning_Opportunity__c, Source_Lead__c, Broker_Email__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Opportunity__c = :opportunityId
+        ];
+        Assert.isNull(logged.Winning_Lead__c, 'EXACTLY ONE ANCHOR');
+        Assert.isNull(logged.Source_Lead__c, 'and a competing broker still has no source Lead');
+        Assert.areEqual('rival.broker@example.invalid', logged.Broker_Email__c,
+            'The submission stays the only record of who the competing broker was');
+    }
+
+    // ── ERROR CAPTURE (defect 2) ────────────────────────────────────────────
+    //
+    // The catch's job is to persist ANY failure, so these use the forceRouteFailure seam rather
+    // than the converted-winner bug that exposed it — that bug is now fixed, and coupling the
+    // assertion to it would leave the contract unexercised the moment it was.
+
+    @isTest
+    static void execute_perPropertyFailure_persistsTheMessageAndStackOnErrorNotJustTheType() {
+        Inbound_Email_Staging__c staging = insertStaging(
+            'failing.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: 1000 Failure Way', 'Presenting 1000 Failure Way.',
+            'msg-error-capture@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Failing Broker', 'broker_email' => 'failing.broker@example.invalid',
+            'property_address' => '1000 Failure Way', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        ExtractAddressQueueable.forceRouteFailure = true;
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+        ExtractAddressQueueable.forceRouteFailure = false;
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Status__c, Outcome__c, Error__c, Result_Record_Id__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_ERROR + ' (System.DmlException)',
+            updatedStaging.Outcome__c,
+            'Outcome__c keeps carrying the TYPE — it is the filterable reporting field and its format is unchanged');
+        Assert.isNotNull(updatedStaging.Error__c,
+            'THE WHOLE POINT: staging row a0aiw000000OCckAAG had this NULL, which is why a production '
+            + 'DmlException cost a code-read instead of a query');
+        Assert.isTrue(updatedStaging.Error__c.contains('System.DmlException'),
+            'Error__c must name the exception type');
+        Assert.isTrue(updatedStaging.Error__c.contains('Simulated per-property routing failure'),
+            'and carry the MESSAGE, which the old catch discarded entirely');
+        Assert.isTrue(updatedStaging.Error__c.contains(' | line '), 'and the line number');
+        Assert.isTrue(updatedStaging.Error__c.contains('1000 failure way'),
+            'and name WHICH property failed — an email can carry ten, and "one of them broke" is not diagnosable');
+        Assert.areEqual('Error', updatedStaging.Status__c,
+            'A per-property failure now stamps Status Error, which is what the class header always promised '
+            + 'and what makes the row re-runnable once the cause is fixed');
+
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM Task WHERE Inbound_Message_Id__c = 'msg-error-capture@example.invalid'
+        ], 'The Task is STILL logged, unattached — that Message-ID guard, not the Status guard, is what '
+         + 'stops a redelivery from re-running the pipeline now that Status can be Error');
+    }
+
+    // ⚠ NOT A GENUINE PARTIAL-FAILURE TEST, AND ITS NAME NO LONGER CLAIMS TO BE ONE. Both
+    // properties succeed below — `forceRouteFailure` is ALL-OR-NOTHING per job (it is a single
+    // static boolean, not property-indexed), so it cannot make exactly one of several properties
+    // fail without a production-code change (e.g. a call-count-aware seam), which is out of scope
+    // for a tests-only fix. This method is the CONTROL for
+    // execute_perPropertyFailure_persistsTheMessageAndStackOnErrorNotJustTheType immediately
+    // above: together the two show Error__c is written WHEN AND ONLY WHEN something actually
+    // failed. There is currently no test of a genuine mixed-outcome multi-property email (some
+    // properties route successfully while one fails in the same run) — flagged to the reviewer
+    // as a gap that needs a property-count-aware test seam to close, not a test-file-only change.
+    @isTest
+    static void execute_multiPropertyCleanRun_leavesErrorNullAndDoesNotFlipStatus() {
+        Inbound_Email_Staging__c staging = insertStaging(
+            'partial.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: two properties', 'Two properties attached.',
+            'msg-partial-failure@example.invalid', null, null);
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.propertiesBody('partial.broker@example.invalid',
+                new List<String>{ '1100 Partial St', '1200 Partial Ave' })));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Status__c, Outcome__c, Error__c, Routed_Record_Ids__c, Property_Count__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(2, updatedStaging.Property_Count__c, 'Both properties were extracted');
+        Assert.isNull(updatedStaging.Error__c,
+            'A clean multi-property run must leave Error__c null — wiring routingErrors into finish() '
+            + 'must not start reporting phantom failures on the happy path');
+        Assert.areEqual('Processed', updatedStaging.Status__c, 'and must not flip Status either');
+        Assert.isNotNull(updatedStaging.Routed_Record_Ids__c,
+            'A multi-result email still writes the full per-property audit block');
+        Assert.isTrue(updatedStaging.Outcome__c.startsWith(ExtractAddressQueueable.OUTCOME_MULTI_PREFIX),
+            'and still summarises as a multi-property outcome');
     }
 }
