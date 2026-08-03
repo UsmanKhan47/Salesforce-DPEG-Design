@@ -2201,13 +2201,35 @@ private class ExtractAddressQueueableTest {
         Assert.isNull(created.Phone, 'The body-named contact\'s office line is not this Lead\'s phone');
         Assert.isNull(created.Title, 'nor their title');
 
-        Assert.isTrue(created.Deal_Notes__c.contains('Sender-first identity'),
-            'The demotion must be recorded — the cleared values reach no field, so this note is the '
-            + 'ONLY route back for a human. Actual notes: ' + created.Deal_Notes__c);
-        Assert.isTrue(created.Deal_Notes__c.contains('JLL'), 'The discarded company must be named');
-        Assert.isTrue(created.Deal_Notes__c.contains('Managing Director'), 'and the discarded title');
-        Assert.isTrue(created.Deal_Notes__c.contains('214-555-0100'), 'and the discarded office line');
-        Assert.isTrue(created.Deal_Notes__c.contains('214-555-0199'), 'and the discarded mobile');
+        // ⚠ REWORKED 2026-08-03 — SAME GUARANTEE, DIFFERENT (AND CORRECT) LOCATION.
+        // These four used to assert the discarded values appeared in a "Sender-first identity"
+        // note on Deal_Notes__c. That note has been removed: it was pipeline bookkeeping rendered
+        // on the record a human works. The guarantee it protected — NOTHING IS SILENTLY LOST — is
+        // unchanged and is now pinned where the data actually survives, which is strictly more
+        // truthful than pinning prose.
+        Assert.isFalse(created.Deal_Notes__c != null && created.Deal_Notes__c.contains('Sender-first identity'),
+            'THE DEMOTION NOTE MUST NOT REACH THE LEAD. Actual notes: ' + created.Deal_Notes__c);
+        // AND NO ORPHANED HEADER. EmailToLeadService.buildDealNotes only emits
+        // '-- Extraction notes --' when the notes list is non-empty, so removing the demotion note
+        // cannot leave the header stranded — this pins that rather than trusting it. Asserted as
+        // "never the trailing content" instead of "Deal_Notes__c is null" so a legitimate parser
+        // rejection note on this fixture could never turn it red for the wrong reason.
+        Assert.isFalse(
+            created.Deal_Notes__c != null && created.Deal_Notes__c.trim().endsWith('-- Extraction notes --'),
+            'The extraction-notes header must never be emitted with nothing under it. Actual: '
+            + created.Deal_Notes__c);
+
+        String extractedJson = [
+            SELECT Extracted_JSON__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Extracted_JSON__c;
+        Assert.isTrue(extractedJson.contains('JLL'),
+            'THE AUDIT TRAIL FOR A DEMOTION LIVES ON THE STAGING ROW: the discarded company survives '
+            + 'verbatim in Extracted_JSON__c, written before routing and never mutated. Actual: ' + extractedJson);
+        Assert.isTrue(extractedJson.contains('Managing Director'), 'and the discarded title');
+        Assert.isTrue(extractedJson.contains('214-555-0100'), 'and the discarded office line');
+        Assert.isTrue(extractedJson.contains('214-555-0199'),
+            'and the discarded mobile — which has no Lead field at all (Lead.MobilePhone does not '
+            + 'exist in this org), so the staging row is its ONLY home');
     }
 
     // ⚠ RE-ADDED 2026-08-03. This test existed after the Intake Rules V2 verification pass but was
@@ -2291,7 +2313,8 @@ private class ExtractAddressQueueableTest {
             SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
         ].Result_Record_Id__c;
         Lead created = [
-            SELECT Email, Company, Phone, Title, Listing_Broker_Email__c, Deal_Notes__c
+            SELECT Email, Company, Phone, Title, Listing_Broker_Email__c, Listing_Broker_Name__c,
+                   Deal_Notes__c
             FROM Lead WHERE Id = :leadId
         ];
 
@@ -2301,10 +2324,15 @@ private class ExtractAddressQueueableTest {
             + 'exactly what makes U3\'s footer extraction worth having on this path');
         Assert.areEqual('214-555-0100', created.Phone, 'The phone survives');
         Assert.areEqual('Managing Director', created.Title, 'and the title');
+        // ⚠ THE LISTING SLOT IS NOW THE ONLY DISCRIMINATOR ON THIS PATH (2026-08-03). It used to be
+        // paired with "and no Sender-first note is added", which became vacuous when the note was
+        // removed — a removed note is absent on EVERY path, so asserting its absence here would no
+        // longer distinguish "guard 3 stood down" from "the demotion ran". An empty listing slot
+        // still does: the demotion always fills it.
         Assert.isNull(created.Listing_Broker_Email__c,
-            'No demotion happened, so nothing was written to the listing-contact slot');
-        Assert.isTrue(created.Deal_Notes__c == null || !created.Deal_Notes__c.contains('Sender-first identity'),
-            'and NO demotion note is added. Actual notes: ' + created.Deal_Notes__c);
+            'NO DEMOTION HAPPENED — guard 3 (the model already agreed) stood down, so nothing was '
+            + 'written to the listing-contact slot. This is what proves the demotion did not run');
+        Assert.isNull(created.Listing_Broker_Name__c, 'and neither half of the slot was touched');
     }
 
     @isTest
@@ -2329,15 +2357,19 @@ private class ExtractAddressQueueableTest {
         Id leadId = [
             SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
         ].Result_Record_Id__c;
-        Lead created = [SELECT Email, Company, Deal_Notes__c FROM Lead WHERE Id = :leadId];
+        Lead created = [
+            SELECT Email, Company, Listing_Broker_Email__c FROM Lead WHERE Id = :leadId
+        ];
 
         Assert.areEqual('mark.stern@jll.example.invalid', created.Email,
             'When the envelope sender IS our own forwarder, the body-extracted identity must be '
             + 'kept. If this ever reads coordinator@dpeg.example.invalid, the pipeline has started '
             + 'crediting DPEG staff with broker submissions');
         Assert.areEqual('JLL', created.Company, 'and the extracted contact block survives intact');
-        Assert.isTrue(created.Deal_Notes__c == null || !created.Deal_Notes__c.contains('Sender-first identity'),
-            'The guard returns BEFORE any demotion, so there is no note. Actual: ' + created.Deal_Notes__c);
+        // Replaces a "no Sender-first note" check that the note's removal made vacuous — an empty
+        // listing slot is what actually distinguishes "the guard returned" from "the demotion ran".
+        Assert.isNull(created.Listing_Broker_Email__c,
+            'The guard returns BEFORE any demotion, so the listing-contact slot is untouched');
     }
 
     @isTest
@@ -2378,14 +2410,18 @@ private class ExtractAddressQueueableTest {
                 SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staged.Id
             ].Result_Record_Id__c;
             Assert.isNotNull(leadId, 'A Lead must still be created for staging ' + staged.Id);
-            Lead created = [SELECT Email, Company, Deal_Notes__c FROM Lead WHERE Id = :leadId];
+            Lead created = [
+                SELECT Email, Company, Listing_Broker_Email__c FROM Lead WHERE Id = :leadId
+            ];
 
             Assert.areEqual('mark.stern@jll.example.invalid', created.Email,
                 'A blank envelope sender must fall back to the body-extracted identity rather than '
                 + 'blanking the broker. Staging: ' + staged.Id);
             Assert.areEqual('JLL', created.Company, 'and nothing is demoted');
-            Assert.isTrue(created.Deal_Notes__c == null || !created.Deal_Notes__c.contains('Sender-first identity'),
-                'Guard 1 returns BEFORE any demotion, so there is no note. Actual: ' + created.Deal_Notes__c);
+            // Replaces a "no Sender-first note" check the note's removal made vacuous.
+            Assert.isNull(created.Listing_Broker_Email__c,
+                'Guard 1 returns BEFORE any demotion, so the listing-contact slot is untouched. '
+                + 'Staging: ' + staged.Id);
         }
     }
 
@@ -2426,9 +2462,12 @@ private class ExtractAddressQueueableTest {
         Assert.isNull(created.Title, 'nor a job title');
         Assert.areEqual('mark.stern@jll.example.invalid', created.Listing_Broker_Email__c,
             'and the body-named contact is still demoted to the listing slot');
-        Assert.isTrue(created.Deal_Notes__c.contains('the company (JLL) was kept'),
-            'The note must say the company was KEPT, not list it as discarded — sending someone to '
-            + 'hunt for data the record still carries is its own defect. Actual: ' + created.Deal_Notes__c);
+        // ⚠ REWORKED 2026-08-03. This used to assert the note said "the company (JLL) was kept".
+        // The note is gone, but what it protected was never the prose — it was the RETENTION
+        // itself, which the Company assertion above pins directly and unambiguously. Pinning the
+        // field is strictly stronger than pinning a sentence describing the field.
+        Assert.isFalse(created.Deal_Notes__c != null && created.Deal_Notes__c.contains('Sender-first identity'),
+            'and no demotion note reaches the Lead on the same-firm path either. Actual: ' + created.Deal_Notes__c);
     }
 
     @isTest
@@ -2455,11 +2494,17 @@ private class ExtractAddressQueueableTest {
         Assert.areEqual(EmailToLeadService.COMPANY_PLACEHOLDER, created.Company,
             'DIFFERENT DOMAINS: keeping "JLL" would attribute this deal to JLL\'s Account on '
             + 'conversion, when the person who sent it has no connection to JLL at all');
-        Assert.isTrue(created.Deal_Notes__c.contains('JLL'),
-            'The discarded firm must still be named in the note — clearing it is recoverable only '
-            + 'because a human can read what it was. Actual: ' + created.Deal_Notes__c);
-        Assert.isFalse(created.Deal_Notes__c.contains('was kept'),
-            'and the note must NOT claim the company was retained');
+        // ⚠ REWORKED 2026-08-03. Both prose assertions ("the note names JLL", "the note must not
+        // say 'was kept'") existed to prove the CLEAR is recoverable and not mis-described. The
+        // recoverability guarantee is unchanged and now pinned at its real source; the
+        // mis-description one is retired with the sentence that could carry it.
+        Assert.isTrue([
+            SELECT Extracted_JSON__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Extracted_JSON__c.contains('JLL'),
+            'The discarded firm survives verbatim on the staging row, which is what makes clearing '
+            + 'Lead.Company recoverable — the audit trail for a demotion lives there, not on the Lead');
+        Assert.isFalse(created.Deal_Notes__c != null && created.Deal_Notes__c.contains('JLL'),
+            'and it must NOT be re-narrated onto the Lead. Actual: ' + created.Deal_Notes__c);
     }
 
     @isTest
@@ -2505,11 +2550,21 @@ private class ExtractAddressQueueableTest {
         Assert.areEqual('alex.lister@listingco.example.invalid', created.Listing_Broker_Email__c,
             'A listing broker the model named EXPLICITLY must survive the demotion untouched');
         Assert.areEqual('Alex Lister', created.Listing_Broker_Name__c, 'and so must their name');
-        Assert.isTrue(created.Deal_Notes__c.contains('Sender-first identity'),
-            'The demoted body-named contact still has to be recorded SOMEWHERE, and with the '
-            + 'listing slot occupied the note is the only place left. Actual: ' + created.Deal_Notes__c);
-        Assert.isTrue(created.Deal_Notes__c.contains('mark.stern@jll.example.invalid'),
-            'and it must name the demoted address specifically');
+
+        // ⚠ REWORKED 2026-08-03, AND THIS IS THE MOST IMPORTANT OF THE FIVE. This path is the ONE
+        // shape where the demoted contact reaches NO Lead field at all: the listing slot is already
+        // occupied by an explicitly-named listing broker, so the fill-if-blank demotion writes
+        // nothing. The old assertions leaned on the note as "the only place left". With the note
+        // gone the guarantee still holds — but only because Extracted_JSON__c holds the model's
+        // raw response. That is exactly the claim this rework must prove rather than assume.
+        Assert.isFalse(created.Deal_Notes__c != null && created.Deal_Notes__c.contains('Sender-first identity'),
+            'No demotion note on the Lead, on this path either. Actual: ' + created.Deal_Notes__c);
+        Assert.isTrue([
+            SELECT Extracted_JSON__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Extracted_JSON__c.contains('mark.stern@jll.example.invalid'),
+            'THE DEMOTED CONTACT IS STILL RECOVERABLE: with the listing slot already occupied, the '
+            + 'staging row\'s Extracted_JSON__c is the only record of who the body named — which is '
+            + 'why removing the note is safe ONLY as long as that field keeps the raw response');
     }
 
     @isTest

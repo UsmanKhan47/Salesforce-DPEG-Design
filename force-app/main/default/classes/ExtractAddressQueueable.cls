@@ -605,8 +605,11 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             applyRegexFallback(extraction);
             applyEnvelopeEmailFallback(extraction);
             // U1 SENDER-FIRST IDENTITY (intake-rules-v2). LAST of the three identity steps and
-            // BEFORE both gates: it must run even for an email that is about to be gated, so the
-            // demotion note still reaches the staging audit trail.
+            // BEFORE both gates, so a gated email is still attributed to the right broker: the
+            // identity feeds the Task this email is logged against and, on a claim path, the
+            // arbitration key. (It used to say "so the demotion note still reaches the staging
+            // audit trail" — that note was removed 2026-08-03; the ordering reason stands on its
+            // own and never depended on it.)
             applySenderFirstBrokerIdentity(extraction);
 
             if (isHardGated(extraction)) {
@@ -1926,7 +1929,36 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
 
     /**
      * Swap the envelope sender into the broker identity and demote whoever the BODY named to the
-     * listing-contact fields, recording every discarded value in one note.
+     * listing-contact fields.
+     *
+     * ═══ 🔴 NO NOTE IS WRITTEN TO THE LEAD, AND NOTHING IS LOST BY THAT (2026-08-03) ═══
+     * This method used to append a "Sender-first identity: ..." note to `Deal_Notes__c` naming
+     * every value the demotion discarded. It has been REMOVED at the user's request: it is
+     * pipeline bookkeeping, and it was surfacing on the record a human works as if it were deal
+     * information. Do not reinstate it.
+     *
+     * WHERE EACH DISCARDED VALUE ACTUALLY LIVES — verified before removal:
+     *   • `brokerName` / `brokerEmail` -> `Lead.Listing_Broker_Name__c` / `Listing_Broker_Email__c`,
+     *     written by this very method (fill-if-blank). They are ON THE LEAD, as fields.
+     *   • `brokerCompany`, `brokerPhone`, `brokerMobile`, `brokerTitle` -> preserved VERBATIM in
+     *     `Inbound_Email_Staging__c.Extracted_JSON__c`, which `execute()` writes with the model's
+     *     raw response BEFORE any routing decision (D3) and which nothing ever mutates.
+     *
+     * 🔴 THE RULE THIS ESTABLISHES: THE AUDIT TRAIL FOR A DEMOTION LIVES ON THE STAGING ROW, NOT
+     * ON THE LEAD. `Extracted_JSON__c` is the complete, immutable record of what the model said;
+     * the Lead carries only what a human working the deal needs. A future change that wants to
+     * "restore visibility" of a discarded value should surface the staging row, not re-add prose
+     * to `Deal_Notes__c`.
+     *
+     * ⚠ THE OTHER `Deal_Notes__c` CONTRIBUTIONS ARE UNAFFECTED and must stay: the model's
+     * `deal_summary`, the parser's plausibility-rejection notes ("offer_due_date '2023-08-11' was
+     * ignored: not a plausible offer deadline"), and the spillover list of properties the email
+     * carried but the pipeline could not route. Each of those describes the DEAL and exists
+     * nowhere else on the record. Only the demotion note described the pipeline itself.
+     *
+     * ⚠ `EmailToLeadService.buildDealNotes` only emits the '-- Extraction notes --' header when
+     * the notes list is non-empty, and returns null when no section contributed at all — so
+     * removing this note cannot leave an orphaned header or an empty `Deal_Notes__c`.
      *
      * ═══ 🔴 WHY THE CONTACT BLOCK IS CLEARED RATHER THAN CARRIED OVER ═══
      * `brokerPhone`, `brokerMobile` and `brokerTitle` describe the BODY-NAMED PERSON, not the
@@ -1936,7 +1968,8 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * across firms would ATTRIBUTE THE DEAL TO THE BODY-NAMED BROKER'S FIRM'S ACCOUNT. Clearing it
      * drops `Lead.Company` to `EmailToLeadService.COMPANY_PLACEHOLDER`, which
      * `LeadConvertMatchService` (D1b) DELIBERATELY EXCLUDES from Account matching — the correct,
-     * recoverable outcome. The firm name is not lost, it is in the note, one click from a human.
+     * recoverable outcome. The firm name is not lost — it survives verbatim in the staging row's
+     * `Extracted_JSON__c` (see the NO NOTE section above).
      *
      * ═══ THE ONE EXCEPTION: SAME-FIRM (TEAM-BLAST) SENDS KEEP THE COMPANY ═══
      * When the envelope sender and the body-named broker share an email DOMAIN, they are
@@ -1976,13 +2009,12 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * @param sender     The sanitized envelope sender that becomes the broker identity.
      */
     private void demoteBodyBroker(LLMExtractionResult extraction, String sender) {
+        // Computed BEFORE brokerEmail is overwritten — it compares the sender's domain against the
+        // BODY-NAMED broker's, and the next few lines destroy that value.
         Boolean sameFirm = isSameFirmDomain(sender, extraction.brokerEmail);
 
-        // ⚠ THE NOTE IS COMPOSED FIRST, WHILE THE VALUES STILL EXIST. Everything below this line
-        // destroys the inputs it reads, so moving this call after the clears would silently emit a
-        // note naming nothing — and that note is the ONLY record of the discarded contact block.
-        String note = buildDemotionNote(extraction, sender, sameFirm);
-
+        // ⚠ CAPTURE BEFORE CLEARING. Everything below destroys the values these two hold, and they
+        // are what the listing-contact slot is filled from.
         String oldName = extraction.brokerName;
         String oldEmail = extraction.brokerEmail;
 
@@ -2002,51 +2034,6 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             extraction.listingBrokerName =
                 InboundEmailFieldUtil.clip(oldName, LEN_LISTING_BROKER_NAME);
         }
-
-        extraction.addNote(note);
-    }
-
-    /**
-     * The demotion note. It must name EVERY value the demotion is about to discard, because this
-     * note is the ONLY route back for a human: the contact block is cleared in memory and never
-     * reaches a field. `LLMExtractionResult.addNote` lands it on `Deal_Notes__c` under
-     * '-- Extraction notes --'.
-     *
-     * ⚠ CALL THIS BEFORE MUTATING `extraction` — it reads the values it reports.
-     *
-     * @param extraction The extraction, still carrying the body-named broker's contact block.
-     * @param sender     The envelope sender that is taking over the broker identity.
-     * @param sameFirm   True when sender and body-named broker share a domain, so the company is
-     *                   RETAINED and must not be reported as discarded.
-     * @return The note text; never blank.
-     */
-    private static String buildDemotionNote(LLMExtractionResult extraction, String sender,
-                                            Boolean sameFirm) {
-        String named = joinNonBlank(
-            new List<String>{ extraction.brokerName, extraction.brokerEmail }, ' ');
-        // The company is listed as discarded ONLY when it actually is. Naming a value the record
-        // still carries would send someone hunting for data that never left.
-        String detail = joinNonBlank(new List<String>{
-            sameFirm ? null : extraction.brokerCompany,
-            extraction.brokerTitle, extraction.brokerPhone, extraction.brokerMobile }, ', ');
-
-        String note = 'Sender-first identity: no forwarded-message block was found, so this Lead is'
-            + ' the envelope sender (' + sender + ').';
-        if (String.isBlank(named) && String.isBlank(detail)) {
-            // A direct send the model read nothing from — there is no demoted contact to report,
-            // but the identity decision itself is still worth recording on the record.
-            return note + ' The body named no other contact.';
-        }
-        note += ' The body named ' + (String.isBlank(named) ? 'an unnamed contact' : named);
-        if (String.isNotBlank(detail)) {
-            note += ' (' + detail + ')';
-        }
-        note += ' — recorded as the listing contact.';
-        if (sameFirm && String.isNotBlank(extraction.brokerCompany)) {
-            note += ' Both addresses are at the same firm, so the company ('
-                + extraction.brokerCompany.trim() + ') was kept.';
-        }
-        return note;
     }
 
     /**
@@ -2089,23 +2076,6 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             return null;
         }
         return address.substring(at + 1).trim().toLowerCase();
-    }
-
-    /**
-     * Join the non-blank entries of `parts` with `separator`.
-     *
-     * @param parts     The candidate values; nulls and blanks are skipped.
-     * @param separator The separator to place between kept values.
-     * @return The joined text, or '' when nothing was kept.
-     */
-    private static String joinNonBlank(List<String> parts, String separator) {
-        List<String> kept = new List<String>();
-        for (String part : parts) {
-            if (String.isNotBlank(part)) {
-                kept.add(part.trim());
-            }
-        }
-        return String.join(kept, separator);
     }
 
     /**
