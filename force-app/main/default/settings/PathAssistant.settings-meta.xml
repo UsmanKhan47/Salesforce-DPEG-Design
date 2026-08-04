@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PathAssistantSettings xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      This file is force-ignored (force-app/main/default/settings/** in .forceignore). A normal
+      sf project deploy start using source dir or metadata deploys SILENTLY DROPS this component
+      and reports SUCCESS with the org left unchanged. To change this setting, build a temporary
+      metadata-format package (settings/PathAssistant.settings plus package.xml, type Settings) and
+      deploy using sf project deploy start with the metadata dir flag, which bypasses .forceignore.
+      Always verify with an sf project retrieve start metadata Settings:PathAssistant readback
+      afterward; do not trust a green deploy result alone. pathAssistantEnabled confirmed true in
+      usman-dpeg via readback on 2026-08-04 (deploy 0Afiw000000EhptCAC).
+    -->
     <canOverrideAutoPathCollapseWithUserPref>false</canOverrideAutoPathCollapseWithUserPref>
     <pathAssistantEnabled>true</pathAssistantEnabled>
 </PathAssistantSettings>
