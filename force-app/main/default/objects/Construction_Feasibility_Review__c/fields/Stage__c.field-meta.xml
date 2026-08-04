@@ -40,42 +40,6 @@
                 <default>false</default>
                 <label>Completed</label>
             </value>
-            <value>
-                <fullName>GC / Vendor Proposals</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>GC / Vendor Proposals</label>
-            </value>
-            <value>
-                <fullName>Go / Conditional</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Go / Conditional</label>
-            </value>
-            <value>
-                <fullName>No-Go</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>No-Go</label>
-            </value>
-            <value>
-                <fullName>Opinion to Acquisition</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Opinion to Acquisition</label>
-            </value>
-            <value>
-                <fullName>Opinion to Junior</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Opinion to Junior</label>
-            </value>
-            <value>
-                <fullName>Scope &amp; Cost Review</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Scope &amp; Cost Review</label>
-            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

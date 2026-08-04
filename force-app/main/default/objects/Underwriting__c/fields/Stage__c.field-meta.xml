@@ -31,30 +31,6 @@
                 <default>false</default>
                 <label>Completed</label>
             </value>
-            <value>
-                <fullName>Complete</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Complete</label>
-            </value>
-            <value>
-                <fullName>Data Collection</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Data Collection</label>
-            </value>
-            <value>
-                <fullName>Modeling</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Modeling</label>
-            </value>
-            <value>
-                <fullName>Review</fullName>
-                <default>false</default>
-                <isActive>false</isActive>
-                <label>Review</label>
-            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>
