@@ -33,6 +33,64 @@
  * that satisfies only one of them has broken the feature in one of its two possible
  * ways — deleting other teams' correspondence, or deleting nothing at all.
  *
+ * ═══ GUARD 5 — TIMELINE DEDUP (added 2026-08-04, `agent-output/design-requirements-
+ * timeline-dedup.md`) ═══
+ * The new rule deletes an EAC capture that ADDS NOTHING NEW: it is `Incoming`, its
+ * `MessageIdentifier` exactly equals a pipeline `Task.Inbound_Message_Id__c`, and that
+ * pipeline row is present on EVERY record the capture lives on (Leads ∪ RelatedToId).
+ *
+ * 🔴 **THE CRITICAL PRE-EXISTING GAP THIS CLOSES.** Every `EmailMessage` fixture in
+ * this file — and in every sibling EAC test class — hardcodes `Incoming = false` via
+ * the 2-arg `buildCapture`/`makeCapturedEmail`. Guard 5's FIRST term is
+ * `message.Incoming != true`, so **not one pre-existing test in this class could ever
+ * reach guard 5** before this pass — they all short-circuit KEEP on direction alone,
+ * regardless of what guard 5's Message-ID logic does. New 3/4-arg overloads
+ * (`buildCapture(threadId, messageId, incoming)` /
+ * `makeCapturedEmail(leadId, threadId, messageId, incoming)`) let a test opt into
+ * `Incoming = true`. **The 2-arg defaults are UNCHANGED and must stay that way** —
+ * flipping them would turn `anchorMatchViaMessageIdentifierAloneIsKept` red (see its
+ * own Javadoc) and silently re-scope every pre-guard-5 test in this class into guard
+ * 5's territory.
+ *
+ * New tests (all use the 3/4-arg `Incoming = true` overloads unless proving the
+ * outbound-protection case, which deliberately uses `Incoming = false`):
+ *   • `exactMessageIdDuplicateOnTheSameLead_isDeletedAndThePipelineRowSurvives` — happy
+ *     path AND the 2→1-never-1→0 invariant in one test.
+ *   • `outboundCaptureWithExactMessageIdMatch_isNeverDeleted` — isolates the `Incoming`
+ *     term with the strongest possible adversarial input (an EXACT Message-ID match).
+ *   • `inboundReplySharingTheThreadRootButNotTheMessageId_isKept` — pins
+ *     Message-ID-only, never Thread-Key, end to end through `run()`.
+ *   • `duplicateOnOneOfTwoLeadsWithoutPipelineTaskOnTheOther_isKept` /
+ *     `duplicateOnBothLeadsWithPipelineTasksEverywhere_isDeleted` — the universal
+ *     quantifier across related Leads, both directions.
+ *   • `duplicateWithRelatedToIdPointingAtAnUnanchoredRecord_isKept` /
+ *     `duplicateWithRelatedToIdAlsoCarryingThePipelineRow_isDeleted` — the same
+ *     quantifier on the RelatedToId leg.
+ *   • `exactDuplicateAlsoLivingOnAContact_isKeptByGuard2Ordering` — proves admissibility
+ *     (guard 2) runs BEFORE guard 5 is ever evaluated.
+ *   • `dedupeAt251Captures_isBulkSafe` — 251 exact duplicates, one delete pair.
+ *   • `dedupeThroughTheRealQueueablePath_staysWithinTheUnchangedQueryBudget` — guard 5
+ *     costs ZERO new SOQL in the shared `EmailCaptureQueueable` execution.
+ *   • `pipelineAnchorTaskIsStructurallyUnreachableViaGuard5Duplicates` — extends the
+ *     structural-unreachability proof to the new delete reason.
+ *
+ * Two branches were found to be UNTESTABLE through the public surface, deliberately
+ * left unpinned rather than faked — both are recorded here rather than as a TODO in
+ * the code, since neither is a gap in the PRODUCTION reasoning, only in what a test
+ * can observe:
+ *   1. **`relatedLeadIds` empty inside `isExactPipelineDuplicate`.** `run()`'s own
+ *      admissibility guard 1 (`relatedLeadIds == null`) already makes this
+ *      unreachable — `RelationIndex.leadIdsByMessageId` only ever stores a KEY once at
+ *      least one Lead relation exists, and it always seeds that entry with >=1 member
+ *      in the same statement. The production Javadoc says as much ("here so a future
+ *      reordering of the guards cannot turn silence into a deletion"); there is no DML
+ *      shape that produces a non-null, empty set at that call site.
+ *   2. **A genuinely NULL `Incoming`.** `EmailMessage.Incoming` is a standard checkbox
+ *      field; Salesforce coerces an explicit `null` assignment to `false` on save, and
+ *      a queried Boolean field can never return null. `outboundCaptureWithExactMessage-
+ *      IdMatch_isNeverDeleted` (`Incoming = false`) already exercises the operative
+ *      `!= true` behaviour for every state this org can actually persist.
+ *
  * ASSERTION STYLE: Assert.* — matches the sibling Broker-Protection test classes.
  *
  * @see EmailThreadGuardService.cls (the seven gotchas and the four scope guards)
@@ -108,6 +166,19 @@ private class EmailThreadGuardServiceTest {
      * message's own, different, id — see EmailMessageSelector's class header: "a
      * thread root's ThreadIdentifier IS its own MessageIdentifier, and the pipeline
      * anchors that root under Inbound_Message_Id__c").
+     *
+     * ⚠ CONDITIONALLY GREEN SINCE GUARD 5 WAS ADDED (2026-08-04) — READ BEFORE
+     * TOUCHING THE FIXTURE. This capture's `MessageIdentifier` (`replyOwnId`) is an
+     * EXACT match for the anchor's `Inbound_Message_Id__c` — the same shape guard 5
+     * deletes in `exactMessageIdDuplicateOnTheSameLead_isDeletedAndThePipelineRowSurvives`.
+     * This test stays green ONLY because `makeCapturedEmail`'s 3-arg form defaults
+     * `Incoming = false`, which guard 5's first term (`!= true`) excludes before its
+     * Message-ID logic ever runs. If a future change flips that default, THIS test —
+     * not a new one — is what goes red, and for a reason unrelated to the OR-term it
+     * was written to isolate. Do not re-point it to Thread_Key__c anchoring to "fix"
+     * that risk: `inboundReplySharingTheThreadRootButNotTheMessageId_isKept` already
+     * owns that shape, and re-pointing this one would delete the only coverage of
+     * `isAnchoredOn`'s MessageIdentifier OR-term.
      */
     @isTest
     static void anchorMatchViaMessageIdentifierAloneIsKept() {
@@ -124,6 +195,19 @@ private class EmailThreadGuardServiceTest {
         // MessageIdentifier is a message the pipeline already anchored.
         EmailMessage capture = makeCapturedEmail(
             broker.Id, 'eac-unrelated-thread@mail.example.invalid', replyOwnId);
+
+        // PIN, HOISTED TO A PRECONDITION (see this method's class-header note): this
+        // fixture is only outside guard 5's reach because Incoming is false. Checked HERE,
+        // before the run, so a future default-flip on makeCapturedEmail's 3-arg form fails
+        // LOUD and SELF-DIAGNOSING right at the fixture, instead of surfacing as a red
+        // keep-assertion below whose message talks about the OR-term and gives no hint
+        // that guard 5 (not guard 4) is what actually fired.
+        Assert.isFalse(capture.Incoming,
+            'PIN: this fixture must stay Incoming = false, or guard 5 (exact pipeline '
+            + 'duplicate) deletes this capture before the OR-term below is ever reached. If '
+            + 'this fails, makeCapturedEmail\'s 3-arg default was flipped to Incoming = true — '
+            + 'fix that default (or call the explicit-Incoming overload here), not the '
+            + 'assertion below');
 
         EmailThreadGuardService.treatAllAsMaterialized = true;
         Test.startTest();
@@ -314,6 +398,402 @@ private class EmailThreadGuardServiceTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GUARD 5 — TIMELINE DEDUP (added 2026-08-04). See the class header for why every
+    // test below uses the 3/4-arg `Incoming = true` overloads and why the pre-existing
+    // suite above could never reach this code path.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * THE HAPPY PATH, combined with the invariant guard 5 *is*: a pipeline row must
+     * already exist on every record the capture is removed from, so a timeline goes
+     * 2 -> 1, never 1 -> 0. Asserting only that the EAC copy died would not prove the
+     * pipeline's own copy of the same email is still represented on the timeline —
+     * this test asserts both in one pass.
+     */
+    @isTest
+    static void exactMessageIdDuplicateOnTheSameLead_isDeletedAndThePipelineRowSurvives() {
+        Lead broker = makeLead();
+        String sharedMessageId = 'pipeline-logged@mail.example.invalid';
+        Task pipelineAnchor = anchorTask(broker.Id, sharedMessageId); // root == its own id
+        insert pipelineAnchor;
+
+        // EAC's copy of the SAME email the pipeline already logged.
+        EmailMessage duplicate = makeCapturedEmail(broker.Id, sharedMessageId, sharedMessageId, true);
+        Id companionId = duplicate.ActivityId;
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ duplicate.Id });
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM EmailMessage WHERE Id = :duplicate.Id],
+            'EAC\'s copy of an email the pipeline already logged (exact Message-ID match) must '
+            + 'be removed');
+        Assert.areEqual(0, [SELECT COUNT() FROM Task WHERE Id = :companionId],
+            'Its companion Task must go with it');
+        Assert.areEqual(1, [SELECT COUNT() FROM Task WHERE Id = :pipelineAnchor.Id],
+            'THE 2->1, NEVER 1->0 INVARIANT: the pipeline\'s own Task for this exact Message-ID '
+            + 'must survive on the Lead. Asserting only that the EAC copy died does not prove '
+            + 'the email is still represented on the timeline');
+    }
+
+    /**
+     * 🔴 THE MOST IMPORTANT NEGATIVE TEST GUARD 5 HAS. EAC is the ONLY source of
+     * outbound mail anywhere in Salesforce — the pipeline only ever logs inbound. This
+     * proves the `Incoming != true` term ALONE protects outbound mail, with the
+     * strongest possible adversarial input: the capture's own MessageIdentifier is an
+     * EXACT match for a pipeline anchor's Inbound_Message_Id__c (the identical setup
+     * that gets an INBOUND capture deleted in the happy-path test above). Direction —
+     * not the identifier match — is what discriminates the two.
+     */
+    @isTest
+    static void outboundCaptureWithExactMessageIdMatch_isNeverDeleted() {
+        Lead broker = makeLead();
+        String sharedMessageId = 'outbound-shares-this-id@mail.example.invalid';
+        insert anchorTask(broker.Id, sharedMessageId);
+
+        EmailMessage outboundReply = makeCapturedEmail(
+            broker.Id, sharedMessageId, sharedMessageId, false); // Incoming = false
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ outboundReply.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, [SELECT COUNT() FROM EmailMessage WHERE Id = :outboundReply.Id],
+            'An OUTBOUND capture must never be deleted as a pipeline duplicate, even when its '
+            + 'own Message-ID exactly equals a pipeline anchor\'s Inbound_Message_Id__c');
+    }
+
+    /**
+     * 🔴 MESSAGE-ID ONLY, NEVER THREAD-KEY — pinned end to end through the guard's
+     * public entry point (EmailThreadAnchorServiceTest pins the same contract directly
+     * on the accessor). A broker's 2nd/3rd reply in an anchored thread shares the
+     * thread ROOT with every other message in the conversation, but the pipeline has
+     * never logged THIS particular message — so it must be KEPT. If
+     * isExactPipelineDuplicate were ever "simplified" to reuse isAnchoredOn's union
+     * (Thread_Key__c OR Inbound_Message_Id__c) instead of the Message-ID-only
+     * accessor, this goes red — and this is the single easiest mistake to make in
+     * this file (see EmailThreadAnchorService.isMessageIdAnchoredOn's own header).
+     */
+    @isTest
+    static void inboundReplySharingTheThreadRootButNotTheMessageId_isKept() {
+        Lead broker = makeLead();
+        // Reply-anchor shape: Thread_Key__c is the ROOT, Inbound_Message_Id__c is the
+        // PIPELINE's OWN first message — different from the capture's own id below.
+        insert new Task(WhoId = broker.Id, Subject = 'Email: deal', Status = 'Completed',
+                        TaskSubtype = 'Email', Thread_Key__c = DEAL_ROOT,
+                        Inbound_Message_Id__c = 'pipeline-first-message@mail.example.invalid');
+
+        // EAC's capture of a LATER reply in the SAME thread the pipeline never logged.
+        EmailMessage laterReply = makeCapturedEmail(
+            broker.Id, DEAL_ROOT, 'eac-only-reply@mail.example.invalid', true);
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ laterReply.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, [SELECT COUNT() FROM EmailMessage WHERE Id = :laterReply.Id],
+            'A reply sharing the anchored thread ROOT, but carrying a Message-ID the pipeline '
+            + 'never logged, must be KEPT — a Thread-Key match is "something in this '
+            + 'conversation was logged", not "this exact message was logged"');
+    }
+
+    /**
+     * 🔴 GUARD 5 IS UNIVERSAL (&& across every record the capture lives on) — the
+     * exact opposite quantifier from guard 4's existential (||). A capture stapled to
+     * TWO Leads is deletable only when EVERY one of them already carries the pipeline
+     * row; one Lead without it keeps the whole capture, even on the Lead that DOES
+     * carry it.
+     */
+    @isTest
+    static void duplicateOnOneOfTwoLeadsWithoutPipelineTaskOnTheOther_isKept() {
+        Lead leadWithPipelineRow = makeLead();
+        Lead leadWithoutPipelineRow = makeLead();
+        String sharedMessageId = 'multi-lead-shared@mail.example.invalid';
+        insert anchorTask(leadWithPipelineRow.Id, sharedMessageId);
+        // leadWithoutPipelineRow carries NO Task at all.
+
+        EmailMessage capture = makeCapturedEmail(
+            leadWithPipelineRow.Id, sharedMessageId, sharedMessageId, true);
+        relate(capture.Id, leadWithoutPipelineRow.Id, 'ToAddress');
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ capture.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, [SELECT COUNT() FROM EmailMessage WHERE Id = :capture.Id],
+            'A capture living on TWO Leads is not deletable when only ONE of them carries the '
+            + 'pipeline row — the per-record redundancy test must hold on EVERY record it lives '
+            + 'on');
+    }
+
+    /**
+     * The positive counterweight: once BOTH Leads carry a pipeline Task for this exact
+     * Message-ID (the shape multi-property routing produces — N Tasks sharing one
+     * Message-ID across N records), the capture is redundant everywhere it lives and
+     * is deleted, while BOTH pipeline anchors survive.
+     */
+    @isTest
+    static void duplicateOnBothLeadsWithPipelineTasksEverywhere_isDeleted() {
+        Lead leadA = makeLead();
+        Lead leadB = makeLead();
+        String sharedMessageId = 'multi-lead-both-anchored@mail.example.invalid';
+        Task anchorA = anchorTask(leadA.Id, sharedMessageId);
+        Task anchorB = anchorTask(leadB.Id, sharedMessageId);
+        insert new List<Task>{ anchorA, anchorB };
+
+        EmailMessage capture = makeCapturedEmail(leadA.Id, sharedMessageId, sharedMessageId, true);
+        relate(capture.Id, leadB.Id, 'ToAddress');
+        // AFTER the second relation — it replaced the companion Task (see `relate`, fact 2).
+        Id companionId = companionIdOf(capture.Id);
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ capture.Id });
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM EmailMessage WHERE Id = :capture.Id],
+            'A capture redundant on EVERY Lead it lives on must be deleted');
+        Assert.areEqual(0, [SELECT COUNT() FROM Task WHERE Id = :companionId],
+            'Its companion Task must go with it');
+        Set<Id> anchorIds = new Set<Id>{ anchorA.Id, anchorB.Id };
+        Assert.areEqual(2, [SELECT COUNT() FROM Task WHERE Id IN :anchorIds],
+            'BOTH pipeline anchors must survive — guard 5 never touches a pipeline Task');
+    }
+
+    /**
+     * 🔴 THE RelatedToId LEG OF GUARD 5 — the same universal-quantifier reasoning as
+     * the two-Lead tests above, on the OTHER record guard 5 consults. A capture that
+     * is an exact duplicate on its Lead but ALSO lives on a RelatedToId record with NO
+     * pipeline row must be KEPT.
+     */
+    @isTest
+    static void duplicateWithRelatedToIdPointingAtAnUnanchoredRecord_isKept() {
+        Lead broker = makeLead();
+        String sharedMessageId = 'relatedto-leg-unanchored@mail.example.invalid';
+        insert anchorTask(broker.Id, sharedMessageId);
+        Opportunity unanchoredOpportunity = TestDataFactory.createOpportunity(null, true);
+
+        EmailMessage capture = makeCapturedEmailWithRelatedTo(
+            broker.Id, sharedMessageId, sharedMessageId, true, unanchoredOpportunity.Id);
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ capture.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, [SELECT COUNT() FROM EmailMessage WHERE Id = :capture.Id],
+            'The capture is redundant on its Lead but ALSO lives on its RelatedToId '
+            + 'Opportunity, which carries no pipeline row for this Message-ID — guard 5 must '
+            + 'fail on that leg and keep the capture, exactly as it would for a second '
+            + 'unanchored Lead');
+    }
+
+    /**
+     * The positive counterweight on the RelatedToId leg: once the RelatedToId record
+     * ALSO carries the pipeline row for this exact Message-ID — the state a completed
+     * adoption leaves behind (see EmailThreadAdopterServiceTest's guard-4 analogue,
+     * `adoptedCaptureIsKeptByTheGuard_viaTheRelatedToIdLeg`) — the capture is redundant
+     * everywhere it lives and is deleted.
+     */
+    @isTest
+    static void duplicateWithRelatedToIdAlsoCarryingThePipelineRow_isDeleted() {
+        Lead broker = makeLead();
+        Opportunity anchoredOpportunity = TestDataFactory.createOpportunity(null, true);
+        String sharedMessageId = 'relatedto-leg-anchored@mail.example.invalid';
+        Task leadAnchor = anchorTask(broker.Id, sharedMessageId);
+        Task opportunityAnchor = new Task(
+            WhatId = anchoredOpportunity.Id, Subject = 'Email: deal', Status = 'Completed',
+            TaskSubtype = 'Email', Thread_Key__c = sharedMessageId,
+            Inbound_Message_Id__c = sharedMessageId);
+        insert new List<Task>{ leadAnchor, opportunityAnchor };
+
+        EmailMessage capture = makeCapturedEmailWithRelatedTo(
+            broker.Id, sharedMessageId, sharedMessageId, true, anchoredOpportunity.Id);
+        Id companionId = capture.ActivityId; // no further relation added after this — still fresh
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ capture.Id });
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM EmailMessage WHERE Id = :capture.Id],
+            'A capture redundant on its Lead AND on its RelatedToId Opportunity must be deleted');
+        Assert.areEqual(0, [SELECT COUNT() FROM Task WHERE Id = :companionId],
+            'Its companion Task must go with it');
+        Assert.areEqual(1, [SELECT COUNT() FROM Task WHERE Id = :leadAnchor.Id],
+            'The Lead-side pipeline anchor must survive');
+        Assert.areEqual(1, [SELECT COUNT() FROM Task WHERE Id = :opportunityAnchor.Id],
+            'The Opportunity-side pipeline anchor must survive too');
+    }
+
+    /**
+     * 🔴 GUARD ORDERING — scope guard 2 (admissibility) runs BEFORE guard 5 is ever
+     * evaluated. A capture that WOULD be an exact pipeline duplicate on its Lead,
+     * judged in isolation, must still be KEPT when it also lives on a Contact — guard
+     * 2 excludes it before guard 4/5 are reached at all. This is the documented
+     * converted-deal boundary (class header, "KNOWN SCOPE BOUNDARY") pinned as
+     * behaviour rather than left implicit.
+     */
+    @isTest
+    static void exactDuplicateAlsoLivingOnAContact_isKeptByGuard2Ordering() {
+        Lead broker = makeLead();
+        Contact brokerContact = TestDataFactory.createBrokerContact(null, true);
+        String sharedMessageId = 'guard-ordering-duplicate@mail.example.invalid';
+        insert anchorTask(broker.Id, sharedMessageId);
+
+        EmailMessage capture = makeCapturedEmail(broker.Id, sharedMessageId, sharedMessageId, true);
+        relate(capture.Id, brokerContact.Id, 'ToAddress');
+        // AFTER the Contact relation — it replaced the companion Task (see `relate`, fact 2).
+        Id companionId = companionIdOf(capture.Id);
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ capture.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, [SELECT COUNT() FROM EmailMessage WHERE Id = :capture.Id],
+            'A capture that would be an exact pipeline duplicate judged on the Lead alone must '
+            + 'still be KEPT once it also lives on a Contact — scope guard 2 excludes it before '
+            + 'guard 5 is ever reached. Remove guard 2 and this goes red for the SAME reason '
+            + 'captureAlsoLivingOnAContactIsKept does');
+        Assert.areEqual(1, [SELECT COUNT() FROM Task WHERE Id = :companionId],
+            'Its companion Task must survive too, or the Contact timeline loses the entry '
+            + 'anyway');
+    }
+
+    /**
+     * BULK SAFETY for guard 5 at the volume EAC actually produces — mirrors
+     * guardAt251Captures_isBulkSafe exactly, except every capture is an EXACT
+     * pipeline duplicate instead of unanchored, so this exercises guard 5's
+     * per-record loop and its shared delete pair at volume in one DML.
+     */
+    @isTest
+    static void dedupeAt251Captures_isBulkSafe() {
+        final Integer volume = 251;
+        Lead broker = makeLead();
+
+        List<Task> pipelineAnchors = new List<Task>();
+        for (Integer i = 0; i < volume; i++) {
+            pipelineAnchors.add(anchorTask(broker.Id, 'dedupe-bulk-' + i + '@mail.example.invalid'));
+        }
+        insert pipelineAnchors;
+
+        List<EmailMessage> captures = new List<EmailMessage>();
+        for (Integer i = 0; i < volume; i++) {
+            String messageId = 'dedupe-bulk-' + i + '@mail.example.invalid';
+            captures.add(buildCapture(messageId, messageId, true)); // exact duplicate, inbound
+        }
+        insert captures; // ONE bulk DML — the shape EAC uses.
+
+        List<EmailMessageRelation> relations = new List<EmailMessageRelation>();
+        for (EmailMessage capture : captures) {
+            relations.add(new EmailMessageRelation(
+                EmailMessageId = capture.Id, RelationId = broker.Id, RelationType = 'ToAddress'));
+        }
+        insert relations;
+
+        Set<Id> captureIds = new Map<Id, EmailMessage>(captures).keySet();
+        Set<Id> companionIds = new Set<Id>();
+        for (EmailMessage requeried : [SELECT Id, ActivityId FROM EmailMessage WHERE Id IN :captureIds]) {
+            if (requeried.ActivityId != null) {
+                companionIds.add(requeried.ActivityId);
+            }
+        }
+        Assert.areEqual(volume, companionIds.size(),
+            'Precondition: Enhanced Email must stamp a companion Task on all ' + volume
+            + ' captures, or the bulk dedupe path is not actually being exercised');
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(captureIds);
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM EmailMessage WHERE Id IN :captureIds],
+            'All ' + volume + ' exact duplicates must be removed in one pass');
+        Assert.areEqual(0, [SELECT COUNT() FROM Task WHERE Id IN :companionIds],
+            'All ' + volume + ' companion Tasks must be removed alongside their messages');
+        Set<Id> pipelineAnchorIds = new Map<Id, Task>(pipelineAnchors).keySet();
+        Assert.areEqual(volume, [SELECT COUNT() FROM Task WHERE Id IN :pipelineAnchorIds],
+            'All ' + volume + ' pipeline anchor Tasks must survive — guard 5 never touches a '
+            + 'pipeline Task, at any volume');
+    }
+
+    /**
+     * GOVERNOR REGRESSION — guard 5 must cost ZERO new SOQL. Drives one exact
+     * duplicate through the REAL trigger -> EmailCaptureQueueable path (not a direct
+     * service call) and reads the query budget the way
+     * EmailThreadAdopterServiceTest.adopterAt251Captures_isBulkSafe does:
+     * EmailCaptureQueueable.lastRunQueryCount, read AFTER Test.stopTest() — safe here
+     * because it is a static the async execution itself set, not Limits.* (which
+     * stopTest() resets and would make the read vacuous).
+     */
+    @isTest
+    static void dedupeThroughTheRealQueueablePath_staysWithinTheUnchangedQueryBudget() {
+        final Integer queueableQueryBudget = 7; // unchanged by design — see
+                                                 // EmailThreadAdopterServiceTest.QUEUEABLE_QUERY_BUDGET
+        Lead broker = makeLead();
+        String duplicateId = 'governor-budget-dup@mail.example.invalid';
+        insert new Task(WhoId = broker.Id, Subject = 'Email: deal', Status = 'Completed',
+                        TaskSubtype = 'Email', Thread_Key__c = DEAL_ROOT,
+                        Inbound_Message_Id__c = duplicateId);
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailMessage duplicate = makeCapturedEmail(broker.Id, DEAL_ROOT, duplicateId, true);
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM EmailMessage WHERE Id = :duplicate.Id],
+            'Precondition: the duplicate must actually have been deleted by the real pipeline '
+            + 'pass, or the query-budget reading below is not measuring guard 5 at all');
+        Assert.areEqual(queueableQueryBudget, EmailCaptureQueueable.lastRunQueryCount,
+            'GOVERNOR HEADROOM, BOTH DIRECTIONS: the shared queueable execution must spend '
+            + 'EXACTLY ' + queueableQueryBudget + ' queries (anchor index 2, adopter 2, guard '
+            + '3) — never merely at-or-under that budget. An INCREASE regresses governor '
+            + 'headroom, but a DECREASE is the dangerous direction for this destructive '
+            + 'pipeline: if a query silently disappears (e.g. the anchor read), every capture '
+            + 'looks unanchored to the guard and it MASS-DELETES. A <= assertion cannot catch '
+            + 'that direction at all. Observed ' + EmailCaptureQueueable.lastRunQueryCount + '.');
+    }
+
+    /**
+     * Extends the structural-unreachability proof to the delete reason ADDED by guard
+     * 5. Same shape as pipelineAnchorTaskIsStructurallyUnreachable, but the capture
+     * deleted here is an EXACT DUPLICATE rather than merely unanchored — proving the
+     * new delete reason still reaches a Task ONLY through EmailMessage.ActivityId,
+     * never through the anchor Task it matched against.
+     */
+    @isTest
+    static void pipelineAnchorTaskIsStructurallyUnreachableViaGuard5Duplicates() {
+        Lead broker = makeLead();
+        String sharedMessageId = 'structural-guard5@mail.example.invalid';
+        Task pipelineAnchor = anchorTask(broker.Id, sharedMessageId);
+        insert pipelineAnchor;
+        EmailMessage duplicate = makeCapturedEmail(broker.Id, sharedMessageId, sharedMessageId, true);
+        Id companionId = duplicate.ActivityId;
+        Assert.areNotEqual(pipelineAnchor.Id, companionId,
+            'Precondition: the pipeline anchor and the EAC companion must be different Tasks, '
+            + 'or this test proves nothing');
+
+        EmailThreadGuardService.treatAllAsMaterialized = true;
+        Test.startTest();
+        EmailThreadGuardService.run(new Set<Id>{ duplicate.Id });
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM EmailMessage WHERE Id = :duplicate.Id],
+            'The exact duplicate is deleted, so guard 5 did run a real deletion pass');
+        Assert.areEqual(0, [SELECT COUNT() FROM Task WHERE Id = :companionId],
+            'Its companion Task — reachable via ActivityId — is deleted');
+        Assert.areEqual(1, [SELECT COUNT() FROM Task WHERE Id = :pipelineAnchor.Id],
+            'The pipeline anchor Task — the very Task guard 5 matched AGAINST — survives: the '
+            + 'anchor index is a read-only decision input whose rows never enter a delete list, '
+            + 'even for the delete reason that reads it to decide redundancy');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // W1 — SCOPE GUARD 2 ("lives elsewhere"). These two tests are a MATCHED PAIR and
     // discriminate in opposite directions; neither is meaningful without the other:
     //   • the Contact test goes RED if guard 2 is removed (the capture gets deleted),
@@ -500,17 +980,34 @@ private class EmailThreadGuardServiceTest {
     }
 
     /**
-     * An unsaved EmailMessage in the shape EAC materializes.
+     * An unsaved EmailMessage in the shape EAC materializes. Defaults to
+     * `Incoming = false` — see this class's header ("THE CRITICAL PRE-EXISTING GAP")
+     * for why that default must never change.
      *
      * @param threadId  RFC Message-ID of the thread root.
      * @param messageId RFC Message-ID of this message.
      * @return The unsaved EmailMessage.
      */
     private static EmailMessage buildCapture(String threadId, String messageId) {
+        return buildCapture(threadId, messageId, false);
+    }
+
+    /**
+     * OVERLOAD (guard 5 dedup tests, 2026-08-04): lets a test choose the capture's
+     * direction. Guard 5's first term is `message.Incoming != true`, so this is the
+     * only way to reach it at all — every fixture in this file predates guard 5 and
+     * is outbound-shaped by default.
+     *
+     * @param threadId  RFC Message-ID of the thread root.
+     * @param messageId RFC Message-ID of this message.
+     * @param incoming  The message direction guard 5's first term reads.
+     * @return The unsaved EmailMessage.
+     */
+    private static EmailMessage buildCapture(String threadId, String messageId, Boolean incoming) {
         return new EmailMessage(
             Subject = 'captured',
             Status = '3',
-            Incoming = false,
+            Incoming = incoming,
             ThreadIdentifier = threadId,
             MessageIdentifier = messageId,
             FromAddress = 'junior@example.invalid',
@@ -519,8 +1016,10 @@ private class EmailThreadGuardServiceTest {
     }
 
     /**
-     * Inserts one captured email, optionally relates it to a Lead the way EAC does,
-     * and re-reads it so the platform-stamped ActivityId is available.
+     * Inserts one captured email, relates it to a Lead the way EAC does, and re-reads
+     * it so the platform-stamped ActivityId is available. Defaults to
+     * `Incoming = false` for backward compatibility with every pre-guard-5 test in
+     * this file — see the 4-arg overload for the guard 5 dedup tests.
      *
      * ⚠ ActivityId IS SYSTEM-WRITABLE ONLY (gotcha 1) — a test cannot set it, and does
      * not need to: Enhanced Email auto-creates the companion Task on insert and stamps
@@ -534,12 +1033,29 @@ private class EmailThreadGuardServiceTest {
      * @return The re-read EmailMessage with ActivityId populated.
      */
     private static EmailMessage makeCapturedEmail(Id leadId, String threadId, String messageId) {
-        EmailMessage capture = buildCapture(threadId, messageId);
+        return makeCapturedEmail(leadId, threadId, messageId, false);
+    }
+
+    /**
+     * OVERLOAD (guard 5 dedup tests, 2026-08-04): lets a test choose the capture's
+     * direction, and widens the re-query to include `Incoming` and `RelatedToId` so a
+     * caller can assert on them directly (see
+     * `anchorMatchViaMessageIdentifierAloneIsKept`'s pinning assertion).
+     *
+     * @param leadId    Lead to associate via EmailMessageRelation; required.
+     * @param threadId  RFC Message-ID of the thread root.
+     * @param messageId RFC Message-ID of this message.
+     * @param incoming  The message direction guard 5's first term reads.
+     * @return The re-read EmailMessage with ActivityId populated.
+     */
+    private static EmailMessage makeCapturedEmail(
+            Id leadId, String threadId, String messageId, Boolean incoming) {
+        EmailMessage capture = buildCapture(threadId, messageId, incoming);
         insert capture;
         insert new EmailMessageRelation(
             EmailMessageId = capture.Id, RelationId = leadId, RelationType = 'ToAddress');
         EmailMessage stored = [
-            SELECT Id, ActivityId, ThreadIdentifier, MessageIdentifier
+            SELECT Id, ActivityId, ThreadIdentifier, MessageIdentifier, Incoming, RelatedToId
             FROM EmailMessage
             WHERE Id = :capture.Id
         ];
@@ -548,6 +1064,43 @@ private class EmailThreadGuardServiceTest {
             + 'EmailMessage.ActivityId on insert. A null ActivityId means Enhanced Email is '
             + 'disabled in this org — the EAC Thread Guard cannot fingerprint anything without '
             + 'it, and every delete test in this class would pass vacuously');
+        return stored;
+    }
+
+    /**
+     * Builds and inserts a capture the way `makeCapturedEmail` does, but ALSO seeds
+     * `RelatedToId` AT INSERT — the only point that field reliably accepts a value in
+     * this org (measured; see `EmailThreadAdopterServiceTest`'s class header: an
+     * insert-time seed persists, while a post-insert UPDATE is refused under
+     * `@isTest` — an independent, documented platform quirk unrelated to this test).
+     * Used only by the guard-5 RelatedToId-leg tests, which need EAC to have already
+     * related the capture to a record the guard must independently examine.
+     *
+     * @param leadId      Lead to associate via EmailMessageRelation; required.
+     * @param threadId    RFC Message-ID of the thread root.
+     * @param messageId   RFC Message-ID of this message.
+     * @param incoming    The message direction guard 5's first term reads.
+     * @param relatedToId Seeded at insert.
+     * @return The re-read EmailMessage with ActivityId and RelatedToId populated.
+     */
+    private static EmailMessage makeCapturedEmailWithRelatedTo(
+            Id leadId, String threadId, String messageId, Boolean incoming, Id relatedToId) {
+        EmailMessage capture = buildCapture(threadId, messageId, incoming);
+        capture.RelatedToId = relatedToId;
+        insert capture;
+        insert new EmailMessageRelation(
+            EmailMessageId = capture.Id, RelationId = leadId, RelationType = 'ToAddress');
+        EmailMessage stored = [
+            SELECT Id, ActivityId, ThreadIdentifier, MessageIdentifier, Incoming, RelatedToId
+            FROM EmailMessage
+            WHERE Id = :capture.Id
+        ];
+        Assert.isNotNull(stored.ActivityId,
+            'PRECONDITION FAILED: Enhanced Email must auto-create the companion Task and stamp '
+            + 'EmailMessage.ActivityId on insert (see makeCapturedEmail)');
+        Assert.areEqual(relatedToId, stored.RelatedToId,
+            'PRECONDITION FAILED: RelatedToId must persist as seeded at insert, or the '
+            + 'RelatedToId-leg tests are not testing what they claim to');
         return stored;
     }
 }

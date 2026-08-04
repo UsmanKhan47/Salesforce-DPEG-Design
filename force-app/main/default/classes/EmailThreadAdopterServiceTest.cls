@@ -641,14 +641,15 @@ private class EmailThreadAdopterServiceTest {
         Assert.isTrue(EmailThreadAdopterService.lastRunFailureCodes[0].contains(REFUSAL_CODE),
             'and every refusal must be the documented quirk, not a new error. Actual: '
             + EmailThreadAdopterService.lastRunFailureCodes[0]);
-        Assert.isTrue(EmailCaptureQueueable.lastRunQueryCount <= QUEUEABLE_QUERY_BUDGET,
-            'GOVERNOR HEADROOM: one execution consumed '
-            + EmailCaptureQueueable.lastRunQueryCount + ' queries against a budget of '
-            + QUEUEABLE_QUERY_BUDGET + '. The budget is CONSTANT (anchor index 2, adopter 2, '
-            + 'guard 3) and must not scale with the number of captures');
-        Assert.isTrue(EmailCaptureQueueable.lastRunQueryCount > 0,
-            'Precondition: the queueable must actually have run, or the budget assertion is '
-            + 'vacuous');
+        Assert.areEqual(QUEUEABLE_QUERY_BUDGET, EmailCaptureQueueable.lastRunQueryCount,
+            'GOVERNOR HEADROOM, BOTH DIRECTIONS: one execution must consume EXACTLY '
+            + QUEUEABLE_QUERY_BUDGET + ' queries (anchor index 2, adopter 2, guard 3), '
+            + 'constant regardless of the number of captures in the chunk — never merely '
+            + 'at-or-under that budget. An INCREASE regresses governor headroom, but a '
+            + 'DECREASE is the dangerous direction for this destructive pipeline: if a query '
+            + 'silently disappears (e.g. the anchor read), every capture looks unanchored to '
+            + 'the guard and it MASS-DELETES. A <= assertion cannot catch that direction at '
+            + 'all. Observed ' + EmailCaptureQueueable.lastRunQueryCount + '.');
     }
 
     // ─────────────────────────────────────────────────────────────────────────

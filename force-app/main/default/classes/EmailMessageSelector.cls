@@ -57,15 +57,29 @@ public with sharing class EmailMessageSelector {
      *     RelatedToId record must be KEPT even when no related Lead anchors it. Before this
      *     field was selected the guard could not see it at all, so it deleted adopted
      *     captures seconds after the adopter wrote them (finding P6).
+     *   • Incoming          — the message DIRECTION (added 2026-08-04, timeline dedup).
+     *     The guard's new fifth scope guard deletes a capture that merely re-states an
+     *     inbound email the Broker Protection pipeline already logged. `Incoming == true`
+     *     is the FIRST term of that predicate, and it is there to make outbound
+     *     preservation an INVARIANT OF THE CODE rather than an emergent property of the
+     *     data: the pipeline is blind to outbound mail by construction, so EAC's copy of
+     *     an outbound reply is the ONLY representation of it anywhere in Salesforce.
+     *     Message-ID matching alone would already protect it (an outbound reply's own
+     *     Message-ID anchors nothing), but saying so in the predicate means no future data
+     *     surprise can make it false.
      *
      * ⚠ DO NOT NARROW THIS FIELD SET. Dropping ActivityId silently converts the guard
      * into a no-op that can never identify an EAC-materialized message; dropping either
-     * identifier makes every capture look unanchored; dropping RelatedToId reopens P6.
+     * identifier makes every capture look unanchored; dropping RelatedToId reopens P6;
+     * dropping Incoming makes the dedupe rule's direction test read null, which
+     * `EmailThreadGuardService.isExactPipelineDuplicate` treats as "not inbound" — so the
+     * rule would silently stop deleting anything rather than fail loudly. WIDENING it is
+     * always allowed; narrowing it never is.
      *
      * @param messageIds EmailMessage Ids to load; null/empty-safe.
-     * @return Matching EmailMessages with Id, ThreadIdentifier, MessageIdentifier and
-     *         ActivityId populated; an empty list when the input is null/empty or the
-     *         rows are already gone (never null).
+     * @return Matching EmailMessages with Id, ThreadIdentifier, MessageIdentifier,
+     *         ActivityId, RelatedToId and Incoming populated; an empty list when the input
+     *         is null/empty or the rows are already gone (never null).
      * @example
      * List<EmailMessage> msgs = EmailMessageSelector.selectByIds(messageIds);
      */
@@ -74,7 +88,7 @@ public with sharing class EmailMessageSelector {
             return new List<EmailMessage>();
         }
         return [
-            SELECT Id, ThreadIdentifier, MessageIdentifier, ActivityId, RelatedToId
+            SELECT Id, ThreadIdentifier, MessageIdentifier, ActivityId, RelatedToId, Incoming
             FROM EmailMessage
             WHERE Id IN :messageIds
             WITH SYSTEM_MODE

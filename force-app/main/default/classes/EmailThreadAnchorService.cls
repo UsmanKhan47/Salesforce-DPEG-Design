@@ -11,6 +11,26 @@
  * This class performs that read ONCE per queueable execution and normalizes identifiers
  * ONCE, so the two features cannot disagree. That is the entire reason it exists.
  *
+ * ═══ THE THREE QUESTIONS AnchorIndex ANSWERS — AND WHY THE THIRD IS NOT THE FIRST ═══
+ * (third accessor added 2026-08-04 with the guard's timeline-dedup rule)
+ *
+ *   1. `isAnchoredOn(recordId, message)`     — "is this CONVERSATION known on that
+ *      record?" Union of `Thread_Key__c` and `Inbound_Message_Id__c`. Consumed by the
+ *      guard as a KEEP test.
+ *   2. `resolveOpportunity(message)`         — "which deal does this thread belong to?"
+ *      Message-ID first, thread root as fallback, FIRST-WINS. Consumed by the adopter.
+ *   3. `isMessageIdAnchoredOn(recordId, m)`  — "did the pipeline log THIS EXACT MESSAGE
+ *      on that record?" `Inbound_Message_Id__c` ONLY, never thread key, and NOT
+ *      first-wins. Consumed by the guard as a DELETE test.
+ *
+ * 🔴 (1) AND (3) ARE NOT INTERCHANGEABLE AND MUST NEVER BE COLLAPSED. Conversation-level
+ * identity is the right key for "is this relevant here?"; message-level identity is the
+ * only correct key for "is this redundant here?". Substituting the union into (3) would
+ * delete every EAC copy of an outbound reply and of every mid-thread inbound message the
+ * pipeline never saw — the full reasoning, with the measured row it would destroy, is on
+ * `isMessageIdAnchoredOn` itself. That is why the Message-ID half is retained in its own
+ * map instead of being filtered back out of the union, which is impossible after merging.
+ *
  * ═══ 🔴 WHY THE NORMALIZATION LIVES HERE AND NOWHERE ELSE (defect P4) ═══
  * The pipeline writes its two anchors in DIFFERENT bracket forms, and this was a live
  * defect in the deployed guard before this change:
@@ -90,6 +110,24 @@ public with sharing class EmailThreadAnchorService {
         /** Normalized anchor values present on each record (`Task.WhoId` ∪ `Task.WhatId`). */
         private Map<Id, Set<String>> anchorsByRecordId = new Map<Id, Set<String>>();
 
+        /**
+         * Normalized `Task.Inbound_Message_Id__c` values present on each record — the
+         * SAME rows as `anchorsByRecordId`, but WITHOUT the `Thread_Key__c` half mixed in
+         * (added 2026-08-04 for the guard's timeline-dedup rule).
+         *
+         * 🔴 WHY A SECOND MAP RATHER THAN A FILTER OVER THE FIRST. `anchorsByRecordId` is
+         * a deliberate UNION of the two anchor types, which is exactly right for
+         * `isAnchoredOn` ("is this conversation known here at all?") and exactly wrong for
+         * `isMessageIdAnchoredOn` ("did the pipeline log THIS SPECIFIC MESSAGE here?").
+         * Once merged, the distinction is unrecoverable — a value in the union cannot be
+         * traced back to the field it came from. Keeping the Message-ID half separately as
+         * it is read costs one map and no query.
+         *
+         * ⚠ Keys here are always a SUBSET of `anchorsByRecordId`'s keys (every value in
+         * here was also added there), which is why `isEmpty()` does not consult it.
+         */
+        private Map<Id, Set<String>> messageIdsByRecordId = new Map<Id, Set<String>>();
+
         /** Normalized anchor value → the Opportunity it resolves to (first-wins by priority). */
         private Map<String, Id> opportunityByAnchorValue = new Map<String, Id>();
 
@@ -111,6 +149,58 @@ public with sharing class EmailThreadAnchorService {
             }
             return anchors.contains(normalize(message.ThreadIdentifier))
                 || anchors.contains(normalize(message.MessageIdentifier));
+        }
+
+        /**
+         * Did the Broker Protection pipeline log THIS EXACT MESSAGE on that specific
+         * record? True only when a pipeline anchor Task attached to `recordId` (via
+         * `WhoId` or `WhatId`) carries an `Inbound_Message_Id__c` equal to the capture's
+         * own `MessageIdentifier`, both normalized. Added 2026-08-04 for
+         * `EmailThreadGuardService`'s fifth scope guard (timeline dedup).
+         *
+         * ═══ 🔴 MESSAGE-ID ONLY. NEVER THREAD-KEY. READ THIS BEFORE "SIMPLIFYING" IT ═══
+         * It is tempting to reuse `isAnchoredOn` here, or to widen this method to also
+         * consult `Thread_Key__c`. Doing either DESTROYS OUTBOUND MAIL, and the reason is
+         * structural rather than incidental:
+         *
+         *   • `Inbound_Message_Id__c` is THIS MESSAGE's own RFC Message-ID — globally
+         *     unique per message (RFC 5322). Equality therefore means "the pipeline
+         *     already logged this very email", which is duplication.
+         *   • `Thread_Key__c` is the CONVERSATION ROOT, deliberately SHARED by every
+         *     message in the thread (`PropertyMatchingService.computeThreadKey`,
+         *     `InboundEmailActivityService`). Equality only means "SOMETHING in this
+         *     conversation was logged" — which is the normal, healthy state of every
+         *     reply, not duplication.
+         *
+         * The measured casualty of getting this wrong is a real row: Junior's OUTBOUND
+         * reply (Task `00Tiw000000G4ajEAC`, EmailMessage `02siw0000006BgjAAE`) carries the
+         * same `ThreadIdentifier` the pipeline stamped as `Thread_Key__c` on the inbound
+         * message it answers. A thread-key rule would classify it as a duplicate and
+         * delete THE ONLY REPRESENTATION OF OUTBOUND MAIL THAT EXISTS ANYWHERE IN
+         * SALESFORCE — the pipeline is blind to outbound by construction. The same
+         * reasoning holds inbound: a broker's 2nd and 3rd replies share one
+         * `Thread_Key__c`, so a thread-key rule would delete every EAC copy after the
+         * first, including messages the pipeline never logged at all.
+         *
+         * ⚠ NOT first-wins, unlike `resolveOpportunity`. This is a per-record MEMBERSHIP
+         * test and must see EVERY anchor on that record: one email routed to N records
+         * (D1 multi-property) produces N anchor Tasks, and the guard asks about each
+         * record independently.
+         *
+         * @param recordId The record to test (a related Lead, or the RelatedToId record).
+         * @param message  The capture under examination.
+         * @return true when a pipeline anchor on that record carries this exact Message-ID.
+         */
+        public Boolean isMessageIdAnchoredOn(Id recordId, EmailMessage message) {
+            if (recordId == null || message == null) {
+                return false;
+            }
+            String messageId = normalize(message.MessageIdentifier);
+            if (messageId == null) {
+                return false;
+            }
+            Set<String> messageIds = messageIdsByRecordId.get(recordId);
+            return messageIds != null && messageIds.contains(messageId);
         }
 
         /**
@@ -236,8 +326,17 @@ public with sharing class EmailThreadAnchorService {
                 continue;
             }
 
-            recordAnchors(result, anchor.WhoId, anchorValues);
-            recordAnchors(result, anchor.WhatId, anchorValues);
+            recordAnchors(result.anchorsByRecordId, anchor.WhoId, anchorValues);
+            recordAnchors(result.anchorsByRecordId, anchor.WhatId, anchorValues);
+
+            // The Message-ID half again, UNMERGED — see AnchorIndex.messageIdsByRecordId.
+            // Same rows, same normalization, same loop: no extra query, no second
+            // bracket-handling pass (defect P4).
+            if (messageId != null) {
+                Set<String> messageIdOnly = new Set<String>{ messageId };
+                recordAnchors(result.messageIdsByRecordId, anchor.WhoId, messageIdOnly);
+                recordAnchors(result.messageIdsByRecordId, anchor.WhatId, messageIdOnly);
+            }
 
             Id resolvedOpportunity = resolveOpportunityFor(anchor);
             if (resolvedOpportunity == null) {
@@ -275,21 +374,32 @@ public with sharing class EmailThreadAnchorService {
     }
 
     /**
-     * Records that `recordId` carries these anchor values. Null record Ids are skipped —
-     * an anchor Task may legitimately have only one of WhoId / WhatId set.
+     * Records that `recordId` carries these anchor values, accumulating into whichever
+     * per-record map the caller names. Null record Ids are skipped — an anchor Task may
+     * legitimately have only one of WhoId / WhatId set.
      *
-     * @param index        The index under construction.
+     * ⚠ The target map is a PARAMETER (2026-08-04) so the union index and the
+     * Message-ID-only index share ONE accumulation routine. A second copy of this loop is
+     * exactly the drift the P4 bracket defect taught: two halves that mean to behave
+     * identically, written twice, diverge.
+     *
+     * ⚠ ACCUMULATES, never replaces — `addAll` onto an existing set. A record legitimately
+     * carries N anchors (D1 multi-property routing), and a membership test must see all of
+     * them.
+     *
+     * @param target       The per-record map under construction.
      * @param recordId     The record the anchor sits on.
      * @param anchorValues The normalized values it carries.
      */
-    private static void recordAnchors(AnchorIndex index, Id recordId, Set<String> anchorValues) {
+    private static void recordAnchors(
+            Map<Id, Set<String>> target, Id recordId, Set<String> anchorValues) {
         if (recordId == null) {
             return;
         }
-        if (!index.anchorsByRecordId.containsKey(recordId)) {
-            index.anchorsByRecordId.put(recordId, new Set<String>());
+        if (!target.containsKey(recordId)) {
+            target.put(recordId, new Set<String>());
         }
-        index.anchorsByRecordId.get(recordId).addAll(anchorValues);
+        target.get(recordId).addAll(anchorValues);
     }
 
     /**

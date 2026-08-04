@@ -18,6 +18,17 @@
  *      WhoId IS a Contact, and one Contact can front many deals, so resolving through it
  *      would manufacture exactly the wrong-deal lie the guard exists to delete.
  *
+ * ═══ `isMessageIdAnchoredOn` — THE THIRD ACCESSOR (added 2026-08-04, guard 5 / timeline
+ * dedup) ═══
+ * Message-ID ONLY, per record, NOT first-wins — the exact opposite shape from
+ * `resolveOpportunity`. Tests below pin, directly on the accessor rather than only
+ * end-to-end through the guard (EmailThreadGuardServiceTest owns the end-to-end
+ * pinning): it must NOT be satisfied by a Thread_Key__c-only match (the single easiest
+ * "simplification" that would delete outbound mail and every EAC copy of a
+ * pipeline-unseen reply — see the accessor's own header), it must be bracket-agnostic
+ * (reusing `normalize`, not reimplementing it — defect P4), and it must be record-scoped
+ * (a Message-ID anchored on one record must not satisfy a query about a different one).
+ *
  * ═══ WHY MOST TESTS HERE DO NO EmailMessage DML ═══
  * `index(List<EmailMessage>)` takes records, not Ids, so an UNSAVED EmailMessage is a
  * perfectly good capture for everything except the `Set<Id>` overload. That keeps these
@@ -342,6 +353,171 @@ private class EmailThreadAnchorServiceTest {
         Assert.isFalse(anchors.isAnchoredOn(broker.Id, null),
             'A null message must be false, not a throw');
         Assert.isFalse(anchors.isAnchoredOn(UserInfo.getUserId(), capture),
+            'A record carrying no anchors must be false');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // isMessageIdAnchoredOn — the third accessor (added 2026-08-04, guard 5)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 🔴 THE CONTRACT THIS ACCESSOR EXISTS TO ENFORCE. A reply-anchor Task's
+     * `Thread_Key__c` (the thread ROOT) must satisfy `isAnchoredOn`'s union but must
+     * NOT satisfy this Message-ID-only accessor — only `Inbound_Message_Id__c` (THIS
+     * message's own id) may. Both are asserted against the SAME index in the SAME
+     * test so the contrast is proven in one pass, not inferred across two.
+     */
+    @isTest
+    static void isMessageIdAnchoredOn_matchesOnlyExactMessageId_notTheThreadKey() {
+        Lead broker = TestDataFactory.createLead(true);
+        String ownMessageId = 'anchor-own-id@mail.example.invalid';
+        insert new Task(WhoId = broker.Id, Subject = 'Email: deal', Status = 'Completed',
+                        TaskSubtype = 'Email', Thread_Key__c = DEAL_ROOT,
+                        Inbound_Message_Id__c = ownMessageId);
+
+        EmailMessage threadRootMatchOnly = buildCapture(DEAL_ROOT, 'unrelated@mail.example.invalid');
+        EmailMessage exactMessageIdMatch =
+            buildCapture('unrelated-thread@mail.example.invalid', ownMessageId);
+
+        Test.startTest();
+        EmailThreadAnchorService.AnchorIndex anchors = EmailThreadAnchorService.index(
+            new List<EmailMessage>{ threadRootMatchOnly, exactMessageIdMatch });
+        Test.stopTest();
+
+        Assert.isTrue(anchors.isAnchoredOn(broker.Id, threadRootMatchOnly),
+            'Precondition: the union test (isAnchoredOn) DOES match via the thread root — this '
+            + 'is the normal state of every reply, and the test proves nothing if the union '
+            + 'misses it too');
+        Assert.isFalse(anchors.isMessageIdAnchoredOn(broker.Id, threadRootMatchOnly),
+            'A Thread-Key-only match must NOT satisfy the Message-ID-only accessor — reusing '
+            + 'isAnchoredOn\'s union here would delete every EAC copy of every reply after the '
+            + 'first one the pipeline logged, and every EAC copy of outbound mail sharing the '
+            + 'thread root');
+        Assert.isTrue(anchors.isMessageIdAnchoredOn(broker.Id, exactMessageIdMatch),
+            'A capture whose OWN MessageIdentifier equals the anchor\'s Inbound_Message_Id__c '
+            + 'must satisfy the accessor');
+    }
+
+    /**
+     * ⚠ SPLIT 2026-08-04 (code review) — the original single test here, named
+     * "...isBracketAgnosticInBothDirections", covered only THIS direction and did not
+     * actually exercise `isMessageIdAnchoredOn`'s own `normalize(message.MessageIdentifier)`
+     * call: anchor-side normalization happens once, in `index(...)`, when the Task row is
+     * folded into `messageIdsByRecordId` — so by the time this accessor runs, the stored
+     * value is ALREADY bare regardless of whether it arrived bracketed. Pairing that with a
+     * capture whose own MessageIdentifier is ALREADY bare means `normalize(bareId)` is a
+     * no-op either way, so deleting the accessor's own `normalize(...)` call (production
+     * line `EmailThreadAnchorService.cls:198`) would leave this test green. See the mirror
+     * test below, which is the direction that actually catches that mutation.
+     *
+     * This test alone proves: a BRACKETED-at-rest Task field still normalizes correctly
+     * through the `index(...)` build path (the P4 fix), and a bare capture value matches it.
+     */
+    @isTest
+    static void isMessageIdAnchoredOn_bracketedAnchorAtRestMatchesABareCapture() {
+        Lead broker = TestDataFactory.createLead(true);
+        String bareId = 'bracket-agnostic@mail.example.invalid';
+        // Stored BRACKETED, as the raw Message-ID header arrives.
+        insert new Task(WhoId = broker.Id, Subject = 'Email: deal', Status = 'Completed',
+                        TaskSubtype = 'Email', Inbound_Message_Id__c = '<' + bareId + '>');
+        // EAC supplies the BARE form.
+        EmailMessage capture = buildCapture(null, bareId);
+
+        Test.startTest();
+        EmailThreadAnchorService.AnchorIndex anchors =
+            EmailThreadAnchorService.index(new List<EmailMessage>{ capture });
+        Test.stopTest();
+
+        Assert.isTrue(anchors.isMessageIdAnchoredOn(broker.Id, capture),
+            'A BRACKETED-at-rest stored anchor must match a BARE capture MessageIdentifier — '
+            + 'the same P4 normalization isAnchoredOn relies on must protect this accessor '
+            + 'too (exercises index()\'s anchor-side normalize, not the accessor\'s own)');
+    }
+
+    /**
+     * The MIRROR direction, added 2026-08-04 (code review) alongside the split above —
+     * this is the one that actually exercises `isMessageIdAnchoredOn`'s OWN
+     * `normalize(message.MessageIdentifier)` call. The stored anchor is bare (so
+     * `index(...)`'s own normalization is a no-op and cannot be masking anything), and the
+     * CAPTURE supplies the bracketed form. If the accessor's own `normalize(...)` call
+     * (`EmailThreadAnchorService.cls:198`) were ever deleted, `messageId` would stay
+     * bracketed and fail to match the bare stored value — this assertion goes red exactly
+     * there. `bracketAsymmetryIsClosedByNormalization` (line ~93) already covers this same
+     * stored-bare/capture-bracketed direction for `isAnchoredOn`; this is that direction's
+     * first coverage for `isMessageIdAnchoredOn`.
+     */
+    @isTest
+    static void isMessageIdAnchoredOn_bareAnchorAtRestMatchesABracketedCapture() {
+        Lead broker = TestDataFactory.createLead(true);
+        String bareId = 'bracket-agnostic-mirror@mail.example.invalid';
+        // Stored BARE on purpose — real Inbound_Message_Id__c rows are bracketed (measured
+        // E3, class header), but that would let index()'s own anchor-side normalize() mask
+        // a broken accessor-side normalize(). Bare-at-rest isolates the accessor's own call.
+        insert new Task(WhoId = broker.Id, Subject = 'Email: deal', Status = 'Completed',
+                        TaskSubtype = 'Email', Inbound_Message_Id__c = bareId);
+        // EAC supplies the BRACKETED form.
+        EmailMessage capture = buildCapture(null, '<' + bareId + '>');
+
+        Test.startTest();
+        EmailThreadAnchorService.AnchorIndex anchors =
+            EmailThreadAnchorService.index(new List<EmailMessage>{ capture });
+        Test.stopTest();
+
+        Assert.isTrue(anchors.isMessageIdAnchoredOn(broker.Id, capture),
+            'A BARE stored anchor must match a BRACKETED capture MessageIdentifier — this is '
+            + 'the direction that actually proves isMessageIdAnchoredOn normalizes the '
+            + 'capture side itself, not merely inheriting index()\'s anchor-side pass');
+    }
+
+    /**
+     * The membership test must be per-record, not "does this Message-ID exist
+     * anywhere". The same identifier anchored on Lead A must not satisfy a query
+     * about Lead B — a global test here would let guard 5 delete a capture off a
+     * record that never received the pipeline row.
+     */
+    @isTest
+    static void isMessageIdAnchoredOn_isRecordScoped() {
+        Lead leadA = TestDataFactory.createLead(true);
+        Lead leadB = TestDataFactory.createLead(true);
+        String messageId = 'record-scoped@mail.example.invalid';
+        insert anchorOnWho(leadA.Id, null, messageId);
+        EmailMessage capture = buildCapture(null, messageId);
+
+        Test.startTest();
+        EmailThreadAnchorService.AnchorIndex anchors =
+            EmailThreadAnchorService.index(new List<EmailMessage>{ capture });
+        Test.stopTest();
+
+        Assert.isTrue(anchors.isMessageIdAnchoredOn(leadA.Id, capture),
+            'Precondition: the anchor IS found on Lead A');
+        Assert.isFalse(anchors.isMessageIdAnchoredOn(leadB.Id, capture),
+            'The same Message-ID anchored on Lead A must not satisfy a query about a DIFFERENT '
+            + 'record');
+    }
+
+    /**
+     * `isMessageIdAnchoredOn` is called by the guard for every related Lead AND for
+     * the `RelatedToId` record, which is frequently null. Null arguments and unknown
+     * records must be a plain false, never an exception inside the guard's delete
+     * decision.
+     */
+    @isTest
+    static void isMessageIdAnchoredOn_nullOrUnknownRecord_isFalse() {
+        Lead broker = TestDataFactory.createLead(true);
+        String messageId = 'null-safety@mail.example.invalid';
+        insert anchorOnWho(broker.Id, null, messageId);
+        EmailMessage capture = buildCapture(null, messageId);
+
+        Test.startTest();
+        EmailThreadAnchorService.AnchorIndex anchors =
+            EmailThreadAnchorService.index(new List<EmailMessage>{ capture });
+        Test.stopTest();
+
+        Assert.isFalse(anchors.isMessageIdAnchoredOn(null, capture),
+            'A null record Id (the usual state of RelatedToId) must be false, not a throw');
+        Assert.isFalse(anchors.isMessageIdAnchoredOn(broker.Id, null),
+            'A null message must be false, not a throw');
+        Assert.isFalse(anchors.isMessageIdAnchoredOn(UserInfo.getUserId(), capture),
             'A record carrying no anchors must be false');
     }
 

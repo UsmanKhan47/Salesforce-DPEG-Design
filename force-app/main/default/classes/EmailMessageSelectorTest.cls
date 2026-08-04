@@ -7,6 +7,12 @@
  * stopped returning ActivityId would not fail any behavioural test with the test seam
  * engaged — it would simply stop deleting companion Tasks in production.
  *
+ * `Incoming` (added 2026-08-04 for guard 5 / timeline dedup) gets the same treatment:
+ * it is the FIRST term of `EmailThreadGuardService.isExactPipelineDuplicate`, and a
+ * selector that silently stopped returning it would make every capture read as
+ * direction-null, which the guard treats as "not inbound" — the dedup rule would
+ * stop deleting anything, silently, rather than fail loudly.
+ *
  * ASSERTION STYLE: Assert.* — matches the sibling Broker-Protection test classes.
  */
 @isTest
@@ -47,6 +53,36 @@ private class EmailMessageSelectorTest {
             'ActivityId must be selected AND populated: it is the only handle the guard has on a '
             + 'companion Task. A null here means Enhanced Email is disabled in this org, which '
             + 'disarms the EAC fingerprint entirely');
+    }
+
+    /**
+     * Pins the field added 2026-08-04: `Incoming` must be selected AND its value
+     * returned faithfully. It is the first term of the guard's timeline-dedup
+     * predicate — a selector that silently dropped it would make the predicate read
+     * every capture as "not inbound" and the dedup rule would stop deleting anything,
+     * silently, rather than fail loudly.
+     */
+    @isTest
+    static void selectByIds_returnsIncoming() {
+        EmailMessage capture = new EmailMessage(
+            Subject = 'captured',
+            Status = '3',
+            Incoming = true,
+            ThreadIdentifier = 'sel-incoming-root@example.invalid',
+            MessageIdentifier = 'sel-incoming-msg@example.invalid',
+            FromAddress = 'broker@example.invalid',
+            ToAddress = 'coordinator@example.invalid'
+        );
+        insert capture;
+
+        Test.startTest();
+        List<EmailMessage> rows = EmailMessageSelector.selectByIds(new Set<Id>{ capture.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The captured email should be returned');
+        Assert.isTrue(rows[0].Incoming,
+            'Incoming must be selected AND populated: it is the first term of the guard\'s '
+            + 'timeline-dedup predicate (isExactPipelineDuplicate)');
     }
 
     @isTest
