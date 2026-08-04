@@ -113,4 +113,40 @@ private class LoiSelectorTest {
         }
         Test.stopTest();
     }
+
+    // selectStageRequiredById — the fetch-for-use read added for the generic stage-advance quick
+    // action (RecordStageAdvanceService.advance).
+
+    @isTest
+    static void selectStageRequiredById_returnsTheStageField() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        LOI__c loi = TestDataFactory.createLoi(opp.Id, true);
+
+        Test.startTest();
+        LOI__c result = LoiSelector.selectStageRequiredById(loi.Id);
+        Test.stopTest();
+
+        Assert.areEqual(loi.Id, result.Id, 'Should return the LOI identified by Id');
+        // ⚠ Stage__c drives the Path; LOI_Status__c is the APPROVAL's field. Selecting the wrong one
+        // here would couple the quick action to the approval and make the Path never move.
+        Assert.areEqual('Draft', result.Stage__c,
+            'Stage__c must be populated for the advance');
+    }
+
+    @isTest
+    static void selectStageRequiredById_missing_throwsQueryException() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        LOI__c loi = TestDataFactory.createLoi(opp.Id, true);
+        Id ghostId = loi.Id;
+        delete loi;
+
+        Test.startTest();
+        try {
+            LoiSelector.selectStageRequiredById(ghostId);
+            Assert.fail('A missing fetch-for-use Id must throw QueryException');
+        } catch (System.QueryException e) {
+            Assert.isNotNull(e.getMessage(), 'QueryException expected for a non-existent Id');
+        }
+        Test.stopTest();
+    }
 }

@@ -143,4 +143,34 @@ public with sharing class UnderwritingSelector {
             WITH USER_MODE
         ];
     }
+
+    /**
+     * Loads an Underwriting for the generic stage-advance quick action — backs
+     * RecordStageAdvanceService.advance.
+     *
+     * FETCH-FOR-USE: the caller reads the stage, derives the next one and writes it back, so a miss
+     * is an error. Single-row SOQL assignment -> native System.QueryException, matching
+     * OpportunitySelector.selectStageRequiredById.
+     *
+     * ⚠ `Stage__c` (the Path field), NOT the coarse `Status__c` this object also carries. Both
+     * exist, both hold near-identical words ('Complete' vs 'Completed'), and
+     * ApprovalAuditService writes BOTH on principal sign-off. Selecting the wrong one here would
+     * make the quick action advance a reporting field while the Path never moved.
+     *
+     * Field list is deliberately MINIMAL (Id + Stage__c) — see the per-caller note in the class
+     * header.
+     *
+     * @param underwritingId Underwriting__c Id; must reference an existing row.
+     * @return The Underwriting with Id and Stage__c populated.
+     * @throws System.QueryException when no Underwriting matches the Id.
+     */
+    public static Underwriting__c selectStageRequiredById(Id underwritingId) {
+        return [
+            SELECT Id, Stage__c
+            FROM Underwriting__c
+            WHERE Id = :underwritingId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
 }

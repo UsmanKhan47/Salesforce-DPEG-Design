@@ -84,4 +84,33 @@ public with sharing class LoiSelector {
             LIMIT 1
         ];
     }
+
+    /**
+     * Loads an LOI for the generic stage-advance quick action — backs
+     * RecordStageAdvanceService.advance.
+     *
+     * FETCH-FOR-USE: the caller reads the stage, derives the next one and writes it back, so a miss
+     * is an error. Single-row SOQL assignment -> native System.QueryException, matching
+     * OpportunitySelector.selectStageRequiredById.
+     *
+     * ⚠ `Stage__c` is the Path field and is NOT `LOI_Status__c` — the approval audit writes the
+     * latter, this action writes the former. Widening this method to select or write LOI_Status__c
+     * would silently couple the quick action to the approval's field.
+     *
+     * Field list is deliberately MINIMAL (Id + Stage__c) — see the per-caller note in the class
+     * header.
+     *
+     * @param loiId LOI__c Id; must reference an existing row.
+     * @return The LOI with Id and Stage__c populated.
+     * @throws System.QueryException when no LOI matches the Id.
+     */
+    public static LOI__c selectStageRequiredById(Id loiId) {
+        return [
+            SELECT Id, Stage__c
+            FROM LOI__c
+            WHERE Id = :loiId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
 }

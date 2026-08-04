@@ -120,4 +120,42 @@ private class NdaSelectorTest {
         Assert.isTrue(nullResult.isEmpty(), 'Null input returns an empty list, not null');
         Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
     }
+
+    // selectStageRequiredById — the fetch-for-use read added for the generic stage-advance quick
+    // action (RecordStageAdvanceService.advance).
+
+    @isTest
+    static void selectStageRequiredById_returnsTheStageField() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c nda = TestDataFactory.createNda(opp.Id, true);
+
+        Test.startTest();
+        NDA__c result = NdaSelector.selectStageRequiredById(nda.Id);
+        Test.stopTest();
+
+        Assert.areEqual(nda.Id, result.Id, 'Should return the NDA identified by Id');
+        // ⚠ NDA__c's stage field is Status__c, NOT Stage__c — the only one of the five
+        // stage-controlled acquisitions children shaped that way. A selector that quietly selected
+        // a differently-named field would make the generic service read null and refuse every
+        // advance with "this record has no stage set".
+        Assert.areEqual('Pending', result.Status__c,
+            'Status__c is the NDA stage field and must be populated for the advance');
+    }
+
+    @isTest
+    static void selectStageRequiredById_missing_throwsQueryException() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c nda = TestDataFactory.createNda(opp.Id, true);
+        Id ghostId = nda.Id;
+        delete nda;
+
+        Test.startTest();
+        try {
+            NdaSelector.selectStageRequiredById(ghostId);
+            Assert.fail('A missing fetch-for-use Id must throw QueryException');
+        } catch (System.QueryException e) {
+            Assert.isNotNull(e.getMessage(), 'QueryException expected for a non-existent Id');
+        }
+        Test.stopTest();
+    }
 }

@@ -89,4 +89,34 @@ public with sharing class NdaSelector {
             WITH USER_MODE
         ];
     }
+
+    /**
+     * Loads an NDA for the generic stage-advance quick action — backs
+     * RecordStageAdvanceService.advance.
+     *
+     * FETCH-FOR-USE: the caller reads the stage, derives the next one and writes it back, so a miss
+     * is an error, not a normal state. A single-row SOQL assignment throws native
+     * System.QueryException, matching OpportunitySelector.selectStageRequiredById.
+     *
+     * ⚠ NDA__c's stage field is `Status__c`, NOT `Stage__c` — it is the only one of the five
+     * stage-controlled acquisitions children shaped that way, which is why
+     * RecordStageAdvanceService carries the field name per object.
+     *
+     * Field list is deliberately MINIMAL (Id + the stage field) per this selector's per-caller
+     * philosophy: the advance write touches nothing else, so widening it would only enlarge the
+     * USER_MODE FLS surface and create denials the action does not need.
+     *
+     * @param ndaId NDA__c Id; must reference an existing row.
+     * @return The NDA with Id and Status__c populated.
+     * @throws System.QueryException when no NDA matches the Id.
+     */
+    public static NDA__c selectStageRequiredById(Id ndaId) {
+        return [
+            SELECT Id, Status__c
+            FROM NDA__c
+            WHERE Id = :ndaId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
 }

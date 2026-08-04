@@ -60,4 +60,31 @@ public with sharing class ConstructionFeasibilityReviewSelector {
             WITH USER_MODE
         ];
     }
+
+    /**
+     * Loads a Construction Feasibility Review for the generic stage-advance quick action — backs
+     * RecordStageAdvanceService.advance.
+     *
+     * FETCH-FOR-USE, and therefore deliberately DIFFERENT in shape from
+     * selectLatestByOpportunityId above: that one returns a List because "no review" is a normal
+     * display state, whereas here the caller has been handed a record Id by the quick action and a
+     * miss is an error. Single-row SOQL assignment -> native System.QueryException, matching
+     * OpportunitySelector.selectStageRequiredById.
+     *
+     * Field list is deliberately MINIMAL (Id + Stage__c): the advance write touches nothing else,
+     * so widening it would only enlarge the USER_MODE FLS surface.
+     *
+     * @param reviewId Construction_Feasibility_Review__c Id; must reference an existing row.
+     * @return The review with Id and Stage__c populated.
+     * @throws System.QueryException when no review matches the Id.
+     */
+    public static Construction_Feasibility_Review__c selectStageRequiredById(Id reviewId) {
+        return [
+            SELECT Id, Stage__c
+            FROM Construction_Feasibility_Review__c
+            WHERE Id = :reviewId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
 }

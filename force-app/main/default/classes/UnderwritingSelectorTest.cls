@@ -156,4 +156,41 @@ private class UnderwritingSelectorTest {
         Assert.isTrue(nullResult.isEmpty(), 'Null input returns an empty list, not null');
         Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
     }
+
+    // selectStageRequiredById — the fetch-for-use read added for the generic stage-advance quick
+    // action (RecordStageAdvanceService.advance).
+
+    @isTest
+    static void selectStageRequiredById_returnsTheStageField() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        Underwriting__c record = TestDataFactory.createUnderwriting(opp.Id, true);
+
+        Test.startTest();
+        Underwriting__c result = UnderwritingSelector.selectStageRequiredById(record.Id);
+        Test.stopTest();
+
+        Assert.areEqual(record.Id, result.Id, 'Should return the Underwriting identified by Id');
+        // ⚠ Stage__c (the Path field), NOT the coarse Status__c this object also carries. The
+        // factory sets Stage__c = 'Requested' and Status__c = 'In Progress' — deliberately
+        // different values, so this assertion FAILS if the selector ever reads the wrong one.
+        Assert.areEqual('Requested', result.Stage__c,
+            'Stage__c must be populated for the advance');
+    }
+
+    @isTest
+    static void selectStageRequiredById_missing_throwsQueryException() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        Underwriting__c record = TestDataFactory.createUnderwriting(opp.Id, true);
+        Id ghostId = record.Id;
+        delete record;
+
+        Test.startTest();
+        try {
+            UnderwritingSelector.selectStageRequiredById(ghostId);
+            Assert.fail('A missing fetch-for-use Id must throw QueryException');
+        } catch (System.QueryException e) {
+            Assert.isNotNull(e.getMessage(), 'QueryException expected for a non-existent Id');
+        }
+        Test.stopTest();
+    }
 }

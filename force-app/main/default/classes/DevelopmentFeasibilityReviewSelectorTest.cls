@@ -84,4 +84,42 @@ private class DevelopmentFeasibilityReviewSelectorTest {
         Assert.isTrue(nullResult.isEmpty(), 'Null input returns an empty list, not null');
         Assert.isTrue(emptyResult.isEmpty(), 'Empty input returns an empty list, not null');
     }
+
+    // selectStageRequiredById — the fetch-for-use read added for the generic stage-advance quick
+    // action (RecordStageAdvanceService.advance).
+
+    @isTest
+    static void selectStageRequiredById_returnsTheStageField() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        Development_Feasibility_Review__c review =
+            TestDataFactory.createDevelopmentReview(opp.Id, null, true);
+
+        Test.startTest();
+        Development_Feasibility_Review__c result =
+            DevelopmentFeasibilityReviewSelector.selectStageRequiredById(review.Id);
+        Test.stopTest();
+
+        Assert.areEqual(review.Id, result.Id, 'Should return the review identified by Id');
+        Assert.areEqual('Requested', result.Stage__c, 'Stage__c must be populated for the advance');
+    }
+
+    @isTest
+    static void selectStageRequiredById_missing_throwsQueryException() {
+        // FETCH-FOR-USE, unlike selectLatestByOpportunityId above which returns an empty list:
+        // the quick action was handed a record Id, so a miss is an error rather than a display state.
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        Development_Feasibility_Review__c review =
+            TestDataFactory.createDevelopmentReview(opp.Id, null, true);
+        Id ghostId = review.Id;
+        delete review;
+
+        Test.startTest();
+        try {
+            DevelopmentFeasibilityReviewSelector.selectStageRequiredById(ghostId);
+            Assert.fail('A missing fetch-for-use Id must throw QueryException');
+        } catch (System.QueryException e) {
+            Assert.isNotNull(e.getMessage(), 'QueryException expected for a non-existent Id');
+        }
+        Test.stopTest();
+    }
 }
