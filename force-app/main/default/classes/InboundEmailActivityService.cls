@@ -46,6 +46,41 @@
  * matching those anchors, so relocating them would silently disarm it. Migrating to
  * EmailMessage is a separate, deliberate change — not an outage fix.
  *
+ * ═══ THE TASK NOW RECORDS WHO SENT THE EMAIL (2026-08-04) ═══
+ * Until this change the Task carried the subject and the body and NOTHING about the sender —
+ * not a name, not an address, not a direction. On a Lead's Activity timeline that produced the
+ * reported defect: an inbound broker email rendered as "You sent an email" with no indication
+ * anywhere of who it had actually come from.
+ *
+ * WHY THE SENDER GOES ON `Subject` AND NOT ONLY INTO `Description`. The COLLAPSED timeline row
+ * renders `Subject` ONLY. A sender recorded anywhere else is invisible until the row is
+ * expanded — which is precisely the moment the reader has already been misled. So `Subject`
+ * carries a `From &lt;sender&gt;: ` prefix (buildSubject) and `Description` gains a header block
+ * with the address and the UNTRUNCATED original subject (buildDescription). The two are
+ * complementary, not redundant: the prefix shares the 255-character Subject budget, so the
+ * Description's `Subject:` line is the guarantee that the full subject survives somewhere.
+ *
+ * ⚠ THIS DOES NOT FIX THE "You sent an email" CHROME, AND NOTHING ON A TASK CAN. Direction is
+ * not a Task attribute — the Lightning timeline derives that line from `EmailMessage.Incoming`,
+ * and a standalone Task has no counterpart field to set. The prefix is a MITIGATION (the
+ * broker's name now sits immediately beneath the wrong line), not a cure. Removing the line
+ * requires migrating this module to EmailMessage, which was assessed and RECOMMENDED AGAINST on
+ * two independent grounds: it would relocate the thread anchors onto a PLATFORM-OWNED companion
+ * Task — destroying the EAC Thread Guard's structural-unreachability guarantee, and losing
+ * Inbound_Message_Id__c silently breaks idempotency — and an EmailMessage cannot reliably reach
+ * a LEAD at all, because a sender address that already belongs to a Contact makes every
+ * EmailMessageRelation fail with "An email can't have more than 1 sender" (measured in
+ * `usman-dpeg`, 2026-08-02), which is the shape of every repeat broker this module exists for.
+ * Do not re-litigate it without reading `agent-output/design-requirements.md` §4.
+ *
+ * ⚠ CONTRACT NOTE — `Task.Subject` IS NOT A MATCHING KEY, AND MUST STAY THAT WAY. Nothing in
+ * this repo queries pipeline Tasks by Subject (the two subject-matching TaskSelector methods
+ * belong to the Disposition closing checklist and the broker check-in reminder; both match
+ * literal internal subjects scoped by WhatId and cannot collide with a `From `-prefixed email
+ * subject). Idempotency and reply threading match on Inbound_Message_Id__c / Thread_Key__c
+ * ONLY, and neither of those changed. A future Subject-based probe would now have to account
+ * for the prefix — prefer a field over re-deriving meaning from this string.
+ *
  * NO SUBTYPE-ERA SPLIT EXISTS. A concern was raised about heterogeneous TaskSubtype values
  * across pipeline Tasks. It is moot: ZERO pipeline Tasks have ever been successfully inserted
  * in this org (every attempt died on Type), so there is no historical population to be
@@ -98,6 +133,50 @@ public with sharing class InboundEmailActivityService {
     private static final Integer LEN_KEY = 255;
 
     /**
+     * Sender-prefix vocabulary for Task.Subject.
+     *
+     * ⚠ SUBJECT_SENDER_PREFIX is `'From '` with NO colon. The colon lives in
+     * SUBJECT_SENDER_SEPARATOR, AFTER the sender, so the composed line reads
+     * `From Jane Broker: 1400 Royal Ln`. The Description header block uses a DIFFERENT,
+     * RFC-shaped label (`'From: '`, colon immediately after the word). The two are similar
+     * enough to swap by accident and are not interchangeable.
+     */
+    private static final String SUBJECT_SENDER_PREFIX = 'From ';
+    private static final String SUBJECT_SENDER_SEPARATOR = ': ';
+
+    /**
+     * The sender label's own budget INSIDE the 255-character Subject. It exists so a
+     * pathological display name cannot eat the subject: the sender is clipped to 60 BEFORE the
+     * composed string is clipped to 255, so the prefix costs at most 5 + 60 + 2 = 67 characters
+     * and AT LEAST 188 characters of the original subject always survive. See buildSubject.
+     */
+    private static final Integer LEN_SUBJECT_SENDER = 60;
+
+    /**
+     * Budget for the address shown on the Description's `From:` line — Salesforce's standard
+     * Email-field length. It is a DISPLAY bound only: Description is a text field, so nothing
+     * here can throw INVALID_EMAIL_ADDRESS, and the value is deliberately NOT run through
+     * InboundEmailFieldUtil.sanitizeEmail (which returns null for anything malformed and would
+     * therefore HIDE information — see buildDescription).
+     */
+    private static final Integer LEN_SENDER_EMAIL = 80;
+
+    /**
+     * Shown on the Description's `From:` line when neither a name nor an address is known. That
+     * line is ALWAYS emitted — "the pipeline could not identify a sender" is itself information
+     * the reader needs, and its absence would read as an oversight rather than a fact.
+     */
+    private static final String SENDER_UNKNOWN = '(sender not identified)';
+
+    /**
+     * Plain 60-hyphen rule closing the Description header block. ASCII on purpose: this text
+     * lands in a 32,000-character field that is also read by scripts and exports, so no
+     * box-drawing characters and nothing outside ASCII.
+     */
+    private static final String HEADER_RULE =
+        '------------------------------------------------------------';
+
+    /**
      * True when this exact RFC Message-ID has already been logged as a Task — i.e. the
      * platform is redelivering a message the pipeline has already routed.
      *
@@ -118,29 +197,41 @@ public with sharing class InboundEmailActivityService {
     }
 
     /**
-     * Log one inbound broker email as a completed Task attached to `recordId`, carrying
-     * both threading keys. A one-element convenience wrapper over the bulk method below —
-     * kept so single-target callers (and their tests) read as one line.
+     * Log one inbound broker email as a completed Task attached to `recordId`, carrying both
+     * threading keys AND the sender's identity. A one-element convenience wrapper over the bulk
+     * method below — kept so single-target callers (and their tests) read as one line.
      *
-     * @param recordId   The record the routing tree resolved (Lead / Contact / Opportunity
-     *                   / other); may be null.
-     * @param subject    The inbound email subject, used verbatim as the Task Subject.
-     * @param body       The raw email body → Task.Description.
-     * @param messageId  RFC Message-ID of this email → Inbound_Message_Id__c.
-     * @param inReplyTo  RFC In-Reply-To header (used only to derive the thread key).
-     * @param references RFC References header (used only to derive the thread key).
+     * ⚠ THERE IS DELIBERATELY NO SENDER-LESS OVERLOAD of either method. The 6-argument forms
+     * were REMOVED rather than retained on 2026-08-04: keeping them would let a future caller
+     * silently log a Task with no sender on it, reintroducing the exact defect this change
+     * fixes. Pass blanks explicitly if the sender is genuinely unknown — buildSubject then
+     * degrades to the pre-change Subject, byte for byte.
+     *
+     * @param recordId    The record the routing tree resolved (Lead / Contact / Opportunity
+     *                    / other); may be null.
+     * @param subject     The inbound email subject; composed into the Task Subject.
+     * @param body        The raw email body → Task.Description, beneath the sender header.
+     * @param messageId   RFC Message-ID of this email → Inbound_Message_Id__c.
+     * @param inReplyTo   RFC In-Reply-To header (used only to derive the thread key).
+     * @param references  RFC References header (used only to derive the thread key).
+     * @param senderName  Display name of the broker who sent the email; blank falls back to
+     *                    `senderEmail`, and blank BOTH suppresses the Subject prefix entirely.
+     * @param senderEmail The broker's address; display only, never an arbitration key.
      * @return The Id of the inserted Task.
      * @throws DmlException when the Task insert fails; the caller records it on the
      *         staging row's Error__c alongside the outcome it had already reached.
      * @example
      * InboundEmailActivityService.logInboundEmail(
      *     leadId, staging.Subject__c, staging.Raw_Body__c,
-     *     staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c);
+     *     staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c,
+     *     senderName, senderEmail);
      */
     public static Id logInboundEmail(Id recordId, String subject, String body,
-                                     String messageId, String inReplyTo, String references) {
+                                     String messageId, String inReplyTo, String references,
+                                     String senderName, String senderEmail) {
         List<Task> logged = logInboundEmail(
-            new List<Id>{ recordId }, subject, body, messageId, inReplyTo, references);
+            new List<Id>{ recordId }, subject, body, messageId, inReplyTo, references,
+            senderName, senderEmail);
         return logged[0].Id;
     }
 
@@ -180,29 +271,33 @@ public with sharing class InboundEmailActivityService {
      * all (a gated or pre-filtered email), or the idempotency check would let the platform
      * reprocess the same message forever.
      *
-     * @param recordIds  Distinct routed records in ascending priority; null/empty logs one
-     *                   unattached Task.
-     * @param subject    The inbound email subject, used verbatim as the Task Subject.
-     * @param body       The raw email body → Task.Description.
-     * @param messageId  RFC Message-ID of this email → Inbound_Message_Id__c.
-     * @param inReplyTo  RFC In-Reply-To header (used only to derive the thread key).
-     * @param references RFC References header (used only to derive the thread key).
+     * @param recordIds   Distinct routed records in ascending priority; null/empty logs one
+     *                    unattached Task.
+     * @param subject     The inbound email subject; composed into the Task Subject.
+     * @param body        The raw email body → Task.Description, beneath the sender header.
+     * @param messageId   RFC Message-ID of this email → Inbound_Message_Id__c.
+     * @param inReplyTo   RFC In-Reply-To header (used only to derive the thread key).
+     * @param references  RFC References header (used only to derive the thread key).
+     * @param senderName  Display name of the broker who sent the email; blank falls back to
+     *                    `senderEmail`, and blank BOTH suppresses the Subject prefix entirely.
+     * @param senderEmail The broker's address; display only, never an arbitration key.
      * @return The inserted Tasks, in the same order as `recordIds`.
      * @throws DmlException when the Task insert fails; the caller records it on the
      *         staging row's Error__c alongside the outcome it had already reached.
      * @example
      * InboundEmailActivityService.logInboundEmail(
      *     orderedTargets, staging.Subject__c, staging.Raw_Body__c,
-     *     staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c);
+     *     staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c,
+     *     senderName, senderEmail);
      */
     public static List<Task> logInboundEmail(List<Id> recordIds, String subject, String body,
-                                             String messageId, String inReplyTo, String references) {
-        // Both threading keys are identical on every row, so they are computed ONCE rather
-        // than per Task — computeThreadKey is pure but it is not free.
-        String clippedSubject = String.isBlank(subject)
-            ? SUBJECT_FALLBACK
-            : InboundEmailFieldUtil.clip(subject, LEN_SUBJECT);
-        String clippedBody = InboundEmailFieldUtil.clip(body, LEN_DESCRIPTION);
+                                             String messageId, String inReplyTo, String references,
+                                             String senderName, String senderEmail) {
+        // Every row of this batch is the SAME email, so both threading keys and both composed
+        // display strings are identical across the N Tasks and are built ONCE rather than per
+        // Task — computeThreadKey and the composers are pure, but they are not free.
+        String composedSubject = buildSubject(senderName, senderEmail, subject);
+        String composedDescription = buildDescription(senderName, senderEmail, subject, body);
         String clippedMessageId = InboundEmailFieldUtil.clip(messageId, LEN_KEY);
         String threadKey = InboundEmailFieldUtil.clip(
             PropertyMatchingService.computeThreadKey(messageId, inReplyTo, references), LEN_KEY);
@@ -214,8 +309,8 @@ public with sharing class InboundEmailActivityService {
         List<Task> activities = new List<Task>();
         for (Id recordId : targets) {
             Task activity = new Task(
-                Subject = clippedSubject,
-                Description = clippedBody,
+                Subject = composedSubject,
+                Description = composedDescription,
                 ActivityDate = Date.today(),
                 Status = STATUS_COMPLETED,
                 // TaskSubtype only. Never add Task.Type here — it does not exist in this
@@ -229,6 +324,140 @@ public with sharing class InboundEmailActivityService {
         }
         insert activities;
         return activities;
+    }
+
+    /**
+     * Compose Task.Subject: `From &lt;sender&gt;: &lt;original subject&gt;`.
+     *
+     * ═══ WHY THE SENDER GOES FIRST — THE TRUNCATION CONTRACT ═══
+     * InboundEmailFieldUtil.clip is HEAD-PRESERVING (`substring(0, max)`), so whatever sits at
+     * the front of the composed string survives and the TAIL is what a 255-character field
+     * discards. Putting the sender first is therefore not a cosmetic choice — it is what makes
+     * "the sender can never be truncated away" true by construction:
+     *
+     *   • the sender is clipped to LEN_SUBJECT_SENDER (60) FIRST, so a pathological 300-character
+     *     display name cannot eat the subject;
+     *   • the prefix therefore costs at most 5 (`'From '`) + 60 + 2 (`': '`) = 67 characters, so
+     *     AT LEAST 188 characters of the original subject always remain in Subject;
+     *   • what is lost above 255 is the ORIGINAL SUBJECT'S TAIL. That is the correct trade: the
+     *     sender is the information the reader is missing, and the FULL subject is preserved
+     *     unabridged on the Description's `Subject:` line (see buildDescription) and verbatim on
+     *     `Inbound_Email_Staging__c.Subject__c`.
+     *
+     * Typical broker subjects run 40–90 characters, so in practice nothing is lost at all.
+     *
+     * ═══ THE THREE FALLBACKS ═══
+     *   1. NAME BLANK, ADDRESS KNOWN  → the ADDRESS becomes the sender label.
+     *   2. BOTH BLANK                 → NO PREFIX AT ALL. The Subject is then byte-identical to
+     *      the pre-2026-08-04 behaviour. This keeps the change strictly additive and avoids
+     *      emitting a dangling `From : ` or a noisy `From (unknown): `.
+     *   3. SUBJECT BLANK              → the existing SUBJECT_FALLBACK is substituted INSIDE the
+     *      composition, so the result is `From Jane Broker: (no subject)` and never a trailing
+     *      `From Jane Broker: `.
+     *
+     * @param senderName  The broker's display name; blank falls back to `senderEmail`.
+     * @param senderEmail The broker's address; used as the label only when the name is blank.
+     * @param subject     The original inbound subject; blank yields SUBJECT_FALLBACK.
+     * @return The composed Subject, never longer than LEN_SUBJECT and never blank.
+     */
+    private static String buildSubject(String senderName, String senderEmail, String subject) {
+        String baseSubject = String.isBlank(subject) ? SUBJECT_FALLBACK : subject;
+
+        String senderLabel = String.isNotBlank(senderName)
+            ? senderName.trim()
+            : (String.isNotBlank(senderEmail) ? senderEmail.trim() : null);
+
+        if (senderLabel == null) {
+            // Fallback 2 — no sender was resolved on any path, so emit no prefix.
+            return InboundEmailFieldUtil.clip(baseSubject, LEN_SUBJECT);
+        }
+
+        return InboundEmailFieldUtil.clip(
+            SUBJECT_SENDER_PREFIX
+                + InboundEmailFieldUtil.clip(senderLabel, LEN_SUBJECT_SENDER)
+                + SUBJECT_SENDER_SEPARATOR
+                + baseSubject,
+            LEN_SUBJECT);
+    }
+
+    /**
+     * Compose Task.Description: a sender header block, a rule, a blank line, then the raw body.
+     *
+     * <pre>
+     * From: Muhammad Haris &lt;muhammad.haris@example.com&gt;
+     * Subject: Gordon Center - Jacksonville FL
+     * ------------------------------------------------------------
+     *
+     * &lt;raw email body, verbatim&gt;
+     * </pre>
+     *
+     * ═══ WHY THIS BLOCK EXISTS ALONGSIDE THE SUBJECT PREFIX ═══
+     * The prefix shares the 255-character Subject budget, so a long subject can lose its tail
+     * there. The `Subject:` line here carries the original UNABRIDGED and is what makes that
+     * trade safe. The `From:` line adds the ADDRESS, which the Subject deliberately has no room
+     * for.
+     *
+     * ═══ THE `From:` LINE — ALWAYS EMITTED, FOUR SHAPES ═══
+     *   • name + address → `Jane Broker &lt;jane@firm.com&gt;`
+     *   • name only      → `Jane Broker`
+     *   • address only   → `jane@firm.com`
+     *   • neither        → SENDER_UNKNOWN. The line is still written: "the pipeline could not
+     *     identify a sender" is itself information, and an omitted line reads as an oversight.
+     *
+     * ⚠ THE ADDRESS IS SHOWN VERBATIM AND IS **NOT** RUN THROUGH
+     * InboundEmailFieldUtil.sanitizeEmail. That helper returns NULL for anything malformed,
+     * which here would HIDE information rather than protect anything: Description is a text
+     * field, so it cannot throw INVALID_EMAIL_ADDRESS, and `extraction.brokerEmail` travels
+     * unsanitised by contract — so on the rare paste-forward path this slot may hold a display
+     * name or a fragment. That is a useful signal to the reader (the extraction is suspect), and
+     * it is bounded by the LEN_SENDER_EMAIL clip.
+     *
+     * ═══ COMPOSE-THEN-CLIP, SAME HEAD-PRESERVING RULE AS buildSubject ═══
+     * The whole string is clipped to LEN_DESCRIPTION (32,000) ONCE, at the end, so the header
+     * always survives and the BODY'S TAIL is what is lost at the ceiling. Two consequences,
+     * both accepted deliberately:
+     *   • a body that previously filled all 32,000 characters now loses roughly the header's
+     *     length from its tail. The raw body survives verbatim on
+     *     `Inbound_Email_Staging__c.Raw_Body__c`, which is the durable copy;
+     *   • A NULL OR EMPTY BODY NOW YIELDS A DESCRIPTION CONTAINING JUST THE HEADER, where it
+     *     previously yielded null. That is a behaviour change and an improvement — the sender is
+     *     recorded even for an empty-bodied email.
+     *
+     * @param senderName  The broker's display name; may be blank.
+     * @param senderEmail The broker's address; may be blank.
+     * @param subject     The original inbound subject; blank yields SUBJECT_FALLBACK.
+     * @param body        The raw email body; null or blank yields a header-only Description.
+     * @return The composed Description, never longer than LEN_DESCRIPTION and never null.
+     */
+    private static String buildDescription(String senderName, String senderEmail,
+                                           String subject, String body) {
+        String name = String.isBlank(senderName) ? null : senderName.trim();
+        String address = String.isBlank(senderEmail)
+            ? null
+            : InboundEmailFieldUtil.clip(senderEmail.trim(), LEN_SENDER_EMAIL);
+
+        String fromValue;
+        if (name != null && address != null) {
+            fromValue = name + ' <' + address + '>';
+        } else if (name != null) {
+            fromValue = name;
+        } else if (address != null) {
+            fromValue = address;
+        } else {
+            fromValue = SENDER_UNKNOWN;
+        }
+
+        // 'From: ' / 'Subject: ' here are the RFC-shaped header labels — NOT
+        // SUBJECT_SENDER_PREFIX, which is 'From ' with the colon deferred to after the name.
+        String header = 'From: ' + fromValue + '\n'
+            + 'Subject: ' + (String.isBlank(subject) ? SUBJECT_FALLBACK : subject) + '\n'
+            + HEADER_RULE + '\n';
+
+        // Explicit null guard: Apex renders a null operand of a String concatenation as the
+        // literal text 'null', which would print `null` where the body belongs.
+        String rawBody = (body == null) ? '' : body;
+
+        return InboundEmailFieldUtil.clip(header + '\n' + rawBody, LEN_DESCRIPTION);
     }
 
     /**

@@ -78,7 +78,8 @@
  *
  *   EMAIL-LEVEL EPILOGUE (once)
  *    9.  ONE Task per DISTINCT routed record, ONE bulk DML, ASCENDING PRIORITY (C-2 / C-3) —
- *        which is what makes branch (a) possible for the NEXT email.
+ *        which is what makes branch (a) possible for the NEXT email. Each Task now names the
+ *        SENDER (2026-08-04) — see "THE SENDER SHOWN ON THE LOGGED TASK" below.
  *    10. Stamp staging: Outcome__c (summary), Result_Record_Id__c (primary),
  *        Routed_Record_Ids__c (all N), Property_Count__c, Processed_DateTime__c.
  *
@@ -177,6 +178,25 @@
  * reads. The catch is therefore widened to JSONException, with a defensive Exception arm
  * behind it. MAX_TOKENS 4096 and OpenAI JSON mode make truncation unlikely; this makes it
  * survivable.
+ *
+ * ═══ THE SENDER SHOWN ON THE LOGGED TASK (2026-08-04) ═══
+ * `senderName` / `senderEmail` carry the ONE broker identity this job resolved, and finish()
+ * hands them to InboundEmailActivityService so the Task actually says who the email came from.
+ * ONE EMAIL, ONE BROKER IDENTITY: the Task shows the same identity that drove arbitration, never
+ * a second independently-derived notion of "who sent this" that would be free to disagree with it.
+ *
+ * They are DEFAULTED FROM THE ENVELOPE (`From_Name__c` / `From_Address__c`) the instant the
+ * staging row loads, BEFORE ANY BRANCH — and that placement is load-bearing, not tidiness.
+ * finish() is reachable from FOUR places, and the reply / deterministic-pre-filter prologue
+ * RETURNS BEFORE THE CALLOUT, so no extraction exists on that path at all. Deriving the sender
+ * only where an extraction is in scope would ship a fix that is silently absent from the
+ * highest-volume branch. They are then REFINED fill-if-present (never blanked) immediately after
+ * applySenderFirstBrokerIdentity — a no-op on the ordinary auto-forward, and the whole point on
+ * the PASTE-FORWARD shape, where U1 stands down and the envelope is DPEG's OWN COORDINATOR.
+ *
+ * DISPLAY ONLY. Nothing here is written to `Property_Key__c`, `Broker_Email__c`, `Lead.Email` or
+ * any other arbitration input, and the pair adds NO SOQL and NO DML — the
+ * `lastRunQueryCount` / `lastRunDmlCount` budgets are unchanged.
  *
  * ═══ LAYER ═══
  * Queueable orchestrator. It contains NO SOQL and NO DML of its own — every read goes through
@@ -498,6 +518,23 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     private Inbound_Email_Staging__c staging;
 
     /**
+     * The broker identity shown on the Task this email is logged against — display only, never
+     * an arbitration key. See "THE SENDER SHOWN ON THE LOGGED TASK" in the class header for the
+     * full reasoning; the two rules that matter when editing this file:
+     *
+     *   1. THEY ARE SET AT THE STAGING LOAD, BEFORE ANY BRANCH, because finish() is reachable
+     *      from FOUR paths and the reply / pre-filter prologue returns BEFORE the callout — so
+     *      `extraction` does not exist on every path and cannot be the source of truth here.
+     *   2. THE REFINE AFTER U1 IS FILL-IF-PRESENT AND NEVER BLANKS THE ENVELOPE DEFAULT. A
+     *      degraded extraction must leave the envelope sender standing, not erase it.
+     *
+     * Both are HELD AS MEMBERS for the same reason `outcomes` and `routingErrors` are: finish()
+     * needs them and cannot be handed a local from a branch it is called out of.
+     */
+    private String senderName;
+    private String senderEmail;
+
+    /**
      * Everything routing has achieved SO FAR. Held as members, not locals, so the catch block
      * can report a PARTIAL success: if two properties claimed cleanly and the Task insert then
      * failed, the staging row records both the outcomes reached and the error.
@@ -579,6 +616,15 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             return;
         }
 
+        // SENDER IDENTITY DEFAULT — set here, before ANY branch, on purpose. finish() is reached
+        // from four places and routePrologueWithoutCallout() returns BEFORE the callout, so there
+        // is no extraction to read on the reply / pre-filter path. Initialising at the single
+        // common point and refining after U1 is what makes every branch correct BY CONSTRUCTION
+        // rather than by remembering to pass the sender down each one. Costs no query: both
+        // fields are already on the row InboundEmailStagingSelector loaded.
+        senderName = staging.From_Name__c;
+        senderEmail = staging.From_Address__c;
+
         try {
             if (STATUS_PROCESSED.equals(staging.Status__c)) {
                 // The platform re-ran a job whose row is already terminal. Re-routing would
@@ -611,6 +657,23 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             // audit trail" — that note was removed 2026-08-03; the ordering reason stands on its
             // own and never depended on it.)
             applySenderFirstBrokerIdentity(extraction);
+
+            // REFINE THE TASK'S SENDER — fill-if-present, NEVER blanking the envelope default.
+            // Placed immediately after U1 so the Task shows the SAME identity arbitration used.
+            //   • Ordinary auto-forward: U1 has already made these equal to the envelope, so
+            //     this is a no-op.
+            //   • PASTE-FORWARD (From_Address__c == Forwarded_By__c): U1 STANDS DOWN because the
+            //     envelope sender is DPEG's own coordinator, so the body-extracted broker wins
+            //     here too. Without this the Task header would name our own forwarder —
+            //     reproducing the exact confusion this change exists to remove.
+            //   • LLM degraded / no extraction: both values are blank, so the envelope stands.
+            // Pure in-memory: no query, no DML, no arbitration input touched.
+            if (String.isNotBlank(extraction.brokerName)) {
+                senderName = extraction.brokerName;
+            }
+            if (String.isNotBlank(extraction.brokerEmail)) {
+                senderEmail = extraction.brokerEmail;
+            }
 
             if (isHardGated(extraction)) {
                 // D2 HARD GATE. No Lead, no claim — but the Task is still logged by finish(),
@@ -1331,11 +1394,17 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * in order to resolve a later reply onto the deal DPEG actually owns. When routing produced
      * no record at all (a gate, or a total failure) the Task is still logged, UNATTACHED: the
      * Message-ID must be recorded or a redelivery re-runs the whole pipeline.
+     *
+     * `senderName` / `senderEmail` are passed so the Task says WHO sent the email. They are
+     * always populated by the time any of the four callers reaches here — the envelope default
+     * is set at the staging load, before every branch — so this method needs no fallback of its
+     * own. Blank on both is still handled downstream: buildSubject then emits no prefix at all.
      */
     private void finish() {
         InboundEmailActivityService.logInboundEmail(
             orderedTaskTargets(), staging.Subject__c, staging.Raw_Body__c,
-            staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c);
+            staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c,
+            senderName, senderEmail);
 
         // routingErrorText() is null on the clean path, which is what keeps Status__c 'Processed'
         // byte-for-byte as before. When the loop DID isolate a per-property failure it is non-null,

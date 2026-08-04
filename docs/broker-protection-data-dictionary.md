@@ -191,6 +191,14 @@ records in a single bulk `insert` — see `docs/2026-07-31-llm-field-extraction.
 rule (ascending priority, so a later reply resolves onto the correct record) and why N Tasks sharing
 one `Inbound_Message_Id__c` is safe.
 
+Since 2026-08-04, `Subject` and `Description` (both standard fields, not listed above) also carry the
+resolved broker identity: `Subject` gets a head-preserving `From <sender>: ` prefix ahead of the
+original subject (the sender is clipped to 60 chars first, so it can never be truncated away), and
+`Description` gets a `From:` / `Subject:` / 60-hyphen-rule header block — with the full, untruncated
+subject — ahead of the raw body. `Task.Subject` is deliberately **not** a matching key anywhere in
+this repo; see `docs/2026-08-04-broker-attribution-on-pipeline-tasks.md` and `ARCHITECTURE.md` §2 for
+the full contract, including why this does not fix the "You sent an email" timeline chrome.
+
 ---
 
 ## Integration Credentials

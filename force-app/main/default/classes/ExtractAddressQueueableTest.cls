@@ -48,6 +48,23 @@
  * incidental to those three FIX-2 tests before and is DECISIVE now: U2 suppresses a
  * call_for_offers email unconditionally, so they would have routed to the gate and created no Lead.
  *
+ * 2026-08-04 — THE TASK NOW NAMES THE SENDER. InboundEmailActivityService.logInboundEmail gained
+ * senderName/senderEmail as its final two parameters (the old 6-arg overloads were REMOVED, not
+ * kept alongside), and ExtractAddressQueueable now holds a resolved sender identity
+ * (senderName/senderEmail members, defaulted from the staging row BEFORE any branch and refined
+ * fill-if-present after applySenderFirstBrokerIdentity) that finish() passes through. This class
+ * had no prior call site touching that signature directly, so nothing existing needed to change —
+ * the new SENDER SHOWN ON THE LOGGED TASK section near the bottom of this file is purely additive.
+ * It covers: the winner branch stamping the envelope sender's name on the Task Subject; the
+ * PASTE-FORWARD case (From_Address__c == Forwarded_By__c), which is the one shape where the
+ * "refine fill-if-present after U1" step is load-bearing — the Task must show the BODY-NAMED
+ * broker, never DPEG's own coordinator; the REPLY branch, which returns BEFORE the callout and so
+ * proves the sender comes from the staging-load default, not from an extraction that does not
+ * exist on that path; and a governor-headroom test reusing the SAME budget ceiling as
+ * envelopeBroker_addsNoQueriesAndNoDml (U1) to prove the sender fields add zero queries and zero
+ * DML. Direct field-level coverage of buildSubject/buildDescription/attachTo now lives in the new
+ * InboundEmailActivityServiceTest.cls, which this file's assertions deliberately do not duplicate.
+ *
  * ASSERTION STYLE: Assert.* — matches the sibling Broker-Protection test classes in
  * this exact module (PropertyClaimServiceTest, PropertyMatchingServiceTest).
  *
@@ -3287,5 +3304,173 @@ private class ExtractAddressQueueableTest {
             'A multi-result email still writes the full per-property audit block');
         Assert.isTrue(updatedStaging.Outcome__c.startsWith(ExtractAddressQueueable.OUTCOME_MULTI_PREFIX),
             'and still summarises as a multi-property outcome');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // THE SENDER SHOWN ON THE LOGGED TASK, 2026-08-04
+    //
+    // InboundEmailActivityService.logInboundEmail gained senderName/senderEmail as its final two
+    // parameters (the old 6-arg overloads were REMOVED outright). ExtractAddressQueueable holds
+    // the resolved identity in senderName/senderEmail MEMBERS — defaulted from staging.From_Name__c
+    // / staging.From_Address__c the instant the staging row loads, BEFORE any branch, and refined
+    // fill-if-present immediately after applySenderFirstBrokerIdentity — so finish() always has a
+    // correct value to hand to the Task, on every one of the four paths that reach it.
+    //
+    // Field-level coverage of buildSubject/buildDescription/attachTo now lives in
+    // InboundEmailActivityServiceTest.cls; the tests below cover only what this class is
+    // responsible for — that the RIGHT identity reaches finish() on each distinct routing shape.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void execute_winnerBranch_taskSubjectNamesTheEnvelopeSender() {
+        // insertStaging hardcodes From_Name__c = 'Jane Broker' on every fixture in this file, so
+        // the winner branch's Task must show exactly that name, prefixed ahead of the original
+        // subject.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'jane@brokerfirm.example.invalid', 'forwarder@example.invalid',
+            'FW: 100 Sender Subject St', 'some forwarded email body',
+            'msg-sender-subject-winner@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Jane Broker', 'broker_email' => 'jane@brokerfirm.example.invalid',
+            'property_address' => '100 Sender Subject St', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Task logged = [
+            SELECT Subject FROM Task WHERE Inbound_Message_Id__c = 'msg-sender-subject-winner@example.invalid'
+        ];
+        Assert.areEqual('From Jane Broker: FW: 100 Sender Subject St', logged.Subject,
+            'THE SENDER MUST REACH THE TASK: on the winner branch the envelope sender\'s name '
+            + '(staging.From_Name__c, set as senderName before any branch runs) must prefix the '
+            + 'Task Subject ahead of the original email subject');
+    }
+
+    @isTest
+    static void execute_pasteForward_taskSubjectShowsTheBodyNamedBrokerNotTheCoordinator() {
+        // THE CASE THAT MATTERS MOST. From_Address__c == Forwarded_By__c means U1's paste-forward
+        // guard (senderIsOurOwnForwarder) stands down, so applySenderFirstBrokerIdentity never
+        // overrides extraction.brokerName/brokerEmail — they stay as the BODY-named broker. The
+        // "refine fill-if-present" step immediately after U1 is what then carries that body-named
+        // identity onto the Task, displacing the staging-load default (which, on this fixture,
+        // would otherwise have been insertStaging's hardcoded 'Jane Broker'). If that refine step
+        // ever stops firing, the Task silently reverts to naming DPEG's OWN COORDINATOR — the
+        // exact confusion this whole change exists to remove.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'coordinator@dpeg.example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: 920 Paste Forward Subject Way',
+            'Pasting this in from another thread:\n\nMark Stern at JLL is marketing 920 Paste Forward Subject Way.',
+            'msg-pasteforward-subject@example.invalid', null, null);
+        setBodyBrokerMock('mark.stern@jll.example.invalid', '920 Paste Forward Subject Way');
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        // Precondition: confirm the paste-forward guard actually fired (the Lead is the
+        // body-named broker, not the coordinator) before trusting the Subject assertion below.
+        Id leadId = [
+            SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Result_Record_Id__c;
+        Assert.areEqual('mark.stern@jll.example.invalid', [SELECT Email FROM Lead WHERE Id = :leadId].Email,
+            'Precondition: this must genuinely be the paste-forward shape (Lead = body-named broker), '
+            + 'or the Task assertion below proves nothing about the refine step');
+
+        Task logged = [
+            SELECT Subject FROM Task WHERE Inbound_Message_Id__c = 'msg-pasteforward-subject@example.invalid'
+        ];
+        Assert.isTrue(logged.Subject.startsWith('From Mark Stern: '),
+            'On a paste-forward the Task must show the BODY-NAMED broker, never the coordinator who '
+            + 'pasted the message in. If this ever reads "From Jane Broker: " (the envelope default) '
+            + 'or "From coordinator...", the fill-if-present refine step after '
+            + 'applySenderFirstBrokerIdentity has stopped firing on the one shape it exists for. '
+            + 'Actual: ' + logged.Subject);
+    }
+
+    @isTest
+    static void execute_replyBranch_taskSubjectStillShowsTheEnvelopeSenderWithNoCallout() {
+        // finish() is reached from FOUR places, and the reply prologue RETURNS BEFORE THE
+        // CALLOUT — so there is no `extraction` to read a sender from on this path at all. The
+        // sender must therefore already be correct purely from the staging-load DEFAULT, which is
+        // exactly what this test proves: no HttpCalloutMock is configured, so if this path ever
+        // started depending on `extraction` for the sender it would need a callout it cannot make.
+        Lead existingLead = TestDataFactory.createLead(true);
+        insert new Task(
+            Subject = 'Original inquiry', Status = 'Completed', TaskSubtype = 'Email',
+            WhoId = existingLead.Id,
+            Inbound_Message_Id__c = 'root-sender-reply@example.invalid',
+            Thread_Key__c = 'root-sender-reply@example.invalid'
+        );
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'jane@brokerfirm.example.invalid', 'forwarder@example.invalid',
+            'RE: Original inquiry', 'Thanks, following up',
+            'msg-reply-sender@example.invalid', '<root-sender-reply@example.invalid>', null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Outcome__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_REPLY, updatedStaging.Outcome__c,
+            'Precondition: this must genuinely be the no-callout reply branch, or the Subject '
+            + 'assertion below proves nothing about that code path');
+
+        Task logged = [
+            SELECT Subject FROM Task WHERE Inbound_Message_Id__c = 'msg-reply-sender@example.invalid'
+        ];
+        Assert.areEqual('From Jane Broker: RE: Original inquiry', logged.Subject,
+            'A reply never reaches the callout, so the sender must come from the staging-load '
+            + 'DEFAULT (staging.From_Name__c), not from an extraction that does not exist on this path');
+    }
+
+    @isTest
+    static void execute_senderPassedToTask_addsNoQueriesAndNoDml() {
+        // The sender fields are pure member assignments off the already-loaded staging row plus
+        // two extra String arguments on an EXISTING logInboundEmail call — no new query, no new
+        // DML. Reuses the SAME budget ceiling as envelopeBroker_addsNoQueriesAndNoDml (U1)
+        // deliberately, so a regression in either change shows up against an UNCHANGED number
+        // rather than one invented fresh for this test.
+        final Integer singlePropertyQueryBudget = 30;   // async cap is 200
+        final Integer singlePropertyDmlBudget = 20;     // async cap is 150
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'jane@brokerfirm.example.invalid', 'forwarder@example.invalid',
+            'FW: 100 Sender Budget St', 'some forwarded email body',
+            'msg-sender-budget@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Jane Broker', 'broker_email' => 'jane@brokerfirm.example.invalid',
+            'property_address' => '100 Sender Budget St', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        // NOT VACUOUS: prove the sender actually reached the Task before trusting the budget
+        // assertions below.
+        Task logged = [
+            SELECT Subject FROM Task WHERE Inbound_Message_Id__c = 'msg-sender-budget@example.invalid'
+        ];
+        Assert.isTrue(logged.Subject.startsWith('From Jane Broker: '),
+            'Precondition: the sender must actually have reached the Task, or the budget assertions '
+            + 'below prove nothing');
+
+        // ⚠ READ FROM THE STATICS THE QUEUEABLE CAPTURES INSIDE execute(), never from Limits.*
+        // after Test.stopTest() — stopTest restores the pre-test counters, which would make the
+        // obvious assertion silently vacuous.
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount > 0, 'Sanity: telemetry must have been captured');
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount <= singlePropertyQueryBudget,
+            'GOVERNOR HEADROOM: consumed ' + ExtractAddressQueueable.lastRunQueryCount
+            + ' SOQL queries against the SAME budget the pipeline had BEFORE the sender-Task change ('
+            + singlePropertyQueryBudget + '). The sender fields must add ZERO queries');
+        Assert.isTrue(ExtractAddressQueueable.lastRunDmlCount <= singlePropertyDmlBudget,
+            'GOVERNOR HEADROOM: consumed ' + ExtractAddressQueueable.lastRunDmlCount
+            + ' DML statements against the SAME budget as before the sender-Task change ('
+            + singlePropertyDmlBudget + ')');
     }
 }
