@@ -2,7 +2,9 @@
     <lightning-card icon-name="standard:lead">
         <span slot="title">Competing Broker Submissions ({count})</span>
 
-        <!-- ERROR: inline banner (a toast is also raised from the wire handler) -->
+        <!-- ERROR: inline banner (a toast is also raised from the wire handler).
+             `lv-error` is the ONE genuinely cross-bundle class here (shared with
+             recentLeads / recentOpportunities / renewalList) — do not rename it. -->
         <template lwc:if={error}>
             <div
                 class="lv-error slds-p-around_medium slds-text-color_error"
@@ -13,76 +15,90 @@
         </template>
 
         <template lwc:else>
-            <!-- DATA: native related-list ("lv-*") table -->
+            <!-- DATA: one stacked tile per submission.
+                 A <ul>/<li> + per-tile <dl> replaces the former 5-column <table>:
+                 the ul carries the table's aria-label, each li is one record, and
+                 each dt/dd pair is the single-record equivalent of the
+                 <th scope="col"> -> <td> association the table provided. Unlike a
+                 table, this needs no horizontal room, so nothing scrolls sideways
+                 in the ~360px sidebar region of Lead_Record_Page. -->
             <template lwc:if={hasSubmissions}>
-                <div class="lv-scroll">
-                    <table class="lv-table" aria-label="Competing broker submissions">
-                        <thead>
-                            <tr class="lv-head">
-                                <th scope="col" class="lv-th">Broker</th>
-                                <th scope="col" class="lv-th">Forwarded By</th>
-                                <th scope="col" class="lv-th">Property Address</th>
-                                <th scope="col" class="lv-th">Submitted</th>
-                                <th scope="col" class="lv-th">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template for:each={rows} for:item="row">
-                                <tr key={row.id} class={row.rowClass}>
-                                    <td class="lv-cell" data-label="Broker">
-                                        <span class="lv-name">{row.brokerName}</span>
-                                        <template lwc:if={row.brokerEmail}>
-                                            <lightning-formatted-email
-                                                class="lv-sub"
-                                                value={row.brokerEmail}
-                                            ></lightning-formatted-email>
-                                        </template>
-                                    </td>
-                                    <td class="lv-cell" data-label="Forwarded By">
-                                        <template lwc:if={row.forwardedByEmail}>
-                                            <lightning-formatted-email
-                                                value={row.forwardedByEmail}
-                                            ></lightning-formatted-email>
-                                        </template>
-                                        <template lwc:else>
-                                            <span class="lv-muted">—</span>
-                                        </template>
-                                    </td>
-                                    <td class="lv-cell" data-label="Property Address">
-                                        {row.propertyAddress}
-                                    </td>
-                                    <td class="lv-cell" data-label="Submitted">
-                                        <lightning-formatted-date-time
-                                            value={row.submittedDateTime}
-                                            year="numeric"
-                                            month="short"
-                                            day="2-digit"
-                                            hour="2-digit"
-                                            minute="2-digit"
-                                        ></lightning-formatted-date-time>
-                                    </td>
-                                    <td class="lv-cell" data-label="Status">
-                                        <lightning-badge
-                                            label={row.badgeLabel}
-                                            class={row.badgeClass}
-                                        ></lightning-badge>
-                                    </td>
-                                </tr>
+                <!-- role="list" is NOT redundant here. `list-style: none` makes
+                     WebKit drop the implicit `list` role, and aria-label is only
+                     exposed on an element whose role supports naming — so
+                     without this attribute Safari/VoiceOver announces neither
+                     the label nor "list, N items", losing exactly the semantics
+                     this markup replaced the <table> with. axe has no rule for
+                     it, so the toBeAccessible() test passing is not evidence
+                     against it. -->
+                <ul
+                    class="cbs-list"
+                    role="list"
+                    aria-label="Competing broker submissions"
+                >
+                    <template for:each={rows} for:item="row">
+                        <li key={row.id} class={row.rowClass}>
+                            <div class="cbs-tile-head">
+                                <h3 class="cbs-broker">{row.brokerName}</h3>
+                                <span class="slds-assistive-text">Status:</span>
+                                <lightning-badge
+                                    label={row.badgeLabel}
+                                    class={row.badgeClass}
+                                ></lightning-badge>
+                            </div>
+
+                            <template lwc:if={row.brokerEmail}>
+                                <lightning-formatted-email
+                                    class="cbs-email"
+                                    value={row.brokerEmail}
+                                ></lightning-formatted-email>
                             </template>
-                        </tbody>
-                    </table>
-                </div>
+
+                            <!-- dt/dd ONLY, in order and with no wrapper divs —
+                                 axe's `definition-list` rule is strict, and the
+                                 layout is done with CSS instead of markup. -->
+                            <dl class="cbs-fields">
+                                <dt class="cbs-label">Submitted</dt>
+                                <dd class="cbs-value">
+                                    <lightning-formatted-date-time
+                                        value={row.submittedDateTime}
+                                        year="numeric"
+                                        month="short"
+                                        day="2-digit"
+                                        hour="2-digit"
+                                        minute="2-digit"
+                                    ></lightning-formatted-date-time>
+                                </dd>
+
+                                <dt class="cbs-label">Property Address</dt>
+                                <dd class="cbs-value">{row.propertyAddress}</dd>
+
+                                <dt class="cbs-label">Forwarded By</dt>
+                                <dd class="cbs-value">
+                                    <template lwc:if={row.forwardedByEmail}>
+                                        <lightning-formatted-email
+                                            value={row.forwardedByEmail}
+                                        ></lightning-formatted-email>
+                                    </template>
+                                    <template lwc:else>
+                                        <span class="cbs-muted">—</span>
+                                    </template>
+                                </dd>
+                            </dl>
+                        </li>
+                    </template>
+                </ul>
             </template>
 
             <!-- EMPTY -->
             <template lwc:else>
-                <div class="lv-empty" role="status">
+                <div class="cbs-empty" role="status">
                     <lightning-icon
                         icon-name="utility:info"
                         size="small"
-                        class="lv-empty-icon"
+                        class="cbs-empty-icon"
                     ></lightning-icon>
-                    <p class="lv-empty-text">
+                    <p class="cbs-empty-text">
                         No broker submissions are on record for this lead.
                     </p>
                 </div>

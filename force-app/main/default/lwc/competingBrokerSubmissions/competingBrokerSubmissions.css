@@ -1,73 +1,150 @@
 :host {
     display: block;
     color: var(--slds-g-color-neutral-base-10, #181818);
+    overflow-wrap: anywhere;
 }
 
-/* ===== Native related-list ("lv-*") table chrome ===== */
-.lv-scroll {
-    overflow-x: auto;
-}
-.lv-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-.lv-head {
-    background: var(--slds-g-color-surface-container-1, #fafaf9);
-    border-bottom: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-base-1, #e5e5e5);
-}
-.lv-th {
-    text-align: left;
+/* ===========================================================================
+   Stacked tiles ("cbs-*") — replaces the former hand-rolled 5-column table.
+   ---------------------------------------------------------------------------
+   NOTHING in this component may scroll sideways at any container width. Six
+   declarations below do that work; all six are load-bearing, and each one is
+   pinned by the T2 source-text test in __tests__. That test strips CSS comments
+   BEFORE matching, which is why this comment can now name the banned values
+   outright (`overflow-x: auto`, `overflow: auto`, `white-space: nowrap`,
+   `flex-wrap: nowrap`) instead of tiptoeing around its own regexes:
+     1. no `overflow-x` AND no `overflow` shorthand set to auto/scroll anywhere
+        (the old .lv-scroll wrapper is gone; clipping the content instead of
+        reflowing it would only hide the burst, and the shorthand restores the
+        horizontal scrollbar just as effectively as the longhand)
+     2. no `nowrap` anywhere — not `white-space: nowrap` (which the old .lv-th
+        carried) and not `flex-wrap: nowrap` on .cbs-tile-head
+     3. `min-width: 0` on every flex/grid child that holds text — a flex/grid
+        item defaults to `min-width: auto` and then REFUSES to shrink below its
+        longest unbreakable token, so one long email address alone would force
+        the tile wider than its container. The LOAD-BEARING one is the one on
+        .cbs-tile (the grid item); the others are defensive, so the test pins
+        the .cbs-tile one by selector rather than pinning the property globally.
+     4. `overflow-wrap: anywhere` on :host — `anywhere` (not `break-word`)
+        because only `anywhere` affects min-content sizing, which is what lets
+        rule 3 actually take effect. It sits on :host, NOT on .cbs-tile, so it
+        also covers the .lv-error banner (which renders a platform-generated
+        message this component does not control and cannot pre-wrap) and the
+        empty state. Because overflow-wrap INHERITS, that one declaration also
+        crosses the shadow boundary into lightning-formatted-email's own shadow
+        root, which this stylesheet cannot otherwise reach.
+     5. grid minimum `min(18rem, 100%)`, never a bare 18rem — a bare 18rem
+        minimum bursts any container narrower than 288px. This is the rule that
+        looks over-complicated and invites a "simplifying" edit; its failure
+        mode is invisible at desktop width and shows up only in the sidebar.
+     6. no fixed pixel widths on content
+   The grid uses auto-fill and NO media queries on purpose: a media query
+   measures the viewport, but the constraint here is CONTAINER width — the same
+   viewport yields a ~360px record-page sidebar or a ~900px main region.
+   =========================================================================== */
+.cbs-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-3, 12px);
     padding: var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-4, 16px);
-    font-size: var(--slds-g-font-scale-neg-1, 12px);
-    font-weight: var(--slds-g-font-weight-7, 700);
-    color: var(--slds-g-color-neutral-base-30, #444444);
-    white-space: nowrap;
+    margin: 0;
+    list-style: none;
 }
-.lv-cell {
-    padding: var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-4, 16px);
-    font-size: var(--slds-g-font-scale-base, 13px);
-    border-bottom: var(--slds-g-sizing-border-1, 1px) solid
+
+.cbs-tile {
+    min-width: 0;
+    border: var(--slds-g-sizing-border-1, 1px) solid
         var(--slds-g-color-border-base-1, #e5e5e5);
-    vertical-align: middle;
+    border-radius: var(--slds-g-radius-border-2, 8px);
+    padding: var(--slds-g-spacing-3, 12px);
 }
 
-/* Broker cell: bold name over a muted email, related-list "record link" idiom */
-.lv-name {
-    display: block;
-    font-weight: var(--slds-g-font-weight-7, 700);
-    color: var(--slds-g-color-neutral-base-10, #181818);
-}
-.lv-sub {
-    font-size: var(--slds-g-font-scale-neg-1, 12px);
-}
-.lv-muted {
-    color: var(--slds-g-color-neutral-base-60, #706e6b);
-}
-
-/* Row hover + winning-submission accent stripe */
-.lv-row:hover {
-    background: var(--slds-g-color-surface-container-1, #f3f3f3);
-}
-.lv-row_winner {
+/* Winning submission: tinted surface + 3px inset accent stripe (carried over
+   verbatim from the retired .lv-row_winner — same tokens, same 3px). */
+.cbs-tile_winner {
     background: var(--slds-g-color-surface-container-1, #fafaf9);
     box-shadow: inset 3px 0 0 var(--slds-g-color-success-base-50, #2e844a);
 }
 
+/* Tile head: broker name left, Winner/Competing badge right; the badge wraps
+   beneath the name at extreme narrow widths rather than pushing it wider. */
+.cbs-tile-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--slds-g-spacing-2, 8px);
+    min-width: 0;
+}
+
+.cbs-broker {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 13px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-neutral-base-10, #181818);
+}
+
+/* Broker email — the arbitration key this panel exists to adjudicate. Stays a
+   live, readable mailto link, and at the SAME font scale as .cbs-value below.
+   It used to be one step smaller (neg-1), which — since Forwarded By also
+   renders as a blue link — made the corroborating field visually HEAVIER than
+   the primary one. All fields are deliberately equal weight here. */
+.cbs-email {
+    display: block;
+    min-width: 0;
+    margin-top: var(--slds-g-spacing-2, 8px);
+    font-size: var(--slds-g-font-scale-base, 13px);
+}
+
+/* ===== Labelled facts: Submitted / Property Address / Forwarded By =====
+   All three rows share .cbs-label and .cbs-value — deliberately EQUAL visual
+   weight, no field is de-emphasised relative to the others. */
+.cbs-fields {
+    min-width: 0;
+    margin: var(--slds-g-spacing-3, 12px) 0 0;
+}
+
+.cbs-label {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 10px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+}
+
+.cbs-value {
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-2, 8px);
+    font-size: var(--slds-g-font-scale-base, 13px);
+    color: var(--slds-g-color-neutral-base-10, #181818);
+}
+.cbs-value:last-of-type {
+    margin-bottom: 0;
+}
+
+/* Placeholder for an ABSENT value (not a de-emphasised field). */
+.cbs-muted {
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+}
+
 /* ===== Empty state ===== */
-.lv-empty {
+.cbs-empty {
     display: flex;
     align-items: center;
     gap: var(--slds-g-spacing-2, 8px);
     padding: var(--slds-g-spacing-5, 20px) var(--slds-g-spacing-4, 16px);
     color: var(--slds-g-color-neutral-base-60, #706e6b);
 }
-.lv-empty-text {
+.cbs-empty-text {
+    min-width: 0;
     font-size: var(--slds-g-font-scale-base, 13px);
     margin: 0;
 }
 
-/* ===== Error banner ===== */
+/* ===== Error banner (cross-bundle class — keep the name) ===== */
 .lv-error {
     font-size: var(--slds-g-font-scale-base, 13px);
 }

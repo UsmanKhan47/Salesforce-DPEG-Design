@@ -73,12 +73,11 @@ export default class CompetingBrokerSubmissions extends LightningElement {
                 forwardedByEmail: s.Forwarded_By_Email__c,
                 propertyAddress: s.Property_Address_Raw__c || EM_DASH,
                 submittedDateTime: s.Submitted_DateTime__c,
-                isWinner: s.Is_Winning_Submission__c === true,
                 badgeLabel: badge.label,
                 badgeClass: BADGE_CLASS[badge.variant],
                 rowClass: s.Is_Winning_Submission__c
-                    ? 'lv-row lv-row_winner'
-                    : 'lv-row'
+                    ? 'cbs-tile cbs-tile_winner'
+                    : 'cbs-tile'
             };
         });
     }
