@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Stage gate (d), decision D1 = d-1 (2026-08-04 gate). CloseDate is platform-required
+        and can never be blank, so an ISBLANK(CloseDate) reading of "Close Date set" would be
+        a guaranteed no-op. Instead this blocks entry to About to Close when CloseDate is
+        already in the PAST, forcing the deal-driver to re-set a realistic date before the
+        deal enters the closing runway.
+
+        errorDisplayField is CloseDate, not StageName, because CloseDate is the field the
+        user must actually change and it is editable on the layout.
+
+        Gate applies to the stage transition only (ISCHANGED); existing records already at
+        About to Close are unaffected.
+    -->
+    <fullName>Close_Date_Before_About_To_Close</fullName>
+    <active>true</active>
+    <description>Blocks stage entry to About to Close when the Close Date is already in the past. See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(StageName, &apos;About to Close&apos;),
+    CloseDate &lt; TODAY()
+)</errorConditionFormula>
+    <errorDisplayField>CloseDate</errorDisplayField>
+    <errorMessage>Set a current Close Date before moving this deal to About to Close - the current Close Date is in the past.</errorMessage>
+</ValidationRule>

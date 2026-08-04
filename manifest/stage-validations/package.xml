@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Stage-validations change (2026-08-04) — full component list. This manifest
+  now carries TWO things that must deploy together: the stage-validations
+  change itself, AND the Opportunity deal-actions feature as a hard
+  PREREQUISITE. They cannot be split into separate deploys. CLI flags
+  (dashes omitted here because XML comments cannot contain a double hyphen):
+  "sf project deploy start", flag manifest=manifest/stage-validations/package.xml,
+  flag post-destructive-changes=manifest/stage-validations/destructiveChangesPost.xml,
+  flag test-level=RunLocalTests, flag wait=30.
+
+  NOT YET AUTHORISED FOR DEPLOY — see the pre-deploy verification steps in
+  agent-output/design-requirements-stage-validations.md §8/§10 (F2 approval-
+  rejection check, F6 Lead Settings check, Lead backlog count).
+
+  WHY post-destructive-changes FORCES A SINGLE, COMPLETE MANIFEST: sf project
+  deploy start rejects flag post-destructive-changes unless flag manifest is
+  also supplied (CLI error: "All of the following must be provided when
+  using post-destructive-changes: manifest"), which means a flag
+  source-dir-scoped deploy cannot carry the NDA rename at all. Every
+  component in this change, declarative and programmatic, therefore has to
+  travel through THIS ONE manifest file in a single deploy - there is no way
+  to split it into a manifest deploy for the rename plus a separate
+  source-dir deploy for anything else. Every member listed below was
+  confirmed present on disk (.cls plus .cls-meta.xml, the LWC bundle's
+  .js-meta.xml, or the QuickAction's .quickAction-meta.xml) before being
+  added - a package.xml member with no matching file on disk fails deploy
+  with "named in package.xml, but was not found in zipped directory".
+
+  WHY THE DEAL-ACTIONS FEATURE IS A HARD PREREQUISITE, NOT OPTIONAL SCOPE:
+  found by a dry run against the target org (deploy id 0Afiw000000EYZhCAO),
+  5 component errors. The repo carries the Opportunity deal-actions feature
+  (OpportunityActionPermissionService/Controller, six deal quick actions'
+  LWC bundles, nine QuickActions) but the org never received it -
+  StageAdvanceControllerTest :: Variable does not exist:
+  OpportunityActionPermissionService (x4), and Opportunity_Record_Page ::
+  couldn't validate Quick Action Opportunity.Move_to_About_to_Close.
+  Dropping either half does not help: StageAdvanceControllerTest is one of
+  the repaired test classes already in this manifest and references
+  OpportunityActionPermissionService directly, and the Close_Deal visibility
+  fix lives in the FlexiPage already in this manifest, which references
+  quick actions the org does not have. The org's OLDER StageAdvanceControllerTest
+  (the one it would fall back to if this class were dropped) has unrepaired
+  fixtures and would start failing RunLocalTests the moment the validation
+  rules go active. So the deal-actions feature is not new scope being
+  smuggled in here - it is a pre-existing, already-committed gap between
+  repo and org that this deploy is now forced to close as a side effect of
+  the post-destructive-changes constraint above.
+
+  UnderwritingGateTest is deliberately NOT listed - it was not modified by
+  this change and needs no redeploy; it still runs under RunLocalTests.
+
+  RED FLAG, MANDATORY POST-DEPLOY STEP FOR DPEG_Acquisitions AND
+  DPEG_Apex_Access: deploying a permission set in this org has been observed
+  to SILENTLY DROP FieldPermissions rows that the file still declares. This
+  caused a live incident on 2026-08-01 - Broker_Protection_Access lost
+  Task.Inbound_Message_Id__c, Task.Thread_Key__c and Task.WhoId, which made
+  those fields invisible org-wide and broke the live Broker Protection
+  pipeline; it took 60 test failures to notice before the cause was found.
+  DO NOT assume a Succeeded deploy of DPEG_Acquisitions or DPEG_Apex_Access
+  actually persisted every FieldPermissions row the file declares. The
+  mandatory post-deploy verification is to query FieldPermissions for the
+  FULL object set each of these two permission sets touches - not just the
+  fields this change intended to alter - and diff the result against the
+  file. Only after that diff comes back clean should either permission set
+  be considered actually deployed.
+
+  SECOND DEPENDENCY CASCADE, CLOSED VIA A FULL TRANSITIVE SWEEP (2026-08-04,
+  dry run 0Afiw000000EXPHCA4, 8/46 component errors, all rooted in ONE
+  missing class): OpportunityActionPermissionService references UserSelector,
+  which was never deployed to the org even though PermissionSetAssignmentSelector
+  (also referenced by it) already is. Fix: UserSelector and UserSelectorTest
+  added below. To stop discovering this one deploy at a time, every ApexClass
+  member below was then swept transitively - the org's full ApexClass list
+  (270 classes) was diffed against every class name in the repo (281 classes);
+  the diff closes at exactly 11 repo-only classes, all 11 of which are listed
+  in the ApexClass block below, so no class referenced by anything in this
+  manifest can be missing from both the org and this file. The six deal-actions
+  LWC bundles were swept the same way for their flag salesforce/apex and flag
+  salesforce/schema imports (StageAdvanceController and OpportunityApprovalController
+  resolve against the org; OpportunityActionPermissionController resolves
+  against this manifest; zero schema/field imports found). All nine QuickActions
+  were confirmed to resolve to one of the five action-facing bundles below
+  (dealActionGuard is a shared JS-only import, not a QuickAction target itself).
+  Closure is complete - nothing referenced by any member of this manifest is
+  missing from both the repo and the org.
+
+  THIRD GAP, SECURITY-RELEVANT - THE REAL LESSON OF THIS MANIFEST'S HISTORY
+  (2026-08-04, full RunLocalTests validation 0Afiw000000EYbKCAW). The org's
+  copy of StageAdvanceController was STALE - zero occurrences of
+  assertDealActionAccess, so advance()/advanceTo() called
+  StageAdvanceService directly with NO permission gate. The deploy carried
+  the NEW StageAdvanceControllerTest and the NEW OpportunityActionPermissionService,
+  but not the OLD controller those were written against, so the test
+  compiled clean (it only references the service, which WAS present), the
+  gate never actually ran, the stage write succeeded, OpportunityReviewTrigger
+  fired on it, and the failure surfaced three classes downstream as a
+  QueryException from DevelopmentFeasibilityReviewSelector - nowhere near the
+  real defect. Had this deployed as-is, the deal-action buttons would have
+  gone LIVE WITH NO SERVER-SIDE AUTHORIZATION - client-side check only,
+  trivially bypassed by calling the flag AuraEnabled method directly. Same
+  incident shape as July 2026, when a quick-actions deploy shipped an
+  outdated LeadConvertActionController and the convert assertion was not
+  live for over a month. StageAdvanceController, StageAdvanceService,
+  OpportunityApprovalController and OpportunityApprovalControllerTest are
+  added below to close it - all four report changed:true, created:false,
+  i.e. present in the org but stale.
+
+  WHY THIS TOOK THREE DRY RUNS TO SURFACE, AND THE RULE FOR NEXT TIME: this
+  manifest was built from the GIT delta - what this change's commits touch -
+  rather than the ORG delta - what actually differs between the org and the
+  repo. Those are not the same list whenever a feature has been sitting
+  committed-but-never-fully-deployed, which is exactly the deal-actions
+  feature's history here. RULE: for any manifest touching a feature that has
+  never fully deployed, build it by diffing the org against the repo FIRST -
+  flag data query "SELECT Name FROM ApexClass" versus the .cls files on disk
+  (see the transitive-sweep note above for the exact method) - and only then
+  narrow the result by intent. A component reported changed:true, created:false
+  in a deploy result means the ORG HAS AN OLDER VERSION - that is exactly the
+  silent-skew shape that hides a missing security gate behind a compiling
+  test and an unrelated-looking downstream error.
+
+  DELIBERATELY NOT ADDED, EVEN THOUGH ALSO ORG-VS-REPO DIFFERENT: EmailMessageSelector,
+  EmailMessageSelectorTest, EmailThreadAnchorService, EmailThreadAnchorServiceTest,
+  EmailThreadGuardService, EmailThreadGuardServiceTest, EmailThreadAdopterServiceTest.
+  These are the EAC guard-5 change - committed, but DELIBERATELY held pending
+  a durability experiment completing 2026-08-05. Being stale in the org right
+  now is their CORRECT, intended state. Do not "helpfully" add them to this
+  manifest during a future org-delta sweep just because they show up as
+  different - check whether a hold is in effect before assuming every delta
+  is a gap to close.
+
+  FOURTH GAP, SAME FAILURE MODE AS THE THIRD - CAUGHT US TWICE IN ONE CHANGE
+  (2026-08-04, dry run 0Afiw000000EaRpCAK: 51/51 components, 0 component
+  errors, 166/167 tests, one failure). LeadConvertServiceTest.blankLeadFieldsLeaveTargetsNull
+  threw the Property_And_Email_Required_To_Convert validation-rule message
+  from convertOne at line 89 - but on disk convertOne is at line 103 and
+  blankLeadFieldsLeaveTargetsNull at line 599. The org ran an OLDER compiled
+  copy: the developer's GATE_ADDRESS fixture fix was never shipped, because
+  LeadConvertServiceTest was not in this manifest. Confirmed as the only gap
+  by diffing the porcelain-format flag status of force-app/main/default/classes
+  (14 classes this change touches) against the manifest's members list -
+  exactly one name came back uncovered. LeadConvertServiceTest is added below.
+
+  REFINEMENT TO THE ORG-DELTA RULE ABOVE, FORCED BY THIS GAP: a name-level
+  diff of repo ApexClass names against org ApexClass names - the method used
+  for the transitive sweep above - only catches classes MISSING from the org.
+  It is structurally blind to a class that EXISTS in the org but is STALE,
+  which is exactly what LeadConvertServiceTest was, and exactly what
+  StageAdvanceController was for the third gap above. Worse, this specific
+  file was edited AFTER the transitive sweep ran, so even a perfect name diff
+  taken at that moment would not have covered it. A correct manifest for a
+  change like this needs the UNION of two different checks, and neither one
+  alone is sufficient:
+    (a) classes missing from the org entirely - caught by the name-diff
+        method described above (misses stale-but-present classes, which is
+        the whole failure mode of gaps three and four);
+    (b) every class this change actually edits or adds - caught by a
+        porcelain-format flag status against the classes directory (misses
+        classes this change does NOT touch but that a touched class newly
+        depends on, which is the whole failure mode of gap two, UserSelector).
+  Both halves of this change were bitten by exactly one of these two gaps in
+  isolation - proof that relying on either check alone is not enough. Check
+  (b) must also be RE-RUN after any late edit to a file already in the
+  manifest, since the manifest is a point-in-time snapshot and fixture
+  repairs (like the GATE_ADDRESS fix here) routinely land after it is first
+  written.
+-->
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Opportunity.NDA_Signed_Before_Deal_Progression</members>
+        <members>Opportunity.Underwriting_Approved_Before_LOI</members>
+        <members>Opportunity.Approved_LOI_Before_PSA</members>
+        <members>Opportunity.Contract_Signed_Before_Closed_Won</members>
+        <members>Opportunity.Close_Date_Before_About_To_Close</members>
+        <members>Opportunity.No_Backward_Stage_Movement</members>
+        <members>Lead.Property_And_Email_Required_To_Progress</members>
+        <members>Lead.Property_And_Email_Required_To_Convert</members>
+        <name>ValidationRule</name>
+    </types>
+    <types>
+        <members>Opportunity_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <types>
+        <members>TestDataFactory</members>
+        <members>ContractExecutionServiceTest</members>
+        <members>ContractReviewTriggerHandlerTest</members>
+        <members>OpportunityDocStatusControllerTest</members>
+        <members>OpportunityReviewServiceTest</members>
+        <members>StageAdvanceServiceTest</members>
+        <members>StageAdvanceControllerTest</members>
+        <members>LoiGateTest</members>
+        <members>StageBackwardMovementGateTest</members>
+        <members>NdaDealProgressionGateTest</members>
+        <members>StageApprovalGatesTest</members>
+        <members>CloseDateGateTest</members>
+        <members>LeadPropertyEmailGateTest</members>
+        <members>OpportunityActionPermissionService</members>
+        <members>OpportunityActionPermissionController</members>
+        <members>OpportunityActionPermissionServiceTest</members>
+        <members>OpportunityActionPermissionCtrlTest</members>
+        <members>UserSelector</members>
+        <members>UserSelectorTest</members>
+        <members>StageAdvanceController</members>
+        <members>StageAdvanceService</members>
+        <members>OpportunityApprovalController</members>
+        <members>OpportunityApprovalControllerTest</members>
+        <members>LeadConvertServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>leadStatusChange</members>
+        <members>advanceDealStage</members>
+        <members>dealActionGuard</members>
+        <members>dealMoveToAboutToClose</members>
+        <members>dealSendToConstructionReview</members>
+        <members>dealSendToDevelopmentReview</members>
+        <members>submitForApproval</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <types>
+        <members>Opportunity.Advance_to_PSA</members>
+        <members>Opportunity.Begin_Review</members>
+        <members>Opportunity.Close_Deal</members>
+        <members>Opportunity.Initiate_LOI</members>
+        <members>Opportunity.Initiate_Underwriting</members>
+        <members>Opportunity.Move_to_About_to_Close</members>
+        <members>Opportunity.Send_to_Construction_Review</members>
+        <members>Opportunity.Send_to_Development_Review</members>
+        <members>Opportunity.Submit_for_Approval</members>
+        <name>QuickAction</name>
+    </types>
+    <types>
+        <members>DPEG_Acquisitions</members>
+        <members>DPEG_Apex_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

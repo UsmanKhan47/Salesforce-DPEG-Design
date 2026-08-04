@@ -79,4 +79,38 @@ private class LoiGateTest {
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'Rejection returns the deal to Underwriting');
     }
+
+    /**
+     * Pins CARVE-OUT 1 of the No_Backward_Stage_Movement validation rule (code review W2).
+     *
+     * rejectionReturnsDealToUnderwriting above does NOT actually pin carve-out 1: per this org's
+     * own finding (F2, recorded in the rule's XML comment and in
+     * agent-output/design-requirements-stage-validations.md), approval-process field updates
+     * bypass custom validation rules entirely here, so that test's PRIORVALUE(StageName) = 'LOI'
+     * -> StageName = 'Underwriting' transition never actually reaches No_Backward_Stage_Movement's
+     * formula at all - the test would keep passing whether or not carve-out 1 existed. Deleting
+     * carve-out 1 from the deployed rule would NOT turn that test red.
+     *
+     * This test drives the identical LOI -> Underwriting transition through a direct `update`
+     * (no approval process involved), which is the one path carve-out 1's formula can actually be
+     * evaluated against. Without carve-out 1 this is a plain backward move (LOI rank 5 ->
+     * Underwriting rank 4) and would be blocked, so this test DOES red if carve-out 1 is removed.
+     */
+    @isTest
+    static void directLoiToUnderwritingUpdate_isAllowedByCarveOut1_notByApproval() {
+        Opportunity o = newOpp('LOI');
+        insert o; // ISCHANGED(StageName) is false on insert, so every gate is bypassed here.
+        TestDataFactory.signPrimaryNda(o); // isolate: Underwriting entry is ALSO NDA-gated
+
+        Test.startTest();
+        o.StageName = 'Underwriting';
+        update o; // must NOT throw - carve-out 1 exempts exactly this transition, with no
+                  // Approval.process(...) call anywhere in this test
+        Test.stopTest();
+
+        System.assertEquals('Underwriting',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'Carve-out 1 must let a LOI -> Underwriting move through a plain update, independent of '
+            + 'whether approval-process field updates run validation rules in this org');
+    }
 }

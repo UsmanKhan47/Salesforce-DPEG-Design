@@ -57,6 +57,15 @@ private class StageAdvanceServiceTest {
         Opportunity loiDeal = newOpp('LOI');
         Opportunity psaDeal = newOpp('PSA');
 
+        // Both hops now cross stage gates, so both fixtures are brought up to the state the real
+        // pipeline would have left them in. The signed-NDA gate covers PSA and Closed Won, so it
+        // applies to BOTH deals; the approved-LOI gate applies only to the deal entering PSA, and
+        // the signed-contract gate only to the deal entering Closed Won. (psaDeal is INSERTED at
+        // PSA, so it never crosses the approved-LOI gate — ISCHANGED is false on insert.)
+        TestDataFactory.signPrimaryNda(new List<Opportunity>{ loiDeal, psaDeal });
+        TestDataFactory.placeApprovedLoi(loiDeal);
+        TestDataFactory.signContract(psaDeal);
+
         Test.startTest();
         StageAdvanceService.advance(loiDeal.Id);
         StageAdvanceService.advance(psaDeal.Id);
@@ -218,6 +227,13 @@ private class StageAdvanceServiceTest {
         insert new List<Opportunity>{ landDeal, constructionDeal };
         Opportunity psaDeal = newOpp('PSA');
         Opportunity deadDeal = newOpp('Under Review');
+
+        // Only psaDeal needs preparing: 'About to Close' is inside the signed-NDA gate's stage
+        // list, and the NDA auto-created on insert is Pending. Nothing else here crosses a gate —
+        // the two branch targets are ungated, and the Dead/Pass leg is deliberately left bare
+        // because it is a live assertion that the off-ramp is ALWAYS reachable. Giving deadDeal an
+        // NDA it does not need would silently stop testing that.
+        TestDataFactory.signPrimaryNda(psaDeal);
 
         Test.startTest();
         StageAdvanceService.advanceTo(landDeal.Id, 'Development Review');

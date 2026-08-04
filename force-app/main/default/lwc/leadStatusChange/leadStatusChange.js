@@ -48,17 +48,103 @@ export const DEFAULT_CONFIRM_MESSAGE = 'Change lead status?';
 const DEFAULT_CONFIRM_LABEL = 'Confirm';
 
 /**
+ * Returns the first non-empty `message` string carried by an error entry, or a list of them.
+ *
+ * Accepts a single object or an array because the LDS error shape is not uniform: `output.errors`
+ * is an array, each `output.fieldErrors` bucket is an array, and `body` itself is sometimes an
+ * array. Anything that is not shaped like an error entry is skipped rather than thrown on.
+ *
+ * @param {*} entries an error entry, or an array of them
+ * @returns {string|undefined} the first usable message, or undefined
+ */
+function firstMessage(entries) {
+    if (!entries) {
+        return undefined;
+    }
+    const list = Array.isArray(entries) ? entries : [entries];
+    for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        if (
+            entry &&
+            typeof entry.message === 'string' &&
+            entry.message.trim() !== ''
+        ) {
+            return entry.message;
+        }
+    }
+    return undefined;
+}
+
+/**
  * Extracts a user-safe message from an LDS/DML/Apex error, falling back to a fixed message so no
  * raw platform text or `undefined` ever leaks into the toast (ARCHITECTURE.md §5).
+ *
+ * ── WHY THIS READS body.output BEFORE body.message ────────────────────────────
+ * When LDS `updateRecord` is refused by a VALIDATION RULE, the platform puts its own generic
+ * "An error occurred while trying to update the record. Please try again." in `body.message` and
+ * the RULE'S OWN TEXT in `body.output`:
+ *
+ *   body.output.errors     -> page-level errors: validation rules whose errorDisplayField is not
+ *                             on the submitted field set, and Apex-thrown page errors.
+ *   body.output.fieldErrors -> { <fieldApiName>: [ { message, ... } ] } — where a rule bound to a
+ *                             specific field lands, and where a REQUIRED-field failure lands.
+ *
+ * Reading only `body.message` (the original implementation) therefore surfaced the generic text
+ * and dropped the actionable one — the user was told "try again" for a problem that retrying can
+ * never fix. Every Lead quick action shares this function, so the fix reaches all four.
+ *
+ * Ordering is deliberate: page-level first (a stage/status gate names the whole record's problem),
+ * then the first field-level message, then `body.message`, then the caller's fallback.
+ *
+ * This runs on an error path and MUST NOT throw: every lookup is guarded and the whole walk is
+ * wrapped, because an exception here would replace a bad message with no message at all.
  *
  * @param {*} error the error thrown by updateRecord or an imperative Apex call
  * @param {string} [fallback] message to use when the error carries no readable body
  * @returns {string} a user-safe message
  */
 function messageFor(error, fallback) {
-    return (
-        (error && error.body && error.body.message) || fallback || GENERIC_ERROR
-    );
+    try {
+        const body = error && error.body;
+        const bodies = Array.isArray(body) ? body : [body];
+
+        // 1 + 2 — the rule's own text, wherever LDS chose to put it.
+        for (let i = 0; i < bodies.length; i++) {
+            const output = bodies[i] && bodies[i].output;
+            if (!output || typeof output !== 'object') {
+                continue;
+            }
+
+            const pageError = firstMessage(output.errors);
+            if (pageError) {
+                return pageError;
+            }
+
+            const fieldErrors = output.fieldErrors;
+            if (fieldErrors && typeof fieldErrors === 'object') {
+                const buckets = Array.isArray(fieldErrors)
+                    ? fieldErrors
+                    : Object.values(fieldErrors);
+                for (let j = 0; j < buckets.length; j++) {
+                    const fieldError = firstMessage(buckets[j]);
+                    if (fieldError) {
+                        return fieldError;
+                    }
+                }
+            }
+        }
+
+        // 3 — the platform's summary line, or an Apex AuraHandledException message.
+        for (let i = 0; i < bodies.length; i++) {
+            const bodyMessage = firstMessage(bodies[i]);
+            if (bodyMessage) {
+                return bodyMessage;
+            }
+        }
+    } catch (walkFailure) {
+        // An unrecognised error shape must degrade to the fallback, never to a second exception.
+    }
+    return fallback || GENERIC_ERROR;
 }
 
 /**

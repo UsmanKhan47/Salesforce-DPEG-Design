@@ -6,10 +6,20 @@
 @isTest
 private class ContractExecutionServiceTest {
 
+    /**
+     * A deal legitimately parked at PSA, with its Contract Review.
+     *
+     * The LOI -> PSA hop crosses TWO stage gates: the signed-NDA gate (which covers PSA) and the
+     * approved-LOI gate. Both are prepared here rather than at each call site because every test
+     * in this class starts from this fixture — the deal is put into the state the real pipeline
+     * would have left it in, not exempted from the rules.
+     */
     private static Contract_Review__c dealAtPsa() {
         Opportunity o = TestDataFactory.createOpportunity(null, false);
         o.StageName = 'LOI';
         insert o;
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.placeApprovedLoi(o);
         // Entering PSA auto-creates the Contract Review + Primary_Contract__c stamp.
         o.StageName = 'PSA';
         update o;
@@ -120,6 +130,12 @@ private class ContractExecutionServiceTest {
             o.StageName = 'LOI';
         }
         insert opps;
+
+        // Same two gates dealAtPsa() prepares, in bulk. Each helper is a single DML statement for
+        // the whole collection, so the fixture cost stays O(1) in statements and this test keeps
+        // measuring the execution cascade rather than its own setup.
+        TestDataFactory.signPrimaryNda(opps);
+        TestDataFactory.placeApprovedLoi(opps);
 
         for (Opportunity o : opps) {
             o.StageName = 'PSA';

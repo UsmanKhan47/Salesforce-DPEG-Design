@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Stage gate (b): a deal cannot enter PSA until an APPROVED LOI is in place, not merely
+        a linked one. "In place" is read as LOI_Approved__c = true, the flag set by
+        LOI_Approval's Set_LOI_Approved_Flag final action, the only machine-readable evidence
+        the LOI approval happened, since the collapsed single LOI stage does not change
+        StageName on approval.
+
+        Gate applies to the stage transition only (ISCHANGED); existing records already at
+        PSA are unaffected.
+    -->
+    <fullName>Approved_LOI_Before_PSA</fullName>
+    <active>true</active>
+    <description>Blocks stage entry to PSA unless an approved LOI (LOI_Approved__c) is in place, not merely a linked one. See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(StageName, &apos;PSA&apos;),
+    OR(
+        ISBLANK(Primary_LOI__c),
+        NOT(LOI_Approved__c)
+    )
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>This deal cannot enter PSA until an approved LOI is in place. Link the primary LOI and complete the LOI approval first.</errorMessage>
+</ValidationRule>

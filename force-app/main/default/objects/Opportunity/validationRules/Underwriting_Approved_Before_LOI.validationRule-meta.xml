@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Stage gate (a): a deal cannot enter LOI until the underwriting has been approved by
+        the principals (UW_Approved__c).
+
+        Safe against the legitimate route by construction: Underwriting_Approval's
+        finalApprovalActions sets StageName = 'LOI' and UW_Approved__c = true in the same
+        action set / same record save, so the flag is already true when this rule evaluates,
+        true whether or not approval-process field updates run validation rules in this org.
+
+        Gate applies to the stage transition only (ISCHANGED); existing records already at
+        LOI are unaffected.
+
+        Known, accepted: UW_Approved__c is never cleared, so a once-approved deal can be
+        moved back into LOI manually forever, acceptable, since a deal that has been
+        principal-approved once has passed the gate this rule exists to enforce.
+    -->
+    <fullName>Underwriting_Approved_Before_LOI</fullName>
+    <active>true</active>
+    <description>Blocks stage entry to LOI unless the underwriting has been approved by the principals (UW_Approved__c). See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(StageName, &apos;LOI&apos;),
+    NOT(UW_Approved__c)
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>This deal cannot enter LOI until the underwriting has been approved by the principals. Submit it for approval from the Underwriting stage.</errorMessage>
+</ValidationRule>

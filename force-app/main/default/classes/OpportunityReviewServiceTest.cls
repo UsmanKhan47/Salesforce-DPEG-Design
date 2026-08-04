@@ -146,6 +146,9 @@ private class OpportunityReviewServiceTest {
     static void contractReviewCreatesOnUpdate() {
         Opportunity o = newOpp('Under Review');
         insert o;
+        // Entering PSA crosses the signed-NDA gate (which covers PSA) and the approved-LOI gate.
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.placeApprovedLoi(o);
 
         Test.startTest();
         o.StageName = 'PSA';
@@ -171,8 +174,17 @@ private class OpportunityReviewServiceTest {
         insert o; // creates the first review
 
         Test.startTest();
-        // Move away via Under Review (Underwriting is now gated on a signed NDA).
-        o.StageName = 'Under Review';
+        // Move away via Dead/Pass, then come back.
+        //
+        // This used to move away via Under Review, which the backward-stage block now forbids
+        // (Development Review is rank 3, Under Review rank 2). The test's subject is RE-ENTRY
+        // IDEMPOTENCY, not the direction of travel, so the "away" hop is re-routed rather than
+        // the assertion weakened. Dead/Pass is the only stage that expresses "left and came back"
+        // without contradicting the new rules: it is deliberately UNRANKED, so entering it is
+        // always allowed (the escape hatch every stranded deal needs) and leaving it is always
+        // allowed (reviving a passed deal). It is also outside the signed-NDA gate's stage list,
+        // so this fixture still needs no NDA — which keeps the test about duplicate reviews.
+        o.StageName = 'Dead/Pass';
         update o; // moves away — no create
         o.StageName = 'Development Review';
         update o; // re-enters — must NOT create a second

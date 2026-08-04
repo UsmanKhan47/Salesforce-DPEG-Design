@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Stage-validations change (2026-08-04), decision D5 = rename.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+
+    Opportunity.NDA_Signed_Before_Underwriting is RENAMED to
+    Opportunity.NDA_Signed_Before_Deal_Progression (see
+    force-app/main/default/objects/Opportunity/validationRules/NDA_Signed_Before_Deal_Progression.validationRule-meta.xml).
+    A ValidationRule's fullName IS its name in Setup, so a rename requires
+    delete + create, not an in-place edit. There is no data risk - validation
+    rules store nothing.
+
+    POST-destructive (not pre-): deploy the new rule (and every other component
+    in this change) first, then delete the old one, so the gate the old rule
+    enforced is never momentarily absent.
+
+    Deploy (only once authorised by the user, and only AFTER the corresponding
+    package deploy has succeeded). CLI flags (dashes omitted here because XML
+    comments cannot contain a double hyphen): "sf project deploy start", flag
+    source-dir=force-app, flag post-destructive-changes=
+    manifest/stage-validations/destructiveChangesPost.xml, flag
+    test-level=RunLocalTests, flag wait=30.
+
+    Rollback: the deleted validation rule is recoverable from git history (it
+    is not a Recycle-Bin-eligible metadata type).
+    -->
+    <types>
+        <members>Opportunity.NDA_Signed_Before_Underwriting</members>
+        <name>ValidationRule</name>
+    </types>
+    <version>67.0</version>
+</Package>

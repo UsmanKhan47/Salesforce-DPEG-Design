@@ -91,6 +91,13 @@
  *  the blast radius to the unavoidable NDA. Tests asserting NDA__c counts must
  *  account for the auto-created one.
  *
+ *  ⚠ MOVING a saved Opportunity between stages now crosses VALIDATION-RULE GATES
+ *  (signed NDA / approved underwriting / approved LOI / signed contract, plus a
+ *  backward-movement block). Setting StageName BEFORE insert still bypasses them
+ *  all, because ISCHANGED() is false on insert. To cross a gate legitimately, use
+ *  the four stage-gate helpers next to createOpportunitiesByRecordType:
+ *  signPrimaryNda / approveUnderwriting / placeApprovedLoi / signContract.
+ *
  * ── DELIBERATE DEVIATION ─────────────────────────────────────────────────────
  *  This class exceeds the sf-apex 500-line guidance. That rule targets
  *  single-responsibility production classes; ARCHITECTURE.md §2 names exactly one
@@ -574,6 +581,262 @@ public with sharing class TestDataFactory {
         }
         insertIf(doInsert, opps);
         return opps;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // OPPORTUNITY STAGE-GATE FIXTURES
+    //
+    // Four helpers that put an ALREADY-INSERTED deal into the state a stage
+    // validation rule demands, so a test that legitimately needs to cross a gate
+    // says so in one readable line.
+    //
+    //   signPrimaryNda      -> a signed primary NDA        (Underwriting / LOI / PSA /
+    //                                                       About to Close / Closed Won)
+    //   approveUnderwriting -> UW_Approved__c              (LOI)
+    //   placeApprovedLoi    -> Primary_LOI__c + LOI_Approved__c (PSA)
+    //   signContract        -> Contract_Signed__c          (Closed Won)
+    //
+    // ── WHY HELPERS AND NOT NINE AD-HOC PATCH-UPS ────────────────────────────
+    // The gates are one family of rules; when the family changes (a stage added to
+    // the NDA list, a new prerequisite) exactly one place should need editing.
+    // Each helper also names the BUSINESS state it creates, so a reader of the test
+    // sees "this deal has an approved LOI" rather than four opaque field writes.
+    //
+    // ── CONTRACT ─────────────────────────────────────────────────────────────
+    //  - They take SAVED Opportunities. A record with no Id is rejected loudly
+    //    rather than silently doing nothing — these prepare a deal that already
+    //    exists, they do not build one.
+    //  - Bulk-safe: every helper is ONE DML statement per object it touches, with
+    //    no SOQL or DML inside a loop, so the 251-record bulk tests can call them.
+    //  - They MIRROR every value they write back onto the caller's in-memory
+    //    records, so a later `update opps` in the test carries the same values and
+    //    cannot silently re-trigger a "changed to meet criteria" flow.
+    //  - DML is done through minimal `new Opportunity(Id = ...)` shells so a helper
+    //    can never write back a stale field the caller happens to be holding.
+    //
+    // ⚠ SIDE EFFECT worth knowing: setting LOI_Approved__c fires the after-save
+    //   `LOI_Approval_Stamp` flow (ApprovalAuditService + two group notifications).
+    //   With no approval history the audit stamp is a no-op, but the flow does run.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Guard for the stage-gate helpers: they prepare saved deals, so an unsaved record is a
+     * caller mistake that must fail by name rather than as a confusing DML error later.
+     *
+     * @param opportunities The deals to prepare.
+     * @param helper        Helper name, for the error message.
+     * @return The same list, once every record is known to carry an Id.
+     */
+    private static List<Opportunity> requireSavedOpportunities(
+        List<Opportunity> opportunities,
+        String helper
+    ) {
+        if (opportunities == null || opportunities.isEmpty()) {
+            throw new TestDataFactoryException(
+                helper + ' requires at least one Opportunity; received null or an empty list.');
+        }
+        for (Opportunity opp : opportunities) {
+            if (opp == null || opp.Id == null) {
+                throw new TestDataFactoryException(
+                    helper + ' requires INSERTED Opportunities, but one record has no Id. '
+                    + 'These helpers prepare a saved deal to cross a stage gate — call them after insert.');
+            }
+        }
+        return opportunities;
+    }
+
+    /**
+     * Signs each deal's PRIMARY NDA, satisfying the signed-NDA stage gate.
+     *
+     * ⚠ It SIGNS THE EXISTING RECORD rather than inserting a rival NDA.
+     * OpportunityReviewService.ensureNda already opens exactly one Pending NDA per Opportunity on
+     * insert and stamps it onto Primary_NDA__c, and the gate reads `Primary_NDA__r.NDA_Signed__c`.
+     * Inserting a second, signed NDA would satisfy nothing unless it were also stamped as primary,
+     * and would break every test that asserts one NDA per deal. (Same pattern as
+     * OpportunityDocStatusControllerTest, which signs the auto-created record in place.)
+     *
+     * The caller's in-memory copy never carries Primary_NDA__c — the trigger stamps it AFTER the
+     * insert returns — so the deals are re-read here. A deal with no primary NDA at all (the
+     * cascade was bypassed) gets a signed one created and stamped, so the helper's postcondition
+     * is the same either way.
+     *
+     * @param opportunities Inserted Opportunities to prepare (required, non-empty).
+     * @return The NDA records that are now signed, one per deal.
+     */
+    public static List<NDA__c> signPrimaryNda(List<Opportunity> opportunities) {
+        Map<Id, Opportunity> byId =
+            new Map<Id, Opportunity>(requireSavedOpportunities(opportunities, 'signPrimaryNda'));
+
+        Map<Id, Id> primaryByDeal = new Map<Id, Id>();
+        for (Opportunity saved : [
+            SELECT Id, Primary_NDA__c FROM Opportunity WHERE Id IN :byId.keySet()
+        ]) {
+            primaryByDeal.put(saved.Id, saved.Primary_NDA__c);
+        }
+
+        List<NDA__c> signed = new List<NDA__c>();
+        List<Opportunity> withoutPrimary = new List<Opportunity>();
+        for (Opportunity deal : byId.values()) {
+            Id primaryNdaId = primaryByDeal.get(deal.Id);
+            if (primaryNdaId == null) {
+                withoutPrimary.add(deal);
+                continue;
+            }
+            deal.Primary_NDA__c = primaryNdaId;
+            signed.add(new NDA__c(
+                Id = primaryNdaId,
+                Status__c = 'Signed',
+                NDA_Signed__c = true,
+                Date_Signed__c = Date.today()
+            ));
+        }
+        if (!signed.isEmpty()) {
+            update signed;
+        }
+
+        if (!withoutPrimary.isEmpty()) {
+            List<NDA__c> replacements = new List<NDA__c>();
+            for (Opportunity deal : withoutPrimary) {
+                replacements.add(createSignedNdas(1, deal.Id, false)[0]); // build only — no DML in the loop
+            }
+            insert replacements;
+            List<Opportunity> stamps = new List<Opportunity>();
+            for (Integer i = 0; i < withoutPrimary.size(); i++) {
+                withoutPrimary[i].Primary_NDA__c = replacements[i].Id;
+                stamps.add(new Opportunity(
+                    Id = withoutPrimary[i].Id, Primary_NDA__c = replacements[i].Id));
+            }
+            update stamps;
+            signed.addAll(replacements);
+        }
+        return signed;
+    }
+
+    /**
+     * Signs the primary NDA on one deal.
+     * @param opportunity An inserted Opportunity.
+     * @return The now-signed NDA.
+     */
+    public static NDA__c signPrimaryNda(Opportunity opportunity) {
+        return signPrimaryNda(new List<Opportunity>{ opportunity })[0];
+    }
+
+    /**
+     * Marks each deal's underwriting as principal-approved (UW_Approved__c), satisfying the
+     * "underwriting approved before LOI" gate.
+     *
+     * This writes ONLY the flag the gate reads. It deliberately does not fake Underwriting_Status__c
+     * or the UW_Approved_By__c / UW_Approval_Date__c audit stamps: those are written by
+     * ApprovalAuditService from real approval history, and inventing them here would let a test
+     * assert an audit trail that no approver ever created.
+     *
+     * @param opportunities Inserted Opportunities to prepare (required, non-empty).
+     * @return The same Opportunities, with the flag mirrored onto the in-memory records.
+     */
+    public static List<Opportunity> approveUnderwriting(List<Opportunity> opportunities) {
+        List<Opportunity> deals = requireSavedOpportunities(opportunities, 'approveUnderwriting');
+        Map<Id, Opportunity> updates = new Map<Id, Opportunity>();
+        for (Opportunity deal : deals) {
+            deal.UW_Approved__c = true;
+            updates.put(deal.Id, new Opportunity(Id = deal.Id, UW_Approved__c = true));
+        }
+        update updates.values();
+        return deals;
+    }
+
+    /**
+     * Marks one deal's underwriting as principal-approved.
+     * @param opportunity An inserted Opportunity.
+     * @return The same Opportunity.
+     */
+    public static Opportunity approveUnderwriting(Opportunity opportunity) {
+        return approveUnderwriting(new List<Opportunity>{ opportunity })[0];
+    }
+
+    /**
+     * Puts an APPROVED LOI in place on each deal — creates one LOI__c, designates it as
+     * Primary_LOI__c and sets LOI_Approved__c — satisfying the "approved LOI before PSA" gate.
+     *
+     * Both halves are required: the gate reads the lookup AND the flag, because the LOI approval
+     * process deliberately leaves the deal parked at the LOI stage, so the flag is the only
+     * evidence the approval happened.
+     *
+     * The returned LOIs are index-aligned to the input, so a caller that needs particular LOI
+     * terms can mutate and re-save the record it got back rather than inserting a second LOI
+     * (which the controller layer would not read — it prefers Primary_LOI__c).
+     *
+     * @param opportunities Inserted Opportunities to prepare (required, non-empty).
+     * @return The newly created LOIs, one per deal, index-aligned to the input list.
+     */
+    public static List<LOI__c> placeApprovedLoi(List<Opportunity> opportunities) {
+        List<Opportunity> deals = requireSavedOpportunities(opportunities, 'placeApprovedLoi');
+
+        List<LOI__c> lois = new List<LOI__c>();
+        for (Opportunity deal : deals) {
+            LOI__c loi = createLois(1, deal.Id, false)[0]; // build only — no DML in the loop
+            loi.LOI_Status__c = 'Approved';
+            lois.add(loi);
+        }
+        insert lois;
+
+        Map<Id, Opportunity> updates = new Map<Id, Opportunity>();
+        for (Integer i = 0; i < deals.size(); i++) {
+            deals[i].Primary_LOI__c = lois[i].Id;
+            deals[i].LOI_Approved__c = true;
+            updates.put(deals[i].Id, new Opportunity(
+                Id = deals[i].Id,
+                Primary_LOI__c = lois[i].Id,
+                LOI_Approved__c = true
+            ));
+        }
+        update updates.values();
+        return lois;
+    }
+
+    /**
+     * Puts an approved LOI in place on one deal.
+     * @param opportunity An inserted Opportunity.
+     * @return The LOI now designated Primary_LOI__c.
+     */
+    public static LOI__c placeApprovedLoi(Opportunity opportunity) {
+        return placeApprovedLoi(new List<Opportunity>{ opportunity })[0];
+    }
+
+    /**
+     * Marks each deal's contract as signed (Contract_Signed__c + Contract_Executed_Date__c),
+     * satisfying the "contract signed before Closed Won" gate.
+     *
+     * Mirrors what ContractExecutionService stamps on a real PSA execution, minus the Transaction
+     * hand-off: Contract_Executed_Date__c is a DateTime (Day 0) and is set because a signed
+     * contract with no execution date is a state the real service never produces.
+     *
+     * @param opportunities Inserted Opportunities to prepare (required, non-empty).
+     * @return The same Opportunities, with both values mirrored onto the in-memory records.
+     */
+    public static List<Opportunity> signContract(List<Opportunity> opportunities) {
+        List<Opportunity> deals = requireSavedOpportunities(opportunities, 'signContract');
+        DateTime dayZero = DateTime.now();
+        Map<Id, Opportunity> updates = new Map<Id, Opportunity>();
+        for (Opportunity deal : deals) {
+            deal.Contract_Signed__c = true;
+            deal.Contract_Executed_Date__c = dayZero;
+            updates.put(deal.Id, new Opportunity(
+                Id = deal.Id,
+                Contract_Signed__c = true,
+                Contract_Executed_Date__c = dayZero
+            ));
+        }
+        update updates.values();
+        return deals;
+    }
+
+    /**
+     * Marks one deal's contract as signed.
+     * @param opportunity An inserted Opportunity.
+     * @return The same Opportunity.
+     */
+    public static Opportunity signContract(Opportunity opportunity) {
+        return signContract(new List<Opportunity>{ opportunity })[0];
     }
 
     /**

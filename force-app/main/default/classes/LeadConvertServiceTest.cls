@@ -39,13 +39,31 @@
  * can simulate. Confirmed dead-in-test, not merely un-covered; do not add a test that fakes this by
  * asserting against a hardcoded picklist value list instead of the real describe.
  *
+ * ⚠ EVERY LEAD CONVERTED HERE MUST CARRY Property_Address__c AND Email (2026-08-04). The Lead
+ * validation rule Property_And_Email_Required_To_Convert refuses `Database.convertLead` when either
+ * is blank, so a fixture that deliberately empties one of them no longer reaches this service at
+ * all — it fails at the conversion with FIELD_CUSTOM_VALIDATION_EXCEPTION. TestDataFactory.createLead
+ * supplies both, so the only exposure is a fixture that NULLS one on purpose; there is exactly one
+ * such intent in this class and it is handled by
+ * blankAddressLeavesTheDealNameAloneAndFallsBackToCompany, which drives the service directly rather
+ * than through a conversion. Do not "simplify" that method back into a conversion — it cannot work.
+ *
  * @see force-app/main/default/classes/LeadConvertService.cls
  * @see force-app/main/default/classes/OpportunityContactRoleSelector.cls
+ * @see force-app/main/default/objects/Lead/validationRules/Property_And_Email_Required_To_Convert.validationRule-meta.xml
  */
 @isTest
 private class LeadConvertServiceTest {
 
     private static final Integer BULK_N = 251;
+
+    /**
+     * The minimum a Lead must carry to get PAST Property_And_Email_Required_To_Convert. Used by the
+     * fixtures whose subject is what happens when everything ELSE is blank — naming it makes it
+     * obvious in the assertions below which values are under test and which are gate tax.
+     * Kept short so it survives both OPPORTUNITY_NAME_MAX and PROPERTY_NAME_MAX unclipped.
+     */
+    private static final String GATE_ADDRESS = '5 Gate Row, Austin TX';
 
     /** Batch size used by the governor-scaling proof; see stampCostDoesNotScaleWithBatchSize. */
     private static final Integer SCALE_N = 50;
@@ -565,15 +583,27 @@ private class LeadConvertServiceTest {
     // 6. NULL SAFETY — the ordinary case for a thin email.
     // ═════════════════════════════════════════════════════════════════════════
 
+    /**
+     * ⚠ Property_Address__c IS POPULATED ON PURPOSE and is the ONLY extraction field that is (Email
+     * comes from TestDataFactory). Property_And_Email_Required_To_Convert refuses a conversion when
+     * either is blank, so the thin-email fixture this method used to build can no longer be
+     * converted at all. Everything else the pipeline can fill is still empty, which is what this
+     * method is about — the "leave the target null" assertions below are untouched.
+     *
+     * The three claims that genuinely NEEDED a blank address — Opportunity.Name left alone, the
+     * Property name falling through to Company, and Property.Address__c staying null — moved intact
+     * to blankAddressLeavesTheDealNameAloneAndFallsBackToCompany. They are not dropped, and they are
+     * not asserted here against a fixture that can no longer produce them.
+     */
     @isTest
     static void blankLeadFieldsLeaveTargetsNull() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Thinmail Holdings';
         l.Deal_Type__c = 'Commercial';
         // Everything the extraction pipeline might have filled is empty — the common case when an
-        // email names a broker and nothing else.
+        // email names a broker and nothing else — EXCEPT the address the conversion gate demands.
         l.Property_Name__c = null;
-        l.Property_Address__c = null;
+        l.Property_Address__c = GATE_ADDRESS;
         l.Asset_Type__c = null;
         l.Guidance_Price__c = null;
         l.Guidance_Cap_Rate__c = null;
@@ -599,10 +629,11 @@ private class LeadConvertServiceTest {
         Assert.isNull(o.Deal_Room_Link__c, 'and the deal room link');
         Assert.isNull(o.Listing_Broker_Name__c, 'and the listing broker');
         Assert.isNull(o.Listing_Broker_Email__c, 'and their email');
-        Assert.isTrue(o.Name.contains('Thinmail Holdings'),
-            'With neither a property name nor an address, Opportunity.Name is LEFT ALONE — the '
-            + 'platform-derived name stands rather than being blanked. Name is required, so writing '
-            + 'null here would fail the whole update');
+        Assert.areEqual(GATE_ADDRESS, o.Name,
+            'With no property NAME, the deal is named after the address — the second rung of the '
+            + 'precedence chain. The third rung (no name and no address, so Name is left alone) is '
+            + 'unreachable through a conversion now and is pinned by '
+            + 'blankAddressLeavesTheDealNameAloneAndFallsBackToCompany instead');
 
         Property__c p = [
             SELECT Name, Address__c, Asking_Price__c, Square_Footage__c, Annual_NOI__c, Unit_Count__c,
@@ -610,10 +641,10 @@ private class LeadConvertServiceTest {
                    Seller_Entity__c, Asset_Type__c
             FROM Property__c WHERE Id = :o.Property__c
         ];
-        Assert.areEqual('Thinmail Holdings', p.Name,
-            'The Property name precedence falls all the way through to Company when the lead carries '
-            + 'neither a property name, an address nor a street');
-        Assert.isNull(p.Address__c, 'No address on the lead means no address on the Property');
+        Assert.areEqual(GATE_ADDRESS, p.Name,
+            'and the Property takes the same address as its name when no property name was extracted');
+        Assert.areEqual(GATE_ADDRESS, p.Address__c,
+            'the address the gate required is still copied onto the Property, not swallowed');
         Assert.isNull(p.Square_Footage__c, 'and no physical facts at all');
         Assert.isNull(p.Annual_NOI__c, 'no NOI');
         Assert.isNull(p.Unit_Count__c, 'no unit count');
@@ -625,6 +656,70 @@ private class LeadConvertServiceTest {
         Assert.isNull(p.Zoning__c, 'no zoning');
         Assert.isNull(p.Seller_Entity__c, 'no seller entity');
         Assert.isNull(p.Asset_Type__c, 'and a blank asset type is not forced onto the picklist');
+    }
+
+    /**
+     * The name-precedence FALLBACK — a lead carrying neither a property name, an address nor a
+     * street. Three claims live here, moved verbatim (values and wording) out of
+     * blankLeadFieldsLeaveTargetsNull when the conversion gate landed:
+     *   1. Opportunity.Name is LEFT ALONE (Name is required; writing null would fail the update);
+     *   2. Property.Name falls all the way through to Company;
+     *   3. Property.Address__c stays null.
+     *
+     * ⚠ WHY THIS DRIVES THE SERVICE DIRECTLY INSTEAD OF CONVERTING. Property_And_Email_Required_To_Convert
+     * makes a blank Property_Address__c UNCONVERTIBLE, so there is no longer any fixture that reaches
+     * this branch through Database.convertLead. The branch is NOT dead code: the rule is enforced
+     * only when the org setting "Require Validation for Converted Leads" is on (the rule's own file
+     * records that as unverified in the target org and notes it fails OPEN when off), and Broker
+     * Protection branch (c) deliberately mints address-less Leads (ARCHITECTURE.md §1). So the
+     * fallback still has to be right, and this is the only way left to prove it.
+     *
+     * The re-invoke pattern (reReadForReRun + oldMap = null) is the one already used by
+     * stampCostDoesNotScaleWithBatchSize and opportunityContactRoleIsIdempotent — see the class
+     * header's note that a re-run also builds a SECOND Property. That second Property is precisely
+     * what this method inspects.
+     *
+     * The Opportunity.Name reset before the re-run is what makes claim 1 OBSERVABLE: the real
+     * conversion had already renamed the deal after GATE_ADDRESS, so without a known sentinel
+     * "left alone" and "renamed to the address" would look identical.
+     */
+    @isTest
+    static void blankAddressLeavesTheDealNameAloneAndFallsBackToCompany() {
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = 'Thinmail Holdings';
+        l.Deal_Type__c = 'Commercial';
+        l.Property_Name__c = null;
+        l.Property_Address__c = GATE_ADDRESS; // gate tax only — blanked again below, in memory
+        l.Street = null;
+        insert l;
+
+        Database.LeadConvertResult res = convertOne(l);
+        Id dealId = res.getOpportunityId();
+        update new Opportunity(Id = dealId, Name = 'Thinmail Holdings');
+
+        // The thin-email shape the pipeline really produces: a broker, a company, nothing else.
+        List<Lead> reRun = reReadForReRun(new Set<Id>{ l.Id });
+        reRun[0].Property_Name__c = null;
+        reRun[0].Property_Address__c = null;
+        reRun[0].Street = null;
+
+        Test.startTest();
+        LeadConvertService.stampConvertedOpportunities(reRun, null);
+        Test.stopTest();
+
+        Opportunity o = [SELECT Name, Property__c FROM Opportunity WHERE Id = :dealId];
+        Assert.isTrue(o.Name.contains('Thinmail Holdings'),
+            'With neither a property name nor an address, Opportunity.Name is LEFT ALONE — the '
+            + 'platform-derived name stands rather than being blanked. Name is required, so writing '
+            + 'null here would fail the whole update');
+
+        Property__c p = [
+            SELECT Name, Address__c FROM Property__c WHERE Id = :o.Property__c
+        ];
+        Assert.areEqual('Thinmail Holdings', p.Name,
+            'The Property name precedence falls all the way through to Company when the lead carries '
+            + 'neither a property name, an address nor a street');
+        Assert.isNull(p.Address__c, 'No address on the lead means no address on the Property');
     }
 
     // ═════════════════════════════════════════════════════════════════════════

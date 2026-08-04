@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Stage gate (c): a deal cannot be marked Closed Won until the contract is signed
+        (Contract_Signed__c).
+
+        Gate applies to the stage transition only (ISCHANGED); existing records already at
+        Closed Won are unaffected.
+
+        Note: the after-save flow Transaction_Complete_Close writes StageName = 'Closed Won'
+        via ordinary DML and IS subject to this rule. The normal path is safe because the
+        same service that stamps Contract_Signed__c also creates the Transaction, but a
+        manually-created Transaction, or a deal whose contract was never signed, will make
+        that flow throw and roll back the Transaction save (accepted risk, monitor via UAT:
+        close a Transaction end-to-end).
+    -->
+    <fullName>Contract_Signed_Before_Closed_Won</fullName>
+    <active>true</active>
+    <description>Blocks stage entry to Closed Won unless the contract is signed (Contract_Signed__c). See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(StageName, &apos;Closed Won&apos;),
+    NOT(Contract_Signed__c)
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>This deal cannot be marked Closed Won until the contract is signed. Execute the PSA on the Contract Review first.</errorMessage>
+</ValidationRule>

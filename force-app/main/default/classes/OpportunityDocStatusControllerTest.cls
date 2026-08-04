@@ -12,23 +12,28 @@ private class OpportunityDocStatusControllerTest {
         Opportunity opp = TestDataFactory.createOpportunity(null, false);
         opp.StageName = 'Development Review';
         insert opp;
-        opp.StageName = 'PSA';
-        update opp;
 
-        // OpportunityReviewService.ensureNda() already auto-created a Pending NDA on
-        // insert and stamped it onto Opportunity.Primary_NDA__c. The controller reads
-        // the primary, so sign that record rather than inserting a rival NDA.
-        NDA__c nda = [SELECT Id FROM NDA__c WHERE Opportunity__c = :opp.Id LIMIT 1];
-        nda.Status__c = 'Signed';
+        // The NDA and LOI are now prepared BEFORE the stage move, not after it: entering PSA
+        // crosses the signed-NDA gate (which covers PSA) and the approved-LOI gate.
+        //
+        // Both helpers act on the record the controller actually reads. signPrimaryNda SIGNS the
+        // Pending NDA that OpportunityReviewService.ensureNda auto-created and stamped onto
+        // Primary_NDA__c, rather than inserting a rival; placeApprovedLoi's LOI is likewise
+        // designated Primary_LOI__c, so this test mutates the LOI it hands back instead of
+        // inserting a second one the controller would never look at.
+        NDA__c nda = TestDataFactory.signPrimaryNda(opp);
         nda.Date_Sent__c = Date.today();
         nda.NDA_Expiry_Date__c = Date.today().addDays(365);
         update nda;
 
-        LOI__c loi = TestDataFactory.createLoi(opp.Id, false);
+        LOI__c loi = TestDataFactory.placeApprovedLoi(opp);
         loi.LOI_Status__c = 'Submitted';
         loi.Offer_Price__c = 18000000;
         loi.Offer_Cap_Rate__c = 7;
-        insert loi;
+        update loi;
+
+        opp.StageName = 'PSA';
+        update opp;
 
         Underwriting__c uw = TestDataFactory.createUnderwriting(opp.Id, false);
         uw.Stage__c = 'In Progress';

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Blocks moving a Lead into Under Review or Qualified unless Property Address and
+        Email are both filled.
+
+        errorDisplayField is Status, the field being changed, and the only one of the two
+        required fields guaranteed present on both the layout and the Path; attaching to
+        Property_Address__c would highlight the wrong field whenever Email is the missing
+        one.
+
+        Disqualified is deliberately NOT gated, it is the Lead's equivalent of the
+        Opportunity's Dead/Pass off-ramp, and a junk lead with no address must always be
+        disqualifiable, or the same trap the Opportunity backward-block invariant exists to
+        prevent is reintroduced here. Converted is not in the gated list either (see
+        Property_And_Email_Required_To_Convert); NOT(IsConverted) is a defensive guard, not
+        the primary one, the ISPICKVAL list already excludes Converted structurally, but the
+        guard exists so a future edit that adds a status to this list cannot accidentally
+        start blocking conversions.
+
+        Gate applies to the status transition only (ISCHANGED), so existing Leads already
+        sitting in a gated status are not frozen (known-open insert-time hole, accepted).
+
+        Known live-data impact: Broker Protection deliberately creates Leads with a null
+        Property_Address__c (ARCHITECTURE.md §1, branch (c) of the routing tree, outcome
+        label 'New Lead (property, no address)'). That population becomes unable to
+        progress under this rule until a human types the address, the label exists
+        precisely so a human can find and fix them.
+    -->
+    <fullName>Property_And_Email_Required_To_Progress</fullName>
+    <active>true</active>
+    <description>Blocks a Lead from moving to Under Review or Qualified unless Property Address and Email are both filled. See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(Status),
+    NOT(IsConverted),
+    OR(
+        ISPICKVAL(Status, &apos;Under Review&apos;),
+        ISPICKVAL(Status, &apos;Qualified&apos;)
+    ),
+    OR(
+        ISBLANK(Property_Address__c),
+        ISBLANK(Email)
+    )
+)</errorConditionFormula>
+    <errorDisplayField>Status</errorDisplayField>
+    <errorMessage>Property Address and Email are both required before this lead can move forward. Fill them in on the lead first.</errorMessage>
+</ValidationRule>

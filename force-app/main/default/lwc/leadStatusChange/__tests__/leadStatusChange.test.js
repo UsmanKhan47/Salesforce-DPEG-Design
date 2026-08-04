@@ -106,6 +106,188 @@ describe('c/leadStatusChange', () => {
         );
     });
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // messageFor() — the body.output shapes an LDS validation-rule failure uses.
+    //
+    // When updateRecord is refused by a VALIDATION RULE, LDS puts its own generic line in
+    // body.message and the RULE'S OWN TEXT in body.output. Reading only body.message (the
+    // original implementation) told the user to "try again" for a problem retrying cannot fix,
+    // which would have made the Lead half of the stage-gate feature indistinguishable from a bug.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const LDS_GENERIC =
+        'An error occurred while trying to update the record. Please try again.';
+    const RULE_TEXT =
+        'Property Address and Email are both required before this lead can move forward. ' +
+        'Fill them in on the lead first.';
+
+    it('VALIDATION RULE: surfaces body.output.errors[0].message, not the LDS generic line', async () => {
+        // The exact shape LDS returns when a page-level validation rule blocks updateRecord.
+        updateRecord.mockRejectedValueOnce({
+            body: {
+                message: LDS_GENERIC,
+                output: {
+                    errors: [
+                        {
+                            constituentField: null,
+                            duplicateRecordError: null,
+                            errorCode: 'FIELD_CUSTOM_VALIDATION_EXCEPTION',
+                            field: 'Status',
+                            fieldLabel: 'Lead Status',
+                            message: RULE_TEXT
+                        }
+                    ],
+                    fieldErrors: {}
+                }
+            }
+        });
+        const cmp = fakeComponent();
+
+        const result = await changeLeadStatus(cmp, RECORD_ID, TARGET);
+
+        expect(result).toBe(false);
+        expect(cmp.dispatchEvent).toHaveBeenCalledTimes(1);
+        const toast = cmp.dispatchEvent.mock.calls[0][0];
+        expect(toast.detail.variant).toBe('error');
+        // The whole point: the rule's own wording reaches the user.
+        expect(toast.detail.message).toBe(RULE_TEXT);
+        expect(toast.detail.message).not.toBe(LDS_GENERIC);
+    });
+
+    it('FIELD ERROR: surfaces the first body.output.fieldErrors message when there is no page error', async () => {
+        // Where a REQUIRED-field failure lands, and where a rule bound to a submitted field lands.
+        updateRecord.mockRejectedValueOnce({
+            body: {
+                message: LDS_GENERIC,
+                output: {
+                    errors: [],
+                    fieldErrors: {
+                        Status: [
+                            {
+                                constituentField: null,
+                                errorCode: 'FIELD_CUSTOM_VALIDATION_EXCEPTION',
+                                field: 'Status',
+                                fieldLabel: 'Lead Status',
+                                message: RULE_TEXT
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+        const cmp = fakeComponent();
+
+        await changeLeadStatus(cmp, RECORD_ID, TARGET);
+
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).toBe(RULE_TEXT);
+    });
+
+    it('PRIORITY: a page-level error wins over a field-level one, and both win over body.message', async () => {
+        updateRecord.mockRejectedValueOnce({
+            body: {
+                message: LDS_GENERIC,
+                output: {
+                    errors: [{ message: 'page level' }],
+                    fieldErrors: { Status: [{ message: 'field level' }] }
+                }
+            }
+        });
+        const cmp = fakeComponent();
+
+        await changeLeadStatus(cmp, RECORD_ID, TARGET);
+
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).toBe(
+            'page level'
+        );
+    });
+
+    it('UNCHANGED BEHAVIOUR: an empty output still falls through to body.message', async () => {
+        // Every error shape that worked before must keep working — output is present but carries
+        // nothing, which is what a plain DML/Apex failure looks like through LDS.
+        updateRecord.mockRejectedValueOnce({
+            body: {
+                message: 'This field is required.',
+                output: { errors: [], fieldErrors: {} }
+            }
+        });
+        const cmp = fakeComponent();
+
+        await changeLeadStatus(cmp, RECORD_ID, TARGET);
+
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).toBe(
+            'This field is required.'
+        );
+    });
+
+    it('ARRAY BODY: reads output out of an array-shaped error body', async () => {
+        // Some LDS/wire error payloads arrive as an array of bodies rather than one object.
+        updateRecord.mockRejectedValueOnce({
+            body: [{ message: LDS_GENERIC, output: { errors: [{ message: RULE_TEXT }] } }]
+        });
+        const cmp = fakeComponent();
+
+        await changeLeadStatus(cmp, RECORD_ID, TARGET);
+
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).toBe(RULE_TEXT);
+    });
+
+    it('TWO-PASS: an earlier body.message must not win over a later body.output.errors message', async () => {
+        // Every body is searched for output text BEFORE any body.message is accepted (two
+        // separate loops over `bodies`), not "check output-then-message per body, in one pass".
+        // The pre-existing ARRAY BODY test above cannot discriminate this: its single-element
+        // array carries both keys on the SAME body, so a naive single-loop rewrite (check output,
+        // fall back to message, per body, in one loop) would return the identical result. Here the
+        // two keys are split across DIFFERENT array elements, with the message-only body FIRST:
+        // a single-pass implementation would accept body[0].message before ever reaching
+        // body[1].output, and return the generic LDS line instead of the rule's own text.
+        updateRecord.mockRejectedValueOnce({
+            body: [
+                { message: LDS_GENERIC },
+                { output: { errors: [{ message: RULE_TEXT }] } }
+            ]
+        });
+        const cmp = fakeComponent();
+
+        await changeLeadStatus(cmp, RECORD_ID, TARGET);
+
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).toBe(RULE_TEXT);
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).not.toBe(LDS_GENERIC);
+    });
+
+    it('NEVER THROWS: a malformed output degrades to the generic message', async () => {
+        // messageFor runs on the error path, so a shape it does not recognise must produce the
+        // fallback — not a second exception that would leave the user with no toast at all.
+        updateRecord.mockRejectedValueOnce({
+            body: { output: { errors: 'not-an-array', fieldErrors: 7 } }
+        });
+        const cmp = fakeComponent();
+
+        const result = await changeLeadStatus(cmp, RECORD_ID, TARGET);
+
+        expect(result).toBe(false);
+        expect(cmp.dispatchEvent).toHaveBeenCalledTimes(1);
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).toBe(
+            'The lead status could not be updated. Please try again or contact your administrator.'
+        );
+    });
+
+    it('guardLeadAction also gets the body.output treatment (Apex page-level errors)', async () => {
+        hasLeadActionAccess.mockRejectedValue({
+            body: {
+                message: LDS_GENERIC,
+                output: { errors: [{ message: 'Apex class access is not enabled.' }] }
+            }
+        });
+        const cmp = fakeComponent();
+
+        const proceed = await guardLeadAction(cmp, { message: 'Sure?' });
+
+        expect(proceed).toBe(false);
+        expect(cmp.dispatchEvent.mock.calls[0][0].detail.message).toBe(
+            'Apex class access is not enabled.'
+        );
+    });
+
     it('changeLeadStatus performs NO permission check of its own (the caller guards)', async () => {
         const cmp = fakeComponent();
 

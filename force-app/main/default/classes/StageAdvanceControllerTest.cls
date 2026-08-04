@@ -81,6 +81,9 @@ private class StageAdvanceControllerTest {
     @isTest
     static void advanceToPsaMovesLoiToPsa() {
         Opportunity o = newOpp('LOI');
+        // Entering PSA crosses the signed-NDA gate (which covers PSA) and the approved-LOI gate.
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.placeApprovedLoi(o);
         Test.startTest();
         StageAdvanceController.advance(o.Id);
         Test.stopTest();
@@ -92,6 +95,9 @@ private class StageAdvanceControllerTest {
     @isTest
     static void closeDealMovesPsaToClosedWon() {
         Opportunity o = newOpp('PSA');
+        // Closed Won is inside the signed-NDA gate's stage list and behind the signed-contract gate.
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.signContract(o);
         Test.startTest();
         StageAdvanceController.advance(o.Id);
         Test.stopTest();
@@ -103,6 +109,12 @@ private class StageAdvanceControllerTest {
     @isTest
     static void closeDealMovesAboutToCloseToClosedWon() {
         Opportunity o = newOpp('About to Close');
+        // Same two gates as the PSA -> Closed Won hop above: Closed Won is in the signed-NDA
+        // gate's stage list and behind the signed-contract gate. (This method is NOT in the design
+        // doc's Category-A list — it was found by sweeping every stage-changing UPDATE in the
+        // suite. The doc traced Closed Won only from PSA and missed the About-to-Close entry.)
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.signContract(o);
         Test.startTest();
         StageAdvanceController.advance(o.Id);
         Test.stopTest();
@@ -207,6 +219,15 @@ private class StageAdvanceControllerTest {
         System.runAs(bareUser) {
             try {
                 StageAdvanceController.advance(dealId);
+                // Reached only if NO exception was raised, i.e. the gate did not run at all. Failing
+                // HERE, by name, is the whole point: without it a missing gate lets the stage write
+                // proceed and the test reds much later on whatever the downstream cascade happens to
+                // throw first (measured 2026-08-04: a WITH USER_MODE selector inside
+                // OpportunityReviewTrigger), which reads like a selector/permission-set defect and
+                // sends the reader hunting in the wrong class.
+                Assert.fail('advance must REFUSE a non-deal-driver. It returned normally, so '
+                    + 'OpportunityActionPermissionService.assertDealActionAccess did not run — check that '
+                    + 'the StageAdvanceController being executed is the one carrying the assert');
             } catch (AuraHandledException e) {
                 refusals++;
                 Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE, e.getMessage(),
@@ -215,6 +236,7 @@ private class StageAdvanceControllerTest {
             }
             try {
                 StageAdvanceController.advanceTo(dealId, 'Development Review');
+                Assert.fail('advanceTo must REFUSE a non-deal-driver — see the note on advance above');
             } catch (AuraHandledException e) {
                 refusals++;
                 Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE, e.getMessage(),

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Decision D3 = declarative (Option 1): blocks Lead conversion unless Property Address
+        and Email are both filled. Enforced at conversion ONLY IF the org setting
+        shouldLeadConvertRequireValidation ("Require Validation for Converted Leads",
+        Setup -> Lead Settings) is ON.
+
+        NOT YET VERIFIED IN THE TARGET ORG as of this metadata-only build, the repo's
+        settings/LeadConfig.settings-meta.xml snapshot shows it as true, but that file is
+        forceignored (never deploys, may be a stale/different-org snapshot). If this setting
+        is OFF, this rule fails OPEN silently (no gate) rather than failing closed. MUST
+        verify in Setup before/at deploy per the design doc's pre-deploy checklist; remedy if
+        off is a one-click setting change (safe today, Lead had zero validation rules before
+        this change).
+
+        This covers the standard Convert button and the API, not just the custom quick
+        action, the declarative mechanism was chosen over an Apex pre-check for exactly that
+        reason. Validation rules evaluate before after-update triggers, so if this rule
+        fires, Database.convertLead is refused and LeadConvertTrigger/LeadConvertService
+        never run, there is no partial-conversion state, only a refused conversion.
+
+        errorDisplayField is Status (IsConverted has no direct UI surface to attach an error
+        to on the standard Convert screen).
+    -->
+    <fullName>Property_And_Email_Required_To_Convert</fullName>
+    <active>true</active>
+    <description>Blocks Lead conversion unless Property Address and Email are both filled, subject to an org setting verified before deploy. See the XML comment in this file.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(IsConverted),
+    IsConverted,
+    OR(
+        ISBLANK(Property_Address__c),
+        ISBLANK(Email)
+    )
+)</errorConditionFormula>
+    <errorDisplayField>Status</errorDisplayField>
+    <errorMessage>Property Address and Email are both required before this lead can be converted.</errorMessage>
+</ValidationRule>

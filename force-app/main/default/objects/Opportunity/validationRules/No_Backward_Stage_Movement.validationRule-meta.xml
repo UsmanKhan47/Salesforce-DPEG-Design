@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        Decision 4: a deal cannot be moved back to an earlier stage. ABSOLUTE for users,
+        there is deliberately NO bypass permission and NO other admin/data-fix escape hatch
+        beyond the two named carve-outs below. Do not reintroduce a bypass custom permission;
+        the user explicitly rejected one at the design gate (D4 = NO bypass custom
+        permission, "the block is absolute for users"). This rule is absolute against
+        PERMISSIONS but NOT against PROCEDURE: because entering Dead/Pass (new rank 0) and
+        leaving Dead/Pass (prior rank 0) are both always allowed (see the rank map below),
+        any user with ordinary edit access on StageName can reach any earlier stage in two
+        saves via Dead/Pass, for example PSA to Dead/Pass to Under Review, with no special
+        permission required. That two-save round trip through Dead/Pass IS the actual
+        recovery procedure for a mistakenly advanced deal, and it is far less drastic than
+        deactivating this validation rule org-wide; deactivating the rule is NOT the remedy
+        and should not be used. The Dead/Pass route defeats stage ORDERING only, not the
+        substantive checks: every forward CONTENT gate this rule coexists with (NDA signed,
+        Underwriting approved, LOI approved, contract signed) still fires on the way back up,
+        so a deal walked back to Under Review this way still cannot reach PSA again without a
+        signed NDA and an approved LOI. This is an unavoidable consequence of the
+        user-required invariant that Dead/Pass stay reachable from every stage, not a defect
+        to be fixed: a validation rule sees only PRIORVALUE versus the new value on a single
+        save, so it cannot distinguish "legitimately moved to Dead/Pass to kill a deal" from
+        "using Dead/Pass as a stepping stone back down the pipeline."
+
+        RANK MAP (edit here AND in NDA_Signed_Before_Deal_Progression's stage list if a new
+        stage is ever added): New=1, Under Review=2, Development Review=3 (Land only),
+        Construction Review=3 (Commercial only, deliberately the SAME rank as Development
+        Review; they are parallel record-type branches, not a sequence, and neither is
+        reachable on the other record type), Underwriting=4, LOI=5, PSA=6, About to Close=7,
+        Closed Won=8. Dead/Pass and any unmapped/future stage rank 0 = UNRANKED = the rule
+        does not compare it. This is a deliberate fail-open default: entering Dead/Pass (new
+        rank 0) makes the "new rank > 0" clause (clause 3) false so the rule never fires
+        (Dead/Pass always reachable, per invariant); leaving/reviving Dead/Pass (prior rank 0)
+        is allowed too, but not because of the "prior rank > 0" clause (clause 2). That clause
+        is logically redundant for this case: since no rank is negative, clauses 3 and 4 (new
+        rank > 0, and new rank < prior rank) already jointly imply prior rank > 0, including
+        when leaving Dead/Pass, where the "is it backward?" clause (new rank < prior rank =
+        new rank < 0) is already impossible on its own. Only clause 3 (new rank > 0) is
+        load-bearing for the Dead/Pass invariant; clause 2 is kept in the formula anyway
+        because it makes the intent explicit, it would matter if a negative rank were ever
+        introduced, and it is the only clause removable without a behaviour change should the
+        formula ever hit the 5,000-byte compiled-size ceiling. A future 10th stage with no
+        rank mapping is therefore permissive, not catastrophic, it simply is not blocked,
+        rather than freezing the whole pipeline the first time an admin adds a picklist
+        value. TEXT(StageName) is used throughout rather than ISPICKVAL because Dead/Pass is
+        stored as Dead%2FPass in picklist/BusinessProcess metadata but as Dead/Pass at
+        runtime, TEXT() is a plain string compare and sidesteps the encoding question
+        entirely.
+
+        CARVE-OUT 1 (LOI-rejection approval path): PRIORVALUE(StageName) = 'LOI' becoming
+        StageName = 'Underwriting' is exempted. LOI_Approval's finalRejectionActions performs
+        exactly this transition on rejection. A currently-green test in this repo
+        (LoiGateTest.rejectionReturnsDealToUnderwriting) demonstrates that approval-process
+        field updates already bypass custom validation rules in this org, that transition
+        would satisfy every clause of the deployed NDA gate (ISCHANGED true, stage IS
+        Underwriting, NDA not signed) and yet the test asserts the stage lands cleanly on
+        Underwriting. So this carve-out is belt-and-braces, not load-bearing under that
+        finding, included anyway in case that finding does not hold in every org/config,
+        since the cost of being wrong (a rejection getting blocked) is worse than the cost of
+        an unnecessary carve-out. Re-verify in the target org before deploy: take a deal to
+        LOI with an unsigned NDA, submit and reject the LOI approval, confirm the stage lands
+        on Underwriting with no error.
+
+        CARVE-OUT 1 STICKINESS CHECK (confirmed clean): CARVE-OUT 1 keys on
+        PRIORVALUE(StageName) = 'LOI' AND StageName = 'Underwriting', i.e. a StageName
+        TRANSITION, not a sticky field state. PRIORVALUE(StageName) is re-derived from the
+        immediately prior stored value on every save, so it cannot go stale the way a
+        never-cleared checkbox can; a later backward move from, say, PSA to Underwriting
+        evaluates PRIORVALUE(StageName) = 'PSA', which does not match 'LOI', so CARVE-OUT 1
+        does not apply and the rule blocks it normally. No ISCHANGED addition was needed
+        here; the transition-keyed shape is self-limiting by construction.
+
+        CARVE-OUT 2 (Opportunity_Initiate_Underwriting before-save Flow, AMENDED 2026-08-04
+        to exclude Closed Won, see below): the clause
+        NOT(AND(ISCHANGED(Initiate_Underwriting__c), Initiate_Underwriting__c,
+        ISPICKVAL(StageName,'Underwriting'), NOT(ISPICKVAL(PRIORVALUE(StageName),'Closed
+        Won')))) is exempted. That flow is a RecordBeforeSave, CreateAndUpdate flow with
+        doesRequireRecordChangedToMeetCriteria = true and a filter of Initiate_Underwriting__c
+        EqualTo true, i.e. it fires ONLY on the save where the checkbox TRANSITIONS to true,
+        never on a later save where it is merely already true, whose one decision
+        (Not_Yet_Underwriting: StageName not equal to 'Underwriting') assigns StageName =
+        'Underwriting' whenever the record is not already there, reachable at the Flow level
+        from ANY later stage (LOI, PSA, About to Close, Closed Won) unconditionally.
+        Before-save Flow assignments run BEFORE validation rules evaluate, so without SOME
+        carve-out this rule would see ISCHANGED(StageName) true and the new stage already
+        rewritten to Underwriting by the flow, and would throw on every legitimate use of the
+        checkbox, a regression in shipped, working behaviour. The flow itself is unchanged;
+        this carve-out lives entirely in this rule.
+
+        ISCHANGED(Initiate_Underwriting__c) IS LOAD-BEARING AND MUST NOT BE REMOVED: the flow
+        never clears Initiate_Underwriting__c back to false after it fires (its single
+        assignment touches only $Record.StageName), so the checkbox stays true on that record
+        permanently. Without ISCHANGED(Initiate_Underwriting__c) the carve-out would grant a
+        PERMANENT backward-move exemption into Underwriting to any deal that ever ticked the
+        box once, indefinitely, which is exactly the sticky, unadministered bypass the user
+        rejected at D4, just reintroduced through a different field. Adding
+        ISCHANGED(Initiate_Underwriting__c) mirrors the Flow's own entry condition exactly,
+        so the carve-out now fires on precisely the saves the Flow fires on and no others. Do
+        not "simplify" this formula by dropping ISCHANGED(Initiate_Underwriting__c), that
+        would silently reopen the permanent exemption. ISCHANGED(Initiate_Underwriting__c) is
+        false on insert (nothing to change from), but the whole rule is already gated behind
+        ISCHANGED(StageName), which is also false on insert, so the create path is unaffected
+        either way.
+
+        USER DECISION, CLOSED WON EXCLUSION (2026-08-04): the rewind stays allowed from LOI,
+        PSA and About to Close, but is now BLOCKED from Closed Won. Rationale recorded
+        verbatim: "this deal needs more underwriting" is a real scenario mid-pipeline, so
+        breaking the checkbox entirely would be a regression in working behaviour. But a WON
+        deal being silently reversed by any deal driver ticking a checkbox is a wider bypass
+        than the admin custom permission the user explicitly rejected at the gate, it is
+        available to more people and administered by nobody. Excluding Closed Won preserves
+        the feature's legitimate use and closes the case that actually matters. The added
+        clause NOT(ISPICKVAL(PRIORVALUE(StageName),'Closed Won')) inside the carve-out's own
+        AND means the carve-out only applies when the PRIOR stage was not Closed Won; when it
+        was, that inner AND is false, so NOT(inner AND) is true, which lets the outer rule's
+        AND chain proceed to evaluate true (i.e. the rule blocks) exactly as if no carve-out
+        existed for that case.
+
+        KNOWN ROUGH EDGE, DOCUMENTED NOT FIXED: ticking the checkbox on a Closed Won deal
+        will now throw the generic backward-block error ("A deal cannot be moved back to an
+        earlier stage...") rather than a message naming the checkbox, because the before-save
+        Flow rewrites StageName to 'Underwriting' before this rule evaluates and the rule
+        then rejects the save through its normal backward-block path. This is accepted
+        deliberately by the user; the message is slightly indirect for that specific path but
+        the Flow is not modified and the message is not special-cased for it.
+    -->
+    <fullName>No_Backward_Stage_Movement</fullName>
+    <active>true</active>
+    <description>Blocks moving a deal to an earlier stage. Two carve-outs apply (LOI-rejection approval; Initiate Underwriting, blocked from Closed Won). No bypass permission exists. See the XML comment.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+
+    /* prior rank */
+    CASE(TEXT(PRIORVALUE(StageName)),
+        &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0) &gt; 0,
+
+    /* new rank */
+    CASE(TEXT(StageName),
+        &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0) &gt; 0,
+
+    /* is it backward? */
+    CASE(TEXT(StageName),
+        &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0)
+    &lt;
+    CASE(TEXT(PRIORVALUE(StageName)),
+        &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0),
+
+    /* CARVE-OUT 1: the LOI-rejection transition (see comment above) */
+    NOT( AND(
+        ISPICKVAL(PRIORVALUE(StageName), &apos;LOI&apos;),
+        ISPICKVAL(StageName, &apos;Underwriting&apos;)
+    )),
+
+    /* CARVE-OUT 2: the Opportunity_Initiate_Underwriting before-save Flow.
+       NOT available out of Closed Won - see comment above. */
+    NOT( AND(
+        ISCHANGED(Initiate_Underwriting__c),
+        Initiate_Underwriting__c,
+        ISPICKVAL(StageName, &apos;Underwriting&apos;),
+        NOT( ISPICKVAL(PRIORVALUE(StageName), &apos;Closed Won&apos;) )
+    ))
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>A deal cannot be moved back to an earlier stage. To stop work on this deal, move it to Dead/Pass instead.</errorMessage>
+</ValidationRule>

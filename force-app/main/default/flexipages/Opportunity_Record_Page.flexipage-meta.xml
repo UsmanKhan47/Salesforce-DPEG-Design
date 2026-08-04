@@ -141,11 +141,16 @@
                         <valueListItems>
                             <value>Opportunity.Close_Deal</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
+                                <booleanFilter>(1 OR 2) AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!Record.StageName}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>PSA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.StageName}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>About to Close</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>

@@ -7,11 +7,18 @@
 @isTest
 private class ContractReviewTriggerHandlerTest {
 
-    /** Drives an Opportunity to PSA, which auto-creates its Contract Review. */
+    /**
+     * Drives an Opportunity to PSA, which auto-creates its Contract Review.
+     *
+     * LOI -> PSA crosses the signed-NDA gate (which covers PSA) and the approved-LOI gate, so the
+     * fixture is prepared to satisfy both rather than the assertions being relaxed.
+     */
     private static Contract_Review__c dealAtPsa() {
         Opportunity o = TestDataFactory.createOpportunity(null, false);
         o.StageName = 'LOI';
         insert o;
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.placeApprovedLoi(o);
         o.StageName = 'PSA';
         update o;
         return [SELECT Id, Opportunity__c FROM Contract_Review__c WHERE Opportunity__c = :o.Id];
@@ -48,6 +55,9 @@ private class ContractReviewTriggerHandlerTest {
             o.StageName = 'LOI';
         }
         insert opps;
+        // The same two gates dealAtPsa() prepares, in bulk: one DML statement per helper.
+        TestDataFactory.signPrimaryNda(opps);
+        TestDataFactory.placeApprovedLoi(opps);
         for (Opportunity o : opps) {
             o.StageName = 'PSA';
         }
