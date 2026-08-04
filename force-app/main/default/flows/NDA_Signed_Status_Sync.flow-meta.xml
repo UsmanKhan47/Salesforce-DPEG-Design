@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <assignments>
+        <name>Set_Signed_False</name>
+        <label>Set Signed False</label>
+        <locationX>302</locationX>
+        <locationY>288</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.NDA_Signed__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <booleanValue>false</booleanValue>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <assignments>
+        <name>Set_Signed_True</name>
+        <label>Set Signed True</label>
+        <locationX>50</locationX>
+        <locationY>288</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.NDA_Signed__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>Needs_Signed_Date</targetReference>
+        </connector>
+    </assignments>
+    <assignments>
+        <name>Stamp_Signed_Date</name>
+        <label>Stamp Signed Date</label>
+        <locationX>50</locationX>
+        <locationY>504</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Date_Signed__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.CurrentDate</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <decisions>
+        <name>Is_Signed</name>
+        <label>Is Signed?</label>
+        <locationX>176</locationX>
+        <locationY>180</locationY>
+        <defaultConnectorLabel>Not Signed</defaultConnectorLabel>
+        <rules>
+            <name>Status_Is_Signed</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Signed</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Set_Signed_True</targetReference>
+            </connector>
+            <label>Signed</label>
+        </rules>
+    </decisions>
+    <decisions>
+        <name>Needs_Signed_Date</name>
+        <label>Needs Signed Date?</label>
+        <locationX>50</locationX>
+        <locationY>396</locationY>
+        <defaultConnectorLabel>Already set</defaultConnectorLabel>
+        <rules>
+            <name>Date_Signed_Is_Blank</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Date_Signed__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Stamp_Signed_Date</targetReference>
+            </connector>
+            <label>Stamp</label>
+        </rules>
+    </decisions>
+    <description>Derives NDA_Signed__c from Status__c on every save, in both directions: Status = &apos;Signed&apos; sets the checkbox true, any other Status sets it false. Also stamps Date_Signed__c to TODAY() the first time Status reaches &apos;Signed&apos; with a blank date - never overwrites an existing date and never clears it when Status moves away. Before-save so NDA_Signed_Before_Deal_Progression and any other validation rule reading NDA_Signed__c sees the synced value in the same transaction. See NDA_Signed__c/Status__c field history for the defect this fixes (NDA-0004, a0Jiw0000002k6nEAA).</description>
+    <environments>Default</environments>
+    <interviewLabel>NDA Signed Status Sync {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>NDA Signed Status Sync</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Is_Signed</targetReference>
+        </connector>
+        <object>NDA__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordBeforeSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>
