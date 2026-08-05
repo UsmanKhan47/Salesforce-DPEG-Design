@@ -21,11 +21,6 @@
                 <label>Review</label>
             </value>
             <value>
-                <fullName>Counter</fullName>
-                <default>false</default>
-                <label>Counter</label>
-            </value>
-            <value>
                 <fullName>Contract Execution</fullName>
                 <default>false</default>
                 <label>Contract Execution</label>

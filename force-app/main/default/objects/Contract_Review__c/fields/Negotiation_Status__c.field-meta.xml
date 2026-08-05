@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Negotiation_Status__c</fullName>
-    <description>Junior&apos;s Section 15 PSA lifecycle: Initial Draft (seller drafts first) -&gt; Seller Counter / Buyer Counter -&gt; Revised -&gt; Ready for Execution -&gt; Executed. Synced to the coarse Stage__c by the Contract_Review_Stage_Sync flow; Executed triggers the transaction handoff.</description>
+    <description>Junior&apos;s Section 15 PSA lifecycle: Initial Draft -&gt; Revised -&gt; Ready for Execution -&gt; Executed. Moved ONLY by the deal driver via the Advance Stage quick action; logging a PSA version no longer touches it. Synced to the coarse Stage__c by the Contract_Review_Stage_Sync flow, and it drives the Contract Review Path directly; Executed triggers the transaction handoff. Seller Counter / Buyer Counter were removed 2026-08-05 - redlines are recorded as PSA Version rows and by Ball In Court, not as a status.</description>
     <label>Negotiation Status</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
@@ -15,16 +15,6 @@
                 <fullName>Initial Draft</fullName>
                 <default>true</default>
                 <label>Initial Draft</label>
-            </value>
-            <value>
-                <fullName>Seller Counter</fullName>
-                <default>false</default>
-                <label>Seller Counter</label>
-            </value>
-            <value>
-                <fullName>Buyer Counter</fullName>
-                <default>false</default>
-                <label>Buyer Counter</label>
             </value>
             <value>
                 <fullName>Revised</fullName>

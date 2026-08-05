@@ -65,17 +65,26 @@ public with sharing class PsaVersionService {
             Document_URL__c = documentUrl
         );
 
+        // 🔴 THIS METHOD NO LONGER TOUCHES Negotiation_Status__c (2026-08-05, user decision).
+        // It used to derive it: first seller version -> 'Initial Draft', every later version ->
+        // 'Seller Counter' / 'Buyer Counter'. Those two counter values were REMOVED from the
+        // restricted picklist, so writing either would now throw
+        // INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST and fail the Log Version button outright.
+        //
+        // The status is now moved ONLY by the deal driver, through the Advance Stage quick action
+        // (RecordStageAdvanceService: Initial Draft -> Revised -> Ready for Execution -> Executed).
+        // Logging a version is a RECORD of an exchange, not a state transition — a distinction the
+        // old code collapsed, which is why every redline silently re-drove the parent's status and
+        // the Path could jump backwards while the deal driver was mid-negotiation.
+        //
+        // Ball_In_Court__c IS still stamped here, deliberately: it is the log's own output (who owes
+        // the next move) and nothing else derives it. Direction therefore survives the change —
+        // between Ball In Court and the PSA_Version__c rows, who countered and when is fully
+        // recoverable without a counter STATUS.
         Boolean fromSeller = direction == 'Seller';
-        String status;
-        if (priorCount == 0 && fromSeller) {
-            status = 'Initial Draft'; // the seller drafts first (Section 15)
-        } else {
-            status = fromSeller ? 'Seller Counter' : 'Buyer Counter';
-        }
         update new Contract_Review__c(
             Id = contractReviewId,
             Ball_In_Court__c = fromSeller ? 'Us' : 'Seller',
-            Negotiation_Status__c = status,
             Latest_Version__c = priorCount + 1
         );
     }

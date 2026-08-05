@@ -6,28 +6,24 @@
 
          Stage__c is a DERIVED PROJECTION here — the before-save flow Contract_Review_Stage_Sync
          recomputes it from Negotiation_Status__c on every save — so a Path on Stage__c could not
-         match the workflow. Three concrete mismatches, all user-visible:
-
-           1. 'Counter' was advertised as the step after Review, but advancing NEVER reaches it —
-              Seller/Buyer Counter are branch states, not a step in the line.
-           2. 'Revised' and 'Ready for Execution' BOTH project to 'Review', so one of the three
-              Advance Stage clicks moved the Path not at all.
-           3. The final click jumped Review -> Contract Execution, leaving Counter permanently
-              un-passed on every deal that never countered.
+         match the workflow. Two of the three original mismatches are now gone because the counter
+         values were removed outright (below); the one that made a Stage__c Path unworkable remains:
+         'Revised' and 'Ready for Execution' BOTH project to 'Review', so a Stage__c Path would sit
+         still through one of the Advance Stage clicks.
 
          On Negotiation_Status__c the Path and the Advance Stage button are the SAME sequence:
          every click moves exactly one step and nothing is advertised that never happens.
 
          ⚠ STEP ORDER COMES FROM THE PICKLIST, NOT FROM THIS FILE. The retired Path listed its steps
          alphabetically yet rendered in picklist order, so do not infer display order from the order
-         below. Negotiation_Status__c is ordered Initial Draft, Seller Counter, Buyer Counter,
-         Revised, Ready for Execution, Executed — which yields the intended line once the two
-         counters are omitted.
+         below. Negotiation_Status__c is ordered Initial Draft, Revised, Ready for Execution,
+         Executed — which is exactly the intended line, so every value is a step and none is skipped.
 
-         ⚠ SELLER COUNTER / BUYER COUNTER ARE DELIBERATELY NOT STEPS. A record in either state shows
-         NO highlighted step until it returns to the line — the accepted cost of the user's "simple
-         linear, no counter buttons" decision (2026-08-05). Stage__c still derives 'Counter' for
-         them, so reports and the coarse rollup are unaffected. -->
+         ⚠ SELLER COUNTER / BUYER COUNTER NO LONGER EXIST (removed 2026-08-05). Redlines are recorded
+         as PSA_Version__c rows plus Ball_In_Court__c, not as a status, so a negotiating record now
+         sits on 'Revised' instead of dropping off the Path — which is why this step's coaching text
+         tells the user to stay here and keep logging versions. Do not reintroduce a counter status
+         without also revisiting PsaVersionService, which deliberately no longer writes this field. -->
     <active>true</active>
     <entityName>Contract_Review__c</entityName>
     <fieldName>Negotiation_Status__c</fieldName>
@@ -37,7 +33,7 @@
         <picklistValueName>Initial Draft</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Review the PSA internally. Validate terms, contingencies and timelines. If the counterparty redlines, set Negotiation Status to Seller or Buyer Counter and log each exchange in PSA Versions — the Path pauses while countering and resumes here.</info>
+        <info>Review the PSA internally. Validate terms, contingencies and timelines. Redlines happen here: log every exchange with Log Version — each one records who sent it and flips Ball In Court — and stay on this step for as long as the negotiation runs. Advance only once the document is final.</info>
         <picklistValueName>Revised</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>

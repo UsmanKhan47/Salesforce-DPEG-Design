@@ -1,7 +1,12 @@
 /**
  * Tests PsaVersionController (thinned in P6). The happy paths prove the delegated behaviour
- * is preserved end-to-end: version history, ball-in-court flips, and the Negotiation Status
- * derivation (first seller version = Initial Draft).
+ * is preserved end-to-end: version history and ball-in-court flips.
+ *
+ * 🔴 Negotiation_Status__c and the Stage__c it derives are asserted UNCHANGED. Logging a version
+ * used to drive both (first seller version = Initial Draft; later versions = Seller/Buyer Counter
+ * -> Stage 'Counter'). Those counter values were removed from the restricted picklist on
+ * 2026-08-05 and the status is now moved ONLY by the deal driver via Advance Stage, so this
+ * asserts the version log stays out of it end-to-end, not just in the service.
  *
  * P6 controller thinning: saveVersion's DML + rules now live in PsaVersionService, and every
  * @AuraEnabled method wraps its work in a try/catch that maps failures to an
@@ -57,13 +62,14 @@ private class PsaVersionControllerTest {
         cr = [SELECT Ball_In_Court__c, Negotiation_Status__c, Latest_Version__c, Stage__c
               FROM Contract_Review__c WHERE Id = :cr.Id];
         System.assertEquals('Us', cr.Ball_In_Court__c, 'Seller draft puts the ball in OUR court');
-        System.assertEquals('Initial Draft', cr.Negotiation_Status__c, 'Seller drafts first (Section 15)');
+        System.assertEquals('Initial Draft', cr.Negotiation_Status__c,
+            'Logging a version must NOT touch the status — untouched picklist default');
         System.assertEquals(1, cr.Latest_Version__c, 'Version counter maintained');
         System.assertEquals('PSA Drafting', cr.Stage__c, 'Stage synced from negotiation status');
     }
 
     @isTest
-    static void backAndForthDerivesCountersAndFlipsBall() {
+    static void backAndForthFlipsBallAndLeavesStageAlone() {
         Contract_Review__c cr = newContract();
         PsaVersionController.saveVersion(cr.Id, 'Seller', null, 'v1', null);
 
@@ -74,9 +80,11 @@ private class PsaVersionControllerTest {
         cr = [SELECT Ball_In_Court__c, Negotiation_Status__c, Latest_Version__c, Stage__c
               FROM Contract_Review__c WHERE Id = :cr.Id];
         System.assertEquals('Seller', cr.Ball_In_Court__c, 'Our redline puts the ball in the seller court');
-        System.assertEquals('Buyer Counter', cr.Negotiation_Status__c, 'Our version = Buyer Counter');
+        System.assertEquals('Initial Draft', cr.Negotiation_Status__c,
+            'Our redline must NOT move the status — this branch used to write Buyer Counter');
         System.assertEquals(2, cr.Latest_Version__c, 'Two versions tracked');
-        System.assertEquals('Counter', cr.Stage__c, 'Buyer/Seller Counter status syncs to the Counter stage');
+        System.assertEquals('PSA Drafting', cr.Stage__c,
+            'and so the derived Stage must not move either — it used to sync to the removed Counter stage');
         System.assertEquals(2, PsaVersionController.getVersions(cr.Id).size(), 'Full history preserved');
     }
 

@@ -2,19 +2,6 @@
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
     <apiVersion>67.0</apiVersion>
     <assignments>
-        <name>Set_Stage_Counter</name>
-        <label>Set Stage Counter</label>
-        <locationX>554</locationX>
-        <locationY>288</locationY>
-        <assignmentItems>
-            <assignToReference>$Record.Stage__c</assignToReference>
-            <operator>Assign</operator>
-            <value>
-                <stringValue>Counter</stringValue>
-            </value>
-        </assignmentItems>
-    </assignments>
-    <assignments>
         <name>Set_Stage_Drafting</name>
         <label>Set Stage Drafting</label>
         <locationX>50</locationX>
@@ -133,28 +120,6 @@
                 <targetReference>Set_Stage_Executed_Only</targetReference>
             </connector>
             <label>Executed - date kept</label>
-        </rules>
-        <rules>
-            <name>Is_Counter</name>
-            <conditionLogic>or</conditionLogic>
-            <conditions>
-                <leftValueReference>$Record.Negotiation_Status__c</leftValueReference>
-                <operator>EqualTo</operator>
-                <rightValue>
-                    <stringValue>Seller Counter</stringValue>
-                </rightValue>
-            </conditions>
-            <conditions>
-                <leftValueReference>$Record.Negotiation_Status__c</leftValueReference>
-                <operator>EqualTo</operator>
-                <rightValue>
-                    <stringValue>Buyer Counter</stringValue>
-                </rightValue>
-            </conditions>
-            <connector>
-                <targetReference>Set_Stage_Counter</targetReference>
-            </connector>
-            <label>Counter (seller or buyer)</label>
         </rules>
     </decisions>
     <environments>Default</environments>
