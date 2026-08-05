@@ -719,6 +719,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>LOI__c.Is_Advance_Allowed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>LOI__c.Stage__c</field>
         <readable>true</readable>
     </fieldPermissions>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Exists so the Advance Stage button's visibility rule can be a PURE CHAIN OF ANDs.
+
+         The rule this replaces was `1 AND 2 AND 3 AND (4 OR 5)`. A flexipage booleanFilter has no
+         negation operator, so "hide at Prepare/Review unless approved" could only be written as its
+         De Morgan equivalent — an OR inside parentheses. That deployed and survived a retrieve, but
+         the button was still visible at Prepare/Review on an unapproved LOI, and whether the
+         RENDERER honours those parentheses is not something this repo has ever confirmed. Moving the
+         disjunction into a formula removes the question instead of re-litigating it: the visibility
+         rule becomes two EQUAL comparisons, which are already proven to work on this very page
+         (Submit for Approval's pure-AND rule behaves correctly).
+
+         It also gives the logic ONE home. The same expression is what a validation rule on Stage__c
+         would need in order to ENFORCE this rather than merely hide a button, which is the
+         outstanding half of this work — a hidden headless quick action is a UX affordance and is
+         bypassed by calling the Apex directly.
+
+         ⚠ TEXT() compares, never ISPICKVAL: 'Prepare/Review' carries a literal slash. Same reason
+         RecordStageAdvanceService's header gives for the future validation rules. -->
+    <fullName>Is_Advance_Allowed__c</fullName>
+    <label>Is Advance Allowed</label>
+    <description>Backs the Advance Stage button's visibility on the LOI record page. True when the generic one-hop advance is legitimate: not at the terminal Completed stage, not at Sent (where the named Counter and Completed buttons take over the branch), not at Prepare/Review unless the LOI is Approved, and not while an approval is pending. Kept as a formula so the visibility rule is a pure chain of ANDs and so the same expression can back a validation rule that enforces it server-side.</description>
+    <inlineHelpText>System field. True when the Advance Stage button should be available on this LOI. It turns off at Sent, where Counter and Completed replace it, and at Prepare/Review until the LOI has been approved.</inlineHelpText>
+    <type>Checkbox</type>
+    <formula><![CDATA[AND(
+  TEXT(Stage__c) <> "Completed",
+  TEXT(Stage__c) <> "Sent",
+  OR(
+    TEXT(Stage__c) <> "Prepare/Review",
+    TEXT(LOI_Status__c) = "Approved"
+  ),
+  TEXT(LOI_Status__c) <> "Pending Approval"
+)]]></formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>

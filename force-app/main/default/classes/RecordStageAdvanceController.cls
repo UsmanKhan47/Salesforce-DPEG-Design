@@ -125,4 +125,41 @@ public with sharing class RecordStageAdvanceController {
             throw ahe(WRITE_FAILURE_MESSAGE);
         }
     }
+
+    /**
+     * Moves the record to an EXPLICIT stage, for an object whose path BRANCHES. Today that is the
+     * LOI at 'Sent', where a broker either counters or accepts and one derived hop cannot express
+     * both outcomes.
+     *
+     * 🔴 `target` IS CALLER-SUPPLIED AND THEREFORE UNTRUSTED. The service validates it against that
+     * object's allow-list before any write; the four objects with linear paths supply no allowed
+     * targets at all, so this entry point cannot move them. Do not add a code path that skips that
+     * check — it is the only thing standing between class access and arbitrary stage writes across
+     * five objects.
+     *
+     * @param recordId the stage-controlled record to move
+     * @param target   the destination stage; must be on the object's allow-list
+     * @return a user-facing confirmation message, e.g. 'LOI moved to Completed.'
+     * @throws AuraHandledException when the running user is not permitted, when the target is not
+     *         allowed, when a validation rule blocks the write (its message is surfaced verbatim),
+     *         or — with a fixed generic message — on an unexpected failure.
+     * @example
+     * const message = await advanceTo({ recordId, target: 'Completed' });
+     */
+    @AuraEnabled
+    public static String advanceTo(Id recordId, String target) {
+        try {
+            RecordStageAdvanceService.assertStageActionAccess(recordId);
+            return RecordStageAdvanceService.advanceTo(recordId, target);
+        } catch (RecordStageAdvanceService.AccessDeniedException e) {
+            throw ahe(e.getMessage());
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            // Blank / disallowed target, unsupported object, or a SURFACED validation message.
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'RecordStageAdvanceController.advanceTo on ' + recordId
+                + ' -> ' + target + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
+        }
+    }
 }

@@ -64,6 +64,79 @@ private class RecordStageAdvanceControllerTest {
     }
 
     @isTest
+    static void advanceToWritesAnAllowedExplicitTarget() {
+        // The LOI 'Sent' branch: a broker either counters or accepts. 'Completed' is NOT reachable
+        // by advance() from 'Sent' (LOI_NEXT_STAGE derives 'Counter'), which is the whole reason
+        // advanceTo exists.
+        LOI__c record = loi();
+        record.Stage__c = 'Sent';
+        update record;
+
+        Test.startTest();
+        String message = RecordStageAdvanceController.advanceTo(record.Id, 'Completed');
+        Test.stopTest();
+
+        Assert.isTrue(message.contains('Completed'),
+            'The confirmation naming the new stage is what the LWC toasts');
+        Assert.areEqual('Completed', [SELECT Stage__c FROM LOI__c WHERE Id = :record.Id].Stage__c,
+            'advanceTo must write the explicit target, skipping the derived Counter hop');
+    }
+
+    @isTest
+    static void advanceToRejectsATargetOffTheAllowList() {
+        // 🔴 THE ALLOW-LIST IS THE WHOLE SECURITY PROPERTY. Without it any holder of class access
+        // could write ANY stage on ANY of five objects, skipping every hop and every gate. This
+        // proves a derivable forward hop is refused even though it is a perfectly valid picklist
+        // value on the object — membership, not validity, is the test.
+        LOI__c record = loi();
+
+        Test.startTest();
+        try {
+            RecordStageAdvanceController.advanceTo(record.Id, 'Sent');
+            Assert.fail('A stage that is not an allowed explicit target must be refused');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().contains('not available'),
+                'The refusal is surfaced to the user; got: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.areEqual('Draft', [SELECT Stage__c FROM LOI__c WHERE Id = :record.Id].Stage__c,
+            'A refused target must leave the stage untouched');
+    }
+
+    @isTest
+    static void advanceToRejectsABlankTarget() {
+        Test.startTest();
+        try {
+            RecordStageAdvanceController.advanceTo(loi().Id, '');
+            Assert.fail('A blank target must be refused');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().contains('No target stage'),
+                'The blank-target message reaches the LWC verbatim; got: ' + e.getMessage());
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void advanceToCannotTouchAnObjectWithNoAllowedTargets() {
+        // The other four objects have LINEAR paths and supply no explicit targets at all, so
+        // advanceTo is structurally unreachable for them. 'Signed' is a real NDA status, so this
+        // proves the refusal comes from the per-object allow-list and not from value validation.
+        Test.startTest();
+        try {
+            RecordStageAdvanceController.advanceTo(nda().Id, 'Signed');
+            Assert.fail('An object with no allowed explicit targets must refuse every target');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().contains('not available'),
+                'Refused for the NDA too; got: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.areEqual('Pending', [SELECT Status__c FROM NDA__c WHERE Id = :nda().Id].Status__c,
+            'The NDA status must be untouched — a linear object has no explicit-target route');
+    }
+
+    @isTest
     static void noNextStepSurfacesItsMessageVerbatim() {
         // A terminal stage. The service's message is user-actionable, so the controller's typed
         // clause must carry it out unchanged rather than replacing it with the generic wording.

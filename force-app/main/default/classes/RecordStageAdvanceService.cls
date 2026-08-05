@@ -136,6 +136,25 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
+     * 🔴 THE LOI PATH IS NO LONGER LINEAR (2026-08-05) — the ONLY object here that branches.
+     *
+     * At 'Sent' a broker either counters or accepts, so the deal driver gets two named buttons
+     * instead of one generic Advance Stage: Counter and Completed. 'Completed' cannot be reached by
+     * advance() from 'Sent' — LOI_NEXT_STAGE derives 'Counter' — so it needs an explicit target.
+     *
+     * This is the allow-list the class header demanded on day one, and it is deliberately PER
+     * OBJECT: the other four configs pass no explicit targets at all, so advanceTo() is structurally
+     * unreachable for them. Membership is limited to the two stages that legitimately have no single
+     * derivable predecessor from 'Sent'. 'Prepare/Review' and 'Sent' are deliberately EXCLUDED —
+     * they are derivable forward hops belonging to advance(), and listing them would let a direct
+     * Apex call skip the approval gate the LOI page enforces at Prepare/Review.
+     */
+    private static final Set<String> LOI_EXPLICIT_TARGETS = new Set<String>{
+        'Counter',
+        'Completed'
+    };
+
+    /**
      * Underwriting__c.Stage__c.
      *
      * 🔴 THE 'In Progress' -> 'Approved' HOP IS DELIBERATELY ABSENT. IT IS NOT AN OVERSIGHT.
@@ -212,13 +231,31 @@ public with sharing class RecordStageAdvanceService {
         private final String stageField;
         private final Map<String, String> nextStage;
         private final StageActionGate gate;
+        /**
+         * The ONLY stages advanceTo() will write for this object. Empty for an object whose path is
+         * still linear, which makes advanceTo() unreachable there — the allow-list is per object
+         * precisely so a branch on one object cannot open explicit writes on the other four.
+         */
+        private final Set<String> explicitTargets;
 
+        /** Linear path: no branch, so no explicit target is permitted at all. */
         private StageConfig(
             String label,
             String stageField,
             Map<String, String> nextStage,
             StageActionGate gate
         ) {
+            this(label, stageField, nextStage, gate, new Set<String>());
+        }
+
+        private StageConfig(
+            String label,
+            String stageField,
+            Map<String, String> nextStage,
+            StageActionGate gate,
+            Set<String> explicitTargets
+        ) {
+            this.explicitTargets = explicitTargets;
             this.label = label;
             this.stageField = stageField;
             this.nextStage = nextStage;
@@ -239,7 +276,8 @@ public with sharing class RecordStageAdvanceService {
             NDA__c.SObjectType => new StageConfig(
                 'NDA', 'Status__c', NDA_NEXT_STAGE, StageActionGate.DEAL_DRIVER),
             LOI__c.SObjectType => new StageConfig(
-                'LOI', 'Stage__c', LOI_NEXT_STAGE, StageActionGate.DEAL_DRIVER),
+                'LOI', 'Stage__c', LOI_NEXT_STAGE, StageActionGate.DEAL_DRIVER,
+                LOI_EXPLICIT_TARGETS),
             Underwriting__c.SObjectType => new StageConfig(
                 'Underwriting', 'Stage__c', UNDERWRITING_NEXT_STAGE, StageActionGate.DEAL_DRIVER),
             Construction_Feasibility_Review__c.SObjectType => new StageConfig(
@@ -280,6 +318,46 @@ public with sharing class RecordStageAdvanceService {
             throw new RecordStageAdvanceException(noNextStepMessage(config, currentStage));
         }
         return setStage(record, config, target);
+    }
+
+    /**
+     * Moves the record to an EXPLICIT stage, which must be on that object's allow-list.
+     *
+     * Added 2026-08-05 for the LOI 'Sent' branch — a broker either counters or accepts, so the deal
+     * driver needs two named buttons where advance() can only derive one. It mirrors
+     * StageAdvanceService.advanceTo, including the reason that method exists at all.
+     *
+     * 🔴 THE ALLOW-LIST IS THE WHOLE POINT AND IS PER OBJECT. Without it, any holder of controller
+     * access could write ANY stage on ANY of five objects, skipping every hop and every gate — the
+     * exact hole StageAdvanceService.ALLOWED_EXPLICIT_TARGETS was created to close. Four of the five
+     * objects supply no explicit targets, so this method cannot write to them at all. Adding a
+     * branch action means adding its stage to that object's set; do NOT add derivable forward hops,
+     * which belong to advance() and therefore cannot skip a step.
+     *
+     * The rejection message deliberately does NOT echo the supplied value back: a legitimate caller
+     * can never reach that branch (each bundle passes a hardcoded constant), so the only way in is a
+     * hand-crafted call, and reflecting attacker-supplied text into a toast has no upside. Same
+     * wording choice as StageAdvanceService.
+     *
+     * @param recordId the stage-controlled record to move (required)
+     * @param target   the destination stage; must be on this object's allow-list
+     * @return a user-facing confirmation message, e.g. 'LOI moved to Completed.'
+     * @throws RecordStageAdvanceException when recordId is null, target is blank, target is not an
+     *         allowed explicit target for this object, the object is not stage-controlled, or the
+     *         write is blocked (the block's message is surfaced verbatim)
+     * @throws System.QueryException when recordId matches no record
+     * @example
+     * String msg = RecordStageAdvanceService.advanceTo(loiId, 'Completed');
+     */
+    public static String advanceTo(Id recordId, String target) {
+        if (String.isBlank(target)) {
+            throw new RecordStageAdvanceException('No target stage was provided.');
+        }
+        StageConfig config = configFor(recordId);
+        if (!config.explicitTargets.contains(target)) {
+            throw new RecordStageAdvanceException('That stage is not available from this action.');
+        }
+        return setStage(load(recordId), config, target);
     }
 
     /**
