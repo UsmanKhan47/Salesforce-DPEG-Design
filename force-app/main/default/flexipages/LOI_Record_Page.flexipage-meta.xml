@@ -35,7 +35,7 @@
                         <valueListItems>
                             <value>LOI__c.Advance_Stage</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3 AND (4 OR 5)</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>
                                     <operator>EQUAL</operator>
@@ -50,6 +50,16 @@
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Completed</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Prepare/Review</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.LOI_Status__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Approved</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
