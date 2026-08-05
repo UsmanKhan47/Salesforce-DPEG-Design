@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- ⚠ DRIVEN BY Negotiation_Status__c, NOT Stage__c. Replaces Contract_Review_Path (now
+         inactive), which could not simply be re-pointed: the Metadata API refuses to change
+         fieldName on an existing PathAssistant.
+
+         Stage__c is a DERIVED PROJECTION here — the before-save flow Contract_Review_Stage_Sync
+         recomputes it from Negotiation_Status__c on every save — so a Path on Stage__c could not
+         match the workflow. Three concrete mismatches, all user-visible:
+
+           1. 'Counter' was advertised as the step after Review, but advancing NEVER reaches it —
+              Seller/Buyer Counter are branch states, not a step in the line.
+           2. 'Revised' and 'Ready for Execution' BOTH project to 'Review', so one of the three
+              Advance Stage clicks moved the Path not at all.
+           3. The final click jumped Review -> Contract Execution, leaving Counter permanently
+              un-passed on every deal that never countered.
+
+         On Negotiation_Status__c the Path and the Advance Stage button are the SAME sequence:
+         every click moves exactly one step and nothing is advertised that never happens.
+
+         ⚠ STEP ORDER COMES FROM THE PICKLIST, NOT FROM THIS FILE. The retired Path listed its steps
+         alphabetically yet rendered in picklist order, so do not infer display order from the order
+         below. Negotiation_Status__c is ordered Initial Draft, Seller Counter, Buyer Counter,
+         Revised, Ready for Execution, Executed — which yields the intended line once the two
+         counters are omitted.
+
+         ⚠ SELLER COUNTER / BUYER COUNTER ARE DELIBERATELY NOT STEPS. A record in either state shows
+         NO highlighted step until it returns to the line — the accepted cost of the user's "simple
+         linear, no counter buttons" decision (2026-08-05). Stage__c still derives 'Counter' for
+         them, so reports and the coarse rollup are unaffected. -->
+    <active>true</active>
+    <entityName>Contract_Review__c</entityName>
+    <fieldName>Negotiation_Status__c</fieldName>
+    <masterLabel>Contract Review Negotiation Path</masterLabel>
+    <pathAssistantSteps>
+        <info>Draft the purchase &amp;amp; sale agreement from the agreed LOI terms. Circulate the first draft and capture the PSA date.</info>
+        <picklistValueName>Initial Draft</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Review the PSA internally. Validate terms, contingencies and timelines. If the counterparty redlines, set Negotiation Status to Seller or Buyer Counter and log each exchange in PSA Versions — the Path pauses while countering and resumes here.</info>
+        <picklistValueName>Revised</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Terms are locked and the document is final. Route for signature. Advancing from here executes the contract, so confirm every contingency and date is agreed first.</info>
+        <picklistValueName>Ready for Execution</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>PSA fully executed — this hands the deal off to the Transactions team: the Opportunity is stamped Contract Signed (Day 0) and the Transaction record is created automatically. The execution date is stamped for you.</info>
+        <picklistValueName>Executed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>__MASTER__</recordTypeName>
+</PathAssistant>
