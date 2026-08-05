@@ -24,7 +24,7 @@
                 <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
                 <type>user</type>
             </approver>
-            <whenMultipleApprovers>Unanimous</whenMultipleApprovers>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
         </assignedApprover>
         <label>LOI Approval</label>
         <name>LOI_Approval_Step</name>
