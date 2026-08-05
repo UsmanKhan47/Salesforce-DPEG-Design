@@ -85,4 +85,28 @@ public with sharing class ContractReviewSelector {
             WITH USER_MODE
         ];
     }
+
+    /**
+     * The Contract Review's Id and Stage, for RecordStageAdvanceService's stage-advance quick
+     * action. Added 2026-08-05 when Contract Review joined the stage-control program — it was the
+     * one acquisitions child with a Path that the original five-object sweep missed, so its record
+     * page still carried the native "Mark Stage as Complete" button that program exists to remove.
+     *
+     * Field list is deliberately MINIMAL (Id + Stage__c): the service reads the current stage,
+     * derives the next one from its own map, and writes it back. Widening this to carry other
+     * fields would make an unrelated FLS gap able to break the stage action.
+     *
+     * @param contractReviewId Contract_Review__c Id; must reference an existing row.
+     * @return The Contract Review with Id and Stage__c populated.
+     * @throws System.QueryException when no Contract Review matches the Id.
+     */
+    public static Contract_Review__c selectStageRequiredById(Id contractReviewId) {
+        return [
+            SELECT Id, Stage__c
+            FROM Contract_Review__c
+            WHERE Id = :contractReviewId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
 }

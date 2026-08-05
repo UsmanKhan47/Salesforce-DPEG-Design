@@ -136,6 +136,27 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
+     * Contract_Review__c.Stage__c — PSA Drafting -> Review -> Counter -> Contract Execution.
+     * 'Contract Execution' is terminal.
+     *
+     * Contract Review joined this program 2026-08-05. It was the one acquisitions child with a
+     * Lightning Path that the original five-object sweep missed, so its record page still carried
+     * the native "Mark Stage as Complete" button — an ungated stage write, which is exactly what
+     * this service exists to replace.
+     *
+     * ⚠ ONLY FOUR OF THE SEVEN Stage__c PICKLIST VALUES ARE ACTIVE. 'Contract Execution (Signed)',
+     * 'Contract Negotiation' and 'Prepare' are inactive orphans still present in the field metadata
+     * (verified against the org's REST describe, not the metadata file — a retrieve UNIONS local and
+     * remote picklist values and so cannot tell you what is live). They are deliberately absent from
+     * this map: a map entry for an inactive value would produce a write the picklist rejects.
+     */
+    private static final Map<String, String> CONTRACT_REVIEW_NEXT_STAGE = new Map<String, String>{
+        'PSA Drafting' => 'Review',
+        'Review' => 'Counter',
+        'Counter' => 'Contract Execution'
+    };
+
+    /**
      * 🔴 THE LOI PATH IS NO LONGER LINEAR (2026-08-05) — the ONLY object here that branches.
      *
      * At 'Sent' a broker either counters or accepts, so the deal driver gets two named buttons
@@ -278,6 +299,9 @@ public with sharing class RecordStageAdvanceService {
             LOI__c.SObjectType => new StageConfig(
                 'LOI', 'Stage__c', LOI_NEXT_STAGE, StageActionGate.DEAL_DRIVER,
                 LOI_EXPLICIT_TARGETS),
+            Contract_Review__c.SObjectType => new StageConfig(
+                'Contract Review', 'Stage__c', CONTRACT_REVIEW_NEXT_STAGE,
+                StageActionGate.DEAL_DRIVER),
             Underwriting__c.SObjectType => new StageConfig(
                 'Underwriting', 'Stage__c', UNDERWRITING_NEXT_STAGE, StageActionGate.DEAL_DRIVER),
             Construction_Feasibility_Review__c.SObjectType => new StageConfig(
@@ -452,6 +476,9 @@ public with sharing class RecordStageAdvanceService {
         }
         if (recordType == Development_Feasibility_Review__c.SObjectType) {
             return DevelopmentFeasibilityReviewSelector.selectStageRequiredById(recordId);
+        }
+        if (recordType == Contract_Review__c.SObjectType) {
+            return ContractReviewSelector.selectStageRequiredById(recordId);
         }
         // Unreachable in practice — configFor() already rejected every unsupported type before this
         // is called. Kept so a new CONFIG_BY_TYPE entry without a matching selector branch fails
