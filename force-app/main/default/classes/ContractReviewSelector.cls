@@ -87,22 +87,30 @@ public with sharing class ContractReviewSelector {
     }
 
     /**
-     * The Contract Review's Id and Stage, for RecordStageAdvanceService's stage-advance quick
-     * action. Added 2026-08-05 when Contract Review joined the stage-control program — it was the
-     * one acquisitions child with a Path that the original five-object sweep missed, so its record
-     * page still carried the native "Mark Stage as Complete" button that program exists to remove.
+     * The Contract Review's Id and NEGOTIATION STATUS, for RecordStageAdvanceService's stage-advance
+     * quick action.
      *
-     * Field list is deliberately MINIMAL (Id + Stage__c): the service reads the current stage,
-     * derives the next one from its own map, and writes it back. Widening this to carry other
-     * fields would make an unrelated FLS gap able to break the stage action.
+     * 🔴 IT SELECTS Negotiation_Status__c, NOT Stage__c, AND THAT IS THE WHOLE POINT.
+     * On this object Stage__c is a DERIVED PROJECTION, not an independently writable field: the
+     * active before-save flow Contract_Review_Stage_Sync recomputes it from Negotiation_Status__c on
+     * EVERY create and update (Initial Draft -> PSA Drafting, Revised / Ready for Execution ->
+     * Review, either Counter -> Counter, Executed -> Contract Execution). Writing Stage__c therefore
+     * appears to succeed — the DML commits, LastModifiedDate moves, the quick action toasts success —
+     * and the value is silently replaced before it is ever stored. Measured 2026-08-05 on CTR-0000.
+     *
+     * The same is true of the Path's native "Mark Stage as Complete", which is why that button is
+     * hidden on this page rather than merely superseded: it was never functional here either.
+     *
+     * Field list is deliberately MINIMAL (Id + Negotiation_Status__c): widening it would let an
+     * unrelated FLS gap break the stage action.
      *
      * @param contractReviewId Contract_Review__c Id; must reference an existing row.
-     * @return The Contract Review with Id and Stage__c populated.
+     * @return The Contract Review with Id and Negotiation_Status__c populated.
      * @throws System.QueryException when no Contract Review matches the Id.
      */
     public static Contract_Review__c selectStageRequiredById(Id contractReviewId) {
         return [
-            SELECT Id, Stage__c
+            SELECT Id, Negotiation_Status__c
             FROM Contract_Review__c
             WHERE Id = :contractReviewId
             WITH USER_MODE

@@ -136,24 +136,41 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
-     * Contract_Review__c.Stage__c — PSA Drafting -> Review -> Counter -> Contract Execution.
-     * 'Contract Execution' is terminal.
+     * Contract_Review__c.Negotiation_Status__c — Initial Draft -> Revised -> Ready for Execution
+     * -> Executed. 'Executed' is terminal.
      *
-     * Contract Review joined this program 2026-08-05. It was the one acquisitions child with a
-     * Lightning Path that the original five-object sweep missed, so its record page still carried
-     * the native "Mark Stage as Complete" button — an ungated stage write, which is exactly what
-     * this service exists to replace.
+     * 🔴 THIS OBJECT'S STAGE FIELD IS Negotiation_Status__c, NOT Stage__c — THE ONLY EXCEPTION
+     * BESIDES THE NDA, AND FOR A COMPLETELY DIFFERENT REASON.
+     * The NDA simply names its field Status__c. Here, Stage__c is a DERIVED PROJECTION that CANNOT
+     * be written at all: the active before-save flow Contract_Review_Stage_Sync recomputes it from
+     * Negotiation_Status__c on every create and update. A first attempt at this object mapped
+     * Stage__c directly and produced a button that reported SUCCESS and changed nothing — the DML
+     * committed, LastModifiedDate moved, and the flow had already replaced the value (measured
+     * 2026-08-05 on CTR-0000). Driving the status is what makes the Path move, as a consequence:
      *
-     * ⚠ ONLY FOUR OF THE SEVEN Stage__c PICKLIST VALUES ARE ACTIVE. 'Contract Execution (Signed)',
-     * 'Contract Negotiation' and 'Prepare' are inactive orphans still present in the field metadata
-     * (verified against the org's REST describe, not the metadata file — a retrieve UNIONS local and
-     * remote picklist values and so cannot tell you what is live). They are deliberately absent from
-     * this map: a map entry for an inactive value would produce a write the picklist rejects.
+     *   Initial Draft        -> Path shows 'PSA Drafting'
+     *   Revised              -> Path shows 'Review'
+     *   Ready for Execution  -> Path shows 'Review'   (same stage; the Path does not move here)
+     *   Executed             -> Path shows 'Contract Execution'
+     *   Seller/Buyer Counter -> Path shows 'Counter'  (set by inline edit, not by this action)
+     *
+     * ⚠ TWO CONSEQUENCES WORTH KNOWING BEFORE EDITING THIS MAP.
+     * 1. Revised -> Ready for Execution leaves the PATH UNCHANGED (both project to 'Review'), so the
+     *    user sees a success toast and a stationary Path. That is correct, not a repeat of the
+     *    defect above — the status genuinely advanced.
+     * 2. The final hop, Ready for Execution -> Executed, is NOT just a status write. It fires
+     *    ContractReviewTrigger -> ContractExecutionService, which stamps the Opportunity (Contract
+     *    Signed, Day 0) and CREATES THE Transaction__c. Adding or reordering entries around
+     *    'Executed' changes when that handoff fires.
+     *
+     * Seller Counter and Buyer Counter are deliberately absent: they are branch states, and the
+     * user chose (2026-08-05) to record them by editing the field rather than with named buttons.
+     * Adding them later means an explicit-target allow-list, exactly as the LOI has.
      */
     private static final Map<String, String> CONTRACT_REVIEW_NEXT_STAGE = new Map<String, String>{
-        'PSA Drafting' => 'Review',
-        'Review' => 'Counter',
-        'Counter' => 'Contract Execution'
+        'Initial Draft' => 'Revised',
+        'Revised' => 'Ready for Execution',
+        'Ready for Execution' => 'Executed'
     };
 
     /**
@@ -299,8 +316,10 @@ public with sharing class RecordStageAdvanceService {
             LOI__c.SObjectType => new StageConfig(
                 'LOI', 'Stage__c', LOI_NEXT_STAGE, StageActionGate.DEAL_DRIVER,
                 LOI_EXPLICIT_TARGETS),
+            // ⚠ 'Negotiation_Status__c', NOT 'Stage__c' — Stage__c is derived and unwritable here.
+            // See CONTRACT_REVIEW_NEXT_STAGE above before changing this.
             Contract_Review__c.SObjectType => new StageConfig(
-                'Contract Review', 'Stage__c', CONTRACT_REVIEW_NEXT_STAGE,
+                'Contract Review', 'Negotiation_Status__c', CONTRACT_REVIEW_NEXT_STAGE,
                 StageActionGate.DEAL_DRIVER),
             Underwriting__c.SObjectType => new StageConfig(
                 'Underwriting', 'Stage__c', UNDERWRITING_NEXT_STAGE, StageActionGate.DEAL_DRIVER),

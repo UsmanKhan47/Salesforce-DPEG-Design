@@ -64,6 +64,35 @@ private class RecordStageAdvanceControllerTest {
     }
 
     @isTest
+    static void contractReviewAdvancesTheNegotiationStatusNotTheStage() {
+        // 🔴 REGRESSION PIN. Stage__c on this object is a DERIVED PROJECTION: the before-save flow
+        // Contract_Review_Stage_Sync recomputes it from Negotiation_Status__c on every save. A first
+        // attempt mapped Stage__c directly and produced a button that reported SUCCESS and changed
+        // nothing — the DML committed and the flow replaced the value before it was stored.
+        // Asserting BOTH fields is what makes that failure detectable here: the status must move,
+        // and the stage must follow as a consequence rather than being written directly.
+        Contract_Review__c cr = new Contract_Review__c(
+            Opportunity__c = dealId(),
+            Negotiation_Status__c = 'Initial Draft'
+        );
+        insert cr;
+
+        Test.startTest();
+        String message = RecordStageAdvanceController.advance(cr.Id);
+        Test.stopTest();
+
+        Contract_Review__c after = [
+            SELECT Negotiation_Status__c, Stage__c FROM Contract_Review__c WHERE Id = :cr.Id
+        ];
+        Assert.areEqual('Revised', after.Negotiation_Status__c,
+            'The action must advance Negotiation_Status__c — the only writable driver on this object');
+        Assert.areEqual('Review', after.Stage__c,
+            'and the before-save flow must derive Stage__c from it, moving the Path as a consequence');
+        Assert.isTrue(message.contains('Revised'),
+            'The confirmation names the status the action actually set');
+    }
+
+    @isTest
     static void advanceToWritesAnAllowedExplicitTarget() {
         // The LOI 'Sent' branch: a broker either counters or accepts. 'Completed' is NOT reachable
         // by advance() from 'Sent' (LOI_NEXT_STAGE derives 'Counter'), which is the whole reason

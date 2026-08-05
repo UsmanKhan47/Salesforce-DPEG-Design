@@ -16,9 +16,9 @@
                                     <rightValue>true</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <leftValue>{!Record.Negotiation_Status__c}</leftValue>
                                     <operator>NE</operator>
-                                    <rightValue>Contract Execution</rightValue>
+                                    <rightValue>Executed</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
