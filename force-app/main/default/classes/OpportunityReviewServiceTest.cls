@@ -43,6 +43,33 @@ private class OpportunityReviewServiceTest {
     }
 
     @isTest
+    static void loiRecordCreatesOnStageEntry() {
+        Test.startTest();
+        Opportunity o = newOpp('LOI'); // insert = stage entry; the LOI entry gates check ISCHANGED
+        insert o;
+        Test.stopTest();
+
+        List<LOI__c> lois = [
+            SELECT Id, Stage__c, LOI_Status__c FROM LOI__c WHERE Opportunity__c = :o.Id
+        ];
+        System.assertEquals(1, lois.size(), 'One LOI opens on entering the LOI stage');
+        System.assertEquals('Draft', lois[0].Stage__c, 'LOI path starts at Draft');
+        System.assertEquals('Draft', lois[0].LOI_Status__c, 'LOI status starts at Draft');
+
+        // The stamp is the load-bearing half: ApprovalAuditService's LOI gate resolves its target
+        // through Primary_LOI__c, and swallows its own failures - so a null here would make the
+        // LOI approval silently stamp nothing, reproducing the Underwriting-gate defect.
+        Opportunity stamped = [SELECT Primary_LOI__c FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(lois[0].Id, stamped.Primary_LOI__c,
+            'Primary_LOI__c stamped so the LOI approval audit can resolve its target');
+
+        // Idempotency: re-saving at the same stage must not open a second LOI.
+        update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'touch');
+        System.assertEquals(1, [SELECT COUNT() FROM LOI__c WHERE Opportunity__c = :o.Id],
+            'No duplicate LOI on re-save');
+    }
+
+    @isTest
     static void ndaOpensOnNewOpportunity() {
         Test.startTest();
         Opportunity o = newOpp('New');

@@ -113,4 +113,26 @@ public with sharing class LoiSelector {
             LIMIT 1
         ];
     }
+
+    /**
+     * LOIs related to a set of Opportunities — backs OpportunityReviewService's LOI-stage
+     * idempotency (drop any deal that already has an LOI so a second is never opened).
+     * Mirrors NdaSelector / UnderwritingSelector.selectByOpportunityIds exactly; the existing
+     * single-record methods on this selector cannot answer a set-based existence question.
+     * Bulk-safe (one query for the whole set).
+     *
+     * @param opportunityIds Parent Opportunity Ids; null/empty-safe.
+     * @return LOIs with Id and Opportunity__c populated; empty when the input is null or empty.
+     */
+    public static List<LOI__c> selectByOpportunityIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<LOI__c>();
+        }
+        return [
+            SELECT Id, Opportunity__c
+            FROM LOI__c
+            WHERE Opportunity__c IN :opportunityIds
+            WITH USER_MODE
+        ];
+    }
 }

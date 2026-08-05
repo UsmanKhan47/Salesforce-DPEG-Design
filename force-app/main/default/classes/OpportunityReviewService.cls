@@ -17,6 +17,7 @@ public with sharing class OpportunityReviewService {
     @TestVisible private static final String CON_STAGE = 'Construction Review';
     @TestVisible private static final String CONTRACT_STAGE = 'PSA';
     @TestVisible private static final String UW_STAGE = 'Underwriting';
+    @TestVisible private static final String LOI_STAGE = 'LOI';
 
     /**
      * Called from the Opportunity after-insert / after-update trigger.
@@ -28,6 +29,8 @@ public with sharing class OpportunityReviewService {
         Set<Id> conOpps = new Set<Id>();
         Set<Id> contractOpps = new Set<Id>();
         Set<Id> uwOpps = new Set<Id>();
+        Set<Id> loiOpps = new Set<Id>();
+        Map<Id, Id> propertyByOpp = new Map<Id, Id>();
 
         for (Opportunity o : newOpps) {
             Opportunity prior = (oldMap == null) ? null : oldMap.get(o.Id);
@@ -50,8 +53,13 @@ public with sharing class OpportunityReviewService {
             if (stageChanged && o.StageName == UW_STAGE) {
                 uwOpps.add(o.Id);
             }
+            if (stageChanged && o.StageName == LOI_STAGE) {
+                loiOpps.add(o.Id);
+                propertyByOpp.put(o.Id, o.Property__c);
+            }
         }
-        if (devOpps.isEmpty() && conOpps.isEmpty() && contractOpps.isEmpty() && uwOpps.isEmpty()) {
+        if (devOpps.isEmpty() && conOpps.isEmpty() && contractOpps.isEmpty()
+                && uwOpps.isEmpty() && loiOpps.isEmpty()) {
             return;
         }
 
@@ -68,6 +76,9 @@ public with sharing class OpportunityReviewService {
         }
         for (Underwriting__c uw : UnderwritingSelector.selectByOpportunityIds(uwOpps)) {
             uwOpps.remove(uw.Opportunity__c);
+        }
+        for (LOI__c loi : LoiSelector.selectByOpportunityIds(loiOpps)) {
+            loiOpps.remove(loi.Opportunity__c);
         }
 
         List<Development_Feasibility_Review__c> devToInsert = new List<Development_Feasibility_Review__c>();
@@ -120,6 +131,45 @@ public with sharing class OpportunityReviewService {
                 uwStamps.add(new Opportunity(Id = uw.Opportunity__c, Primary_Underwriting__c = uw.Id));
             }
             update uwStamps;
+        }
+
+        // Entering LOI opens the LOI record. Added 2026-08-05: LOI was the ONLY child in the deal
+        // tree with no auto-creation, so principal approval moved a deal to the LOI stage with
+        // nothing to work on.
+        //
+        // 🔴 STAMPING Primary_LOI__c IS THE LOAD-BEARING HALF, not bookkeeping.
+        // ApprovalAuditService's LOI gate resolves its target through
+        // OpportunitySelector.selectPrimaryLoiByIds, so a null Primary_LOI__c makes the LOI
+        // approval stamp NOTHING — silently, because that service swallows its own failures. An
+        // LOI created without this stamp would reproduce the Underwriting-gate defect one stage
+        // later. Same insert-then-stamp shape as Contract Review / Underwriting / NDA above.
+        //
+        // Property__c is carried from the deal so the LOI is not orphaned from the asset; it is
+        // read from Trigger.new rather than re-queried. A deal with no Property yields null, which
+        // is the pre-existing state for a manually created LOI and is not made worse here.
+        if (!loiOpps.isEmpty()) {
+            List<LOI__c> loiToInsert = new List<LOI__c>();
+            for (Id oppId : loiOpps) {
+                loiToInsert.add(new LOI__c(
+                    Opportunity__c = oppId,
+                    Property__c = propertyByOpp.get(oppId),
+                    Stage__c = 'Draft',
+                    LOI_Status__c = 'Draft'));
+            }
+            // ⚠ EXPLICIT SYSTEM MODE — and this block genuinely differs from its five siblings
+            // above, which deliberately keep a bare `insert`. Every other child is created when a
+            // DEAL DRIVER moves the stage, and a deal driver has Edit. The LOI stage is the only
+            // one entered by the APPROVAL PROCESS's own field update, so this code runs as the
+            // APPROVER — who is read-only on both Opportunity and LOI__c (DPEG Principal PSG:
+            // Read yes, Edit no, measured). That exact difference is what broke
+            // ApprovalAuditService twice on 2026-08-05, so it is stated at the DML here rather
+            // than assumed from trigger context.
+            Database.insert(loiToInsert, true, AccessLevel.SYSTEM_MODE);
+            List<Opportunity> loiStamps = new List<Opportunity>();
+            for (LOI__c loi : loiToInsert) {
+                loiStamps.add(new Opportunity(Id = loi.Opportunity__c, Primary_LOI__c = loi.Id));
+            }
+            Database.update(loiStamps, true, AccessLevel.SYSTEM_MODE);
         }
     }
 
