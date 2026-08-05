@@ -214,12 +214,71 @@ This is observable, not theoretical: the platform generated these classes at **t
 ### Standards (Non-Negotiable)
 
 - **Sharing:** `with sharing` on every service, selector, domain, and controller class. `without sharing` only with written justification in the class header Javadoc.
-- **SOQL:** always in a selector. Use `WITH USER_MODE`. Never inline SOQL inside service or domain classes.
+- **SOQL:** always in a selector. Use `WITH USER_MODE`. Never inline SOQL inside service or domain classes. **Exception — AUTOMATION PATHS use `WITH SYSTEM_MODE`** (see below): a read the running user never asked for must not depend on the running user's FLS.
 - **Bulkification:** every public method accepts collections, not single records. No SOQL/DML inside loops. Bulk tests insert 251+ records.
 - **Callouts:** all ASB/Plaid callouts wrapped in a dedicated service class (`PlaidCalloutService`) so they can be mocked via `HttpCalloutMock`. all other callouts will use ASB.
 - **Error handling at LWC boundary:** `@AuraEnabled` methods throw `AuraHandledException` with user-safe messages.
 - **Test data:** always use `TestDataFactory` (`force-app/main/default/classes/TestDataFactory.cls` — **it exists and is the org-wide factory**; do not stand up a competing per-feature factory). Never `@isTest(SeeAllData=true)`.
 - **Coverage target:** 90%+ per class, **team-owned classes only** (see _Scope_ above).
+
+#### `WITH SYSTEM_MODE` — the automation-path exception
+
+`USER_MODE` **throws; it does not degrade.** The instant one selected field is inaccessible to the
+running principal, the query raises `System.QueryException: No such column '<field>' on entity
+'<object>'` — which is how the platform reports an **FLS denial**, not a missing field. On a read a
+human requested that is the right outcome. On a read the platform performs *on the user's behalf* it
+is a defect generator: one ungranted custom field breaks an unrelated write, or silently disables an
+automation. Every DPEG persona is on `Minimum Access - Salesforce`, which grants no FLS at all, so
+this is the default case here rather than an edge case.
+
+A selector method therefore uses `WITH SYSTEM_MODE` — **justified at its own declaration** — when the
+read is performed on a principal's behalf rather than at their request.
+
+⚠ **This table records the decisions taken so far; it is NOT a closed list and NOT a conformance
+test.** The authoritative inventory is the selector class headers, which is where each justification
+actually lives. Do not read an unlisted `SYSTEM_MODE` selector as non-conformant — read its header.
+As of 2026-08-05 the repo has **16 `WITH SYSTEM_MODE` queries across 11 selector classes**:
+
+| Path | Principal | Selector methods | Why USER_MODE fails there |
+| --- | --- | --- | --- |
+| **Guest / unauthenticated** | Site guest user | `LeadSelector.GuestReads`, `ContactSelector.GuestReads`, `GroupMemberSelector` | guest has no FLS → Broker-Portal anti-abuse dedup reads throw |
+| **Approval audit** | the approver, via `without sharing` `ApprovalAuditService` | `ProcessInstanceStepSelector` | reproduces the original no-`WITH`-clause read of approval history |
+| **Notifier automation** | `BrokerPortalNotifier` background path | `NotificationTypeSelector`, `QueueGroupSelector`, `LeadSelector.selectByIdsSystem` | notification dispatch must not depend on the triggering user's FLS |
+| **Permission-gate reads** (moved from USER_MODE **2026-08-03**) | the running user, reading their OWN grants | `PermissionSetAssignmentSelector`, `PermissionSetGroupComponentSelector` | a `Minimum Access` persona threw on the very read that decides whether they may act — **the closest prior art to the rollup entry below** |
+| **EAC capture pipeline** (2026-08-02) | whichever principal EAC committed under | `TaskSelector.selectByIds`, `TaskSelector.selectThreadAnchorsByAnchorValues`, `EmailMessageSelector`, `EmailMessageRelationSelector` | the queueable dies → guard silently disabled while EAC keeps polluting timelines |
+| **Rollup recompute — platform-driven, not user-requested** (2026-08-05) | the acting end user, on whose behalf a **trigger** recomputes | `TaskSelector.selectByTransactionDealIds` (← `TaskRollupService` ← `TaskRollupTrigger`) | **reproduced production failure** — see below |
+| **Rollup recompute — prospective** (2026-08-05) | the acting end user; `recalc` is called directly, **no trigger** | `TaskSelector.selectByOnboardingIds` (← `OnboardingTaskRollupService.recalc` ← `OnboardingService.completeTask`) | **nothing today** — inert on the live path; applied for consistency and future callers |
+
+**Only the Transaction rollup rests on an observed failure; the Onboarding one does not, and the two
+must not be cited as one.** A `Transaction__c` created with `Contract_Executed_Date__c` set ran the
+Day-0 fan-out; `TaskFanoutQueueable` inserted its 82 checklist Tasks; `TaskRollupTrigger` fired
+after-insert; `TaskRollupService` called `TaskSelector.selectByTransactionDealIds`; and its `USER_MODE`
+query threw `No such column 'Transaction_Deal__c' on entity 'Task'` (the field exists — it is an FLS
+denial). The exception escaped the trigger as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and **rolled back
+all 82 inserts, making the Day-0 checklist unbuildable by any non-admin.**
+
+`selectByOnboardingIds` was moved in the same change but is **inert on today's live path**:
+`OnboardingService.completeTask` reads `TaskSelector.selectForOnboardingCompletion` (`USER_MODE`,
+selecting the same `Onboarding__c` + `Onboarding_Status__c` custom fields) *before* it calls `recalc`,
+so a persona lacking that FLS throws at the first read and never reaches the rollup — and
+`selectChecklistByOnboardingId` (also `USER_MODE`) gates the checklist UI the same way. Those two
+reads remain the real Onboarding FLS gate and remain `USER_MODE`, correctly: both back reads a human
+explicitly asked for. **Onboarding is therefore not "now non-admin-safe."** The move was still worth
+making — its former justification ("the sole FLS-bearing standard field here is `ActivityDate`") was
+wrong on both counts, ignoring the custom fields in the SELECT and assuming a Standard User profile —
+but it buys safety only for a future caller that arrives without a `USER_MODE` read in front of it
+(a batch recompute, a Yardi sync, a trigger).
+
+⚠ **`SYSTEM_MODE` bypasses FLS and CRUD ONLY — it does NOT bypass sharing.** That is precisely what
+makes this exception safe and why it is not a widening of access: the selector's sharing keyword still
+governs record visibility, so `TaskSelector` (`with sharing`, all four methods) returns exactly the
+rows the running user could already see. Where a caller genuinely needs to escape sharing too, that is
+a **separate, separately justified decision** — `ApprovalAuditService`, `BrokerPortalService`,
+`EmailThreadGuardService` and `EmailThreadAdopterService` are `without sharing` for reasons stated in
+their own class headers, and `SYSTEM_MODE` neither implies nor grants it.
+The exception removes a **field-level failure mode**, nothing else. It is not a licence to reach for
+SYSTEM_MODE whenever USER_MODE is inconvenient — a user-initiated read that throws is telling you
+about a real provisioning gap, and the fix for that is a permission set.
 
 ### Key Apex Services
 
@@ -552,8 +611,13 @@ Five things about the trigger differ from every other trigger in this repo and a
    halves while EAC keeps polluting timelines. Same automation-path reasoning as
    `LeadSelector.GuestReads` / `GroupMemberSelector`. ⚠ This makes the `TaskSelector` header's
    former claim "there is NO guest/automation path on Task" obsolete; it has been amended in place,
-   and the class now mixes USER_MODE (all pre-existing methods) with SYSTEM_MODE (the two EAC
-   methods — `selectByIds` and `selectThreadAnchorsByAnchorValues`) deliberately.
+   and the class now mixes USER_MODE with SYSTEM_MODE deliberately. ⚠ **Amended 2026-08-05:** that
+   mix is no longer "the two EAC methods vs. everything else" — the two rollup-recompute reads
+   (`selectByTransactionDealIds`, `selectByOnboardingIds`) joined the SYSTEM_MODE group for the same
+   automation-path reason, so the class carries **four** SYSTEM_MODE methods. Only the Transaction one
+   is trigger-driven (`TaskRollupTrigger`) and only it fixes an observed failure; the Onboarding one is
+   called directly and is prospective. The authoritative inventory is the `TaskSelector` class header;
+   the reasoning is in the automation-path table under _Standards_ above.
    `selectThreadAnchorsByAnchorValues` **replaced `selectThreadAnchorsByWhoIds`** when the adopter
    landed: the guard could scope by the Leads a capture was related to, but the adopter asks the
    opposite question ("which record does this thread belong to?") and has no record set to scope by

@@ -776,6 +776,191 @@ private class TaskSelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Trigger-driven rollup recomputes (added 2026-08-05) — the two WITH SYSTEM_MODE reads that
+    // replaced WITH USER_MODE after a REPRODUCED production failure (see each method's own
+    // Javadoc in TaskSelector for the full incident). These are the SELECTOR-level regression
+    // pins:
+    //   - a principal with NO FLS on the custom fields these queries read must still get rows
+    //     back (the old USER_MODE code threw `No such column ... on entity 'Task'` for exactly
+    //     this shape of persona);
+    //   - the companion proof that this fix does NOT widen anything: a user with no sharing to
+    //     another user's Task still sees NOTHING, because WITH SYSTEM_MODE bypasses FLS/CRUD
+    //     only, never sharing, and this class stays `with sharing`.
+    //
+    // ⚠ REVISED 2026-08-05 after a failed deploy (job 0Afiw000000FALdCAO — 8/48 new tests failed
+    // with `System.SecurityException: Access to entity 'Transaction__c'/'Onboarding__c' denied`).
+    // The original version of these four tests built a `Minimum Access - Salesforce` user with
+    // ZERO permission set assignments and then performed Transaction__c/Onboarding__c DML AS that
+    // user inside `System.runAs`. That profile grants NO object-level CRUD at all on ANY custom
+    // object (not even Read), so the Transaction__c/Onboarding__c INSERT itself threw before the
+    // code ever reached the Task read this test exists to pin — discriminating nothing, since
+    // that failure is identical whether TaskSelector uses WITH USER_MODE or WITH SYSTEM_MODE.
+    //
+    // THE FIX (Route A). None of the four tests below perform ANY DML on Transaction__c or
+    // Onboarding__c as the restricted principal. The parent record (and the Task itself) is
+    // created in the DEFAULT test-running context — full access, no `runAs` — and the restricted
+    // principal performs ONLY the read-only `TaskSelector` call. This needs no object-level grant
+    // at all: `WITH SYSTEM_MODE` bypasses object CRUD as well as field FLS (proven by this same
+    // class's EAC methods below, which already run this way in production for a principal holding
+    // zero permission sets), so a zero-permission-set user reaching only the SELECT is not a
+    // weaker test — it is the strongest version of it. Only the ONE thing the fixed and reverted
+    // code disagree on (the withheld Transaction_Deal__c / Onboarding__c / Onboarding_Status__c
+    // FLS) is what changes the outcome now.
+    //
+    // End-to-end coverage through the real callers, where the restricted principal DOES have to
+    // perform DML (to fire the trigger, and because the rollup itself writes back to the parent),
+    // lives in TaskRollupServiceTest / OnboardingTaskRollupServiceTest — see those files' own
+    // design notes for how object CRUD is granted there (Route B) without leaking the withheld
+    // Task FLS.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 🔴 REGRESSION PIN — reproduces, at the selector level, the production failure recorded in
+     * TaskSelector.selectByTransactionDealIds's own Javadoc (2026-08-05). The Transaction__c and
+     * its checklist Task are created in the default (full-access) test context; the restricted
+     * principal performs ONLY the SELECT. A principal with NO FLS on Transaction_Deal__c must
+     * still get rows back under WITH SYSTEM_MODE. Under the OLD WITH USER_MODE code this exact
+     * call threw `No such column 'Transaction_Deal__c' on entity 'Task'` for precisely this
+     * shape of persona. If this is ever reverted alongside a "harmonizing" change back to
+     * WITH USER_MODE, this test goes red here.
+     */
+    @isTest
+    static void selectByTransactionDealIds_minimumAccessUserNoFLS_returnsRows_pinsProductionIncident() {
+        User minAccessUser = buildMinimumAccessUser('txnFls');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert minAccessUser;
+        }
+
+        // Parent + Task created in the default (full-access) context — the restricted principal
+        // below never performs any DML at all; it only reads.
+        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
+        insert t;
+        insert new Task(Transaction_Deal__c = t.Id, Subject = 'Sign PSA', Status = 'Completed');
+
+        Test.startTest();
+        System.runAs(minAccessUser) {
+            List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ t.Id });
+
+            Assert.areEqual(1, rows.size(),
+                'A principal with NO permission-set FLS on Transaction_Deal__c must still see rows '
+                + 'under WITH SYSTEM_MODE. The old WITH USER_MODE code threw a QueryException for '
+                + 'exactly this persona (the reproduced 2026-08-05 production incident) — see this '
+                + 'method\'s own Javadoc.');
+            Assert.areEqual(t.Id, rows[0].Transaction_Deal__c,
+                'Transaction_Deal__c — the exact field the production incident could not read — is populated');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * The same latent defect, fixed pre-emptively for selectByOnboardingIds (it had no
+     * reproduced incident of its own — it is invoked directly from OnboardingService.completeTask
+     * rather than from a trigger — but read the identical custom fields under the identical
+     * WITH USER_MODE call before this change). Same Route A shape as the test above.
+     */
+    @isTest
+    static void selectByOnboardingIds_minimumAccessUserNoFLS_returnsRows_pinsSameLatentDefect() {
+        User minAccessUser = buildMinimumAccessUser('onbFls');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert minAccessUser;
+        }
+
+        Onboarding__c o = TestDataFactory.createOnboarding(null, false);
+        insert o;
+        insert new Task(Onboarding__c = o.Id, Subject = 'Set up meters', Onboarding_Status__c = 'Not Started');
+
+        Test.startTest();
+        System.runAs(minAccessUser) {
+            List<Task> rows = TaskSelector.selectByOnboardingIds(new Set<Id>{ o.Id });
+
+            Assert.areEqual(1, rows.size(),
+                'A principal with NO permission-set FLS on Onboarding__c/Onboarding_Status__c must '
+                + 'still see rows under WITH SYSTEM_MODE — the same latent defect '
+                + 'selectByTransactionDealIds hit in production, fixed pre-emptively here.');
+            Assert.areEqual(o.Id, rows[0].Onboarding__c, 'Onboarding__c is populated for this persona');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * ⚠ SHARING-BOUNDARY PIN. WITH SYSTEM_MODE bypasses FLS and CRUD ONLY — it must NEVER widen
+     * record-level visibility, and this class stays `with sharing`. Task/Event's sharing model in
+     * this org is Private (objects/Activity/Activity.object-meta.xml declares
+     * `<sharingModel>Private</sharingModel>`, and no sharingRules-meta.xml exists anywhere in the
+     * repo for Activity), so a user who does not own a checklist Task and shares no
+     * role-hierarchy/sharing-rule access to its owner must still see ZERO rows here, exactly as
+     * before this change. Includes a POSITIVE CONTROL (the owner DOES see their own row, asserted
+     * first) so a fixture regression that produced no visible Task at all cannot pass silently as
+     * a false "sharing works" result.
+     */
+    @isTest
+    static void selectByTransactionDealIds_systemModeDoesNotBypassSharing_nonOwnerSeesNoRows() {
+        User owner = buildMinimumAccessUser('txnShareOwner');
+        User outsider = buildMinimumAccessUser('txnShareOut');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert new List<User>{ owner, outsider };
+        }
+
+        // Created in the default (full-access) context; ownership is assigned via OwnerId rather
+        // than by running the DML as `owner` — neither restricted user ever performs any DML here.
+        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
+        insert t;
+        insert new Task(Transaction_Deal__c = t.Id, Subject = 'Owner-only checklist Task',
+            Status = 'Not Started', OwnerId = owner.Id);
+
+        Test.startTest();
+        System.runAs(owner) {
+            List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ t.Id });
+            Assert.areEqual(1, rows.size(),
+                'POSITIVE CONTROL: the Task\'s own owner must see it. If this returns 0, the fixture '
+                + 'itself is broken (e.g. no Task was actually created), and the outsider assertion '
+                + 'below would pass for the wrong reason.');
+        }
+        System.runAs(outsider) {
+            List<Task> rows = TaskSelector.selectByTransactionDealIds(new Set<Id>{ t.Id });
+            Assert.areEqual(0, rows.size(),
+                'A non-owner with no role-hierarchy relationship to the Task owner, no sharing rule, and '
+                + 'no View/Modify All Data must see ZERO rows even under WITH SYSTEM_MODE — sharing is '
+                + 'still enforced. A non-zero result here would mean SYSTEM_MODE (or a dropped '
+                + '`with sharing`) is leaking row visibility, not just bypassing FLS.');
+        }
+        Test.stopTest();
+    }
+
+    /** Same sharing-boundary proof (with positive control) as above, for selectByOnboardingIds. */
+    @isTest
+    static void selectByOnboardingIds_systemModeDoesNotBypassSharing_nonOwnerSeesNoRows() {
+        User owner = buildMinimumAccessUser('onbShareOwner');
+        User outsider = buildMinimumAccessUser('onbShareOut');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert new List<User>{ owner, outsider };
+        }
+
+        Onboarding__c o = TestDataFactory.createOnboarding(null, false);
+        insert o;
+        insert new Task(Onboarding__c = o.Id, Subject = 'Owner-only onboarding Task',
+            Onboarding_Status__c = 'Not Started', OwnerId = owner.Id);
+
+        Test.startTest();
+        System.runAs(owner) {
+            List<Task> rows = TaskSelector.selectByOnboardingIds(new Set<Id>{ o.Id });
+            Assert.areEqual(1, rows.size(),
+                'POSITIVE CONTROL: the Task\'s own owner must see it — otherwise the fixture itself is '
+                + 'broken and the outsider assertion below would pass for the wrong reason.');
+        }
+        System.runAs(outsider) {
+            List<Task> rows = TaskSelector.selectByOnboardingIds(new Set<Id>{ o.Id });
+            Assert.areEqual(0, rows.size(),
+                'Same sharing-boundary proof as the Transaction rollup read: WITH SYSTEM_MODE never '
+                + 'bypasses sharing, so a non-owner with no hierarchy/sharing-rule access sees ZERO rows '
+                + 'here too.');
+        }
+        Test.stopTest();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -802,6 +987,32 @@ private class TaskSelectorTest {
             Email = 'std.selector@example.invalid',
             Username = unique + '@example.invalid.dpeg',
             ProfileId = standardProfile.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+    }
+
+    /**
+     * Builds (but does not insert) a user on the 'Minimum Access - Salesforce' profile with NO
+     * permission set assignments — i.e. zero FLS on every custom field, matching every real DPEG
+     * persona per ARCHITECTURE.md §2 ("all access comes from permission sets"). Callers that need
+     * this user to see a specific custom field must assign the relevant permission set
+     * themselves; the regression tests above deliberately do NOT, because the whole point is to
+     * prove the SELECT no longer depends on that grant.
+     */
+    private static User buildMinimumAccessUser(String tag) {
+        Profile minimumAccessProfile = [SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1];
+        String unique = tag + String.valueOf(Datetime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        return new User(
+            FirstName = 'Min',
+            LastName = 'Access',
+            Alias = 'minacc',
+            Email = 'min.access.selector@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = minimumAccessProfile.Id,
             TimeZoneSidKey = 'America/Chicago',
             LocaleSidKey = 'en_US',
             EmailEncodingKey = 'UTF-8',

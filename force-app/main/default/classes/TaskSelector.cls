@@ -23,13 +23,34 @@
  * intentional; it is the pre-agreed PM contract, covered by its own test
  * (including the runAs USER_MODE proof), not dead code.
  *
- * MODE — every query uses `WITH USER_MODE` (API 67). Design §5 measured this
- * live: the only FLS-bearing standard Task fields in scope
- * (ActivityDate / Description / WhatId / WhoId) are all Standard User READ=true,
- * so USER_MODE returns rows for the internal personas here. Custom Task fields
- * (Task_Group__c, Task_Sequence__c, Task_Owner_Label__c, Verbal_Verification_*,
- * Verified_By__c/At__c, Verification_Phone__c) rely on the deployed permsets
- * (P3: custom-field FLS gap = 0).
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ MODE INVENTORY — THIS CLASS DELIBERATELY MIXES USER_MODE AND SYSTEM_MODE.  │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ * DEFAULT IS `WITH USER_MODE` (API 67) — every method NOT named below uses it, and
+ * that is the reads a human asked for. Design §5 measured this live: the only
+ * FLS-bearing standard Task fields in scope (ActivityDate / Description / WhatId /
+ * WhoId) are all Standard User READ=true, so USER_MODE returns rows for the internal
+ * personas driving those reads. Custom Task fields (Task_Group__c, Task_Sequence__c,
+ * Task_Owner_Label__c, Verbal_Verification_*, Verified_By__c/At__c,
+ * Verification_Phone__c) rely on the deployed permsets (P3: custom-field FLS gap = 0).
+ *
+ * FOUR methods are `WITH SYSTEM_MODE`. Each carries its own justification at its own
+ * declaration; all four sit on an AUTOMATION PATH, where `USER_MODE` THROWS rather
+ * than degrades and so converts one missing FLS grant into a broken write:
+ *
+ *   EAC capture pipeline (added 2026-08-02)
+ *     • selectByIds                        <- EmailThreadGuardService
+ *     • selectThreadAnchorsByAnchorValues  <- EmailThreadAnchorService (guard+adopter)
+ *   Rollup recomputes — PLATFORM-DRIVEN, NOT USER-REQUESTED (added 2026-08-05).
+ *   ⚠ The two entries below rest on DIFFERENT evidence; do not read the second as
+ *   inheriting the first's. Only ONE of them fixes an observed failure:
+ *     • selectByTransactionDealIds         <- TaskRollupService, fired by
+ *       TaskRollupTrigger (after-insert). REPRODUCED PRODUCTION FAILURE — a USER_MODE
+ *       FLS denial here rolled back an entire 82-Task Day-0 fan-out.
+ *     • selectByOnboardingIds              <- OnboardingTaskRollupService.recalc,
+ *       called DIRECTLY by OnboardingService.completeTask (no trigger involved).
+ *       PROSPECTIVE ONLY — inert on today's live path, because an earlier USER_MODE
+ *       read in that same method throws first. See the method's own Javadoc.
  *
  * ⚠ AMENDED 2026-08-02 — the statement "There is NO guest/automation path on Task,
  * so NO `SYSTEM_MODE` appears here" was true when written and is NO LONGER TRUE.
@@ -38,10 +59,32 @@
  * EmailThreadGuardService / EmailThreadAdopterService read Task as whichever
  * principal EAC committed under
  * (the connected-mailbox user, or Automated Process) — a principal this repo's
- * permission sets never provision. The two EAC-guard methods at the BOTTOM of this
- * class are therefore `WITH SYSTEM_MODE`, each with its own justification; every
- * other method in this class remains `WITH USER_MODE` and is unchanged. Do not
- * "harmonize" the two groups — they answer questions for different principals.
+ * permission sets never provision.
+ *
+ * ⚠ AMENDED 2026-08-05 — the two ROLLUP reads joined the SYSTEM_MODE group for the
+ * SAME automation-path reason, established by a production failure rather than by
+ * analogy. A Transaction__c created with Contract_Executed_Date__c set ran the Day-0
+ * fan-out, which inserted its 82 checklist Tasks; TaskRollupTrigger fired
+ * after-insert; TaskRollupService called selectByTransactionDealIds; and its
+ * USER_MODE query threw `No such column 'Transaction_Deal__c' on entity 'Task'` —
+ * the platform's wording for an FLS DENIAL, not a missing field (it exists:
+ * objects/Activity/fields/Transaction_Deal__c.field-meta.xml). The throw escaped the
+ * trigger as CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY and rolled back all 82 inserts,
+ * leaving the Day-0 checklist — the core of the Transaction module — UNBUILDABLE BY
+ * ANY NON-ADMIN. Every DPEG persona is on `Minimum Access - Salesforce`, which grants
+ * no FLS whatsoever; all access comes from permission sets, so ONE ungranted custom
+ * field is enough to break an unrelated write. selectByOnboardingIds was moved in the
+ * same change for CONSISTENCY AND FUTURE CALLERS ONLY — it is NOT a second instance
+ * of this defect and could not have produced one (its live caller throws earlier); the
+ * distinction is spelled out in that method's Javadoc so nobody cites it as evidence.
+ *
+ * ⚠ SCOPE OF THE BYPASS — THIS IS WHAT MAKES IT SAFE. `SYSTEM_MODE` bypasses FLS and
+ * CRUD ONLY. It does NOT bypass sharing: this class stays `with sharing`, so every
+ * SYSTEM_MODE method still returns only rows the running user can already see. The
+ * change removes a field-level failure mode without widening record visibility by a
+ * single row.
+ *
+ * Do not "harmonize" the two groups — they answer questions for different principals.
  *
  * NOT-FOUND CONTRACT is per-caller (pilot WireSelector pattern):
  *   - list reads (checklist / open-reminders) : missing rows are normal ->
@@ -236,9 +279,61 @@ public with sharing class TaskSelector {
      * `WHERE Onboarding__c IN :onboardingIds`.
      *
      * Narrow field set (Onboarding__c, Onboarding_Status__c, ActivityDate) — the
-     * only fields the rollup arithmetic reads. `WITH USER_MODE`: the recompute runs
-     * for internal PM personas; the sole FLS-bearing standard field here
-     * (ActivityDate) is Standard User READ=true per design §5.
+     * only fields the rollup arithmetic reads.
+     *
+     * ⚠ `WITH SYSTEM_MODE` — CHANGED 2026-08-05, and the rationale it replaced was
+     * WRONG, not merely outdated. That rationale read: "`WITH USER_MODE`: the
+     * recompute runs for internal PM personas; the sole FLS-bearing standard field
+     * here (ActivityDate) is Standard User READ=true per design §5." Both halves
+     * fail. It accounted only for STANDARD fields, but Onboarding__c and
+     * Onboarding_Status__c are CUSTOM fields that need FLS of their own; and it
+     * assumed a Standard User profile, whereas every DPEG persona is on
+     * `Minimum Access - Salesforce`, which grants no FLS at all — all access comes
+     * from permission sets. Taken IN ISOLATION, a persona missing either custom
+     * grant would make this query throw `No such column ... on entity 'Task'` — the
+     * platform's wording for an FLS DENIAL rather than a missing field. In practice
+     * that throw is pre-empted upstream; see the next paragraph, which is the part
+     * that matters.
+     *
+     * ⚠ THIS CHANGE IS PROSPECTIVE — IT FIXES NOTHING ON TODAY'S LIVE PATH, AND
+     * SAYING OTHERWISE WOULD MISLEAD THE NEXT READER. Unlike
+     * selectByTransactionDealIds below (a REPRODUCED production failure), the
+     * Onboarding rollup CANNOT reach that failure today, because its only production
+     * caller reads the same custom fields under USER_MODE first and throws there:
+     *
+     *   OnboardingService.completeTask
+     *     -> TaskSelector.selectForOnboardingCompletion  // USER_MODE; SELECTs
+     *                                                    // Onboarding__c + Onboarding_Status__c
+     *     -> update t
+     *     -> OnboardingTaskRollupService.recalc -> THIS METHOD
+     *
+     * A persona lacking FLS on those two custom fields throws at the FIRST read and
+     * never reaches the recompute. Same story upstream: selectChecklistByOnboardingId
+     * (also USER_MODE) both SELECTs and FILTERS on them, so a user who cannot render
+     * the checklist cannot click the checkbox that starts this chain either.
+     *
+     * ⚠ COROLLARY — DO NOT READ THIS AS "ONBOARDING IS NOW NON-ADMIN-SAFE." IT IS
+     * NOT. selectForOnboardingCompletion and selectChecklistByOnboardingId remain the
+     * real Onboarding FLS gate, and they remain USER_MODE — correctly so, since both
+     * back reads a human explicitly asked for. Making this method SYSTEM_MODE moves
+     * that gate not one inch.
+     *
+     * WHY DO IT AT ALL, THEN: (a) the recompute is genuinely not a user-requested
+     * read — nobody asked for these rows; the user completed one Task and the service
+     * recomputes the Tasks_* counters on their behalf — so it belongs on the same
+     * footing as the Transaction rollup; and (b) it is safe PROSPECTIVELY, for the
+     * first caller that arrives without a USER_MODE read in front of it (a nightly
+     * batch recompute, a Yardi sync, a trigger). Such a caller would otherwise
+     * rediscover the Transaction defect from scratch, because `USER_MODE` THROWS (it
+     * does not degrade) the moment one selected field is inaccessible. Same
+     * automation-path reasoning as the EAC methods at the bottom of this class and as
+     * `LeadSelector.GuestReads` / `GroupMemberSelector` (ARCHITECTURE.md §2).
+     *
+     * SCOPE OF THE BYPASS: `SYSTEM_MODE` bypasses FLS and CRUD ONLY — it does NOT
+     * bypass sharing. This class remains `with sharing`, so the recompute still sees
+     * only the Tasks the running user can already see; it cannot read a Task under an
+     * Onboarding__c the user has no access to. That distinction is what makes this
+     * safe.
      *
      * @param onboardingIds Onboarding__c Ids whose checklist Tasks to load.
      * @return Matching Tasks; an empty list when the input is null/empty or no
@@ -254,7 +349,7 @@ public with sharing class TaskSelector {
             SELECT Onboarding__c, Onboarding_Status__c, ActivityDate
             FROM Task
             WHERE Onboarding__c IN :onboardingIds
-            WITH USER_MODE
+            WITH SYSTEM_MODE
         ];
     }
 
@@ -273,6 +368,43 @@ public with sharing class TaskSelector {
      * a group. So this is a separate, unfiltered, rollup-shaped read, not a reuse
      * of the checklist method.
      *
+     * ⚠ `WITH SYSTEM_MODE` — CHANGED 2026-08-05 to fix a CONFIRMED PRODUCTION
+     * FAILURE, reproduced in `usman-dpeg`. A Transaction__c was created with
+     * Contract_Executed_Date__c set; the Transaction_Task_Fanout flow ran
+     * TaskFanoutService, which enqueued TaskFanoutQueueable; the job inserted its 82
+     * checklist Tasks; TaskRollupTrigger fired after-insert; TaskRollupService called
+     * THIS method; and the `WITH USER_MODE` query threw:
+     *
+     *   CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, TaskRollupTrigger: execution of
+     *   AfterInsert caused by: System.QueryException: No such column
+     *   'Transaction_Deal__c' on entity 'Task'
+     *
+     * `Transaction_Deal__c` DOES exist
+     * (objects/Activity/fields/Transaction_Deal__c.field-meta.xml) — "No such column"
+     * is how Salesforce reports an FLS DENIAL under `WITH USER_MODE`. The throw
+     * escaped the trigger and rolled back all 82 inserts, so the Day-0 checklist —
+     * the core of the Transaction module — was UNBUILDABLE BY ANY NON-ADMIN. Every
+     * DPEG persona is on `Minimum Access - Salesforce`, which grants no FLS at all;
+     * access comes only from permission sets, so one ungranted custom field on this
+     * SELECT is enough to take down the whole fan-out.
+     *
+     * WHY SYSTEM_MODE RATHER THAN A PERMISSION-SET GRANT: this is a TRIGGER-DRIVEN
+     * ROLLUP RECOMPUTE, not a user-initiated read. Nobody asked for these rows — a
+     * trigger recomputes the "N / 75" counters on the acting user's behalf, and
+     * `USER_MODE` THROWS (it does not degrade) the moment one selected field is
+     * inaccessible. Making an automatic recompute depend on the acting user's FLS
+     * means any persona missing any one custom field silently breaks an unrelated
+     * write. That is the documented precedent in ARCHITECTURE.md §2 for the EAC
+     * capture pipeline, and it applies verbatim here. Granting FLS instead would fix
+     * today's persona and leave the class fragile for the next one — the failure mode
+     * is structural, not a provisioning oversight.
+     *
+     * SCOPE OF THE BYPASS: `SYSTEM_MODE` bypasses FLS and CRUD ONLY — NOT sharing.
+     * This class remains `with sharing`, so the recompute still counts only the Tasks
+     * the running user can already see. That distinction is what makes the change
+     * safe: it removes a field-level failure mode without widening record visibility
+     * by a single row.
+     *
      * @param transactionDealIds Transaction__c Ids whose Tasks to load.
      * @return Matching Tasks (Transaction_Deal__c, IsClosed, ActivityDate, Subject,
      *         Verbal_Verification_Completed__c); an empty list when the input is
@@ -288,7 +420,7 @@ public with sharing class TaskSelector {
             SELECT Transaction_Deal__c, IsClosed, ActivityDate, Subject, Verbal_Verification_Completed__c
             FROM Task
             WHERE Transaction_Deal__c IN :transactionDealIds
-            WITH USER_MODE
+            WITH SYSTEM_MODE
         ];
     }
 
@@ -437,7 +569,16 @@ public with sharing class TaskSelector {
     // selected field is inaccessible, killing the queueable. The guard would then
     // be silently disabled: no error surfaces anywhere a human looks, while EAC
     // keeps stapling unrelated conversations onto deal Leads. That is why these
-    // two reads are SYSTEM_MODE and the rest of this class is not.
+    // two reads are SYSTEM_MODE.
+    //
+    // ⚠ AMENDED 2026-08-05 — this block used to end "...and the rest of this class
+    // is not." That is no longer true and would mislead: the two ROLLUP reads
+    // (selectByTransactionDealIds, selectByOnboardingIds) are now SYSTEM_MODE too,
+    // for the same automation-path reason stated above — a USER_MODE FLS denial in
+    // the Transaction rollup rolled back a whole Day-0 fan-out in production, and the
+    // Onboarding rollup followed for consistency and future callers rather than as a
+    // second observed failure. See the class header for the full four-method
+    // inventory and for which entry rests on which evidence.
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
