@@ -1157,6 +1157,24 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
+                <fieldItem>Record.Broker__c</fieldItem>
+                <identifier>RecordBroker_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Listing_Broker_Name__c</fieldItem>
+                <identifier>RecordListing_Broker_Name_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldItem>Record.Listing_Broker_Email__c</fieldItem>
+                <identifier>RecordListing_Broker_Email_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
                 <fieldItem>Record.Property__r.Annual_NOI__c</fieldItem>
                 <identifier>RecordProperty_rAnnual_NOI_cField</identifier>
             </fieldInstance>

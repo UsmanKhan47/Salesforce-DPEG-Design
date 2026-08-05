@@ -225,6 +225,18 @@ public with sharing class LeadConvertService {
             Opportunity o = new Opportunity(Id = oppId);
             // Conversion IS the approval to underwrite: the converting user is the approver.
             o.Lead_Approved_By__c = UserInfo.getUserId();
+            // S2b (2026-08-05) — mirror the submitting broker onto a LOOKUP as well as the
+            // OpportunityContactRole created below. The role alone was invisible in practice: a
+            // contact role is a related list, so it cannot appear in the highlights panel, a
+            // compact layout, a list view column or a report column on the Opportunity. Riding on
+            // this existing loop keeps the class's 2-SOQL / 3-DML contract EXACTLY as documented in
+            // the header — the value is already on the Lead, so this adds no query and no
+            // statement. ⚠ This is the SUBMITTING broker; the OM's listing broker is a different
+            // person and lives in Listing_Broker_Name__c / Listing_Broker_Email__c (set by
+            // applyDealFields below). Do not merge the two.
+            if (l.ConvertedContactId != null) {
+                o.Broker__c = l.ConvertedContactId;
+            }
             if (oppToPropertyId.containsKey(oppId)) {
                 o.Property__c = oppToPropertyId.get(oppId);
             }

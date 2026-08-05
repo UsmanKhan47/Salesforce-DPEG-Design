@@ -550,6 +550,18 @@ private class LeadConvertServiceTest {
         Assert.isTrue(roles[0].IsPrimary, 'and is the primary contact on the deal');
         Assert.areEqual(res.getContactId(), roles[0].ContactId,
             'The role must point at the CONVERTED Contact — the submitting broker');
+
+        // S2b — the same broker must ALSO land on the Broker__c lookup. The contact role alone was
+        // invisible in practice: a related list cannot surface in the highlights panel, a compact
+        // layout, a list view column or a report column, so nobody could see who the broker was.
+        // The two are asserted together on purpose — they must never drift apart.
+        Opportunity deal = [
+            SELECT Broker__c, Listing_Broker_Email__c FROM Opportunity WHERE Id = :res.getOpportunityId()
+        ];
+        Assert.areEqual(res.getContactId(), deal.Broker__c,
+            'Broker__c mirrors the primary Broker contact role, so the broker is visible as a FIELD');
+        Assert.areEqual(roles[0].ContactId, deal.Broker__c,
+            'The lookup and the contact role must name the SAME Contact — they must not drift');
     }
 
     /**

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Role-named lookup to Contact per ARCHITECTURE.md rule 3, which names Broker__c as one of
+         its examples. This is the SUBMITTING broker - the person whose email produced the Lead and
+         who therefore holds the Broker Protection claim - not the listing broker named in the OM.
+         Those two are frequently DIFFERENT people (measured on Boulevard Corners: submitting broker
+         usmankhan-96@hotmail.com vs Listing_Broker_Name__c "Marco Zando"), so this field must never
+         be conflated with Listing_Broker_Name__c / Listing_Broker_Email__c.
+
+         Why a field and not the contact role: LeadConvertService already creates the primary
+         'Broker' OpportunityContactRole, but a contact role is a RELATED LIST. It cannot appear in
+         the highlights panel, a compact layout, a list view column, or a report column on the
+         Opportunity, so in practice nobody could see who the broker was. This lookup duplicates the
+         role deliberately, for visibility; the role remains the system of record for the
+         relationship.
+
+         deleteConstraint SetNull, never Cascade: deleting a broker Contact must NEVER delete the
+         deal. -->
+    <fullName>Broker__c</fullName>
+    <label>Broker</label>
+    <description>The submitting broker who brought this deal - the Contact created when their Lead was converted, and the same person carrying the Broker Protection claim. Stamped automatically by LeadConvertService at conversion, mirroring the primary Broker OpportunityContactRole so the broker is visible on the page, in list views and in reports. NOT the listing broker from the offering memorandum - that is Listing_Broker_Name__c / Listing_Broker_Email__c and is often a different person.</description>
+    <inlineHelpText>The broker who submitted this deal to DPEG. Set automatically on lead conversion. If the offering memorandum names a different listing broker, that person is in the Listing Broker Name and Listing Broker Email fields instead.</inlineHelpText>
+    <type>Lookup</type>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Brokered Opportunities</relationshipLabel>
+    <relationshipName>Brokered_Opportunities</relationshipName>
+    <required>false</required>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <trackHistory>false</trackHistory>
+</CustomField>
