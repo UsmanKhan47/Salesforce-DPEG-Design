@@ -66,6 +66,7 @@
         </inputAssignments>
         <inputReference>$Record.Opportunity__r</inputReference>
     </recordUpdates>
+    <runInMode>SystemModeWithoutSharing</runInMode>
     <start>
         <locationX>50</locationX>
         <locationY>0</locationY>
