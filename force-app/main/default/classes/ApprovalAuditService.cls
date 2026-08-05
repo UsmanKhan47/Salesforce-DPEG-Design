@@ -98,15 +98,22 @@ public without sharing class ApprovalAuditService {
             }
         }
 
+        // EXPLICIT SYSTEM-MODE DML (2026-08-05). A bare `update` here inherits the calling
+        // Flow's access mode, and the calling flow runs as THE APPROVER — who is deliberately
+        // read-only on all three of these objects (DPEG Principal PSG: Read yes, Edit no,
+        // measured). Setting <runInMode>SystemModeWithoutSharing</runInMode> on the flow did NOT
+        // lift it: the stamp still silently wrote nothing after that change shipped. AccessLevel
+        // .SYSTEM_MODE states the requirement at the DML itself, so it no longer depends on how
+        // any caller is configured. Do not revert to a bare `update`.
         try {
             if (!oppUpdates.isEmpty()) {
-                update oppUpdates;
+                Database.update(oppUpdates, true, AccessLevel.SYSTEM_MODE);
             }
             if (!uwUpdates.isEmpty()) {
-                update uwUpdates;
+                Database.update(uwUpdates, true, AccessLevel.SYSTEM_MODE);
             }
             if (!loiUpdates.isEmpty()) {
-                update loiUpdates;
+                Database.update(loiUpdates, true, AccessLevel.SYSTEM_MODE);
             }
         } catch (Exception e) {
             // Deliberately catches Exception, NOT DmlException. The class contract above is that
