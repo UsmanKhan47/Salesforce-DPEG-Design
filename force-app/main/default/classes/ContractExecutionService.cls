@@ -63,9 +63,26 @@ public with sharing class ContractExecutionService {
                 ));
             }
         }
-        update oppUpdates;
+        // 🔴 EXPLICIT SYSTEM MODE — THE PROCESS OPENS THE TRANSACTION, NOT THE USER.
+        // This runs as whoever executed the contract, i.e. the DEAL DRIVER, and the deal driver is
+        // deliberately READ-ONLY on Transaction__c: DPEG Junior Analyst PSG grants Read + View All
+        // with Create = false, and his profile (Minimum Access) grants nothing on the object at all
+        // (measured 2026-08-05). A bare `insert` therefore threw
+        //   System.TypeException: DML operation INSERT not allowed on Transaction__c
+        // and took the whole contract execution with it.
+        //
+        // Granting the deal driver Create on Transaction__c was rejected as the fix: it would let
+        // him create transactions at will, permanently, to satisfy one automated handoff. Handing
+        // the deal to the Transactions team is a consequence of the process, so the requirement is
+        // stated at the DML instead. Same reasoning and same remedy as ApprovalAuditService.
+        //
+        // The Opportunity stamp gets the same treatment for consistency, not because it fails
+        // today — the deal driver does hold Edit on Opportunity. Leaving one of the two writes
+        // user-mode would make this method's behaviour depend on which persona happens to execute
+        // a contract, which is precisely the class of surprise this comment exists to prevent.
+        Database.update(oppUpdates, true, AccessLevel.SYSTEM_MODE);
         if (!transToInsert.isEmpty()) {
-            insert transToInsert;
+            Database.insert(transToInsert, true, AccessLevel.SYSTEM_MODE);
         }
 
         // Build every notification first, then hand the whole batch to

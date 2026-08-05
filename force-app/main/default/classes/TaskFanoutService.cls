@@ -131,11 +131,23 @@ public with sharing class TaskFanoutService {
             toFlag.add(new Transaction__c(Id = t.Id, Tasks_Fanned_Out__c = true, Tasks_Total__c = createdForTxn));
         }
 
+        // 🔴 EXPLICIT SYSTEM MODE — same reason as ContractExecutionService, and this is the VERY
+        // NEXT STEP of the same click. The Day-0 fan-out is invoked from the Transaction_Task_Fanout
+        // flow, which declares no runInMode and therefore runs in the CALLING USER's context — the
+        // deal driver who just executed the contract. That user has no Create on Task and no Edit on
+        // Transaction__c (measured 2026-08-05: absent from every permission set AND from the
+        // Minimum Access profile), so both statements below would throw
+        // System.TypeException the instant the Transaction insert upstream started succeeding.
+        //
+        // Fixed together deliberately: repairing only the upstream insert would have moved the
+        // failure one statement down the same transaction rather than fixing the handoff. The
+        // checklist is created BY the process, so the access level is stated here rather than
+        // inferred from whoever clicked.
         if (!toInsert.isEmpty()) {
-            insert toInsert;
+            Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
         }
         if (!toFlag.isEmpty()) {
-            update toFlag;
+            Database.update(toFlag, true, AccessLevel.SYSTEM_MODE);
         }
     }
 }
