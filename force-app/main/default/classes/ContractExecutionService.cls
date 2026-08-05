@@ -5,15 +5,106 @@
  *   1. Stamps the parent Opportunity: Contract_Signed__c, Contract_Executed_Date__c
  *      (Day 0), Deal_Status__c = 'Contract Signed'. The deal stays at the coarse
  *      'PSA' stage; Deal_Status marks it executed / about to close.
- *   2. Creates the Transaction__c (idempotent - never a second one per deal) with
- *      Contract_Executed_Date__c set, which ARMS the existing Transaction_Task_Fanout
- *      flow -> TaskFanoutService 75-task Day-0 checklist untouched.
- *   3. Notifies Transactions_Team + Investor_Relations (PSA executed) and
+ *   2. Notifies Transactions_Team + Investor_Relations (PSA executed) and
  *      Due_Diligence (Danish: DD materials available once the contract is signed).
+ *
+ * ⚠ THIS CLASS NOW HAS TWO ENTRY POINTS ON TWO DIFFERENT TRIGGERS, AND THEY DO DIFFERENT THINGS.
+ *
+ *   handleExecution                (ContractReviewTrigger)      contract EXECUTED -> stamp + notify
+ *   openTransactionsOnAboutToClose (OpportunityReviewTrigger)   stage ABOUT TO CLOSE -> Transaction
+ *
+ * Creating the Transaction MOVED out of handleExecution on 2026-08-05 (user decision): the
+ * Transactions team now picks a deal up when it is genuinely about to close, not at signature.
+ * handleExecution still stamps Day 0 — and openTransactionsOnAboutToClose READS THAT STAMP BACK to
+ * date the 75-task checklist, so the two remain coupled even though they no longer run together.
+ * Do not re-add Transaction creation to handleExecution.
  */
 public with sharing class ContractExecutionService {
 
     @TestVisible private static final String EXECUTED = 'Executed';
+
+    /** The Opportunity stage that opens the transaction. */
+    @TestVisible private static final String ABOUT_TO_CLOSE = 'About to Close';
+
+    /**
+     * Opens the Transaction__c (and, through it, the Day-0 task checklist) when a deal ENTERS the
+     * 'About to Close' stage. Called from OpportunityReviewTriggerHandler, after insert/update.
+     *
+     * ── WHY HERE AND NOT AT CONTRACT EXECUTION (moved 2026-08-05, user decision) ──
+     * handleExecution used to create the Transaction the moment a Contract Review became
+     * 'Executed'. The trigger point is now the OPPORTUNITY stage, so the Transactions team picks a
+     * deal up when it is genuinely about to close rather than at signature. handleExecution still
+     * stamps Contract_Signed__c / Contract_Executed_Date__c and still notifies the three teams — it
+     * simply no longer opens the transaction. Do not re-add creation there: two creators would race
+     * on the same idempotency read within one transaction.
+     *
+     * ── 🔴 DAY 0 IS THE CONTRACT EXECUTION DATE, NOT TODAY ──
+     * Transaction__c.Contract_Executed_Date__c ARMS the Transaction_Task_Fanout flow, and every one
+     * of the ~75 checklist tasks is dated by offset from it. By the time a deal reaches About to
+     * Close the contract may have been executed weeks earlier, so dating the checklist "now" would
+     * silently shift every deadline. It therefore reads Opportunity.Contract_Executed_Date__c and
+     * falls back to today ONLY when the deal reached this stage without an executed contract —
+     * which is possible, because 'About to Close' is an explicit-target stage the deal driver can
+     * set directly (StageAdvanceService.ALLOWED_EXPLICIT_TARGETS).
+     *
+     * ── ACCESS ──
+     * The DML is EXPLICIT SYSTEM MODE and that is load-bearing, not defensive. This runs as the deal
+     * driver, who is deliberately READ-ONLY on Transaction__c — Create = false on the permission set
+     * and no grant at all on the Minimum Access profile (measured 2026-08-05). A bare insert throws
+     * System.TypeException: DML operation INSERT not allowed on Transaction__c. Granting the deal
+     * driver Create was rejected: the transaction is opened BY THE PROCESS, and he must be able to
+     * view one without ever being able to make one.
+     *
+     * Idempotent: a deal that already has a Transaction never gets a second one, so re-entering the
+     * stage is a no-op.
+     *
+     * @param newOpps Trigger.new
+     * @param oldMap  Trigger.oldMap on update; null on insert.
+     */
+    public static void openTransactionsOnAboutToClose(
+            List<Opportunity> newOpps, Map<Id, Opportunity> oldMap) {
+        Set<Id> entering = new Set<Id>();
+        for (Opportunity o : newOpps) {
+            Opportunity prior = (oldMap == null) ? null : oldMap.get(o.Id);
+            Boolean justEntered = o.StageName == ABOUT_TO_CLOSE
+                && (prior == null || prior.StageName != ABOUT_TO_CLOSE);
+            if (justEntered) {
+                entering.add(o.Id);
+            }
+        }
+        if (entering.isEmpty()) {
+            return;
+        }
+
+        // Idempotency: a deal that already has a Transaction is not handed off twice.
+        Set<Id> alreadyHandedOff = new Set<Id>();
+        for (Transaction__c t : TransactionSelector.selectByOpportunityIds(entering)) {
+            alreadyHandedOff.add(t.Opportunity__c);
+        }
+
+        List<Transaction__c> transToInsert = new List<Transaction__c>();
+        for (Opportunity o : OpportunitySelector.selectExecutionHandoffByIds(entering)) {
+            if (alreadyHandedOff.contains(o.Id)) {
+                continue;
+            }
+            Date dayZero = (o.Contract_Executed_Date__c == null)
+                ? Date.today()
+                : o.Contract_Executed_Date__c.date();
+            transToInsert.add(new Transaction__c(
+                Opportunity__c = o.Id,
+                Property__c = o.Property__c,
+                Contract_Value__c = o.Primary_Contract__r != null ? o.Primary_Contract__r.Contract_Value__c : null,
+                Earnest_Money__c = o.Primary_LOI__r != null ? o.Primary_LOI__r.Earnest_Money__c : null,
+                Contract_Executed_Date__c = dayZero, // arms the Day-0 task fan-out
+                Status__c = 'Active',
+                Stage__c = 'Open Contract',
+                Target_Close_Date__c = Date.today().addDays(60)
+            ));
+        }
+        if (!transToInsert.isEmpty()) {
+            Database.insert(transToInsert, true, AccessLevel.SYSTEM_MODE);
+        }
+    }
 
     public static void handleExecution(List<Contract_Review__c> newCrs, Map<Id, Contract_Review__c> oldMap) {
         Set<Id> executedOppIds = new Set<Id>();
@@ -29,15 +120,8 @@ public with sharing class ContractExecutionService {
             return;
         }
 
-        // Idempotency: a deal that already has a Transaction is not handed off twice.
-        Set<Id> alreadyHandedOff = new Set<Id>();
-        for (Transaction__c t : TransactionSelector.selectByOpportunityIds(executedOppIds)) {
-            alreadyHandedOff.add(t.Opportunity__c);
-        }
-
         Datetime dayZero = Datetime.now();
         List<Opportunity> oppUpdates = new List<Opportunity>();
-        List<Transaction__c> transToInsert = new List<Transaction__c>();
         List<Opportunity> opps = OpportunitySelector.selectExecutionHandoffByIds(executedOppIds);
         for (Opportunity o : opps) {
             Opportunity stamp = new Opportunity(
@@ -46,44 +130,17 @@ public with sharing class ContractExecutionService {
                 Deal_Status__c = 'Contract Signed'
             );
             if (o.Contract_Executed_Date__c == null) {
+                // Day 0. This is now the ONLY place it is stamped, and openTransactionsOnAboutToClose
+                // reads it back to date the checklist — so this assignment outlives the execution
+                // step and must not be removed with it.
                 stamp.Contract_Executed_Date__c = dayZero;
             }
             oppUpdates.add(stamp);
-
-            if (!alreadyHandedOff.contains(o.Id)) {
-                transToInsert.add(new Transaction__c(
-                    Opportunity__c = o.Id,
-                    Property__c = o.Property__c,
-                    Contract_Value__c = o.Primary_Contract__r != null ? o.Primary_Contract__r.Contract_Value__c : null,
-                    Earnest_Money__c = o.Primary_LOI__r != null ? o.Primary_LOI__r.Earnest_Money__c : null,
-                    Contract_Executed_Date__c = dayZero.date(), // arms the Day-0 task fan-out
-                    Status__c = 'Active',
-                    Stage__c = 'Open Contract',
-                    Target_Close_Date__c = Date.today().addDays(60)
-                ));
-            }
         }
-        // 🔴 EXPLICIT SYSTEM MODE — THE PROCESS OPENS THE TRANSACTION, NOT THE USER.
-        // This runs as whoever executed the contract, i.e. the DEAL DRIVER, and the deal driver is
-        // deliberately READ-ONLY on Transaction__c: DPEG Junior Analyst PSG grants Read + View All
-        // with Create = false, and his profile (Minimum Access) grants nothing on the object at all
-        // (measured 2026-08-05). A bare `insert` therefore threw
-        //   System.TypeException: DML operation INSERT not allowed on Transaction__c
-        // and took the whole contract execution with it.
-        //
-        // Granting the deal driver Create on Transaction__c was rejected as the fix: it would let
-        // him create transactions at will, permanently, to satisfy one automated handoff. Handing
-        // the deal to the Transactions team is a consequence of the process, so the requirement is
-        // stated at the DML instead. Same reasoning and same remedy as ApprovalAuditService.
-        //
-        // The Opportunity stamp gets the same treatment for consistency, not because it fails
-        // today — the deal driver does hold Edit on Opportunity. Leaving one of the two writes
-        // user-mode would make this method's behaviour depend on which persona happens to execute
-        // a contract, which is precisely the class of surprise this comment exists to prevent.
+        // SYSTEM MODE: this runs as whoever executed the contract, and the write must not depend on
+        // which persona that is. See openTransactionsOnAboutToClose for the full reasoning — it is
+        // the same one, and there it is load-bearing rather than merely defensive.
         Database.update(oppUpdates, true, AccessLevel.SYSTEM_MODE);
-        if (!transToInsert.isEmpty()) {
-            Database.insert(transToInsert, true, AccessLevel.SYSTEM_MODE);
-        }
 
         // Build every notification first, then hand the whole batch to
         // GroupNotifier.notify() ONCE. GroupNotifier.send() is a single-request

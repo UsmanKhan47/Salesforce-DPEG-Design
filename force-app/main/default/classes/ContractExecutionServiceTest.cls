@@ -27,7 +27,7 @@ private class ContractExecutionServiceTest {
     }
 
     @isTest
-    static void executionStampsOppAndOpensTransaction() {
+    static void executionStampsOppButOpensNoTransaction() {
         Contract_Review__c cr = dealAtPsa();
         cr.Contract_Value__c = 12000000;
         update cr;
@@ -48,15 +48,13 @@ private class ContractExecutionServiceTest {
         System.assertEquals('Contract Signed', o.Deal_Status__c, 'Deal status stamped');
         System.assertEquals('PSA', o.Deal_Bucket__c, 'Tracker bucket follows');
 
-        List<Transaction__c> txns = [
-            SELECT Status__c, Stage__c, Contract_Value__c, Contract_Executed_Date__c
-            FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
-        ];
-        System.assertEquals(1, txns.size(), 'Exactly one Transaction created');
-        System.assertEquals('Active', txns[0].Status__c, 'Transaction opens Active');
-        System.assertEquals(12000000, txns[0].Contract_Value__c, 'Contract value carried over');
-        System.assertNotEquals(null, txns[0].Contract_Executed_Date__c,
-            'Executed date set on the Transaction - arms the Day-0 fan-out flow');
+        // 🔴 EXECUTION NO LONGER OPENS THE TRANSACTION (moved 2026-08-05). The trigger point is now
+        // the Opportunity entering 'About to Close'. Asserting ZERO here is what stops the creation
+        // being quietly re-added to handleExecution, which would give a deal two creators racing on
+        // the same idempotency read inside one transaction.
+        System.assertEquals(0,
+            [SELECT COUNT() FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c],
+            'Contract execution stamps and notifies, but must NOT open the Transaction');
 
         // Contract Review itself synced by the before-save flow.
         cr = [SELECT Stage__c, Execution_Date__c FROM Contract_Review__c WHERE Id = :cr.Id];
@@ -65,21 +63,76 @@ private class ContractExecutionServiceTest {
     }
 
     @isTest
-    static void reExecutionNeverDuplicatesTheTransaction() {
+    static void aboutToCloseOpensTheTransactionDatedFromDayZero() {
         Contract_Review__c cr = dealAtPsa();
-        cr.Negotiation_Status__c = 'Executed';
+        cr.Contract_Value__c = 12000000;
         update cr;
+        cr.Negotiation_Status__c = 'Executed'; // stamps Day 0 on the Opportunity
+        update cr;
+        Opportunity signed = [
+            SELECT Contract_Executed_Date__c FROM Opportunity WHERE Id = :cr.Opportunity__c
+        ];
 
         Test.startTest();
-        cr.Negotiation_Status__c = 'Revised';
-        update cr;
-        cr.Negotiation_Status__c = 'Executed';
-        update cr;
+        update new Opportunity(Id = cr.Opportunity__c, StageName = 'About to Close');
+        Test.stopTest();
+
+        List<Transaction__c> txns = [
+            SELECT Status__c, Stage__c, Contract_Value__c, Contract_Executed_Date__c
+            FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
+        ];
+        System.assertEquals(1, txns.size(), 'Entering About to Close opens exactly one Transaction');
+        System.assertEquals('Active', txns[0].Status__c, 'Transaction opens Active');
+        System.assertEquals(12000000, txns[0].Contract_Value__c, 'Contract value carried over');
+        // 🔴 Day 0 is the CONTRACT EXECUTION date, not the date the stage changed. Every one of the
+        // ~75 checklist tasks is dated by offset from this field, so anchoring it to "now" would
+        // silently shift every deadline on a deal that executed weeks before it closed.
+        System.assertEquals(signed.Contract_Executed_Date__c.date(), txns[0].Contract_Executed_Date__c,
+            'Day 0 comes from the contract execution date, not from today');
+    }
+
+    @isTest
+    static void aboutToCloseWithoutAnExecutedContractFallsBackToToday() {
+        // 'About to Close' is an explicit-target stage the deal driver can set directly
+        // (StageAdvanceService.ALLOWED_EXPLICIT_TARGETS), so a deal CAN arrive here with no executed
+        // contract and therefore no Day 0 to inherit. The checklist still has to be datable.
+        Contract_Review__c cr = dealAtPsa();
+
+        Test.startTest();
+        update new Opportunity(Id = cr.Opportunity__c, StageName = 'About to Close');
+        Test.stopTest();
+
+        List<Transaction__c> txns = [
+            SELECT Contract_Executed_Date__c FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c
+        ];
+        System.assertEquals(1, txns.size(), 'A Transaction opens even with no executed contract');
+        System.assertEquals(Date.today(), txns[0].Contract_Executed_Date__c,
+            'Day 0 falls back to today when the deal never had a contract execution date');
+    }
+
+    @isTest
+    static void reEnteringAboutToCloseNeverDuplicatesTheTransaction() {
+        Contract_Review__c cr = dealAtPsa();
+        update new Opportunity(Id = cr.Opportunity__c, StageName = 'About to Close');
+
+        // ⚠ DRIVES THE SERVICE DIRECTLY, and it has to. Re-entering the stage the natural way needs
+        // a round trip out and back, which the No_Backward_Stage_Movement validation rule correctly
+        // refuses ("A deal cannot be moved back to an earlier stage"). Passing a null oldMap is the
+        // insert-context shape, so `justEntered` is true and the ONLY thing that can prevent a
+        // second Transaction is the alreadyHandedOff idempotency read — which is exactly what this
+        // test exists to pin. Same technique, and same reason, as LeadConvertServiceTest's
+        // direct-invocation methods.
+        List<Opportunity> opps = [
+            SELECT Id, StageName FROM Opportunity WHERE Id = :cr.Opportunity__c
+        ];
+
+        Test.startTest();
+        ContractExecutionService.openTransactionsOnAboutToClose(opps, null);
         Test.stopTest();
 
         System.assertEquals(1,
             [SELECT COUNT() FROM Transaction__c WHERE Opportunity__c = :cr.Opportunity__c],
-            'Re-executing must not open a second Transaction');
+            'A second pass over a deal that already has a Transaction must not open another');
     }
 
     /**
@@ -148,14 +201,24 @@ private class ContractExecutionServiceTest {
         System.assertEquals(251, reviews.size(), 'A Contract Review opens for every deal entering PSA');
 
         Test.startTest();
+        // BOTH halves of the cascade at 251, because they now live on DIFFERENT triggers and each
+        // carries one of the two governor breaks this test was written to catch:
+        //   execution      -> the notification loop (the SOQL break)
+        //   About to Close -> the Transaction insert + Day-0 fan-out (the DML break)
+        // Driving only one of them would silently retire half the coverage.
         for (Contract_Review__c cr : reviews) {
             cr.Negotiation_Status__c = 'Executed';
         }
         update reviews;
+
+        for (Opportunity o : opps) {
+            o.StageName = 'About to Close';
+        }
+        update opps;
         Test.stopTest();
 
         System.assertEquals(251,
             [SELECT COUNT() FROM Transaction__c WHERE Opportunity__c IN :opps],
-            'Every executed deal opens exactly one Transaction');
+            'Every deal entering About to Close opens exactly one Transaction');
     }
 }

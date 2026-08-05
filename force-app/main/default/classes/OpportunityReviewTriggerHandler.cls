@@ -32,5 +32,11 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
     private void route(List<Opportunity> opps, Map<Id, Opportunity> priorById) {
         OpportunityReviewService.createReviewRecords(opps, priorById);
         OpportunityReviewService.ensureNda(opps, priorById);
+        // Entering 'About to Close' opens the Transaction and, through it, the Day-0 checklist.
+        // It lives in ContractExecutionService rather than OpportunityReviewService because it is
+        // the TRANSACTIONS HANDOFF, not a review child — that service owns the handoff concept and
+        // still stamps the Day 0 this step reads back. Moved off ContractReviewTrigger on
+        // 2026-08-05: the trigger point is now the deal's stage, not the contract's status.
+        ContractExecutionService.openTransactionsOnAboutToClose(opps, priorById);
     }
 }
