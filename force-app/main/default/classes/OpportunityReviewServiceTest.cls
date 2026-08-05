@@ -59,6 +59,12 @@ private class OpportunityReviewServiceTest {
         // The stamp is the load-bearing half: ApprovalAuditService's LOI gate resolves its target
         // through Primary_LOI__c, and swallows its own failures - so a null here would make the
         // LOI approval silently stamp nothing, reproducing the Underwriting-gate defect.
+        //
+        // It is written ASYNCHRONOUSLY by LoiPrimaryStampQueueable, which is why the assertion sits
+        // after Test.stopTest() - in production the deal is LOCKED by its own approval at the
+        // moment the LOI is created, and an inline write throws ENTITY_IS_LOCKED. This test does
+        // not reproduce that lock (no approval is running), so it pins the WIRING, not the lock;
+        // only a real approval by a principal exercises the reason the queueable exists.
         Opportunity stamped = [SELECT Primary_LOI__c FROM Opportunity WHERE Id = :o.Id];
         System.assertEquals(lois[0].Id, stamped.Primary_LOI__c,
             'Primary_LOI__c stamped so the LOI approval audit can resolve its target');

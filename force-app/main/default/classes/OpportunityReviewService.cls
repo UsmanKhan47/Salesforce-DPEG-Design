@@ -161,15 +161,27 @@ public with sharing class OpportunityReviewService {
             // DEAL DRIVER moves the stage, and a deal driver has Edit. The LOI stage is the only
             // one entered by the APPROVAL PROCESS's own field update, so this code runs as the
             // APPROVER — who is read-only on both Opportunity and LOI__c (DPEG Principal PSG:
-            // Read yes, Edit no, measured). That exact difference is what broke
-            // ApprovalAuditService twice on 2026-08-05, so it is stated at the DML here rather
-            // than assumed from trigger context.
+            // Read yes, Edit no, measured). LOI__c is not the record under approval, so it is not
+            // locked and inserts fine here; the user sees the LOI immediately.
             Database.insert(loiToInsert, true, AccessLevel.SYSTEM_MODE);
-            List<Opportunity> loiStamps = new List<Opportunity>();
+
+            // 🔴 THE BACK-STAMP MUST BE ASYNC, AND IT IS A LOCK — NOT A PERMISSION.
+            // Writing Primary_LOI__c back onto the deal from THIS transaction throws
+            // ENTITY_IS_LOCKED: the Opportunity is locked for the duration of its own approval
+            // (Underwriting_Approval declares recordEditability=AdminOnly), and AccessLevel
+            // .SYSTEM_MODE does NOT lift an approval lock — it only lifts CRUD/FLS. Both approval
+            // processes set finalApprovalRecordLock=false, so the deal unlocks at commit, which is
+            // when the Queueable runs. Do not "simplify" this back to an inline update.
+            Map<Id, Id> loiByOpp = new Map<Id, Id>();
             for (LOI__c loi : loiToInsert) {
-                loiStamps.add(new Opportunity(Id = loi.Opportunity__c, Primary_LOI__c = loi.Id));
+                loiByOpp.put(loi.Opportunity__c, loi.Id);
             }
-            Database.update(loiStamps, true, AccessLevel.SYSTEM_MODE);
+            // Guard the enqueue the same way EmailMessageTriggerHandler does: this trigger can fire
+            // inside an async context that has already spent its chained-job budget, and an
+            // uncaught LimitException here would roll back the approval it is riding on.
+            if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) {
+                System.enqueueJob(new LoiPrimaryStampQueueable(loiByOpp));
+            }
         }
     }
 
