@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Grants Run Reports so the holder can execute reports/dashboards they have folder access to. Shared building block - no other permission set in this repo grants RunReports.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>DPEG Reports Access</label>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>RunReports</name>
+    </userPermissions>
+</PermissionSet>

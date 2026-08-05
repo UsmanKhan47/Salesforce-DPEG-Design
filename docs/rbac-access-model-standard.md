@@ -47,11 +47,14 @@ Three fields matter — fill in **all three** on every permission set:
 **Already deployed (2026-07-22):**
 `DPEG_Acquisition_Edit`, `DPEG_Acquisition_View`, `DPEG_Disposition_Edit`, `DPEG_Disposition_View`, `DPEG_Transaction_View`, `DPEG_PropertyMgmt_View`, `DPEG_App_Acquisition/Disposition/Transaction/PropertyMgmt`; PSGs `DPEG_Junior_Analyst_PSG`, `DPEG_Principal_PSG`.
 
-**To add for the Transaction & PM teams:**
-- `DPEG_Transaction_Edit` (create/read/update Transaction + Critical_Date, no delete)
+**Also deployed, added after the 2026-07-22 baseline (dates as noted):**
+- `DPEG_Transaction_Edit` (create/read/update Transaction + Critical_Date, no delete) — deployed with `DPEG_Transaction_Team` and `DPEG_App_Transaction`; confirmed live by 2026-08-04.
+- `DPEG_Opportunity_View` (shared — deal spine that Transaction/PM/others view read-only) — confirmed live by 2026-08-04.
+- `DPEG_Property_View` — deployed **2026-08-04** (Danish/Transaction-team onboarding, see `docs/2026-08-04-danish-transaction-access-notification.md`). The condition noted below for building it has now been met: the Transaction record page's "Property" tab reads six `Property__r.*` fields that no other role-scoped set could grant without also pulling in the rest of Acquisitions. Read-only, View All, full FLS (all 35 `Property__c` fields — the object has no required or master-detail fields to exclude).
+- `DPEG_Reports_Access` — deployed **2026-08-04**, new building block not anticipated in the original spec. Grants only the `RunReports` user permission (no object carries it in this org otherwise). Kept as its own block rather than added to `DPEG_Base_Access` specifically so Run Reports stays opt-in per team rather than becoming an org-wide grant.
+
+**Still genuinely to add, as needed:**
 - `DPEG_PropertyMgmt_Edit` (create/read/update the PM masters, no delete; details follow master)
-- `DPEG_Opportunity_View` (shared — deal spine that Transaction/PM/others view read-only)
-- `DPEG_Property_View` *(optional — only if teams need to view `Property__c` without full Acquisition read)*
 
 ---
 

@@ -1,0 +1,12 @@
+A new Transaction has been opened following PSA execution.
+
+Transaction: {!Transaction__c.Name}
+Related Opportunity: {!Transaction__c.Opportunity__c}
+Stage: {!Transaction__c.Stage__c}
+Target Close Date: {!Transaction__c.Target_Close_Date__c}
+
+View the Transaction record: {!Transaction__c.Link}
+
+The Day-0 task checklist has been generated and is ready to work.
+
+- DPEG Transactions

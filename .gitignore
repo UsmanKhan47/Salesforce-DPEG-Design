@@ -31,4 +31,8 @@ Thumbs.db
 .vscode/
 
 # Subagent local memory (machine-specific, per agent definition: memory: local)
+# The `**/` form is required: a pattern containing a slash is anchored to this
+# directory, so the bare `.claude/agent-memory-local/` below never matched the
+# copies agents wrote under force-app/ (2026-08-05).
+**/.claude/agent-memory-local/
 .claude/agent-memory-local/

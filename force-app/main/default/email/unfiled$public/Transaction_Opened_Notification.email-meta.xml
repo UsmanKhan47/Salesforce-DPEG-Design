@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EmailTemplate xmlns="http://soap.sforce.com/2006/04/metadata">
+    <available>true</available>
+    <description>Notifies the Transactions team when a new Transaction record is opened (Day-0, following PSA execution).</description>
+    <encodingKey>UTF-8</encodingKey>
+    <name>Transaction Opened Notification</name>
+    <style>none</style>
+    <subject>New Transaction opened &#8211; {!Transaction__c.Name}</subject>
+    <type>text</type>
+    <uiType>Aloha</uiType>
+</EmailTemplate>
