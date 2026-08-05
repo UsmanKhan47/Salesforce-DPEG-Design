@@ -12,10 +12,21 @@
                         <valueListItems>
                             <value>LOI__c.Submit_for_Approval</value>
                             <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.LOI_Status__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Pending Approval</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.LOI_Status__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Approved</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
@@ -25,10 +36,21 @@
                         <valueListItems>
                             <value>LOI__c.Advance_Stage</value>
                             <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.LOI_Status__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Pending Approval</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Completed</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
