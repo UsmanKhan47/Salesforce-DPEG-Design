@@ -9,7 +9,7 @@
                         <valueListItems>
                             <value>LOI__c.Submit_for_Approval</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>
                                     <operator>EQUAL</operator>
@@ -24,6 +24,11 @@
                                     <leftValue>{!Record.LOI_Status__c}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Approved</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Prepare/Review</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

@@ -50,11 +50,22 @@ private class OpportunityReviewServiceTest {
         Test.stopTest();
 
         List<LOI__c> lois = [
-            SELECT Id, Stage__c, LOI_Status__c FROM LOI__c WHERE Opportunity__c = :o.Id
+            SELECT Id, Stage__c, LOI_Status__c, OwnerId FROM LOI__c WHERE Opportunity__c = :o.Id
         ];
         System.assertEquals(1, lois.size(), 'One LOI opens on entering the LOI stage');
         System.assertEquals('Draft', lois[0].Stage__c, 'LOI path starts at Draft');
         System.assertEquals('Draft', lois[0].LOI_Status__c, 'LOI status starts at Draft');
+
+        // The LOI must be owned by the DEAL's owner, not by whoever's transaction created it. In
+        // production that creator is the APPROVER (the LOI stage is entered by the approval's own
+        // field update), and with OWD Private that left the record uneditable by the deal team.
+        // ⚠ HONEST LIMIT: this assertion cannot FAIL in test context - the running user owns the
+        // Opportunity, so a regression that dropped the OwnerId assignment would still produce a
+        // matching owner by default. It pins intent, not the defect. Only a real approval by a
+        // principal distinguishes the two, which is exactly why this reached production.
+        Opportunity dealOwner = [SELECT OwnerId FROM Opportunity WHERE Id = :o.Id];
+        System.assertEquals(dealOwner.OwnerId, lois[0].OwnerId,
+            'LOI is owned by the deal owner, not the running user');
 
         // The stamp is the load-bearing half: ApprovalAuditService's LOI gate resolves its target
         // through Primary_LOI__c, and swallows its own failures - so a null here would make the

@@ -31,6 +31,7 @@ public with sharing class OpportunityReviewService {
         Set<Id> uwOpps = new Set<Id>();
         Set<Id> loiOpps = new Set<Id>();
         Map<Id, Id> propertyByOpp = new Map<Id, Id>();
+        Map<Id, Id> ownerByOpp = new Map<Id, Id>();
 
         for (Opportunity o : newOpps) {
             Opportunity prior = (oldMap == null) ? null : oldMap.get(o.Id);
@@ -56,6 +57,7 @@ public with sharing class OpportunityReviewService {
             if (stageChanged && o.StageName == LOI_STAGE) {
                 loiOpps.add(o.Id);
                 propertyByOpp.put(o.Id, o.Property__c);
+                ownerByOpp.put(o.Id, o.OwnerId);
             }
         }
         if (devOpps.isEmpty() && conOpps.isEmpty() && contractOpps.isEmpty()
@@ -153,6 +155,16 @@ public with sharing class OpportunityReviewService {
                 loiToInsert.add(new LOI__c(
                     Opportunity__c = oppId,
                     Property__c = propertyByOpp.get(oppId),
+                    // 🔴 OWNER MUST BE THE DEAL'S OWNER, NOT THE RUNNING USER. Without this the
+                    // LOI is owned by whoever's transaction created it — and that is the APPROVER,
+                    // because the LOI stage is entered by the approval's own field update. With
+                    // OWD Private on LOI__c that made the record UNEDITABLE by the deal team: the
+                    // deal driver holds ViewAllRecords (so it is visible) but not ModifyAllRecords,
+                    // and the role hierarchy grants access upward, not down from a principal. The
+                    // observed symptom was "insufficient access rights on object id" when the deal
+                    // driver clicked Advance Stage on the LOI. The five sibling children never hit
+                    // this because a deal driver creates them and therefore already owns them.
+                    OwnerId = ownerByOpp.get(oppId),
                     Stage__c = 'Draft',
                     LOI_Status__c = 'Draft'));
             }
