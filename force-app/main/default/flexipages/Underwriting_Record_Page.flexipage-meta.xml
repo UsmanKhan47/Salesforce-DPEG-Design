@@ -7,7 +7,23 @@
                     <name>actionNames</name>
                     <valueList>
                         <valueListItems>
+                            <value>Edit</value>
+                        </valueListItems>
+                        <valueListItems>
                             <value>Underwriting__c.Submit_for_Approval</value>
+                            <visibilityRule>
+                                <criteria>
+                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Delete</value>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Underwriting__c.Advance_Stage</value>
                             <visibilityRule>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>
@@ -28,11 +44,11 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideChatterActions</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideSlackAction</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentName>force:highlightsPanel</componentName>
                 <identifier>highlightsPanel</identifier>
@@ -119,6 +135,10 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Tabs</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
                     <name>tabs</name>
                     <value>tabs</value>
                 </componentInstanceProperties>
@@ -137,8 +157,16 @@
                     <value>Underwriting Discussion</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
+                    <name>hideMethod</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
                     <name>internalOnly</name>
                     <value>true</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>showRevision</name>
+                    <value>false</value>
                 </componentInstanceProperties>
                 <componentName>dealMessageLog</componentName>
                 <identifier>counterHistoryCard</identifier>
