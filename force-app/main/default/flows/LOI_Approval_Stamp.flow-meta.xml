@@ -101,6 +101,7 @@
     <interviewLabel>LOI Approval Stamp {!$Flow.CurrentDateTime}</interviewLabel>
     <label>LOI Approval Stamp</label>
     <processType>AutoLaunchedFlow</processType>
+    <runInMode>SystemModeWithoutSharing</runInMode>
     <start>
         <locationX>50</locationX>
         <locationY>0</locationY>

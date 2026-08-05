@@ -2,7 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>LOI_Approved__c</fullName>
     <defaultValue>false</defaultValue>
-    <description>Set by the LOI_Approval process on final (unanimous) principal approval. Mirrors UW_Approved__c and triggers LOI_Approval_Stamp (audit stamp onto the primary LOI + panel FYI), since the collapsed single LOI stage no longer changes on approval.</description>
+    <description>Set by the LOI_Approval process on final principal approval (FirstResponse since 2026-08-05 - either principal, not both). Mirrors UW_Approved__c and triggers LOI_Approval_Stamp (audit stamp onto the primary LOI + panel FYI), since the collapsed single LOI stage no longer changes on approval.</description>
     <label>LOI Approved</label>
     <trackFeedHistory>false</trackFeedHistory>
     <trackTrending>false</trackTrending>

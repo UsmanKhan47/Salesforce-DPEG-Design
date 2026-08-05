@@ -1,5 +1,5 @@
 /**
- * Tests the LOI gate: the two-principal unanimous LOI_Approval process (entered
+ * Tests the LOI gate: the two-principal FirstResponse LOI_Approval process (entered
  * at the single coarse LOI stage) with the ApprovalAuditService audit trail
  * stamped onto the primary LOI. On approval the LOI_Approved__c flag is set (the
  * stage stays at LOI); on rejection the deal returns to Underwriting.
@@ -14,7 +14,7 @@ private class LoiGateTest {
     }
 
     @isTest
-    static void unanimousApprovalStampsLoiAuditTrail() {
+    static void firstResponseApprovalStampsLoiAuditTrail() {
         Opportunity o = newOpp('LOI');
         insert o;
         LOI__c loi = TestDataFactory.createLoi(o.Id, false);
@@ -30,22 +30,28 @@ private class LoiGateTest {
         System.assert(submitted.isSuccess(), 'Deal at LOI should enter LOI_Approval');
 
         Test.startTest();
-        // Unanimous step: both principals must approve; the admin acts on every
-        // pending workitem (Modify All Data can process any approval request).
-        for (ProcessInstanceWorkitem wi : [
-            SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id
-        ]) {
-            Approval.ProcessWorkitemRequest wr = new Approval.ProcessWorkitemRequest();
-            wr.setWorkitemId(wi.Id);
-            wr.setAction('Approve');
-            wr.setComments('Terms cleared.');
-            Approval.process(wr);
-        }
+        // FirstResponse step (changed from Unanimous 2026-08-05): EITHER principal decides, so
+        // exactly one workitem is approved. The platform withdraws the other principal's workitem
+        // as soon as the first response lands, which is why the previous loop over every workitem
+        // now throws INVALID_CROSS_REFERENCE_KEY on its second iteration.
+        ProcessInstanceWorkitem wi = [
+            SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id LIMIT 1
+        ];
+        Approval.ProcessWorkitemRequest wr = new Approval.ProcessWorkitemRequest();
+        wr.setWorkitemId(wi.Id);
+        wr.setAction('Approve');
+        wr.setComments('Terms cleared.');
+        Approval.process(wr);
         Test.stopTest();
+
+        // Pins the FirstResponse rule itself: the second principal is never waited for.
+        System.assertEquals(0, [
+            SELECT COUNT() FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id
+        ], 'One approval must complete the process and withdraw the other principal\'s work item');
 
         o = [SELECT StageName, LOI_Approved__c FROM Opportunity WHERE Id = :o.Id];
         System.assertEquals('LOI', o.StageName, 'Stage stays at the coarse LOI stage');
-        System.assert(o.LOI_Approved__c, 'Unanimous approval sets the LOI Approved flag');
+        System.assert(o.LOI_Approved__c, 'A single principal approval sets the LOI Approved flag');
 
         loi = [SELECT LOI_Status__c, Approved_By__c, Approved_Date__c, Approval_Comments__c
                FROM LOI__c WHERE Id = :loi.Id];

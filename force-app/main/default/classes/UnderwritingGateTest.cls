@@ -1,8 +1,10 @@
 /**
  * Tests the Phase-3 underwriting gate: the NDA-signed validation rule, the
  * Initiate Underwriting checkbox flow, and the Underwriting_Approval process
- * (unanimous - both principals approve -> LOI + audit stamps; one reject ends
- * it -> deal stays at Underwriting with Underwriting Complete cleared to rework).
+ * (FirstResponse since 2026-08-05 - EITHER principal approves -> LOI + audit stamps;
+ * one reject ends it -> deal stays at Underwriting with Underwriting Complete cleared
+ * to rework. Was Unanimous; the approve test looped over every workitem and had to be
+ * rewritten, because the platform withdraws the second one on the first response).
  */
 @isTest
 private class UnderwritingGateTest {
@@ -67,18 +69,26 @@ private class UnderwritingGateTest {
         Approval.ProcessResult submitted = Approval.process(req);
         System.assert(submitted.isSuccess(), 'Completed underwrite should enter Underwriting_Approval');
 
-        // Unanimous: every assigned principal must approve before the deal advances.
+        // FirstResponse (changed from Unanimous 2026-08-05): ONE principal decides. Approving a
+        // single workitem completes the process and the platform WITHDRAWS the other principal's
+        // workitem. This must approve exactly one — the previous loop over every workitem now
+        // throws INVALID_CROSS_REFERENCE_KEY on the second iteration, because that row no longer
+        // exists by the time the loop reaches it.
         Test.startTest();
-        for (ProcessInstanceWorkitem wi : [
-            SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id
-        ]) {
-            Approval.ProcessWorkitemRequest wr = new Approval.ProcessWorkitemRequest();
-            wr.setWorkitemId(wi.Id);
-            wr.setAction('Approve');
-            wr.setComments('Numbers work.');
-            Approval.process(wr);
-        }
+        ProcessInstanceWorkitem wi = [
+            SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id LIMIT 1
+        ];
+        Approval.ProcessWorkitemRequest wr = new Approval.ProcessWorkitemRequest();
+        wr.setWorkitemId(wi.Id);
+        wr.setAction('Approve');
+        wr.setComments('Numbers work.');
+        Approval.process(wr);
         Test.stopTest();
+
+        // Pins the FirstResponse rule itself: the second principal is never waited for.
+        System.assertEquals(0, [
+            SELECT COUNT() FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id
+        ], 'One approval must complete the process and withdraw the other principal\'s work item');
 
         o = [
             SELECT StageName, UW_Approved__c, Underwriting_Status__c,
@@ -111,8 +121,9 @@ private class UnderwritingGateTest {
         req.setObjectId(o.Id);
         Approval.process(req);
 
-        // Unanimous: a single rejection ends the approval immediately - the other
-        // principal's pending item is withdrawn.
+        // A single rejection ends the approval immediately and the other principal's pending
+        // item is withdrawn. This was already true under Unanimous and is unchanged by the move
+        // to FirstResponse, which is why this test needed no rewrite - it always acted on one item.
         Test.startTest();
         ProcessInstanceWorkitem wi = [
             SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstance.TargetObjectId = :o.Id LIMIT 1

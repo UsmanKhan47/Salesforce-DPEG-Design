@@ -108,7 +108,14 @@ public without sharing class ApprovalAuditService {
             if (!loiUpdates.isEmpty()) {
                 update loiUpdates;
             }
-        } catch (DmlException e) {
+        } catch (Exception e) {
+            // Deliberately catches Exception, NOT DmlException. The class contract above is that
+            // an audit-stamp failure must never roll back the approval transaction, and a
+            // DmlException-only catch did not deliver it: when the approving principal lacked
+            // Edit on Opportunity the platform threw System.TypeException ('DML operation UPDATE
+            // not allowed on Opportunity'), which is not a DmlException, so it escaped this
+            // handler and took the whole approval down with it (2026-08-05, Nikhil approving an
+            // Underwriting gate). Narrowing this back to DmlException reopens that hole.
             System.debug(LoggingLevel.WARN, 'ApprovalAuditService: audit stamp failed: ' + e.getMessage());
         }
     }
