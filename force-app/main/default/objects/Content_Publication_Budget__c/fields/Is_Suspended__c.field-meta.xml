@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Suspended__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>True while the ContentPublication circuit breaker (design §6.5) is tripped. AttachmentPersistQueueable and AttachmentCarrierSweepBatch skip all ContentVersion DML while this is true and record a "suspended until" note instead of attempting a publish. Set only by AttachmentPersistFinalizer.trip(), on a message-substring match against 'ContentPublication Limit exceeded' — never on a type check, since the platform wraps the original exception as System.AsyncException.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Clears automatically once now() passes Suspended_Until_DateTime__c, or can be cleared manually in Setup to resume persistence early.</inlineHelpText>
+    <label>Is Suspended</label>
+    <type>Checkbox</type>
+</CustomField>

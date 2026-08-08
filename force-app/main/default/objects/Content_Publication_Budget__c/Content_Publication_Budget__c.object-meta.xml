@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      DEPLOY BLOCKER FIX (2026-08-06): the customSettingsVisibility element (was set to Public)
+      was REMOVED. Confirmed by a live dry run to fail with "Property 'customSettingsVisibility'
+      not valid in version 67.0" (sf project deploy start against this object's source dir, using
+      the dry run flag), and it cascaded into roughly 30 unrelated looking "Dependent class is
+      invalid" Apex errors on a full package deploy.
+
+      Considered, not dropped: customSettingsVisibility (Public/Protected) is a MANAGED PACKAGE
+      concept; it governs whether a Custom Setting is addressable by Apex OUTSIDE the defining
+      namespace (a subscriber org or another package). This project has NO namespace configured
+      (see CLAUDE.md), so there is no cross namespace boundary for this element to govern, which is
+      why the platform rejects it here rather than silently ignoring it.
+
+      For this unpackaged Hierarchy Custom Setting, access is governed the same way as any other
+      custom object in this repo, not by a visibility flag on the object:
+        - Field Level Security (Permission Sets/Profiles) gates direct Setup UI / API record access
+          to the setting's fields, exactly like any other object.
+        - Apex reads via getInstance()/getOrgDefaults() are NOT FLS filtered by default (Custom
+          Settings reads bypass FLS unless the calling code explicitly opts into WITH
+          USER_MODE/SECURITY_ENFORCED), so the real control is which Apex classes are trusted to
+          call them, not a metadata level visibility setting.
+      No functional capability is lost by removing this element in a no namespace org.
+    -->
+    <customSettingsType>Hierarchy</customSettingsType>
+    <description>First Custom Setting in this repo (design-requirements-attachment-persistence-v2.md §6.6, §10.2 A2, Q-5). Hierarchy Custom Setting backing ContentPublicationBudget — the L5 predictive daily budget (DAILY_PUBLICATION_BUDGET = 1000) and L4 reactive circuit breaker (BREAKER_SUSPEND_HOURS = 24) that shield the org's shared, rolling-24-hour ContentPublicationLimit (2,500) from the async attachment-persistence pipeline (AttachmentPersistQueueable / AttachmentCarrierSweepBatch). Chosen over a custom object specifically because a hierarchy setting read costs zero SOQL. Custom Setting DATA is not deployable — the Apex service creates the org-default row on first use; do not hand-create it in Setup and do not expect a data row in source control. No customSettingsVisibility: unpackaged org, no namespace boundary to govern — see class comment.</description>
+    <enableFeeds>false</enableFeeds>
+    <label>Content Publication Budget</label>
+</CustomObject>

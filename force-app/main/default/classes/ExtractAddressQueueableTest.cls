@@ -68,6 +68,24 @@
  * ASSERTION STYLE: Assert.* — matches the sibling Broker-Protection test classes in
  * this exact module (PropertyClaimServiceTest, PropertyMatchingServiceTest).
  *
+ * 🔴 2026-08-06 — ATTACHMENT PERSISTENCE v2 SUPERSEDES THE 2026-08-05 "ATTACHMENT LINKING"
+ * SHAPE DESCRIBED BELOW IN OLDER COMMIT HISTORY. v1 called `InboundEmailAttachmentService.
+ * linkTo(...)` directly from `finish()` via a 4th constructor argument (`contentDocumentIds`).
+ * That argument and `linkAttachments()` are GONE — file conversion and linking now belong
+ * entirely to `AttachmentPersistQueueable`, chained (guarded by `Test.isRunningTest()`, per
+ * SP-2) from the LAST statement of `finish()`. Every `insertContentDocuments(...)` fixture and
+ * every `ContentDocumentLink` assertion that used to live in this file were REMOVED — this
+ * class must never create a `ContentVersion` at all (T3), and its DML budget is CONSTANT
+ * whether or not an email carries an attachment (T4: 7 exact at N=1, 43 exact at N=10). The
+ * section near the bottom of this file ("ATTACHMENT PERSISTENCE v2") tests the guarded-chain
+ * DECISION (what would be enqueued, and the release path on a gate/duplicate) via the
+ * `lastRunEnqueuedTargets` seam; the real conversion is `AttachmentPersistQueueableTest.cls`'s
+ * job, and the chain's real firing is UAT-only (design §8.3, UAT U1).
+ *
+ * Isolated coverage of `InboundEmailAttachmentService.classify()/stageBytes()/persist()/
+ * linkTo()` themselves lives in `InboundEmailAttachmentServiceTest.cls` and
+ * `EmailToLeadHandlerTest.cls`, which this file's assertions deliberately do not duplicate.
+ *
  * ⚠ 2026-07-31 — THE PER-TRANSACTION-SINGLETON EXEMPTION NO LONGER COVERS THIS CLASS.
  * D1 multi-property extraction made execute() LOOP, so `.claude/rules/bulk-test-rule.md`
  * was narrowed (design C-18) to `LLMExtractionCalloutService` alone. The replacement
@@ -1186,7 +1204,14 @@ private class ExtractAddressQueueableTest {
         // NAMED BUDGETS, not the raw platform caps: the point is to fail HERE when a future
         // change adds a query per property, long before it fails in production at N = 8.
         final Integer QUERY_BUDGET = 120;   // async cap is 200
-        final Integer DML_BUDGET = 60;      // async cap is 150
+        // 🔴 EXACT, NOT A CEILING — measured directly, not derived from the old "60" ceiling
+        // (which was never tight). RE-PINNED 2026-08-06 from 44 to 43: attachment FILE LINKING
+        // moved out of this class entirely, into AttachmentPersistQueueable (design §9, Q-13),
+        // so this class's DML is now CONSTANT regardless of whether the email carries an
+        // attachment at all — there is no "+1" delta here anymore. See T4 in
+        // AttachmentPersistQueueableTest.cls for the file job's own budget, which is where that
+        // work (and its cost) now lives.
+        final Integer DML_BUDGET = 43;      // async cap is 150
 
         Inbound_Email_Staging__c staging = insertStaging(
             'blast.broker@example.invalid', 'forwarder20@example.invalid',
@@ -1212,17 +1237,22 @@ private class ExtractAddressQueueableTest {
 
         Assert.areEqual(10, [SELECT COUNT() FROM Property_Registry__c WHERE Property_Key__c LIKE '%multi st'],
             'Each of the 10 properties must take its own claim — that is the whole point of D1');
-        Assert.areEqual(10, [SELECT COUNT() FROM Lead WHERE Property_Address__c LIKE '%Multi St'],
-            'One Lead per property, per the restated invariant');
+        Set<Id> routedLeadIds = new Set<Id>();
+        for (Lead routed : [SELECT Id FROM Lead WHERE Property_Address__c LIKE '%Multi St']) {
+            routedLeadIds.add(routed.Id);
+        }
+        Assert.areEqual(10, routedLeadIds.size(), 'One Lead per property, per the restated invariant');
 
         Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount <= QUERY_BUDGET,
             'GOVERNOR HEADROOM: 10 properties consumed ' + ExtractAddressQueueable.lastRunQueryCount
             + ' SOQL queries against a budget of ' + QUERY_BUDGET + '. If this fails, a change has added '
             + 'per-property queries — fix that rather than raising the budget, because the async cap is 200 '
             + 'and production hits it before this test does.');
-        Assert.isTrue(ExtractAddressQueueable.lastRunDmlCount <= DML_BUDGET,
-            'GOVERNOR HEADROOM: 10 properties consumed ' + ExtractAddressQueueable.lastRunDmlCount
-            + ' DML statements against a budget of ' + DML_BUDGET + ' (async cap 150)');
+        // T4, N=10 half — see AttachmentPersistQueueableTest.cls for the file job's own budget.
+        Assert.areEqual(DML_BUDGET, ExtractAddressQueueable.lastRunDmlCount,
+            'THE LOAD-BEARING ASSERTION, N=10: exactly ' + DML_BUDGET + ' DML statements, CONSTANT — file '
+            + 'linking no longer happens in this class at all (it moved to AttachmentPersistQueueable, '
+            + '2026-08-06), so this number must never move because of an attachment.');
         Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount > 0,
             'Sanity: the telemetry must actually have been captured, or the two assertions above are vacuous');
     }
@@ -1260,6 +1290,12 @@ private class ExtractAddressQueueableTest {
         ];
         Assert.isTrue(firstLead.Deal_Notes__c.contains('Additional properties in this email'),
             'The un-routed remainder must be written onto the FIRST Lead so a human can act on it (C-1)');
+
+        Set<Id> routedLeadIds = new Set<Id>();
+        for (Property_Registry__c r : [SELECT Winning_Lead__c FROM Property_Registry__c WHERE Property_Key__c LIKE '%multi st']) {
+            routedLeadIds.add(r.Winning_Lead__c);
+        }
+        Assert.areEqual(ExtractAddressQueueable.MAX_PROPERTIES, routedLeadIds.size(), 'Precondition: exactly 10 Leads were routed');
     }
 
     @isTest
@@ -3472,5 +3508,206 @@ private class ExtractAddressQueueableTest {
             'GOVERNOR HEADROOM: consumed ' + ExtractAddressQueueable.lastRunDmlCount
             + ' DML statements against the SAME budget as before the sender-Task change ('
             + singlePropertyDmlBudget + ')');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // ATTACHMENT PERSISTENCE v2, 2026-08-06 — finish() no longer links files itself. It hands
+    // the carrier's Ids to AttachmentPersistQueueable (design §3.4, §11.9), guarded by
+    // Test.isRunningTest() because SP-2 measured the real chain throwing
+    // System.AsyncException: Maximum stack depth has been reached inside @isTest. So THIS class
+    // is tested for the DECISION (what would be enqueued, and when it is correctly skipped or
+    // replaced by a release) — the actual conversion is AttachmentPersistQueueableTest.cls's
+    // job, and the real chain firing is UAT-only (design §8.3, UAT U1).
+    //
+    // Zero ContentPublication cost throughout this section: every fixture uses a classic
+    // Attachment carrier, never a ContentVersion.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** Stamps Attachment_Status__c = Pending on an already-inserted staging row and gives it one
+     *  real carrier Attachment — the shape EmailToLeadHandler.stageBytes would have left behind. */
+    private static void givePendingCarrier(Id stagingId, String fileName) {
+        update new Inbound_Email_Staging__c(
+            Id = stagingId, Attachment_Status__c = InboundEmailStagingService.ATTACHMENT_STATUS_PENDING);
+        insert new Attachment(
+            ParentId = stagingId, Name = fileName, ContentType = 'application/pdf',
+            Body = Blob.valueOf('CARRIER CONTENT FOR ' + fileName)
+        );
+    }
+
+    @isTest
+    static void finish_withCarrier_recordsTheEnqueueDecisionAndCreatesNoContentVersion() {
+        // Test 27 + Test 33 / T3, combined: the SAME winner-claim scenario proves both that the
+        // guarded chain records the CORRECT decision (which targets it would enqueue against)
+        // and that — regardless of that decision — this class never creates a ContentVersion
+        // itself. T3 is the regression net: it goes red the instant anyone moves file DML back
+        // into routing, exactly the defect class the 2026-08-06 redesign exists to prevent.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'carrier.broker@example.invalid', 'forwarder40@example.invalid',
+            'FW: 700 Carrier Ave', 'body',
+            'msg-carrier-decision@example.invalid', null, null);
+        givePendingCarrier(staging.Id, 'om.pdf');
+        setMock(new Map<String, String>{
+            'broker_name' => 'Carrier Broker', 'broker_email' => 'carrier.broker@example.invalid',
+            'property_address' => '700 Carrier Ave', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Result_Record_Id__c, Attachment_Status__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.isNotNull(updatedStaging.Result_Record_Id__c, 'Precondition: the winner claim must succeed, or the decision below proves nothing');
+
+        Assert.isNotNull(ExtractAddressQueueable.lastRunEnqueuedTargets,
+            'A Pending carrier plus a non-empty target list must record an ENQUEUE decision');
+        Assert.areEqual(1, ExtractAddressQueueable.lastRunEnqueuedTargets.size(), '');
+        Assert.areEqual(updatedStaging.Result_Record_Id__c, ExtractAddressQueueable.lastRunEnqueuedTargets[0],
+            'The recorded decision must target the SAME record the Task was logged against');
+
+        // The chain itself never fires inside @isTest (SP-2) — no real file job was ever enqueued.
+        Assert.areEqual(0, [SELECT COUNT() FROM AsyncApexJob WHERE ApexClass.Name = 'AttachmentPersistQueueable'], '');
+        // The carrier is UNTOUCHED — enqueueAttachmentPersist's success path performs no DML at all.
+        Assert.areEqual(1, [SELECT COUNT() FROM Attachment WHERE ParentId = :staging.Id], '');
+        Assert.areEqual(InboundEmailStagingService.ATTACHMENT_STATUS_PENDING, updatedStaging.Attachment_Status__c, '');
+
+        // 🔴 T3 — THE REGRESSION NET.
+        Assert.areEqual(0, [SELECT COUNT() FROM ContentVersion],
+            'This class must NEVER create a ContentVersion — that would mean file conversion moved '
+            + 'back into the transaction that owns the Lead and the registry claim');
+    }
+
+    @isTest
+    static void finish_noCarrier_recordsNoEnqueue() {
+        // Test 28 — the overwhelming majority of emails: no attachment, zero cost.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'nocarrier.broker@example.invalid', 'forwarder41@example.invalid',
+            'FW: 701 No Carrier Ave', 'body',
+            'msg-no-carrier@example.invalid', null, null);
+        // Deliberately no givePendingCarrier() call — Attachment_Status__c stays blank, which is
+        // NOT 'Pending', matching an ordinary zero-attachment email.
+        setMock(new Map<String, String>{
+            'broker_name' => 'No Carrier Broker', 'broker_email' => 'nocarrier.broker@example.invalid',
+            'property_address' => '701 No Carrier Ave', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.isNotNull([SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id].Result_Record_Id__c,
+            'Precondition: the winner claim must succeed, or the null-decision assertion below proves nothing');
+        Assert.isNull(ExtractAddressQueueable.lastRunEnqueuedTargets,
+            'No carrier means no enqueue decision at all — the predicate is FREE (the field was already loaded)');
+    }
+
+    @isTest
+    static void finish_gatedEmail_releasesTheCarrierAndEnqueuesNothing() {
+        // Test 29 — §6.3 item 2. A gated email produces no routed record, so there is nothing to
+        // file a file on and there never will be: the carrier must be RELEASED, not left pending
+        // forever.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'gated.broker@example.invalid', 'forwarder42@example.invalid',
+            'Weekly market roundup', 'newsletter body',
+            'msg-gated-carrier@example.invalid', null, null);
+        givePendingCarrier(staging.Id, 'irrelevant-attachment.pdf');
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'newsletter',
+                'is_acquisition_related' => false,
+                'confidence' => 0.97,
+                'broker_email' => 'gated.broker@example.invalid'
+            }, new List<Map<String, Object>>())));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Outcome__c, Attachment_Status__c, Dropped_Attachment_Notes__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_NOT_ACQUISITION, updatedStaging.Outcome__c,
+            'Precondition: this must genuinely be the D2 hard gate, or the release assertions below prove nothing');
+
+        Assert.isNull(ExtractAddressQueueable.lastRunEnqueuedTargets,
+            'A gate must NEVER record an enqueue decision — it takes the release path instead');
+        Assert.areEqual(0, [SELECT COUNT() FROM Attachment WHERE ParentId = :staging.Id],
+            'The carrier bytes must be deleted — there is no record to file them on, and never will be');
+        Assert.areEqual(InboundEmailStagingService.ATTACHMENT_STATUS_NOT_SAVED, updatedStaging.Attachment_Status__c, '');
+        Assert.isTrue(updatedStaging.Dropped_Attachment_Notes__c.contains('gated'),
+            'Actual: ' + updatedStaging.Dropped_Attachment_Notes__c);
+        Assert.areEqual(0, [SELECT COUNT() FROM ContentVersion], '');
+    }
+
+    @isTest
+    static void execute_duplicateDelivery_releasesTheCarrierAndEnqueuesNothing() {
+        // Test 30 — §6.3 item 1. A platform redelivery's OWN carrier copy must be released so it
+        // cannot accumulate on a row that will never be converted; the ORIGINAL email's files
+        // (and this class's zero-cost DML invariant) are untouched.
+        setMock(new Map<String, String>{
+            'broker_name' => 'Jane Broker', 'broker_email' => 'idempotent-carrier@example.invalid',
+            'property_address' => '555 Idempotent Carrier Ln', 'sent_datetime' => ''
+        });
+
+        Inbound_Email_Staging__c staging1 = insertStaging(
+            'idempotent-carrier@example.invalid', 'forwarder43@example.invalid',
+            'FW: 555 Idempotent Carrier Ln', 'first delivery',
+            'dup-carrier-123@example.invalid', null, null);
+        Inbound_Email_Staging__c staging2 = insertStaging(
+            'idempotent-carrier@example.invalid', 'forwarder43@example.invalid',
+            'FW: 555 Idempotent Carrier Ln', 'redelivered copy',
+            'dup-carrier-123@example.invalid', null, null);
+        givePendingCarrier(staging2.Id, 'redelivered-copy.pdf');
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging1.Id, null, null));
+        System.enqueueJob(new ExtractAddressQueueable(staging2.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging2 = [
+            SELECT Outcome__c, Attachment_Status__c, Dropped_Attachment_Notes__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging2.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_DUPLICATE_DELIVERY, updatedStaging2.Outcome__c,
+            'Precondition: this must genuinely be the redelivery short-circuit, or the release assertions below prove nothing');
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Attachment WHERE ParentId = :staging2.Id],
+            'The duplicate delivery\'s OWN carrier copy must be released — it can never be converted, '
+            + 'since execute() returns before finish() ever runs on this path');
+        Assert.areEqual(InboundEmailStagingService.ATTACHMENT_STATUS_NOT_SAVED, updatedStaging2.Attachment_Status__c, '');
+        Assert.isTrue(updatedStaging2.Dropped_Attachment_Notes__c.contains('duplicate delivery'),
+            'Actual: ' + updatedStaging2.Dropped_Attachment_Notes__c);
+        Assert.areEqual(0, [SELECT COUNT() FROM ContentVersion], '');
+    }
+
+    @isTest
+    static void execute_singlePropertyWinner_dmlBudgetIsExactlySevenRegardlessOfACarrier() {
+        // T4, N=1 half — re-pinned 2026-08-06 from a "+1 with an attachment" shape (8) to a flat,
+        // CONSTANT 7: file linking left this class entirely, so a Pending carrier must cost this
+        // class NOTHING beyond the ordinary winner-claim DML.
+        final Integer singlePropertyDmlBudget = 7;
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'exactbudget.broker@example.invalid', 'forwarder44@example.invalid',
+            'FW: 702 Exact Budget Ave', 'body',
+            'msg-exact-budget@example.invalid', null, null);
+        givePendingCarrier(staging.Id, 'exact-budget.pdf');
+        setMock(new Map<String, String>{
+            'broker_name' => 'Exact Budget Broker', 'broker_email' => 'exactbudget.broker@example.invalid',
+            'property_address' => '702 Exact Budget Ave', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.isNotNull([SELECT Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id].Result_Record_Id__c,
+            'Precondition: the winner claim must succeed, or the exact budget below proves nothing');
+        Assert.areEqual(singlePropertyDmlBudget, ExtractAddressQueueable.lastRunDmlCount,
+            'THE LOAD-BEARING ASSERTION, N=1: exactly 7 DML statements, CONSTANT whether or not a carrier '
+            + 'is present — if this is ever anything other than 7, either file linking crept back into this '
+            + 'class, or the guarded chain stopped being a zero-DML decision');
     }
 }

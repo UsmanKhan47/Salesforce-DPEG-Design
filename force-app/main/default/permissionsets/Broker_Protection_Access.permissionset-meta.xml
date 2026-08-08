@@ -21,23 +21,73 @@
         VERIFY AFTER EVERY DEPLOY of this permission set:
             SELECT SobjectType, COUNT(Id) FROM FieldPermissions
             WHERE Parent.Name = 'Broker_Protection_Access' GROUP BY SobjectType
-        must return Lead 28, Task 6, Contact 1, Inbound_Email_Staging__c 19,
+        must return Lead 28, Task 6, Contact 1, Inbound_Email_Staging__c 23,
         Competing_Broker_Submission__c 10, Property_Registry__c 3 (plus platform-managed Event
         mirrors of the Task/Activity rows).
         ⚠ Competing_Broker_Submission__c moved 9 -> 10 on 2026-08-03 with Winning_Opportunity__c,
         the post-conversion winner anchor. A count of 9 after this change means the new field's
         FLS did not land, and the inbound pipeline will read a null anchor on every
         converted-winner property.
+        ⚠ Inbound_Email_Staging__c moved 19 -> 22 on 2026-08-05 with Attachment_Count__c /
+        Attachment_Bytes__c / Dropped_Attachment_Notes__c, the inbound attachment-capture feature.
+        A count of 19 after this change means the three new fields' FLS did not land — the
+        pipeline still writes the retained-file count/bytes/drop-reasons correctly (per the
+        ordinary Metadata-API custom-field rule, deployed fields arrive with no FLS for anybody),
+        they are just invisible to every human on this permission set, including the FLS-gated
+        §2 B size-risk reporting the fields exist to enable.
+        ⚠ Inbound_Email_Staging__c moved 22 -> 23 on 2026-08-06 with Attachment_Status__c, the
+        v2 attachment-persistence redesign's sweeper work-queue field (design-requirements-
+        attachment-persistence-v2.md §10.2 A1/A3). A count of 22 after this change means the new
+        field's FLS did not land — the field is still stamped correctly by the pipeline, it is
+        just invisible on this permission set. NOTE: Content_Publication_Budget__c (the new
+        Hierarchy Custom Setting backing the L5/L4 quota guards, same design §6.6/§10.2 A2) is
+        DELIBERATELY NOT declared anywhere in this file — Custom Settings need no FLS grant for
+        Apex access, so a speculative fieldPermissions/objectPermissions block for it here would
+        be dead weight, not a missing grant.
 
         A redeploy has been observed to silently drop the Activity-field rows, which breaks the
         Email Service context user's (Minimum Access profile) ability to see the standard fields
         the inbound-email pipeline stamps: on Task, Description/ActivityDate/WhoId/WhatId; on
-        Lead, Description/Phone/Title. If Task.WhoId is missing after a deploy, it is expected —
-        see the XML comment below; it is granted org-side only and must be re-verified/re-granted
-        there, not via this file. Lead.Description/Phone/Title, by contrast, ARE declared below
-        (same convention as DPEG_Acquisition_Edit's Lead.Email/Lead.LeadSource) and are expected
-        to survive a redeploy; if the Lead count drops below 27 after a deploy, that is a
-        regression, not the WhoId-style expected gap.
+        Lead, Description/Phone/Title. Task.WhoId, Task.WhatId, Task.Description/ActivityDate and
+        Lead.Description/Phone/Title are ALL now declared below (see the Task.WhoId comment
+        further down for why that changed on 2026-08-06 — it used to be an org-side-only grant)
+        and are expected to survive a redeploy; if the Lead count drops below 27, or the Task
+        count drops below 6, after a deploy, that is a regression, full stop.
+
+        🔴 ROOT CAUSE FOUND AND FIXED 2026-08-05 (unit-testing pass, attachment-capture review).
+        The "Activity-field rows get silently dropped" symptom above was NOT a platform quirk —
+        it was this file declaring `<field>Activity.Inbound_Message_Id__c</field>` /
+        `<field>Activity.Thread_Key__c</field>`. `Activity` is not a valid SObject prefix for a
+        <fieldPermissions> entry; on this org it deployed as an EVENT-only grant (measured:
+        FieldPermissions grouped by SobjectType showed `Event 2` and `Task 3`, three short of the
+        documented `Task 6`), so EVERY redeploy of this file silently wiped the Task-side FLS on
+        both fields — exactly the "silently drop" behaviour the previous version of this comment
+        described as an unexplained observation. Corrected to `Task.Inbound_Message_Id__c` /
+        `Task.Thread_Key__c`, matching every other Task field declared below. Salesforce then
+        auto-creates the "platform-managed Event mirror" the VERIFY query already expected, so
+        Event access is not lost. If the Task count is ever short of 6 again after this fix, that
+        is a REAL regression — the Activity-prefix mistake is what to check for first.
+
+        🔴 SECOND INCIDENT, SAME ROOT CAUSE, FOUND AND FIXED 2026-08-06. The 2026-08-05
+        Activity-prefix deploy above did fix Inbound_Message_Id__c/Thread_Key__c, but a Metadata
+        API deploy of a PermissionSet REPLACES its entire field-permission set rather than merging
+        with it — so that same deploy also wiped the org-side-only Task.WhoId row described below
+        (created by hand 2026-08-01, never represented in this file). Every inbound email that
+        routed to a Lead or Contact target then threw `System.DmlException | Operation failed due
+        to fields being inaccessible on Sobject Task` out of
+        `InboundEmailActivityService.logInboundEmail` (called from
+        `ExtractAddressQueueable.finish`) — the Lead, the registry claim and the staging row still
+        committed, but the Task never logged, so the pipeline lost both its activity-timeline
+        entry and its `Inbound_Message_Id__c` redelivery-idempotency key for that email. Checked
+        every other Task field the pipeline writes
+        (Subject/Description/ActivityDate/Status/TaskSubtype/Inbound_Message_Id__c/Thread_Key__c/
+        WhoId/WhatId) against `sobjects/Task/describe`: Subject, Status and TaskSubtype are NOT
+        FLS-controlled (`permissionable: false`) so they need no grant and were never at risk;
+        Description/ActivityDate/WhatId/Inbound_Message_Id__c/Thread_Key__c ARE FLS-controlled and
+        were still present; Task.WhoId was the only FLS-controlled field missing. Fixed by
+        declaring Task.WhoId in this file (see the block below) instead of leaving it org-side-only
+        — an org-side-only grant on a file that gets redeployed for unrelated reasons is exactly
+        the failure mode that produced both incidents.
 
         ObjectPermissions must include UserExternalCredential read (1 row) — without it, any
         callout through the OpenAI Named Credential throws before sending, regardless of the
@@ -50,12 +100,12 @@
     </externalCredentialPrincipalAccesses>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Activity.Inbound_Message_Id__c</field>
+        <field>Task.Inbound_Message_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Activity.Thread_Key__c</field>
+        <field>Task.Thread_Key__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -74,21 +124,28 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
-        Task.WhoId is deliberately NOT declared here, following the same convention as the
-        repo's only other standard-Task FLS permission set (DPEG_Task_Edit.permissionset-meta.xml),
-        which grants Task.ActivityDate / Task.Description / Task.WhatId but never Task.WhoId —
-        no permission set anywhere in this repo declares Task.WhoId or Activity.WhoId in metadata.
-        An org-side FieldPermissions row for Task.WhoId (Broker_Protection_Access, read+edit) was
-        created directly in the org on 2026-08-01 to unblock the live inbound-email pipeline (the
-        Email Service context user, Minimum Access profile, could not see Task.WhoId when the
-        pipeline logs an inbound-email Task). Re-verify this row after every deploy of this
-        permission set via:
-          SELECT Id FROM FieldPermissions WHERE Parent.Name='Broker_Protection_Access'
-            AND SobjectType='Task' AND Field='Task.WhoId'
-        If a future deploy of this file is confirmed NOT to clear the org-side WhoId row, this
-        comment can be replaced with a real <fieldPermissions> block — do not add one speculatively
-        without confirming Task.WhoId deploys cleanly via metadata first.
+        🔴 Task.WhoId IS NOW DECLARED HERE — DO NOT REMOVE OR RE-HIDE IT IN A COMMENT.
+        This block used to say WhoId was "deliberately NOT declared," on the theory that an
+        org-side-only grant (created by hand 2026-08-01, read+edit, to unblock the live
+        inbound-email pipeline — the Email Service context user, Minimum Access profile, could not
+        see Task.WhoId when the pipeline logs an inbound-email Task on a Lead/Contact target) would
+        survive a metadata redeploy of this file untouched. It does NOT: a Metadata API deploy of a
+        PermissionSet REPLACES its entire field-permission set rather than merging with the org's
+        existing rows, so the 2026-08-05 Activity-prefix-casing fix (see the top comment block)
+        silently wiped this org-side row along with everything else not declared in-repo, and every
+        inbound email routing to a Lead or Contact then failed with `System.DmlException |
+        Operation failed due to fields being inaccessible on Sobject Task` — the Task never logged,
+        losing both the activity-timeline entry and the `Inbound_Message_Id__c`
+        redelivery-idempotency key. Fixed 2026-08-06 by declaring the field below, matching every
+        other Task.* row in this file. `DPEG_Task_Edit.permissionset-meta.xml` still does not grant
+        Task.WhoId — that is a SEPARATE permission set for a different persona and is out of scope
+        here; do not "harmonize" it without a reason specific to that persona.
     -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Task.WhoId</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Competing_Broker_Submission__c.Broker_Email__c</field>
@@ -232,6 +289,26 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Inbound_Email_Staging__c.Routed_Record_Ids__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Attachment_Bytes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Attachment_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Dropped_Attachment_Notes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Attachment_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

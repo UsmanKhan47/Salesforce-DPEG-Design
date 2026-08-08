@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Suspended_Until_DateTime__c</fullName>
+    <description>When Is_Suspended__c is true, the timestamp the breaker automatically clears at (design §6.5 — BREAKER_SUSPEND_HOURS = 24, measured from the trip). Read by ContentPublicationBudget.canPublish() to auto-clear the suspension once now() passes this value.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Blank when Is_Suspended__c is false.</inlineHelpText>
+    <label>Suspended Until</label>
+    <required>false</required>
+    <type>DateTime</type>
+</CustomField>

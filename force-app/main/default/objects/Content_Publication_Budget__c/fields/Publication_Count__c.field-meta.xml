@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Publication_Count__c</fullName>
+    <description>Running count of ContentVersion publications recorded against the current rolling window (design §6.6, L5 predictive daily budget). Incremented only after a SUCCESSFUL publish, by ContentPublicationBudget.record(count). Compared against DAILY_PUBLICATION_BUDGET (1000) by ContentPublicationBudget.canPublish(count) before every conversion attempt in AttachmentPersistQueueable and AttachmentCarrierSweepBatch.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Do not edit manually except to reset the window early. Rolls over to 0 automatically when Window_Start_DateTime__c is more than 24 hours old.</inlineHelpText>
+    <label>Publication Count</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

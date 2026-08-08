@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Attachment_Status__c</fullName>
+    <description>Work-queue status of this row's attachment carrier (v2 persistence redesign, 2026-08-06 — see design-requirements-attachment-persistence-v2.md §6.4/§10.2 A1). Required to exist, not optional — AttachmentCarrierSweepBatch selects on this field to find rows with retry work outstanding, and a Long Text notes field cannot serve as a work queue. Stamped None/Pending by the synchronous handler at staging-row creation, then advanced to Saved/Partial/Failed/Not Saved/Expired by AttachmentPersistQueueable, AttachmentPersistFinalizer, or AttachmentCarrierSweepBatch as the carrier moves through conversion, deferral, retry, or expiry.</description>
+    <inlineHelpText>Pending = carrier written, not yet converted. Saved = all files converted, carrier removed. Partial = some files converted, remainder still on the carrier and will retry. Failed = the file job died; the carrier is intact and will retry. Not Saved = the carrier itself was never written, or the email was gated/a duplicate delivery — there is nothing to retry. Expired = unconverted for 14+ days; carrier removed by the sweeper.</inlineHelpText>
+    <label>Attachment Status</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <!--
+      RESTRICTED PICKLIST, VERIFIED 2026-08-06: of the seven values below, ONLY Not_Saved has a
+      fullName that differs from its label (fullName Not_Saved, label "Not Saved"). None, Pending,
+      Saved, Partial, Failed and Expired all have fullName identical to label, so this trap is
+      confined to the one value.
+
+      Apex binds to the fullName (the API name), not the label, because this value set is
+      restricted: writing the label text "Not Saved" instead of the API name Not_Saved throws
+      INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST at runtime, with nothing to catch it at compile time.
+
+      InboundEmailStagingService.cls is the SOLE OWNER of this binding
+      (ATTACHMENT_STATUS_NOT_SAVED = 'Not_Saved', with an underscore); every other class that
+      touches this value (InboundEmailAttachmentService, AttachmentCarrierSweepBatch,
+      AttachmentPersistQueueable, AttachmentPersistFinalizer, ExtractAddressQueueable,
+      EmailToLeadHandler, InboundEmailStagingSelector) is a CONSUMER of that constant, not a second
+      place where the literal is defined. If this value set is ever re-cut, update the constant in
+      InboundEmailStagingService.cls in the same change; do not edit any consumer class instead.
+    -->
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>None</fullName>
+                <default>false</default>
+                <label>None</label>
+            </value>
+            <value>
+                <fullName>Pending</fullName>
+                <default>false</default>
+                <label>Pending</label>
+            </value>
+            <value>
+                <fullName>Saved</fullName>
+                <default>false</default>
+                <label>Saved</label>
+            </value>
+            <value>
+                <fullName>Partial</fullName>
+                <default>false</default>
+                <label>Partial</label>
+            </value>
+            <value>
+                <fullName>Failed</fullName>
+                <default>false</default>
+                <label>Failed</label>
+            </value>
+            <value>
+                <fullName>Not_Saved</fullName>
+                <default>false</default>
+                <label>Not Saved</label>
+            </value>
+            <value>
+                <fullName>Expired</fullName>
+                <default>false</default>
+                <label>Expired</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Window_Start_DateTime__c</fullName>
+    <description>Start of the current rolling-24-hour publication-count window (design §6.6). ContentPublicationBudget rolls Publication_Count__c back to 0 and resets this to the current time when it is found to be more than 24 hours old.</description>
+    <inlineHelpText>Set automatically by ContentPublicationBudget on first use and on every window rollover. Do not edit manually except to force an early rollover.</inlineHelpText>
+    <label>Window Start</label>
+    <required>false</required>
+    <type>DateTime</type>
+</CustomField>

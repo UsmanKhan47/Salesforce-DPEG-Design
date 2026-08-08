@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Attachment_Count__c</fullName>
+    <description>Number of attachment files retained (kept) for this email after InboundEmailAttachmentService.classify() applies the MIME/extension allow-list, the image size floor, and the MAX_ATTACHMENTS cap. Files dropped during classification are not counted here — see Dropped_Attachment_Notes__c for what was excluded and why.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Populated by the attachment capture pipeline. Compare against Dropped_Attachment_Notes__c to see what was excluded.</inlineHelpText>
+    <label>Attachment Count</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

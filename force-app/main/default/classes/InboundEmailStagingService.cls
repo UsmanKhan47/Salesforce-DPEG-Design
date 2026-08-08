@@ -29,7 +29,17 @@
  * committed real work (a Lead, a registry claim, a Task); letting a status-stamp failure
  * throw would replace an accurate "the claim happened" with an unhandled async failure and
  * roll nothing back. A failed stamp leaves the row 'Pending', which is visible and
- * hand-recoverable.
+ * hand-recoverable. appendDroppedNote (2026-08-05) is fail-soft for the same reason and
+ * one degree more so — it catches Exception, not just DmlException, because it is the only
+ * method here that READS as well as writes and its callers' whole contract is "never throw".
+ *
+ * ATTACHMENT CAPTURE (2026-08-05; REDESIGNED 2026-08-06) — createStaging additionally stamps
+ * Attachment_Count__c, Attachment_Bytes__c, Dropped_Attachment_Notes__c AND
+ * Attachment_Status__c in the SAME insert (zero extra DML), and appendDroppedNote lets the
+ * failure paths add refusals afterwards. markAttachmentStatus (new) is how the file job, its
+ * Finalizer and the daily sweeper move a row through the file pipeline's own state machine.
+ * The DML that writes the FILES and the byte CARRIER belongs to InboundEmailAttachmentService;
+ * this class still owns only Inbound_Email_Staging__c.
  *
  * @see EmailToLeadHandler.cls (calls createStaging)
  * @see ExtractAddressQueueable.cls (calls getStaging + the three mark* methods)
@@ -42,11 +52,51 @@ public with sharing class InboundEmailStagingService {
     private static final String STATUS_PROCESSED = 'Processed';
     private static final String STATUS_ERROR = 'Error';
 
+    /**
+     * Inbound_Email_Staging__c.Attachment_Status__c picklist values (added 2026-08-06).
+     *
+     * 🔴 THIS FIELD IS THE FILE PIPELINE'S WORK QUEUE, NOT DECORATION. `AttachmentCarrierSweepBatch`
+     * selects on `IN ('Pending','Partial','Failed')`, which is exactly why the design made it a
+     * required picklist rather than leaving the information in the Long Text notes field — a Long
+     * Text field cannot be a work queue. Every writer stamps one of these values; nothing may
+     * leave the field blank once an email has been classified.
+     *
+     * PUBLIC on purpose: these strings are a cross-class contract (the handler, the routing job,
+     * the file job, its Finalizer and the sweeper all write them, and an admin filters a list
+     * view on them), so every caller binds to the constant rather than re-typing the literal.
+     *
+     *   None      no attachment arrived at all
+     *   Pending   carrier written, conversion not yet attempted (the normal state for seconds)
+     *   Saved     every file converted and linked                       — terminal, success
+     *   Partial   some converted, or conversion was deferred/budgeted   — RETRIED by the sweeper
+     *   Failed    the file job died, or the breaker is tripped          — RETRIED by the sweeper
+     *   Not_Saved carrier refused, or released as gated/duplicate       — TERMINAL, unrecoverable
+     *   Expired   still unconverted after CARRIER_MAX_AGE_DAYS          — TERMINAL, unrecoverable
+     *
+     * 🔴 **`ATTACHMENT_STATUS_NOT_SAVED` IS `'Not_Saved'` WITH AN UNDERSCORE, AND THAT IS NOT A
+     * TYPO.** The picklist is RESTRICTED, and a restricted picklist enforces the value's
+     * `<fullName>` — which the deployed metadata sets to `Not_Saved`, with `Not Saved` as its
+     * LABEL only. Writing the label would throw
+     * `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` at runtime, where no Apex compile check can see
+     * it. ⚠ Design §7 and §10.2 A1 print the LABEL (`Not Saved`); the field metadata is
+     * authoritative. If anyone ever re-cuts the value set, this constant must move with it —
+     * it is the only place in Apex that names the value.
+     */
+    public static final String ATTACHMENT_STATUS_NONE = 'None';
+    public static final String ATTACHMENT_STATUS_PENDING = 'Pending';
+    public static final String ATTACHMENT_STATUS_SAVED = 'Saved';
+    public static final String ATTACHMENT_STATUS_PARTIAL = 'Partial';
+    public static final String ATTACHMENT_STATUS_FAILED = 'Failed';
+    public static final String ATTACHMENT_STATUS_NOT_SAVED = 'Not_Saved';
+    public static final String ATTACHMENT_STATUS_EXPIRED = 'Expired';
+
     /** Destination field lengths — every inbound value is clipped to these before DML. */
     private static final Integer LEN_LONG_TEXT = 131072;
     private static final Integer LEN_REFERENCES = 32768;
     /** Routed_Record_Ids__c is LongTextArea(32768) — the N-result audit trail. */
     private static final Integer LEN_ROUTED_IDS = 32768;
+    /** Dropped_Attachment_Notes__c is LongTextArea(32768) — the attachment audit trail. */
+    private static final Integer LEN_DROPPED_NOTES = 32768;
     private static final Integer LEN_ERROR = 32000;
     private static final Integer LEN_TEXT = 255;
     private static final Integer LEN_RECORD_ID = 18;
@@ -82,6 +132,28 @@ public with sharing class InboundEmailStagingService {
         public String imageMimeType;
         /** True when an inline image was found and handed to the async extractor. */
         public Boolean hasImage;
+        /**
+         * Attachment_Count__c — files RETAINED by InboundEmailAttachmentService.classify,
+         * not files received. Null/absent is stamped as null (added 2026-08-05).
+         */
+        public Integer attachmentCount;
+        /** Attachment_Bytes__c — total retained bytes, which is what makes the oversized-email
+         *  risk reportable ("how close do our real emails run to the ceiling?"). */
+        public Integer attachmentBytes;
+        /**
+         * Dropped_Attachment_Notes__c — one `filename | mime | bytes | reason` line per
+         * dropped attachment, plus the vision-gate skip when one applied.
+         * ⚠ A BLANK VALUE DOES NOT MEAN "the broker sent no attachment": an email rejected
+         * by the Email Service for size never reaches Apex and produces no staging row at all.
+         */
+        public String droppedNotes;
+        /**
+         * Attachment_Status__c — 'Pending' when a byte carrier was written for this email,
+         * 'None' when nothing was retained (added 2026-08-06). Stamped in the SAME insert as
+         * everything else, so the file pipeline's work queue costs zero extra DML at the
+         * boundary. Blank is treated as 'None'.
+         */
+        public String attachmentStatus;
     }
 
     /**
@@ -114,10 +186,120 @@ public with sharing class InboundEmailStagingService {
             Forwarded_By__c = InboundEmailFieldUtil.sanitizeEmail(request.forwardedBy),
             Image_Mime_Type__c = InboundEmailFieldUtil.clip(request.imageMimeType, LEN_TEXT),
             Has_Image__c = request.hasImage == true,
+            // Attachment capture (2026-08-05). Written in the SAME insert as everything else,
+            // so recording what was kept and what was dropped costs zero extra DML.
+            Attachment_Count__c = request.attachmentCount,
+            Attachment_Bytes__c = request.attachmentBytes,
+            Dropped_Attachment_Notes__c =
+                InboundEmailFieldUtil.clip(request.droppedNotes, LEN_DROPPED_NOTES),
+            // The file pipeline's work queue, stamped in the SAME insert (zero extra DML).
+            Attachment_Status__c = String.isBlank(request.attachmentStatus)
+                ? ATTACHMENT_STATUS_NONE
+                : request.attachmentStatus,
             Status__c = STATUS_PENDING
         );
         insert staging;
         return staging.Id;
+    }
+
+    /**
+     * Append one or more lines to Dropped_Attachment_Notes__c, preserving whatever
+     * createStaging already wrote. Read-then-append: 1 SOQL + 1 DML.
+     *
+     * ⚠ FAILURE PATH ONLY — it is called when a ContentVersion insert or a
+     * ContentDocumentLink insert was REFUSED, never on the success path. It therefore sits
+     * OUTSIDE the pinned success-path governor budgets (EmailToLeadHandler 1 SOQL / 3 DML;
+     * ExtractAddressQueueable 30/21 at N=1 and 120/61 at N=10). Say so before reading a
+     * budget assertion as violated.
+     *
+     * WHY IT EXISTS AT ALL — the R1 lesson, recorded in ARCHITECTURE.md. A fail-soft write
+     * whose entire failure surface is `allOrNone = false` plus a System.debug produces zero
+     * writes and NO DURABLE SIGNAL: no exception, no failed job, nothing queryable, and
+     * "0 links this week" becomes indistinguishable from "nothing needed linking". Recording
+     * the refusal on the audit row is what makes the difference answerable.
+     *
+     * FAIL-SOFT, and it catches `Exception` rather than `DmlException` — deliberately wider
+     * than storeExtractedJson / stamp, because unlike them it also READS: a `WITH USER_MODE`
+     * QueryException is reachable here and is NOT a DmlException, so a narrower catch would
+     * let it escape into a caller whose whole contract is "never throw". Same shape as the
+     * ApprovalAuditService TypeException incident recorded in ARCHITECTURE.md.
+     *
+     * @param stagingId The staging row to append to; null is a no-op.
+     * @param note      The line(s) to append; blank is a no-op.
+     * @example
+     * InboundEmailStagingService.appendDroppedNote(stagingId, String.join(refusals, '\n'));
+     */
+    public static void appendDroppedNote(Id stagingId, String note) {
+        if (stagingId == null || String.isBlank(note)) {
+            return;
+        }
+        try {
+            Inbound_Email_Staging__c row =
+                InboundEmailStagingSelector.selectDroppedNotesById(stagingId);
+            String existing = (row == null) ? null : row.Dropped_Attachment_Notes__c;
+            String merged = String.isBlank(existing) ? note : existing + '\n' + note;
+            update new Inbound_Email_Staging__c(
+                Id = stagingId,
+                Dropped_Attachment_Notes__c =
+                    InboundEmailFieldUtil.clip(merged, LEN_DROPPED_NOTES)
+            );
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR,
+                'InboundEmailStagingService.appendDroppedNote: could not append to staging '
+                + stagingId + ': ' + e.getTypeName() + ' | ' + e.getMessage());
+        }
+    }
+
+    /**
+     * Stamp the file pipeline's terminal (or interim) state for this row, and record the
+     * human-readable reason alongside it. Added 2026-08-06 with the attachment-persistence
+     * redesign.
+     *
+     * ⚠ TWO FIELDS, TWO AUDIENCES, AND BOTH ARE NEEDED. `Attachment_Status__c` is what
+     * `AttachmentCarrierSweepBatch` QUERIES — it is a work queue, and a Long Text notes field
+     * cannot be one. `Dropped_Attachment_Notes__c` is what a HUMAN READS. Writing only the note
+     * would leave the row invisible to the retry sweep; writing only the status would leave a
+     * human unable to tell a deferral (recoverable) from a release (terminal), which design §7
+     * calls the single most important thing this copy has to convey.
+     *
+     * COST — 1 DML for the status. The note, when present, goes through the EXISTING
+     * `appendDroppedNote` path (+1 SOQL / +1 DML) so there is ONE formatter and one
+     * read-then-append rule rather than two that can drift. That note write is FAILURE-PATH ONLY
+     * and sits outside every pinned success-path governor budget, exactly as it does today.
+     *
+     * FAIL-SOFT, catching `Exception` rather than `DmlException` — the same reasoning as
+     * appendDroppedNote, one degree stronger: its callers include `AttachmentPersistFinalizer`,
+     * whose entire job is to report a failure that has already happened. A failure to record a
+     * failure must never become a second failure.
+     *
+     * @param stagingId The staging row to stamp; null is a no-op.
+     * @param status    An ATTACHMENT_STATUS_* value; blank is a no-op for the status write.
+     * @param note      The §7 line explaining it; blank writes no note.
+     * @example
+     * InboundEmailStagingService.markAttachmentStatus(
+     *     stagingId, InboundEmailStagingService.ATTACHMENT_STATUS_SAVED, null);
+     */
+    public static void markAttachmentStatus(Id stagingId, String status, String note) {
+        if (stagingId == null) {
+            return;
+        }
+        try {
+            if (String.isNotBlank(status)) {
+                update new Inbound_Email_Staging__c(
+                    Id = stagingId,
+                    Attachment_Status__c = status
+                );
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR,
+                'InboundEmailStagingService.markAttachmentStatus: could not stamp staging '
+                + stagingId + ' as "' + status + '": ' + e.getTypeName() + ' | ' + e.getMessage());
+        }
+        // Deliberately OUTSIDE the try above: a failed status stamp must not cost the note, and
+        // a failed note must not cost the status. appendDroppedNote is itself fail-soft.
+        if (String.isNotBlank(note)) {
+            appendDroppedNote(stagingId, note);
+        }
     }
 
     /**

@@ -80,6 +80,9 @@
  *    9.  ONE Task per DISTINCT routed record, ONE bulk DML, ASCENDING PRIORITY (C-2 / C-3) —
  *        which is what makes branch (a) possible for the NEXT email. Each Task now names the
  *        SENDER (2026-08-04) — see "THE SENDER SHOWN ON THE LOGGED TASK" below.
+ *    9b. ONE bulk DML linking this email's already-persisted Salesforce Files to THE SAME
+ *        ORDERED TARGET LIST (2026-08-05) — see "ATTACHMENT LINKING" below. Skipped entirely
+ *        when the email carried no retained attachment.
  *    10. Stamp staging: Outcome__c (summary), Result_Record_Id__c (primary),
  *        Routed_Record_Ids__c (all N), Property_Count__c, Processed_DateTime__c.
  *
@@ -198,13 +201,47 @@
  * any other arbitration input, and the pair adds NO SOQL and NO DML — the
  * `lastRunQueryCount` / `lastRunDmlCount` budgets are unchanged.
  *
+ * ═══ ATTACHMENT HANDOFF (2026-08-05; REDESIGNED 2026-08-06) ═══
+ * 🔴 THIS JOB OWNS THE LEAD AND THE REGISTRY CLAIM, SO IT MUST NEVER TOUCH `ContentVersion`.
+ * A `ContentPublication Limit exceeded` here would take the claim with it — recoverable only by
+ * manual registry surgery. It therefore does not create files and no longer links them either;
+ * it hands the work to `AttachmentPersistQueueable`, a transaction that owns nothing else.
+ *
+ * The 4th constructor argument (`List<Id> contentDocumentIds`) and `linkAttachments()` are GONE.
+ * Document Ids do not exist until after routing, so that parameter was always null — a vestigial
+ * trap. Their REASONING relocates rather than disappearing:
+ *
+ *   • **linkTo() MUST NEVER BE CALLED PER PROPERTY OR PER FILE** — one bulk statement, once.
+ *     That invariant moved WITH the call, to `AttachmentPersistQueueable`, whose budget is
+ *     pinned constant in BOTH file count and target count.
+ *   • **🔴 REDELIVERY SAFETY IS STRUCTURAL AND STILL DEPENDS ON A LOCATION IN THIS FILE.** The
+ *     duplicate-delivery guard in execute() returns WITHOUT calling finish(), and the file job
+ *     is enqueued only from inside finish(). Moving `enqueueAttachmentPersist` out of finish(),
+ *     or making the skip path call finish(), silently re-opens duplicate files on live Leads.
+ *     The skip path now also RELEASES the duplicate's carrier, so it leaves no bytes behind.
+ *   • **THE DML BUDGETS DROPPED BY 1**: `singlePropertyDmlBudget` 8 -> 7 and `DML_BUDGET`
+ *     44 -> 43, because routed linking left finish() on 2026-08-06. The QUERY budgets (30 / 120)
+ *     are UNCHANGED. A failing query budget still means someone reintroduced a re-read.
+ *
+ * ⚠ **THE SINGLE CHAINED-JOB SLOT IS NOW CONSUMED.** SP-2 confirmed this class held zero
+ * `System.enqueueJob` calls; `enqueueAttachmentPersist` takes that one slot. A future
+ * 11+-property chaining feature (deferred in MAX_PROPERTIES' own comment) must SHARE this job
+ * rather than add a second enqueue.
+ *
+ * ⚠ **THE CHAIN CANNOT BE PROVEN BY AN APEX TEST.** SP-2 measured a queueable-to-queueable chain
+ * throwing `System.AsyncException: Maximum stack depth has been reached` inside `@isTest`
+ * (catchably), while working cleanly in real execution. So the call is guarded by
+ * `Test.isRunningTest()` and the DECISION is asserted through the `lastRunEnqueuedTargets` seam;
+ * the firing itself is proven only by UAT U1. Same precedent as EmailThreadAdopterService's
+ * `AdoptionWriter`.
+ *
  * ═══ LAYER ═══
  * Queueable orchestrator. It contains NO SOQL and NO DML of its own — every read goes through
  * a service (InboundEmailStagingService, PropertyMatchingService, InboundEmailActivityService)
  * and every write through the service that owns that object (EmailToLeadService for the Lead —
  * both its insert and, on the lost-race path, its delete; PropertyClaimService for the
  * registry/submissions, InboundEmailActivityService for the Task, InboundEmailStagingService
- * for the staging row). The only external call is via
+ * for the staging row, InboundEmailAttachmentService for the carrier release). The only external call is via
  * LLMExtractionCalloutService, the dedicated callout wrapper — this class implements
  * Database.AllowsCallouts so that boundary can run here and be mocked via HttpCalloutMock.
  *
@@ -506,6 +543,20 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     @TestVisible private static Integer lastRunQueryCount;
     @TestVisible private static Integer lastRunDmlCount;
 
+    /**
+     * TEST-ONLY DECISION SEAM for the file-job chain (design §8.6.2).
+     *
+     * 🔴 IT EXISTS BECAUSE THE CHAIN IS UNPROVABLE IN APEX, NOT BECAUSE IT IS OPTIONAL. SP-2
+     * measured `System.enqueueJob` from inside a running Queueable throwing
+     * `System.AsyncException: Maximum stack depth has been reached` in `@isTest` — catchably —
+     * while working cleanly in production. So a test asserts THE DECISION ("we resolved these
+     * targets and requested the enqueue") and UAT U1 proves the FIRING. A reviewer who "fixes"
+     * this into an assertion on a chained job's effects will get a vacuous or failing test.
+     *
+     * Null when `enqueueAttachmentPersist` decided NOT to enqueue (no carrier, or a gate).
+     */
+    @TestVisible private static List<Id> lastRunEnqueuedTargets;
+
     private final Id stagingId;
     private final String imageBase64;
     private final String imageMimeType;
@@ -590,8 +641,20 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * records only Has_Image__c / Image_Mime_Type__c, and the bytes are needed exactly once,
      * by the vision call in this job.
      *
+     * ⚠ THE 4th ARGUMENT (`List<Id> contentDocumentIds`) WAS REMOVED ON 2026-08-06 AND MUST NOT
+     * COME BACK. Files are no longer created at the boundary at all — document Ids do not exist
+     * until AFTER routing — so the parameter was always null: exactly the vestigial trap this
+     * codebase documents against. The bytes now travel as classic `Attachment` carriers on the
+     * staging row, and `AttachmentPersistQueueable` converts and links them afterwards.
+     *
+     * 🔴 AND NOTHING BYTE-SHAPED MAY BE ADDED HERE. SP-1 measured an UNCATCHABLE
+     * `System.LimitException: Batchable instance is too big` thrown at `System.enqueueJob`
+     * ITSELF at ~4.2-4.5 MB of payload, inside the transaction that owns the email. The
+     * <= 1 MB `imageBase64` is the ONE permitted exception and only because SP-1 proved ~4x
+     * headroom for that specific bound.
+     *
      * @param stagingId     The Inbound_Email_Staging__c row created for this inbound email.
-     * @param imageBase64   Base64 of an optional inline image (may be null).
+     * @param imageBase64   Base64 of an optional inline image, <= VISION_MAX_BYTES (may be null).
      * @param imageMimeType MIME type for that image (may be null).
      */
     public ExtractAddressQueueable(Id stagingId, String imageBase64, String imageMimeType) {
@@ -637,6 +700,12 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
 
             if (InboundEmailActivityService.isAlreadyLogged(staging.Message_Id__c)) {
                 InboundEmailStagingService.markSkipped(stagingId, OUTCOME_DUPLICATE_DELIVERY);
+                // 🔴 THIS RETURN — NOT ANY DEDUPE CHECK — IS WHY A REDELIVERY COSTS ZERO
+                // ContentPublications: it never reaches finish(), and the file job is enqueued
+                // only from there. The duplicate's own carrier bytes are released so they cannot
+                // accumulate on a row that will never be converted. The ORIGINAL email's files
+                // are untouched; only this duplicate's copy of the bytes goes.
+                releaseCarrier('duplicate delivery');
                 return;
             }
 
@@ -1399,10 +1468,21 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * always populated by the time any of the four callers reaches here — the envelope default
      * is set at the staging load, before every branch — so this method needs no fallback of its
      * own. Blank on both is still handled downstream: buildSubject then emits no prefix at all.
+     *
+     * ⚠ `orderedTaskTargets()` IS COMPUTED ONCE INTO A LOCAL AND SHARED (2026-08-05). The Tasks
+     * and the attachment links must land on THE SAME ORDERED LIST — that was the user's explicit
+     * decision, and calling the method twice would invite the two to drift the moment anyone
+     * makes it non-deterministic.
+     *
+     * ⚠ THE FILE-JOB ENQUEUE IS THE LAST STATEMENT, AFTER markRouted, AND IT IS TRY/CAUGHT
+     * (2026-08-06). Order matters: the staging row must already be stamped before a chained job
+     * can fail, so a chain failure can never cost this email its routing record.
      */
     private void finish() {
+        List<Id> targets = orderedTaskTargets();
+
         InboundEmailActivityService.logInboundEmail(
-            orderedTaskTargets(), staging.Subject__c, staging.Raw_Body__c,
+            targets, staging.Subject__c, staging.Raw_Body__c,
             staging.Message_Id__c, staging.In_Reply_To__c, staging.References__c,
             senderName, senderEmail);
 
@@ -1411,6 +1491,108 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         // and markRouted then derives Status__c 'Error' — see routingErrorText for why that
         // status change is correct rather than incidental.
         InboundEmailStagingService.markRouted(stagingId, buildResult(routingErrorText()));
+
+        enqueueAttachmentPersist(targets);
+    }
+
+    /**
+     * Hand this email's carrier BYTES to `AttachmentPersistQueueable` — the transaction that
+     * owns nothing else and is therefore the only admissible home for a `ContentVersion` insert.
+     * The LAST statement of finish().
+     *
+     * ═══ 🔴 WHY THIS IS AN ENQUEUE AND NOT THE WORK ITSELF ═══
+     * This job owns the Lead and the registry claim. A `ContentPublication Limit exceeded`
+     * raised inside it would roll BOTH back — recoverable only by manual registry surgery — and
+     * that exception ignores `allOrNone = false` and escapes `catch (Exception e)` (measured,
+     * M2/M3). Doing file work here is the same defect that destroyed inbound emails on
+     * 2026-08-05, one transaction further down. 🔴 Never inline it.
+     *
+     * ═══ IDS ONLY. NEVER BYTES. ═══
+     * SP-1 measured an UNCATCHABLE `LimitException: Batchable instance is too big` thrown at
+     * `System.enqueueJob` itself above ~4.2-4.5 MB of payload. The bytes stay on the staging row.
+     *
+     * ═══ ⚠ WHY THIS LIVES IN finish() AND NOWHERE ELSE — THE IDEMPOTENCY DEPENDENCY ═══
+     * A platform redelivery creates a duplicate staging row, and that is accepted (decision E1).
+     * It does NOT create duplicate files on any business record, and the ONLY reason is
+     * structural: execute() short-circuits on
+     * `InboundEmailActivityService.isAlreadyLogged(...)` and RETURNS WITHOUT CALLING finish().
+     * 🔴 ANYONE WHO MOVES THIS ENQUEUE OUT OF finish(), OR MAKES THE SKIP PATH CALL finish(),
+     * SILENTLY RE-OPENS DUPLICATE FILES ON LIVE LEADS. There is no dedupe to catch it.
+     *
+     * ═══ THREE DECISIONS, EACH COSTING NOTHING WHEN IT DOES NOT APPLY ═══
+     *   1. NO CARRIER (`Attachment_Status__c != 'Pending'`) -> return. The overwhelming majority
+     *      of emails. Zero DML, zero enqueue, and the predicate is FREE because
+     *      `InboundEmailStagingSelector.selectById` already loaded the field.
+     *   2. NO TARGETS (a D2 / U2 gate produced no routed record) -> RELEASE the carrier instead.
+     *      There is nothing to file a file on and there never will be, so this is the highest-
+     *      volume junk in the pipeline being made to cost zero publications AND zero residual
+     *      bytes.
+     *   3. OTHERWISE -> enqueue with Ids only.
+     *
+     * ═══ ITS OWN try/catch, AND THE `Test.isRunningTest()` GUARD ═══
+     * Wrapped because it runs AFTER `markRouted`: a chain failure must never turn a correctly
+     * routed email into an async failure. Guarded because SP-2 measured a queueable-to-queueable
+     * chain throwing `AsyncException: Maximum stack depth has been reached` inside `@isTest`;
+     * the DECISION is recorded on `lastRunEnqueuedTargets` and UAT U1 proves the firing.
+     *
+     * The class's "NO SOQL and NO DML of its own" invariant is intact: the release is delegated
+     * to `InboundEmailAttachmentService`, which owns every `Attachment` write in this module.
+     *
+     * @param targets The distinct routed records, the SAME ordered collection the Tasks were
+     *                logged against. Empty means a gate fired.
+     */
+    private void enqueueAttachmentPersist(List<Id> targets) {
+        lastRunEnqueuedTargets = null;
+        try {
+            if (staging == null
+                    || !InboundEmailStagingService.ATTACHMENT_STATUS_PENDING
+                            .equals(staging.Attachment_Status__c)) {
+                return;
+            }
+            if (targets == null || targets.isEmpty()) {
+                releaseCarrier('gated - no routed record');
+                return;
+            }
+            if (Test.isRunningTest()) {
+                // SP-2: the real call throws here. Record the decision instead; UAT U1 is the
+                // only proof that the chain fires. 🔴 Do not "fix" this into an assertion on a
+                // chained job's effects — inside a test there is no chained job to observe.
+                lastRunEnqueuedTargets = targets;
+                return;
+            }
+            lastRunEnqueuedTargets = targets;
+            System.enqueueJob(new AttachmentPersistQueueable(stagingId, targets));
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR,
+                'ExtractAddressQueueable.enqueueAttachmentPersist: could not chain the file job '
+                + 'for staging ' + stagingId + ': ' + e.getTypeName() + ' | ' + e.getMessage());
+        }
+    }
+
+    /**
+     * Release this email's carrier bytes because no record will ever be filed against them — a
+     * gated email or a duplicate delivery. Delegated to `InboundEmailAttachmentService`, which
+     * owns every `Attachment` write in this module, so this class keeps its "no DML of its own"
+     * invariant.
+     *
+     * 🔴 TERMINAL AND UNRECOVERABLE. Only call it where routing has provably finished with no
+     * record to attach to; after this the file exists only in the original email.
+     *
+     * @param reason A short human reason recorded alongside the standard §7 note.
+     */
+    private void releaseCarrier(String reason) {
+        try {
+            if (staging == null
+                    || !InboundEmailStagingService.ATTACHMENT_STATUS_PENDING
+                            .equals(staging.Attachment_Status__c)) {
+                return;
+            }
+            InboundEmailAttachmentService.releaseCarrier(stagingId, reason);
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR,
+                'ExtractAddressQueueable.releaseCarrier failed for staging ' + stagingId
+                + ': ' + e.getTypeName() + ' | ' + e.getMessage());
+        }
     }
 
     /**
