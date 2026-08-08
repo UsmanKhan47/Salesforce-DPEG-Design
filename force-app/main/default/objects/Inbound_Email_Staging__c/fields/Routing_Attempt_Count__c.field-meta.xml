@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Routing_Attempt_Count__c</fullName>
+    <description>How many times ExtractAddressQueueable has died with an unhandled exception while routing this row (Status__c = 'Failed'). Written only by RoutingFailureFinalizer; read only by RoutingRetrySweepBatch to enforce the retry attempt cap. Zero on a row that has never failed.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Incremented by the routing Finalizer on each unhandled-exception death. The retry sweeper abandons a row once this reaches the attempt cap.</inlineHelpText>
+    <label>Routing Attempt Count</label>
+    <precision>2</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

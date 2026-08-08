@@ -200,6 +200,34 @@ private class AttachmentCarrierSweepBatchTest {
             'A row whose ROUTING has not finished must be left exactly as it was for a later pass');
     }
 
+    // ── routing FAILED (retrying) — also left alone, not converted (2026-08-08) ─
+
+    @isTest
+    static void sweep_routingFailed_isSkippedNotConverted() {
+        // 🔴 T6 (design agent-output/design-requirements-routing-resilience.md §9) — THE
+        // REGRESSION GUARD for §3.6's cross-feature defect. The instant Status__c = 'Failed'
+        // became writable, a routing-failed row that carries an attachment would otherwise stop
+        // being skipped, convert with EMPTY routed targets, and stamp 'Saved' — permanently losing
+        // the Lead links once routing later retries and succeeds. A 'Failed' row is a
+        // routing-UNFINISHED row exactly as 'Pending' is, and must be left alone identically.
+        Id stagingId = insertStaging('routing-failed-1',
+            InboundEmailStagingService.ATTACHMENT_STATUS_PENDING, InboundEmailStagingService.STATUS_FAILED);
+        insertCarrier(stagingId, 'routing-failed-not-done.pdf', 'CONTENT');
+
+        Test.startTest();
+        Database.executeBatch(new AttachmentCarrierSweepBatch(), AttachmentCarrierSweepBatch.SCOPE);
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM ContentVersion WHERE Title = 'routing-failed-not-done.pdf'],
+            'A routing-Failed row must NEVER convert — routing has not finished, it has died and is queued for retry');
+        Assert.areEqual(1, [SELECT COUNT() FROM Attachment WHERE ParentId = :stagingId], 'The carrier must be left untouched');
+        Inbound_Email_Staging__c staging = [
+            SELECT Attachment_Status__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.areEqual(InboundEmailStagingService.ATTACHMENT_STATUS_PENDING, staging.Attachment_Status__c,
+            'A row whose ROUTING died and is queued for retry must be left exactly as it was for a later pass');
+    }
+
     // ── test 38 — bulk safety, content-free ───────────────────────────────────
 
     /**

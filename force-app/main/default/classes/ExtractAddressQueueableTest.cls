@@ -3710,4 +3710,90 @@ private class ExtractAddressQueueableTest {
             + 'is present — if this is ever anything other than 7, either file linking crept back into this '
             + 'class, or the guarded chain stopped being a zero-DML decision');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // ROUTING RESILIENCE (2026-08-08) — T9: the Finalizer attach must be
+    // completely inert on the ordinary SUCCESS path. All five governor budgets
+    // pinned above (30/20/20/120/43) are UNCHANGED by this feature (design §8):
+    // System.attachFinalizer is not a governed statement, and RoutingFailureFinalizer
+    // runs in its own transaction after this one, so it cannot appear in this
+    // class's own counters. This section proves the ONE thing that IS observable
+    // from inside this test class: a normal winner run must leave
+    // Routing_Attempt_Count__c untouched and Status__c at 'Processed', never
+    // 'Failed' — i.e. attaching a Finalizer that fires only on
+    // UNHANDLED_EXCEPTION cannot itself flip anything on the success path.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void execute_normalSuccess_attachedFinalizerLeavesRoutingAttemptCountAndStatusUntouched() {
+        Inbound_Email_Staging__c staging = insertStaging(
+            'finalizer-noop.broker@example.invalid', 'forwarder-finalizer-noop@example.invalid',
+            'FW: 950 Finalizer Noop Way', 'body',
+            'msg-finalizer-noop@example.invalid', null, null);
+        setMock(new Map<String, String>{
+            'broker_name' => 'Finalizer Noop Broker', 'broker_email' => 'finalizer-noop.broker@example.invalid',
+            'property_address' => '950 Finalizer Noop Way', 'sent_datetime' => ''
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Status__c, Routing_Attempt_Count__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual('Processed', updated.Status__c,
+            'Precondition: a normal run must reach Processed, or the Finalizer no-op claim below proves nothing');
+        Assert.isNull(updated.Routing_Attempt_Count__c,
+            'A SUCCESSFUL run must never touch Routing_Attempt_Count__c — the Finalizer fires ONLY on '
+            + 'UNHANDLED_EXCEPTION, and does nothing at all on SUCCESS (RoutingFailureFinalizerTest pins '
+            + 'the Finalizer\'s own no-op branch directly; this test pins that the attach point is '
+            + 'genuinely inert from ExtractAddressQueueable\'s own perspective too)');
+
+        // The two AsyncApexJob filters this feature was flagged as a risk to (EmailToLeadHandlerTest:848,
+        // this class's own :3570) both filter on a SPECIFIC ApexClass.Name — 'ExtractAddressQueueable' /
+        // 'AttachmentPersistQueueable' — never a bare COUNT(), so a Finalizer's own distinct AsyncApexJob
+        // row (if the platform records one at all) cannot inflate either count. Confirmed directly here:
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM AsyncApexJob WHERE ApexClass.Name = 'ExtractAddressQueueable'
+        ], 'Exactly the one job this test itself enqueued — no phantom second row from the Finalizer attach');
+    }
+
+    /**
+     * 🔴 W5 — THE `LLM_Unavailable` LIST VIEW'S FILTER FRAGMENT, PINNED.
+     *
+     * `OUTCOME_NO_PROPERTY_LLM_DOWN` became the THIRD `Outcome__c` string coupling on 2026-08-08,
+     * when the `LLM_Unavailable` list view shipped filtering `Outcome__c contains 'LLM unavailable'`.
+     * That view is the only surface listing the Leads a human must hand-claim during an LLM outage,
+     * and renaming the constant would empty it **with no compile error and no other failing test** —
+     * the identical failure mode the `Gated_Not_Acquisition` and `Gated_Call_For_Offers` couplings
+     * already carry warnings about. A Javadoc warning is not enforcement; this assertion is.
+     *
+     * PURE — no DML, no SOQL, no fixtures, no callout mock. It is a string contract test, so it
+     * cannot be vacuous and costs nothing to run.
+     *
+     * ⚠ Deliberately pins the FRAGMENT, not the whole label: the constant contains an em dash
+     * (U+2014), and requiring an admin to reproduce that character in a list-view filter would be
+     * needless fragility. Reword the prose around it freely; do not touch `LLM unavailable`.
+     */
+    @isTest
+    static void llmDownOutcome_keepsTheSubstringItsListViewFiltersOn() {
+        final String LIST_VIEW_FRAGMENT = 'LLM unavailable';
+        String label = ExtractAddressQueueable.OUTCOME_NO_PROPERTY_LLM_DOWN;
+
+        Assert.isTrue(label.contains(LIST_VIEW_FRAGMENT),
+            '🔴 OUTCOME_NO_PROPERTY_LLM_DOWN must contain the exact fragment "' + LIST_VIEW_FRAGMENT
+            + '" that the deployed LLM_Unavailable list view filters on. It currently reads "'
+            + label + '". If you renamed this label deliberately, update the list view filter in '
+            + 'objects/Inbound_Email_Staging__c/listViews/LLM_Unavailable.listView-meta.xml in the '
+            + 'SAME change — otherwise the outage-triage view silently returns nothing.');
+
+        // It creates a Lead, so it must NOT be swept up by either GATED view's prefix filter.
+        Assert.isFalse(label.startsWith('Not Acquisition'),
+            'An LLM-down email DID produce a Lead, so it must not pollute the Gated_Not_Acquisition '
+            + 'list view, whose filter is startsWith \'Not Acquisition\'');
+        Assert.isFalse(label.startsWith('Not Routed'),
+            'nor the Gated_Call_For_Offers view, whose filter is startsWith \'Not Routed\' — this '
+            + 'email WAS routed, to a Lead');
+    }
 }

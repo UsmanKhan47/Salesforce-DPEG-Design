@@ -425,4 +425,181 @@ private class InboundEmailStagingServiceTest {
             'A blank status must not overwrite the existing value with a DML at all — it stays whatever createStaging left it as');
         Assert.areEqual('a note with no status change', staging.Dropped_Attachment_Notes__c, '');
     }
+
+    // ── markRoutingFailed (NEW 2026-08-08, routing resilience) ────────────────
+
+    @isTest
+    static void markRoutingFailed_pendingRow_stampsFailedAndSetsCounterToOne() {
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingfailed-1@example.invalid'));
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: first death. AsyncApexJob 707FIRST.');
+        Test.stopTest();
+
+        Inbound_Email_Staging__c staging = [
+            SELECT Status__c, Routing_Attempt_Count__c, Error__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.areEqual(InboundEmailStagingService.STATUS_FAILED, staging.Status__c,
+            'A row that has never routed successfully (Pending) must become the FIRST time it dies unhandled');
+        Assert.areEqual(1, staging.Routing_Attempt_Count__c, '');
+        Assert.areEqual('ROUTING FAILED: first death. AsyncApexJob 707FIRST.', staging.Error__c, '');
+    }
+
+    @isTest
+    static void markRoutingFailed_alreadyFailedRow_incrementsCounterAgainAndAppendsBothNotes() {
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingfailed-2@example.invalid'));
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: first death.');
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: second death.');
+        Test.stopTest();
+
+        Inbound_Email_Staging__c staging = [
+            SELECT Status__c, Routing_Attempt_Count__c, Error__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.areEqual(InboundEmailStagingService.STATUS_FAILED, staging.Status__c, '');
+        Assert.areEqual(2, staging.Routing_Attempt_Count__c, 'A SECOND death on an already-Failed row must advance the counter from 1 to 2');
+        Assert.isTrue(staging.Error__c.contains('first death'), 'The FIRST note must survive. Actual: ' + staging.Error__c);
+        Assert.isTrue(staging.Error__c.contains('second death'), 'The SECOND note must be appended. Actual: ' + staging.Error__c);
+    }
+
+    @isTest
+    static void markRoutingFailed_blankStatusRow_treatedAsPendingAndBecomesFailed() {
+        // A row written before Status__c had a default (or corrupted to blank some other way)
+        // must be treated as Pending — i.e. still retryable — not silently ignored.
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingfailed-blank@example.invalid'));
+        update new Inbound_Email_Staging__c(Id = stagingId, Status__c = null);
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: from a blank status.');
+        Test.stopTest();
+
+        Assert.areEqual(InboundEmailStagingService.STATUS_FAILED, [
+            SELECT Status__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ].Status__c, '');
+    }
+
+    @isTest
+    static void markRoutingFailed_errorRow_isNotPromotedToFailed_recordsAuditNoteOnly() {
+        // 🔴 THE CENTRAL SAFETY RULE (design §3.3). An 'Error' row's catch RAN — its work MAY have
+        // already committed — so it must NEVER be promoted into the automatic retry queue. Only
+        // the note is recorded, and it must say plainly that no retry will happen.
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingfailed-error@example.invalid'));
+        update new Inbound_Email_Staging__c(Id = stagingId, Status__c = 'Error', Error__c = 'earlier committed work');
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: a later unrelated death.');
+        Test.stopTest();
+
+        Inbound_Email_Staging__c staging = [
+            SELECT Status__c, Error__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.areEqual('Error', staging.Status__c,
+            'An Error row must NEVER be promoted to Failed — that would put possibly-committed work back in the retry queue');
+        Assert.isTrue(staging.Error__c.contains('NOT RE-QUEUED'), 'Actual: ' + staging.Error__c);
+        Assert.isTrue(staging.Error__c.contains('earlier committed work'), 'The PRIOR note must survive. Actual: ' + staging.Error__c);
+    }
+
+    @isTest
+    static void markRoutingFailed_processedRow_isNotPromotedToFailed_recordsAuditNoteOnly() {
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingfailed-processed@example.invalid'));
+        update new Inbound_Email_Staging__c(Id = stagingId, Status__c = 'Processed');
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: a late death on a done row.');
+        Test.stopTest();
+
+        Inbound_Email_Staging__c staging = [
+            SELECT Status__c, Error__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.areEqual('Processed', staging.Status__c, 'A Processed row must never be promoted to Failed');
+        Assert.isTrue(staging.Error__c.contains('NOT RE-QUEUED'), 'Actual: ' + staging.Error__c);
+    }
+
+    @isTest
+    static void markRoutingFailed_atMaxRoutingAttemptCount_doesNotOverflowThePrecisionTwoField() {
+        // Routing_Attempt_Count__c is Number(2,0) — 0..99 is the largest representable value.
+        // MAX_ROUTING_ATTEMPT_COUNT is a FIELD-CAPACITY clip, not the retry policy (that lives
+        // solely in RoutingRetrySweepBatch.MAX_ATTEMPTS = 3) — this proves the clip prevents a
+        // NUMBER_OUTSIDE_VALID_RANGE DML failure long before any real row could reach it.
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingfailed-maxcount@example.invalid'));
+        update new Inbound_Email_Staging__c(
+            Id = stagingId, Status__c = InboundEmailStagingService.STATUS_FAILED, Routing_Attempt_Count__c = 99);
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: at the field ceiling.');
+        Test.stopTest();
+
+        Assert.areEqual(99, [
+            SELECT Routing_Attempt_Count__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ].Routing_Attempt_Count__c, 'The counter must clip at 99 rather than attempt to write 100, which the field cannot hold');
+    }
+
+    @isTest
+    static void markRoutingFailed_nullStagingId_isANoOp() {
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(null, 'anything');
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Inbound_Email_Staging__c], '');
+    }
+
+    @isTest
+    static void markRoutingFailed_hardDeletedRow_isANoOp() {
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingfailed-deleted@example.invalid'));
+        Inbound_Email_Staging__c toDelete = new Inbound_Email_Staging__c(Id = stagingId);
+        delete toDelete;
+        Database.emptyRecycleBin(new List<Inbound_Email_Staging__c>{ toDelete });
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingFailed(stagingId, 'a row that no longer exists');
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Inbound_Email_Staging__c WHERE Id = :stagingId],
+            'A hard-deleted row must not resurrect or throw — the Finalizer\'s job is to report a failure, never to compound one');
+    }
+
+    // ── markRoutingAbandoned (NEW 2026-08-08, routing resilience) ─────────────
+
+    @isTest
+    static void markRoutingAbandoned_stampsErrorAndAppendsTheNoteToTheCallerSuppliedExistingError() {
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingabandoned-1@example.invalid'));
+        update new Inbound_Email_Staging__c(
+            Id = stagingId, Status__c = InboundEmailStagingService.STATUS_FAILED,
+            Error__c = 'ROUTING FAILED: earlier death.');
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingAbandoned(
+            stagingId, 'ROUTING FAILED: earlier death.', 'ABANDONED: MAX_ATTEMPTS reached.');
+        Test.stopTest();
+
+        Inbound_Email_Staging__c staging = [
+            SELECT Status__c, Error__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ];
+        Assert.areEqual('Error', staging.Status__c, 'Abandoning must move the row to the human queue');
+        Assert.isTrue(staging.Error__c.contains('earlier death'), 'The prior history must survive. Actual: ' + staging.Error__c);
+        Assert.isTrue(staging.Error__c.contains('MAX_ATTEMPTS reached'), 'Actual: ' + staging.Error__c);
+    }
+
+    @isTest
+    static void markRoutingAbandoned_nullExistingError_stillWritesTheNote() {
+        Id stagingId = InboundEmailStagingService.createStaging(minimalRequest('msg-service-routingabandoned-2@example.invalid'));
+
+        Test.startTest();
+        InboundEmailStagingService.markRoutingAbandoned(stagingId, null, 'ABANDONED: first-ever note.');
+        Test.stopTest();
+
+        Assert.areEqual('ABANDONED: first-ever note.', [
+            SELECT Error__c FROM Inbound_Email_Staging__c WHERE Id = :stagingId
+        ].Error__c, '');
+    }
+
+    @isTest
+    static void markRoutingAbandoned_nullStagingId_isANoOp() {
+        Test.startTest();
+        InboundEmailStagingService.markRoutingAbandoned(null, 'existing', 'note');
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Inbound_Email_Staging__c], '');
+    }
 }

@@ -219,9 +219,18 @@
  *     is enqueued only from inside finish(). Moving `enqueueAttachmentPersist` out of finish(),
  *     or making the skip path call finish(), silently re-opens duplicate files on live Leads.
  *     The skip path now also RELEASES the duplicate's carrier, so it leaves no bytes behind.
- *   • **THE DML BUDGETS DROPPED BY 1**: `singlePropertyDmlBudget` 8 -> 7 and `DML_BUDGET`
- *     44 -> 43, because routed linking left finish() on 2026-08-06. The QUERY budgets (30 / 120)
- *     are UNCHANGED. A failing query budget still means someone reintroduced a re-read.
+ *   • **THE DML BUDGETS DROPPED BY 1**, because routed linking left finish() on 2026-08-06.
+ *     ⚠ CORRECTED 2026-08-08 — the earlier wording said "`singlePropertyDmlBudget` 8 -> 7" as if
+ *     there were one such literal. **THE TEST CLASS CARRIES THREE, AND ONLY THE THIRD MOVED:**
+ *
+ *       ExtractAddressQueueableTest:2673  singlePropertyDmlBudget = 20  ceiling (<=)  UNCHANGED
+ *       ExtractAddressQueueableTest:3475  singlePropertyDmlBudget = 20  ceiling (<=)  UNCHANGED
+ *       ExtractAddressQueueableTest:3690  singlePropertyDmlBudget =  7  EQUALITY      8 -> 7
+ *
+ *     plus `DML_BUDGET` 44 -> 43 at :1214 (N=10, also an EQUALITY assertion) and the two QUERY
+ *     budgets, 30 at N=1 (:2672, :3474) and 120 at N=10 (:1206), which are UNCHANGED. Naming only
+ *     one of the three sent the next reader to "verify" against a number their test does not use.
+ *     A failing query budget still means someone reintroduced a re-read.
  *
  * ⚠ **THE SINGLE CHAINED-JOB SLOT IS NOW CONSUMED.** SP-2 confirmed this class held zero
  * `System.enqueueJob` calls; `enqueueAttachmentPersist` takes that one slot. A future
@@ -251,6 +260,35 @@
  * `with sharing` is declared for standards conformance (ARCHITECTURE.md §2). It is functionally
  * a no-op here because the class performs no SOQL/DML directly — the classes it delegates to
  * enforce their own sharing.
+ *
+ * ═══ ROUTING RESILIENCE (2026-08-08) — ONE STATEMENT, AND IT IS THE FIRST ONE ═══
+ * 🔴 `System.attachFinalizer(new RoutingFailureFinalizer(stagingId))` is the FIRST statement of
+ * execute(), ABOVE the getStaging call. Both facts are load-bearing:
+ *
+ *   • **This job's catch cannot see the failures that matter most.** SP-R1 (2026-08-08,
+ *     `usman-dpeg`) measured a heap `LimitException` and a CPU `LimitException` both ESCAPING a
+ *     `catch (Exception e)` positioned directly around the failing code — the catch block never
+ *     ran, in either case. The ERROR MODEL below is therefore true only of ORDINARY exceptions;
+ *     for the uncatchable family, a Finalizer is the only mechanism that can record anything at
+ *     all, and SP-3 measured its DML committing durably AFTER the parent's rollback.
+ *   • **Above getStaging, because getStaging is outside the try.**
+ *     `InboundEmailStagingSelector.selectById` is `WITH USER_MODE`, which THROWS rather than
+ *     degrades, so one missing FLS grant kills this job before any recording code would run. One
+ *     line lower and that whole failure class stays silent.
+ *
+ * What follows from that stamp: `Status__c = 'Failed'` (a FOURTH value, never conflated with
+ * 'Error' — see `InboundEmailStagingService.STATUS_FAILED`), an incremented
+ * `Routing_Attempt_Count__c`, a durable note on `Error__c`, and automatic replay by
+ * `RoutingRetrySweepBatch`. Replay is safe ONLY because `UNHANDLED_EXCEPTION` proves the
+ * transaction rolled back (SP-5), which is why a caught 'Error' row is never retried.
+ *
+ * ⚠ COSTS NOTHING HERE. `attachFinalizer` is not a governed statement and the Finalizer runs in
+ * its own transaction, so all five pinned budgets are UNCHANGED (see the ATTACHMENT HANDOFF
+ * section above for the exact figures and their line numbers).
+ *
+ * ⚠ AND IT CONSUMES THIS CLASS'S ONE FINALIZER SLOT. The platform permits one finalizer per
+ * queueable; a future second concern must extend `RoutingFailureFinalizer` rather than attach
+ * another — the same shape as the single chained-job slot noted above.
  *
  * ═══ ERROR MODEL ═══
  * execute() swallows every REMAINING exception rather than letting the job fail (the callout
@@ -306,10 +344,27 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     public static final String OUTCOME_REPLY = 'Reply Thread';
     public static final String OUTCOME_REPEAT = 'Repeat';
     public static final String OUTCOME_NO_PROPERTY = 'New Lead (no property)';
-    /** Branch (c) reached because the LLM was unreachable, not because the email had no
-     *  address. Kept distinct from OUTCOME_NO_PROPERTY on purpose: these are the only Leads
-     *  worth re-extracting once the outage clears, and an admin needs to be able to list
-     *  exactly them. */
+    /**
+     * Branch (c) reached because the LLM was unreachable, not because the email had no address.
+     * Kept distinct from OUTCOME_NO_PROPERTY on purpose: these are the only Leads worth
+     * re-extracting once the outage clears, and an admin needs to be able to list exactly them.
+     *
+     * 🔴 THE SUBSTRING `'LLM unavailable'` IS LOAD-BEARING — THIS IS THE THIRD `Outcome__c` STRING
+     * COUPLING IN THIS CLASS, AND IT GAINED A DEPLOYED CONSUMER ON 2026-08-08. The
+     * `LLM_Unavailable` list view filters `Outcome__c contains 'LLM unavailable'`, so changing
+     * that fragment — even by re-casing it — silently empties the only surface that lists the
+     * Leads a human must hand-claim during an outage. **It breaks with no compile error and no
+     * failing test outside this module**, which is exactly how the `Gated_Not_Acquisition` and
+     * `Gated_Call_For_Offers` couplings (see OUTCOME_NOT_ACQUISITION and OUTCOME_CALL_FOR_OFFERS
+     * below) came to carry the same warning.
+     *
+     * ⚠ Note the view matches `contains`, NOT the whole label, and deliberately so: this constant
+     * carries an EM DASH (—, U+2014), and requiring an admin to reproduce that character exactly
+     * in a list-view filter is needless fragility. The prose either side of the em dash may be
+     * reworded freely; the fragment `LLM unavailable` may not.
+     * Pinned by `ExtractAddressQueueableTest.llmDownOutcome_keepsTheSubstringItsListViewFiltersOn`
+     * — an assertion is the only thing that actually fails when someone edits this string.
+     */
     public static final String OUTCOME_NO_PROPERTY_LLM_DOWN = 'New Lead (no property) — LLM unavailable';
     /** Branch (c) reached with a NAMED property the pipeline could not address. Distinct from
      *  OUTCOME_NO_PROPERTY for the same reason OUTCOME_NO_PROPERTY_LLM_DOWN is — THE FOLLOW-UP
@@ -670,6 +725,25 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * @param ctx The queueable context (unused; required by the interface).
      */
     public void execute(QueueableContext ctx) {
+        // 🔴 FIRST STATEMENT, ABOVE getStaging — AND THE ORDER IS THE WHOLE POINT (2026-08-08).
+        // This job owns the Lead and the registry claim, and until now its death was invisible and
+        // permanent: SP-R1 measured heap and CPU LimitExceptions ESCAPING a `catch (Exception e)`
+        // wrapped directly around the failing code, so the catch below cannot see them and the row
+        // stranded on 'Pending' with Error__c null, with nothing to retry it.
+        //
+        // Attaching ABOVE the getStaging call is what makes the OTHER uncatchable shape reportable
+        // too: getStaging runs outside the try block, and InboundEmailStagingSelector.selectById is
+        // WITH USER_MODE, which THROWS rather than degrades — so one missing FLS grant kills this
+        // job before any code that could record it would have run. One line lower and that failure
+        // stays silent forever.
+        //
+        // SP-R2 measured attachFinalizer succeeding inside a `Queueable, Database.AllowsCallouts`
+        // class shaped exactly like this one, and the Finalizer still firing after a real callout.
+        // It costs 0 SOQL and 0 DML — the Finalizer runs in its OWN transaction after this one
+        // rolls back — so all five pinned budgets are unchanged. It is also the only finalizer
+        // this class attaches; the platform permits one per queueable.
+        System.attachFinalizer(new RoutingFailureFinalizer(stagingId));
+
         staging = InboundEmailStagingService.getStaging(stagingId);
         if (staging == null) {
             // The row was hard-deleted between the synchronous insert and this async run.

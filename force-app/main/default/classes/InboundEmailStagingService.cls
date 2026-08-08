@@ -33,6 +33,19 @@
  * one degree more so — it catches Exception, not just DmlException, because it is the only
  * method here that READS as well as writes and its callers' whole contract is "never throw".
  *
+ * ROUTING RESILIENCE (2026-08-08) — markRoutingFailed / markRoutingAbandoned are the write half
+ * of the routing transaction's own four-exit lifecycle, mirroring what markAttachmentStatus is to
+ * the file pipeline's. 🔴 They are the ONLY writers of Status__c = 'Failed', and 'Failed' is the
+ * ONLY status a machine is ever allowed to retry — see STATUS_FAILED's Javadoc for why 'Error'
+ * has the opposite property. Both are fail-soft catching Exception (not DmlException) for the same
+ * reason appendDroppedNote is: markRoutingFailed READS as well as writes, and its caller is a
+ * Finalizer whose entire job is to report a failure that has already happened.
+ * 🔴 Their DML runs through the `without sharing` inner class `RoutingWrites` — this object is
+ * `sharingModel = Private` and the rows are owned by the Email Service context user, so a
+ * scheduled sweep or a Finalizer running as any other principal would otherwise have its update
+ * refused and, being fail-soft, would swallow the refusal. Read that class's header before
+ * changing it; the outer class stays `with sharing` and every other write here is unaffected.
+ *
  * ATTACHMENT CAPTURE (2026-08-05; REDESIGNED 2026-08-06) — createStaging additionally stamps
  * Attachment_Count__c, Attachment_Bytes__c, Dropped_Attachment_Notes__c AND
  * Attachment_Status__c in the SAME insert (zero extra DML), and appendDroppedNote lets the
@@ -51,6 +64,58 @@ public with sharing class InboundEmailStagingService {
     private static final String STATUS_PENDING = 'Pending';
     private static final String STATUS_PROCESSED = 'Processed';
     private static final String STATUS_ERROR = 'Error';
+
+    /**
+     * The FOURTH Status__c value, added 2026-08-08 with routing resilience: the routing
+     * transaction DIED with an unhandled exception and committed nothing.
+     *
+     * 🔴 IT IS PUBLIC, ALONE AMONG THE FOUR, AND THAT ASYMMETRY IS DELIBERATE. `Pending`,
+     * `Processed` and `Error` are written here and read nowhere else, so they stay private.
+     * `Failed` is a CROSS-CLASS CONTRACT with **THREE** consumers, every one of which binds to this
+     * constant rather than re-typing the literal:
+     *
+     *   1. `InboundEmailStagingSelector.queryRoutingRetrySweep()` — filters the retry work queue
+     *   2. `RoutingRetrySweepBatch`                               — re-checks it as the dispatch
+     *                                                               safety guard
+     *   3. `AttachmentCarrierSweepBatch.ROUTING_STATUS_FAILED`    — SKIPS such a row, because
+     *                                                               routing is unfinished
+     *
+     * ⚠ (3) was missing from this list until 2026-08-09 and is the one that matters most: it lives
+     * in a DIFFERENT feature, so a re-cut of this value that updated only (1) and (2) would leave
+     * the file sweeper converting failed rows with no routed target — the §3.6 permanent-loss
+     * defect. The `Not_Saved` restricted-picklist trap documented below is proof that such a re-cut
+     * happens here.
+     *
+     * 🔴 `'Failed'` AND `'Error'` ARE NOT SYNONYMS AND MUST NEVER BE CONFLATED — they have
+     * OPPOSITE replay-safety properties, which is the entire reason a fourth value was added
+     * instead of reusing the third:
+     *
+     *   Failed   the Finalizer wrote it, so the parent job hit UNHANDLED_EXCEPTION, so (SP-5,
+     *            measured in this org) its own DML rolled back. NOTHING committed — no Lead, no
+     *            registry claim, no submission, no Task, no stamp. A replay is a first run.
+     *            → RETRIED automatically.
+     *   Error    execute()'s catch RAN, which means the transaction COMMITTED. It may hold a Lead
+     *            with no claim (a replay mints a SECOND Lead) or a registry row with no submission
+     *            (a replay files the winning broker as a competing submission against their own
+     *            Lead). → A HUMAN QUEUE. Never auto-retried.
+     *
+     * ⚠ Unlike `ATTACHMENT_STATUS_NOT_SAVED`, this value's `<fullName>` and `<label>` are
+     * IDENTICAL (`Failed`), so the restricted-picklist underscore trap recorded below does not
+     * recur here. It is still the only place in Apex that names the value.
+     */
+    public static final String STATUS_FAILED = 'Failed';
+
+    /**
+     * Ceiling for `Routing_Attempt_Count__c`, which is Number(2,0). This is a FIELD-CAPACITY clip,
+     * NOT the retry policy: the number of attempts allowed lives on `RoutingRetrySweepBatch`,
+     * which is the only thing that consults it.
+     *
+     * 🔴 DO NOT "IMPROVE" THIS INTO A POLICY CAP. Design §3.4 reason 3 is explicit that the
+     * counter must be INCREMENTED in one place and CONSULTED in one place; clamping here would
+     * make this class a second consumer of the retry policy and put the cap in two files that can
+     * drift apart silently.
+     */
+    private static final Integer MAX_ROUTING_ATTEMPT_COUNT = 99;
 
     /**
      * Inbound_Email_Staging__c.Attachment_Status__c picklist values (added 2026-08-06).
@@ -439,6 +504,236 @@ public with sharing class InboundEmailStagingService {
      */
     public static void markError(Id stagingId, Id resultRecordId, String outcome, String errorText) {
         stamp(stagingId, STATUS_ERROR, resultRecordId, outcome, errorText, null, null);
+    }
+
+    /**
+     * Record that the ROUTING transaction died with an unhandled exception: stamp
+     * `Status__c = 'Failed'`, increment `Routing_Attempt_Count__c`, and APPEND `note` to whatever
+     * `Error__c` already held. Added 2026-08-08; called only by `RoutingFailureFinalizer` and, on
+     * its own dispatch-failure path, by `RoutingRetrySweepBatch`.
+     *
+     * 🔴 STAMPING 'Failed' IS WHAT PUTS THE ROW IN THE RETRY QUEUE. It is not a label — it is the
+     * proof that a replay is safe. `RoutingFailureFinalizer` fires only on
+     * `ParentJobResult.UNHANDLED_EXCEPTION`, and SP-5 measured (in this org) that such a failure
+     * rolls back the queueable's own DML, so the row carries nothing from the failed attempt. See
+     * STATUS_FAILED's Javadoc for why the superficially similar 'Error' must never be retried.
+     *
+     * 🔴 BUT IT ONLY MOVES A ROW THAT IS SAFE TO MOVE — see `isRetryableRoutingState`. A row
+     * already sitting on the terminal `Error` or `Processed` (left by a PREVIOUS, completed run,
+     * which is what survives this transaction's rollback) keeps its status and receives the note
+     * ONLY. Without that check any later uncatchable death would promote an `Error` row into the
+     * retry queue, which is precisely what the whole design forbids.
+     *
+     * ⚠ THIS RUNS IN A FRESH TRANSACTION, AFTER THE PARENT'S ROLLBACK. SP-3 measured a Finalizer's
+     * own DML committing durably there. That is also why its cost — 1 SOQL + 1 DML — sits OUTSIDE
+     * every pinned `ExtractAddressQueueable` governor budget by construction, exactly as
+     * `AttachmentPersistFinalizer`'s does. Do not read a budget assertion as violated on its
+     * account.
+     *
+     * WHY IT READS FIRST. Two of the three writes need the current value: the counter is an
+     * increment, and `Error__c` is an APPEND (blowing away a prior failure's text would destroy
+     * the only history of a row that has now failed twice). The read goes through
+     * `InboundEmailStagingSelector.selectRoutingStateById` — a narrow `WITH SYSTEM_MODE` method
+     * that deliberately is NOT `selectById`, so this cannot make the pipeline's critical path
+     * depend on a brand-new field's FLS.
+     *
+     * THE COUNTER IS INCREMENTED HERE AND CONSULTED NOWHERE IN THIS CLASS. Design §3.4 reason 3:
+     * one incrementer, one consumer (`RoutingRetrySweepBatch`). The only clamp applied is
+     * MAX_ROUTING_ATTEMPT_COUNT, which is the Number(2,0) field's own capacity, not a policy.
+     *
+     * FAIL-SOFT, catching `Exception` rather than `DmlException` — deliberately wider, and for two
+     * independent reasons: it READS as well as writes, so a `QueryException` is reachable and is
+     * not a `DmlException`; and its caller is a Finalizer reporting a failure that has already
+     * happened. **A failure to record a failure must not become a second failure.**
+     *
+     * @param stagingId The staging row to stamp; null is a no-op. A row that no longer exists
+     *                  (hard-deleted between the failure and this call) is also a no-op.
+     * @param note      The durable line explaining the death — the wrapped exception message and
+     *                  the AsyncApexJob Id. Blank appends nothing but still stamps the status.
+     * @example
+     * InboundEmailStagingService.markRoutingFailed(stagingId, 'ROUTING FAILED: ... AsyncApexJob 707...');
+     */
+    public static void markRoutingFailed(Id stagingId, String note) {
+        if (stagingId == null) {
+            return;
+        }
+        try {
+            Inbound_Email_Staging__c row =
+                InboundEmailStagingSelector.selectRoutingStateById(stagingId);
+            if (row == null) {
+                return;
+            }
+            Decimal current = row.Routing_Attempt_Count__c;
+            Integer attempts = (current == null) ? 0 : current.intValue();
+            if (attempts < MAX_ROUTING_ATTEMPT_COUNT) {
+                attempts++;
+            }
+
+            Inbound_Email_Staging__c stampRow = new Inbound_Email_Staging__c(
+                Id = stagingId,
+                Routing_Attempt_Count__c = attempts
+            );
+            String line = note;
+            if (isRetryableRoutingState(row.Status__c)) {
+                stampRow.Status__c = STATUS_FAILED;
+            } else {
+                // 🔴 THE ROW IS ALREADY TERMINAL — RECORD THE DEATH, BUT DO NOT ENQUEUE IT.
+                // See isRetryableRoutingState for why this branch is a hard safety requirement
+                // rather than tidiness. The note is qualified so nobody reads the Finalizer's
+                // standard "it will be retried automatically" copy and waits for a retry that,
+                // correctly, will never come.
+                line = appendLine(note, NOTE_TERMINAL_NOT_REQUEUED + row.Status__c
+                    + '. The death above is recorded for the audit trail only.');
+            }
+            stampRow.Error__c = InboundEmailFieldUtil.clip(appendLine(row.Error__c, line), LEN_ERROR);
+            new RoutingWrites().stampRoutingState(stampRow);
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR,
+                'InboundEmailStagingService.markRoutingFailed: could not record the routing '
+                + 'failure on staging ' + stagingId + ': ' + e.getTypeName() + ' | '
+                + e.getMessage());
+        }
+    }
+
+    /**
+     * Give up on retrying a routing-failed row: stamp `Status__c = 'Error'` and APPEND `note` to
+     * `Error__c`. Added 2026-08-08; called only by `RoutingRetrySweepBatch`, at the attempt cap or
+     * the age cap. This is the ABANDONED exit of the routing row's four-exit lifecycle.
+     *
+     * Moving the row to 'Error' is what REMOVES it from the retry work queue (which selects only
+     * 'Failed') and puts it in the human queue instead. That is the correct destination: a
+     * deterministic failure — an FLS gap, or a body that always exhausts heap — will fail
+     * identically forever, and the value of this design is that such a row now REACHES a person
+     * rather than sitting on 'Pending' invisibly.
+     *
+     * 🔴 `existingError` IS A PARAMETER, NOT A READ, AND THAT IS THE POINT. The caller is a batch
+     * that already selected `Error__c` in its own locator, so re-reading it here would put a SOQL
+     * statement inside the sweep loop — prohibited outright by
+     * `.claude/rules/apex-layering-rule.md` and a direct breach of design §8's pinned
+     * "0 SOQL of its own (locator only)" for this batch. Passing the value the caller already
+     * holds costs nothing and keeps this method at **0 SOQL / 1 DML**. (Design §16's prompt sketches
+     * a two-argument signature; the third argument is what makes its own governor pin literally
+     * true.)
+     *
+     * FAIL-SOFT catching `Exception` for the same reason as `markRoutingFailed`: this is the last
+     * statement of a sweep pass that must not abort over one unstampable row.
+     *
+     * @param stagingId     The staging row to stamp; null is a no-op.
+     * @param existingError The row's current `Error__c`, from the caller's own query; null is
+     *                      fine and simply means there is nothing to append to.
+     * @param note          The line naming which cap was reached. Blank appends nothing.
+     * @example
+     * InboundEmailStagingService.markRoutingAbandoned(row.Id, row.Error__c, NOTE_ATTEMPT_CAP);
+     */
+    public static void markRoutingAbandoned(Id stagingId, String existingError, String note) {
+        if (stagingId == null) {
+            return;
+        }
+        try {
+            new RoutingWrites().stampRoutingState(new Inbound_Email_Staging__c(
+                Id = stagingId,
+                Status__c = STATUS_ERROR,
+                Error__c = InboundEmailFieldUtil.clip(appendLine(existingError, note), LEN_ERROR)
+            ));
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR,
+                'InboundEmailStagingService.markRoutingAbandoned: could not abandon staging '
+                + stagingId + ': ' + e.getTypeName() + ' | ' + e.getMessage());
+        }
+    }
+
+    /**
+     * 🔴 THE ROUTING RETRY ENGINE'S WRITES, WHICH MUST RUN **WITHOUT SHARING** — the exact mirror
+     * of `InboundEmailStagingSelector.RoutingReads`, and needed for the same reason.
+     *
+     * Fixing only the READ half would have been a half-fix that LOOKED complete. Under
+     * `sharingModel = Private` with no sharing rules and `viewAllRecords = false`, an `update` of a
+     * row the running principal neither owns nor is shared throws `INSUFFICIENT_ACCESS_OR_READONLY`
+     * — and because both callers are deliberately fail-soft, that exception is caught and reduced
+     * to a `System.debug`. The sweep would therefore read the row (now correctly, without sharing),
+     * decide to abandon or re-stamp it, and then **silently fail to write**, leaving the row in the
+     * queue to be re-read and re-decided on every pass, forever.
+     *
+     * Staging rows are owned by whoever inserted them — the Email Service context user, since
+     * `createStaging` sets no `OwnerId` — while these writes are performed by the scheduling
+     * principal or by a Finalizer running under whatever principal the platform chose. Those are
+     * different users by construction, not by misconfiguration.
+     *
+     * ═══ SCOPE — AS NARROW AS APEX ALLOWS ═══
+     * `private`, so nothing outside this file can borrow an unshared write of this object; inner
+     * classes do not inherit the outer sharing setting, so the outer `InboundEmailStagingService`
+     * **stays `with sharing`** and every other write here — `createStaging`, `stamp`,
+     * `markAttachmentStatus`, `appendDroppedNote`, `storeExtractedJson` — is untouched. It takes a
+     * fully-built row rather than field values precisely so it holds no logic that could diverge
+     * from the two public methods above.
+     *
+     * ⚠ Apex forbids static methods on inner classes, hence the instance method.
+     */
+    private without sharing class RoutingWrites {
+
+        /**
+         * Commit one routing-state stamp, without sharing.
+         *
+         * @param row A fully-built `Inbound_Email_Staging__c` carrying an Id and the fields to
+         *            write; the caller owns all clipping and all decisions.
+         */
+        private void stampRoutingState(Inbound_Email_Staging__c row) {
+            update row;
+        }
+    }
+
+    /**
+     * Whether a routing death on a row in this state may move it into the RETRY queue.
+     *
+     * 🔴 THIS GUARD IS THE ONE PLACE THE DESIGN'S CENTRAL SAFETY RULE COULD HAVE BEEN LOST, AND IT
+     * IS NOT HYPOTHETICAL. `RoutingFailureFinalizer` fires on `UNHANDLED_EXCEPTION` without
+     * knowing anything about the row — and an unhandled exception rolls the transaction back, so
+     * the status it finds is whatever a PREVIOUS, COMPLETED run left there. Without this check a
+     * row already stamped `Error` would be dragged into `Failed` by any later uncatchable death,
+     * and `RoutingRetrySweepBatch` would then replay it — the exact thing §3.3 forbids absolutely,
+     * because an `Error` row's catch RAN and its work MAY have committed (replaying one can mint a
+     * second Lead, or file a winning broker as a competing submission against their own Lead).
+     *
+     * The same applies, less dangerously, to `Processed`: re-routing a completed row is at best
+     * pointless and, on the narrow path where `Message_Id__c` is blank so the redelivery guard
+     * cannot catch it, is another route to a duplicate Lead.
+     *
+     * So only two states may become `Failed`:
+     *   Pending  routing never completed — the ordinary case, and the whole point of the feature
+     *   Failed   it died again; the counter advances toward the cap
+     * Blank is treated as `Pending`, which is what a row written before `Status__c` had a default
+     * would read as.
+     *
+     * @param status The row's CURRENT Status__c, read in the same transaction as the write.
+     * @return true when the death may re-queue this row for retry.
+     */
+    private static Boolean isRetryableRoutingState(String status) {
+        return String.isBlank(status)
+            || STATUS_PENDING.equals(status)
+            || STATUS_FAILED.equals(status);
+    }
+
+    /** Qualifier appended when a routing death is recorded on an ALREADY-TERMINAL row, so the
+     *  audit trail does not promise a retry that must never happen. */
+    private static final String NOTE_TERMINAL_NOT_REQUEUED =
+        'NOT RE-QUEUED: this row had already reached the terminal routing status ';
+
+    /**
+     * Append one line to an accumulating text field, preserving what is already there.
+     *
+     * A row that has failed three times must read as three failures, not as the third one — the
+     * sequence is the only evidence of whether a failure is transient or deterministic, which is
+     * exactly the question a human opening the Errors list view is trying to answer.
+     *
+     * @param existing The current value; blank means there is nothing to preserve.
+     * @param line     The line to add; blank returns `existing` untouched.
+     * @return The merged text, newline-separated.
+     */
+    private static String appendLine(String existing, String line) {
+        if (String.isBlank(line)) {
+            return existing;
+        }
+        return String.isBlank(existing) ? line : existing + '\n' + line;
     }
 
     /**

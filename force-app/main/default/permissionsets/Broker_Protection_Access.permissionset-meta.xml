@@ -21,7 +21,7 @@
         VERIFY AFTER EVERY DEPLOY of this permission set:
             SELECT SobjectType, COUNT(Id) FROM FieldPermissions
             WHERE Parent.Name = 'Broker_Protection_Access' GROUP BY SobjectType
-        must return Lead 28, Task 6, Contact 1, Inbound_Email_Staging__c 23,
+        must return Lead 28, Task 6, Contact 1, Inbound_Email_Staging__c 24,
         Competing_Broker_Submission__c 10, Property_Registry__c 3 (plus platform-managed Event
         mirrors of the Task/Activity rows).
         ⚠ Competing_Broker_Submission__c moved 9 -> 10 on 2026-08-03 with Winning_Opportunity__c,
@@ -44,6 +44,35 @@
         DELIBERATELY NOT declared anywhere in this file — Custom Settings need no FLS grant for
         Apex access, so a speculative fieldPermissions/objectPermissions block for it here would
         be dead weight, not a missing grant.
+        ⚠ Inbound_Email_Staging__c moved 23 -> 24 on 2026-08-08 with Routing_Attempt_Count__c, the
+        routing-resilience retry counter (design-requirements-routing-resilience.md §10 A2/A3).
+        A count of 23 after this change means the new field's FLS did not land — the field is
+        still written correctly by RoutingFailureFinalizer (system-mode DML), it is just invisible
+        on this permission set. Status__c also gained a fourth restricted picklist value
+        ('Failed') in the same change; that does NOT move this count — adding a value to an
+        already-granted field's value set is not a new fieldPermissions row.
+
+        🔴 Status__c.editable FLIPPED true -> false ON 2026-08-09 (code review C3) — DO NOT REVERT.
+        'Failed' is a MACHINE-ONLY instruction: RoutingRetrySweepBatch replays any row it finds at
+        Status__c = 'Failed' on the sole strength of isRetryableRoutingState's proof that an
+        UNHANDLED_EXCEPTION rolls back its own transaction (§3.3 of the routing-resilience design).
+        That proof holds only for rows the FINALIZER put there. A human with edit access on this
+        picklist could hand-flip an 'Error' row (whose catch RAN, so its transaction may have
+        already committed a Lead/claim/submission) to 'Failed', bypassing that guard entirely and
+        handing the sweeper a row it must never touch — reproducing exactly the corruption §3.3
+        catalogs (a second Lead, or the winning broker filed as a competing submission against
+        their own Lead), recoverable only by manual registry surgery. Every Apex writer of
+        Status__c (markRoutingFailed, markRoutingAbandoned, stamp — all in
+        InboundEmailStagingService.cls) uses plain system-mode `update`, so this grant removes
+        nothing the pipeline needs; it is a human-facing bypass only. The layout item for
+        Status__c is Readonly for the same reason — see
+        layouts/Inbound_Email_Staging__c-Inbound Email Staging Layout.layout-meta.xml. Field
+        remains readable=true so a triager can still SEE the status.
+        Routing_Attempt_Count__c is DELIBERATELY LEFT editable=true — resetting the counter alone
+        cannot re-queue a terminal row (only a Status__c write can, and that is now locked), so a
+        triager who has fixed the underlying deterministic cause of a Failed row's repeated deaths
+        may legitimately want to buy it more attempts before RoutingRetrySweepBatch abandons it at
+        the cap. If this reasoning is ever found wrong, lock it down the same way as Status__c.
 
         A redeploy has been observed to silently drop the Activity-field rows, which breaks the
         Email Service context user's (Minimum Access profile) ability to see the standard fields
@@ -267,7 +296,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Inbound_Email_Staging__c.Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -309,6 +338,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Inbound_Email_Staging__c.Attachment_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Inbound_Email_Staging__c.Routing_Attempt_Count__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

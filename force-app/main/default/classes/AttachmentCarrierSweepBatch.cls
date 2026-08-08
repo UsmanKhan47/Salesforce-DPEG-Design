@@ -42,11 +42,35 @@
  * It also honours the breaker and the daily budget exactly as the live job does, so a sweep
  * during an exhausted window DEFERS rather than hammers.
  *
- * ⚠ ONE ROW SHAPE IS DELIBERATELY SKIPPED: a row whose ROUTING has not finished
- * (`Status__c = 'Pending'`). Converting then would create files with no routed record to link
+ * ⚠ ONE ROW SHAPE IS DELIBERATELY SKIPPED: a row whose ROUTING has not finished — `Status__c` of
+ * `'Pending'` **or `'Failed'`**. Converting then would create files with no routed record to link
  * them to, and stamping 'Saved' would prevent the links from ever being made. Such a row is left
  * alone on each pass and takes the EXPIRED exit if routing never completes — a defined exit, not
  * an accumulation.
+ *
+ * 🔴 **`'Failed'` JOINED THAT SKIP ON 2026-08-08 AND IS NOT OPTIONAL.** It is written by
+ * `RoutingFailureFinalizer` when the routing job dies, and `RoutingRetrySweepBatch` retries it —
+ * so it means routing is UNFINISHED, exactly as 'Pending' does. Shipping the routing feature
+ * without widening this predicate would have converted such rows with EMPTY targets and stamped
+ * 'Saved', permanently losing the Lead links once routing later succeeded. See
+ * `ROUTING_STATUS_FAILED` for the full five-step trace.
+ *
+ * ═══ ⚠ KNOWN, PRE-EXISTING SHARING EXPOSURE — NOTED 2026-08-09, DELIBERATELY NOT CHANGED HERE ═══
+ * `Inbound_Email_Staging__c` is `sharingModel = Private` with no sharing rules, and
+ * `Broker_Protection_Access` sets `viewAllRecords = false`. `WITH SYSTEM_MODE` on
+ * `queryCarrierSweep()` lifts FLS and CRUD but **not** record sharing, and this class is
+ * `with sharing`, so this sweep sees only the staging rows its SCHEDULING principal owns or is
+ * shared — while the rows are owned by the Email Service context user that inserted them. If the
+ * schedule is ever owned by a principal without View All on this object, the sweep processes
+ * nothing and `finish()` logs all-zeros, which is indistinguishable from a healthy pipeline.
+ *
+ * The routing retry engine added on 2026-08-08 hit the identical problem and closed it with
+ * `without sharing` inner classes (`InboundEmailStagingSelector.RoutingReads` /
+ * `InboundEmailStagingService.RoutingWrites`). **The same fix applies here and is queued as its own
+ * change** — it is not made in this pass because it alters a deployed, live retry engine and
+ * deserves its own review rather than riding along with an unrelated blocker fix. Until then,
+ * treat "which principal owns the carrier-sweep schedule" as an operational requirement, exactly
+ * as `RoutingRetrySweepSchedule`'s header now does for its own job.
  *
  * ═══ LAYER ═══
  * Batch. It holds NO SOQL of its own — `start()` delegates to
@@ -79,6 +103,42 @@ public with sharing class AttachmentCarrierSweepBatch
      * a different state machine on a different field that happens to share a label.
      */
     private static final String ROUTING_STATUS_PENDING = 'Pending';
+
+    /**
+     * The routing status that means "the routing tree DIED on this row and will be retried"
+     * (added 2026-08-08 with routing resilience).
+     *
+     * 🔴 A ROUTING-**FAILED** ROW IS A ROUTING-**UNFINISHED** ROW, AND THIS CONSTANT EXISTS
+     * BECAUSE THE ROUTING FEATURE COULD NOT SHIP WITHOUT IT. The instant `Status__c = 'Failed'`
+     * became writable, the skip below stopped covering every unfinished row — and for an email
+     * that carries an attachment AND whose routing died, the consequence was silent and
+     * permanent:
+     *
+     *   1. this sweep stops skipping the row;
+     *   2. `routedTargets(row)` returns EMPTY (nothing was routed, so the audit fields are blank);
+     *   3. the files convert and are linked ONLY to the staging row;
+     *   4. `Attachment_Status__c` is stamped 'Saved', which REMOVES the row from this work queue;
+     *   5. `RoutingRetrySweepBatch` later retries routing and succeeds — and **the files are never
+     *      linked to the Lead**, forever, with no error anywhere.
+     *
+     * The two sweepers are keyed on two different fields of the same row, so the new half's state
+     * machine changes THIS half's behaviour. Do not narrow this predicate back.
+     *
+     * ⚠ Second-order consequence, which is correct and intended: a row whose routing never
+     * succeeds now takes the EXPIRED exit at `CARRIER_MAX_AGE_DAYS` (14) instead of converting
+     * into an orphan. `RoutingRetrySweepBatch.ROUTING_MAX_AGE_DAYS` is deliberately the SAME 14,
+     * so a row can never outlive its own carrier.
+     *
+     * 🔴 IT BINDS THE SHARED CONSTANT — IT DOES NOT RE-TYPE THE LITERAL, AND THE DISTINCTION FROM
+     * `ROUTING_STATUS_PENDING` ABOVE IS REAL. That one is declared locally because
+     * `InboundEmailStagingService.STATUS_PENDING` is **private**, so there is nothing to bind to.
+     * `STATUS_FAILED` was made **public** precisely so its three consumers bind to one place, and
+     * this class is the third. The `Not_Saved` / "Not Saved" trap documented five lines from that
+     * constant proves a restricted-picklist re-cut is a real event in this repo: with a local
+     * literal, the two selector/batch sites would move and this one silently would not — which is
+     * exactly the §3.6 permanent-loss defect coming back through a spelling change.
+     */
+    private static final String ROUTING_STATUS_FAILED = InboundEmailStagingService.STATUS_FAILED;
 
     /** §7 copy for the EXPIRED exit — TERMINAL, so it names where the file still exists. */
     @TestVisible private static final String NOTE_EXPIRED =
@@ -134,10 +194,12 @@ public with sharing class AttachmentCarrierSweepBatch
                     expired++;
                     continue;
                 }
-                if (ROUTING_STATUS_PENDING.equals(row.Status__c)) {
-                    // Routing has not finished. Converting now would create files with no
-                    // routed record to link them to. Leave it for a later pass; the EXPIRED
-                    // exit bounds how long that can go on.
+                if (routingUnfinished(row)) {
+                    // Routing has not finished — it is either still 'Pending' or it DIED and is
+                    // queued for retry as 'Failed'. Converting now would create files with no
+                    // routed record to link them to, and stamping 'Saved' would remove the row
+                    // from this queue so the links could never be made afterwards. Leave it for a
+                    // later pass; the EXPIRED exit bounds how long that can go on.
                     skipped++;
                     continue;
                 }
@@ -170,6 +232,36 @@ public with sharing class AttachmentCarrierSweepBatch
         System.debug(LoggingLevel.INFO,
             'AttachmentCarrierSweepBatch finished: retried=' + retried + ' expired=' + expired
             + ' skipped=' + skipped + ' failed=' + failed);
+    }
+
+    /**
+     * Whether the ROUTING tree has yet to finish with this row — either it has not run to
+     * completion ('Pending') or it died and is queued for retry ('Failed').
+     *
+     * 🔴 BOTH VALUES, ALWAYS. See `ROUTING_STATUS_FAILED`'s Javadoc for the five-step defect that
+     * omitting 'Failed' produces: files converted with no routed target, stamped 'Saved', dropped
+     * out of this queue, and the routed links lost permanently once routing later retries.
+     *
+     * 'Processed' and 'Error' are both TERMINAL for routing — 'Error' rows are never auto-retried
+     * (they may already have committed work), so whatever they routed is final and the files can
+     * safely be linked to it. Neither belongs here.
+     *
+     * ⚠ ONE 'Error' SHAPE IS DEGRADED AND IS ACCEPTED KNOWINGLY: a row ABANDONED by
+     * `RoutingRetrySweepBatch` at its attempt or age cap is stamped 'Error' having routed NOTHING,
+     * so this pass converts its carrier with an empty target list and links the files to the
+     * staging row alone. The bytes survive permanently as Files, and such a row has no Lead and
+     * never will have one, so no routed link is lost — but a MANUAL re-drive afterwards will not
+     * re-link them. Declining here on "no routed target" would be the obvious fix and is WRONG:
+     * a legitimately GATED email is also 'Processed' with no target, and its files are supposed to
+     * land on the staging row (see `routedTargets`). The trade-off is written into
+     * `RoutingRetrySweepBatch.NOTE_FILES`, which tells the human reading the row exactly this.
+     *
+     * @param row The staging row.
+     * @return true when the carrier must be left alone on this pass.
+     */
+    private static Boolean routingUnfinished(Inbound_Email_Staging__c row) {
+        return ROUTING_STATUS_PENDING.equals(row.Status__c)
+            || ROUTING_STATUS_FAILED.equals(row.Status__c);
     }
 
     /**

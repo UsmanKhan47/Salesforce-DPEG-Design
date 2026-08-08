@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Routing_Abandoned</fullName>
+    <columns>NAME</columns>
+    <columns>From_Address__c</columns>
+    <columns>Subject__c</columns>
+    <columns>Status__c</columns>
+    <columns>Outcome__c</columns>
+    <columns>CREATED_DATE</columns>
+    <columns>Routing_Attempt_Count__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Status__c</field>
+        <operation>equals</operation>
+        <value>Error</value>
+    </filters>
+    <filters>
+        <field>Routing_Attempt_Count__c</field>
+        <operation>greaterOrEqual</operation>
+        <value>3</value>
+    </filters>
+    <label>Routing: Abandoned</label>
+</ListView>
