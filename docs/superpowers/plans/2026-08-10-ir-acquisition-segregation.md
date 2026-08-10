@@ -1221,9 +1221,26 @@ git commit -m "feat: Investor Relations role, permission sets and PSG"
 - Consumes: record types (Task 1), the `Investor_Relations` group (Task 10), a completed backfill (Task 7).
 - Produces: the four rules Task 12's OWD flip depends on.
 
-- [ ] **Step 1: Confirm Task 0's G1 answer before writing anything**
+- [ ] **Step 1: G1 is ANSWERED — read this before writing anything**
 
-If criteria-based sharing does **not** accept `RecordTypeId` in this org, stop and apply the `Business_Unit__c` fallback from the spec §4 rather than improvising a workaround.
+Settled empirically against `usman-dpeg` on 2026-08-10 (check-only validation, commit `f941dce`):
+
+1. ✅ **`RecordTypeId` IS accepted** as a criteria-based sharing rule field. The `Business_Unit__c` fallback is NOT needed and must not be built.
+2. 🔴 **The criteria `<value>` is the record type LABEL, not the developer name.** `Broker_Firm` was rejected with `Picklist value does not exist`; `Broker Firm` was accepted. So: `Broker Firm`, `Investor Entity`, `Acquisition Broker`, `IR Investor`.
+3. 🔴 **`<sharedTo>` accepts exactly ONE target per rule** — `sharedTo can only contain a single element`. **The four-rule design in the table above is not deployable as written.** Every multi-group grant becomes one rule per group, so the real count is **six**:
+
+| Rule | Criteria (RecordTypeId = label) | Shared to |
+|---|---|---|
+| `Account_Broker_Firm_Internal_Acquisitions` | `Broker Firm` | `DPEG_Acquisitions_Team` |
+| `Account_Broker_Firm_Internal_Transactions` | `Broker Firm` | `DPEG_Transactions_Team` |
+| `Account_Broker_Firm_Internal_PropertyMgmt` | `Broker Firm` | `DPEG_Property_Mgmt_Team` |
+| `Account_Investor_Entity_IR` | `Investor Entity` | `Investor_Relations` |
+| `Lead_Acquisition_Broker` | `Acquisition Broker` | `DPEG_Acquisitions_Team` |
+| `Lead_IR_Investor` | `IR Investor` | `Investor_Relations` |
+
+The three `Broker Firm` rules carry **identical** criteria and identical `<accountSettings>`; only `<sharedTo>` differs.
+
+**The first three already exist** in `sharingRules/Account.sharingRules-meta.xml` and have passed check-only validation. This task adds `Account_Investor_Entity_IR` and the two Lead rules, then deploys.
 
 - [ ] **Step 2: Write the Account rules**
 

@@ -72,12 +72,18 @@ Siblings do not see each other's records under Private OWD, so **the boundary ho
 
 Criteria-based, on **Account and Lead only**. Contact needs none — it inherits.
 
-| Rule | Criteria | Shared to | Access |
+> ✅ **G1 ANSWERED 2026-08-10** by check-only validation against `usman-dpeg`. `RecordTypeId` **is** accepted as a criteria field, so the `Business_Unit__c` fallback below is not needed. Two corrections came out of it, both load-bearing: the criteria `<value>` is the record type **LABEL** (`Broker Firm`), not the developer name — `Broker_Firm` is rejected as "Picklist value does not exist"; and 🔴 **`<sharedTo>` accepts exactly ONE target per rule**, so a multi-group grant is one rule per group. Four rules became six.
+
+| Rule | Criteria (RecordTypeId = label) | Shared to | Access |
 |---|---|---|---|
-| `Account_Broker_Firm_Internal` | RecordType = `Broker_Firm` | `DPEG_Acquisitions_Team`, `DPEG_Transactions_Team`, `DPEG_Property_Mgmt_Team` | Read/Write |
-| `Account_Investor_Entity_IR` | RecordType = `Investor_Entity` | `Investor_Relations` | Read/Write |
-| `Lead_Acquisition_Broker` | RecordType = `Acquisition_Broker` | `DPEG_Acquisitions_Team` | Read/Write |
-| `Lead_IR_Investor` | RecordType = `IR_Investor` | `Investor_Relations` | Read/Write |
+| `Account_Broker_Firm_Internal_Acquisitions` | `Broker Firm` | `DPEG_Acquisitions_Team` | Read/Write |
+| `Account_Broker_Firm_Internal_Transactions` | `Broker Firm` | `DPEG_Transactions_Team` | Read/Write |
+| `Account_Broker_Firm_Internal_PropertyMgmt` | `Broker Firm` | `DPEG_Property_Mgmt_Team` | Read/Write |
+| `Account_Investor_Entity_IR` | `Investor Entity` | `Investor_Relations` | Read/Write |
+| `Lead_Acquisition_Broker` | `Acquisition Broker` | `DPEG_Acquisitions_Team` | Read/Write |
+| `Lead_IR_Investor` | `IR Investor` | `Investor_Relations` | Read/Write |
+
+The three `Broker Firm` rules are identical but for `<sharedTo>`. Each Account rule carries `<accountSettings>` with `<contactAccessLevel>Edit</contactAccessLevel>` — **that single element is the entire mechanism by which Contact access follows the Account**, and omitting it would ship half the feature.
 
 Existing `Lead_Acquisition_Queue_RW` is preserved unchanged.
 
