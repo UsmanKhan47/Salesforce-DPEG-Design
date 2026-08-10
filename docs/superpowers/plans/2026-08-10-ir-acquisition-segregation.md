@@ -1329,6 +1329,41 @@ git commit -m "feat: criteria-based sharing rules for the IR-Acquisitions bounda
 
 ---
 
+## Task 11b: 🔴 Replace the `viewAllRecords` grants on Lead and Contact
+
+**Added 2026-08-10 after a cross-task review. This is a PREREQUISITE of Task 12, not a follow-up — without it the OWD flip changes nothing for the persona this feature exists to separate.**
+
+`viewAllRecords` bypasses OWD and every sharing rule **for read**. Measured on this branch:
+
+| Permission set | Grant | Held by |
+|---|---|---|
+| `DPEG_Contact_Edit` | `viewAllRecords = true` on **Contact** | Junior Analyst PSG, Property Management |
+| `DPEG_Acquisition_Edit` | `viewAllRecords = true` on **Lead** | Junior Analyst PSG |
+
+Also check `DPEG_Contact_View` and `DPEG_Acquisition_View` for the same grants, and re-check every permission set — the earlier "verified absent" claim came from a truncated `grep -B10`, so **use a window-independent check**:
+
+```bash
+for f in force-app/main/default/permissionsets/*.permissionset-meta.xml; do
+  awk '/<objectPermissions>/,/<\/objectPermissions>/' "$f" \
+    | grep -B3 -A3 -E "<object>(Lead|Contact|Account)</object>" | grep -E "<object>|viewAllRecords|modifyAllRecords"
+done
+```
+
+🔴 **REPLACE, do not simply delete.** These grants exist so the acquisitions and property-management teams get **owner-independent read** on all Leads and broker Contacts. Deleting them without a replacement takes that away and breaks live workflows. The replacement already exists — Task 11's criteria-based rules give the same access, scoped by record type:
+
+- `Lead_Acquisition_Broker` → all `Acquisition Broker` Leads to `DPEG_Acquisitions_Team`
+- `Account_Broker_Firm_Internal_{Acquisitions,Transactions,PropertyMgmt}` → all `Broker Firm` Accounts, and via `<contactAccessLevel>` their Contacts, to all three teams
+
+**Therefore this task is ORDERED: the sharing rules must be deployed and their recalculation finished BEFORE the View All grants are removed.** Removing first leaves a window in which those teams can see nothing.
+
+⚠ **Group membership is the hidden dependency.** The replacement only works if the affected users are actually IN `DPEG_Acquisitions_Team`, `DPEG_Transactions_Team` and `DPEG_Property_Mgmt_Team`. Membership is not deployable metadata — verify it in-org first, or the removal silently blinds the teams.
+
+⚠ **`modifyAllRecords` is a separate question** and is `false` on these — confirm it stays false; granting it would defeat the boundary for write as well as read.
+
+**Verification is Task 14's matrix**, which must be run as a real Junior Analyst persona. This is the exact case where an admin smoke test proves nothing.
+
+---
+
 ## Task 12: The OWD flip
 
 🔴 **Manual, in Setup, not deployable.** Everything before this is inert; everything after depends on it.
