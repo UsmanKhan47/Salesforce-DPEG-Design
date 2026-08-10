@@ -34,7 +34,7 @@
     <description>A Contact's record type must match its Account's. Contact sharing is inherited from the Account, so a mismatch leaks the Contact to the wrong team. See the XML comment in this file.</description>
     <errorConditionFormula>AND(
     NOT(ISBLANK(AccountId)),
-    NOT(ISBLANK(TEXT(Account.RecordType.DeveloperName))),
+    NOT(ISBLANK(Account.RecordType.DeveloperName)),
     OR(
         AND(
             RecordType.DeveloperName = "Broker",
