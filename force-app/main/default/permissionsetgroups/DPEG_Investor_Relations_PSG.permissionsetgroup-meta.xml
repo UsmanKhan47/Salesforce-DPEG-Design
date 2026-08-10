@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Investor Relations persona: Edit on the IR-record-type Lead/Contact/Account population only, plus Investor Relations app and tab visibility. Deliberately carries NO acquisition, disposition, transaction or property-management access - the IR boundary is enforced by record type visibility here and by criteria-based sharing rules on Account and Lead.</description>
+    <label>DPEG Investor Relations PSG</label>
+    <permissionSets>DPEG_Base_Access</permissionSets>
+    <permissionSets>DPEG_IR_Edit</permissionSets>
+    <permissionSets>DPEG_App_Investor_Relations</permissionSets>
+</PermissionSetGroup>

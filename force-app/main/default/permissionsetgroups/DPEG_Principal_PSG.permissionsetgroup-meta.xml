@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Composed access for the Principal persona: read-only View All across Acquisition, Disposition, Transaction, Property Management and Contact (brokers), plus app/tab visibility for all 4 apps, plus append-only Create on Lease/Renewal Activity notes.</description>
+    <description>Composed access for the Principal persona: read-only View All across Acquisition, Disposition, Transaction, Property Management and Contact (brokers), plus read-only object access to the IR-record-type Lead/Contact/Account population (DPEG_IR_View - the Principal already sees these rows through the role hierarchy above Investor_Relations_Manager, and needs the matching object permission to use that visibility), plus app/tab visibility for all 4 apps, plus append-only Create on Lease/Renewal Activity notes.</description>
     <label>DPEG Principal PSG</label>
     <permissionSets>DPEG_Base_Access</permissionSets>
     <permissionSets>DPEG_Apex_Access</permissionSets>
@@ -9,6 +9,7 @@
     <permissionSets>DPEG_Transaction_View</permissionSets>
     <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
     <permissionSets>DPEG_Contact_View</permissionSets>
+    <permissionSets>DPEG_IR_View</permissionSets>
     <permissionSets>DPEG_App_Acquisition</permissionSets>
     <permissionSets>DPEG_App_Disposition</permissionSets>
     <permissionSets>DPEG_App_Transaction</permissionSets>
