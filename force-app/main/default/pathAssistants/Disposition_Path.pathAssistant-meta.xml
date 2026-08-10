@@ -8,11 +8,34 @@
         no Path at all.
 
         It is kept, inactive, because it is the record of the guidance text the two new paths
-        copied forward byte-identical. In particular the Active Listing step text ("6-week
-        marketing clock ... Week 4 YELLOW ... Week 6 Hard Stop") is under an OPEN question -
-        the source document says ~2 months with a month-1 check - and was copied forward
-        UNEDITED on purpose. Do not reconcile it here or in the new paths until that question
-        is answered.
+        copied forward byte-identical. That record is still accurate: when the Active Listing
+        text was rewritten 2026-08-10 the IDENTICAL rewrite was applied to
+        Disposition_Path_On_Market in the same change, so this file and that one still carry
+        the same string.
+
+        🔴 THE INSTRUCTION THIS COMMENT USED TO CARRY IS RETRACTED - 2026-08-10, BY D27.1 /
+        D28-Q2. It is quoted rather than deleted because a deactivated file is still read by
+        humans, and an instruction NOT to fix a known-wrong number is precisely what carried
+        the 6-week clock forward into two live paths and an LWC:
+
+            RETRACTED: "In particular the Active Listing step text ("6-week marketing clock
+            ... Week 4 YELLOW ... Week 6 Hard Stop") is under an OPEN question - the source
+            document says ~2 months with a month-1 check - and was copied forward UNEDITED on
+            purpose. Do not reconcile it here or in the new paths until that question is
+            answered."
+
+        (Those milestone names survive above ONLY as a verbatim quotation of retracted text.
+        No info element in any path in this repo still renders them.)
+
+        WHAT ANSWERED IT: D27.1 - THE DOCUMENT WON. The marketing period is 60 days with a
+        30-day traction checkpoint, and traction is logged offers and NOTHING else (D28-Q1).
+        THE RECONCILIATION HAS NOW HAPPENED, in all six places D28-Q2 named:
+        BrokerListingController, lwc/listingAlerts, lwc/dispositionOffer and the three test
+        files landed earlier; this path and Disposition_Path_On_Market were the two still
+        outstanding and are corrected here. The bands the new text names are
+        DispositionTractionService's and are decided nowhere else. "Escalation to Ali" was
+        dropped outright rather than reworded: it promised a notification D9 defers, so
+        nothing sends it.
 
         Only one path may exist per record type per object, __MASTER__ included, so this file
         does not conflict with the two new ones. recordTypeName is NOT updateable, so this
@@ -24,7 +47,7 @@
     <masterLabel>Disposition Path</masterLabel>
     <pathAssistantSteps>
         <fieldNames>Selected_Broker__c</fieldNames>
-        <info>6-week marketing clock starts on listing date. Week 4 triggers YELLOW flag. Week 6 triggers Hard Stop + escalation to Ali.</info>
+        <info>The 60-day marketing clock runs from the Listing Date on this Disposition and does not start until that date is set. Traction means logged offers and nothing else. With none: day 30 is the traction checkpoint, where the team discusses internally and decides whether to change the broker; day 40 is review overdue; day 60 is Hard Stop. A single logged offer clears the checkpoint at any point.</info>
         <picklistValueName>Active Listing</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>

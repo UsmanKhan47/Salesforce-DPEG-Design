@@ -7,8 +7,8 @@
                     <div class="card-sub">{listing.brokerFirm} · {listing.contactName}</div>
                 </div>
                 <div class="header-right">
-                    <template if:true={hasWeekLabel}>
-                        <span class="risk-badge"><span class="risk-dot"></span>{listing.weekLabel}</span>
+                    <template if:true={hasTractionLabel}>
+                        <span class="risk-badge" title={listing.tractionDetail}><span class="risk-dot"></span>{listing.tractionLabel}</span>
                     </template>
                 </div>
             </div>

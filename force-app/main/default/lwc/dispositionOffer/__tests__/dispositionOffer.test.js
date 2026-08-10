@@ -78,9 +78,11 @@ describe('c-disposition-offer', () => {
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelectorAll('.offer-row').length).toBe(0);
+        // 60/30, not the retired 6-week clock (D27.1 / D28-Q2). trim() because the string now
+        // spans several source lines behind an explanatory comment.
         expect(
-            element.shadowRoot.querySelector('.empty-msg').textContent
-        ).toBe('No offers yet. 6-week clock active.');
+            element.shadowRoot.querySelector('.empty-msg').textContent.trim()
+        ).toBe('No offers yet. 60-day marketing clock, traction check at day 30.');
     });
 
     it('DATA BRANCH: renders one row per related offer with formatted money + date', async () => {

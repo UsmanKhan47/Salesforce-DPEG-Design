@@ -6,11 +6,38 @@
         LOI, PSA, Closing, Completed.
 
         Five steps (Disposition Readiness, BOV Outreach, Active Listing, Closing, Completed)
-        were copied from the now-deactivated Disposition_Path. FOUR of them remain
-        BYTE-IDENTICAL - fieldNames AND info text. The Active Listing text is under an OPEN
-        question (the source document says ~2 months with a month-1 check, this text says a
-        6-week clock) and was copied forward UNEDITED on purpose. Editing it here would
-        silently pre-empt that question.
+        were copied from the now-deactivated Disposition_Path. FOUR of them are still
+        BYTE-IDENTICAL - fieldNames AND info text - and Active Listing is STILL one of them:
+        its info was rewritten 2026-08-10 (retraction below), and the IDENTICAL rewrite was
+        applied to Disposition_Path in the same change, so the carry-over this comment
+        describes did not break.
+
+        🔴 THE ACTIVE LISTING CLOCK IS NO LONGER AN OPEN QUESTION - RETRACTED 2026-08-10 BY
+        D27.1 / D28-Q2. The superseded sentences are quoted and retracted rather than deleted,
+        because "leave it alone, a question is open" is the exact instruction that left this
+        Path contradicting the LWC beside it for a whole tranche:
+
+            RETRACTED: "The Active Listing text is under an OPEN question (the source document
+            says ~2 months with a month-1 check, this text says a 6-week clock) and was copied
+            forward UNEDITED on purpose. Editing it here would silently pre-empt that
+            question."
+
+        WHAT ANSWERED IT: D27.1 - THE DOCUMENT WON. The marketing period is 60 days with a
+        30-day traction checkpoint, and traction is logged offers and NOTHING else (D28-Q1;
+        "real interest" stays a human judgement made in the internal discussion and is
+        deliberately not modelled as a field, so this text must not imply the system can see
+        it). THE RECONCILIATION HAS NOW HAPPENED: the Active Listing info below states that
+        model, and every band it names is one DispositionTractionService computes - NOT_LISTED,
+        ON_TRACK, CHECKPOINT_DUE at day 30, REVIEW_OVERDUE at day 40, HARD_STOP at day 60, all
+        short-circuited to ON_TRACK by a single logged offer. That service decides a band
+        nowhere else; this text must never state a threshold it does not hold.
+
+        TWO THINGS WERE DROPPED AND MUST NOT COME BACK. "Escalation to Ali" promised a
+        notification D9 defers, so nothing sends it - the same stale-promise defect that
+        condemned the retired listingAlerts mock. And the week-numbered milestones are BANNED
+        STRINGS in lwc/listingAlerts/__tests__/listingAlerts.test.js, which asserts the sibling
+        traction panel never renders them; a Path rendering them next to that panel is exactly
+        the one-screen contradiction BrokerListingController's header exists to prevent.
 
         CLOSING IS THE ONE DEVIATION, added 2026-08-09 on the code review's C1 finding. Its
         fieldNames are unchanged and the original two sentences are unchanged; a third
@@ -48,7 +75,7 @@
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Selected_Broker__c</fieldNames>
-        <info>6-week marketing clock starts on listing date. Week 4 triggers YELLOW flag. Week 6 triggers Hard Stop + escalation to Ali.</info>
+        <info>The 60-day marketing clock runs from the Listing Date on this Disposition and does not start until that date is set. Traction means logged offers and nothing else. With none: day 30 is the traction checkpoint, where the team discusses internally and decides whether to change the broker; day 40 is review overdue; day 60 is Hard Stop. A single logged offer clears the checkpoint at any point.</info>
         <picklistValueName>Active Listing</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>

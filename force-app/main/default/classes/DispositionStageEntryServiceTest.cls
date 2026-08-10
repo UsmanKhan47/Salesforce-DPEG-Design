@@ -1,11 +1,17 @@
 /**
  * @description Tests DispositionStageEntryService — the auto-create behind
- * DispositionTrigger / DispositionTriggerHandler (decisions D15/Q3, D16.2, D19.1). THREE stages,
- * three children:
+ * DispositionTrigger / DispositionTriggerHandler (decisions D15/Q3, D16.2, D19.1, D28/Q3). FOUR
+ * stages, four children:
  *
- *   `NDA` -> NDA__c (Party_Role__c = 'Buyer')   Tranche 3A
- *   `LOI` -> LOI__c (Disposition_LOI)           Tranche 3B fix pass (review C1)
- *   `PSA` -> Contract_Review__c (Disposition_PSA) Tranche 3C fix pass (review C1)
+ *   `NDA`            -> NDA__c (Party_Role__c = 'Buyer')     Tranche 3A
+ *   `LOI`            -> LOI__c (Disposition_LOI)             Tranche 3B fix pass (review C1)
+ *   `PSA`            -> Contract_Review__c (Disposition_PSA) Tranche 3C fix pass (review C1)
+ *   `Active Listing` -> Broker_Listing__c + the marketing clock   Tranche 5B
+ *
+ * ⚠ THE FOURTH IS THE ONLY ONE THAT ALSO USES A BEFORE-SAVE CONTEXT. `stampListingDates` writes
+ * `Disposition__c.Listing_Date__c` in memory during the user's own save; the other three blocks
+ * have no equivalent and must not grow one. Its tests are in their own section at the end of this
+ * file, with the fixture trap that makes the obvious version of them vacuous written out in full.
  *
  * ── WHAT EACH GROUP OF TESTS IS FOR ─────────────────────────────────────────
  *   STAGE ENTRY      it fires on entry, on BOTH insert and update, and on nothing else.
@@ -1020,5 +1026,424 @@ private class DispositionStageEntryServiceTest {
         Assert.areEqual(1, ndasOn(ndaEntrant.Id).size(), 'No second NDA');
         Assert.areEqual(1, loisOn(loiEntrant.Id).size(), 'No second LOI');
         Assert.areEqual(1, contractReviewsOn(psaEntrant.Id).size(), 'No second Contract Review');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // `Active Listing` STAGE — the broker listing + the marketing clock. Tranche 5B (D28/Q3).
+    //
+    // ⚠ TWO MECHANISMS, TWO CONTEXTS, TESTED SEPARATELY:
+    //   stampListingDates      BEFORE insert/update, in-memory, sets Disposition__c.Listing_Date__c
+    //   openBrokerListings     AFTER  insert/update, inserts the Broker_Listing__c child
+    // They are deliberately not one method — see the service's Javadoc for why the parent write
+    // cannot live in the after context and why the child insert cannot live in the before one.
+    //
+    // 🔴 THE FIXTURE TRAP THAT MAKES THE OBVIOUS TEST VACUOUS: TestDataFactory.createDispositions
+    // seeds `Listing_Date__c = Date.today()` on EVERY row. A test that simply moved a factory
+    // disposition to Active Listing and asserted `Listing_Date__c == TODAY` would pass whether or
+    // not stampListingDates ran at all — it would be asserting the fixture. Every stamp test below
+    // therefore NULLS the field first, and `preexistingListingDateIsNotOverwritten` is the
+    // matched-pair falsifier that proves the guard is fill-if-blank rather than unconditional.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private static List<Broker_Listing__c> listingsOn(Id dispositionId) {
+        return [
+            SELECT Id, Disposition__c, List_Date__c, Broker_Firm__c, Listing_Status__c
+            FROM Broker_Listing__c
+            WHERE Disposition__c = :dispositionId
+        ];
+    }
+
+    private static Date listingDateOf(Id dispositionId) {
+        return [SELECT Listing_Date__c FROM Disposition__c WHERE Id = :dispositionId].Listing_Date__c;
+    }
+
+    /** An on-market disposition at Readiness whose marketing clock has NOT started. */
+    private static Disposition__c onMarketWithNoListingDate() {
+        Disposition__c d = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            false
+        );
+        d.Listing_Date__c = null;
+        insert d;
+        return d;
+    }
+
+    // ── STAGE ENTRY + THE STAMP ─────────────────────────────────────────────
+
+    /**
+     * 🔴 THE PREREQUISITE THE WHOLE TRACTION MONITOR RESTS ON. Before this block existed, nothing
+     * created a Broker_Listing__c and nothing wrote Listing_Date__c — and because
+     * `Disposition__c.Days_On_Market__c` is `BlankAsZero`, an unset date reads 0 FOREVER rather
+     * than null. The clock looked healthy and never ticked.
+     */
+    @isTest
+    static void listingStageEntryOpensOneListingAndStartsTheClock() {
+        Disposition__c d = onMarketWithNoListingDate();
+        Assert.isNull(listingDateOf(d.Id),
+            'FIXTURE GUARD: the clock must be unstarted before the move, or this test asserts the '
+            + 'factory rather than the code');
+
+        Test.startTest();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+        Test.stopTest();
+
+        Assert.areEqual(Date.today(), listingDateOf(d.Id),
+            'Entering Active Listing must start the 60-day marketing clock');
+        List<Broker_Listing__c> listings = listingsOn(d.Id);
+        Assert.areEqual(1, listings.size(), 'Exactly one Broker_Listing__c must be opened');
+        Assert.areEqual(Date.today(), listings[0].List_Date__c,
+            'The child date is COPIED from the parent, not re-derived from Date.today() — so the '
+            + 'clock the badge reads and the listing row can never disagree');
+        Assert.areEqual('On Track', listings[0].Listing_Status__c,
+            'A new listing opens On Track');
+    }
+
+    /** A Disposition CREATED at Active Listing is an entry too — the insert path. */
+    @isTest
+    static void aDispositionCreatedAtActiveListingGetsItsListingAndClock() {
+        Disposition__c d = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            false
+        );
+        d.Listing_Date__c = null;
+        d.Disposition_Stage__c = LISTING_STAGE;
+
+        Test.startTest();
+        insert d;
+        Test.stopTest();
+
+        Assert.areEqual(Date.today(), listingDateOf(d.Id),
+            'before-insert must stamp the clock on a row created at Active Listing');
+        Assert.areEqual(1, listingsOn(d.Id).size(),
+            'after-insert must open the listing on a row created at Active Listing');
+    }
+
+    /**
+     * 🔴 FILL-IF-BLANK, NOT UNCONDITIONAL. The matched-pair falsifier for the test above: a real
+     * listing date entered by a human, or seeded, must survive the stage change. An unconditional
+     * stamp would silently overwrite it with "today" and restart the marketing clock.
+     */
+    @isTest
+    static void preexistingListingDateIsNotOverwritten() {
+        Date realListingDate = Date.today().addDays(-40);
+        Disposition__c d = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            false
+        );
+        d.Listing_Date__c = realListingDate;
+        insert d;
+
+        Test.startTest();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+        Test.stopTest();
+
+        Assert.areEqual(realListingDate, listingDateOf(d.Id),
+            'A real listing date must survive - overwriting it would restart a 40-day-old clock');
+        Assert.areEqual(realListingDate, listingsOn(d.Id)[0].List_Date__c,
+            'And the child must carry the SAME date, not today');
+    }
+
+    /**
+     * The selected broker rides across at zero cost — `Selected_Broker__c` is already on
+     * Trigger.new, so no query is bought for it. A blank there simply leaves a blank here.
+     */
+    @isTest
+    static void theSelectedBrokerIsCarriedOntoTheNewListing() {
+        Disposition__c d = onMarketWithNoListingDate();
+        update new Disposition__c(Id = d.Id, Selected_Broker__c = 'Cushman & Wakefield');
+
+        Test.startTest();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+        Test.stopTest();
+
+        Assert.areEqual('Cushman & Wakefield', listingsOn(d.Id)[0].Broker_Firm__c,
+            'The broker approved out of BOV Outreach must appear on the listing it produced');
+    }
+
+    @isTest
+    static void aBlankSelectedBrokerLeavesTheListingBrokerBlankRatherThanFailing() {
+        Disposition__c d = onMarketWithNoListingDate();
+
+        Test.startTest();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+        Test.stopTest();
+
+        Assert.areEqual(1, listingsOn(d.Id).size(),
+            'A disposition with no named broker still gets its listing and its clock');
+        Assert.isNull(listingsOn(d.Id)[0].Broker_Firm__c,
+            'The firm is simply blank - it is filled by hand or by the broker-change action');
+    }
+
+    // ── IT FIRES ON NOTHING ELSE ────────────────────────────────────────────
+
+    @isTest
+    static void otherStagesOpenNoListingAndStartNoClock() {
+        Disposition__c loiEntrant = onMarketWithNoListingDate();
+        Disposition__c psaEntrant = onMarketWithNoListingDate();
+
+        Test.startTest();
+        update new List<Disposition__c>{
+            new Disposition__c(Id = loiEntrant.Id, Disposition_Stage__c = LOI_STAGE),
+            new Disposition__c(Id = psaEntrant.Id, Disposition_Stage__c = PSA_STAGE)
+        };
+        Test.stopTest();
+
+        Assert.areEqual(0, listingsOn(loiEntrant.Id).size(), 'LOI entry opens no broker listing');
+        Assert.areEqual(0, listingsOn(psaEntrant.Id).size(), 'PSA entry opens no broker listing');
+        Assert.isNull(listingDateOf(loiEntrant.Id),
+            'Only Active Listing starts the marketing clock');
+        Assert.isNull(listingDateOf(psaEntrant.Id),
+            'Only Active Listing starts the marketing clock');
+    }
+
+    /** A save that does not CHANGE the stage is not an entry — no second listing, no re-stamp. */
+    @isTest
+    static void anEditWhileAlreadyAtActiveListingIsNotAnEntry() {
+        Disposition__c d = onMarketWithNoListingDate();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+        Date stampedAt = listingDateOf(d.Id);
+        // Rewind the clock behind the service's back, then re-save WITHOUT changing the stage.
+        // Assigned after construction, not as a constructor argument, so the null is unambiguously
+        // part of the update's field set.
+        Disposition__c clear = new Disposition__c(Id = d.Id);
+        clear.Listing_Date__c = null;
+        update clear;
+
+        Test.startTest();
+        update new Disposition__c(Id = d.Id, Title_Company__c = 'Some Other Title Co');
+        Test.stopTest();
+
+        Assert.areEqual(1, listingsOn(d.Id).size(),
+            'An ordinary edit at Active Listing must not open a second listing');
+        Assert.isNull(listingDateOf(d.Id),
+            'The stamp is keyed on stage ENTRY, not on presence at the stage - a plain edit must '
+            + 'not re-stamp');
+        Assert.areEqual(Date.today(), stampedAt, 'Sanity: the original entry did stamp');
+    }
+
+    // ── IDEMPOTENCY ─────────────────────────────────────────────────────────
+
+    /**
+     * ⚠ THE KEY IS "ANY LISTING ON THIS DISPOSITION", NOT "a listing for this broker" — which is
+     * what keeps the broker-change history model reachable. A deliberate broker change APPENDS a
+     * second row (BrokerListingSelector already reads `CreatedDate DESC LIMIT 1`); a stage
+     * re-entry must not.
+     */
+    @isTest
+    static void anExistingListingSuppressesAutoCreate() {
+        Disposition__c d = onMarketWithNoListingDate();
+        Broker_Listing__c preexisting = TestDataFactory.createBrokerListing(d.Id, true);
+
+        Test.startTest();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+        Test.stopTest();
+
+        List<Broker_Listing__c> listings = listingsOn(d.Id);
+        Assert.areEqual(1, listings.size(),
+            'A disposition that already has a listing must not get a second one');
+        Assert.areEqual(preexisting.Id, listings[0].Id, 'And it must be the original row');
+    }
+
+    @isTest
+    static void reEnteringActiveListingNeverOpensASecondListing() {
+        Disposition__c d = onMarketWithNoListingDate();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+
+        Test.startTest();
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = 'Call for Offers');
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
+        Test.stopTest();
+
+        Assert.areEqual(1, listingsOn(d.Id).size(),
+            'Stepping away and back is not a broker change - still exactly one listing');
+        Assert.areEqual(Date.today(), listingDateOf(d.Id),
+            'And the marketing clock was never restarted');
+    }
+
+    // ── NO QUEUEABLE ────────────────────────────────────────────────────────
+
+    /**
+     * 🔴 THE LISTING BLOCK MUST ENQUEUE NOTHING, and the reason is different from the LOI and PSA
+     * blocks'. They have no parent write at all. This block DOES have one — `Listing_Date__c` — and
+     * it is performed in the BEFORE context precisely so it never becomes a second DML that an
+     * approval lock could refuse. A Queueable added here would not merely be redundant: it would
+     * reintroduce the D20/W1 residual (a PENDING approval outlives the job, so the async update
+     * throws with allOrNone = true and nothing retries) in exchange for nothing.
+     */
+    @isTest
+    static void theListingBlockEnqueuesNothing() {
+        Disposition__c d = onMarketWithNoListingDate();
+        List<Disposition__c> newList = new List<Disposition__c>{
+            new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE)
+        };
+        Map<Id, Disposition__c> oldMap = new Map<Id, Disposition__c>{
+            d.Id => new Disposition__c(Id = d.Id, Disposition_Stage__c = READINESS_STAGE)
+        };
+
+        Test.startTest();
+        Integer jobsBefore = Limits.getQueueableJobs();
+        DispositionStageEntryService.createStageEntryRecords(newList, oldMap);
+        Integer jobsUsed = Limits.getQueueableJobs() - jobsBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, jobsUsed,
+            'The Active Listing block must enqueue NOTHING. Its parent write lives in the BEFORE '
+            + 'context, which is what removes the lock hazard a Queueable would exist to work '
+            + 'around - and would not actually solve here.');
+        Assert.areEqual(1, listingsOn(d.Id).size(), 'The listing was still created');
+    }
+
+    // ── BULK ────────────────────────────────────────────────────────────────
+
+    /**
+     * 251 forces a SECOND trigger chunk, which is the whole point of the number: a service that
+     * queried or DML'd per record could not complete this at all.
+     *
+     * ⚠ It also proves the BEFORE and AFTER halves stay in step at volume — every one of the 251
+     * must have both a started clock and a listing, and the listing's date must equal the parent's.
+     */
+    @isTest
+    static void bulkListingStageEntryAt251OpensOneListingEach() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            false
+        );
+        for (Disposition__c d : dispositions) {
+            d.Listing_Date__c = null;
+        }
+        insert dispositions;
+        List<Disposition__c> moves = new List<Disposition__c>();
+        for (Disposition__c d : dispositions) {
+            moves.add(new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE));
+        }
+
+        Test.startTest();
+        update moves;
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N,
+            [SELECT COUNT() FROM Broker_Listing__c WHERE Disposition__c IN :dispositions],
+            'Every one of the 251 dispositions must get exactly one listing — 251 spans TWO '
+            + 'trigger chunks, so a total of 200 here would mean the second chunk was dropped');
+        Assert.areEqual(BULK_N,
+            [
+                SELECT COUNT() FROM Disposition__c
+                WHERE Id IN :dispositions AND Listing_Date__c = TODAY
+            ],
+            'And all 251 marketing clocks must have started — the before-save half must survive '
+            + 'chunking exactly as the after-save half does');
+        Assert.areEqual(BULK_N,
+            [
+                SELECT COUNT() FROM Broker_Listing__c
+                WHERE Disposition__c IN :dispositions AND List_Date__c = TODAY
+            ],
+            'Every child date must match its parent clock');
+    }
+
+    /**
+     * 🔴 THE GOVERNOR ASSERTION FOR THE LISTING BLOCK, made on the SUPPRESSION path for the reason
+     * the class header gives: every disposition already has its listing, so the service reads once
+     * and returns without inserting — which keeps every after-save flow out of the measurement and
+     * lets the numbers be EXACT rather than "≤ something".
+     *
+     * The property pinned is COST INDEPENDENT OF RECORD COUNT: one query and zero DML for 251.
+     */
+    @isTest
+    static void listingSuppressionPathCostsOneQueryAndNoDmlAt251() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            true
+        );
+        List<Broker_Listing__c> existing = new List<Broker_Listing__c>();
+        for (Disposition__c d : dispositions) {
+            existing.add(TestDataFactory.createBrokerListing(d.Id, false));
+        }
+        insert existing;   // built in the loop, inserted once — never DML in a loop
+
+        List<Disposition__c> newList = new List<Disposition__c>();
+        Map<Id, Disposition__c> oldMap = new Map<Id, Disposition__c>();
+        for (Disposition__c d : dispositions) {
+            newList.add(new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE));
+            oldMap.put(d.Id, new Disposition__c(Id = d.Id, Disposition_Stage__c = READINESS_STAGE));
+        }
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Integer dmlBefore = Limits.getDmlStatements();
+        DispositionStageEntryService.createStageEntryRecords(newList, oldMap);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed,
+            'EXACTLY ONE query for 251 dispositions — the listing idempotency read is issued once '
+            + 'for the whole collection. Anything above 1 means it moved into the loop; ZERO would '
+            + 'mean the Active Listing block stopped running at all.');
+        Assert.areEqual(0, dmlUsed,
+            'Zero DML when every disposition already has its listing. A non-zero count means the '
+            + 'early return after the idempotency filter was lost, and 251 duplicate listings were '
+            + 'created.');
+        Assert.areEqual(BULK_N,
+            [SELECT COUNT() FROM Broker_Listing__c WHERE Disposition__c IN :dispositions],
+            'Still exactly one listing each — nothing was added');
+    }
+
+    /**
+     * 🔴 THE BEFORE-CONTEXT COSTS NOTHING, AT ANY VOLUME. `stampListingDates` performs no SOQL, no
+     * DML and no enqueue by construction — it is an in-memory assignment — and this is what makes
+     * the claim "it is outside the service's stated budget by construction, not by exemption"
+     * falsifiable rather than a comment. It is invoked directly so the count contains this method
+     * and nothing else.
+     */
+    @isTest
+    static void stampListingDatesCostsNoQueriesNoDmlAt251() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            true
+        );
+        List<Disposition__c> newList = new List<Disposition__c>();
+        Map<Id, Disposition__c> oldMap = new Map<Id, Disposition__c>();
+        for (Disposition__c d : dispositions) {
+            newList.add(new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE));
+            oldMap.put(d.Id, new Disposition__c(Id = d.Id, Disposition_Stage__c = READINESS_STAGE));
+        }
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Integer dmlBefore = Limits.getDmlStatements();
+        Integer jobsBefore = Limits.getQueueableJobs();
+        DispositionStageEntryService.stampListingDates(newList, oldMap);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Integer jobsUsed = Limits.getQueueableJobs() - jobsBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, queriesUsed, 'The before-save stamp must issue no SOQL at any volume');
+        Assert.areEqual(0, dmlUsed,
+            'The before-save stamp must issue no DML — that is the entire reason it is in the '
+            + 'BEFORE context rather than the after one');
+        Assert.areEqual(0, jobsUsed, 'And it must enqueue nothing');
+        for (Disposition__c d : newList) {
+            Assert.areEqual(Date.today(), d.Listing_Date__c,
+                'Every one of the 251 must be stamped in memory');
+        }
+    }
+
+    @isTest
+    static void stampListingDatesIsNullAndEmptySafe() {
+        DispositionStageEntryService.stampListingDates(null, null);
+        DispositionStageEntryService.stampListingDates(new List<Disposition__c>(), null);
+        Assert.isTrue(true,
+            'Null and empty inputs must return quietly rather than throwing inside a before-save '
+            + 'trigger, where the only symptom would be an unsaveable record');
     }
 }

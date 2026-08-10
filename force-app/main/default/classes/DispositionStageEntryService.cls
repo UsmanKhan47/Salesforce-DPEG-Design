@@ -3,20 +3,30 @@
  * OpportunityReviewService, and deliberately shaped after it rather than invented fresh
  * (decisions D15/Q3, D16.2, D19.1).
  *
- * IT DOES THREE THINGS, ONE PER STAGE, AND THE THREE ARE NOT INTERCHANGEABLE:
+ * IT DOES FOUR THINGS, ONE PER STAGE, AND THE FOUR ARE NOT INTERCHANGEABLE:
  *
- *   | stage entered | child opened                        | added   | DML mode    | parent stamp |
- *   | ------------- | ----------------------------------- | ------- | ----------- | ------------ |
- *   | `NDA`         | NDA__c, Party_Role__c = 'Buyer'     | 3A      | SYSTEM_MODE | DEFERRED     |
- *   | `LOI`         | LOI__c, Disposition_LOI             | 3B fix  | SYSTEM_MODE | NONE         |
- *   | `PSA`         | Contract_Review__c, Disposition_PSA | 3C fix  | SYSTEM_MODE | NONE         |
+ *   | stage entered    | child opened                        | added  | DML mode    | parent stamp |
+ *   | ---------------- | ----------------------------------- | ------ | ----------- | ------------ |
+ *   | `NDA`            | NDA__c, Party_Role__c = 'Buyer'     | 3A     | SYSTEM_MODE | DEFERRED     |
+ *   | `LOI`            | LOI__c, Disposition_LOI             | 3B fix | SYSTEM_MODE | NONE         |
+ *   | `PSA`            | Contract_Review__c, Disposition_PSA | 3C fix | SYSTEM_MODE | NONE         |
+ *   | `Active Listing` | Broker_Listing__c                   | 5B     | SYSTEM_MODE | BEFORE-SAVE  |
  *
- * 🔴 THE LAST TWO COLUMNS ARE THE PART A READER MUST NOT SKIM. All three blocks use SYSTEM_MODE
- * DML, but ONLY the NDA block defers a parent stamp to a Queueable, and the reason is NOT that the
- * other two were simplified — it is that they have nothing to defer. Each block's reasoning is
- * argued at the block, from scratch, because inheriting a justification is precisely the mistake
- * review W1 caught in DispositionNdaStampQueueable (which had copied
- * OpportunityReviewService's LOI-block wording verbatim into a case where it did not hold).
+ * 🔴 THE LAST TWO COLUMNS ARE THE PART A READER MUST NOT SKIM. All four blocks use SYSTEM_MODE
+ * DML, but they reach that answer by THREE different routes and they handle the parent write three
+ * different ways. Only the NDA block defers a parent stamp to a Queueable; the LOI and PSA blocks
+ * have nothing to defer; and the Active Listing block writes its parent field IN A BEFORE-SAVE
+ * CONTEXT, which is neither of the other two answers. Each block's reasoning is argued at the
+ * block, from scratch, because inheriting a justification is precisely the mistake review W1
+ * caught in DispositionNdaStampQueueable (which had copied OpportunityReviewService's LOI-block
+ * wording verbatim into a case where it did not hold).
+ *
+ * ⚠ AND THE ACTIVE LISTING BLOCK'S SYSTEM_MODE REASON IS NOT THE OTHER THREE'S. They need it
+ * because the disposition persona holds `allowCreate = false` on their child object. The
+ * disposition persona holds `allowCreate = TRUE` on `Broker_Listing__c` (measured), so that
+ * argument is simply false here and quoting it would be inheriting a justification again. The real
+ * reason is stated at `openBrokerListings`, and it is a genuine, bounded widening rather than a
+ * restoration of access the persona already had.
  *
  * ── 🔴 IT FIRES ON A RECORD THAT THREE APPROVALS LOCK ────────────────────────
  * `Disposition__c` is the entry object of `Sale_Decision_Approval` (at Disposition Readiness),
@@ -34,24 +44,30 @@
  * those stages. Do not harmonize in either direction.
  *
  * ── LAYERING / BULK ─────────────────────────────────────────────────────────
- * Service (ARCHITECTURE.md §2). ZERO inline SOQL — the three idempotency reads go to
- * NdaSelector.selectByDispositionIds, LoiSelector.selectByDispositionIds and
- * ContractReviewSelector.selectByDispositionIds, all `WITH SYSTEM_MODE` for automation-path reasons
- * documented at those methods.
+ * Service (ARCHITECTURE.md §2). ZERO inline SOQL — the four idempotency reads go to
+ * NdaSelector.selectByDispositionIds, LoiSelector.selectByDispositionIds,
+ * ContractReviewSelector.selectByDispositionIds and BrokerListingSelector.selectByDispositionIds,
+ * all `WITH SYSTEM_MODE` for automation-path reasons documented at those methods.
  *
  * Trigger-driven, so the `.claude/rules/bulk-test-rule.md` per-transaction-singleton exemption
- * does NOT apply and literal 251-record bulk tests exist for all three stages. Budget is
- * 1 SOQL / 1 DML PER STAGE ENTERED IN THE CHUNK (≤ 3 / ≤ 3), plus ≤ 1 enqueue for the NDA block —
+ * does NOT apply and literal 251-record bulk tests exist for all four stages. Budget is
+ * 1 SOQL / 1 DML PER STAGE ENTERED IN THE CHUNK (≤ 4 / ≤ 4), plus ≤ 1 enqueue for the NDA block —
  * CONSTANT IN THE NUMBER OF DISPOSITIONS. That constancy is the property the bulk tests assert,
  * not merely that 251 rows produced 251 children. A chunk that enters no target stage at all — the
  * overwhelmingly common case, since this trigger now fires on EVERY Disposition write in the org —
  * costs zero queries, zero DML and zero enqueues.
+ *
+ * ⚠ `stampListingDates` IS OUTSIDE THAT BUDGET BY CONSTRUCTION, NOT BY EXEMPTION: it runs in a
+ * BEFORE context and performs zero SOQL, zero DML and zero enqueues at any record count. It cannot
+ * move the numbers above because it issues no statements at all.
  *
  * @see force-app/main/default/classes/OpportunityReviewService.cls (the acquisitions twin)
  * @see force-app/main/default/classes/DispositionNdaStampQueueable.cls (the deferred NDA stamp)
  * @see force-app/main/default/classes/NdaSelector.cls (the NDA idempotency read)
  * @see force-app/main/default/classes/LoiSelector.cls (the LOI idempotency read)
  * @see force-app/main/default/classes/ContractReviewSelector.cls (the PSA idempotency read)
+ * @see force-app/main/default/classes/BrokerListingSelector.cls (the listing idempotency read)
+ * @see force-app/main/default/classes/DispositionTractionService.cls (what the clock feeds)
  */
 public with sharing class DispositionStageEntryService {
 
@@ -75,6 +91,34 @@ public with sharing class DispositionStageEntryService {
     /** The stage whose ENTRY opens the sell-side PSA. On BOTH record types — see LOI_STAGE. */
     @TestVisible
     private static final String PSA_STAGE = 'PSA';
+
+    /**
+     * The stage whose ENTRY opens the broker listing and starts the marketing clock (D28/Q3).
+     *
+     * ⚠ ON-MARKET ONLY BY VALUE SET, like `NDA` is off-market only. `Active Listing` is exposed on
+     * the `On_Market` record type and not on `Off_Market` (verified in
+     * objects/Disposition__c/recordTypes/), which is correct: a direct sale has no listing broker
+     * and no marketing period, so there is nothing to clock. No RecordType criterion is needed here
+     * and none should be added — the value set is self-limiting, exactly as
+     * `Broker_Selection_Approval`'s own description records for the same stage family.
+     */
+    @TestVisible
+    private static final String LISTING_STAGE = 'Active Listing';
+
+    /**
+     * The `Listing_Status__c` every auto-created listing opens at.
+     *
+     * ⚠ IT HAPPENS TO EQUAL THE FIELD-LEVEL DEFAULT, and is set explicitly anyway for the same
+     * reason DISPOSITION_PSA_INITIAL_STATUS is: a fresh listing starting On Track is a business
+     * decision of this feature, and an implicit default is not falsifiable by a test.
+     *
+     * 🔴 NOTHING KEEPS THIS FIELD IN STEP AFTERWARDS, AND THAT IS DELIBERATE. The displayed
+     * traction band is computed live by `DispositionTractionService` and deliberately does NOT read
+     * this field, so a stale hand-set value cannot corrupt it. Writing it on a schedule is the
+     * deferred D9 job's work; `DispositionTractionService.listingStatusValue` is the seam it uses.
+     */
+    @TestVisible
+    private static final String LISTING_INITIAL_STATUS = 'On Track';
 
     /**
      * Developer name of the record type every auto-created DISPOSITION NDA is stamped with.
@@ -163,6 +207,7 @@ public with sharing class DispositionStageEntryService {
         Set<Id> ndaStageEntrants = new Set<Id>();
         Set<Id> loiStageEntrants = new Set<Id>();
         Set<Id> psaStageEntrants = new Set<Id>();
+        List<Disposition__c> listingStageEntrants = new List<Disposition__c>();
         for (Disposition__c d : newDispositions) {
             Disposition__c prior = (oldMap == null) ? null : oldMap.get(d.Id);
             String priorStage = (prior == null) ? null : prior.Disposition_Stage__c;
@@ -177,13 +222,129 @@ public with sharing class DispositionStageEntryService {
                 loiStageEntrants.add(d.Id);
             } else if (PSA_STAGE == d.Disposition_Stage__c) {
                 psaStageEntrants.add(d.Id);
+            } else if (LISTING_STAGE == d.Disposition_Stage__c) {
+                // ⚠ The WHOLE RECORD, not just the Id — unlike the other three, this block copies
+                // two values off the parent (Listing_Date__c and Selected_Broker__c) onto the
+                // child, and re-querying for fields Trigger.new already carries would be a query
+                // bought for nothing.
+                listingStageEntrants.add(d);
             }
         }
         // Each helper returns immediately on an empty set, so a chunk that entered none of the
-        // three target stages — the overwhelmingly common Disposition save — costs nothing at all.
+        // four target stages — the overwhelmingly common Disposition save — costs nothing at all.
         openBuyerNdas(ndaStageEntrants);
         openDispositionLois(loiStageEntrants);
         openDispositionContractReviews(psaStageEntrants);
+        openBrokerListings(listingStageEntrants);
+    }
+
+    /**
+     * BEFORE INSERT / BEFORE UPDATE. Starts the 60-day marketing clock by stamping
+     * `Listing_Date__c` on entry to `Active Listing` — in memory, on the record being saved.
+     *
+     * ═══════════════════════════════════════════════════════════════════════
+     * 🔴 THE DML MODE AND THE LOCK, RE-ARGUED FROM SCRATCH. NOTHING HERE IS INHERITED.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * ── FIRST, A MEASURED CORRECTION TO A PREMISE THAT LOOKS TRUE AND IS NOT ──
+     * `Active Listing` is NOT `Broker_Selection_Approval`'s entry stage. Read off
+     * approvalProcesses/Disposition__c.Broker_Selection_Approval.approvalProcess-meta.xml, the
+     * `entryCriteria` is `Disposition_Stage__c equals **BOV Outreach**`. The three disposition
+     * approvals key on `Disposition Readiness`, `BOV Outreach` and `Closing` respectively — so NO
+     * approval in this org has `Active Listing` as its entry stage, and this block is not the
+     * "runs as the approver" case that `OpportunityReviewService`'s LOI block is.
+     *
+     * ⚠ BUT THE ADJACENCY IS REAL AND IS WHERE THE ACTUAL HAZARD LIVES: `Active Listing` is the
+     * stage a disposition moves INTO from `BOV Outreach`, which IS the stage the broker-selection
+     * approval locks (`recordEditability = AdminOnly`). Three cases, and only one is live:
+     *
+     *   (a) approval already approved, then the owner advances — `finalApprovalRecordLock = false`
+     *       released the lock in a PRIOR transaction, so the record is unlocked. Safe.
+     *   (b) approval still pending, a NON-admin tries to advance — `AdminOnly` makes the platform
+     *       refuse the update BEFORE any trigger runs. This code never executes. Safe.
+     *   (c) approval still pending, an ADMIN advances — `AdminOnly` permits it, so this code runs
+     *       with the approval still pending, i.e. with the record still locked against a SECOND
+     *       DML. 🔴 This is the one live hazard, and it is exactly the residual review D20/W1
+     *       recorded against DispositionNdaStampQueueable.
+     *
+     * ── WHAT WAS CHOSEN, AND WHY IT BEATS BOTH SIBLING ANSWERS ──────────────
+     * A BEFORE-SAVE, IN-MEMORY ASSIGNMENT. No DML, no Queueable, no lock exposure, at any record
+     * count. Case (c) becomes harmless: the admin's own update is permitted (that is what
+     * `AdminOnly` means), and this writes into that same already-permitted save. There is no second
+     * statement for ENTITY_IS_LOCKED to refuse.
+     *
+     *   an inline `update` in the AFTER context — REJECTED. In case (c) it throws
+     *       ENTITY_IS_LOCKED with allOrNone = true, rolling back the admin's own stage change. The
+     *       measured lesson (LoiPrimaryStampQueueable, Tranche 2 C1): SYSTEM_MODE lifts CRUD and
+     *       FLS and NEVER a lock, so `AccessLevel.SYSTEM_MODE` would not rescue it either.
+     *   a QUEUEABLE, copying the NDA block — REJECTED, AND IT WOULD NOT EVEN WORK. D20/W1
+     *       established the reason precisely: `finalApprovalRecordLock = false` releases the lock
+     *       ON FINAL APPROVAL, and on this path the triggering transaction is NOT the one releasing
+     *       it, so a PENDING approval OUTLIVES the queueable and the async update throws too —
+     *       with allOrNone = true, no retry, and nothing but a failed AsyncApexJob to show for it.
+     *       Copying that pattern here would inherit its known residual and buy nothing.
+     *
+     * 🔴 AND THE REASON THIS OPTION IS AVAILABLE HERE BUT NOT TO THE NDA BLOCK IS STRUCTURAL, NOT
+     * PREFERENCE. `Primary_NDA__c`'s value is the CHILD'S ID, which does not exist until after the
+     * child is inserted, which needs the parent's Id, which needs the AFTER context. It is causally
+     * downstream of the insert and cannot be computed early at any price. `Listing_Date__c` depends
+     * on nothing but the transition being made, which is fully known in before-update. That is the
+     * whole difference, and it is why the two must not be harmonised.
+     *
+     * ── FLS ────────────────────────────────────────────────────────────────
+     * A before-trigger field assignment is an in-memory SObject mutation and is not FLS-checked, so
+     * a persona without EDIT on `Listing_Date__c` still gets the stamp. That is the intended
+     * outcome and matches `LeadConvertService`'s stamp: a missing FLS grant makes the value
+     * invisible to that persona, it does not disable the clock. `DPEG_Disposition_View` holds the
+     * field read-only and cannot change a stage anyway.
+     *
+     * ── 🔴 FILL-IF-BLANK, NEVER UNCONDITIONAL. THREE INDEPENDENT REASONS ────
+     * 1. IDEMPOTENCY. Re-entering `Active Listing` must not restart the marketing clock — the same
+     *    "never a second listing for one disposition" rule the child guard enforces. An
+     *    unconditional stamp would reset the 60 days every time someone stepped back and forward.
+     * 2. IT WOULD DESTROY REAL DATA. `TestDataFactory.createDispositions` seeds
+     *    `Listing_Date__c = Date.today()` on EVERY fixture, and a human can set the true listing
+     *    date by hand before advancing the stage. Overwriting a known date with "today" is a silent
+     *    data loss.
+     * 3. IT KEEPS THE PARENT CLOCK AND THE CHILD'S `List_Date__c` IN AGREEMENT, because
+     *    `openBrokerListings` copies the parent value rather than re-deriving `Date.today()`.
+     *
+     * ⚠ CONSEQUENCE FOR TESTS, STATED BECAUSE IT MAKES THE OBVIOUS TEST VACUOUS: since the factory
+     * pre-populates `Listing_Date__c`, a test asserting that this method stamps must NULL THE FIELD
+     * FIRST. Without that it passes for the wrong reason — the value it asserts was put there by
+     * the fixture, not by this code.
+     *
+     * @param newDispositions Trigger.new.
+     * @param oldMap          Trigger.oldMap on update; null on insert (an insert is treated as
+     *                        entry into whatever stage the row was created at).
+     */
+    public static void stampListingDates(
+        List<Disposition__c> newDispositions,
+        Map<Id, Disposition__c> oldMap
+    ) {
+        if (newDispositions == null || newDispositions.isEmpty()) {
+            return;
+        }
+        // Resolved once for the whole chunk. Date.today() is stable within a transaction, but
+        // hoisting it also makes every stamped row in one save carry an identical date rather than
+        // relying on that.
+        Date today = Date.today();
+        for (Disposition__c d : newDispositions) {
+            if (LISTING_STAGE != d.Disposition_Stage__c) {
+                continue;
+            }
+            // ENTRY, not presence — the same test createStageEntryRecords makes, so the pair
+            // cannot disagree about which saves are a stage entry. On insert oldMap is null and
+            // priorStage is null, so being CREATED at Active Listing counts as entry.
+            Disposition__c prior = (oldMap == null || d.Id == null) ? null : oldMap.get(d.Id);
+            String priorStage = (prior == null) ? null : prior.Disposition_Stage__c;
+            if (priorStage == d.Disposition_Stage__c) {
+                continue;
+            }
+            if (d.Listing_Date__c == null) {
+                d.Listing_Date__c = today;
+            }
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -469,6 +630,128 @@ public with sharing class DispositionStageEntryService {
         }
         Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
         // NO PARENT STAMP AND NO QUEUEABLE — see point 3 above.
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // `Active Listing` STAGE — the broker listing. Tranche 5B (D28/Q3).
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Opens one broker listing per entrant.
+     *
+     * 🔴 THIS IS A PREREQUISITE, NOT AN ENHANCEMENT. Before it existed, NOTHING in the application
+     * created a `Broker_Listing__c` — repo-wide the only creators were `TestDataFactory` and three
+     * seed scripts — and NOTHING wrote `Disposition__c.Listing_Date__c`. With
+     * `Days_On_Market__c` carrying `formulaTreatBlanksAs = BlankAsZero`, an unset date reads **0
+     * forever, not null**: a clock that looks healthy and never ticks. The traction monitor is
+     * inert without this block.
+     *
+     * ── 🔴 THE DML MODE, RE-ARGUED FROM SCRATCH. THE SIBLING BLOCKS' REASON IS FALSE HERE. ──
+     * The NDA, LOI and PSA blocks all reach SYSTEM_MODE through "the disposition persona holds
+     * `allowCreate = false` on this child object". THAT ARGUMENT DOES NOT APPLY. Measured in
+     * permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml: `Broker_Listing__c` is granted
+     * `allowCreate = true`, `allowEdit = true`, `viewAllRecords = true`, and EVERY field this
+     * method writes (`Disposition__c`, `List_Date__c`, `Listing_Status__c`, `Broker_Firm__c`) is
+     * `editable = true`. `DPEG_Acquisitions` additionally carries `modifyAllRecords = true`. This
+     * block also introduces NO NEW FIELD, so the second sibling leg — "a Metadata-API-deployed
+     * field arrives with no FLS for anyone, System Administrator included" — is absent too.
+     *
+     * 🔴 SO ON THE EVIDENCE `USER_MODE` WOULD WORK FOR BOTH DISPOSITION PERSONAS, AND SYSTEM_MODE
+     * IS CHOSEN ANYWAY FOR A DIFFERENT REASON. This insert is automation the user did not ask for:
+     * they moved a stage, and a listing record appears as a side effect. `USER_MODE` THROWS rather
+     * than degrades, so ANY principal outside the two measured permission sets — an administrator
+     * holding neither, a data load, a future Flow-driven stage change, an integration user — would
+     * have their legitimate stage change ROLLED BACK by a `DmlException` about an object they were
+     * not trying to touch. That is the `TaskRollupService` production incident's exact shape
+     * (ARCHITECTURE.md §2: a `USER_MODE` read inside a trigger threw and rolled back 82 Task
+     * inserts, making a checklist unbuildable by any non-admin).
+     *
+     * ⚠ AND THE HONEST COUNTER-STATEMENT, BECAUSE THIS ONE IS A GENUINE WIDENING WHERE THE OTHER
+     * THREE WERE NOT: SYSTEM_MODE here lets a principal create a `Broker_Listing__c` they could not
+     * create by hand. It is bounded three ways — the row is created only as a side effect of a
+     * stage change they were already permitted to make, every value on it is derived from the
+     * parent record they already hold, and no user input reaches it. Do not restate the sibling
+     * blocks' "the persona has no create" line here; it is measurably untrue and would leave the
+     * next reader believing this grant restores access rather than adds it.
+     *
+     * ── THE APPROVAL LOCK — DOES NOT REACH THE CHILD ────────────────────────
+     * `Active Listing` is not any approval's entry stage (measured: `Disposition Readiness`,
+     * `BOV Outreach`, `Closing`), and in the one case where this code CAN run under a pending
+     * approval — an admin advancing a locked record out of `BOV Outreach`, `recordEditability =
+     * AdminOnly` — a child of a locked record is not itself locked, so the insert is safe
+     * synchronously. There is NO parent write in this method at all: `Listing_Date__c` is stamped
+     * in the BEFORE context by `stampListingDates`, precisely so that the one write that WOULD
+     * have been refused never becomes a second DML. No Queueable, and adding one would assert a
+     * hazard that has been designed out rather than one that is present.
+     *
+     * ── allOrNone = true ────────────────────────────────────────────────────
+     * Same trade as the LOI and PSA blocks, for the same reason: a disposition parked at
+     * `Active Listing` with no listing is SILENT — the traction panel would read "not listed" while
+     * the Path says otherwise — and a refused stage change is LOUD. Silence is the failure mode
+     * this tranche keeps paying for.
+     *
+     * ── IDEMPOTENCY: SIMPLE PRESENCE, ANY LISTING ───────────────────────────
+     * "This disposition already has a broker listing" is the whole test. Re-entering the stage,
+     * a re-save, and the NDA block's own deferred stamp update are therefore all no-ops.
+     *
+     * ⚠ IT IS DELIBERATELY *NOT* KEYED ON THE BROKER, and that is what keeps the broker-change
+     * history model reachable: `BrokerListingSelector.selectMostRecentByDispositionId` is already
+     * `ORDER BY CreatedDate DESC LIMIT 1`, i.e. already written as "the current listing among
+     * several", so a deliberate broker change APPENDS a second row and the card follows the new
+     * broker with no schema change. Auto-create must never be the thing that appends it — a stage
+     * re-entry is not a broker change.
+     *
+     * ── WHAT IS STAMPED, AND WHAT IS DELIBERATELY LEFT BLANK ────────────────
+     *   `List_Date__c`      = the PARENT's Listing_Date__c, copied rather than re-derived from
+     *                         Date.today(), so the child's date and the clock the badge reads can
+     *                         never disagree. `stampListingDates` has already run in the before
+     *                         context of this same save, so the value is present on Trigger.new.
+     *   `Broker_Firm__c`    = `Disposition__c.Selected_Broker__c` — free, already on Trigger.new,
+     *                         and by definition the broker just approved out of BOV Outreach. A
+     *                         blank there simply leaves a blank here.
+     *   `Listing_Status__c` = LISTING_INITIAL_STATUS; see that constant.
+     *   `Contact_Name__c`   — LEFT BLANK. The named contact lives on the `Selected` BOV_Submission__c
+     *                         and would cost a query per chunk to fetch, for a display string.
+     *                         A human fills it, or the future broker-change action supplies it.
+     *   `Days_On_Market__c` — LEFT BLANK ON PURPOSE. It is the hand-keyed Number nothing writes;
+     *                         seeding a 0 would resurrect the very field the clock was moved OFF.
+     *   `Offers_Received__c`— LEFT BLANK. Same reason; the real count is `Disposition_Offer__c`
+     *                         children, read live by DispositionTractionService.
+     *
+     * ── NO RECORD TYPE ─────────────────────────────────────────────────────
+     * `Broker_Listing__c` has no `recordTypes/` directory — the object has none — so unlike the
+     * other three blocks there is no stamp, no describe and no `isAvailable()` guard here. The
+     * guarded-versus-unconditional question is not answerable in the abstract and is deliberately
+     * left to whoever adds record types to this object, exactly as design §2.6 argued for
+     * `Property_Asset__c`.
+     *
+     * @param entrants Dispositions that just entered `Active Listing`, as whole records.
+     */
+    private static void openBrokerListings(List<Disposition__c> entrants) {
+        if (entrants.isEmpty()) {
+            return;
+        }
+        Map<Id, Disposition__c> byId = new Map<Id, Disposition__c>(entrants);
+        // One query for the whole chunk — never one per record.
+        for (Broker_Listing__c existing : BrokerListingSelector.selectByDispositionIds(byId.keySet())) {
+            byId.remove(existing.Disposition__c);
+        }
+        if (byId.isEmpty()) {
+            return;
+        }
+
+        List<Broker_Listing__c> toInsert = new List<Broker_Listing__c>();
+        for (Disposition__c d : byId.values()) {
+            toInsert.add(new Broker_Listing__c(
+                Disposition__c = d.Id,
+                List_Date__c = d.Listing_Date__c,
+                Broker_Firm__c = d.Selected_Broker__c,
+                Listing_Status__c = LISTING_INITIAL_STATUS
+            ));
+        }
+        Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
+        // NO PARENT STAMP AND NO QUEUEABLE — the one parent write this feature needs happens in
+        // the BEFORE context (stampListingDates). Do not add one "for symmetry" with the NDA block.
     }
 
     // ═════════════════════════════════════════════════════════════════════════

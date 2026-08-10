@@ -945,6 +945,54 @@ Work is committed as `3e798d2` + `fce1996` on `feature/ir-acquisitions-segregati
 
 ---
 
+## D28 — Gate 1, Tranche 5 (Property Asset + Active Listing). 2026-08-10.
+
+Design: `agent-output/design-requirements-asset-and-listing.md`.
+**Build in one pass, DEPLOY SEPARATELY — Item A first, Item B second.** Opposite risk profiles: Item A
+runs inside `OpportunityReviewTrigger` on **every Closed Won org-wide** and **fails LOUDLY** (a throw
+rolls back the deal close); Item B is contained to one stage and **fails SILENTLY** (a clock keyed on a
+date nobody sets computes day 0 forever and looks healthy). Deploying together lets a dead Item B hide
+behind a healthy Item A — the Tranche 4A/4B argument.
+
+- **Q1 = OFFERS ONLY; "real interest" stays a human judgement.** The 30-day checkpoint fires on zero
+  offers. Rejected: a recordable interest signal (works only if maintained, and an unmaintained field
+  reads as *zero interest*) and a manual "there is interest" flag (inverts the burden — silence becomes
+  a positive assertion of no-interest rather than absence of data).
+- **Q2 = CHANGE ALL SIX PLACES to 60/30.** 🔴 D27.1 is **not** a text edit: the 6-week clock is
+  **implemented in Apex** — `BrokerListingController.getListing:46-59` hardcodes `dom >= 42 / 28 / 21`
+  and produces the `weekLabel` + `isAtRisk` that `lwc/brokerListing` renders and colours — plus both Path
+  files, an XML comment telling future readers *not* to fix the other one, `lwc/listingAlerts.html`, and
+  `lwc/dispositionOffer/dispositionOffer.html:22`. **Three test files pin it.**
+  ⚠ Configurable thresholds were offered and NOT chosen; the numbers stay hardcoded. Noted because this
+  is the **second** time these numbers have been disputed — if a third revision comes, revisit.
+- **Q3 = AUTO-CREATE the `Broker_Listing__c` on entry to Active Listing**, stamping `Listing_Date__c`, in
+  `DispositionStageEntryService` — the same auto-create pattern already built for NDA, LOI and PSA.
+  🔴 **This is a PREREQUISITE, not an enhancement:** nothing creates a `Broker_Listing__c` and nothing
+  writes `Listing_Date__c` today, and `Days_On_Market__c` is `BlankAsZero`, so an unset date reads
+  **0 forever, not null** — a clock that looks healthy and never ticks.
+- **Q4 = REPLACE `lwc/listingAlerts` with the real traction status.** 🔴 It is **not** an empty stub as
+  the audit recorded: the `.js` is, but the `.html` is a hardcoded 22-line mock rendering four alert rows
+  **as fact** — including two notifications D9 defers and a **"Clock PAUSES" rule that appears in no
+  document and no decision**. A component rendering a fixed lie is worse than an empty one.
+
+### Findings that corrected the brief
+
+1. **Extending `Transaction_Complete_Close` would miss half the closes** — `StageAdvanceService.NEXT_STAGE`
+   maps **both** `PSA ⇒ Closed Won` and `About to Close ⇒ Closed Won`, so a deal driver can reach Closed
+   Won with **no Transaction at all**. Recommended home is `OpportunityReviewTriggerHandler`, which
+   already routes a non-review stage-keyed concern (`ContractExecutionService.openTransactionsOnAboutToClose`,
+   moved there 2026-08-05 for exactly this reason).
+2. **The new asset will be INVISIBLE to the Sell Meter, and that is correct** — `PropertyAssetSelector`
+   filters both meter queries on `Peak_Sell_Date__c != null`, which an auto-created asset will not have.
+   Recorded because the natural expectation is the opposite.
+3. **Record-type stamping is NOT applicable** — `Property_Asset__c` has no record types. The design
+   recorded why none of D16.3's, 3B's or 3C's three arguments would transfer, so the fourth is made when
+   it is real rather than pre-emptively.
+4. **Nothing fires on `Property_Asset__c` creation** — no trigger, no flow, no list views; verified four
+   ways. So auto-creating assets starts no downstream automation.
+
+---
+
 ## OPEN — remaining questions, each blocking its own item
 
 1. ~~**Acquisition NDA middle state**~~ — ✅ **RESOLVED by D14.1: four states, additive.**

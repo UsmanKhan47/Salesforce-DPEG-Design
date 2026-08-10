@@ -222,4 +222,93 @@ private class PropertyAssetSelectorTest {
 
         Assert.isTrue(threw, 'fetch-for-use: a miss throws QueryException, it does not return null');
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // selectByPropertyIds — the Closed Won idempotency guard's read (Tranche 5A)
+    //
+    // ⚠ This method is the ONE `WITH SYSTEM_MODE` + `without sharing` read on this class.
+    // The mode and the sharing keyword cannot be falsified by a test running as an
+    // administrator, so what these tests pin is the CONTRACT the service depends on:
+    // the key is Property__c alone (no Status__c filter), the field set is minimal, the
+    // null/empty short-circuit costs no query, and a property with no asset is simply
+    // absent. The mode/sharing decisions rest on measured repo state recorded in the
+    // method header and are proved by post-deploy gate A-G4, as a non-admin persona.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectByPropertyIds_returnsTheExistingAssetsPropertyLink() {
+        Property__c withAsset = TestDataFactory.createProperty(true);
+        Property__c withoutAsset = TestDataFactory.createProperty(true);
+        Property_Asset__c asset = TestDataFactory.createPropertyAsset(withAsset.Id, true);
+
+        Test.startTest();
+        List<Property_Asset__c> result = PropertyAssetSelector.selectByPropertyIds(
+            new Set<Id>{ withAsset.Id, withoutAsset.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(),
+            'Only the property that already carries an asset produces a row');
+        Assert.areEqual(asset.Id, result[0].Id, 'Id must be selected');
+        Assert.areEqual(withAsset.Id, result[0].Property__c,
+            'Property__c must be selected — the caller keys the whole guard on it');
+    }
+
+    /**
+     * 🔴 NO `Status__c` FILTER. A `Disposed` asset still counts as "this property already has
+     * an asset", so a re-acquisition does NOT mint a second one — D27.3's "never a second
+     * asset for one property", read literally. If a future change adds
+     * `AND Status__c = 'Active'` to this query, a bought-sold-rebought property silently
+     * grows a rival asset and splits the whole Property Management tree in two. This test is
+     * the fence.
+     */
+    @isTest
+    static void selectByPropertyIds_disposedAssetStillCounts() {
+        Property__c prop = TestDataFactory.createProperty(true);
+        Property_Asset__c asset = TestDataFactory.createPropertyAsset(prop.Id, false);
+        asset.Status__c = 'Disposed';
+        insert asset;
+
+        Test.startTest();
+        List<Property_Asset__c> result =
+            PropertyAssetSelector.selectByPropertyIds(new Set<Id>{ prop.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(),
+            'A Disposed asset must still be seen by the idempotency guard');
+    }
+
+    @isTest
+    static void selectByPropertyIds_nullOrEmpty_returnsEmptyAndCostsNoQuery() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Property_Asset__c> fromNull = PropertyAssetSelector.selectByPropertyIds(null);
+        List<Property_Asset__c> fromEmpty =
+            PropertyAssetSelector.selectByPropertyIds(new Set<Id>());
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(0, fromNull.size(), 'A null input returns an empty list, never null');
+        Assert.areEqual(0, fromEmpty.size(), 'An empty input returns an empty list, never null');
+        Assert.areEqual(0, spent, 'Neither short-circuit may issue SOQL');
+    }
+
+    @isTest
+    static void selectByPropertyIds_bulk251_readsAllInOneQuery() {
+        List<Property__c> properties = TestDataFactory.createProperties(BULK_N, true);
+        List<Property_Asset__c> assets = new List<Property_Asset__c>();
+        for (Property__c p : properties) {
+            assets.add(new Property_Asset__c(Name = p.Name, Property__c = p.Id, Status__c = 'Active'));
+        }
+        insert assets;
+        Set<Id> ids = new Map<Id, Property__c>(properties).keySet();
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Property_Asset__c> result = PropertyAssetSelector.selectByPropertyIds(ids);
+        Integer spent = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, result.size(), 'All 251 existing assets should be returned');
+        Assert.areEqual(1, spent, 'A 251-Id read costs exactly one query, not 251');
+    }
 }

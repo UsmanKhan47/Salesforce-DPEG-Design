@@ -23,10 +23,28 @@
         and the rest of the sentence are unchanged, and the On_Market copy of this step still
         carries the original wording, which is correct there.
 
-        NOT corrected, deliberately: the Active Listing step text on the On_Market path ("6-week
-        marketing clock ... Week 4 YELLOW ... Week 6 Hard Stop") is under an OPEN user question
-        about a 2-month vs 6-week clock. That step does not exist on this path, but do not
-        "fix" it on the other one either.
+        🔴 THE "NOT CORRECTED, DELIBERATELY" NOTE THAT STOOD HERE IS RETRACTED - 2026-08-10,
+        BY D27.1 / D28-Q2. It is quoted rather than deleted because this file's copy was one of
+        three that told the next reader to leave a known-wrong clock alone, and three copies of
+        that instruction are what made this a review blocker rather than a one-line fix:
+
+            RETRACTED: "NOT corrected, deliberately: the Active Listing step text on the
+            On_Market path ("6-week marketing clock ... Week 4 YELLOW ... Week 6 Hard Stop") is
+            under an OPEN user question about a 2-month vs 6-week clock. That step does not
+            exist on this path, but do not "fix" it on the other one either."
+
+        (Those milestone names survive above ONLY as a verbatim quotation of retracted text.)
+
+        WHAT ANSWERED IT: D27.1 - THE DOCUMENT WON. The marketing period is 60 days with a
+        30-day traction checkpoint, and traction is logged offers and NOTHING else (D28-Q1).
+        The Active Listing text on Disposition_Path_On_Market and on the deactivated
+        Disposition_Path was rewritten to that model in this change, and the bands both now
+        name are DispositionTractionService's.
+
+        NOTHING IN THIS FILE CHANGED BUT THIS COMMENT, for the reason the retracted note gave
+        and the opening paragraph still gives: Active Listing is restricted out of the
+        Off_Market value set, so this path has no Active Listing step to correct. The paragraph
+        is kept only so a reader of this file is not left holding the retracted instruction.
 
         NDA, Disposition Offer, LOI and PSA are new, text-only steps: none has a
         Disposition__c field to surface. Nothing about NDA__c itself changes in this tranche -

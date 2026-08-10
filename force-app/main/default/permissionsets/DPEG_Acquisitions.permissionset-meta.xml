@@ -40,6 +40,15 @@
         <apexClass>DispositionTaskController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      Tranche 5B (2026-08-10) — the Active Listing traction monitor behind lwc/listingAlerts.
+      ⚠ A PermissionSet deploy REPLACES this file's whole grant list; reconcile against the org
+      before deploying.
+    -->
+    <classAccesses>
+        <apexClass>DispositionTractionController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>GroupNotifier</apexClass>
         <enabled>true</enabled>
