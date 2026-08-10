@@ -25,6 +25,8 @@
 - **Per `CLAUDE.md`, the main agent orchestrates and does not implement.** Metadata tasks → `salesforce-admin`. Apex tasks → `salesforce-developer`. Test classes → `salesforce-unit-testing`. Every task passes `salesforce-code-review` before `salesforce-devops` deploys.
 - **Record type API names are fixed and used verbatim throughout:**
   `Lead.Acquisition_Broker`, `Lead.IR_Investor`, `Contact.Broker`, `Contact.Investor`, `Account.Broker_Firm`, `Account.Investor_Entity`.
+- 🔴 **NO record-type helper in this plan guards on `isAvailable()` — every one guards on `info != null` alone** (amended 2026-08-10, after the Task 2 review). `isAvailable()` asks whether the RUNNING USER may *select* a record type in the UI. That is the wrong question everywhere here, because Apex DML writes in system mode regardless: the guard would never block the write, it would only cause the record to land **unstamped**. After Task 12 an unstamped record matches no criteria-based sharing rule and is invisible to everyone except its owner — a silent, org-wide failure with no error anywhere. This applies uniformly to `TestDataFactory` (Task 3), `EmailToLeadService`/`BrokerPortalService` (Task 4) and `LeadConvertService` (Task 5). `info != null` still degrades correctly for the one case that deserves it: the record type genuinely does not exist in this org.
+- **Sharing rules:** `RecordTypeId` criteria take the record type **LABEL** (`Broker Firm`), and `<sharedTo>` accepts exactly **one** target per rule. Both established empirically 2026-08-10.
 
 ---
 
@@ -403,7 +405,7 @@ Place it next to the other private helpers (`requirePositive`, `insertIf`, `next
         Schema.RecordTypeInfo info = sobjType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
             .get(developerName);
-        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+        return (info != null) ? info.getRecordTypeId() : null;
     }
 ```
 
@@ -526,7 +528,7 @@ Expected: FAIL — `RecordType.DeveloperName` is null.
      * This is the same reasoning ARCHITECTURE.md §2 records for `WITH SYSTEM_MODE`: a write the
      * platform performs ON a principal's behalf must not depend on that principal's grants.
      * Contrast `LeadConvertService` (Task 5) and `TestDataFactory` (Task 3), which are
-     * user-initiated and keep the isAvailable() guard correctly.
+     * user-initiated, but they omit the guard too — see the note under Global Constraints.
      *
      * Null remains a legitimate answer for the ONE case it should be: the record type does not
      * exist in this org at all. The caller then leaves RecordTypeId unset and the platform
@@ -708,7 +710,7 @@ Then add the method:
         Schema.RecordTypeInfo info = sobjType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
             .get(developerName);
-        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+        return (info != null) ? info.getRecordTypeId() : null;
     }
 ```
 
