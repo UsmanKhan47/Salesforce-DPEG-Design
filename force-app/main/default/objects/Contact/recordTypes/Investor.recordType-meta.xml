@@ -6,12 +6,352 @@
         CONTACT RECORD TYPES DRIVE LAYOUT, FLS AND REPORTING ONLY - NOT SHARING. Contact
         sharing is inherited from its Account via ControlledByParent (target state - see the
         comment in Account/recordTypes/Investor_Entity.recordType-meta.xml for the org's
-        current, measured OWD, which has not yet been corrected to match this design). The
+        current, measured OWD, which has not yet been corrected to match this design). MEASURED,
+        not assumed: Contact's live InternalSharingModel was queried via the Tooling API
+        (`SELECT InternalSharingModel FROM EntityDefinition WHERE DeveloperName = 'Contact'`)
+        on 2026-08-10 (Task 0 of this plan) and returned ReadWrite, contradicting this repo's
+        own Contact.object-meta.xml, which still declares ControlledByParent. The
         Record_Type_Matches_Account validation rule (Task 8) is what keeps a Contact's own
         record type from disagreeing with its parent Account's record type.
+
+        ⚠ FIX 2026-08-10 (code review, CRITICAL) - EVERY PICKLIST ON THE OBJECT IS ENUMERATED
+        BELOW - Salutation, LeadSource, OtherGeocodeAccuracy, MailingGeocodeAccuracy,
+        ContactSource, TitleType, DepartmentGroup, BuyerAttributes, Broker_Priority__c,
+        Broker_Specialty__c and Broker_Status__c - because a record type file that omits a
+        picklist silently drops ALL of that picklist's values from that type. This is the same
+        rule already enforced under NDA__c, Contract_Review__c, Disposition__c and LOI__c; the
+        original brief that produced this file omitted it, which was a plan defect, not a
+        deliberate narrowing. The full value set was pulled from a LIVE ORG DESCRIBE
+        (`sf sobject describe, sobject=Contact`), never from this repo's field files, because
+        `sf project retrieve` unions local and remote picklist values and a repo field file can
+        list values the org no longer has. Both Contact record types (this one and Broker) carry
+        the IDENTICAL, COMPLETE value set with the SAME defaults (Broker_Priority__c = Standard,
+        Broker_Specialty__c = Retail, Broker_Status__c = Active) - narrowing either record
+        type's values is a separate, deliberate change for later. This type carries no existing
+        rows today, so "behaviour-neutral" here means it is created with the full value set
+        available from day one, matching its sibling. The Broker_* defaults reading oddly on an
+        Investor Contact is a known cosmetic gap, not a functional one - a future value-set
+        narrowing (out of scope here) is the right place to fix it.
     -->
     <fullName>Investor</fullName>
     <active>true</active>
     <description>Investor contact. Layout/FLS/reporting only - sharing is inherited from the parent Account. See the XML comment in this file.</description>
     <label>Investor</label>
+    <picklistValues>
+        <picklist>Broker_Priority__c</picklist>
+        <values>
+            <fullName>High</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Standard</fullName>
+            <default>true</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Broker_Specialty__c</picklist>
+        <values>
+            <fullName>Retail</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Office</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Industrial</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Multifamily</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mixed-Use</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Land</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Broker_Status__c</picklist>
+        <values>
+            <fullName>Active</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Inactive</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>BuyerAttributes</picklist>
+        <values>
+            <fullName>Detractor</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>DecisionMaker</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Buyer</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>ExecutiveSponsor</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Champion</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>BusinessUser</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Evaluator</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>TechnicalExpert</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>ContactSource</picklist>
+        <values>
+            <fullName>Auto Create</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Email Message</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Meeting Digest</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Seller Home</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>DepartmentGroup</picklist>
+        <values>
+            <fullName>chiefExecutive</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>sales</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>finance</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>tech</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>support</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>legal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>humanResources</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>customerSuccess</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>marketing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>other</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LeadSource</picklist>
+        <values>
+            <fullName>Email-to-Lead</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Broker Portal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Manual Entry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Web</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Phone Inquiry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>MailingGeocodeAccuracy</picklist>
+        <values>
+            <fullName>Address</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>NearAddress</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Block</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Street</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>ExtendedZip</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Zip</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Neighborhood</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>City</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>County</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>State</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Unknown</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>OtherGeocodeAccuracy</picklist>
+        <values>
+            <fullName>Address</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>NearAddress</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Block</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Street</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>ExtendedZip</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Zip</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Neighborhood</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>City</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>County</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>State</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Unknown</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Salutation</picklist>
+        <values>
+            <fullName>Mr.</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Ms.</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mrs.</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Dr.</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Prof.</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mx.</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>TitleType</picklist>
+        <values>
+            <fullName>ceo</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>executive</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>vp</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>directorOrManager</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>individualContributor</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
 </RecordType>
