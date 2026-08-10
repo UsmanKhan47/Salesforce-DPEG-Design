@@ -8,4 +8,6 @@
     <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
     <permissionSets>DPEG_Contact_Edit</permissionSets>
     <permissionSets>DPEG_App_PropertyMgmt</permissionSets>
+    <permissionSets>DPEG_Account_View</permissionSets>
+    <permissionSets>DPEG_Contact_View</permissionSets>
 </PermissionSetGroup>

@@ -10,4 +10,6 @@
     <permissionSets>DPEG_Property_View</permissionSets>
     <permissionSets>DPEG_Reports_Access</permissionSets>
     <permissionSets>DPEG_App_Transaction</permissionSets>
+    <permissionSets>DPEG_Account_View</permissionSets>
+    <permissionSets>DPEG_Contact_View</permissionSets>
 </PermissionSetGroup>
