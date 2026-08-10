@@ -587,9 +587,9 @@ After `l.Status = 'New';` (line 80), reusing the helper rather than re-deriving 
         }
 ```
 
-⚠ `BrokerPortalService` is `without sharing` and runs as the site guest user, who will never hold record type visibility. That is precisely why `acquisitionBrokerRecordTypeId()` above **omits the `isAvailable()` guard** — with it, the guest insert would succeed and land unstamped, silently. No guest permission-set change is therefore required for the stamp to work.
+⚠ `BrokerPortalService` is `without sharing` and runs as the Site guest user, who may well not hold record type visibility. That is exactly why `acquisitionBrokerRecordTypeId()` above **keeps the `isAvailable()` guard**: record-type visibility is enforced on DML regardless of mode (measured 2026-08-10), so without the guard an unprovisioned guest user would make the portal submission **throw** rather than land unstamped.
 
-Still worth verifying in-org that the guest user can create Leads at all after the record types deploy, and recording the result in the runbook — but that is a pre-existing CRUD question, not a new dependency this task introduces.
+🔴 **The guard is a backstop, not the fix.** Verify in-org that both the Site guest user and the Email Service context user can access `Lead.Acquisition_Broker`, and record the result in the runbook. If either cannot, its Leads land unstamped and become invisible after Task 12 — silently. `scripts/apex/verify-record-type-backfill.apex` is the detector, and Task 14 must re-run it *after* exercising both pipelines, not only before the OWD flip.
 
 - [ ] **Step 6: Run the tests and the pinned governor tests**
 
