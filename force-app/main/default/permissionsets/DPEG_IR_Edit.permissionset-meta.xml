@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Investor Relations persona: Create/Read/Edit (no Delete) on the IR-record-type Lead/Contact/Account population only. Deliberately NO viewAllRecords/modifyAllRecords - record visibility beyond owned rows comes from the Lead_IR_Investor / Account_Investor_Entity sharing rules (Task 11), never from this permission set. Record type visibility is scoped to Lead.IR_Investor / Contact.Investor / Account.Investor_Entity only, so an IR user cannot create or see a broker-typed row. Carries no broker field and no acquisitions Lead deal-screening field.</description>
+    <!--
+        PermissionSet.Description is capped at 255 characters. The full rationale below is
+        security-relevant and was moved here rather than deleted; a comment is repo-only and
+        is never sent to the Metadata API, so it can be as long as it needs to be. Do not
+        paste this back into <description> verbatim - trim it if it needs to change there.
+
+        Investor Relations persona: Create/Read/Edit (no Delete) on the IR-record-type
+        Lead/Contact/Account population only. Deliberately NO viewAllRecords/modifyAllRecords
+        - record visibility beyond owned rows comes from the Lead_IR_Investor /
+        Account_Investor_Entity sharing rules (Task 11), never from this permission set.
+        Record type visibility is scoped to Lead.IR_Investor / Contact.Investor /
+        Account.Investor_Entity only, so an IR user cannot create or see a broker-typed row.
+        Carries no broker field and no acquisitions Lead deal-screening field.
+    -->
+    <description>Investor Relations: Create/Read/Edit (no Delete) on IR-record-type Lead/Contact/Account only. No viewAllRecords/modifyAllRecords - visibility comes from sharing rules, not this set. Scoped to IR record types only; no broker or deal-screening fields.</description>
     <fieldPermissions>
         <editable>true</editable>
         <field>Account.AccountSource</field>
