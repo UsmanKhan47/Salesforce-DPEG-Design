@@ -25,7 +25,19 @@
 - **Per `CLAUDE.md`, the main agent orchestrates and does not implement.** Metadata tasks → `salesforce-admin`. Apex tasks → `salesforce-developer`. Test classes → `salesforce-unit-testing`. Every task passes `salesforce-code-review` before `salesforce-devops` deploys.
 - **Record type API names are fixed and used verbatim throughout:**
   `Lead.Acquisition_Broker`, `Lead.IR_Investor`, `Contact.Broker`, `Contact.Investor`, `Account.Broker_Firm`, `Account.Investor_Entity`.
-- 🔴 **NO record-type helper in this plan guards on `isAvailable()` — every one guards on `info != null` alone** (amended 2026-08-10, after the Task 2 review). `isAvailable()` asks whether the RUNNING USER may *select* a record type in the UI. That is the wrong question everywhere here, because Apex DML writes in system mode regardless: the guard would never block the write, it would only cause the record to land **unstamped**. After Task 12 an unstamped record matches no criteria-based sharing rule and is invisible to everyone except its owner — a silent, org-wide failure with no error anywhere. This applies uniformly to `TestDataFactory` (Task 3), `EmailToLeadService`/`BrokerPortalService` (Task 4) and `LeadConvertService` (Task 5). `info != null` still degrades correctly for the one case that deserves it: the record type genuinely does not exist in this org.
+- 🔴 **EVERY record-type helper in this plan guards on `info != null && info.isAvailable()`** — and provisioning, not the guard, is the primary answer.
+
+  **This bullet reversed itself once. Read the whole thing before changing it again.** An earlier version said to drop `isAvailable()`, on the reasoning that Apex DML writes in system mode so the guard could only cause records to land unstamped. **That reasoning was wrong and was falsified by measurement on 2026-08-10** (Task 3, reproduced live via `ContactSelectorTest`): a plain `insert` — already CRUD/FLS-bypassing — still threw `System.DmlException: INVALID_CROSS_REFERENCE_KEY, Record Type ID` under `System.runAs` for a user lacking the record type.
+
+  **The measured rule: record-type visibility is enforced on Apex DML UNCONDITIONALLY. `AccessLevel` / `SYSTEM_MODE` governs CRUD, FLS and sharing — never record-type visibility.**
+
+  So the two failure modes are not "throws" versus "works", they are:
+  - **guarded** → the record lands **unstamped**, matches no sharing rule after Task 12, and is visible only to its owner. Silent.
+  - **unguarded** → the **INSERT THROWS**. On the inbound-email path that destroys the broker email outright — no Lead, no claim, no audit row. That is strictly worse, and is the same shape as this repo's ContentPublication outage.
+
+  **Therefore: guard everywhere, and treat the guard as a fail-soft backstop rather than the solution.** The actual fix is to provision every principal that creates records with the record type it needs — via permission sets, which is what Task 2 did for the human personas. `isAvailable()` exists for the principals that cannot be reliably provisioned (the Site guest user, the Email Service context user) so that a provisioning gap costs an unstamped record instead of a destroyed email.
+
+  🔴 **Because the guard hides a provisioning gap, Task 14 MUST verify that no record lands unstamped in real use** — the `verify-record-type-backfill.apex` script from Task 7 is the detector, and it needs re-running after the pipeline tests, not only before the OWD flip.
 - **Sharing rules:** `RecordTypeId` criteria take the record type **LABEL** (`Broker Firm`), and `<sharedTo>` accepts exactly **one** target per rule. Both established empirically 2026-08-10.
 
 ---
@@ -405,7 +417,7 @@ Place it next to the other private helpers (`requirePositive`, `insertIf`, `next
         Schema.RecordTypeInfo info = sobjType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
             .get(developerName);
-        return (info != null) ? info.getRecordTypeId() : null;
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 ```
 
@@ -516,19 +528,25 @@ Expected: FAIL — `RecordType.DeveloperName` is null.
     /**
      * The Acquisition_Broker record type Id, or null when it does not exist in this org.
      *
-     * 🔴 DELIBERATELY NOT GUARDED ON isAvailable() — THIS IS AN AUTOMATION PATH.
+     * 🔴 GUARDED ON isAvailable(), AND THAT GUARD IS A FAIL-SOFT BACKSTOP, NOT THE FIX.
      *
-     * `isAvailable()` reports whether the RUNNING USER may select this record type. Both callers
-     * write in SYSTEM MODE on a principal nobody provisioned for the UI: the Email Service
-     * context user, and the Site guest user. Their DML succeeds regardless — so an isAvailable()
-     * guard would not block the insert, it would silently produce an UNSTAMPED Lead. After
-     * Task 12 an unstamped Lead matches no sharing rule and is invisible to everyone except its
-     * owner, with no error anywhere.
+     * MEASURED 2026-08-10: record-type visibility is enforced on Apex DML UNCONDITIONALLY.
+     * `AccessLevel` / SYSTEM_MODE governs CRUD, FLS and sharing — never record-type visibility.
+     * A plain `insert` for a principal lacking the record type throws
+     * `System.DmlException: INVALID_CROSS_REFERENCE_KEY, Record Type ID`.
      *
-     * This is the same reasoning ARCHITECTURE.md §2 records for `WITH SYSTEM_MODE`: a write the
-     * platform performs ON a principal's behalf must not depend on that principal's grants.
-     * Contrast `LeadConvertService` (Task 5) and `TestDataFactory` (Task 3), which are
-     * user-initiated, but they omit the guard too — see the note under Global Constraints.
+     * Both callers here run as a principal nobody provisions through the UI — the Email Service
+     * context user and the Site guest user. WITHOUT this guard, a provisioning gap would not
+     * produce an unstamped Lead, it would DESTROY THE INBOUND EMAIL: no Lead, no registry claim,
+     * no audit row, no bounce. That is the ContentPublication failure shape and it is the one
+     * outcome this pipeline must never have.
+     *
+     * WITH the guard, the same gap costs an UNSTAMPED Lead — recoverable, and detectable by
+     * `scripts/apex/verify-record-type-backfill.apex`.
+     *
+     * ⚠ THE REAL FIX IS PROVISIONING, NOT THIS GUARD. Confirm in-org that the Email Service
+     * context user and the Site guest user can both access Lead.Acquisition_Broker; the guard
+     * exists so that verifying it is a task rather than an incident.
      *
      * Null remains a legitimate answer for the ONE case it should be: the record type does not
      * exist in this org at all. The caller then leaves RecordTypeId unset and the platform
@@ -543,7 +561,7 @@ Expected: FAIL — `RecordType.DeveloperName` is null.
         Schema.RecordTypeInfo info = Lead.SObjectType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
             .get(RT_ACQUISITION_BROKER);
-        return (info != null) ? info.getRecordTypeId() : null;
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 ```
 
@@ -710,7 +728,7 @@ Then add the method:
         Schema.RecordTypeInfo info = sobjType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
             .get(developerName);
-        return (info != null) ? info.getRecordTypeId() : null;
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 ```
 
