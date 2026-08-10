@@ -219,6 +219,31 @@ public with sharing class TestDataFactory {
         }
     }
 
+    /**
+     * The Id of a record type by developer name, or null when it does not exist in this org.
+     *
+     * Null is a legitimate answer, not an error: the caller then leaves RecordTypeId unset and
+     * the platform applies its own default. That is what lets this factory work in an org where
+     * the segregation record types have not deployed yet, so plan Tasks 1 and 3 can land in
+     * either order and no existing test goes red on a partial deploy.
+     *
+     * Deliberately guards on `info != null` only - never `isAvailable()`. `isAvailable()` asks
+     * whether the RUNNING USER may select this record type in the UI; Apex DML writes in system
+     * mode regardless, so gating on it would never block the write - it would only leave records
+     * unstamped, which is worse: an unstamped record matches no sharing rule once IR/Acquisitions
+     * segregation is in place, and the factory's behavior would depend on which user runs the
+     * test, including inside System.runAs.
+     *
+     * A describe, not a query - it costs no SOQL, which matters because this runs inside every
+     * governor-pinned test in the suite.
+     */
+    private static Id recordTypeId(Schema.SObjectType sobjType, String developerName) {
+        Schema.RecordTypeInfo info = sobjType.getDescribe()
+            .getRecordTypeInfosByDeveloperName()
+            .get(developerName);
+        return (info != null) ? info.getRecordTypeId() : null;
+    }
+
     private static void requireId(Id value, String label) {
         if (value == null) {
             throw new TestDataFactoryException(label + ' is required and cannot be null.');
@@ -410,6 +435,12 @@ public with sharing class TestDataFactory {
                 Phone = '713-555-' + String.valueOf(i).leftPad(4, '0')
             ));
         }
+        Id brokerFirmRt = recordTypeId(Account.SObjectType, 'Broker_Firm');
+        if (brokerFirmRt != null) {
+            for (Account a : accounts) {
+                a.RecordTypeId = brokerFirmRt;
+            }
+        }
         insertIf(doInsert, accounts);
         return accounts;
     }
@@ -437,6 +468,12 @@ public with sharing class TestDataFactory {
                 Phone = '713-555-' + String.valueOf(i).leftPad(4, '0'),
                 AccountId = accountId
             ));
+        }
+        Id brokerRt = recordTypeId(Contact.SObjectType, 'Broker');
+        if (brokerRt != null) {
+            for (Contact c : contacts) {
+                c.RecordTypeId = brokerRt;
+            }
         }
         insertIf(doInsert, contacts);
         return contacts;
@@ -496,6 +533,12 @@ public with sharing class TestDataFactory {
                 Guidance_Price__c = 1000000 + (i * 1000),
                 Guidance_Cap_Rate__c = 6.5
             ));
+        }
+        Id acqRt = recordTypeId(Lead.SObjectType, 'Acquisition_Broker');
+        if (acqRt != null) {
+            for (Lead l : leads) {
+                l.RecordTypeId = acqRt;
+            }
         }
         insertIf(doInsert, leads);
         return leads;
