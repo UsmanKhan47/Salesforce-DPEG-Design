@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE BROKER FIRM ACCOUNT. Every Account that existed before 2026-08-10 is this type.
+
+        THIS IS THE ACTUAL SHARING BOUNDARY FOR BOTH ACCOUNT AND CONTACT. Contact sharing is
+        ControlledByParent, so this record type - not Contact's own - is what a sharing rule
+        keys on. It is shared to Acquisitions, Transactions AND Property Management, all three
+        of which consume broker Contacts through Broker_Assignment__c.Broker__c,
+        Lease_Inquiry__c.Broker__c and Opportunity.Broker__c. The split this feature draws is
+        "everyone except IR", not a two-way Acquisitions-vs-IR split - do not scope a future
+        sharing rule to Acquisitions alone or Transactions/PM lose broker visibility.
+
+        MEASURED ORG FACT (2026-08-10): Contact.object-meta.xml currently declares
+        sharingModel = ControlledByParent, but the org's LIVE Contact OWD is actually
+        ReadWrite, not ControlledByParent - a later task in this plan corrects that mismatch.
+        Until it does, this record type's role as "the actual sharing boundary" is the TARGET
+        state this feature is building toward, not yet the enforced state.
+    -->
+    <fullName>Broker_Firm</fullName>
+    <active>true</active>
+    <description>Broker firm account. The real sharing boundary for both Account and Contact - shared to Acquisitions, Transactions and PM. See the XML comment in this file.</description>
+    <label>Broker Firm</label>
+</RecordType>

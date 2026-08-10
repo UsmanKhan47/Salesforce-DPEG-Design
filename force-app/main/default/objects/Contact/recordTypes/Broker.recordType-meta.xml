@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE BROKER CONTACT. Every Contact that existed before 2026-08-10 is this type, and
+        every Contact the acquisitions pipeline (Lead conversion, the Broker Portal, manual
+        acquisitions entry) creates is this type.
+
+        CONTACT RECORD TYPES DRIVE LAYOUT, FLS AND REPORTING ONLY - NOT SHARING. Contact
+        sharing is inherited from its Account via ControlledByParent (target state - see the
+        comment in Account/recordTypes/Broker_Firm.recordType-meta.xml for the org's current,
+        measured OWD, which has not yet been corrected to match this design). The
+        Record_Type_Matches_Account validation rule (Task 8) is what keeps a Contact's own
+        record type from disagreeing with its parent Account's record type - without it a
+        Broker Contact could be filed under an Investor_Entity Account (or vice versa) and the
+        two segregation boundaries would silently diverge.
+    -->
+    <fullName>Broker</fullName>
+    <active>true</active>
+    <description>Broker contact. Layout/FLS/reporting only - sharing is inherited from the parent Account. See the XML comment in this file.</description>
+    <label>Broker</label>
+</RecordType>

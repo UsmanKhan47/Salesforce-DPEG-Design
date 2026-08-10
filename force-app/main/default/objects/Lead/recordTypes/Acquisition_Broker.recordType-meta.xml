@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. RecordType.Description is capped
+        at 255 characters. A comment is repo-only and never reaches the Metadata API. It must
+        sit INSIDE the root element - a comment above <RecordType> breaks `sf` deploy at
+        source conversion with a misleading "unable to find matching parent xml file".
+
+        THE ACQUISITIONS BROKER LEAD. Every Lead that existed before 2026-08-10 is this type,
+        and every Lead the inbound email pipeline, the Broker Portal, or a manual acquisitions
+        entry creates is this type.
+
+        THIS RECORD TYPE IS LOAD-BEARING FOR SECURITY, NOT PRESENTATION. Once Lead OWD is
+        Private (plan Task 12), the criteria-based sharing rule Lead_Acquisition_Broker is the
+        ONLY thing granting DPEG_Acquisitions_Team access to these rows. A Lead left without a
+        record type matches NO sharing rule and becomes invisible to everyone except its owner.
+        That is why the backfill (Task 3) is gated on a zero-row query and why the Apex stamps
+        (Tasks 4 and 5) ship BEFORE the backfill runs.
+    -->
+    <fullName>Acquisition_Broker</fullName>
+    <active>true</active>
+    <description>Acquisitions broker lead. Governs sharing once Lead OWD is Private - see the XML comment in this file.</description>
+    <label>Acquisition Broker</label>
+</RecordType>

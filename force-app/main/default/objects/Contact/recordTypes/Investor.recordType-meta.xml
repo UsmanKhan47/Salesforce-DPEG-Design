@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE INVESTOR CONTACT. Net new as of 2026-08-10 - no existing Contact carries this type.
+
+        CONTACT RECORD TYPES DRIVE LAYOUT, FLS AND REPORTING ONLY - NOT SHARING. Contact
+        sharing is inherited from its Account via ControlledByParent (target state - see the
+        comment in Account/recordTypes/Investor_Entity.recordType-meta.xml for the org's
+        current, measured OWD, which has not yet been corrected to match this design). The
+        Record_Type_Matches_Account validation rule (Task 8) is what keeps a Contact's own
+        record type from disagreeing with its parent Account's record type.
+    -->
+    <fullName>Investor</fullName>
+    <active>true</active>
+    <description>Investor contact. Layout/FLS/reporting only - sharing is inherited from the parent Account. See the XML comment in this file.</description>
+    <label>Investor</label>
+</RecordType>

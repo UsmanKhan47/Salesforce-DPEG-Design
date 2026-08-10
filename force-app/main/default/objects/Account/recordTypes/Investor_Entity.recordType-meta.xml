@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE INVESTOR ENTITY ACCOUNT. Net new as of 2026-08-10 - no existing Account carries
+        this type.
+
+        THE IR BOUNDARY. Assumes investors are modelled as ENTITIES (LLCs, trusts, funds), each
+        with its own Account - see the spec section 3 switch point if that assumption turns out
+        to be wrong for how IR actually onboards investors. As with Broker_Firm, this record
+        type - not Contact's own - is the real sharing key, because Contact sharing is
+        ControlledByParent.
+
+        MEASURED ORG FACT (2026-08-10): Contact.object-meta.xml currently declares
+        sharingModel = ControlledByParent, but the org's LIVE Contact OWD is actually
+        ReadWrite, not ControlledByParent - a later task in this plan corrects that mismatch.
+        Until it does, this record type's role as the IR sharing boundary is the TARGET state
+        this feature is building toward, not yet the enforced state.
+    -->
+    <fullName>Investor_Entity</fullName>
+    <active>true</active>
+    <description>Investor entity account. The IR sharing boundary - assumes investors are modelled as entities. See the XML comment in this file.</description>
+    <label>Investor Entity</label>
+</RecordType>

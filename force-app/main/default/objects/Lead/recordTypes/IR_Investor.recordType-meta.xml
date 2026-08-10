@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE INVESTOR RELATIONS LEAD. Net new as of 2026-08-10 - no existing Lead carries this
+        type and the backfill deliberately does not create any.
+
+        SECURITY-LOAD-BEARING, same as the sibling type: the Lead_IR_Investor sharing rule is
+        the only thing granting the Investor_Relations group access once Lead OWD is Private.
+
+        NO APEX PATH CREATES THIS TYPE. The inbound email pipeline, the Broker Portal and lead
+        conversion all stamp Acquisition_Broker explicitly. IR leads are created by hand or by
+        a future IR intake that does not yet exist.
+    -->
+    <fullName>IR_Investor</fullName>
+    <active>true</active>
+    <description>Investor Relations lead. Governs sharing once Lead OWD is Private - see the XML comment in this file.</description>
+    <label>IR Investor</label>
+</RecordType>
