@@ -9,6 +9,30 @@
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
     <recordTypeVisibilities>
+        <recordType>Account.Broker_Firm</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Account.Investor_Entity</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Contact.Broker</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Contact.Investor</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Lead.Acquisition_Broker</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Lead.IR_Investor</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
         <recordType>Opportunity.Commercial</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>

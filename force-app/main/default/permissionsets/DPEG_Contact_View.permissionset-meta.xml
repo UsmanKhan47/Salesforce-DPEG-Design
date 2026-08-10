@@ -87,4 +87,8 @@
         <object>Contact</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <recordTypeVisibilities>
+        <recordType>Contact.Broker</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
 </PermissionSet>
