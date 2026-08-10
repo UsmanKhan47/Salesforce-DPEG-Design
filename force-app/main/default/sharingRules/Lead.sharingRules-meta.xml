@@ -11,5 +11,31 @@
             <queue>Acquisition</queue>
         </sharedFrom>
     </sharingOwnerRules>
+    <sharingCriteriaRules>
+        <fullName>Lead_Acquisition_Broker</fullName>
+        <label>Lead Acquisition Broker</label>
+        <accessLevel>Edit</accessLevel>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Acquisition Broker</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Lead_IR_Investor</fullName>
+        <label>Lead IR Investor</label>
+        <accessLevel>Edit</accessLevel>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>IR Investor</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Investor_Relations</group>
+        </sharedTo>
+    </sharingCriteriaRules>
 </SharingRules>
 
