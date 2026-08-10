@@ -512,13 +512,27 @@ Expected: FAIL — `RecordType.DeveloperName` is null.
     private static final String RT_ACQUISITION_BROKER = 'Acquisition_Broker';
 
     /**
-     * The Acquisition_Broker record type Id, or null when it does not exist in this org or is
-     * not available to the running user.
+     * The Acquisition_Broker record type Id, or null when it does not exist in this org.
      *
-     * Null is a legitimate answer: the caller leaves RecordTypeId unset and the platform applies
-     * its own default. That keeps an inbound broker email routable in an org where the
-     * segregation record types have not deployed yet - this pipeline must never lose an email
-     * over a metadata gap.
+     * 🔴 DELIBERATELY NOT GUARDED ON isAvailable() — THIS IS AN AUTOMATION PATH.
+     *
+     * `isAvailable()` reports whether the RUNNING USER may select this record type. Both callers
+     * write in SYSTEM MODE on a principal nobody provisioned for the UI: the Email Service
+     * context user, and the Site guest user. Their DML succeeds regardless — so an isAvailable()
+     * guard would not block the insert, it would silently produce an UNSTAMPED Lead. After
+     * Task 12 an unstamped Lead matches no sharing rule and is invisible to everyone except its
+     * owner, with no error anywhere.
+     *
+     * This is the same reasoning ARCHITECTURE.md §2 records for `WITH SYSTEM_MODE`: a write the
+     * platform performs ON a principal's behalf must not depend on that principal's grants.
+     * Contrast `LeadConvertService` (Task 5) and `TestDataFactory` (Task 3), which are
+     * user-initiated and keep the isAvailable() guard correctly.
+     *
+     * Null remains a legitimate answer for the ONE case it should be: the record type does not
+     * exist in this org at all. The caller then leaves RecordTypeId unset and the platform
+     * applies its default, so an inbound broker email is still routable in an org where the
+     * segregation metadata has not deployed yet. This pipeline must never lose an email over a
+     * metadata gap.
      *
      * A describe, not a query. It costs no SOQL, which is why it does not move this class's
      * pinned query budget.
@@ -527,7 +541,7 @@ Expected: FAIL — `RecordType.DeveloperName` is null.
         Schema.RecordTypeInfo info = Lead.SObjectType.getDescribe()
             .getRecordTypeInfosByDeveloperName()
             .get(RT_ACQUISITION_BROKER);
-        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+        return (info != null) ? info.getRecordTypeId() : null;
     }
 ```
 
@@ -553,7 +567,9 @@ After `l.Status = 'New';` (line 80), reusing the helper rather than re-deriving 
         }
 ```
 
-⚠ `BrokerPortalService` is `without sharing` and runs as the site guest user. `isAvailable()` reflects the *running* user's record type access, so if the guest user is never granted `Lead.Acquisition_Broker` this degrades to null and the guest Lead lands unstamped. **Add `Lead.Acquisition_Broker` visibility to whichever permission set the guest user holds**, and record that as a manual verification step in the runbook — guest user permissions are configured in-org, not in this repo.
+⚠ `BrokerPortalService` is `without sharing` and runs as the site guest user, who will never hold record type visibility. That is precisely why `acquisitionBrokerRecordTypeId()` above **omits the `isAvailable()` guard** — with it, the guest insert would succeed and land unstamped, silently. No guest permission-set change is therefore required for the stamp to work.
+
+Still worth verifying in-org that the guest user can create Leads at all after the record types deploy, and recording the result in the runbook — but that is a pre-existing CRUD question, not a new dependency this task introduces.
 
 - [ ] **Step 6: Run the tests and the pinned governor tests**
 
