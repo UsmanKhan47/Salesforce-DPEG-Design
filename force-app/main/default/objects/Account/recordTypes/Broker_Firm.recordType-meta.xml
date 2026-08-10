@@ -36,6 +36,23 @@
         picklists, so no <default>true</default> appears anywhere in this file. Narrowing either
         record type's values is a separate, deliberate change for later, and this fix is
         deliberately behaviour-neutral for every existing Account.
+
+        ⚠ FIX ROUND 3 (2026-08-10, iterative check-only dry-runs against usman-dpeg, root-caused
+        by bisection on Contact/recordTypes/Broker.recordType-meta.xml) - BillingGeocodeAccuracy
+        AND ShippingGeocodeAccuracy REMOVED. Both failed with a GENERIC "An unexpected error
+        occurred... ErrorId..." rather than a clean field-level message. Root cause, confirmed by
+        bisection on the Contact sibling case (identical shape, cheaper to isolate there): both
+        are COMPOUND-FIELD SUB-COMPONENTS - `compoundFieldName` in the live describe reads
+        `BillingAddress` for BillingGeocodeAccuracy and `ShippingAddress` for
+        ShippingGeocodeAccuracy - and every field that failed had this set while every field that
+        passed did not. RecordType.picklistValues cannot restrict a compound field's
+        sub-picklist; the platform does not report this as a clean validation error, it throws
+        generically instead. THE RULE FOR ALL FUTURE TASKS IN THIS PLAN: a picklist that is a
+        compound-field sub-component must NEVER be enumerated in a RecordType's picklistValues -
+        check `compoundFieldName` in the describe, not just `type`, before adding any field to
+        this file. The remaining FOUR picklists below (AccountSource, Industry, Ownership, Type)
+        were each dry-run-validated and remain enumerated identically on both Account record
+        types.
     -->
     <fullName>Broker_Firm</fullName>
     <active>true</active>
@@ -65,53 +82,6 @@
         </values>
         <values>
             <fullName>Other</fullName>
-            <default>false</default>
-        </values>
-    </picklistValues>
-    <picklistValues>
-        <picklist>BillingGeocodeAccuracy</picklist>
-        <values>
-            <fullName>Address</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>NearAddress</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Block</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Street</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>ExtendedZip</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Zip</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Neighborhood</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>City</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>County</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>State</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Unknown</fullName>
             <default>false</default>
         </values>
     </picklistValues>
@@ -262,53 +232,6 @@
         </values>
         <values>
             <fullName>Other</fullName>
-            <default>false</default>
-        </values>
-    </picklistValues>
-    <picklistValues>
-        <picklist>ShippingGeocodeAccuracy</picklist>
-        <values>
-            <fullName>Address</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>NearAddress</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Block</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Street</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>ExtendedZip</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Zip</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Neighborhood</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>City</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>County</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>State</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Unknown</fullName>
             <default>false</default>
         </values>
     </picklistValues>

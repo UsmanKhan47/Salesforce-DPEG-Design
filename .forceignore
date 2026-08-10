@@ -219,7 +219,34 @@ force-app/main/default/objects/WorkTypeGroupMember/**
 
 # --- Bucket B: standard objects that already exist in the org, with ZERO DPEG customization ---
 # (verified 0 custom __c fields and no DPEG-named listViews/webLinks in each dir)
-force-app/main/default/objects/Account/**
+# Account NARROWED 2026-08-10 (Task 1 fix round 2): the blanket ignore was silently dropping the
+# entire objects/Account/** tree - including the two new record types (Broker_Firm,
+# Investor_Entity) - from EVERY deploy attempt with zero error or warning. A check-only dry-run
+# against usman-dpeg reported "no RecordType named Account.Broker_Firm found" for two
+# PermissionSets, which read like fallout from the Lead/Contact failures in the same run but was
+# not - it was this ignore rule, reproducible with Account alone in an otherwise-clean deploy
+# ("No local changes to deploy" - zero files, zero errors, nothing to fix by editing Account's
+# own metadata). The Bucket B rationale ("ZERO DPEG customization") stopped being true the moment
+# Task 1 added two record types under Account/recordTypes/.
+# ⚠ TWO FAILED ATTEMPTS BEFORE THIS ONE, BOTH INSTRUCTIVE. (1) Removing the Account/** line
+# outright was too broad: Account/fields/** in this repo already contains multiple pre-existing,
+# broken standard-field declarations unrelated to this task (ChannelProgramLevelName,
+# ChannelProgramName, CleanStatus, DandbCompanyId, DunsNumber, IsCustomerPortal, IsPartner,
+# NaicsCode, NaicsDesc, Tradestyle, YearStarted - ten "Could not resolve standard field's name"
+# plus one custom-suffix error), almost certainly D&B/Data.com-era fields not resolvable in this
+# org's edition/feature set. (2) Keeping `Account/**` and adding `!Account/recordTypes/**` (a
+# gitignore-style negation) did NOT work - `force-app/main/default/objects/Account/**` prunes the
+# `recordTypes` directory NODE itself, and per gitignore semantics a negation cannot re-include a
+# path whose parent directory was already excluded; the negated recordTypes files simply never
+# appeared in the deploy's file list, with no error at all (confirmed via the dry-run's own
+# `files` array, not assumed). The fix below sidesteps negation entirely: ignore ONLY the known-
+# broken `fields/**` subfolder directly, and leave `Account/Account.object-meta.xml` and
+# `Account/recordTypes/**` un-ignored by simply never matching them - Account has no other
+# subfolders today (verified: `fields/` and `recordTypes/` are the only two). Do not widen this
+# to a blanket `Account/**` again without first resolving the eleven field-level errors above,
+# and do not assume `!`-negation will rescue a path buried under a `dir/**` ignore elsewhere in
+# this file without re-testing against a live dry-run first.
+force-app/main/default/objects/Account/fields/**
 force-app/main/default/objects/Asset/**
 force-app/main/default/objects/Campaign/**
 force-app/main/default/objects/Case/**
