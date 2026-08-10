@@ -95,7 +95,7 @@
         <criteriaItems>
             <field>RecordTypeId</field>
             <operation>equals</operation>
-            <value>LOI__c.Disposition_LOI</value>
+            <value>Disposition LOI</value>
         </criteriaItems>
         <sharedTo>
             <group>DPEG_Acquisitions_Team</group>
@@ -109,7 +109,7 @@
         <criteriaItems>
             <field>RecordTypeId</field>
             <operation>equals</operation>
-            <value>LOI__c.Disposition_LOI</value>
+            <value>Disposition LOI</value>
         </criteriaItems>
         <sharedTo>
             <group>Principals</group>

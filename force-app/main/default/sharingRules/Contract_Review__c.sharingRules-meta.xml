@@ -155,7 +155,7 @@
         <criteriaItems>
             <field>RecordTypeId</field>
             <operation>equals</operation>
-            <value>Contract_Review__c.Disposition_PSA</value>
+            <value>Disposition PSA</value>
         </criteriaItems>
         <sharedTo>
             <group>DPEG_Acquisitions_Team</group>
@@ -169,7 +169,7 @@
         <criteriaItems>
             <field>RecordTypeId</field>
             <operation>equals</operation>
-            <value>Contract_Review__c.Disposition_PSA</value>
+            <value>Disposition PSA</value>
         </criteriaItems>
         <sharedTo>
             <group>Principals</group>

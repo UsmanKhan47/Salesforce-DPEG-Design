@@ -84,7 +84,7 @@
         <criteriaItems>
             <field>RecordTypeId</field>
             <operation>equals</operation>
-            <value>NDA__c.Disposition_NDA</value>
+            <value>Disposition NDA</value>
         </criteriaItems>
         <sharedTo>
             <group>DPEG_Acquisitions_Team</group>
@@ -98,7 +98,7 @@
         <criteriaItems>
             <field>RecordTypeId</field>
             <operation>equals</operation>
-            <value>NDA__c.Disposition_NDA</value>
+            <value>Disposition NDA</value>
         </criteriaItems>
         <sharedTo>
             <group>Principals</group>
