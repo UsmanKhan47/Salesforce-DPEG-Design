@@ -72,6 +72,15 @@
  * @see ExtractAddressQueueable.cls (the async router — the only caller of this class)
  * @see PropertyClaimService.cls (the first-broker-wins claim writer)
  * @see LLMExtractionParser.cls (produces the typed values LeadRequest carries)
+ *
+ * EXTENDED 2026-08-10 (IR/Acquisitions segregation, Task 4): createLeadFromExtracted now
+ * stamps every minted Lead with the Acquisition_Broker record type via
+ * acquisitionBrokerRecordTypeId() — a guarded describe, not a query, so it costs no SOQL and
+ * does not move this class's or ExtractAddressQueueable's pinned governor budgets. Without a
+ * record-type stamp, once Lead OWD flips to Private (a later task in this plan) an inbound
+ * broker Lead would match no sharing rule and become invisible to the Acquisitions team. The
+ * helper is public and is also called directly by BrokerPortalService.submitDeal — see the
+ * helper's own doc comment for why the guard is load-bearing and must not be removed.
  */
 public with sharing class EmailToLeadService {
 
@@ -94,6 +103,10 @@ public with sharing class EmailToLeadService {
     /** Header the parser's rejection notes are filed under on Deal_Notes__c, so a reader can
      *  tell "the model said nothing" from "the model said something we refused to store". */
     private static final String NOTES_HEADER = '-- Extraction notes --';
+
+    /** The Acquisition_Broker record type developer name (IR/Acquisitions segregation). */
+    @TestVisible
+    private static final String RT_ACQUISITION_BROKER = 'Acquisition_Broker';
 
     /** Destination field lengths — Lead.Description is a 32k LongTextArea, the rest Text(255). */
     private static final Integer LEN_TEXT = 255;
@@ -182,6 +195,56 @@ public with sharing class EmailToLeadService {
     }
 
     /**
+     * The Acquisition_Broker record type Id, or null when it does not exist in this org, or
+     * is not available to the running user (IR/Acquisitions segregation, Task 4).
+     *
+     * 🔴 GUARDED ON isAvailable(), AND THAT GUARD IS A FAIL-SOFT BACKSTOP, NOT THE FIX.
+     *
+     * MEASURED 2026-08-10 (see TestDataFactory.recordTypeId's header for the reproduction):
+     * record-type visibility is enforced on Apex DML UNCONDITIONALLY. AccessLevel / SYSTEM_MODE
+     * governs CRUD, FLS and sharing — it never governs record-type visibility. A plain `insert`
+     * for a principal lacking the record type throws
+     * `System.DmlException: INVALID_CROSS_REFERENCE_KEY, Record Type ID`, regardless of DML
+     * mode. So the real choice here was never "throws vs. silently unstamped" — it is
+     * "throws vs. doesn't set RecordTypeId at all," and only isAvailable() can tell those apart
+     * before the DML fires.
+     *
+     * BOTH callers of this method run as a principal nobody provisions through the UI — the
+     * Email Service context user (this class) and the Site guest user (BrokerPortalService).
+     * WITHOUT this guard, a provisioning gap on either would not produce an unstamped Lead, it
+     * would DESTROY THE INBOUND EMAIL or the guest submission outright: no Lead, no registry
+     * claim, no audit row, no bounce. That is the same failure shape as this repo's
+     * ContentPublication outage (see ARCHITECTURE.md §2, InboundEmailAttachmentService's class
+     * header) — an unconditional write becoming a single point of failure for a transaction
+     * that had nothing to do with the write's own purpose.
+     *
+     * WITH the guard, the same provisioning gap costs an UNSTAMPED Lead — recoverable, and
+     * detectable by a later backfill/verify pass. Provisioning is the real fix; this guard only
+     * makes verifying it a task rather than an incident.
+     *
+     * Null remains a legitimate answer for TWO reasons: the record type does not exist in this
+     * org at all (routes an inbound email safely in an org where this segregation metadata has
+     * not deployed yet), OR it exists but is not available to the running user — in which case
+     * the caller leaves RecordTypeId unset and the platform applies whichever default record
+     * type is available to that principal. Either way this pipeline must never lose an email
+     * over record-type metadata.
+     *
+     * Reused by BrokerPortalService.submitDeal — do not re-derive this in that class; call this
+     * method so both Lead-creating automation paths share one answer.
+     *
+     * A describe, not a query. It costs no SOQL, which is why it does not move this class's or
+     * ExtractAddressQueueable's pinned query budgets.
+     *
+     * @return The Acquisition_Broker RecordTypeId, or null.
+     */
+    public static Id acquisitionBrokerRecordTypeId() {
+        Schema.RecordTypeInfo info = Lead.SObjectType.getDescribe()
+            .getRecordTypeInfosByDeveloperName()
+            .get(RT_ACQUISITION_BROKER);
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+    }
+
+    /**
      * Insert the Lead for one property of one inbound broker email, complete on the first
      * write.
      *
@@ -215,6 +278,11 @@ public with sharing class EmailToLeadService {
      */
     public static Id createLeadFromExtracted(LeadRequest request) {
         Lead lead = new Lead();
+
+        Id acqRt = acquisitionBrokerRecordTypeId();
+        if (acqRt != null) {
+            lead.RecordTypeId = acqRt;
+        }
 
         applyName(lead, String.isNotBlank(request.brokerName) ? request.brokerName : request.fromName);
 

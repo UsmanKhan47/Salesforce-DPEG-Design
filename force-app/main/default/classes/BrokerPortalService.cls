@@ -28,6 +28,20 @@
  * AuraHandledException at the LWC boundary (ARCHITECTURE.md §5). Unexpected failures
  * (e.g. the Lead insert) propagate as their native type to the controller's generic
  * catch. This class never throws AuraHandledException.
+ *
+ * EXTENDED 2026-08-10 (IR/Acquisitions segregation, Task 4): submitDeal now stamps the
+ * Acquisition_Broker record type on every guest-submitted Lead via
+ * EmailToLeadService.acquisitionBrokerRecordTypeId() — reused rather than re-derived, so this
+ * class's guest-context Lead and the inbound-email pipeline's Lead can never answer the
+ * record-type question two different ways. That helper's guard
+ * (`info != null && info.isAvailable()`) is a deliberate fail-soft backstop, not a defect: the
+ * Site guest user is not provisioned with record-type visibility through the UI, so guarding on
+ * `isAvailable()` here is what keeps a provisioning gap from THROWING on `insert l` and
+ * destroying a guest submission outright (measured — see the helper's own doc comment on
+ * EmailToLeadService). Guarded, the same gap costs an unstamped Lead: recoverable, and
+ * detectable. Without the record-type stamp, once Lead OWD flips to Private (a later task in
+ * this plan) a Broker-Portal Lead would match no sharing rule and become invisible to the
+ * Acquisitions team.
  */
 public without sharing class BrokerPortalService {
 
@@ -79,6 +93,12 @@ public without sharing class BrokerPortalService {
         l.LeadSource = LEAD_SOURCE;
         l.Status = 'New';
         l.First_Seen_Date__c = Datetime.now();
+        // IR/Acquisitions segregation (Task 4): reuse EmailToLeadService's guarded describe so
+        // this Lead answers "which record type?" the same way the inbound-email pipeline does.
+        Id acqRt = EmailToLeadService.acquisitionBrokerRecordTypeId();
+        if (acqRt != null) {
+            l.RecordTypeId = acqRt;
+        }
         Id queueId = brokerQueueId();
         if (queueId == null) {
             throw new SubmissionException(ROUTING_UNAVAILABLE_MSG);

@@ -514,6 +514,20 @@ private class EmailToLeadServiceTest {
         Assert.isNull(created.Asset_Type__c, 'A no-property Lead must not invent a classification');
     }
 
+    // ── record-type stamp (IR/Acquisitions segregation, Task 4) ─────────────
+
+    @isTest
+    static void createLeadFromExtracted_carriesTheAcquisitionRecordType() {
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Lead readBack = [SELECT RecordType.DeveloperName FROM Lead WHERE Id = :leadId];
+        Assert.areEqual('Acquisition_Broker', readBack.RecordType.DeveloperName,
+            'An inbound broker Lead without this record type matches no sharing rule once Lead OWD '
+            + 'is Private, so the acquisitions team never sees it.');
+    }
+
     // ── deleteLead (lost-race cleanup) ───────────────────────────────────────
 
     @isTest

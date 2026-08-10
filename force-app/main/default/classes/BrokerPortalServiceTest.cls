@@ -314,6 +314,20 @@ private class BrokerPortalServiceTest {
         System.Assert.areEqual('High', created.Broker_Priority__c, 'Priority copied from the broker contact');
     }
 
+    // ---- Record-type stamp (IR/Acquisitions segregation, Task 4) ----
+
+    @IsTest
+    static void submitDeal_createdLeadCarriesTheAcquisitionRecordType() {
+        Test.startTest();
+        BrokerPortalService.submitDeal(validInput());
+        Test.stopTest();
+
+        Lead readBack = [SELECT RecordType.DeveloperName FROM Lead WHERE LeadSource = 'Broker Portal' LIMIT 1];
+        System.Assert.areEqual('Acquisition_Broker', readBack.RecordType.DeveloperName,
+            'A guest Broker-Portal Lead without this record type matches no sharing rule once Lead OWD '
+            + 'is Private, so the acquisitions team never sees it.');
+    }
+
     // ---- Lead-insert failure propagates as DmlException (not swallowed by the service) ----
 
     @IsTest
