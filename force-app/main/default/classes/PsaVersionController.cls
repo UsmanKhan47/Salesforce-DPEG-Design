@@ -2,10 +2,20 @@
  * Backs the psaVersionLog LWC on the Opportunity Contract tab and the Contract Review
  * record page. Reads the PSA draft/counter history (PSA_Version__c children of the
  * Contract Review) and appends a new version, which also derives and stamps the parent's
- * Ball_In_Court__c, Negotiation_Status__c, and Latest_Version__c.
+ * Ball_In_Court__c and Latest_Version__c.
  *
- * All SOQL is delegated to PsaVersionSelector per ARCHITECTURE.md §2 — this controller
- * holds no inline SOQL.
+ * ⚠ TWO CORRECTIONS TO THIS PARAGRAPH, BOTH MADE IN PLACE RATHER THAN LEFT TO MISLEAD.
+ * (1) It used to claim the save also derives `Negotiation_Status__c`. That STOPPED on 2026-08-05
+ * (user decision) — the two counter values were removed from the restricted picklist and the
+ * status is now moved only by the deal driver through Advance Stage; PsaVersionService's header
+ * carries the full note. (2) Since 2026-08-10 `direction` is a ROLE, not a label: the service
+ * DERIVES the stored token from the parent's side of the deal ('Seller' on a purchase, 'Buyer' on
+ * a sale), so this controller must keep passing the picker's token through UNCHANGED. Do not
+ * "normalise" it here — that would put the decision back on the client, which is the defect the
+ * 3C fix pass closed.
+ *
+ * All SOQL is delegated to PsaVersionSelector and ContractReviewSelector per ARCHITECTURE.md §2 —
+ * this controller holds no inline SOQL.
  *
  * Thin controller (P6 controller thinning). The append + Contract-Review-stamp DML and the
  * version business rules live in PsaVersionService per .claude/rules/apex-layering-rule.md;

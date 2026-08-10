@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Disposition_Stage__c</field>
+        <field>Property_Asset__c</field>
+        <field>Sell_Decision_Trigger__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+        </assignedApprover>
+        <label>Principal Review</label>
+        <name>Principal_Review_Step</name>
+    </approvalStep>
+    <description>Principal sign-off on the decision to sell the asset. EITHER principal (Ali or Nikhil) decides - first response wins: the first approval approves and the first rejection rejects; the second principal is never waited for and their work item is withdrawn. Entry: the disposition is at Disposition Readiness. No field updates fire on approval or rejection - approval history records who and when, and the stage is advanced by a human afterwards.</description>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
+    <entryCriteria>
+        <criteriaItems>
+            <field>Disposition__c.Disposition_Stage__c</field>
+            <operation>equals</operation>
+            <value>Disposition Readiness</value>
+        </criteriaItems>
+    </entryCriteria>
+    <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>Sale Decision Approval</label>
+    <processOrder>1</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+</ApprovalProcess>

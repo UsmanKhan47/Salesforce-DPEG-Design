@@ -1,12 +1,22 @@
 /**
- * RecordStageAdvanceController — the @AuraEnabled boundary for the generic "advance stage" quick
- * action on the five stage-controlled acquisitions child objects (NDA__c, LOI__c, Underwriting__c,
+ * RecordStageAdvanceController — the @AuraEnabled boundary for the "advance stage" quick actions on
+ * the SIX stage-controlled child objects (NDA__c, LOI__c, Contract_Review__c, Underwriting__c,
  * Construction_Feasibility_Review__c, Development_Feasibility_Review__c).
  *
- * Consumed by ONE headless LWC bundle, `c/advanceRecordStage`, which backs one quick action per
- * object; and by its shared pre-flight util `c/recordStageGuard`.
+ * ⚠ "five acquisitions child objects" is what this header used to say; both halves are now wrong.
+ * Contract_Review__c joined on 2026-08-05, and since Tranche 3A (2026-08-09) NDA__c serves the
+ * DISPOSITION module too through its Disposition_NDA record type — which answers to a different
+ * persona (see hasStageActionAccess below).
  *
- *   hasStageActionAccess(recordId) - cacheable UX gate; dispatches to the object's configured gate.
+ * Consumed by the headless LWC bundles `c/advanceRecordStage` (the generic derived hop, one quick
+ * action per object) and the one-action branch bundles `c/loiMarkCountered`, `c/loiMarkCompleted`
+ * and `c/ndaMarkDeclined`; all four share the pre-flight util `c/recordStageGuard`.
+ *
+ *   hasStageActionAccess(recordId) - cacheable UX gate; dispatches to the RECORD TYPE's configured
+ *                                    gate. ⚠ Since 2026-08-09 it LOADS the record for an object
+ *                                    with more than one configured sequence, so a non-existent Id
+ *                                    now reaches the generic clause below (fixed message, gate
+ *                                    still fails closed) where it previously did not.
  *   advance(recordId)              - asserts the gate server-side, then moves the record one hop.
  *
  * Thin controller (ARCHITECTURE.md §2 / .claude/rules/apex-layering-rule.md): the stage maps, the
@@ -131,11 +141,17 @@ public with sharing class RecordStageAdvanceController {
      * LOI at 'Sent', where a broker either counters or accepts and one derived hop cannot express
      * both outcomes.
      *
-     * 🔴 `target` IS CALLER-SUPPLIED AND THEREFORE UNTRUSTED. The service validates it against that
-     * object's allow-list before any write; the four objects with linear paths supply no allowed
-     * targets at all, so this entry point cannot move them. Do not add a code path that skips that
-     * check — it is the only thing standing between class access and arbitrary stage writes across
-     * five objects.
+     * 🔴 `target` IS CALLER-SUPPLIED AND THEREFORE UNTRUSTED. The service validates it against the
+     * allow-list for that record's own RECORD TYPE before any write; the objects with linear paths
+     * supply no allowed targets at all, so this entry point cannot move them. Do not add a code
+     * path that skips that check — it is the only thing standing between class access and arbitrary
+     * stage writes across six objects.
+     *
+     * ⚠ PER RECORD TYPE, not per object, since 2026-08-09 — and that is the security half of the
+     * Tranche 3A change rather than a tidy-up. `Declined` belongs to `Disposition_NDA`, its Mark
+     * Declined action keys on `Status__c = 'Sent'` which BOTH NDA record types carry, and
+     * record-type picklist restriction is enforced by the UI ONLY. An object-level allow-list would
+     * therefore write a disposition-only value onto an acquisition NDA.
      *
      * @param recordId the stage-controlled record to move
      * @param target   the destination stage; must be on the object's allow-list

@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <assignments>
+        <name>Record_Flag_Update_Fault</name>
+        <label>Record Flag Update Fault</label>
+        <locationX>440</locationX>
+        <locationY>408</locationY>
+        <description>Fault sink for Update Disposition Flag, added 2026-08-09 (code review C1). Deliberately SILENT and TERMINAL: it captures $Flow.FaultMessage into faultDetail and then ends with no connector, so the Wire save COMMITS instead of rolling back. It must not surface an error - this is an after-save autolaunched flow with no screen, so the only thing a rethrow can do is reproduce the exact rollback this path exists to prevent. THE CAPTURED MESSAGE IS NOT OBSERVABLE AFTER THE FACT: corrected 2026-08-09 (code review W3 pass 2), retracting an earlier claim here that it is visible in the interview detail. A COMPLETED autolaunched interview is not retained - only PAUSED interviews appear in Setup - so there is no interview detail to open, and the debug log holds the message only if a trace flag happened to be active on that user at that moment, which for an after-save flow fired by an IR persona it will not be. Treat the swallowed fault as SILENT and UNRECOVERABLE in production. The expected fault is ENTITY_IS_LOCKED while a Closing approval is pending; the flag reconciles on the next Wire save after the approval resolves. Because nothing here leaves a retrievable trace, post-deploy gate B9 is the ONLY control on the stale flag this path produces.</description>
+        <assignmentItems>
+            <assignToReference>faultDetail</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.FaultMessage</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <decisions>
+        <name>Flag_Changed</name>
+        <label>Has the flag actually changed?</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <description>No-change guard, added 2026-08-09 (code review C1). This flow used to write the parent Disposition on EVERY Wire save whether the computed flag changed or not, so any incidental wire edit during a pending Closing approval touched a LOCKED record. Skipping the write when the parent already holds the computed value removes the overwhelming majority of that exposure, and is correct on its own merits - an unconditional parent write on every child save is wasted DML. It is NECESSARY BUT NOT SUFFICIENT: a genuine flag flip mid-approval still writes, which is why the fault connector on Update Disposition Flag is not optional either. Wire_Verification_Completed__c is a Checkbox with defaultValue false, so it is never null and NotEqualTo is a total comparison.</description>
+        <defaultConnectorLabel>No change - skip the parent update</defaultConnectorLabel>
+        <rules>
+            <name>Flag_Needs_Update</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Disposition__r.Wire_Verification_Completed__c</leftValueReference>
+                <operator>NotEqualTo</operator>
+                <rightValue>
+                    <elementReference>isComplete</elementReference>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Update_Disposition_Flag</targetReference>
+            </connector>
+            <label>Flag needs updating</label>
+        </rules>
+    </decisions>
+    <description>Maintains Disposition__c.Wire_Verification_Completed__c, the flag the Wire_Complete_Before_Completed validation rule reads to block the Closing to Completed transition. Computes completeness from the MOST RECENT Wire on the disposition only - the same row WireSelector.selectMostRecentByDispositionId returns - so the badge the user sees and the gate that blocks them agree. RESIDUAL DIVERGENCE (code review W4), documented rather than latent: Flow Get Records supports exactly ONE sort field, so this element sorts CreatedDate Desc while WireSelector sorts CreatedDate DESC, Id DESC. The Id DESC tie-break is INEXPRESSIBLE here. CreatedDate is second-granular, so two Wires created under one disposition within the same second can make this flow and the UI badge read DIFFERENT rows - real in bulk inserts and data loads, not a shape a user typing one wire at a time can produce. If that ever matters, the rollup moves to Apex (WireTrigger to a rollup service reusing WireSelector), which is the only way to express the same ORDER BY. Assigns in BOTH directions, so unticking the verbal checkbox sets the flag back to false. runInMode is SystemModeWithoutSharing EXPLICITLY: Disposition__c is Private and the persona editing a Wire is not necessarily its owner or an editor of it - but note that system mode does NOT lift an approval record lock, which is what the fault connector on Update Disposition Flag exists for. Wire DELETE is not handled, and that IS a live gap. CORRECTED 2026-08-09 (code review W2 pass 2), retracting an earlier claim here that no permission set grants allowDelete on Wire__c and that the stale-flag path was therefore unreachable: both halves were FALSE. DPEG_Acquisitions grants allowDelete AND modifyAllRecords on Wire__c; only DPEG_Disposition_Edit sets allowDelete false; and any administrator has Modify All Data regardless. Note also that profiles are forceignored in this repo, so no file-based check can ever establish a NEGATIVE claim about permissions - do not restate one. Consequence: recordTriggerType is CreateAndUpdate, so deleting a Wire never re-fires this flow. Delete the most recent COMPLETE Wire and the flag stays true while the badge falls back to an older Wire or to none - a real counter-example to the badge-equals-gate invariant, in the FAIL-OPEN direction, until the next Wire save reconciles it. A RecordAfterDelete-triggered variant is the fix if this is ever seen; it is deliberately out of scope for this tranche.</description>
+    <environments>Default</environments>
+    <formulas>
+        <name>isComplete</name>
+        <dataType>Boolean</dataType>
+        <description>TRUE only when all six wire-fraud confirmation fields are populated on the MOST RECENT Wire. Uses the AND() FUNCTION form: Salesforce formulas have no infix AND keyword (the infix operator is &amp;&amp;), and writing one yields &quot;Syntax error. Extra AND&quot;. ISBLANK is used for all five non-Boolean fields - it supports every field type, unlike ISNULL which does not support text. The Checkbox is a bare Boolean term. If the Get returned no row all terms are null, so this evaluates FALSE, which is the safe default for the gate.</description>
+        <expression>AND(
+    NOT(ISBLANK({!Get_Most_Recent_Wire.Wire_Instructions_Source__c})),
+    {!Get_Most_Recent_Wire.Verbal_Verification_Completed__c},
+    NOT(ISBLANK({!Get_Most_Recent_Wire.Verifier_Name__c})),
+    NOT(ISBLANK({!Get_Most_Recent_Wire.Verifier_Phone__c})),
+    NOT(ISBLANK({!Get_Most_Recent_Wire.Verified_DateTime__c})),
+    NOT(ISBLANK({!Get_Most_Recent_Wire.Confirmed_Wire_Amount__c}))
+)</expression>
+    </formulas>
+    <interviewLabel>Wire Verification Rollup {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Wire Verification Rollup</label>
+    <processType>AutoLaunchedFlow</processType>
+    <recordLookups>
+        <name>Get_Most_Recent_Wire</name>
+        <label>Get Most Recent Wire</label>
+        <locationX>176</locationX>
+        <locationY>168</locationY>
+        <assignNullValuesIfNoRecordsFound>true</assignNullValuesIfNoRecordsFound>
+        <connector>
+            <targetReference>Flag_Changed</targetReference>
+        </connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Disposition__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.Disposition__c</elementReference>
+            </value>
+        </filters>
+        <getFirstRecordOnly>true</getFirstRecordOnly>
+        <object>Wire__c</object>
+        <sortField>CreatedDate</sortField>
+        <sortOrder>Desc</sortOrder>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </recordLookups>
+    <recordUpdates>
+        <name>Update_Disposition_Flag</name>
+        <label>Update Disposition Flag</label>
+        <locationX>176</locationX>
+        <locationY>408</locationY>
+        <description>Writes the parent Disposition directly through the lookup, matching the Underwriting_Opp_Sync precedent - no second Get is needed. FAULT CONNECTOR ADDED 2026-08-09 (code review C1) and it is load-bearing, replacing an earlier claim here that its absence was deliberate. Closing_Approval sets recordEditability AdminOnly and enters at Disposition_Stage__c equals Closing - the ONLY stage at which a Wire is worked at all - so a Wire saved while that approval is pending updates a LOCKED parent and throws ENTITY_IS_LOCKED. runInMode SystemModeWithoutSharing does NOT lift an approval lock: that is measured in this repo, not assumed - see ARCHITECTURE.md, OpportunityReviewService, where a SYSTEM_MODE back-stamp still threw ENTITY_IS_LOCKED after the CRUD fix landed. Unhandled, that fault ROLLS THE WIRE SAVE BACK and tells the user to refresh the page, which can never clear a lock. A stale flag is strictly better than a lost wire, and it is harmless while the lock holds: the stage cannot change while locked either, so Wire_Complete_Before_Completed is unreachable in that window, and the next Wire save reconciles the flag.</description>
+        <faultConnector>
+            <targetReference>Record_Flag_Update_Fault</targetReference>
+        </faultConnector>
+        <inputAssignments>
+            <field>Wire_Verification_Completed__c</field>
+            <value>
+                <elementReference>isComplete</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record.Disposition__r</inputReference>
+    </recordUpdates>
+    <runInMode>SystemModeWithoutSharing</runInMode>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Get_Most_Recent_Wire</targetReference>
+        </connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Disposition__c</field>
+            <operator>IsNull</operator>
+            <value>
+                <booleanValue>false</booleanValue>
+            </value>
+        </filters>
+        <object>Wire__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+    <variables>
+        <name>faultDetail</name>
+        <description>Holds $Flow.FaultMessage on the fault path. IT IS NOT RETRIEVABLE AFTER THE FACT - corrected 2026-08-09 (code review W3 pass 2), retracting an earlier claim here that the message stays readable in the interview detail: a COMPLETED autolaunched interview is not retained, only PAUSED interviews appear in Setup, and the debug log captures it only under a trace flag that happened to be active at that moment. Never read by any element - it exists solely to give the fault text somewhere to land, because the alternative (no fault connector) rolls the Wire save back. So the swallowed error is silent AND unobservable, which is why post-deploy gate B9 - not this variable - is the control on the stale flag.</description>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+</Flow>

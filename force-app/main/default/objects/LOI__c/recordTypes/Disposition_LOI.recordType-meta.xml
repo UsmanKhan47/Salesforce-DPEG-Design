@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        RecordType.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it lives here rather than being trimmed away; a comment is
+        repo-only and is never sent to the Metadata API. Do not paste this back into
+        <description>. NOTE ALSO: the comment must sit INSIDE the root element - a comment
+        placed ABOVE <RecordType> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error. The 255 cap has been breached THREE
+        times in this programme; the lengths in this file were MEASURED with an XML parser.
+
+        THE SELL-SIDE LOI. Parented by the new Disposition__c lookup. Five stages, ALL FIVE
+        ADDED 2026-08-09 and none of them existing on Stage__c before this tranche:
+        Received -> Under Review -> Countered by DPEG -> Counter Received from Buyer ->
+        Executed (Part 2 lines 55-74).
+
+        THE DIRECTION IS REVERSED, WHICH IS THE WHOLE REASON THIS RECORD TYPE EXISTS. On an
+        acquisition DPEG DRAFTS the LOI and SENDS it out, so the path starts at Draft. On a
+        disposition the LOI ARRIVES from the buyer through the appointed broker, so the path
+        starts at Received and there is no Draft, no Prepare/Review and no Sent. The middle of
+        the path is an explicit loop - we counter (Countered by DPEG), the buyer counters back
+        (Counter Received from Buyer), "and it goes round until both sides are agreed" - which
+        is why the disposition side has TWO counter values where the acquisition side has one.
+
+        THE TWO STAGE SETS ARE FULLY DISJOINT, AND THAT IS THE LOAD-BEARING PROPERTY. No stage
+        value appears on both record types, so every flexipage visibility rule keyed on a stage
+        value is SELF-LIMITING to its own record type with no record-type criterion added.
+        Contrast NDA__c, whose Sent and Signed ARE shared. If a future change makes any LOI
+        stage shared, every such rule must be revisited.
+
+        STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THE PATH FILE. Runtime display
+        order comes from Stage__c's picklist value order (sorted=false), filtered by this
+        record type - a record type can only include or exclude, never re-order. The five
+        values here were APPENDED after the five acquisition values, which renders this path as
+        Received -> Under Review -> Countered by DPEG -> Counter Received from Buyer ->
+        Executed AND leaves the acquisition rendering byte-identical to today's. Appending was
+        sufficient only because the sets are disjoint; NDA__c needed an interleave (Not Sent
+        moved ahead of Sent) because its sets overlap and an appended starting state rendered
+        THIRD. Anyone re-ordering Stage__c must re-check BOTH record type files.
+
+        THE MASTER DEFAULT IS Draft AND IT IS NOT REACHABLE HERE. Received carries
+        default=true on this record type, which is what a new disposition LOI opens on. The
+        field-level default (Draft) is untouched, because changing it would move the
+        acquisition side's starting state - a live regression for zero benefit.
+
+        WARNING - RECORD-TYPE PICKLIST RESTRICTION IS UI-ONLY. It is NOT enforced by Apex DML,
+        so restricting Draft/Prepare/Review/Sent/Counter/Completed out here does not stop a
+        direct write. The Apex-side allow-list in RecordStageAdvanceService must become
+        record-type-aware in the same tranche; that is the parallel developer change.
+
+        ACQUISITION-DIRECTIONAL FIELDS ARE LAYOUT-EXCLUDED, NOT DELETED. Submitted_Date__c,
+        Approved_By__c, Approved_Date__c, Approval_Comments__c and LOI_Status__c stay on the
+        object and keep their acquisition data; a separate disposition layout omits them. The
+        Submit_for_Approval quick action needs no record-type criterion - it is gated on
+        {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record type does not carry - and
+        Opportunity.LOI_Approval is an approval on the OPPORTUNITY object (entryCriteria
+        StageName equals LOI) with no relationship to an LOI__c record, so it cannot fire here.
+
+        LOI_Status__c IS STILL ENUMERATED IN FULL, AND THAT IS DELIBERATE RATHER THAN AN
+        OVERSIGHT. It is acquisition vocabulary and is excluded from the disposition LAYOUT, but
+        a record type cannot expose an empty picklist and, more importantly,
+        Is_Advance_Allowed__c reads LOI_Status__c on EVERY LOI - its Draft default must remain
+        available here or the formula's acquisition-only terms stop being inert. Note that
+        CounterOfferService stamps LOI_Status__c = 'Countered' on every counter, including a
+        disposition one; that is invisible on the disposition layout and is left alone
+        deliberately, because suppressing it is a behaviour change nobody asked for.
+
+        Ball_In_Court__c IS LEFT AT Us/Seller AND THAT IS AN OPEN ITEM, NOT A DECISION.
+        On a sale the counterparty is the BUYER, so 'Seller' here would mean DPEG - the field
+        does not merely read oddly, it INVERTS. Adding a Buyer value is raised as a
+        recommendation and is deliberately not applied by this file, because it also requires
+        CounterOfferService to choose the label from the parent's record type. Until that
+        lands, Ball_In_Court__c on a disposition LOI must be read with care.
+
+        =====================================================================
+        🔴 RETRACTED 2026-08-10 (code review 3B/3C, W1 + W2). THE PARAGRAPH DIRECTLY ABOVE IS
+        FALSE ON BOTH OF ITS CLAIMS. READ THIS INSTEAD.
+        =====================================================================
+
+        RETRACTED, verbatim: "Ball_In_Court__c IS LEFT AT Us/Seller AND THAT IS AN OPEN ITEM,
+        NOT A DECISION... Adding a Buyer value is raised as a recommendation and is DELIBERATELY
+        NOT APPLIED BY THIS FILE."
+
+        BOTH HALVES WERE ALREADY UNTRUE WHEN THE REVIEW READ THEM:
+          1. 'Buyer' IS APPLIED BY THIS FILE. It is in the Ball_In_Court__c block below and has
+             been since 3B. The paragraph was written in an earlier pass and was never retracted
+             when the decision landed later the same day.
+          2. IT IS NO LONGER AN OPEN ITEM. The dependency the paragraph named as the blocker -
+             "it also requires CounterOfferService to choose the label from the parent's record
+             type" - WAS BUILT. CounterOfferService.isSaleSide resolves the side from the parent
+             (record type first, Disposition__c lookup as the migration-window fallback) and
+             stores a DERIVED label, never the caller's token, so a caller sending 'Seller' on a
+             sale gets 'Buyer' stored. It is tested four ways.
+
+        🔴 WHY THIS RETRACTION MATTERS MORE THAN ORDINARY COMMENT ROT, WHICH IS EXACTLY WHY THE
+        REVIEW RAISED IT: this file is the stated authority for the token contract. A future
+        reader who trusted the retracted paragraph would conclude that 'Buyer' was added by
+        mistake, REMOVE IT - and silently break CounterOfferService's only sell-side write path,
+        since the derived label would then have no value to land on. Do not remove 'Buyer'.
+
+        =====================================================================
+        W2 APPLIED IN THE SAME CHANGE: 'Seller' IS NOW RESTRICTED OUT OF Ball_In_Court__c HERE.
+        =====================================================================
+
+        The value set on this record type is now {Us, Buyer}, matching Disposition_PSA. The
+        argument is that record type's, applied verbatim one object earlier: on a sale DPEG IS
+        the seller, so 'Seller' would name THE SAME PARTY 'Us' ALREADY NAMES, and the field
+        would carry no information at all. Leaving it exposed left a value whose only meaning
+        was the inversion this record type exists to fix.
+
+        ⚠ 'Seller' AS AN INCUMBENT WIRE TOKEN DOES NOT TRANSFER TO THIS FIELD, and that is the
+        distinction to hold. Direction__c keeps 'Seller' accepted on both sides because clients
+        SEND that token and a stored history of it exists. Ball_In_Court__c is never sent by any
+        client - CounterOfferService derives it - so there is no incumbent to preserve.
+
+        ESTABLISHED BEFORE REMOVING, NOT ASSUMED:
+          - NO ROWS ARE AFFECTED. 3B is undeployed (D14), so no Disposition_LOI row exists in any
+            org. Acquisition_LOI keeps 'Seller' and every live acquisition LOI is untouched. This
+            is a record-type restriction, not a picklist-value removal, so the standing
+            picklist-removal sweep rule is not triggered - the master value set is unchanged.
+          - NO WRITER CAN PRODUCE IT. CounterOfferService is the only writer of this field and on
+            a sale it writes 'Us' or 'Buyer' only. Restricting the value therefore closes the one
+            remaining route in, which was a HAND EDIT or an INLINE EDIT - and the field is exposed
+            for exactly that.
+          - NO READER DEPENDS ON IT. No flexipage visibility rule on LOI_Record_Page references
+            Ball_In_Court__c (they key on Stage__c, LOI_Status__c, Is_Advance_Allowed__c and the
+            two driver flags), and Is_Advance_Allowed__c does not read it either.
+        ⚠ Record-type picklist restriction remains UI-ONLY and is NOT enforced by Apex DML. This
+        stops a USER picking 'Seller' on a sale; CounterOfferService is what stops CODE writing
+        it, and that is where the enforcement actually lives.
+
+        EVERY PICKLIST ON THE OBJECT IS ENUMERATED - Stage__c, LOI_Status__c and
+        Ball_In_Court__c - because a record type file that omits a picklist silently drops all
+        of its values from that type. Precedent:
+        objects/Opportunity/recordTypes/Commercial.recordType-meta.xml. LOI__c has exactly
+        three picklists; the fields/ directory was walked to establish that.
+
+        No <businessProcess> - that element is for Opportunity, Case, Lead and Solution only.
+
+        THE OFFER MIGRATION IS A SEPARATE, LATER WAVE AND IS NOT DONE BY THIS FILE. D6 retires
+        the negotiation from Disposition_Offer__c (the counter values and the four counter
+        price/date fields) so the offer becomes capture + comparison only. That half is a
+        DESTRUCTIVE DATA MIGRATION which cannot begin until this record type is live and
+        verified, and the standing picklist-removal sweep rule applies to it in full.
+
+        POST-DEPLOY, NOT DEPLOYABLE: profile record-type assignment (System Administrator
+        included), the per-profile DEFAULT, the disposition layout assignment, and confirming
+        that a disposition persona creating an LOI from the related list sees NO record-type
+        chooser - if one appears, the permission-set scoping is wrong. profiles/** is
+        .forceignore'd in this repo.
+    -->
+    <fullName>Disposition_LOI</fullName>
+    <active>true</active>
+    <description>The sell-side LOI, parented by Disposition. Five stages, all added 2026-08-09: Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed. The acquisition stages are restricted out. See the XML comment in this file.</description>
+    <label>Disposition LOI</label>
+    <picklistValues>
+        <picklist>Ball_In_Court__c</picklist>
+        <values>
+            <fullName>Us</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Buyer</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LOI_Status__c</picklist>
+        <values>
+            <fullName>Draft</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Pending Approval</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Approved</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Rejected</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Submitted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Working</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Countered</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Killed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Signed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Stage__c</picklist>
+        <values>
+            <fullName>Received</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Under Review</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Countered by DPEG</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Counter Received from Buyer</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Executed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

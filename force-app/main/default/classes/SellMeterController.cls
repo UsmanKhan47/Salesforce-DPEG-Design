@@ -1,7 +1,13 @@
 /**
  * Read-only data provider for the Sell Meter dashboard: a portfolio-level readiness
  * roll-up (getMeterSummary) and the per-asset table (getPortfolio). Readiness bands are
- * derived from days-until the peak sell date (see bandForPeak).
+ * derived from days-until the peak sell date (see SellMeterService.bandForPeak).
+ *
+ * ⚠ THE BAND FUNCTION NO LONGER LIVES HERE. bandForPeak was moved VERBATIM to
+ * SellMeterService so the write path (DispositionService.findOrCreate's sell-meter gate)
+ * and this read path share one implementation and can never disagree. Do not re-add a
+ * private copy: a second copy is exactly the drift the move exists to prevent. Thresholds
+ * are unchanged (<= 30 GREEN, <= 90 YELLOW, else RED; null peak -> RED).
  *
  * All SOQL is delegated to PropertyAssetSelector per ARCHITECTURE.md §2 — this controller
  * holds no inline SOQL. Read-only: there are no mutation methods here.
@@ -57,7 +63,7 @@ public with sharing class SellMeterController {
         try {
             MeterSummary s = new MeterSummary();
             for (Property_Asset__c a : PropertyAssetSelector.selectAllForMeterSummary()) {
-                String band = bandForPeak(a.Peak_Sell_Date__c);
+                String band = SellMeterService.bandForPeak(a.Peak_Sell_Date__c);
                 if (band == 'GREEN') {
                     s.green++;
                 } else if (band == 'YELLOW') {
@@ -83,23 +89,6 @@ public with sharing class SellMeterController {
         }
     }
 
-    // Maps a peak sell date to a readiness band by days-until-peak:
-    //   <= 30 days (including already past) → GREEN (sell now)
-    //   31-90 days                          → YELLOW (getting close)
-    //   > 90 days, or no peak date          → RED (hold - not yet)
-    private static String bandForPeak(Date peak) {
-        if (peak == null) {
-            return 'RED';
-        }
-        Integer days = Date.today().daysBetween(peak);
-        if (days <= 30) {
-            return 'GREEN';
-        } else if (days <= 90) {
-            return 'YELLOW';
-        }
-        return 'RED';
-    }
-
     @AuraEnabled(cacheable=true)
     public static List<PropertyRow> getPortfolio() {
         try {
@@ -117,7 +106,7 @@ public with sharing class SellMeterController {
                 r.peakSellDate = a.Peak_Sell_Date__c;
                 r.projectedValueAtPeak = a.Projected_Value_At_Peak__c;
                 // Readiness band is driven by days until the peak sell date (see bandForPeak).
-                r.sellMeter = bandForPeak(a.Peak_Sell_Date__c);
+                r.sellMeter = SellMeterService.bandForPeak(a.Peak_Sell_Date__c);
                 // Implied value / score still computed for the portfolio-upside metric; no longer drive the band.
                 if (a.NOI__c != null && a.Market_Cap_Rate__c != null && a.Market_Cap_Rate__c != 0) {
                     r.impliedValue = a.NOI__c / (a.Market_Cap_Rate__c / 100);

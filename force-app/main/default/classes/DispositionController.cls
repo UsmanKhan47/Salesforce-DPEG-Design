@@ -41,10 +41,31 @@ public with sharing class DispositionController {
         @AuraEnabled public Boolean wireCreated;
     }
 
+    /**
+     * Find-or-create the Disposition for a Property Asset (Sell Meter Initiate / Override).
+     *
+     * ⚠ THE TWO CATCHES ARE NOT INTERCHANGEABLE AND THE ORDER IS LOAD-BEARING.
+     * SellMeterGateException is a DESIGNED REFUSAL — the asset's peak sell date bands RED,
+     * which is a permanent business answer with a message authored in
+     * DispositionService specifically to be shown to a user. It is rethrown VERBATIM.
+     * Everything else is a PLATFORM FAILURE whose text leaks field API names and
+     * validation-rule internals, so it is masked behind the fixed generic message.
+     *
+     * Delete the first catch and a deliberate refusal reaches the user as "This change
+     * could not be saved. Refresh the page and try again" — advice that can never work,
+     * because refreshing will refuse identically forever. Apex requires the subclass catch
+     * above `catch (Exception e)`; the generic catch must stay beneath it, not be replaced
+     * by it.
+     */
     @AuraEnabled(cacheable=false)
     public static String findOrCreate(Id assetId) {
         try {
             return DispositionService.findOrCreate(assetId);
+        } catch (DispositionService.SellMeterGateException e) {
+            // Designed refusal: INFO, not ERROR — nothing failed, the answer is "no".
+            System.debug(LoggingLevel.INFO, 'DispositionController.findOrCreate refused on '
+                + assetId + ': ' + e.getMessage());
+            throw ahe(e.getMessage());
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'DispositionController.findOrCreate on ' + assetId
                 + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());

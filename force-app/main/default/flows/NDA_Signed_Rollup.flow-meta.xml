@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <assignments>
+        <name>Count_Row</name>
+        <label>Count Row</label>
+        <locationX>440</locationX>
+        <locationY>396</locationY>
+        <description>Increments the total only. Reached for every OUTSTANDING NDA - Not Sent and Sent - i.e. a party who exists, has not signed, and has not declined. AMENDED 2026-08-09 BY DECISION D20/C2: Declined rows no longer reach here at all, they take the Is_Row_Signed decision's Declined outcome and are counted by NEITHER counter. The superseded sentence, retracted rather than deleted, read: "A Declined NDA therefore still counts toward the total and still blocks the release gate, which is intended... Removing them from the count is a delete, not a status change." Deletion is no longer the remedy - allowDelete stays FALSE on NDA__c because a declined NDA is the audit evidence of a party who refused to sign.</description>
+        <assignmentItems>
+            <assignToReference>totalCount</assignToReference>
+            <operator>Add</operator>
+            <value>
+                <numberValue>1.0</numberValue>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>Loop_NDAs</targetReference>
+        </connector>
+    </assignments>
+    <assignments>
+        <name>Count_Signed_Row</name>
+        <label>Count Signed Row</label>
+        <locationX>176</locationX>
+        <locationY>396</locationY>
+        <description>Increments BOTH counters in one element, so the two can never drift apart by construction. Signed alone is the release condition (design Q6) - the source document states one condition, so requiring a counter-signature date as well would be an invention.</description>
+        <assignmentItems>
+            <assignToReference>totalCount</assignToReference>
+            <operator>Add</operator>
+            <value>
+                <numberValue>1.0</numberValue>
+            </value>
+        </assignmentItems>
+        <assignmentItems>
+            <assignToReference>signedCount</assignToReference>
+            <operator>Add</operator>
+            <value>
+                <numberValue>1.0</numberValue>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>Loop_NDAs</targetReference>
+        </connector>
+    </assignments>
+    <assignments>
+        <name>Record_Count_Update_Fault</name>
+        <label>Record Count Update Fault</label>
+        <locationX>704</locationX>
+        <locationY>720</locationY>
+        <description>Fault sink for Update Disposition Counts. Deliberately SILENT and TERMINAL: it captures $Flow.FaultMessage into faultDetail and then ends with no connector, so the NDA save COMMITS instead of rolling back. THE EXPECTED FAULT IS ENTITY_IS_LOCKED. Sale_Decision_Approval enters at Disposition_Stage__c equals Disposition Readiness with recordEditability AdminOnly, and Readiness is EXACTLY where off-market NDAs start being collected - so an NDA saved while that approval is pending writes a LOCKED parent. SystemModeWithoutSharing does NOT lift an approval lock; that is measured in this repo, see ARCHITECTURE.md, OpportunityReviewService, where a SYSTEM_MODE back-stamp still threw ENTITY_IS_LOCKED after the CRUD fix landed. This is the Tranche 2 C1 defect one module later, and the fault connector is here FROM DAY ONE rather than retrofitted after an incident. THE CAPTURED MESSAGE IS NOT OBSERVABLE AFTER THE FACT: a COMPLETED autolaunched interview is not retained - only PAUSED interviews appear in Setup - and the debug log holds it only under a trace flag that happened to be active. Treat the swallowed fault as silent and unrecoverable in production. Cost of the swallow is a STALE COUNT, which self-heals on the next NDA save after the approval resolves. A stale count is strictly better than a lost NDA, and it fails toward BLOCKING rather than releasing while it is low.</description>
+        <assignmentItems>
+            <assignToReference>faultDetail</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.FaultMessage</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <decisions>
+        <name>Counts_Changed</name>
+        <label>Have the counts actually changed?</label>
+        <locationX>440</locationX>
+        <locationY>612</locationY>
+        <description>No-change guard, present from day one for the same reason Wire_Verification_Rollup had to be retrofitted with one (code review C1): an unconditional parent write on every child save touches a record that three approval processes can lock, and is wasted DML besides. It is NECESSARY BUT NOT SUFFICIENT - a genuine count change mid-approval still writes, which is why the fault connector on Update Disposition Counts is not optional either. NOTE the counters are Number fields with defaultValue 0, but rows created BEFORE those fields existed hold NULL - null NotEqualTo 0 is TRUE, so those rows take the update path once and then converge. That first write is intended, not a defect.</description>
+        <defaultConnectorLabel>No change - skip the parent update</defaultConnectorLabel>
+        <rules>
+            <name>Counts_Need_Update</name>
+            <conditionLogic>or</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Disposition__r.NDA_Count__c</leftValueReference>
+                <operator>NotEqualTo</operator>
+                <rightValue>
+                    <elementReference>totalCount</elementReference>
+                </rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>$Record.Disposition__r.Signed_NDA_Count__c</leftValueReference>
+                <operator>NotEqualTo</operator>
+                <rightValue>
+                    <elementReference>signedCount</elementReference>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Update_Disposition_Counts</targetReference>
+            </connector>
+            <label>Counts need updating</label>
+        </rules>
+    </decisions>
+    <decisions>
+        <name>Is_Row_Signed</name>
+        <label>How should this NDA be counted?</label>
+        <locationX>308</locationX>
+        <locationY>288</locationY>
+        <description>Runs INSIDE the loop, but performs no query and no DML - it is an in-memory branch over a collection already in hand, so it does not breach the no-SOQL-and-no-DML-in-loops rule. Status is a restricted picklist, so the comparisons are total. THREE OUTCOMES SINCE 2026-08-09 (DECISION D20/C2), NOT TWO: Signed counts BOTH counters, DECLINED COUNTS NEITHER and returns straight to the loop, everything else counts the total only. The Declined outcome is why this element was renamed from "Is this NDA signed?" - the question is no longer binary. Outcome ORDER is Signed then Declined; the two are mutually exclusive picklist values so order is not load-bearing here, but Signed stays first because it is the common case.</description>
+        <defaultConnectorLabel>Outstanding - count the total only</defaultConnectorLabel>
+        <rules>
+            <name>Row_Status_Is_Signed</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>currentNda.Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Signed</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Count_Signed_Row</targetReference>
+            </connector>
+            <label>Signed</label>
+        </rules>
+        <rules>
+            <name>Row_Status_Is_Declined</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>currentNda.Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Declined</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Loop_NDAs</targetReference>
+            </connector>
+            <label>Declined - count neither</label>
+        </rules>
+    </decisions>
+    <description>Maintains Disposition__c.NDA_Count__c and Signed_NDA_Count__c, the two fields the All_NDAs_Signed_Before_Progression validation rule reads to block every forward stage from NDA onward on an Off_Market disposition. TWO COUNTS, NOT ONE: a single "unsigned count" reads 0 for a disposition on which NO NDA was ever collected, which would let the release gate pass on exactly the case it exists to catch. A flow-maintained pair is the ONLY declarative option here - NDA__c.Disposition__c is a Lookup, not Master-Detail, so a roll-up summary field is unavailable, and a validation rule cannot count child records. ENTRY CONDITION IS Disposition__c IS NOT NULL: an acquisition NDA must never touch this. runInMode is SystemModeWithoutSharing EXPLICITLY - Disposition__c is sharingModel Private and whoever works an NDA is not necessarily the Disposition owner or an editor of it; leaving runInMode to the default is the ambiguity that produced the ApprovalAuditService failure. But note system mode does NOT lift an approval record lock, which is what the fault connector on Update Disposition Counts exists for. NDA DELETE IS NOT HANDLED AND THAT IS A LIVE GAP: recordTriggerType is CreateAndUpdate, so deleting an NDA never re-fires this flow and the counts stay stale until the next NDA save on the same disposition. The direction of that staleness is FAIL-CLOSED - deleting an unsigned NDA leaves the total too high, so the gate keeps blocking - which is the safe direction, but it is still wrong until reconciled. A RecordAfterDelete-triggered variant is the fix if it is ever seen in practice; it is deliberately out of scope here. NO NEGATIVE CLAIM IS MADE ABOUT WHO CAN DELETE AN NDA: profiles are forceignored in this repo, so no file-based check can establish one. DECLINED NDAs ARE EXCLUDED FROM BOTH COUNTERS - AMENDED 2026-08-09, DECISION D20/C2, AND THIS IS THE ARITHMETIC HALF OF A TWO-PART DECISION. A declined NDA used to count toward the total and never toward the signed count, so it blocked every forward stage PERMANENTLY and the only exit was to delete the record. D20 refuses that exit - allowDelete stays FALSE because a declined NDA is the audit evidence of a party who refused to sign - and fixes the arithmetic instead: a party who declined is OUT OF THE PROCESS, so they are neither outstanding nor signed. THE EXCLUSION LIVES HERE AND NOT IN THE VALIDATION RULE BECAUSE IT CANNOT LIVE THERE: All_NDAs_Signed_Before_Progression sees only two Numbers on the parent and has no access to child rows - NDA__c.Disposition__c is a Lookup, not Master-Detail, so no roll-up summary exists and a validation rule cannot count children. The counter is the ONLY place the distinction is expressible. The two intended consequences (a lone Declined NDA still blocks; a declined buyer plus a signed broker now passes) are set out in that rule's XML comment. BULK SHAPE UNTESTED IN ONE DIRECTION (code review W3): the suite drives 251 NDAs across 251 DISTINCT dispositions, so the consolidated Update Records carries 251 distinct Ids and cannot duplicate. The many-NDAs-under-ONE-disposition consolidation - the classic duplicate id in list - is untested either way, and is BOUNDED, not open: the fault connector turns any such failure into a stale count rather than a lost NDA. Do not reduce the 251 counts to dodge it.</description>
+    <environments>Default</environments>
+    <interviewLabel>NDA Signed Rollup {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>NDA Signed Rollup</label>
+    <loops>
+        <name>Loop_NDAs</name>
+        <label>Loop NDAs</label>
+        <locationX>308</locationX>
+        <locationY>168</locationY>
+        <description>In-memory loop over the collection Get_NDAs_On_Disposition already returned. There is no Get Records and no DML inside it - only Assignment elements - so it is bulk-safe. The single Get and the single Update sit outside it.</description>
+        <assignNextValueToReference>currentNda</assignNextValueToReference>
+        <collectionReference>Get_NDAs_On_Disposition</collectionReference>
+        <iterationOrder>Asc</iterationOrder>
+        <nextValueConnector>
+            <targetReference>Is_Row_Signed</targetReference>
+        </nextValueConnector>
+        <noMoreValuesConnector>
+            <targetReference>Counts_Changed</targetReference>
+        </noMoreValuesConnector>
+    </loops>
+    <processType>AutoLaunchedFlow</processType>
+    <recordLookups>
+        <name>Get_NDAs_On_Disposition</name>
+        <label>Get NDAs On Disposition</label>
+        <locationX>176</locationX>
+        <locationY>48</locationY>
+        <description>Every NDA on the same parent, including the record that triggered this interview - the flow is AFTER save, so the triggering row is committed and its current Status is read here rather than being special-cased. Selects Status__c only; Id comes back regardless.</description>
+        <assignNullValuesIfNoRecordsFound>true</assignNullValuesIfNoRecordsFound>
+        <connector>
+            <targetReference>Loop_NDAs</targetReference>
+        </connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Disposition__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.Disposition__c</elementReference>
+            </value>
+        </filters>
+        <getFirstRecordOnly>false</getFirstRecordOnly>
+        <object>NDA__c</object>
+        <queriedFields>Id</queriedFields>
+        <queriedFields>Status__c</queriedFields>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </recordLookups>
+    <recordUpdates>
+        <name>Update_Disposition_Counts</name>
+        <label>Update Disposition Counts</label>
+        <locationX>440</locationX>
+        <locationY>720</locationY>
+        <description>Writes the parent Disposition directly through the lookup, matching the Wire_Verification_Rollup and Underwriting_Opp_Sync precedent - no second Get is needed. THE FAULT CONNECTOR IS LOAD-BEARING AND IS HERE FROM DAY ONE. Sale_Decision_Approval sets recordEditability AdminOnly and enters at Disposition Readiness, which is exactly the stage at which off-market NDAs are collected, so an NDA saved during that approval updates a LOCKED parent and throws ENTITY_IS_LOCKED. Unhandled, that fault ROLLS THE NDA SAVE BACK - losing the broker's NDA record to protect a derived count. A stale count is strictly better, and while the record is locked the stage cannot change either, so All_NDAs_Signed_Before_Progression is unreachable in that window; the next NDA save reconciles. Broker_Selection_Approval and Closing_Approval lock the same object at later stages and are covered by the same connector.</description>
+        <faultConnector>
+            <targetReference>Record_Count_Update_Fault</targetReference>
+        </faultConnector>
+        <inputAssignments>
+            <field>NDA_Count__c</field>
+            <value>
+                <elementReference>totalCount</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Signed_NDA_Count__c</field>
+            <value>
+                <elementReference>signedCount</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record.Disposition__r</inputReference>
+    </recordUpdates>
+    <runInMode>SystemModeWithoutSharing</runInMode>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Get_NDAs_On_Disposition</targetReference>
+        </connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Disposition__c</field>
+            <operator>IsNull</operator>
+            <value>
+                <booleanValue>false</booleanValue>
+            </value>
+        </filters>
+        <object>NDA__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+    <variables>
+        <name>currentNda</name>
+        <description>Loop variable holding the NDA row currently being counted.</description>
+        <dataType>SObject</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+        <objectType>NDA__c</objectType>
+    </variables>
+    <variables>
+        <name>faultDetail</name>
+        <description>Holds $Flow.FaultMessage on the fault path. IT IS NOT RETRIEVABLE AFTER THE FACT - a COMPLETED autolaunched interview is not retained, only PAUSED interviews appear in Setup, and the debug log captures it only under a trace flag that happened to be active at that moment. Never read by any element; it exists solely to give the fault text somewhere to land, because the alternative - no fault connector - rolls the NDA save back.</description>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>signedCount</name>
+        <description>Running count of NDAs on this disposition whose Status is Signed. Initialised to 0 so the comparison in Counts_Changed and the write are both total; flow variables are per-interview, so a bulk NDA save cannot leak a count between records.</description>
+        <dataType>Number</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+        <scale>0</scale>
+        <value>
+            <numberValue>0.0</numberValue>
+        </value>
+    </variables>
+    <variables>
+        <name>totalCount</name>
+        <description>Running count of every NDA on this disposition EXCEPT those whose Status is Declined - amended 2026-08-09, decision D20/C2; it previously counted all rows whatever their Status. It is therefore the count of parties still IN the process: outstanding plus signed. Initialised to 0 for the same reason as signedCount. A disposition with zero countable NDAs records 0, which the release gate treats as NOT satisfied - collecting nothing is not the same as collecting everything, and that is what makes a lone declined NDA still block.</description>
+        <dataType>Number</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+        <scale>0</scale>
+        <value>
+            <numberValue>0.0</numberValue>
+        </value>
+    </variables>
+</Flow>

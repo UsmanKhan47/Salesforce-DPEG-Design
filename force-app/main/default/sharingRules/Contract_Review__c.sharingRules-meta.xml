@@ -1,3 +1,178 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT AND MUST SIT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+        <SharingRules> breaks `sf` deploy at source conversion with the misleading error "unable to
+        find matching parent xml file".
 
+        DECISION D23 (2026-08-09). This file was an EMPTY root element until now; these are the
+        first sharing rules on Contract_Review__c. They are the record visibility half of the
+        Contract_Review__c grants added to DPEG_Disposition_Edit and DPEG_Disposition_View in the
+        same change, and 🔴 NEITHER HALF WORKS ALONE: both permission sets deliberately carry
+        viewAllRecords=false, so without these rules a disposition persona holds PSA object CRUD
+        and can see ZERO Contract Review rows.
+
+        THEY ARE A DELIBERATE COPY OF THE D17 NDA__c / D20.1 LOI__c SHAPE. Read
+        sharingRules/NDA__c.sharingRules-meta.xml and sharingRules/LOI__c.sharingRules-meta.xml
+        alongside this file; the reasoning is the same in every particular and is only summarised
+        here, with the DIFFERENCES written out in full.
+
+        =================================================================================
+        🔴 WHY THE SCOPED SHAPE IS AVAILABLE HERE WHEN IT WAS NOT AT D21
+        =================================================================================
+
+        D21 had to fall back to an org wide viewAllRecords on Counter_Offer__c because a criteria
+        rule was UNWRITABLE on that object. Contract_Review__c clears the two blockers that
+        mattered, and that is why this is a rule rather than a widening:
+
+          1. RECORD TYPES. Counter_Offer__c has none. Contract_Review__c now has TWO,
+             objects/Contract_Review__c/recordTypes/Acquisition_PSA and Disposition_PSA, so the
+             criterion 'RecordTypeId equals Contract_Review__c.Disposition_PSA' has something to
+             name.
+          2. A STORED DISCRIMINATOR. Counter_Offer__c had no stored field identifying the deal
+             side. Contract_Review__c carries Disposition__c, a stored lookup, in addition to the
+             record type itself. Either is a non formula value a criteria rule can key on.
+
+        🔴 THE RULES KEY ON RecordTypeId, NOT ON Disposition__c, AND THE CHOICE IS DELIBERATE.
+        Both fields identify a sell side PSA today, but the RECORD TYPE is the field the persona's
+        whole surface is already scoped by: the permission sets' recordTypeVisibilities, the Path,
+        the picklist value sets and the D20.1 / D17 precedent all key on it. Keying the rule on the
+        same fact keeps one discriminator instead of two that could drift apart, and a record type
+        cannot be blanked by an unrelated reparent the way a lookup can.
+
+        WHY SCOPING MATTERS ON THIS OBJECT. An ACQUISITION Contract Review is the buy side PSA on a
+        live purchase: contract value, execution date and the negotiating position behind it. An
+        unscoped grant would repeat, on a third object, the compounding error D17 spent a decision
+        unwinding on NDA__c and D20.1 pre empted on LOI__c.
+
+        OWD VERIFIED, NOT ASSUMED. Contract_Review__c is sharingModel Private with enableSharing
+        true in the repo (objects/Contract_Review__c/Contract_Review__c.object-meta.xml). A sharing
+        rule on a Public Read/Write object would be meaningless, so this was checked before the
+        rules were written. ⚠ It was checked in the REPO ONLY and was not read back from the org.
+
+        =================================================================================
+        TWO RULES, NOT ONE, AND THE SPLIT IS BY POPULATION - NOT BY ACCESS LEVEL
+        =================================================================================
+
+        A sharing rule shares to a GROUP or ROLE and cannot target a permission set, so "Edit
+        persona" and "View persona" are not addressable here.
+
+        RULE 1 covers BOTH disposition personas with a single Edit level rule, because OBJECT CRUD
+        IS THE CEILING: DPEG_Disposition_View has allowEdit=false, so a View persona holder who is
+        also in DPEG_Acquisitions_Team gets READ ONLY regardless of this rule granting Edit. A
+        second Read level rule to the same group would be redundant (Salesforce takes the most
+        permissive of overlapping rules) and would double the one at a time deploy hazard for no
+        behavioural difference.
+
+        RULE 2 exists for a DIFFERENT POPULATION. The Principals hold DPEG_Disposition_View through
+        DPEG_Principal_PSG and are not necessarily members of DPEG_Acquisitions_Team. With only
+        rule 1 in place they would see zero disposition PSAs, and that failure is SILENT because an
+        unshared row is filtered out of a WITH USER_MODE query rather than refused. This is the
+        identical gap NDA_Disposition_Principals_R and LOI_Disposition_Principals_R were each
+        written to prevent on their own objects.
+
+        WHY DPEG_Acquisitions_Team: every other disposition child object in this repo shares to
+        that group (Disposition__c, BOV_Submission__c, Wire__c, Disposition_Offer__c,
+        Broker_Listing__c, NDA__c and LOI__c). Using a different group for Contract_Review__c would
+        make it the one disposition child with its own population.
+
+        ⚠ CRITERIA BASED, NOT OWNER BASED, AND THAT IS DELIBERATE. An owner rule shares by who owns
+        the row; the requirement is to share by WHICH KIND of row it is, so that acquisition PSAs
+        stay invisible to disposition only personas no matter who owns them. Only a criteria rule
+        can express that.
+
+        ⚠ THE RecordTypeId CRITERIA VALUE IS THE FULLY QUALIFIED DEVELOPER NAME
+        (Contract_Review__c.Disposition_PSA), not an Id. Ids are org specific and must never be
+        hardcoded in metadata. It matches the form used by the two NDA and two LOI rules.
+
+        ⚠ THE RULE NAMES USE "Disp", NOT "Disposition", AND THAT IS A LENGTH CONSTRAINT RATHER THAN
+        A STYLE CHOICE. A sharing rule developer name is capped at 40 characters, and
+        "Contract_Review_Disposition_Principals_R" is EXACTLY 40. Abbreviating both names keeps the
+        pair consistent with each other and safely under the cap; the labels stay unabbreviated.
+
+        =================================================================================
+        🔴 PSA_Version__c IS NOT COVERED BY THIS FILE AND HAS NO RULE OF ITS OWN
+        =================================================================================
+
+        ESTABLISHED, NOT ASSUMED: objects/PSA_Version__c/fields/Contract_Review__c.field-meta.xml
+        is `<type>Lookup</type>` (required true, deleteConstraint Restrict) and PSA_Version__c is
+        sharingModel Private with enableSharing true. ONLY a MASTER DETAIL child is
+        ControlledByParent. A Private OWD LOOKUP child is shared INDEPENDENTLY of its parent, so
+        the rules below do NOT reach PSA versions, and PSA_Version__c needs a mechanism of its own.
+
+        It cannot have a criteria rule today, for the D21 reasons unchanged: it has NO record types
+        (deliberate per the Tranche 3 design, which keeps record types on the parent), its only
+        candidate discriminator Direction__c carries the token contract copied word for word from
+        Counter_Offer__c.Direction__c ('Seller' is the counterparty on BOTH sides), and formula
+        fields are not supported in sharing rule criteria.
+
+        🔴 THE CONSEQUENCE IS WORSE THAN AN EMPTY LIST. PsaVersionSelector carries a `SELECT
+        COUNT()` WITH USER_MODE whose result PsaVersionService writes back as `priorCount + 1` into
+        Contract_Review__c.Latest_Version__c. A user who cannot SEE the prior versions counts ZERO
+        priors and rewinds the version counter to 1 on a live negotiation. The three closure
+        options are set out in full in the D23 comment block on DPEG_Disposition_Edit; picking one
+        is a user decision, as it was at D21.
+
+        =================================================================================
+        DEPLOY GATES
+        =================================================================================
+
+        🔴 EXPECT THESE TO FAIL CHECK ONLY VALIDATION TODAY, AND THAT IS PHASE TWO, NOT A DEFECT.
+        D19.2 recorded exactly this for the NDA pair: check only reported "Picklist value does not
+        exist" on RecordTypeId equals NDA__c.Disposition_NDA because the record type did not yet
+        exist in the target org. The Contract_Review__c record types are in the same position. THE
+        CAUSE IS MOST LIKELY ORDERING BUT IS UNDETERMINED, since a wrong value format produces the
+        identical message, and the resolution is the same either way:
+          1. deploy the Contract_Review__c record types (and the rest of the tranche) FIRST
+          2. then these rules, 🔴 ONE AT A TIME
+          3. if a rule still fails once the record type has landed, THE CRITERIA VALUE IS THE ONLY
+             THING TO CHANGE; nothing else in this file is in doubt
+
+        🔴 DEPLOY THESE ONE AT A TIME. A batch deploy of sharing rules rolls ALL of them back in
+        this org, established in the 2026-07-22 RBAC build. These two join the two NDA and two LOI
+        rules in the same phase, so that is SIX separate deploys.
+
+        🔴 GROUP MEMBERSHIP IS NOT DEPLOYABLE METADATA. If DPEG_Acquisitions_Team or Principals is
+        empty or wrong in the target org these rules grant NOTHING, and "no PSAs visible" looks
+        exactly like "there are no PSAs". Verify as a post deploy gate by OPENING A DISPOSITION PSA
+        AS EACH PERSONA, never as an administrator.
+
+        🔴 RECALCULATION IS ASYNCHRONOUS. Criteria based sharing recalculates in the background and
+        on an object with existing rows it is not instant. A persona checking immediately after
+        deploy may see nothing yet; do not read that as a failed rule until recalculation has
+        completed.
+
+        ACQUISITION PSAs ARE UNAFFECTED. DPEG_Acquisition_Edit / _View and DPEG_Acquisitions hold
+        their own Contract_Review__c grants with viewAllRecords=true and are untouched by this
+        file. These rules only widen access to Disposition_PSA rows; they take nothing away from
+        anyone.
+    -->
+    <sharingCriteriaRules>
+        <fullName>Contract_Review_Disp_Team_RW</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>D23: shares disposition PSAs to the disposition working team. Covers BOTH the Edit and View personas - object CRUD is the ceiling, so a DPEG_Disposition_View holder gets read only. Mirrors NDA_Disposition_Team_RW and LOI_Disposition_Team_RW.</description>
+        <label>Contract Review Disposition Team RW</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Contract_Review__c.Disposition_PSA</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Contract_Review_Disp_Principals_R</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>D23: shares disposition PSAs to the Principals at Read. A separate rule because principals are a different population, not a different access level - they hold DPEG_Disposition_View via the PSG and may not be in the team group.</description>
+        <label>Contract Review Disposition Principals R</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Contract_Review__c.Disposition_PSA</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Principals</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+</SharingRules>

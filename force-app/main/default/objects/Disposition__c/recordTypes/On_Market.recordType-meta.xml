@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        RecordType.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API. Do not paste this back into
+        <description>. NOTE ALSO: the comment must sit INSIDE the root element - a comment
+        placed ABOVE <RecordType> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        THE BROKER-LISTED DISPOSITION PATH.
+        Disposition Readiness, BOV Outreach, Active Listing, Call for Offers, LOI, PSA,
+        Closing, Completed.
+
+        THIS IS THE DEFAULT TYPE. DispositionService.findOrCreate stamps it EXPLICITLY when
+        the Sell Meter creates a disposition (design Q1 answer (a)), rather than leaving
+        RecordTypeId null and inheriting the running user's PROFILE default - profiles are
+        .forceignore'd, so that default is org state this repo cannot see, set or verify.
+        An off-market deal is switched by changing the record type early, while the record
+        is still at Disposition Readiness.
+
+        Disposition_Stage__c is restricted here to the EIGHT on-market stages. NDA and
+        Disposition Offer are off-market stage values ONLY and are deliberately excluded -
+        the source document narrates a buyer NDA and an offer inside the on-market path too,
+        but as RECORDS surfaced during other stages, not as stages. Do not "helpfully" add
+        them here.
+
+        Sell_Decision_Trigger__c is enumerated in full because a record type file must list
+        EVERY picklist on the object or values are silently dropped from that type.
+        Disposition__c has exactly two picklists today.
+
+        No <businessProcess> - that element is for Opportunity, Case, Lead and Solution only.
+    -->
+    <fullName>On_Market</fullName>
+    <active>true</active>
+    <description>The broker-listed disposition path: Readiness, BOV Outreach, Active Listing, Call for Offers, LOI, PSA, Closing, Completed. The default type, stamped by DispositionService.findOrCreate. See the XML comment in this file for full rationale.</description>
+    <label>On Market</label>
+    <picklistValues>
+        <picklist>Disposition_Stage__c</picklist>
+        <values>
+            <fullName>Disposition Readiness</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>BOV Outreach</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Active Listing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Call for Offers</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>LOI</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>PSA</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Closing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Completed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Sell_Decision_Trigger__c</picklist>
+        <values>
+            <fullName>Sell Meter Green</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Principal Decision</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Fund Maturity</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Market Opportunity</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

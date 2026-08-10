@@ -13,6 +13,23 @@
  * and readPathsThrowAuraHandledException covers both catch blocks by running the
  * reads under a bare Standard User whose WITH USER_MODE SOQL on the custom
  * Disposition__c object throws.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * DISPOSITION FOUNDATIONS: findOrCreate NOW HAS TWO CATCHES AND THEY SAY DIFFERENT THINGS
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * A sell-meter refusal (DispositionService.SellMeterGateException) is a DESIGNED refusal
+ * whose message is authored to be shown, so it is rethrown VERBATIM. Everything else is a
+ * platform failure and is masked behind the fixed generic write-failure message. The two
+ * are pinned by a MATCHED PAIR of tests below — refusalSurfacesTheSellMeterWording and
+ * readPathsThrowAuraHandledException — which assert OPPOSITE message contents. Asserting
+ * only "an AuraHandledException was thrown" would pass even if the first catch were
+ * deleted, which is exactly the bug the catch exists to prevent.
+ *
+ * ⚠ FIXTURE PRECONDITION: TestDataFactory.createPropertyAssets does not set
+ * Peak_Sell_Date__c, and a null peak bands RED, so an unmodified factory asset is now
+ * REFUSED. @TestSetup therefore stamps a GREEN peak date; a test that wants a refusal
+ * re-bands the asset explicitly. See DispositionServiceTest's header for why the factory
+ * default was deliberately left alone.
  * @author Unit Testing Agent
  */
 @isTest
@@ -21,7 +38,10 @@ private class DispositionControllerTest {
     @testSetup
     static void setup() {
         Property__c prop = TestDataFactory.createProperty(true);
-        TestDataFactory.createPropertyAsset(prop.Id, true);
+        Property_Asset__c asset = TestDataFactory.createPropertyAsset(prop.Id, false);
+        // GREEN band (<= 30 days to peak): required before findOrCreate will create.
+        asset.Peak_Sell_Date__c = Date.today().addDays(10);
+        insert asset;
     }
 
     // A valid-format but non-existent Id for the given type. The bare-user reads throw on
@@ -68,6 +88,39 @@ private class DispositionControllerTest {
         System.assertEquals(dispId1, dispId2, 'Second call should return the same Disposition Id, not create a duplicate');
         Integer count = [SELECT COUNT() FROM Disposition__c WHERE Property_Asset__c = :asset.Id];
         System.assertEquals(1, count, 'find-or-create must not duplicate the Disposition');
+    }
+
+    /**
+     * 🔴 THE FIRST CATCH. A red-band refusal must reach the user as the SELL-METER wording,
+     * not the generic "This change could not be saved. Refresh the page and try again" —
+     * which is advice that can never work, because refreshing will refuse identically
+     * forever. This test asserts BOTH halves: the refusal text is present AND the generic
+     * text is absent. Deleting DispositionController's SellMeterGateException catch turns
+     * this red; asserting only that "an AuraHandledException was thrown" would not.
+     */
+    @isTest
+    static void refusalSurfacesTheSellMeterWording() {
+        Property_Asset__c asset = [SELECT Id, Peak_Sell_Date__c FROM Property_Asset__c LIMIT 1];
+        asset.Peak_Sell_Date__c = Date.today().addDays(200); // > 90 days => RED
+        update asset;
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionController.findOrCreate(asset.Id);
+            Assert.fail('A RED asset must be refused at the controller boundary too');
+        } catch (AuraHandledException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('not ready to sell'),
+                'The user must see the sell-meter refusal, not a generic write failure: ' + e.getMessage());
+            Assert.isFalse(e.getMessage().contains('could not be saved'),
+                'A designed refusal must NOT be masked behind the generic write-failure message: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The RED asset should have surfaced an AuraHandledException');
+        Assert.areEqual(0, [SELECT COUNT() FROM Disposition__c WHERE Property_Asset__c = :asset.Id],
+            'A refused creation must leave no Disposition behind');
     }
 
     @isTest
@@ -139,7 +192,13 @@ private class DispositionControllerTest {
                 DispositionController.findOrCreate(fakeAssetId);
                 Assert.fail('expected AuraHandledException from findOrCreate under a bare user');
             } catch (AuraHandledException e) {
-                Assert.isNotNull(e, 'findOrCreate read failure maps to AuraHandledException');
+                // The other half of the matched pair with refusalSurfacesTheSellMeterWording:
+                // a PLATFORM failure must be MASKED behind the generic message, and must NOT
+                // borrow the sell-meter wording (nothing about the band was even reached here).
+                Assert.isTrue(e.getMessage().contains('could not be saved'),
+                    'A platform read failure maps to the generic write-failure message: ' + e.getMessage());
+                Assert.isFalse(e.getMessage().contains('not ready to sell'),
+                    'A platform failure must not be reported as a sell-meter refusal: ' + e.getMessage());
             }
             try {
                 DispositionController.getClosingSummary(fakeDispId);

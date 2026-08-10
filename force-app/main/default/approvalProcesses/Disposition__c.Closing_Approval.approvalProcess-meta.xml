@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Disposition_Stage__c</field>
+        <field>PSA_Executed__c</field>
+        <field>Title_Company__c</field>
+        <field>Accepted_Offer_Price__c</field>
+        <field>Net_Sale_Proceeds__c</field>
+        <field>Wire_Verification_Completed__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+        </assignedApprover>
+        <label>Principal Review</label>
+        <name>Principal_Review_Step</name>
+    </approvalStep>
+    <description>Principal sign-off on the final sale terms and the closing wire. EITHER principal (Ali or Nikhil) decides - first response wins. Entry: the disposition is at Closing. Wire Verification Completed is on the approval page DELIBERATELY, not in entry criteria: an unmet wire gate must not surface as the platform message "no applicable approval process was found", so the approver SEES the wire state here while the hard stop lives in the Wire_Complete_Before_Completed validation rule on the Closing to Completed transition. No field updates fire on approval or rejection - one would bypass that validation rule entirely.</description>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
+    <entryCriteria>
+        <criteriaItems>
+            <field>Disposition__c.Disposition_Stage__c</field>
+            <operation>equals</operation>
+            <value>Closing</value>
+        </criteriaItems>
+    </entryCriteria>
+    <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>Closing Approval</label>
+    <processOrder>3</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+</ApprovalProcess>

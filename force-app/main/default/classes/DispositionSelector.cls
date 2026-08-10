@@ -7,12 +7,20 @@
  *   - DispositionController.findOrCreate      -> selectMostRecentByPropertyAssetId
  *   - DispositionController.getClosingSummary -> selectClosingSummaryById
  *   - BovController.getOutreachSummary        -> selectOutreachById
+ *   - ContractExecutionService.handleExecution -> selectStagesByIds  (Tranche 3C, 2026-08-09)
  *
- * MODE — every query uses `WITH USER_MODE` (API 67). Disposition__c is a custom
- * object; P3 proved the custom-field FLS gap is 0, so USER_MODE is safe and
- * enforces the running user's sharing + FLS. There is no guest path for the
- * Disposition module, so no SYSTEM_MODE appears here. USER_MODE also covers the
- * Wires__r relationship subquery (Wire__c is likewise custom, FLS gap 0).
+ * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. The three
+ * controller-backed reads above stay `WITH USER_MODE`; selectStagesByIds alone is
+ * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception, justified at its own
+ * declaration (which is where §2 says the authoritative inventory lives). The sentence this
+ * replaced — "There is no guest path for the Disposition module, so no SYSTEM_MODE appears here" —
+ * was reasoning from the wrong test: the exception is about reads the running user never asked
+ * for, not about anonymous ones. That distinction is now the difference between three methods and
+ * a fourth.
+ *
+ * MODE (the three USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
+ * FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS. USER_MODE also
+ * covers the Wires__r relationship subquery (Wire__c is likewise custom, FLS gap 0).
  *
  * NOT-FOUND CONTRACT is per-caller and encoded in the method shape:
  *   - read-for-display  (selectMostRecentByPropertyAssetId) -> a missing
@@ -112,6 +120,67 @@ public with sharing class DispositionSelector {
             WHERE Id = :dispositionId
             WITH USER_MODE
             LIMIT 1
+        ];
+    }
+
+    /**
+     * Current stage for a set of Dispositions — backs ContractExecutionService.handleExecution's
+     * disposition arm (Tranche 3C, 2026-08-09), which moves a sale to `Closing` when its PSA is
+     * executed.
+     *
+     * 🔴 IT EXISTS TO SUPPORT A NO-CHANGE CHECK, WHICH IS THE POINT AND NOT AN OPTIMISATION.
+     * `Disposition__c` is the entry object of THREE approval processes (Sale_Decision at
+     * Disposition Readiness, Broker_Selection at BOV Outreach, Closing_Approval at Closing), all
+     * declaring `recordEditability = AdminOnly` — so while any is pending the record is LOCKED and
+     * ANY update to it throws ENTITY_IS_LOCKED. The sharpest case is self-inflicted:
+     * `Closing_Approval`'s entry criteria is `Disposition_Stage__c equals Closing`, which is
+     * exactly the value this feature writes, so a re-executed PSA on a disposition already at
+     * Closing-under-approval would fire a write that changes NOTHING and can only fail. Reading the
+     * stage first lets the caller drop those rows before the DML. That is Tranche 2's C1 lesson
+     * (`Flag_Changed` no-change Decision + fault connector) expressed in Apex.
+     *
+     * ── 🔴 WITH SYSTEM_MODE — automation path, and the failure it prevents is not this feature's ──
+     * ARCHITECTURE.md §2's exception applies on its own terms: this read happens INSIDE AN
+     * AFTER-UPDATE TRIGGER on a DIFFERENT object, on behalf of whoever executed the PSA. Nobody
+     * asked for it and nothing it returns is displayed.
+     *
+     * The consequence of USER_MODE here would be the `TaskRollupService` production failure
+     * verbatim, one module over: whoever executes a sell-side PSA is Legal or a deal driver, not
+     * necessarily a `Disposition__c` reader, and `USER_MODE` THROWS rather than degrades. That
+     * `QueryException` would escape `ContractReviewTriggerHandler.afterUpdate` as
+     * CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY and roll back **the PSA execution itself** — the
+     * Contract Review's own `Executed` status, the Opportunity Day-0 stamp, the three team
+     * notifications — to protect a stage advance. A read added to make a feature safer must not be
+     * able to destroy the transaction it was added to.
+     *
+     * ⚠ SHARING IS A SEPARATE QUESTION AND IS DELIBERATELY LEFT ALONE. `SYSTEM_MODE` lifts CRUD and
+     * FLS, never sharing, and this class stays `with sharing`. `Disposition__c` is OWD Private, so
+     * a caller who cannot SEE the disposition reads no row for it — and because the caller treats
+     * an unread Id as "do not write", that degrades to SKIPPING the stage advance rather than to
+     * writing a wrong one. That is the correct failure direction and it is why no
+     * `without sharing` inner class is warranted here: contrast
+     * `InboundEmailStagingSelector.RoutingReads`, where the automation runs as a principal that
+     * does not own the rows AND the miss produced silence indistinguishable from health. Here the
+     * residual is visible on the record (a disposition parked at PSA whose Contract Review reads
+     * Executed) and is fixable by hand.
+     *
+     * Bulk-safe: ONE query for the whole set, never one per record.
+     *
+     * @param dispositionIds Disposition__c Ids; null/empty-safe.
+     * @return Dispositions with Id and Disposition_Stage__c populated; empty when the input is
+     *         null or empty. A row the running user cannot SEE is simply absent (see above).
+     * @example
+     * List&lt;Disposition__c&gt; rows = DispositionSelector.selectStagesByIds(ids);
+     */
+    public static List<Disposition__c> selectStagesByIds(Set<Id> dispositionIds) {
+        if (dispositionIds == null || dispositionIds.isEmpty()) {
+            return new List<Disposition__c>();
+        }
+        return [
+            SELECT Id, Disposition_Stage__c
+            FROM Disposition__c
+            WHERE Id IN :dispositionIds
+            WITH SYSTEM_MODE
         ];
     }
 }

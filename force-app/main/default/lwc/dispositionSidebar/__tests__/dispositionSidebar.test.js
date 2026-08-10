@@ -10,6 +10,24 @@
  * Note: unlike c-disposition-main, isClosing here is true ONLY for the 'Closing'
  * stage (not 'Completed'), so 'Completed' renders no child — asserted below.
  * The accessibility check runs on the empty state (guaranteed axe-clean).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE OFFER CARD NOW SPANS FOUR STAGES (was 'Active Listing' only)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * With the new stage values the sidebar was empty at exactly the stages where
+ * offers are being taken. c-disposition-offer now renders at 'Active Listing',
+ * 'Call for Offers', 'Disposition Offer' and 'LOI'.
+ *
+ * ⚠ NO RECORD-TYPE WIRE ANYWHERE, DELIBERATELY. The two record types' stage value
+ * sets are DISJOINT for every path-specific stage — 'Call for Offers' is On_Market
+ * only and 'Disposition Offer' is Off_Market only — so the stage alone identifies
+ * the path. That is also why this suite still emits nothing but a stage: if a
+ * getObjectInfo/RecordTypeId wire ever appears here, these fixtures stop being
+ * sufficient, which is the signal that the disjointness assumption was broken.
+ *
+ * 🔴 'PSA' is asserted to render NOTHING, on purpose (Gate 1 Q5 = no placeholder).
+ * At PSA the only marker is PSA_Executed__c on the Disposition itself and the
+ * record page falls back to its Details section. That is a decision, not a gap.
  */
 import { createElement } from 'lwc';
 import DispositionSidebar from 'c/dispositionSidebar';
@@ -77,6 +95,85 @@ describe('c-disposition-sidebar', () => {
         expect(
             element.shadowRoot.querySelector('c-disposition-offer')
         ).not.toBeNull();
+        expect(element.shadowRoot.querySelector('c-bov-outreach')).toBeNull();
+    });
+
+    // ── The three stages added to the offer branch. Each is asserted on its own ──
+    // ── rather than in a loop, so a failure names the stage that broke.         ──
+
+    it('Call for Offers (on-market) renders the disposition-offer panel', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('Call for Offers'));
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('c-disposition-offer')
+        ).not.toBeNull();
+        expect(element.shadowRoot.querySelector('c-bov-outreach')).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('c-disposition-closing')
+        ).toBeNull();
+    });
+
+    it('Disposition Offer (off-market) renders the disposition-offer panel', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('Disposition Offer'));
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('c-disposition-offer')
+        ).not.toBeNull();
+    });
+
+    it('LOI renders the disposition-offer panel — the negotiation still lives on the offer', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('LOI'));
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('c-disposition-offer')
+        ).not.toBeNull();
+    });
+
+    it('PSA renders NO sidebar child — deliberately no placeholder (Gate 1 Q5)', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('PSA'));
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('c-disposition-offer')
+        ).toBeNull();
+        expect(element.shadowRoot.querySelector('c-bov-outreach')).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('c-disposition-closing')
+        ).toBeNull();
+    });
+
+    it('Disposition Readiness renders NO sidebar child (the record page shows Details)', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('Disposition Readiness'));
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('c-disposition-offer')
+        ).toBeNull();
+        expect(element.shadowRoot.querySelector('c-bov-outreach')).toBeNull();
+    });
+
+    it('NDA (off-market) renders NO sidebar child — the NDA stage has no offer yet', async () => {
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('NDA'));
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('c-disposition-offer')
+        ).toBeNull();
         expect(element.shadowRoot.querySelector('c-bov-outreach')).toBeNull();
     });
 

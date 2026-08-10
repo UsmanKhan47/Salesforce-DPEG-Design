@@ -7,10 +7,6 @@ export default class BovOutreach extends LightningElement {
     summary;
     loadError;
 
-    // NDA status shown in the footer row. Hard-set to 'Signed' for now; swap to
-    // 'Received' / 'Pending' (or wire to the NDA record) when the data is available.
-    _ndaStatus = 'Signed';
-
     @wire(getOutreachSummary, { dispositionId: '$recordId' })
     wired({ data, error }) {
         if (data) {
@@ -22,10 +18,30 @@ export default class BovOutreach extends LightningElement {
         }
     }
 
-    get ndaStatus() { return this._ndaStatus; }
+    /**
+     * The real NDA status for this disposition, from the most recent related NDA__c.
+     *
+     * ⚠ This used to be a hard-coded `_ndaStatus = 'Signed'`, which reported a COMPLIANCE
+     * state as satisfied on every disposition whether or not an NDA existed. Do not
+     * reintroduce a default value here: a missing NDA must read as missing.
+     *
+     * Apex returns null both when there is genuinely no NDA and when the NDA read degraded
+     * (BovController fails that read soft so a missing FLS grant cannot blank the whole
+     * tile). Both render as 'No NDA' — the honest answer in either case is that we cannot
+     * show a signed NDA.
+     */
+    get ndaStatus() { return this.summary?.ndaStatus || 'No NDA'; }
+
+    /**
+     * Pill colour by status. 'Sent' maps to the amber `nda-received` class — the CSS class
+     * names predate the picklist and were not renamed here (NDA__c is out of scope for this
+     * change). Anything unrecognised, including null / 'No NDA', falls back to the neutral
+     * pending style, so a value added to NDA__c.Status__c later degrades gracefully instead
+     * of rendering an unstyled pill.
+     */
     get ndaPillClass() {
-        const cls = { Signed: 'nda-signed', Received: 'nda-received', Pending: 'nda-pending' };
-        return 'nda-pill ' + (cls[this._ndaStatus] || 'nda-pending');
+        const cls = { Signed: 'nda-signed', Sent: 'nda-received', Received: 'nda-received', Pending: 'nda-pending' };
+        return 'nda-pill ' + (cls[this.summary?.ndaStatus] || 'nda-pending');
     }
 
     get packageSentLabel()        { return formatLongDate(this.summary?.packageSent); }

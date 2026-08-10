@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The DIRECT, UNLISTED disposition path, for the Off_Market record type.
+        Seven steps: Disposition Readiness, NDA, Disposition Offer, LOI, PSA, Closing,
+        Completed. No broker is engaged, so there is no BOV Outreach, no Active Listing and
+        no Call for Offers - those three are restricted out of the Off_Market value set.
+
+        Completed is copied BYTE-IDENTICAL - fieldNames AND info text - from the
+        now-deactivated Disposition_Path. Closing was too until 2026-08-09, when the code
+        review's C1 finding added a third sentence to it (fieldNames unchanged, the original
+        two sentences unchanged): complete the wire verification BEFORE submitting the Closing
+        approval. That ordering is not a preference - Closing_Approval sets recordEditability
+        AdminOnly, so while it is pending the Disposition is locked and
+        Wire_Verification_Rollup cannot write the flag (it now fails soft rather than rolling
+        the Wire save back). The IDENTICAL sentence is on Disposition_Path_On_Market's Closing
+        step - these two must stay in step with each other.
+
+        Disposition Readiness is the ONE deliberate exception to that carry-over, corrected on
+        request 2026-08-09. The original text ended "before advancing to BOV Outreach", which
+        is on-market wording: BOV Outreach does not exist on this path at all, which goes
+        Readiness -> NDA. The trailing clause now names NDA. Its fieldNames (Property_Asset__c)
+        and the rest of the sentence are unchanged, and the On_Market copy of this step still
+        carries the original wording, which is correct there.
+
+        NOT corrected, deliberately: the Active Listing step text on the On_Market path ("6-week
+        marketing clock ... Week 4 YELLOW ... Week 6 Hard Stop") is under an OPEN user question
+        about a 2-month vs 6-week clock. That step does not exist on this path, but do not
+        "fix" it on the other one either.
+
+        NDA, Disposition Offer, LOI and PSA are new, text-only steps: none has a
+        Disposition__c field to surface. Nothing about NDA__c itself changes in this tranche -
+        no new values, no rename, no Party_Role__c.
+
+        Step ORDER in this file is the design's path order for readability. Runtime display
+        order comes from the Disposition_Stage__c picklist value order (sorted=false).
+    -->
+    <active>true</active>
+    <entityName>Disposition__c</entityName>
+    <fieldName>Disposition_Stage__c</fieldName>
+    <masterLabel>Disposition Path Off Market</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Property_Asset__c</fieldNames>
+        <info>Confirm the asset metrics and Argus signal support the sell decision before advancing to NDA.</info>
+        <picklistValueName>Disposition Readiness</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Send an NDA to each interested party. Create one NDA record per party using the NDA lookup to this Disposition. The expanded NDA model - the Declined state, the Pending to Not Sent rename, party roles, counter-signature and the all-signed gate - arrives in a later change; until then track each NDA Status by hand.</info>
+        <picklistValueName>NDA</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Offers are captured on Disposition Offer records against this Disposition. Log the buyer name, offer amount, financing type, due-diligence and closing periods, then work the counter fields until an offer is accepted.</info>
+        <picklistValueName>Disposition Offer</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>LOI is a phase of this disposition, not a separate record - the disposition-side LOI record arrives in a later change. Until then the negotiation stays on the Disposition Offer record: drive it through Offer Status and the DPEG Counter Price, DPEG Counter Date, Buyer Counter Price and Final Agreed Price fields.</info>
+        <picklistValueName>LOI</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>PSA is a phase of this disposition, not a separate record - the disposition-side contract has no record yet and arrives in a later change. PSA Executed on this Disposition is the only marker; tick it on the Closing step once the purchase and sale agreement is signed.</info>
+        <picklistValueName>PSA</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>PSA_Executed__c</fieldNames>
+        <fieldNames>Title_Company__c</fieldNames>
+        <info>PSA Executed = TRUE spawns closing tasks. Wire fraud prevention gate (6 fields) must be complete before wiring. Complete the wire verification BEFORE submitting the Closing approval - the approval locks this Disposition, so a Wire saved while it is pending will not update the Wire Verification Completed flag until the approval resolves.</info>
+        <picklistValueName>Closing</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Closing_Date__c</fieldNames>
+        <fieldNames>Net_Sale_Proceeds__c</fieldNames>
+        <info>Deal closed. Confirm the closing date, net sale proceeds, and that the closing statement is on file.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Off_Market</recordTypeName>
+</PathAssistant>

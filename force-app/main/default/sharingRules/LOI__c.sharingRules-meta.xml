@@ -1,3 +1,118 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT AND MUST SIT INSIDE THE ROOT ELEMENT - a comment placed
+        ABOVE <SharingRules> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
 
+        DECISION D20.1 (2026-08-09). This file was an EMPTY root element until now; these are the
+        first sharing rules on LOI__c. They are the record-visibility half of the LOI__c grants
+        added to DPEG_Disposition_Edit and DPEG_Disposition_View in the same change, and NEITHER
+        HALF WORKS ALONE: the permission sets deliberately carry viewAllRecords=false, so without
+        these rules a disposition persona holds LOI object CRUD and can see ZERO LOI rows.
+
+        THEY ARE A DELIBERATE COPY OF THE D17 NDA__c SHAPE. Read
+        sharingRules/NDA__c.sharingRules-meta.xml alongside this file - the reasoning is the same
+        in every particular and is only summarised here.
+
+        🔴 WHY SCOPED RATHER THAN A PLAIN viewAllRecords, AND WHY THE STAKES ARE HIGHER THAN NDA.
+        An ACQUISITION LOI carries the approval flags that gate PSA entry
+        (Underwriting_Approved_Before_LOI, Approved_LOI_Before_PSA). An unscoped grant would hand
+        the disposition personas the acquisition approval surface - the NDA compounding error
+        that D17 had just finished unwinding, repeated on a higher-value object. This is exactly
+        the mistake the programme has now made once and must not make twice.
+
+        OWD VERIFIED, NOT ASSUMED. LOI__c is sharingModel Private with enableSharing true in the
+        repo (objects/LOI__c/LOI__c.object-meta.xml). A sharing rule on a Public Read/Write object
+        would be meaningless, so this was checked before the rules were written. ⚠ It was checked
+        in the REPO ONLY - it was not read back from the org - and settings/** is .forceignore'd
+        in this repo, so an org-side OWD is not something a file-based check can establish.
+
+        TWO RULES, NOT ONE, AND THE SPLIT IS BY POPULATION - NOT BY ACCESS LEVEL.
+        A sharing rule shares to a GROUP or ROLE and cannot target a permission set, so "Edit
+        persona" and "View persona" are not addressable here.
+
+        RULE 1 covers BOTH disposition personas with a single Edit-level rule, because OBJECT
+        CRUD IS THE CEILING: DPEG_Disposition_View has allowEdit=false, so a View-persona holder
+        who is also in DPEG_Acquisitions_Team gets READ ONLY regardless of this rule granting
+        Edit. A second Read-level rule to the SAME group would be redundant - Salesforce takes the
+        most permissive of overlapping rules - and would double the one-at-a-time deploy hazard
+        for no behavioural difference.
+
+        RULE 2 exists for a DIFFERENT POPULATION. The Principals hold DPEG_Disposition_View
+        through DPEG_Principal_PSG and are not necessarily members of DPEG_Acquisitions_Team.
+        With only rule 1 in place they would see zero disposition LOIs - the identical silent gap
+        D17's second rule was written to prevent for NDAs.
+
+        WHY DPEG_Acquisitions_Team: every other disposition child object in this repo shares to
+        that group (Disposition__c, BOV_Submission__c, Wire__c, Disposition_Offer__c,
+        Broker_Listing__c, and now NDA__c). Using a different group for LOI__c would make it the
+        one disposition child with its own population.
+
+        ⚠ CRITERIA-BASED, NOT OWNER-BASED, AND THAT IS DELIBERATE. An owner rule shares by who
+        owns the row; the requirement is to share by WHICH KIND of row it is, so that acquisition
+        LOIs stay invisible to disposition-only personas no matter who owns them. Only a criteria
+        rule can express that.
+
+        ⚠ THE RecordTypeId CRITERIA VALUE IS THE FULLY-QUALIFIED DEVELOPER NAME
+        (LOI__c.Disposition_LOI), not an Id - Ids are org-specific and must never be hardcoded in
+        metadata. It matches the form used by the two NDA rules.
+
+        🔴 EXPECT THESE TO FAIL CHECK-ONLY VALIDATION TODAY, AND THAT IS PHASE TWO, NOT A DEFECT.
+        D19.2 recorded exactly this for the NDA pair: check-only reported "Picklist value does not
+        exist" on RecordTypeId equals NDA__c.Disposition_NDA because the record type did not yet
+        exist in the target org. The LOI record types (objects/LOI__c/recordTypes/) are in the
+        same position. THE CAUSE IS MOST LIKELY ORDERING BUT IS UNDETERMINED - a wrong value
+        format produces the identical message - and the resolution is the same either way:
+          1. deploy the LOI record types (and the rest of the tranche) FIRST
+          2. then these rules, 🔴 ONE AT A TIME
+          3. if a rule still fails once the record type has landed, THE CRITERIA VALUE IS THE ONLY
+             THING TO CHANGE - nothing else in this file is in doubt
+
+        🔴 DEPLOY THESE ONE AT A TIME. A batch deploy of sharing rules rolls ALL of them back in
+        this org - established in the 2026-07-22 RBAC build. Two rules means two deploys, and
+        they are in the same phase as the two NDA rules, so that is four separate deploys.
+
+        🔴 GROUP MEMBERSHIP IS NOT DEPLOYABLE METADATA. If DPEG_Acquisitions_Team or Principals is
+        empty or wrong in the target org these rules grant NOTHING, and "no LOIs visible" looks
+        exactly like "there are no LOIs". Verify as a post-deploy gate by OPENING A DISPOSITION
+        LOI AS EACH PERSONA, never as an administrator.
+
+        🔴 RECALCULATION IS ASYNCHRONOUS. Criteria-based sharing recalculates in the background,
+        and on an object with existing rows it is not instant. A persona checking immediately
+        after deploy may see nothing yet; do not read that as a failed rule until recalculation
+        has completed.
+
+        ACQUISITION LOIs ARE UNAFFECTED. DPEG_Acquisition_Edit / _View and DPEG_Acquisitions hold
+        their own LOI__c grants and are untouched by this file. These rules only widen access to
+        Disposition_LOI rows; they take nothing away from anyone.
+    -->
+    <sharingCriteriaRules>
+        <fullName>LOI_Disposition_Team_RW</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>D20.1: shares disposition LOIs to the disposition working team. Covers BOTH the Edit and View personas - object CRUD is the ceiling, so a DPEG_Disposition_View holder gets read only. Mirrors NDA_Disposition_Team_RW.</description>
+        <label>LOI Disposition Team RW</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>LOI__c.Disposition_LOI</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>LOI_Disposition_Principals_R</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>D20.1: shares disposition LOIs to the Principals at Read. A separate rule because principals are a different population, not a different access level - they hold DPEG_Disposition_View via the PSG and may not be in the team group.</description>
+        <label>LOI Disposition Principals R</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>LOI__c.Disposition_LOI</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Principals</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+</SharingRules>

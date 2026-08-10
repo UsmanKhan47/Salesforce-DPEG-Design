@@ -1,5 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with the misleading "unable to
+         find matching parent xml file" error.
+
+         ONE DISPOSITION ENTRY ADDED 2026-08-10 (code review 3B/3C, C3). The pre-existing
+         acquisition entry is UNTOUCHED, byte for byte, and nothing else on this page changed.
+
+         ⚠ DYNAMIC ACTIONS WAS ALREADY ON HERE (enableActionsConfiguration = true) AND WAS NOT
+         ENABLED ANYWHERE NEW. Turning it on where it is OFF silently EMPTIES that page's
+         action bar by discarding every inherited action, which cost three pages their buttons
+         in this repo. This edit only appends one entry to a list that already existed.
+
+         =====================================================================
+         WHY THE PAGE NEEDED THIS: D20/C1 FOR THE THIRD TIME.
+         =====================================================================
+         The single pre-existing entry is gated on {!$User.Deal_Driver__c} EQUAL true. A
+         disposition driver holds Disposition_Deal_Driver, which grants FLS on
+         User.Disposition_Driver__c and NOT on User.Deal_Driver__c, and a flexipage visibility
+         rule that reads a field the running user cannot read evaluates FALSE. Since this list
+         IS the whole action bar, a disposition driver saw NO BUTTONS AT ALL on a sell-side
+         PSA, and 3C's entire gate split (RecordStageAdvanceService's Disposition_PSA ->
+         DISPOSITION_DRIVER config, pinned both ways by
+         RecordStageAdvanceServiceTest.contractReviewGateIsResolvedPerRecordTypeNotPerObject)
+         had no UI that could invoke it. Same shape closed on NDA_Record_Page (3A fix pass) and
+         LOI_Record_Page (3B, D22).
+
+         =====================================================================
+         THIS IS THE DUPLICATE-ENTRY SHAPE, NOT AN OR. DO NOT MERGE THE TWO.
+         =====================================================================
+         A flexipage booleanFilter has no negation operator, and this repo has MEASURED that a
+         parenthesised OR ('1 AND (2 OR 3)') deploys, survives a retrieve, and is STILL NOT
+         HONOURED BY THE RENDERER. Two valueListItems carrying the same <value> is the shape
+         NDA_Record_Page introduced and LOI_Record_Page repeated. ⚠ Its deploy-and-render gate
+         is INHERITED here, not re-proven: confirm at check-only that duplicate <value> entries
+         are accepted, and confirm in the org that a user holding BOTH driver flags does not
+         see Advance Stage rendered twice.
+
+         =====================================================================
+         THE SECOND CRITERION IS COPIED VERBATIM, AND UNLIKE THE LOI CASE THAT IS SAFE.
+         =====================================================================
+         D22 refused to copy LOI_Record_Page's entry because its second criterion read
+         Is_Advance_Allowed__c, an ACQUISITION-SHAPED formula that excluded only `Completed`
+         and therefore returned TRUE at `Executed`, the DISPOSITION terminal stage. Copying it
+         then would have rendered a button on a finished disposition LOI.
+
+         THAT DEFECT SHAPE DOES NOT EXIST HERE, and it was checked rather than assumed:
+           - Contract_Review__c has NO Is_Advance_Allowed__c formula field at all. The gate is
+             the inline criterion Negotiation_Status__c NE 'Executed'.
+           - BOTH record types expose the SAME four Negotiation_Status__c values (Initial Draft,
+             Revised, Ready for Execution, Executed) - Acquisition_PSA and Disposition_PSA both
+             state that this identity is deliberate.
+           - CONTRACT_REVIEW_NEXT_STAGE maps Initial Draft => Revised => Ready for Execution =>
+             Executed and stops. `Executed` is the ONLY terminal, and it is the same terminal on
+             both types, so a single NE test names every terminal there is.
+         There is therefore no second terminal for this criterion to miss. If a future change
+         gives either type a status the other lacks, this criterion and CONTRACT_REVIEW_NEXT_STAGE
+         must be revisited together.
+
+         =====================================================================
+         NO RECORD-TYPE CRITERION ON EITHER ENTRY, AND HERE THAT IS A DIFFERENT ARGUMENT
+         FROM LOI_Record_Page'S.
+         =====================================================================
+         On LOI__c the two Stage__c value sets are DISJOINT, so a stage-keyed rule is
+         self-limiting to its own record type. That mechanism is NOT available on this object -
+         the two PSA value sets are IDENTICAL, so no status value discriminates. The
+         discriminator here is the DRIVER FLAG alone, which is sufficient because the two flags
+         are granted by disjoint permission sets. The residual is the same cosmetic one
+         NDA_Record_Page and LOI_Record_Page accept: an acquisition driver opening a disposition
+         PSA still sees Advance Stage and gets a refusal from RecordStageAdvanceService's
+         record-type-scoped gate. Nothing here can write what the server would refuse -
+         RecordStageAdvanceController asserts the gate regardless of what this page renders.
+
+         ⚠ DEPLOY GATE, NOT SATISFIED BY THIS FILE: the rule is only EVALUABLE if the running
+         user has FLS read on User.Disposition_Driver__c. That grant lives in
+         Disposition_Deal_Driver; if a persona reaches this page without that set in their PSG
+         the rule evaluates FALSE and the button is invisible again, silently.
+    -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -12,6 +89,22 @@
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Negotiation_Status__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Executed</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Contract_Review__c.Advance_Stage</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>

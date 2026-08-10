@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API. Do not paste this back into
+        <description>. NOTE ALSO: the comment must sit INSIDE the root element - a comment
+        placed ABOVE <ValidationRule> breaks `sf` deploy at conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        DESCRIPTION TRIMMED 2026-08-09 - IT WAS 259 CHARACTERS AGAINST THE 255 CAP. Found by
+        MEASURING every <description> in this tranche rather than eyeballing them, after the
+        Disposition_NDA record type breached the same cap at 266. The fact cut from
+        <description> is restated here: the two counts it reads are DERIVED by the
+        NDA_Signed_Rollup flow, which is also why that flow must deploy BEFORE this rule.
+
+        THE ALL-SIGNED RELEASE GATE. On an OFF-MARKET disposition, nothing is released to a
+        prospective buyer until every NDA collected against that disposition reads Signed.
+        Source: Part 2 line 305, "nothing is released until this is done".
+
+        IT BLOCKS EVERY FORWARD STAGE FROM NDA ONWARD, NOT JUST THE NEXT HOP (decision D15/Q4).
+        Disposition_Stage__c is freely settable - the No_Backward_Stage_Movement rule is
+        Opportunity-only and nothing stops a user jumping NDA -> LOI directly. Gating only the
+        NDA -> Disposition Offer hop would therefore be a gate a single click bypasses, so the
+        rule names Disposition Offer, LOI, PSA, Closing AND Completed. A future off-market stage
+        added after NDA must be added to this OR list explicitly; it is NOT covered
+        automatically. Same maintenance contract as
+        Opportunity.NDA_Signed_Before_Deal_Progression, which carries the identical warning.
+
+        WHY THE RECORD-TYPE TEST IS REQUIRED. Four of the five gated stages - LOI, PSA, Closing,
+        Completed - are SHARED with the on-market path, where NDAs are not collected at all and
+        this gate must never fire. Only Disposition Offer and NDA are off-market-only. So unlike
+        a value-set-disjoint rule, this one cannot be self-limiting by stage value and needs an
+        explicit record-type criterion.
+
+        RECORD-TYPE SYNTAX - A DELIBERATE SUBSTITUTION, FLAGGED SO IT IS NOT READ AS DRIFT. The
+        Tranche 3 design and the build brief both write $RecordType.DeveloperName. Salesforce's
+        own guidance ("Tips for Referencing Record Types in Formulas") is to AVOID the
+        $RecordType global in formulas except in default-value formulas, and to use the
+        RecordType merge field instead. RecordType.DeveloperName is used below. It is the same
+        scoping decision, expressed in the form the platform documents as supported. It is a
+        NAME comparison, not an Id, so it survives an org rebuild - but it will break if the
+        Off_Market record type is ever renamed, which is the accepted trade the same guidance
+        describes.
+
+        WHY ISCHANGED ONLY - DELIBERATELY DIVERGING FROM ITS SIBLING
+        Wire_Complete_Before_Completed, which uses OR(ISNEW(), ISCHANGED(...)). Tranche 3's own
+        test surface creates off-market dispositions DIRECTLY at LOI and PSA to exercise the
+        LOI and PSA features, and ISNEW() would block its own fixtures. DispositionService.
+        findOrCreate is the only production creator and always creates at Disposition Readiness,
+        so the create path is not a real exposure. THE RESIDUAL IS REAL AND IS ACCEPTED:
+        creating a disposition directly at a later stage bypasses this gate entirely.
+
+        WHY BLANKVALUE. NDA_Count__c and Signed_NDA_Count__c carry defaultValue 0, but a default
+        applies only at INSERT - every Disposition__c row that existed before those fields were
+        created holds NULL. A null Number in a comparison makes the whole expression null, which
+        a validation rule treats as FALSE - so the naive form NDA_Count__c = 0 would FAIL OPEN on
+        exactly the pre-existing rows, letting a disposition with no NDAs at all sail past the
+        gate. BLANKVALUE(...,0) makes both terms total. Do not "simplify" it away.
+
+        NDA_Count__c = 0 IS A BLOCKING CONDITION, NOT AN OVERSIGHT. A disposition on which NO NDA
+        was ever collected must not advance: collecting nothing is not the same as collecting
+        everything. That is also why the rollup maintains TWO counts rather than one unsigned
+        count, which would read 0 in both situations.
+
+        🔴 A DECLINED NDA NO LONGER BLOCKS - AMENDED 2026-08-09 BY DECISION D20/C2, AND THE
+        FORMULA BELOW DID NOT CHANGE. The superseded paragraph is quoted and retracted rather
+        than deleted, because it is the reasoning a future reader is most likely to try to
+        restore:
+
+            RETRACTED: "A DECLINED NDA STILL BLOCKS. It counts toward the total and not toward
+            the signed count, so the party exists and has not signed. If a party is genuinely
+            out of the process the NDA record is DELETED, not left Declined - which is stated
+            in the Declined step of NDA_Path_Disposition."
+
+        WHY IT WAS WRONG: it made Declined a state with NO USER-CLEARABLE EXIT. A declined NDA
+        blocked every forward stage from NDA onward forever, and the only remedy this file and
+        lwc/ndaMarkDeclined both prescribed was to DELETE the record - on an object every
+        permission set in this repo treats as an audit artefact, and which no disposition
+        persona could delete anyway (allowDelete=false, and D20 keeps it false deliberately: a
+        declined NDA IS the evidence of a buyer or broker who refused to sign).
+
+        WHAT ACTUALLY CHANGED, AND WHERE: nothing here. The fix is arithmetic and it lives in
+        the COUNTER. NDA_Signed_Rollup's Is_Row_Signed decision gained a third outcome that
+        counts a Declined row toward NEITHER counter, so a declined party is neither
+        outstanding nor signed. THE EXCLUSION COULD NOT HAVE BEEN PUT IN THIS RULE: the formula
+        below sees two Numbers on the parent and has no access to child rows at all -
+        NDA__c.Disposition__c is a Lookup, not Master-Detail, so there is no roll-up summary
+        available and a validation rule cannot count children. The counter is the only place
+        the distinction is expressible, so this was a determination rather than a preference.
+
+        ⚠ TWO CONSEQUENCES OF THE NEW ARITHMETIC, BOTH INTENDED AND BOTH VISIBLE ONLY HERE:
+        a disposition whose ONLY NDA is Declined now records NDA_Count__c = 0, and the first
+        clause below STILL BLOCKS IT - which is precisely why that clause is not an oversight.
+        And a disposition where the buyer declined but the introducing broker signed now PASSES:
+        this gate governs the DISPOSITION's stage, and a party who declined "goes no further"
+        (Part 2 line 231) while the disposition itself may still proceed with another buyer.
+
+        ⚠ THE DEPLOY ORDER BELOW BECOMES SHARPER, NOT LOOSER. If this rule is deployed while
+        the OLD version of NDA_Signed_Rollup is still active, Declined rows keep inflating
+        NDA_Count__c and the gate keeps blocking - fail-closed, so it is survivable, but the
+        flow must land first or the D20 fix is simply not in effect.
+
+        DEPLOY ORDER - LOAD-BEARING. The NDA_Signed_Rollup flow MUST be deployed BEFORE this
+        rule. Deploying the rule first leaves both counters at 0 or null with nothing able to
+        set them, so NO off-market disposition could advance past the NDA stage at all. Same
+        lesson as Tranche 2's flow-before-validation-rule ordering.
+
+        🔴 THE FIRING SURFACE CLAIM HAS NOW EXPIRED - RETRACTED 2026-08-09 BY TRANCHE 3C, AND
+        THE FORMULA BELOW DID NOT CHANGE. The paragraph that stood here named this exact change
+        as the moment its claim would expire, so it is quoted and retracted rather than deleted:
+
+            RETRACTED: "FIRING SURFACE. As of this tranche Disposition_Stage__c is still written
+            by nothing but user edits - the Path, the Details section and inline edit - so the
+            equivalent claim in Wire_Complete_Before_Completed's comment remains TRUE and was
+            deliberately not touched here. That changes in Tranche 3C, when
+            ContractExecutionService becomes the first machine writer of the field (writing
+            Closing, which IS in the list below); whoever makes that change must make its write
+            fail-soft and must correct the claim in BOTH files then."
+
+        WHAT REPLACED IT: DISPOSITION_STAGE__C NOW HAS TWO WRITERS. (1) User edits, as before:
+        the Path, the Details section and inline edit. (2) ContractExecutionService's disposition
+        arm, advanceDispositionsToClosing, which writes Disposition_Stage__c = 'Closing' when a
+        sell-side PSA reaches Executed on the related Contract Review. It is the first machine
+        writer of this field in the application. Both obligations that paragraph imposed have
+        been met: the machine write IS fail-soft, and the sibling claim in
+        Wire_Complete_Before_Completed was corrected in the same change as this one.
+
+        🔴 THE CONSEQUENCE IS SHARPER HERE THAN IN THE SIBLING RULE: THIS RULE CAN NOW FIRE
+        AGAINST A WRITE NO HUMAN MADE. 'Closing' is in the OR list below, so an automated move
+        into Closing is a FORWARD move and is gated exactly like a manual one. That is correct
+        and must stay: an executed PSA does not entitle an off-market sale to skip the release
+        gate. What happens when it fires:
+        (a) the PSA execution itself PROCEEDS. The arm's write is
+            Database.update(..., false, AccessLevel.SYSTEM_MODE), so allOrNone = false means this
+            rule's rejection cannot roll back the Contract Review's Executed status, the parent
+            stamp or the notifications;
+        (b) the stage move is REFUSED. The disposition stays at the stage it was already on;
+        (c) the record is therefore left with an EXECUTED Contract Review and a stage that did
+            not advance.
+        That end state is VISIBLE, NOT SILENT: both records are on screen and they plainly
+        disagree, and any user can advance the stage by hand once every non-Declined NDA reads
+        Signed. Do not "repair" it by relaxing this gate, and do not bypass validation on the
+        Apex write.
+
+        ⚠ NOTE FOR ANYONE READING THE ARM'S RESULTS: the DML results are deliberately not
+        inspected there, so a block raises no error and writes no log. This rule's own error
+        message is the only human-readable explanation of the refusal, and it renders only to a
+        user who later attempts the move by hand.
+
+        BLAST RADIUS - for the developer and testing agents. Any existing test, seed script or
+        fixture that MOVES an Off_Market disposition to Disposition Offer, LOI, PSA, Closing or
+        Completed will now need a signed NDA on it first. On-market rows are unaffected.
+    -->
+    <fullName>All_NDAs_Signed_Before_Progression</fullName>
+    <active>true</active>
+    <description>Off-market only: blocks every forward stage from NDA onward (Disposition Offer, LOI, PSA, Closing, Completed) until every NDA on this disposition that was not Declined is Signed. See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    RecordType.DeveloperName = &apos;Off_Market&apos;,
+    ISCHANGED(Disposition_Stage__c),
+    OR(
+        ISPICKVAL(Disposition_Stage__c, &apos;Disposition Offer&apos;),
+        ISPICKVAL(Disposition_Stage__c, &apos;LOI&apos;),
+        ISPICKVAL(Disposition_Stage__c, &apos;PSA&apos;),
+        ISPICKVAL(Disposition_Stage__c, &apos;Closing&apos;),
+        ISPICKVAL(Disposition_Stage__c, &apos;Completed&apos;)
+    ),
+    OR(
+        BLANKVALUE(NDA_Count__c, 0) = 0,
+        BLANKVALUE(Signed_NDA_Count__c, 0) &lt; BLANKVALUE(NDA_Count__c, 0)
+    )
+)</errorConditionFormula>
+    <errorDisplayField>Disposition_Stage__c</errorDisplayField>
+    <errorMessage>Every NDA on this disposition must be signed before information is released. Add the buyer&apos;s NDA (and the introducing broker&apos;s, if there is one) and mark each one Signed before advancing.</errorMessage>
+</ValidationRule>

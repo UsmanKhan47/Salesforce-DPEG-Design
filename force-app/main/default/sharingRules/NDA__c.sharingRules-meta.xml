@@ -1,3 +1,107 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT AND MUST SIT INSIDE THE ROOT ELEMENT - a comment placed
+        ABOVE <SharingRules> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
 
+        DECISION D17 (2026-08-09). These two rules REPLACE the org-wide NDA__c read that
+        DPEG_Disposition_Edit and DPEG_Disposition_View carried as viewAllRecords=true. Both
+        sets now hold viewAllRecords=false; their in-root comments carry the full history and
+        the supersession note.
+
+        WHY THIS IS NOW POSSIBLE AT ALL. The D12/W3 acceptance said the correct shape was
+        "view-all SCOPED TO DISPOSITION NDAs" and that it was "not expressible today: it needs
+        record types on NDA__c, which Tranche 3 (decision D7) adds. REVISIT THEN." The record
+        types landed in this tranche, so the revisit trigger has fired and the scoping is
+        expressible: filter on RecordTypeId.
+
+        OWD VERIFIED, NOT ASSUMED. NDA__c is sharingModel Private with enableSharing true, in
+        the repo AND in the target org (retrieved from usman-dpeg 2026-08-09). A sharing rule
+        on a Public Read/Write object would be meaningless, so this was checked before the
+        grants were narrowed.
+
+        ⚠ TWO RULES, NOT ONE PER PERSONA - AND THAT IS THE POINT OF THE SPLIT.
+        A sharing rule shares to a GROUP or ROLE. It cannot target a permission set, so
+        "Edit persona" and "View persona" are not addressable here: those are permission-set
+        assignments, not group memberships.
+
+        RULE 1 covers BOTH disposition personas with a single Edit-level rule, because
+        OBJECT CRUD IS THE CEILING. DPEG_Disposition_View has allowEdit=false, so a View-persona
+        holder who is also in DPEG_Acquisitions_Team gets READ ONLY regardless of this rule
+        granting Edit. Writing a second Read-level rule to the SAME group would be redundant -
+        Salesforce takes the most permissive of overlapping rules - and would double the
+        one-at-a-time deploy hazard for no behavioural difference.
+
+        RULE 2 exists for a DIFFERENT POPULATION, not a different access level. The Principals
+        hold DPEG_Disposition_View through DPEG_Principal_PSG and are not necessarily members of
+        DPEG_Acquisitions_Team. With viewAllRecords gone and only rule 1 in place they would have
+        silently lost NDA visibility, and BovController's BOV Outreach pill would report
+        "No NDA" for NDAs that exist - the precise defect the D12/W3 acceptance was written to
+        prevent. Read is the strictly lower access that persona needs.
+
+        WHY DPEG_Acquisitions_Team. Every other disposition child object in this repo shares to
+        that group - Disposition__c, BOV_Submission__c, Wire__c, Disposition_Offer__c,
+        Broker_Listing__c all carry a *_Team_RW rule to it at Edit. Using a different group for
+        NDA__c would make it the one disposition child with its own population.
+
+        ⚠ CRITERIA-BASED, NOT OWNER-BASED, AND THAT IS A DELIBERATE DEPARTURE from the
+        sharingOwnerRules pattern those five objects use. An owner rule shares by who owns the
+        row; the requirement here is to share by WHICH KIND of row it is, so that acquisition
+        NDAs stay invisible to disposition-only personas no matter who owns them. Only a
+        criteria rule can express that.
+
+        ⚠ THE RecordTypeId CRITERIA VALUE IS THE FULLY-QUALIFIED DEVELOPER NAME
+        (NDA__c.Disposition_NDA), not an Id - Ids are org-specific and must never be hardcoded
+        in metadata. THIS IS THE ONE ELEMENT BELOW WITH NO IN-REPO PRECEDENT: no existing
+        sharing rule in this repo filters on RecordTypeId, so the format could not be confirmed
+        against a file already known to have passed this org. Confirm it in the check-only
+        validation; if it is rejected, the value is the only thing that changes.
+
+        🔴 DEPLOY THESE ONE AT A TIME. A batch deploy of sharing rules rolls ALL of them back in
+        this org - established in the 2026-07-22 RBAC build. Two rules means two deploys.
+
+        🔴 GROUP MEMBERSHIP IS NOT DEPLOYABLE METADATA. If DPEG_Acquisitions_Team or Principals
+        is empty or wrong in the target org, these rules grant NOTHING and every disposition
+        persona sees zero NDAs - which looks exactly like "there are no NDAs". Verify membership
+        as a post-deploy gate, and verify it by OPENING A DISPOSITION NDA AS EACH PERSONA, not
+        as an administrator.
+
+        🔴 RECALCULATION IS ASYNCHRONOUS. Criteria-based sharing recalculates in the background
+        after deploy, and on an object with existing rows it is not instant. A persona checking
+        immediately after the deploy may see nothing yet. Do not read that as a failed rule
+        until recalculation has completed.
+
+        ACQUISITION NDAs ARE UNAFFECTED. DPEG_Acquisition_Edit / _View and DPEG_Acquisitions keep
+        viewAllRecords on NDA__c, so the buy-side module is untouched. These rules only widen
+        access to Disposition_NDA rows; they take nothing away from anyone.
+    -->
+    <sharingCriteriaRules>
+        <fullName>NDA_Disposition_Team_RW</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>D17: shares disposition NDAs to the disposition working team. Covers BOTH the Edit and View personas - object CRUD is the ceiling, so a DPEG_Disposition_View holder gets read only.</description>
+        <label>NDA Disposition Team RW</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>NDA__c.Disposition_NDA</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>NDA_Disposition_Principals_R</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>D17: shares disposition NDAs to the Principals at Read. A separate rule because principals are a different population, not a different access level - they hold DPEG_Disposition_View via the PSG and may not be in the team group.</description>
+        <label>NDA Disposition Principals R</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>NDA__c.Disposition_NDA</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Principals</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+</SharingRules>

@@ -146,6 +146,52 @@ describe('c-loi-counter-offer', () => {
         expect(badge.className).toContain('slds-theme_warning');
     });
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // SELL-SIDE VOCABULARY (Tranche 3B close-out). Counter_Offer__c.Direction__c and
+    // LOI__c.Ball_In_Court__c both carry THREE tokens: 'Ours'/'Us' is DPEG on either side, while
+    // the counterparty is 'Seller' on a purchase and 'Buyer' on a SALE. CounterOfferService has
+    // stored the right one since 3B; these two tests pin that the card DISPLAYS it.
+    //
+    // ⚠ Both are falsifiable against the exact previous code: DIRECTION had no 'Buyer' key so it
+    // fell through `|| DIRECTION.Seller`, and ballBadgeLabel was `=== 'Us' ? … : 'seller court'`.
+    // Either old expression renders the word "Seller" here, so either test reds if reverted.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    it('SELL SIDE: a Buyer counter renders a "Buyer" pill, never "Seller"', async () => {
+        const element = createOnLoiPage();
+
+        getCounterOffers.emit([offer(1, { Direction__c: 'Buyer' })]);
+        await Promise.resolve();
+
+        // The pill label is computed in `rows` and handed to the datatable, so that is where it is
+        // asserted — reaching into the child's rendering would test c-list-datatable instead.
+        const rows = element.shadowRoot.querySelector('c-list-datatable').data;
+        expect(rows).toHaveLength(1);
+        expect(rows[0].direction).toBe('Buyer');
+        // The specific regression: mislabelling the buyer as the seller on a record whose STORED
+        // value was already correct.
+        expect(rows[0].direction).not.toBe('Seller');
+    });
+
+    it('SELL SIDE: Ball_In_Court__c = Buyer captions the badge "buyer court"', async () => {
+        // ⚠ SCOPE NOTE, so a green result is not over-read: `hasBall` is Opportunity-only and a
+        // disposition LOI has no Opportunity, so this badge cannot render for a real sale TODAY.
+        // The fix is correctness-in-advance — it stops a future enablement inheriting a bug — and
+        // this test drives the getter through the only path that reaches it.
+        const element = createOnOpportunity();
+
+        getRecord.emit(oppRecord({ loiId: LOI_ID, ball: 'Buyer' }));
+        getCounterOffers.emit([offer(1)]);
+        await Promise.resolve();
+
+        const badge = element.shadowRoot.querySelector('.slds-badge');
+        expect(badge.textContent).toContain('buyer court');
+        expect(badge.textContent).not.toContain('seller court');
+        // 'Buyer' is not 'Us', so it keeps the plain (non-warning) badge: the ball is with the
+        // counterparty and nothing is waiting on DPEG.
+        expect(badge.className).not.toContain('slds-theme_warning');
+    });
+
     it('DATA BRANCH (LOI page): tracks the record directly with no ball badge', async () => {
         const element = createOnLoiPage();
 

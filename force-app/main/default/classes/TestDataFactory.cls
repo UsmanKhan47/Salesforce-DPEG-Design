@@ -52,6 +52,39 @@
  *   Construction_Feasibility_Review__c.Estimated_Timeline_Impact__c;
  *   CAM_Reconciliation__c.Reconciliation_Year__c. They take String literals here.
  *
+ * ⚠ 3. FIVE OBJECTS HAVE RECORD TYPES AND THE FACTORY STAMPS ALL FIVE.
+ *   (This note said TWO until 2026-08-09; NDA__c arrived in Tranche 3A, LOI__c in 3B and
+ *   Contract_Review__c in 3C.)
+ *
+ *   - Opportunity -> createOpportunitiesByRecordType (Land / Commercial)
+ *   - Disposition__c -> createDispositions (On_Market by default; Off_Market via the
+ *     4-argument overload or createDisposition(assetId, rtName, doInsert))
+ *   - NDA__c -> createNdas (Acquisition_NDA by default; Disposition_NDA via the
+ *     4-argument overload or createDispositionNda(dispositionId, doInsert))
+ *   - LOI__c -> createLois (Acquisition_LOI by default; Disposition_LOI via the
+ *     4-argument overload or createDispositionLoi(dispositionId, doInsert))
+ *   - Contract_Review__c -> createContractReviews (Acquisition_PSA by default; Disposition_PSA
+ *     via the 4-argument overload or createDispositionContractReview(dispositionId, doInsert))
+ *
+ *   An UNSTAMPED record inherits the TEST-RUNNING USER'S PROFILE DEFAULT, which is org
+ *   state and not deployable (`profiles/**` is .forceignore'd) — so an unstamped fixture
+ *   is green or red depending on who runs the suite. All five stamps are guarded on
+ *   isAvailable(), so they degrade to the platform default in an org where the record types
+ *   have not deployed rather than turning every affected test red.
+ *
+ *   ⚠ THREE OF THE FOUR CUSTOM OBJECTS ALSO SEED A PER-RECORD-TYPE STARTING PICKLIST VALUE, and
+ *   that is not cosmetic: record-type picklist restriction is enforced by the UI ONLY, so Apex DML
+ *   would happily insert an off-set value and produce a fixture RecordStageAdvanceService
+ *   cannot advance. NDA__c: 'Pending' vs 'Not Sent'. LOI__c: 'Draft' vs 'Received' (fully
+ *   disjoint sets — there is no shared value to fall back on). Disposition__c seeds
+ *   'Disposition Readiness', which is valid on both of its types.
+ *
+ *   🔴 Contract_Review__c IS THE EXPLICIT EXCEPTION AND IT IS NOT AN OVERSIGHT. Its two record
+ *   types expose the IDENTICAL Negotiation_Status__c and Stage__c value sets (stated deliberately
+ *   in Disposition_PSA's own record type file), so there is no per-type seed to choose and a
+ *   branch would invent a difference that does not exist. What differs between its types is the
+ *   PERMISSION GATE, which is not a field on the row and therefore not the factory's business.
+ *
  * ── CONVENTIONS ──────────────────────────────────────────────────────────────
  *  - Every object exposes createXs(count, [parents], doInsert) returning a List,
  *    and a singular createX([parents], doInsert) that delegates to the bulk form.
@@ -1145,30 +1178,140 @@ public with sharing class TestDataFactory {
     // ACQUISITIONS
     // ═══════════════════════════════════════════════════════════════════════════
 
+    /** NDA__c record type developer name for the buy-side NDA (the factory default). */
+    public static final String NDA_RT_ACQUISITION = 'Acquisition_NDA';
+    /** NDA__c record type developer name for the sell-side NDA. */
+    public static final String NDA_RT_DISPOSITION = 'Disposition_NDA';
+
     /**
-     * NDAs. Remember OpportunityReviewTrigger.ensureNda already creates one NDA
-     * per Opportunity on insert — these are additional.
+     * NDAs on the ACQUISITION record type. Remember OpportunityReviewTrigger.ensureNda already
+     * creates one NDA per Opportunity on insert — these are additional.
      * @param count         Number of NDAs.
      * @param opportunityId Parent Opportunity (nullable).
      * @param doInsert      Insert when true.
-     * @return NDAs.
+     * @return NDAs at Status 'Pending', record type Acquisition_NDA.
      */
     public static List<NDA__c> createNdas(Integer count, Id opportunityId, Boolean doInsert) {
+        return createNdas(count, opportunityId, NDA_RT_ACQUISITION, doInsert);
+    }
+
+    /**
+     * NDAs on an explicit record type (D7 / D14.1). Same shape and same reasoning as
+     * createDispositions — see that method's header for why the record type is stamped at all
+     * rather than inherited from the test-running user's profile default.
+     *
+     * 🔴 THE SEED STATUS IS CHOSEN BY RECORD TYPE, AND IT HAS TO BE. The two value sets OVERLAP
+     * but are not equal: 'Pending' exists only on Acquisition_NDA and 'Not Sent' only on
+     * Disposition_NDA. Record-type picklist restriction is UI-only — Apex DML does NOT enforce
+     * it — so a shared seed value would insert happily and produce a fixture whose status is off
+     * its own record type's value set, which RecordStageAdvanceService would then refuse to
+     * advance for reasons no test message would explain.
+     *
+     * ⚠ Party_Role__c is seeded ONLY on the disposition type. On an acquisition DPEG is itself
+     * the buyer, so 'Buyer' would name US — the meaning inversion the Acquisition_NDA record type
+     * file records, which is why that type carries the values with NO default.
+     *
+     * ⚠ The stamp is GUARDED on isAvailable(), exactly like createDispositions: an undeployed or
+     * unassigned record type leaves RecordTypeId unset rather than turning every NDA test in the
+     * repo red. A green suite is therefore NOT proof the record types landed — TestDataFactoryTest
+     * and post-deploy gate T-A1 are.
+     *
+     * @param count                   Number of NDAs.
+     * @param opportunityId           Parent Opportunity (nullable).
+     * @param recordTypeDeveloperName NDA_RT_ACQUISITION or NDA_RT_DISPOSITION.
+     * @param doInsert                Insert when true.
+     * @return NDAs seeded at their record type's starting status.
+     */
+    public static List<NDA__c> createNdas(
+        Integer count,
+        Id opportunityId,
+        String recordTypeDeveloperName,
+        Boolean doInsert
+    ) {
         requirePositive(count);
+        Id recordTypeId = ndaRecordTypeId(recordTypeDeveloperName);
+        Boolean isDisposition = NDA_RT_DISPOSITION.equals(recordTypeDeveloperName);
         List<NDA__c> ndas = new List<NDA__c>();
         for (Integer i = 0; i < count; i++) {
-            ndas.add(new NDA__c(
+            NDA__c nda = new NDA__c(
                 Opportunity__c = opportunityId,
-                Status__c = 'Pending',
+                Status__c = isDisposition ? 'Not Sent' : 'Pending',
                 Counterparty_Name__c = 'Test Counterparty ' + i,
                 Method__c = 'DocuSign',
                 Date_Sent__c = Date.today(),
                 Is_Non_Expiring__c = false,
                 NDA_Expiry_Date__c = Date.today().addYears(1)
-            ));
+            );
+            if (isDisposition) {
+                nda.Party_Role__c = 'Buyer';
+            }
+            if (recordTypeId != null) {
+                nda.RecordTypeId = recordTypeId;
+            }
+            ndas.add(nda);
         }
         insertIf(doInsert, ndas);
         return ndas;
+    }
+
+    /**
+     * NDAs parented to a DISPOSITION, on the Disposition_NDA record type — the shape
+     * DispositionStageEntryService auto-creates and the shape the off-market all-signed gate
+     * counts.
+     *
+     * ⚠ Party_Role__c is 'Buyer', which is also DispositionStageEntryService's idempotency key.
+     * A test that wants to prove auto-create was SUPPRESSED seeds one of these first; a test that
+     * wants auto-create to FIRE must not.
+     *
+     * @param count         Number of NDAs.
+     * @param dispositionId Parent Disposition__c (nullable).
+     * @param doInsert      Insert when true.
+     * @return NDAs at Status 'Not Sent', Party_Role__c 'Buyer', record type Disposition_NDA.
+     */
+    public static List<NDA__c> createDispositionNdas(
+        Integer count,
+        Id dispositionId,
+        Boolean doInsert
+    ) {
+        List<NDA__c> ndas = createNdas(count, null, NDA_RT_DISPOSITION, false);
+        for (NDA__c nda : ndas) {
+            nda.Disposition__c = dispositionId;
+        }
+        insertIf(doInsert, ndas);
+        return ndas;
+    }
+
+    /** Single disposition-parented NDA. @param dispositionId Parent Disposition. @param doInsert Insert when true. @return The NDA. */
+    public static NDA__c createDispositionNda(Id dispositionId, Boolean doInsert) {
+        return createDispositionNdas(1, dispositionId, doInsert)[0];
+    }
+
+    /**
+     * Resolves an NDA__c record type developer name to its Id, or null when it does not exist in
+     * this org / is not available to the running user. An UNRECOGNISED name is a caller mistake
+     * and throws, so a typo fails loudly instead of silently producing a default-record-type
+     * fixture.
+     *
+     * 🔴 THE ALLOW-LIST COMPARISON MUST BE CASE-SENSITIVE, AND `!=` IS NOT — the identical trap
+     * dispositionRecordTypeId documents at length. Apex `==` / `!=` on String is
+     * case-INSENSITIVE while getRecordTypeInfosByDeveloperName() keys its map case-SENSITIVELY,
+     * so with `!=` a name like 'acquisition_nda' would pass the guard, miss the describe map, and
+     * silently degrade to the platform default. `String.equals(Object)` is case-sensitive, so
+     * guard and lookup answer the same question. Constant-first keeps a null argument on the
+     * throw path rather than NPE-ing.
+     */
+    private static Id ndaRecordTypeId(String recordTypeDeveloperName) {
+        if (!NDA_RT_ACQUISITION.equals(recordTypeDeveloperName)
+            && !NDA_RT_DISPOSITION.equals(recordTypeDeveloperName)) {
+            throw new TestDataFactoryException(
+                'Unknown NDA__c record type: ' + recordTypeDeveloperName
+                + '. Expected Acquisition_NDA or Disposition_NDA.'
+            );
+        }
+        Schema.RecordTypeInfo info = Schema.SObjectType.NDA__c
+            .getRecordTypeInfosByDeveloperName()
+            .get(recordTypeDeveloperName);
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 
     /** Signed NDAs — required to move an Opportunity into Underwriting. @param count Number. @param opportunityId Parent Opp. @param doInsert Insert when true. @return NDAs. */
@@ -1188,19 +1331,67 @@ public with sharing class TestDataFactory {
         return createNdas(1, opportunityId, doInsert)[0];
     }
 
+    /** LOI__c record type developer name for the buy-side LOI (the factory default). */
+    public static final String LOI_RT_ACQUISITION = 'Acquisition_LOI';
+    /** LOI__c record type developer name for the sell-side LOI. */
+    public static final String LOI_RT_DISPOSITION = 'Disposition_LOI';
+
     /**
+     * LOIs on the ACQUISITION record type — the shape OpportunityReviewService auto-creates on
+     * entry to the LOI stage.
+     *
      * @param count         Number of LOIs.
      * @param opportunityId Parent Opportunity (nullable).
      * @param doInsert      Insert when true.
-     * @return LOIs at stage 'Draft'.
+     * @return LOIs at stage 'Draft', record type Acquisition_LOI.
      */
     public static List<LOI__c> createLois(Integer count, Id opportunityId, Boolean doInsert) {
+        return createLois(count, opportunityId, LOI_RT_ACQUISITION, doInsert);
+    }
+
+    /**
+     * LOIs on an explicit record type (D6, Tranche 3B). Same shape and same reasoning as
+     * createNdas / createDispositions — see createDispositions' header for why the record type is
+     * stamped at all rather than inherited from the test-running user's profile default.
+     *
+     * 🔴 THE SEED STAGE IS CHOSEN BY RECORD TYPE, AND IT HAS TO BE. Unlike NDA__c the two LOI
+     * value sets are FULLY DISJOINT — 'Draft' exists only on Acquisition_LOI and 'Received' only on
+     * Disposition_LOI, with no overlap at all — so there is no shared value that would work for
+     * both. Record-type picklist restriction is UI-only (Apex DML does NOT enforce it), so a
+     * hardcoded 'Draft' would insert happily onto a disposition LOI and produce a fixture whose
+     * stage is off its own record type's value set, which RecordStageAdvanceService would then
+     * refuse to advance for reasons no test message would explain.
+     *
+     * ⚠ Submitted_Date__c is seeded ONLY on the acquisition type. It is acquisition-directional
+     * (DPEG submits the LOI on a purchase; on a sale the LOI ARRIVES from the buyer), and the
+     * Disposition_LOI record type file layout-excludes it. Same per-type treatment createNdas
+     * gives Party_Role__c.
+     *
+     * ⚠ The stamp is GUARDED on isAvailable(), exactly like createNdas / createDispositions: an
+     * undeployed or unassigned record type leaves RecordTypeId unset rather than turning every LOI
+     * test in the repo red. A green suite is therefore NOT proof the record types landed —
+     * TestDataFactoryTest and post-deploy gate T-A1 are.
+     *
+     * @param count                   Number of LOIs.
+     * @param opportunityId           Parent Opportunity (nullable).
+     * @param recordTypeDeveloperName LOI_RT_ACQUISITION or LOI_RT_DISPOSITION.
+     * @param doInsert                Insert when true.
+     * @return LOIs seeded at their record type's starting stage.
+     */
+    public static List<LOI__c> createLois(
+        Integer count,
+        Id opportunityId,
+        String recordTypeDeveloperName,
+        Boolean doInsert
+    ) {
         requirePositive(count);
+        Id recordTypeId = loiRecordTypeId(recordTypeDeveloperName);
+        Boolean isDisposition = LOI_RT_DISPOSITION.equals(recordTypeDeveloperName);
         List<LOI__c> lois = new List<LOI__c>();
         for (Integer i = 0; i < count; i++) {
-            lois.add(new LOI__c(
+            LOI__c loi = new LOI__c(
                 Opportunity__c = opportunityId,
-                Stage__c = 'Draft',
+                Stage__c = isDisposition ? 'Received' : 'Draft',
                 Offer_Price__c = 1000000 + (i * 1000),
                 Offer_Cap_Rate__c = 6.5,
                 Earnest_Money__c = 50000,
@@ -1208,12 +1399,78 @@ public with sharing class TestDataFactory {
                 Closing_Period_Days__c = 30,
                 NOI__c = 65000 + (i * 100),
                 Square_Footage__c = 10000 + (i * 100),
-                Submitted_Date__c = Date.today(),
                 Title_Company__c = 'Test Title Co'
-            ));
+            );
+            if (!isDisposition) {
+                loi.Submitted_Date__c = Date.today();
+            }
+            if (recordTypeId != null) {
+                loi.RecordTypeId = recordTypeId;
+            }
+            lois.add(loi);
         }
         insertIf(doInsert, lois);
         return lois;
+    }
+
+    /**
+     * LOIs parented to a DISPOSITION, on the Disposition_LOI record type — the sell-side
+     * negotiation record D6 migrates off Disposition_Offer__c.
+     *
+     * ⚠ Opportunity__c is left NULL deliberately. A disposition LOI hangs off Disposition__c
+     * only, and that lookup is CounterOfferService.isSaleSide's fallback discriminator for the
+     * migration window in which every row still sits on the Master record type — a fixture
+     * carrying both parents would make the two clauses of that rule indistinguishable.
+     *
+     * @param count         Number of LOIs.
+     * @param dispositionId Parent Disposition__c (nullable).
+     * @param doInsert      Insert when true.
+     * @return LOIs at stage 'Received', record type Disposition_LOI.
+     */
+    public static List<LOI__c> createDispositionLois(
+        Integer count,
+        Id dispositionId,
+        Boolean doInsert
+    ) {
+        List<LOI__c> lois = createLois(count, null, LOI_RT_DISPOSITION, false);
+        for (LOI__c loi : lois) {
+            loi.Disposition__c = dispositionId;
+        }
+        insertIf(doInsert, lois);
+        return lois;
+    }
+
+    /** Single disposition-parented LOI. @param dispositionId Parent Disposition. @param doInsert Insert when true. @return The LOI. */
+    public static LOI__c createDispositionLoi(Id dispositionId, Boolean doInsert) {
+        return createDispositionLois(1, dispositionId, doInsert)[0];
+    }
+
+    /**
+     * Resolves an LOI__c record type developer name to its Id, or null when it does not exist in
+     * this org / is not available to the running user. An UNRECOGNISED name is a caller mistake
+     * and throws, so a typo fails loudly instead of silently producing a default-record-type
+     * fixture.
+     *
+     * 🔴 THE ALLOW-LIST COMPARISON MUST BE CASE-SENSITIVE, AND `!=` IS NOT — the identical trap
+     * dispositionRecordTypeId documents at length. Apex `==` / `!=` on String is
+     * case-INSENSITIVE while getRecordTypeInfosByDeveloperName() keys its map case-SENSITIVELY,
+     * so with `!=` a name like 'acquisition_loi' would pass the guard, miss the describe map, and
+     * silently degrade to the platform default. `String.equals(Object)` is case-sensitive, so
+     * guard and lookup answer the same question. Constant-first keeps a null argument on the
+     * throw path rather than NPE-ing.
+     */
+    private static Id loiRecordTypeId(String recordTypeDeveloperName) {
+        if (!LOI_RT_ACQUISITION.equals(recordTypeDeveloperName)
+            && !LOI_RT_DISPOSITION.equals(recordTypeDeveloperName)) {
+            throw new TestDataFactoryException(
+                'Unknown LOI__c record type: ' + recordTypeDeveloperName
+                + '. Expected Acquisition_LOI or Disposition_LOI.'
+            );
+        }
+        Schema.RecordTypeInfo info = Schema.SObjectType.LOI__c
+            .getRecordTypeInfosByDeveloperName()
+            .get(recordTypeDeveloperName);
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 
     /** LOIs under the shared scaffold Opportunity. @param count Number. @param doInsert Insert when true. @return LOIs. */
@@ -1303,25 +1560,150 @@ public with sharing class TestDataFactory {
         return createUnderwritings(1, opportunityId, doInsert)[0];
     }
 
+    /** Contract_Review__c record type developer name for the buy-side PSA (the factory default). */
+    public static final String CONTRACT_REVIEW_RT_ACQUISITION = 'Acquisition_PSA';
+    /** Contract_Review__c record type developer name for the sell-side PSA. */
+    public static final String CONTRACT_REVIEW_RT_DISPOSITION = 'Disposition_PSA';
+
     /**
+     * Contract Reviews on the ACQUISITION record type — the shape OpportunityReviewService
+     * auto-creates on entry to the PSA stage.
+     *
      * @param count         Number of Contract Reviews.
      * @param opportunityId Parent Opportunity (nullable).
      * @param doInsert      Insert when true.
-     * @return Contract Reviews at stage 'PSA Drafting'.
+     * @return Contract Reviews at stage 'PSA Drafting', record type Acquisition_PSA.
      */
     public static List<Contract_Review__c> createContractReviews(Integer count, Id opportunityId, Boolean doInsert) {
+        return createContractReviews(count, opportunityId, CONTRACT_REVIEW_RT_ACQUISITION, doInsert);
+    }
+
+    /**
+     * Contract Reviews on an explicit record type (D16.3, Tranche 3C). Same shape and same
+     * reasoning as createNdas / createLois / createDispositions — see createDispositions' header
+     * for why the record type is stamped at all rather than inherited from the test-running user's
+     * profile default.
+     *
+     * 🔴 UNLIKE createNdas AND createLois, NOTHING ELSE IN THE ROW VARIES BY RECORD TYPE, AND THAT
+     * IS THE INTERESTING PART RATHER THAN AN OMISSION. Those two branch their seed STAGE because
+     * their value sets differ ('Pending' vs 'Not Sent'; 'Draft' vs 'Received'). Both PSA record
+     * types expose the IDENTICAL four Negotiation_Status__c values and the identical three Stage__c
+     * values — Disposition_PSA's own record type file states this is deliberate — so one seed is
+     * correct for both and a branch here would be inventing a difference that does not exist.
+     *
+     * ⚠ Ball_In_Court__c IS DELIBERATELY LEFT UNSET on both types, even though it is the ONE field
+     * whose value set genuinely differs ('Seller' on Acquisition_PSA, 'Buyer' on Disposition_PSA —
+     * the inversion those record types exist to fix). Two reasons: this factory has never seeded
+     * it, so seeding it now would silently change the starting state of every existing Contract
+     * Review fixture in the repo; and nothing DERIVES from a seeded value — PsaVersionService
+     * WRITES the field, so a fixture that pre-populates it can only mask a bug in that write. A
+     * test that needs a starting ball-in-court should set it explicitly and say why.
+     *
+     * ⚠ The stamp is GUARDED on isAvailable(), exactly like createNdas / createLois /
+     * createDispositions: an undeployed or unassigned record type leaves RecordTypeId unset rather
+     * than turning every Contract Review test in the repo red. A green suite is therefore NOT proof
+     * the record types landed — TestDataFactoryTest and post-deploy gate T-A1 are.
+     *
+     * @param count                   Number of Contract Reviews.
+     * @param opportunityId           Parent Opportunity (nullable).
+     * @param recordTypeDeveloperName CONTRACT_REVIEW_RT_ACQUISITION or CONTRACT_REVIEW_RT_DISPOSITION.
+     * @param doInsert                Insert when true.
+     * @return Contract Reviews at stage 'PSA Drafting'.
+     */
+    public static List<Contract_Review__c> createContractReviews(
+        Integer count,
+        Id opportunityId,
+        String recordTypeDeveloperName,
+        Boolean doInsert
+    ) {
         requirePositive(count);
+        Id recordTypeId = contractReviewRecordTypeId(recordTypeDeveloperName);
         List<Contract_Review__c> reviews = new List<Contract_Review__c>();
         for (Integer i = 0; i < count; i++) {
-            reviews.add(new Contract_Review__c(
+            Contract_Review__c cr = new Contract_Review__c(
                 Opportunity__c = opportunityId,
+                // ⚠ Stage__c is a DERIVED PROJECTION — Contract_Review_Stage_Sync recomputes it from
+                // Negotiation_Status__c on every save, so this seed is replaced on insert by the
+                // flow's mapping of the status default (which produces this same value). It is kept
+                // because removing it changes nothing and would read like a fix.
                 Stage__c = 'PSA Drafting',
                 Contract_Value__c = 1000000 + (i * 1000),
                 PSA_Date__c = Date.today()
-            ));
+            );
+            if (recordTypeId != null) {
+                cr.RecordTypeId = recordTypeId;
+            }
+            reviews.add(cr);
         }
         insertIf(doInsert, reviews);
         return reviews;
+    }
+
+    /**
+     * Contract Reviews parented to a DISPOSITION, on the Disposition_PSA record type — the
+     * sell-side PSA whose execution ContractExecutionService turns into a `Closing` stage advance.
+     *
+     * ⚠ Opportunity__c is left NULL deliberately, and here that is load-bearing rather than merely
+     * tidy: `ContractExecutionService.handleExecution` runs its two arms off the two parent
+     * LOOKUPS, not off the record type, so a fixture carrying BOTH parents would run BOTH arms and
+     * make the acquisition and disposition assertions indistinguishable.
+     *
+     * @param count         Number of Contract Reviews.
+     * @param dispositionId Parent Disposition__c (nullable).
+     * @param doInsert      Insert when true.
+     * @return Contract Reviews at stage 'PSA Drafting', record type Disposition_PSA.
+     */
+    public static List<Contract_Review__c> createDispositionContractReviews(
+        Integer count,
+        Id dispositionId,
+        Boolean doInsert
+    ) {
+        List<Contract_Review__c> reviews =
+            createContractReviews(count, null, CONTRACT_REVIEW_RT_DISPOSITION, false);
+        for (Contract_Review__c cr : reviews) {
+            cr.Disposition__c = dispositionId;
+        }
+        insertIf(doInsert, reviews);
+        return reviews;
+    }
+
+    /** Single disposition-parented Contract Review. @param dispositionId Parent Disposition. @param doInsert Insert when true. @return The Contract Review. */
+    public static Contract_Review__c createDispositionContractReview(Id dispositionId, Boolean doInsert) {
+        return createDispositionContractReviews(1, dispositionId, doInsert)[0];
+    }
+
+    /**
+     * Resolves a Contract_Review__c record type developer name to its Id, or null when it does not
+     * exist in this org / is not available to the running user. An UNRECOGNISED name is a caller
+     * mistake and throws, so a typo fails loudly instead of silently producing a
+     * default-record-type fixture.
+     *
+     * 🔴 THE ALLOW-LIST COMPARISON MUST BE CASE-SENSITIVE, AND `!=` IS NOT — the identical trap
+     * dispositionRecordTypeId documents at length. Apex `==` / `!=` on String is case-INSENSITIVE
+     * while getRecordTypeInfosByDeveloperName() keys its map case-SENSITIVELY, so with `!=` a name
+     * like 'acquisition_psa' would pass the guard, miss the describe map, and silently degrade to
+     * the platform default. `String.equals(Object)` is case-sensitive, so guard and lookup answer
+     * the same question. Constant-first keeps a null argument on the throw path rather than
+     * NPE-ing.
+     *
+     * ⚠ THE SILENT DEGRADATION WOULD BE HARDER TO SPOT ON THIS OBJECT THAN ON ITS TWO SIBLINGS,
+     * which is why the guard matters more here rather than less. A mis-typed NDA or LOI record type
+     * produces a fixture whose stage is off its own value set and whose walk test fails; a mis-typed
+     * PSA record type produces a fixture that walks PERFECTLY (both types share one sequence) and
+     * is wrong only about which PERSONA may drive it.
+     */
+    private static Id contractReviewRecordTypeId(String recordTypeDeveloperName) {
+        if (!CONTRACT_REVIEW_RT_ACQUISITION.equals(recordTypeDeveloperName)
+            && !CONTRACT_REVIEW_RT_DISPOSITION.equals(recordTypeDeveloperName)) {
+            throw new TestDataFactoryException(
+                'Unknown Contract_Review__c record type: ' + recordTypeDeveloperName
+                + '. Expected Acquisition_PSA or Disposition_PSA.'
+            );
+        }
+        Schema.RecordTypeInfo info = Schema.SObjectType.Contract_Review__c
+            .getRecordTypeInfosByDeveloperName()
+            .get(recordTypeDeveloperName);
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 
     /** Contract Reviews under the shared scaffold Opportunity. @param count Number. @param doInsert Insert when true. @return Contract Reviews. */
@@ -1643,14 +2025,61 @@ public with sharing class TestDataFactory {
     // computed from checklist Tasks, not from Wire__c.
     // ═══════════════════════════════════════════════════════════════════════════
 
+    /** Disposition__c record type developer name for the broker-listed path (the factory default). */
+    public static final String DISPOSITION_RT_ON_MARKET = 'On_Market';
+    /** Disposition__c record type developer name for the direct-sale path. */
+    public static final String DISPOSITION_RT_OFF_MARKET = 'Off_Market';
+
     /**
      * @param count           Number of Dispositions.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
      * @param doInsert        Insert when true.
-     * @return Dispositions at stage 'Disposition Readiness'.
+     * @return Dispositions at stage 'Disposition Readiness', record type On_Market.
      */
     public static List<Disposition__c> createDispositions(Integer count, Id propertyAssetId, Boolean doInsert) {
+        return createDispositions(count, propertyAssetId, DISPOSITION_RT_ON_MARKET, doInsert);
+    }
+
+    /**
+     * Dispositions on an explicit record type.
+     *
+     * 🔴 WHY THE RECORD TYPE IS STAMPED AT ALL. Leaving RecordTypeId unset makes every
+     * test's Disposition inherit the TEST-RUNNING USER'S PROFILE DEFAULT — which is org
+     * state, is not deployable (`profiles/**` is .forceignore'd), and differs between a
+     * scratch org and usman-dpeg. A test whose fixture depends on that is green or red
+     * depending on who runs it. Stamping it makes the fixture a property of this file.
+     *
+     * ⚠ The stamp is GUARDED, not asserted. When the record type does not exist in the org
+     * (e.g. the §4 metadata has not deployed yet) RecordTypeId is left unset and the
+     * platform default applies. That is deliberate: an undeployed record type must not turn
+     * every disposition test in the repo red, and the guard costs one describe. It does
+     * mean a green suite is NOT proof the record types deployed — post-deploy gate B4 is.
+     *
+     * ⚠ On_Market and Off_Market carry DISJOINT Disposition_Stage__c value sets. This
+     * factory seeds 'Disposition Readiness', which is valid on BOTH, so either record type
+     * inserts cleanly. A caller that moves the record to a path-specific stage must pick the
+     * matching record type: 'BOV Outreach' / 'Active Listing' / 'Call for Offers' are
+     * On_Market only, and 'NDA' / 'Disposition Offer' are Off_Market only.
+     *
+     * ⚠ Stage is NEVER seeded as 'Completed'. The Wire_Complete_Before_Completed validation
+     * rule fires on OR(ISNEW(), ISCHANGED(Disposition_Stage__c)) and would refuse the
+     * insert unless the derived Wire_Verification_Completed__c were already true — which no
+     * brand-new record can be.
+     *
+     * @param count                   Number of Dispositions.
+     * @param propertyAssetId         Parent Property_Asset__c (nullable).
+     * @param recordTypeDeveloperName DISPOSITION_RT_ON_MARKET or DISPOSITION_RT_OFF_MARKET.
+     * @param doInsert                Insert when true.
+     * @return Dispositions at stage 'Disposition Readiness'.
+     */
+    public static List<Disposition__c> createDispositions(
+        Integer count,
+        Id propertyAssetId,
+        String recordTypeDeveloperName,
+        Boolean doInsert
+    ) {
         requirePositive(count);
+        Id recordTypeId = dispositionRecordTypeId(recordTypeDeveloperName);
         List<Disposition__c> dispositions = new List<Disposition__c>();
         for (Integer i = 0; i < count; i++) {
             dispositions.add(new Disposition__c(
@@ -1670,13 +2099,53 @@ public with sharing class TestDataFactory {
                 Closing_Statement_Uploaded__c = false
             ));
         }
+        if (recordTypeId != null) {
+            for (Disposition__c d : dispositions) {
+                d.RecordTypeId = recordTypeId;
+            }
+        }
         insertIf(doInsert, dispositions);
         return dispositions;
+    }
+
+    /**
+     * Resolves a Disposition__c record type developer name to its Id, or null when it does
+     * not exist in this org / is not available to the running user (see the guard rationale
+     * on createDispositions). An UNRECOGNISED name is a caller mistake and throws, so a typo
+     * fails loudly instead of silently producing a default-record-type fixture.
+     *
+     * 🔴 THE ALLOW-LIST COMPARISON MUST BE CASE-SENSITIVE, AND `!=` IS NOT. Apex `==` / `!=`
+     * on String is case-INSENSITIVE, while `getRecordTypeInfosByDeveloperName()` keys the map
+     * case-SENSITIVELY. With `!=` the two disagreed, and the disagreement is exactly the hole
+     * this method exists to close: 'on_market' passed the allow-list (case-insensitively
+     * equal to the constant), then missed the describe map (case-sensitively different), and
+     * returned null — the silent degrade-to-platform-default the throw was written to
+     * prevent. `String.equals(Object)` is case-sensitive, so the guard and the lookup now
+     * answer the same question. Both constants are non-null literals, so a null argument is
+     * simply not equal to either and still throws, unchanged.
+     */
+    private static Id dispositionRecordTypeId(String recordTypeDeveloperName) {
+        if (!DISPOSITION_RT_ON_MARKET.equals(recordTypeDeveloperName)
+            && !DISPOSITION_RT_OFF_MARKET.equals(recordTypeDeveloperName)) {
+            throw new TestDataFactoryException(
+                'Unknown Disposition__c record type: ' + recordTypeDeveloperName
+                + '. Expected On_Market or Off_Market.'
+            );
+        }
+        Schema.RecordTypeInfo info = Schema.SObjectType.Disposition__c
+            .getRecordTypeInfosByDeveloperName()
+            .get(recordTypeDeveloperName);
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 
     /** Dispositions under the shared scaffold asset. @param count Number. @param doInsert Insert when true. @return Dispositions. */
     public static List<Disposition__c> createDispositions(Integer count, Boolean doInsert) {
         return createDispositions(count, defaultPropertyAsset().Id, doInsert);
+    }
+
+    /** Single Disposition on an explicit record type. @param propertyAssetId Parent asset. @param recordTypeDeveloperName On_Market or Off_Market. @param doInsert Insert when true. @return The Disposition. */
+    public static Disposition__c createDisposition(Id propertyAssetId, String recordTypeDeveloperName, Boolean doInsert) {
+        return createDispositions(1, propertyAssetId, recordTypeDeveloperName, doInsert)[0];
     }
 
     /** Single Disposition. @param propertyAssetId Parent asset. @param doInsert Insert when true. @return The Disposition. */

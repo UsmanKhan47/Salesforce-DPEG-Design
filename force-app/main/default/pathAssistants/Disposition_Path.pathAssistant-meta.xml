@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
-    <active>true</active>
+    <!--
+        DEACTIVATED 2026-08-09 - SUPERSEDED, DELIBERATELY NOT DELETED.
+        This is the original __MASTER__ path. It was replaced by Disposition_Path_On_Market
+        and Disposition_Path_Off_Market when Disposition__c gained record types, because a
+        __MASTER__ path matches NEITHER record type and would leave every typed record with
+        no Path at all.
+
+        It is kept, inactive, because it is the record of the guidance text the two new paths
+        copied forward byte-identical. In particular the Active Listing step text ("6-week
+        marketing clock ... Week 4 YELLOW ... Week 6 Hard Stop") is under an OPEN question -
+        the source document says ~2 months with a month-1 check - and was copied forward
+        UNEDITED on purpose. Do not reconcile it here or in the new paths until that question
+        is answered.
+
+        Only one path may exist per record type per object, __MASTER__ included, so this file
+        does not conflict with the two new ones. recordTypeName is NOT updateable, so this
+        path can never be re-pointed at a record type - a replacement is the only route.
+    -->
+    <active>false</active>
     <entityName>Disposition__c</entityName>
     <fieldName>Disposition_Stage__c</fieldName>
     <masterLabel>Disposition Path</masterLabel>

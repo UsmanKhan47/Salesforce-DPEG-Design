@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Wire_Verification_Completed__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>DERIVED - DO NOT HAND-EDIT. Maintained by the Wire_Verification_Rollup flow from the MOST RECENT Wire record on this disposition (the same row WireSelector.selectMostRecentByDispositionId returns, so the badge the user sees and the gate that blocks them can never disagree). True only when all six wire-fraud confirmation fields are populated on that row: Verbal Verification Completed, Verifier Name, Verifier Phone, Verified DateTime, Wire Instructions Source and Confirmed Wire Amount. The flow assigns in BOTH directions, so unticking the verbal checkbox sets this back to false. Read by the Wire_Complete_Before_Completed validation rule, which blocks the Closing to Completed transition while it is false, and shown on the Closing approval page so the approver sees the wire state when deciding.</description>
+    <inlineHelpText>Set automatically from the most recent Wire record - it turns on only when all six wire confirmation fields are filled in. To change it, complete or clear the fields on the Wire record; do not edit it here.</inlineHelpText>
+    <label>Wire Verification Completed</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

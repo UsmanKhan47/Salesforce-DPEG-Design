@@ -26,6 +26,31 @@
                 <label>Active Listing</label>
             </value>
             <value>
+                <fullName>Call for Offers</fullName>
+                <default>false</default>
+                <label>Call for Offers</label>
+            </value>
+            <value>
+                <fullName>NDA</fullName>
+                <default>false</default>
+                <label>NDA</label>
+            </value>
+            <value>
+                <fullName>Disposition Offer</fullName>
+                <default>false</default>
+                <label>Disposition Offer</label>
+            </value>
+            <value>
+                <fullName>LOI</fullName>
+                <default>false</default>
+                <label>LOI</label>
+            </value>
+            <value>
+                <fullName>PSA</fullName>
+                <default>false</default>
+                <label>PSA</label>
+            </value>
+            <value>
                 <fullName>Closing</fullName>
                 <default>false</default>
                 <label>Closing</label>

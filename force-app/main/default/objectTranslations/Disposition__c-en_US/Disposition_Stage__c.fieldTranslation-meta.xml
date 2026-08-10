@@ -11,6 +11,10 @@
         <translation><!-- BOV Outreach --></translation>
     </picklistValues>
     <picklistValues>
+        <masterLabel>Call for Offers</masterLabel>
+        <translation><!-- Call for Offers --></translation>
+    </picklistValues>
+    <picklistValues>
         <masterLabel>Closing</masterLabel>
         <translation><!-- Closing --></translation>
     </picklistValues>
@@ -19,7 +23,23 @@
         <translation><!-- Completed --></translation>
     </picklistValues>
     <picklistValues>
+        <masterLabel>Disposition Offer</masterLabel>
+        <translation><!-- Disposition Offer --></translation>
+    </picklistValues>
+    <picklistValues>
         <masterLabel>Disposition Readiness</masterLabel>
         <translation><!-- Disposition Readiness --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>LOI</masterLabel>
+        <translation><!-- LOI --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>NDA</masterLabel>
+        <translation><!-- NDA --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>PSA</masterLabel>
+        <translation><!-- PSA --></translation>
     </picklistValues>
 </CustomFieldTranslation>

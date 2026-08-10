@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT MUST SIT INSIDE THE ROOT ELEMENT. A comment placed ABOVE <QuickAction>
+        breaks `sf` deploy at source conversion with the misleading error "unable to find
+        matching parent xml file". Precedent: Broker_Protection_Access.permissionset-meta.xml.
+
+        DISPOSITION LOI ONLY. The other half of the sell-side negotiation LOOP - read this
+        together with LOI__c.Mark_Countered_By_DPEG, which carries the full rationale.
+
+        THIS ACTION MOVES Countered by DPEG -> Counter Received from Buyer.
+
+        ⚠ THAT EDGE IS ALSO THE LINEAR NEXT HOP, SO THIS BUTTON OVERLAPS Advance Stage AT THAT
+        STAGE, AND THE OVERLAP IS DELIBERATE. Two reasons. (1) SYMMETRY: a user driving a loop
+        should see the same shape of control at both of its stages; making one direction a
+        named button and the other an anonymous "advance" invites the user to guess. (2)
+        INDEPENDENCE: the linear NEXT_STAGE map for the disposition record type lives in
+        RecordStageAdvanceService - the developer's file, not this one - and if a later change
+        re-points the hop out of Countered by DPEG, a page that depended on Advance Stage for
+        this edge would silently lose it. An explicit target cannot drift that way.
+        The cost is one redundant button on one stage. Do not "tidy" it away without moving
+        the loop's other edge somewhere it can be expressed, which today is nowhere.
+
+        🔴 THE LWC BUNDLE IS NOT IN THIS TRANCHE'S DECLARATIVE SCOPE. The expected name is
+        lwc/loiMarkCounterReceived. It is the developer's file. This quick action WILL FAIL
+        DEPLOY until that bundle exists - deploy them together.
+
+        🔴 IT ALSO NEEDS AN APEX ALLOW-LIST ENTRY: 'Counter Received from Buyer' added to the
+        LOI DISPOSITION explicit-target set, record-type-scoped. Record-type picklist
+        restriction is UI-ONLY and is NOT enforced by Apex DML.
+
+        NAMING: the API name is Mark_Counter_Received rather than Mark_Counter_Received_From_
+        Buyer purely for length; the LABEL carries the full stage wording, which is what a user
+        sees. LOI__c.Mark_Countered already exists and is the ACQUISITION action (it sets
+        Stage__c = 'Counter'); these two names are deliberately distinct from it and from each
+        other so no future reader has to disambiguate three similar buttons by their labels.
+    -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Counter Received from Buyer</label>
+    <lightningWebComponent>loiMarkCounterReceived</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

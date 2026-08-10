@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The BUY-SIDE LOI path, for the Acquisition_LOI record type.
+        Five steps: Draft -> Prepare/Review -> Sent -> Counter -> Completed.
+
+        EVERY <info> TEXT BELOW IS COPIED BYTE-IDENTICAL FROM LOI_Path, the __MASTER__ path
+        this file supersedes (now deactivated, retained as the record of that text). Nothing on
+        the acquisition side is reworded, re-ordered, added or dropped by this tranche. The
+        absence of <fieldNames> on every step is ALSO carried forward deliberately - LOI_Path
+        declared none, and adding key fields here would change what an acquisition user sees on
+        a live Path for no requested reason.
+
+        WHY A NEW FILE AT ALL. A Path is configured PER RECORD TYPE and recordTypeName cannot be
+        re-pointed on an existing PathAssistant, so a __MASTER__ path cannot simply be adopted
+        by a new record type. Same shape as Tranche 2's Disposition_Path split and 3A's NDA_Path
+        split.
+
+        STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THIS FILE. Runtime display order
+        comes from Stage__c's picklist value order (sorted=false) filtered by this record type;
+        the order in this file is only for readability. The five DISPOSITION values were
+        APPENDED to Stage__c after the five acquisition values, which leaves this path's
+        rendering byte-identical to LOI_Path's while giving LOI_Path_Disposition the correct
+        sequence. Appending was sufficient only because the two sets are FULLY DISJOINT - a
+        value a record type does not expose cannot occupy a position in that record type's
+        rendering. Contrast NDA__c, whose sets overlap: Not Sent had to be moved AHEAD of Sent
+        in the master ordering because appending rendered the disposition STARTING state third.
+        Anyone re-ordering Stage__c must re-check BOTH LOI record type files.
+
+        Received, Under Review, Countered by DPEG, Counter Received from Buyer and Executed do
+        not appear here because the Acquisition_LOI record type restricts them out; they belong
+        to LOI_Path_Disposition.
+
+        THE APPROVAL HOP LIVES AT Prepare/Review AND IS ACQUISITION-ONLY BY CONSTRUCTION. The
+        LOI__c.Submit_for_Approval quick action is gated on {!Record.Stage__c} EQUAL
+        'Prepare/Review', a value Disposition_LOI does not carry, so it is self-limiting with no
+        record-type criterion. Opportunity.LOI_Approval is a separate approval on the
+        OPPORTUNITY object and has no relationship to an LOI__c record.
+
+        POST-DEPLOY: this path renders nothing until every existing LOI row has been migrated
+        off Master onto Acquisition_LOI and the record type is assigned in the profiles in use.
+    -->
+    <active>true</active>
+    <entityName>LOI__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>LOI Path Acquisition</masterLabel>
+    <pathAssistantSteps>
+        <info>Draft the letter of intent - capture the offer price, cap rate and key terms. Keep it here until the draft is ready for internal review.</info>
+        <picklistValueName>Draft</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Prepare and review the LOI internally. Validate the terms, route it for any required approval, and refine based on feedback before finalizing.</info>
+        <picklistValueName>Prepare/Review</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>LOI sent to the seller/broker. Awaiting their response - a counter moves it to the Counter stage.</info>
+        <picklistValueName>Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Counter-offer stage. Track the back-and-forth with the seller - log each counter in the Counter History and update the offer terms until both sides align.</info>
+        <picklistValueName>Counter</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>LOI finalized and complete. Record is closed out for this stage of the deal.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Acquisition_LOI</recordTypeName>
+</PathAssistant>

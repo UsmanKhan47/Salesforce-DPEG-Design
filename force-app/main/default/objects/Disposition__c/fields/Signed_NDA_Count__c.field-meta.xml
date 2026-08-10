@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Signed_NDA_Count__c</fullName>
+    <defaultValue>0</defaultValue>
+    <description>DERIVED - DO NOT HAND-EDIT. Number of NDA__c records on this disposition whose Status__c is Signed, maintained by the NDA_Signed_Rollup flow alongside NDA_Count__c. Signed ALONE is the release condition (design Q6): the document states one condition - "information is released only once every NDA is signed" - so requiring a counter-signature date as well would be an invention. A Signed NDA later moved to Declined leaves this count, so the gate re-blocks, which is the intended behaviour. Rows created before this field existed hold null rather than 0, which is why every reader wraps it in BLANKVALUE.</description>
+    <inlineHelpText>Set automatically from the NDA records linked to this disposition. To change it, mark an NDA Signed on the NDA record; do not edit it here.</inlineHelpText>
+    <label>Signed NDA Count</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

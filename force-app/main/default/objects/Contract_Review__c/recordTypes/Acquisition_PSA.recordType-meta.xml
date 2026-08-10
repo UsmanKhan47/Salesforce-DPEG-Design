@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT and must stay that way. A comment
+        placed ABOVE <RecordType> breaks `sf` deploy at source conversion with the misleading
+        error "unable to find matching parent xml file". The <description> below is deliberately
+        short because RecordType.description is capped at 255 CHARACTERS - a cap this programme
+        has now breached FIVE times, every one caught only by measuring. Long rationale goes
+        here, where nothing is sent to the Metadata API and length is unlimited.
+
+        THE BUY-SIDE PSA. This is the shape that exists today: DPEG is the buyer, the paper
+        comes from the seller's counsel, and Ball_In_Court__c 'Seller' correctly names the
+        counterparty. Parented by Opportunity__c; Disposition__c stays blank.
+
+        ⚠ BOTH RECORD TYPES EXPOSE THE SAME FOUR Negotiation_Status__c VALUES, AND THAT IS THE
+        POINT - IT IS NOT AN OVERSIGHT TO BE "FIXED" LATER. Initial Draft -> Revised -> Ready
+        for Execution -> Executed are ALREADY exactly the four states the client document names
+        for the sell-side PSA, so unlike LOI__c and NDA__c there is no second vocabulary to
+        carry. Contract_Review__c therefore needs NO record-type-aware stage map in
+        RecordStageAdvanceService - it keeps ONE map serving both types. Anyone adding a
+        disposition-only status here should re-read that: it would turn a one-map object into a
+        two-map object and drag the Apex change back into scope.
+
+        WHAT THE TWO TYPES ACTUALLY DIFFER ON is exactly two things: the counterparty token in
+        Ball_In_Court__c (Seller here, Buyer on Disposition_PSA) and which parent lookup is
+        populated. That is the whole delta.
+
+        EVERY PICKLIST ON THE OBJECT IS LISTED HERE, INCLUDING ONES THIS CHANGE DOES NOT ALTER.
+        A record type file that OMITS a picklist silently drops ALL of that picklist's values
+        for the type - the field then offers nothing. Contract_Review__c has exactly THREE
+        picklists: Ball_In_Court__c, Negotiation_Status__c and Stage__c. The fields/ directory
+        was walked field by field to establish that, and the walk corrected the design document,
+        which also named Asset_Type__c and Deal_Type__c - both are formula TEXT fields (they
+        cross-object-read Opportunity__r), not picklists, and a picklistValues block naming
+        either would be invalid.
+
+        🔴 Stage__c IS A DERIVED FIELD. Contract_Review_Stage_Sync recomputes it from
+        Negotiation_Status__c on every save, and a direct write to it COMMITS AND IS SILENTLY
+        DISCARDED - measured org behaviour, not theory. It is listed here only so its values do
+        not vanish from the type. Nothing in 3C writes it, and nothing added later should.
+
+        THE THREE isActive=false LEGACY Stage__c VALUES ARE DELIBERATELY OMITTED
+        ('Contract Execution (Signed)', 'Contract Negotiation', 'Prepare'). An inactive value is
+        unselectable org-wide, so listing it grants nothing, while naming a value the platform
+        does not consider live risks the exact "picklist value does not exist" rejection that
+        cost 3A a two-phase deploy. ⚠ NO IN-REPO PRECEDENT EXISTS EITHER WAY - a sweep of every
+        recordType file found none that references a field carrying inactive values, so this is
+        the first case and it is a DEPLOY GATE, not a settled pattern. If a legacy value is ever
+        reactivated it must be added here explicitly.
+
+        NO URL-ENCODING IS NEEDED IN THIS FILE, which is worth stating because it is the
+        exception. Inside a RecordType a picklist fullName must be URL-encoded (the repo
+        precedent is Prepare%2FReview on LOI__c and Dead%2FPass in Opportunity's business
+        processes). Every value listed here contains only letters and spaces - spaces are NOT
+        encoded - so all fullNames are literal. The one value that would have needed it,
+        'Contract Execution (Signed)', is inactive and omitted.
+
+        NO <businessProcess> ELEMENT. That element applies to Opportunity, Case, Lead and
+        Solution only; Contract_Review__c is a custom object.
+
+        🔴 HANDOFF - APEX, NOT BUILT HERE (D16.3, the third and last of the three).
+        OpportunityReviewService:100 inserts Contract_Review__c and stamps NO record type.
+        Left alone, every auto-created ACQUISITION PSA lands on Master - one deal at a time,
+        forever, silently - which is damage to a working flow caused by adding record types to
+        an object whose creator predates them. The class already carries the pattern for NDA__c
+        and LOI__c: a describe resolved ONCE per invocation (zero SOQL), an isAvailable() guard,
+        and a test that re-reads RecordTypeId FROM THE DATABASE and fails unconditionally. ⚠ The
+        guard question must be RE-ARGUED for this insert rather than inherited: the NDA guard
+        exists because ensureNda runs on EVERY Opportunity insert including
+        Database.convertLead, so an unguarded stamp would break lead conversion org-wide before
+        gate T-A1 runs. This insert fires only on entry to the PSA stage, which is a narrower
+        blast radius - but it is still pre-gate-reachable, so the guarded shape is the
+        conservative match.
+    -->
+    <fullName>Acquisition_PSA</fullName>
+    <active>true</active>
+    <description>The buy-side PSA. DPEG is the buyer, so the counterparty is the Seller and Ball In Court reads Us / Seller. Parented by Opportunity; the Disposition lookup stays blank. Same four Negotiation Status values as the disposition type.</description>
+    <label>Acquisition PSA</label>
+    <picklistValues>
+        <picklist>Ball_In_Court__c</picklist>
+        <values>
+            <fullName>Us</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Seller</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Negotiation_Status__c</picklist>
+        <values>
+            <fullName>Initial Draft</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Revised</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Ready for Execution</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Executed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Stage__c</picklist>
+        <values>
+            <fullName>PSA Drafting</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Review</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contract Execution</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

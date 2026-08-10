@@ -9,6 +9,20 @@
  * Values are derived in getters (date formatting, "N of M" responses, the NDA
  * pill), so assertions read the child c-onboarding-card-child props + DOM text
  * rather than raw wire output.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE NDA PILL IS NOW REAL DATA (it used to be a hard-coded 'Signed')
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `_ndaStatus = 'Signed'` reported a COMPLIANCE state as satisfied on every
+ * disposition, whether or not an NDA existed. The pill now renders
+ * summary.ndaStatus, which BovController populates from the disposition's most
+ * recent NDA__c.
+ *
+ * 🔴 The load-bearing case is the NULL one: Apex returns null both when there is
+ * genuinely no NDA and when the NDA read degraded (BovController fails that read
+ * soft so a missing FLS grant cannot blank the whole tile). Both must render
+ * 'No NDA'. A test that only covered the happy 'Signed' path would have passed
+ * against the hard-coded version too, which is exactly how the defect survived.
  */
 import { createElement } from 'lwc';
 import BovOutreach from 'c/bovOutreach';
@@ -32,7 +46,8 @@ const SUMMARY = {
     submissionDeadline: '2026-03-01',
     responsesReceived: 4,
     brokersContacted: 6,
-    selectedBroker: 'Colliers International'
+    selectedBroker: 'Colliers International',
+    ndaStatus: 'Signed'
 };
 
 describe('c-bov-outreach', () => {
@@ -89,7 +104,7 @@ describe('c-bov-outreach', () => {
         expect(element.shadowRoot.querySelector('.matrix-badge')).toBeNull();
     });
 
-    it('shows the default NDA status pill as Signed', async () => {
+    it('NDA PILL: renders the real Signed status from the wire', async () => {
         const element = createComponent();
 
         getOutreachSummary.emit(SUMMARY);
@@ -98,6 +113,62 @@ describe('c-bov-outreach', () => {
         const pill = element.shadowRoot.querySelector('.nda-pill');
         expect(pill.textContent).toContain('Signed');
         expect(pill.className).toContain('nda-signed');
+    });
+
+    it('NDA PILL: a Pending NDA renders Pending, not Signed', async () => {
+        const element = createComponent();
+
+        getOutreachSummary.emit({ ...SUMMARY, ndaStatus: 'Pending' });
+        await Promise.resolve();
+
+        const pill = element.shadowRoot.querySelector('.nda-pill');
+        expect(pill.textContent).toContain('Pending');
+        expect(pill.textContent).not.toContain('Signed');
+        expect(pill.className).toContain('nda-pending');
+    });
+
+    it('NDA PILL: a Sent NDA renders Sent on the amber style', async () => {
+        const element = createComponent();
+
+        getOutreachSummary.emit({ ...SUMMARY, ndaStatus: 'Sent' });
+        await Promise.resolve();
+
+        const pill = element.shadowRoot.querySelector('.nda-pill');
+        expect(pill.textContent).toContain('Sent');
+        // The CSS class names predate the picklist; 'Sent' maps to nda-received.
+        expect(pill.className).toContain('nda-received');
+    });
+
+    /**
+     * 🔴 THE DEFECT FENCE. null means "no NDA yet" (or a degraded NDA read) and MUST NOT
+     * render 'Signed'. If someone reintroduces a default on the client, this goes red.
+     */
+    it('NDA PILL: a null status renders "No NDA" and never Signed', async () => {
+        const element = createComponent();
+
+        getOutreachSummary.emit({ ...SUMMARY, ndaStatus: null });
+        await Promise.resolve();
+
+        const pill = element.shadowRoot.querySelector('.nda-pill');
+        expect(pill.textContent).toContain('No NDA');
+        expect(pill.textContent).not.toContain('Signed');
+        expect(pill.className).toContain('nda-pending');
+    });
+
+    /**
+     * An unrecognised status (a value added to NDA__c.Status__c later, e.g. D7's
+     * 'Declined') must still render its own text on the neutral style rather than an
+     * unstyled pill or a stale colour.
+     */
+    it('NDA PILL: an unknown status renders its own text on the neutral style', async () => {
+        const element = createComponent();
+
+        getOutreachSummary.emit({ ...SUMMARY, ndaStatus: 'Declined' });
+        await Promise.resolve();
+
+        const pill = element.shadowRoot.querySelector('.nda-pill');
+        expect(pill.textContent).toContain('Declined');
+        expect(pill.className).toContain('nda-pending');
     });
 
     it('ERROR BRANCH: renders an error card instead of the summary when the wire errors', async () => {

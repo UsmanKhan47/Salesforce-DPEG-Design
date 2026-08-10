@@ -1,6 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ListView xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Gated_Call_For_Offers</fullName>
+    <!--
+        =====================================================================================
+        THE OR IS LOAD BEARING. DO NOT COLLAPSE THIS BACK TO A SINGLE startsWith FILTER.
+        =====================================================================================
+        Widened 2026-08-10 (Tranche 4A, decision D26.1 finding 3). The widening is PURELY
+        ADDITIVE: filter 1 is byte identical to the filter that shipped, so every historical
+        row this view already returned is still returned. Filter 2 only adds rows.
+
+        WHY FILTER 2 EXISTS.
+        ExtractAddressQueueable.buildOutcomeSummary returns the single outcome label verbatim
+        ONLY when the email produced exactly one outcome. Two or more outcomes go through
+        buildMultiSummary, which returns:
+
+            Multi-Property (2): 1 Not Routed (call for offers), 1 ...
+
+        That string starts with 'Multi-Property', NOT with 'Not Routed', so filter 1 alone
+        misses it. Today the U2 call for offers gate always adds exactly one outcome, so the
+        case cannot arise. Tranche 4B emits one outcome PER MATCHED DEAL, so it arises on the
+        first call for offers email that names two properties, and that email would silently
+        vanish from this view.
+
+        THAT MATTERS MORE THAN IT LOOKS. This view is the ONLY surface for the call for
+        offers misclassification watch. A confidently misclassified exclusive listing takes no
+        registry claim, so a second broker who submits the same property later wins it
+        outright, and recovering the first broker's protection is manual registry surgery.
+        The window in which that is reversible is only visible here.
+
+        WHY 'contains call for offers' IS THE CORRECT SECOND FILTER.
+        buildMultiSummary composes each part as '<count> <label>', so the label text survives
+        VERBATIM as a substring of the multi property summary. A contains test therefore
+        catches the single property form, the multi property form, and any future sibling
+        label that keeps the wording. It cannot over match: no other outcome label in
+        ExtractAddressQueueable carries this phrase, and the class header forbids a call for
+        offers label under the 'Not Acquisition' prefix (that prefix belongs to the separate
+        deployed Gated_Not_Acquisition view).
+
+        KNOWN RESIDUAL, NOT FIXABLE FROM A LIST VIEW.
+        Outcome__c is Text(255) and the staging service clips to that length. A multi property
+        summary long enough to be clipped can lose the trailing part naming the call for
+        offers outcome, and this filter cannot see what was clipped away. Ordering helps but
+        does not close it: buildMultiSummary orders by descending priority, so a matched deal
+        outcome (PRIORITY_REPEAT) sorts ahead of an unmatched one (PRIORITY_NO_PROPERTY), and
+        the phrase appears early. Raise this with the 4B owner if a 10 property blast is ever
+        observed clipping.
+        =====================================================================================
+    -->
+    <booleanFilter>1 OR 2</booleanFilter>
     <columns>NAME</columns>
     <columns>From_Address__c</columns>
     <columns>Subject__c</columns>
@@ -12,6 +59,11 @@
         <field>Outcome__c</field>
         <operation>startsWith</operation>
         <value>Not Routed</value>
+    </filters>
+    <filters>
+        <field>Outcome__c</field>
+        <operation>contains</operation>
+        <value>call for offers</value>
     </filters>
     <label>Gated: Call for Offers</label>
 </ListView>

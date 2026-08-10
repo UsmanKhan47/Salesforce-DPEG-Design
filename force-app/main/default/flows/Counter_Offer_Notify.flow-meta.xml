@@ -1,5 +1,93 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE <Flow>
+         breaks `sf` deploy at source conversion with the misleading "unable to find matching
+         parent xml file" error.
+
+         =====================================================================
+         2026-08-10 (code review 3B/3C, C4) - ENTRY CONDITION ADDED. NOTHING ELSE CHANGED.
+         =====================================================================
+         Until this change the <start> element carried NO filters and NO filterLogic, so this
+         flow fired on EVERY Counter_Offer__c insert. 3B gave LOI__c a Disposition_LOI record
+         type and a sell-side counter loop that reuses Counter_Offer__c, CounterOfferService and
+         lwc/loiCounterOffer wholesale - which means THE FIRST DISPOSITION COUNTER WOULD HAVE
+         NOTIFIED THE Acquisitions_Team PUBLIC GROUP about a sale. Recorded as a live leak at
+         D15 finding #4 and as review critical C4; post-deploy gate T-D3 tests exactly this.
+
+         🔴 THIS SUPPRESSES AN EXISTING NOTIFICATION. IT DOES NOT CREATE ONE. Read that before
+         "restoring" the ungated start element. D9 puts every notification in this programme -
+         all 14 on the disposition side - OUT OF SCOPE, and D15 finding #4 states the
+         distinction explicitly: "Gating that flow is scope CONTAINMENT, not a new notification,
+         and is therefore not covered by D9's deferral." Removing this criterion does not
+         restore parity; it re-opens a cross-module leak.
+
+         =====================================================================
+         WHY A FORMULA AND NOT A CONDITION ROW.
+         =====================================================================
+         The discriminator is on the PARENT. Counter_Offer__c has exactly eight fields
+         (Counter_Cap_Rate__c, Counter_Date__c, Counter_Price__c, Counter_Response__c,
+         Direction__c, LOI__c, Revision_Number__c, Subsequent_Version__c) and carries NO
+         Disposition__c lookup and NO record types - the same two absences that forced D21 to
+         accept org-wide viewAllRecords on this object instead of the narrow D17 sharing shape.
+         So there is nothing on the triggering record itself to filter on, and the criterion has
+         to reach one hop up to LOI__r.
+
+         A record-triggered flow's CONDITION BUILDER offers only fields on the triggering object;
+         reaching a related record is what FORMULA entry conditions exist for (Winter '23, "Use
+         Formulas as Flow Entry Conditions"), and a formula's $Record supports relationship
+         traversal. Hence <filterFormula> rather than <filters>/<filterLogic> - the two are
+         alternatives, never both.
+
+         ⚠ ONE HOP ONLY, AND DELIBERATELY NOT A RECORD-TYPE TEST. $Record.LOI__r.Disposition__c
+         is a single lookup traversal to a stored field. A $RecordType-style traversal is NOT
+         available here, which is why the criterion keys on the LOOKUP rather than on
+         LOI__r.RecordType.DeveloperName. That also makes it correct DURING the migration window:
+         every LOI in the org still sits on the Master record type until gate T-A1/T-A2 run, so a
+         record-type test would let every disposition counter through in exactly the window this
+         gate matters most. The lookup is populated at creation by CounterOfferService's parent,
+         so it is authoritative from row one. This is the same precedence order
+         CounterOfferService.isSaleSide uses in the opposite direction (record type first, lookup
+         as the fallback) - it can afford record-type-first because it also has the lookup; this
+         flow has only the lookup.
+
+         ⚠ NO IN-REPO PRECEDENT FOR <filterFormula> - this is the first one. Every other flow
+         here uses <filters>. Confirm at check-only that the element is accepted at API 67.0, and
+         confirm in the org that an ACQUISITION counter still produces the notification (an entry
+         condition that silently matches nothing looks identical to a working gate from outside).
+
+         =====================================================================
+         fTitle NOW TREATS 'Buyer' AS THE COUNTERPARTY. THE EARLIER "LEFT ALONE" NOTE WAS WRONG.
+         =====================================================================
+         Review C4 noted the second order defect: fTitle branched on Direction__c = 'Seller' only,
+         and 3B made the counterparty token on a sale 'Buyer', so a BUYER's counter fell to the else
+         branch and announced "LOI counter sent to seller" when the buyer sent it.
+
+         🔴 THAT BRANCH WAS ORIGINALLY LEFT ALONE ON THE GROUND THAT THE GATE ABOVE REMOVED THE
+         ENTIRE POPULATION THAT COULD REACH IT. THE CLAIM IS NOT TRUE AND IS RETRACTED HERE.
+         CounterOfferService.isSaleSide is RECORD TYPE FIRST and falls back to the lookup, so an
+         LOI__c carrying the Disposition_LOI record type with a BLANK Disposition__c lookup is sale
+         side to the SERVICE (it derives the counterparty as 'Buyer' and stores it) and acquisition
+         side to THIS GATE (ISBLANK is true, so the flow fires). LOI__c.Disposition__c is
+         <required>false</required>, so that state is reachable through the ordinary UI. The
+         identical defect and the identical correction were found one object over on
+         flows/PSA_Version_Notify; the two fTitle formulas now read the same.
+
+         The widening is a STRICT NO OP on every value the acquisition side actually produces:
+         CounterOfferService stores 'Ours' or 'Seller' on an acquisition parent, and both take
+         exactly the branch they took before. Only 'Buyer', which was wrong wherever it appeared,
+         changes. Both 'Seller' and 'Buyer' mean THE COUNTERPARTY per the Direction__c token
+         contract; 'Ours' means DPEG on either side.
+
+         🔴 RESIDUAL, NAMED RATHER THAN FIXED: for that same blank lookup row the GATE also fails
+         open, so Acquisitions_Team still hears about a sale, merely with a correct title now. This
+         file cannot close that. The formula's only discriminator IS the blank lookup, and the one
+         that would separate the two populations, LOI__r.RecordType.DeveloperName, is a SECOND hop,
+         which an entry formula does not support (see the ONE HOP note above). The real fix is
+         upstream: make Disposition__c required on the Disposition_LOI record type, or have the
+         service refuse a sale side write without it. Both are outside this one file edit. The else
+         branch's "sent to seller" is acquisition vocabulary and would name DPEG on a sale; it is
+         left because on a purchase DPEG IS the buyer, so it is literally right for 'Ours'.
+    -->
     <actionCalls>
         <name>Notify_Counter</name>
         <label>Notify Counter</label>
@@ -35,6 +123,7 @@
         <nameSegment>GroupNotifier</nameSegment>
     </actionCalls>
     <apiVersion>67.0</apiVersion>
+    <description>Notifies Acquisitions_Team when a counter offer is logged. Gated 2026-08-10 to ACQUISITION LOIs only (LOI__r.Disposition__c blank). That criterion SUPPRESSES an over-broad existing notification: scope containment, not a new one. Do not remove it.</description>
     <environments>Default</environments>
     <formulas>
         <name>fBody</name>
@@ -44,7 +133,7 @@
     <formulas>
         <name>fTitle</name>
         <dataType>String</dataType>
-        <expression>IF(ISPICKVAL({!$Record.Direction__c}, &apos;Seller&apos;),
+        <expression>IF(OR(ISPICKVAL({!$Record.Direction__c}, &apos;Seller&apos;), ISPICKVAL({!$Record.Direction__c}, &apos;Buyer&apos;)),
 &apos;LOI counter received - ball in our court&apos;,
 &apos;LOI counter sent to seller&apos;)</expression>
     </formulas>
@@ -57,6 +146,7 @@
         <connector>
             <targetReference>Notify_Counter</targetReference>
         </connector>
+        <filterFormula>ISBLANK({!$Record.LOI__r.Disposition__c})</filterFormula>
         <object>Counter_Offer__c</object>
         <recordTriggerType>Create</recordTriggerType>
         <triggerType>RecordAfterSave</triggerType>

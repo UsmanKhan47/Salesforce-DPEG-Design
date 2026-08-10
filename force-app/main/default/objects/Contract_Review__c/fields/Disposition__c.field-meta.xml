@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT and must stay that way. A comment
+        placed ABOVE <CustomField> breaks `sf` deploy at source conversion with the misleading
+        error "unable to find matching parent xml file for CustomField".
+
+        SHAPE COPIED FROM NDA__c.Disposition__c AND LOI__c.Disposition__c - same referenceTo,
+        same SetNull delete constraint, same "Opportunity is left blank in this context"
+        contract. Added 2026-08-09 with the Acquisition_PSA / Disposition_PSA record types.
+
+        RELATIONSHIP NAME IS `Contract_Reviews`, NOT `Disposition_Contract_Reviews`.
+        The design document proposed the prefixed form; the two fields this one is explicitly
+        mirroring use the bare plural (`NDAs`, `LOIs`), as do every other child of
+        Disposition__c in this repo (BOV_Submissions, Broker_Listings, Wires). The one prefixed
+        name, `Disposition_Offers`, is prefixed only because the OBJECT is Disposition_Offer__c.
+        A repo-wide sweep of every <referenceTo>Disposition__c</referenceTo> confirmed
+        `Contract_Reviews` is unused, so there is no collision forcing the longer name.
+
+        THE LOOKUP, NOT THE RECORD TYPE, IS THE DISCRIMINATOR anything outside the record page
+        should test - the same rule LOI__c.Disposition__c states. A single-hop lookup traversal
+        is supported in record-triggered flow entry conditions and in formulas; a record-type
+        traversal is not.
+
+        ⚠ IT IS DELIBERATELY NOT REQUIRED, and that is not laxity. Every acquisition
+        Contract_Review__c in the org has this field blank, and OpportunityReviewService:100
+        creates acquisition Contract Reviews with only Opportunity__c set. Making this required
+        would break that live insert on the very next deal.
+    -->
+    <fullName>Disposition__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>For sell-side PSAs in the Disposition module - links the Contract Review to the Disposition being sold (Opportunity is left blank in this context). This lookup, not the record type, is the discriminator anything outside the record page should test: a single-hop lookup traversal is supported in record-triggered flow entry conditions and in formulas, where a record-type traversal is not. Added 2026-08-09 with the Acquisition_PSA / Disposition_PSA record types.</description>
+    <inlineHelpText>The Disposition this PSA belongs to. Populated on sell-side PSAs only; leave blank on an acquisition PSA, which uses the Opportunity lookup instead.</inlineHelpText>
+    <label>Disposition</label>
+    <referenceTo>Disposition__c</referenceTo>
+    <relationshipLabel>Contract Reviews</relationshipLabel>
+    <relationshipName>Contract_Reviews</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

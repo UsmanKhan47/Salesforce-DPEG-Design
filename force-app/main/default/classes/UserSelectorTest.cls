@@ -27,6 +27,7 @@
 private class UserSelectorTest {
 
     private static final String DEAL_DRIVER_PERM_SET = 'Acquisition_Deal_Driver';
+    private static final String DISPOSITION_DRIVER_PERM_SET = 'Disposition_Deal_Driver';
 
     /**
      * The grant path: FLS present (via Acquisition_Deal_Driver) and the flag set. Both factors of
@@ -185,9 +186,134 @@ private class UserSelectorTest {
         Assert.areEqual(1, used, 'The selector must issue exactly one query per call');
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // selectDispositionDriverFlagForCurrentUser — the SELL-SIDE twin (D15/Q1)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** The grant path: FLS present (via Disposition_Deal_Driver) and the flag set. */
+    @isTest
+    static void selectDispositionDriverFlagForCurrentUser_withFieldAccessAndFlagSet_returnsTheFlag() {
+        User dispositionDriver = buildStandardUser('usel6');
+        dispositionDriver.Disposition_Driver__c = true;
+        insertFixtureUser(dispositionDriver);
+        assignPermissionSet(dispositionDriver.Id, DISPOSITION_DRIVER_PERM_SET);
+
+        Test.startTest();
+        User result;
+        System.runAs(dispositionDriver) {
+            result = UserSelector.selectDispositionDriverFlagForCurrentUser();
+        }
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'The running user always has a User record, so a row must come back');
+        Assert.areEqual(dispositionDriver.Id, result.Id,
+            'The query is hard-filtered to the RUNNING user — any other Id would mean the filter was dropped');
+        Assert.isTrue(result.Disposition_Driver__c,
+            'Disposition_Driver__c must be readable and true for a provisioned disposition driver');
+    }
+
+    /**
+     * THE FLS TEST for the sell side. The flag is set TRUE on this user on purpose: if USER_MODE
+     * stopped enforcing FLS the query would succeed and return `true`, granting the disposition
+     * actions to someone holding no permission set at all.
+     */
+    @isTest
+    static void selectDispositionDriverFlagForCurrentUser_withoutFieldAccess_throwsInsteadOfLeakingTheFlag() {
+        User bareUser = buildStandardUser('usel7');
+        bareUser.Disposition_Driver__c = true;   // set, but must be unreadable to this user
+        insertFixtureUser(bareUser);
+
+        Test.startTest();
+        Boolean threw = false;
+        Boolean fieldAccessible;
+        System.runAs(bareUser) {
+            fieldAccessible = Schema.SObjectType.User.fields.Disposition_Driver__c.isAccessible();
+            try {
+                UserSelector.selectDispositionDriverFlagForCurrentUser();
+            } catch (Exception e) {
+                threw = true;
+            }
+        }
+        Test.stopTest();
+
+        Assert.isFalse(fieldAccessible,
+            'PRECONDITION: a bare Standard User must NOT have FLS read on '
+            + 'User.Disposition_Driver__c. If this fails, the field has been granted outside '
+            + 'Disposition_Deal_Driver and factor (a) of the disposition action gate is no longer '
+            + 'enforced for those users');
+        Assert.isTrue(threw,
+            'WITH USER_MODE must make the read FAIL for a user without FLS on '
+            + 'Disposition_Driver__c — that throw IS the denial signal for factor (a)');
+    }
+
+    /**
+     * 🔴 THE REASON THESE ARE TWO METHODS AND NOT ONE `SELECT Deal_Driver__c, Disposition_Driver__c`.
+     *
+     * A merged read looks tidier and costs one query instead of two. It is also WRONG: `WITH
+     * USER_MODE` throws when the running user cannot read ANY selected field, so this fully
+     * provisioned ACQUISITIONS deal driver would make the merged query throw on
+     * Disposition_Driver__c — and the calling service converts a throw to `false`, silently
+     * DENYING a legitimate deal driver the acquisition actions they have always had.
+     *
+     * This test pins both halves at once: the acquisition read SUCCEEDS and the disposition read
+     * THROWS, for the same user in the same context. Merging them cannot satisfy both.
+     */
+    @isTest
+    static void theTwoDriverReadsAreIndependent_oneFieldsAccessMustNotBreakTheOther() {
+        User acquisitionDriver = buildStandardUser('usel8');
+        acquisitionDriver.Deal_Driver__c = true;
+        insert acquisitionDriver;
+        assignPermissionSet(acquisitionDriver.Id, DEAL_DRIVER_PERM_SET);
+
+        Test.startTest();
+        Boolean acquisitionReadWorked = false;
+        Boolean dispositionReadThrew = false;
+        System.runAs(acquisitionDriver) {
+            User acquisitionRow = UserSelector.selectDealDriverFlagForCurrentUser();
+            acquisitionReadWorked = acquisitionRow != null && acquisitionRow.Deal_Driver__c == true;
+            try {
+                UserSelector.selectDispositionDriverFlagForCurrentUser();
+            } catch (Exception e) {
+                dispositionReadThrew = true;
+            }
+        }
+        Test.stopTest();
+
+        Assert.isTrue(acquisitionReadWorked,
+            'An acquisitions deal driver must still be able to read their OWN flag. If this fails '
+            + 'because the two reads were merged into one SELECT, every acquisitions deal driver '
+            + 'in the org has just lost the Opportunity stage actions.');
+        Assert.isTrue(dispositionReadThrew,
+            'The same user must be REFUSED the disposition flag — they hold no disposition FLS. '
+            + 'Two gates, two fields, two queries, deliberately independent.');
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Inserts a fixture User in EXPLICIT system mode.
+     *
+     * 🔴 MEASURED 2026-08-09 (check-only validation 0Afiw000000HEo9CAG): a bare `insert user` that
+     * SETS `User.Disposition_Driver__c` fails with `System.DmlException: Operation failed due to
+     * fields being inaccessible on Sobject User` when the running principal has no FLS on that
+     * field — even though ordinary Apex DML is normally described as system mode. `User` is a
+     * setup object and a Metadata-API-deployed custom field arrives carrying NO field permissions
+     * for ANY profile, System Administrator included.
+     *
+     * ⚠ THE Deal_Driver__c METHODS ABOVE DELIBERATELY STILL USE A BARE `insert`, AND THE
+     * DIFFERENCE IS EVIDENCE, NOT INCONSISTENCY. They pass because an org-side grant on
+     * `User.Deal_Driver__c` already exists (measured: isUpdateable() = true for the running user
+     * while Acquisition_Deal_Driver grants only READ) — a grant that lives in the org and not in
+     * this repo, since profiles are `.forceignore`d. The sell-side field has no such grant yet.
+     * That asymmetry is a real deploy concern, not a test artefact: without an EDITABLE grant no
+     * administrator can tick the Disposition Driver checkbox on a real User record at all, and the
+     * two-factor gate then has no reachable true branch for anyone.
+     */
+    private static void insertFixtureUser(User fixture) {
+        Database.insert(fixture, true, AccessLevel.SYSTEM_MODE);
+    }
 
     /** Assigns a deployed permission set, by API Name, to a user. */
     private static void assignPermissionSet(Id assigneeId, String permissionSetName) {

@@ -12,14 +12,27 @@
  *   - ContractExecutionService.handleExecution (PSA-execution handoff: the deal
  *     header + primary contract/LOI figures used to stamp the Opportunity and
  *     seed the Transaction — selectExecutionHandoffByIds)
+ *   - CallForOffersStampService (Broker Protection's inbound call-for-offers
+ *     branch — selectCallForOffersTargetsByIds; the ONE `WITH SYSTEM_MODE`
+ *     method on this class, see MODE below)
  *
- * MODE — every query is `WITH USER_MODE` (API 67). Opportunity is the only
- * standard-object selector in A1; per the P4 design §5 every standard field
- * selected here (Id, Name, StageName, CloseDate, CreatedDate) is
+ * MODE — every query is `WITH USER_MODE` (API 67) EXCEPT
+ * `selectCallForOffersTargetsByIds`, which is `WITH SYSTEM_MODE`. Read the METHOD,
+ * not the class.
+ *
+ * The eleven USER_MODE methods back reads a human explicitly asked for. Opportunity
+ * is the only standard-object selector in A1; per the P4 design §5 every standard
+ * field selected there (Id, Name, StageName, CloseDate, CreatedDate) is
  * `permissionable=false` and therefore never subject to FLS — USER_MODE cannot
  * throw on it — and every custom field selected (Deal_Type__c, Asset_Type__c,
  * Asking_Price__c, Underwritten_NOI__c, Primary_*__c) is granted by the deployed
- * Acquisition permission sets (P3 custom-field FLS gap = 0). No SYSTEM_MODE path.
+ * Acquisition permission sets (P3 custom-field FLS gap = 0). 🔴 NONE OF THEM MAY BE
+ * WIDENED — the SYSTEM_MODE justification below is specific to an automation path
+ * and does not transfer to a single one of them.
+ *
+ * SHARING — the class stays `with sharing`, and for the SYSTEM_MODE method that is a
+ * SEPARATE decision from the mode, deliberately argued separately (see that method's
+ * header). Conflating the two is the D25 mistake this repo has already paid for once.
  *
  * NOT-FOUND CONTRACT is per-caller and encoded in the method shape:
  *   - read-for-display  -> aggregate / count / list methods return their natural
@@ -274,6 +287,96 @@ public with sharing class OpportunitySelector {
             FROM Opportunity
             WHERE Id IN :opportunityIds AND Primary_LOI__c != null
             WITH USER_MODE
+        ];
+    }
+
+    /**
+     * The current call-for-offers stamp values for a set of deals — backs
+     * `CallForOffersStampService.stamp`, which reads them ONCE in bulk so it can skip
+     * every record nothing would change on (which is what makes a platform redelivery
+     * a genuine zero-DML no-op). Added 2026-08-10, Tranche 4B (decisions D26 / D8).
+     *
+     * ═══ 🔴 TWO KEYWORDS, TWO SEPARATE QUESTIONS. DO NOT COLLAPSE THEM. ═══
+     * `WITH SYSTEM_MODE` lifts CRUD and FLS. It does NOT touch sharing — sharing is
+     * governed by this class's `with sharing` keyword, in BOTH modes. Prescribing a mode
+     * change as the fix for a sharing problem is exactly the error recorded as D25 in
+     * `agent-output/stage-by-stage-decisions.md`, so each half is argued on its own below.
+     *
+     * ▸ MODE = SYSTEM_MODE, because this is an AUTOMATION-PATH read (ARCHITECTURE.md §2).
+     *   The running principal never asked for it: it happens on their behalf while an
+     *   inbound broker email is routed. `Broker_Protection_Access` — the permission set the
+     *   pipeline principal actually holds — declares SIX `objectPermissions` blocks
+     *   (`Competing_Broker_Submission__c`, `Inbound_Email_Staging__c`,
+     *   `Property_Claim_Lock__c`, `Property_Registry__c`, `Task`, `UserExternalCredential`)
+     *   and **no `Opportunity` entry of any kind**, nor any `Opportunity` field permission
+     *   (verified against the file 2026-08-10). `WITH USER_MODE` does not degrade, it
+     *   THROWS — `System.QueryException: No such column 'Offer_Due_Date__c' on entity
+     *   'Opportunity'`, which is how the platform reports an FLS denial — and that throw
+     *   would abort the whole call-for-offers branch. Every DPEG persona sits on
+     *   `Minimum Access - Salesforce`, so this is the default case here, not an edge case.
+     *
+     * ▸ SHARING = `with sharing`, and it is SUFFICIENT rather than merely inherited.
+     *   `Opportunity` OWD is **`ReadWrite`** — measured against the org via the Tooling API
+     *   (`EntityDefinition`) on 2026-08-10, not read off this repo. Under a ReadWrite
+     *   default every user already has read/write access to every Opportunity row, so a
+     *   `with sharing` read returns the same rows a `without sharing` one would. There is
+     *   nothing for a `private without sharing` inner class to fix, and adding one would
+     *   widen a boundary for no measured reason.
+     *
+     * 🔴 RESIDUAL, AND IT IS THE FAILURE MODE THIS FEATURE FAILS BY. OWD is ORG state, not
+     * repo state — `objects/Opportunity/Opportunity.object-meta.xml` says `ReadWrite`, but
+     * standard-object OWD is UI-only and this repo has been measured contradicting the org
+     * before. If Opportunity is ever narrowed to Private, this read silently returns ZERO
+     * ROWS for a pipeline principal who owns no deals, and the `Database.update` is then never
+     * attempted at all — so there is no `SaveResult`, no refusal, and nothing for
+     * `allOrNone = false` to report. That is the 2026-08-08
+     * `InboundEmailStagingSelector.RoutingReads` incident one module later.
+     * ⚠ PARTIALLY MITIGATED 2026-08-10 (review finding S4), and only partially: this case now
+     * lands in `CallForOffersStampService.StampResult.missing`, which the caller funnels into
+     * `Inbound_Email_Staging__c.Error__c`, so the row reads `Status__c = 'Error'` naming each
+     * unreadable deal instead of being indistinguishable from "no deal matched". The FEATURE is
+     * still dead in that state; it merely stops being silent, and no test can prove the sharing
+     * behaviour itself (post-deploy gate G5, run AS THE PIPELINE PRINCIPAL, is the only proof).
+     * THE REMEDY, IF IT EVER HAPPENS, IS A NARROW `private without sharing` INNER
+     * CLASS HOLDING ONLY THIS METHOD (the `LeadSelector.GuestReads` /
+     * `InboundEmailStagingSelector.RoutingReads` shape) — never `without sharing` on this
+     * whole class, which backs eleven user-facing reads.
+     *
+     * 🔴 AND THIS METHOD IS ONLY HALF THE CHAIN — THE OTHER HALF HAS NOT BEEN ANALYSED TO THE
+     * SAME DEPTH, WHICH IS WHY IT IS NAMED HERE (review finding W2, 2026-08-10). Before the
+     * branch can ask this method for anything it must first RESOLVE a deal Id, and it does that
+     * through `PropertyMatchingService.resolveLiveRecord` -> `LeadSelector.selectConversionById`,
+     * which is `WITH USER_MODE` on a `with sharing` class. `USER_MODE` THROWS on an FLS denial,
+     * which is loud and recoverable; but if that read is ever FILTERED rather than refused —
+     * sharing, not FLS — then `rows.isEmpty()` is true, `resolveLiveRecord` returns the LEAD Id
+     * unchanged, `findLiveDealForProperty` sees a non-Opportunity and reports NO MATCH. The
+     * email is then labelled `Not Routed (call for offers)` with no error, no refusal, no
+     * `missing` entry and no failing test — the same silent shape as the residual above, one
+     * read earlier. It is NOT broken today: branches (d) and (e) make the identical call on the
+     * live production path. But "the chain has been analysed" must not be inferred from this
+     * header alone.
+     *
+     * BULK read (Set<Id>): the caller resolves a whole email's matched deals at once, so
+     * this returns a List and is called ONCE per email regardless of property count. Never
+     * call it per property.
+     *
+     * @param opportunityIds Matched deal Ids to load (bound with IN); null/empty-safe.
+     * @return Opportunities with Id, Offer_Due_Date__c, Listing_Broker_Name__c and
+     *         Listing_Broker_Email__c populated; an empty list when the input is
+     *         null/empty (never null).
+     * @example
+     * List&lt;Opportunity&gt; targets =
+     *     OpportunitySelector.selectCallForOffersTargetsByIds(matchedIds);
+     */
+    public static List<Opportunity> selectCallForOffersTargetsByIds(Set<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return new List<Opportunity>();
+        }
+        return [
+            SELECT Id, Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+            FROM Opportunity
+            WHERE Id IN :opportunityIds
+            WITH SYSTEM_MODE
         ];
     }
 }

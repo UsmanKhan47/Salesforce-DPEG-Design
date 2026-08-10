@@ -1,5 +1,94 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with a misleading
+         "unable to find matching parent xml file" error.
+
+         THE NDAs RELATED LIST (identifier ndasList) WAS ADDED 2026-08-09 UNDER DECISION D20/C2,
+         AND IT IS A WORKING SURFACE, NOT DECORATION. D19.1 makes the stage-entry trigger create
+         the BUYER NDA only; the INTRODUCING BROKER's NDA is, in D19.1's own words, "added from
+         the related list". There was no related list on this page and DPEG_Disposition_Edit
+         carried allowCreate=false on NDA__c, so that sentence described a workflow no
+         disposition persona could perform. D20/C2 grants allowCreate; this list is the other
+         half of the same fix and neither half works without the other.
+
+         relatedListApiName IS NDAs__r - the relationshipName on NDA__c.Disposition__c is "NDAs",
+         and the child-relationship form used by force:relatedListSingleContainer appends __r.
+         Precedent in this repo: Lease_Activities__r, Renewal_Activities__r.
+
+         DELIBERATELY IN main, NOT IN THE SIDEBAR TABSET. The sidebar tabset holds a single
+         Activity tab; adding a second tab would bury the New button one click deep, and being
+         able to ADD the broker's NDA is the entire reason this component exists.
+
+         DELIBERATELY CARRIES NO VISIBILITY RULE. NDAs are collected on OFF-MARKET dispositions
+         only, so it is tempting to scope this to that record type. It is not scoped, for two
+         reasons: an on-market disposition simply has zero NDAs and renders an empty list, which
+         costs nothing; and record-type picklist restriction is UI-ONLY, so an on-market row CAN
+         receive an NDA by API, seed or data load - in which case hiding the list would hide the
+         evidence rather than prevent the cause. Showing it is the honest failure mode.
+
+         ⚠ THE NEW BUTTON NEEDS NO RECORD-TYPE CHOOSER: DPEG_Disposition_Edit's
+         recordTypeVisibilities expose exactly one NDA type, Disposition_NDA, so creation from
+         here applies it without prompting. If a second disposition NDA type is ever added, a
+         chooser appears and this assumption has to be revisited.
+
+         ⚠ CLICKING THROUGH FROM THIS LIST INSIDE THE DISPOSITION APP DEPENDS ON A SECOND FILE:
+         applications/Disposition.app-meta.xml carries a View actionOverride for NDA__c pointing
+         at NDA_Record_Page, added in the same change. Without it the NDA opens on whichever page
+         the org assigns, which is where the Advance Stage and Mark Declined buttons are NOT.
+
+         =====================================================================
+         2026-08-10 (code review 3B/3C, C1 half 2) - THE OTHER TWO LISTS OF DESIGN 4.8 ADDED:
+         loisList (LOIs__r) AND contractReviewsList (Contract_Reviews__r).
+         =====================================================================
+         Design 4.8 required THREE related lists here. Only the NDA one shipped, so a disposition
+         LOI and a disposition PSA had no read surface AND no creation route on the parent that
+         defines them - the same shape as the NDA gap D20/C2 closed, twice over. Both new lists
+         sit in `main` alongside ndasList, and the two pre-existing visibility rules
+         (c_dispositionMain, flexipage_fieldSection) are UNTOUCHED, exactly as 4.8 required:
+         adding items alongside them is additive and cannot blank the region.
+
+         relatedListApiName IS THE CHILD RELATIONSHIP NAME + __r, read off the field files rather
+         than guessed: LOI__c.Disposition__c has relationshipName LOIs, and
+         Contract_Review__c.Disposition__c has relationshipName Contract_Reviews. Note the second
+         is NOT "ContractReviews" - the underscore is real and a silent typo here renders an
+         empty component rather than an error.
+
+         🔴 NEITHER NEW LIST CARRIES A VISIBILITY RULE, AND THAT IS A DELIBERATE DEVIATION FROM
+         DESIGN 4.8, WHICH ASKED FOR LOI AT Disposition_Stage__c = 'LOI' AND CONTRACT REVIEW AT
+         'PSA'. Three reasons, and the third is the decisive one:
+           1. CONSISTENCY. ndasList already carries none. Three sibling lists that appear and
+              disappear under three different rules make the page unreadable.
+           2. THE SCOPE ARGUMENT THAT JUSTIFIED ndasList DOES NOT EVEN APPLY HERE. NDA is an
+              OFF-MARKET-ONLY stage, so an on-market disposition genuinely never reaches it.
+              LOI and PSA are on BOTH record types' Disposition_Stage__c value sets (verified in
+              objects/Disposition__c/recordTypes/), so there is no record-type story at all.
+           3. 🔴 A STAGE-SCOPED LIST HIDES A RECORD THAT STILL EXISTS. Stage is a MOVING value:
+              the moment a deal advances LOI -> PSA, an LOI-scoped list would hide the LOI that
+              was just negotiated, and at Closing both lists would vanish while the executed PSA
+              is precisely the document a closer needs. A related list scoped to the stage that
+              CREATED the child is only correct if the child stops mattering when the stage
+              moves, which is the opposite of true here. That is the same failure mode ndasList's
+              own note rejects one paragraph up: hiding the list hides the evidence.
+         The cost accepted in exchange is an EMPTY list on a disposition still at Readiness. That
+         is cheap and self-explanatory; an invisible LOI is neither.
+
+         ⚠ THE NEW BUTTON ON THESE TWO LISTS IS CURRENTLY INERT AND THAT IS BY DESIGN, NOT A BUG
+         TO CHASE ON THIS PAGE. DPEG_Disposition_Edit holds allowCreate = FALSE on both LOI__c and
+         Contract_Review__c because creation belongs to D16.2 stage-entry auto-create
+         (DispositionStageEntryService, Apex, developer-owned). These lists are therefore the READ
+         surface plus the recovery route if allowCreate is ever granted; they are not the creation
+         route the way ndasList is. See DPEG_Disposition_Edit's own in-root note, corrected in the
+         same change - it previously justified withholding allowCreate on an auto-create that had
+         not been built.
+
+         ⚠ SAME actionOverride DEPENDENCY AS ndasList: clicking through from either new list
+         inside the Disposition app needs a View actionOverride for LOI__c and Contract_Review__c
+         in applications/Disposition.app-meta.xml pointing at LOI_Record_Page and
+         Contract_Review_Record_Page. Without them the record opens on whichever page the org
+         assigns - which is where the Advance Stage buttons are NOT, making the C3 fix on
+         Contract_Review_Record_Page unreachable from here. -->
+
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -181,10 +270,26 @@
                 <componentName>dispositionMain</componentName>
                 <identifier>c_dispositionMain</identifier>
                 <visibilityRule>
+                    <booleanFilter>1 OR 2 OR 3 OR 4</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>NE</operator>
-                        <rightValue>Disposition Readiness</rightValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>BOV Outreach</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>Active Listing</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>Closing</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>Completed</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>
@@ -206,12 +311,70 @@
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>flexipage_fieldSection</identifier>
                 <visibilityRule>
+                    <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                        <operator>EQUAL</operator>
-                        <rightValue>Disposition Readiness</rightValue>
+                        <operator>NE</operator>
+                        <rightValue>BOV Outreach</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Active Listing</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Closing</rightValue>
+                    </criteria>
+                    <criteria>
+                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                        <operator>NE</operator>
+                        <rightValue>Completed</rightValue>
                     </criteria>
                 </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>parentFieldApiName</name>
+                    <value>Disposition__c.Id</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>relatedListApiName</name>
+                    <value>NDAs__r</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListSingleContainer</componentName>
+                <identifier>ndasList</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>parentFieldApiName</name>
+                    <value>Disposition__c.Id</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>relatedListApiName</name>
+                    <value>LOIs__r</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListSingleContainer</componentName>
+                <identifier>loisList</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>parentFieldApiName</name>
+                    <value>Disposition__c.Id</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>relatedListApiName</name>
+                    <value>Contract_Reviews__r</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListSingleContainer</componentName>
+                <identifier>contractReviewsList</identifier>
             </componentInstance>
         </itemInstances>
         <name>main</name>

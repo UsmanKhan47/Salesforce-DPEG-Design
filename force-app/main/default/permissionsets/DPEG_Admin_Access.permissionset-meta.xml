@@ -1,13 +1,147 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Restores tab visibility and FLS the Admin profile granted (Profiles excluded from deployment, see .forceignore). Grants Visible on every custom tab, FLS on Lease_Inquiry__c.OneDrive_URL__c, and Opportunity Land/Commercial RecordType visibility.</description>
+    <!--
+        This comment must sit INSIDE the root element. A comment placed ABOVE <PermissionSet>
+        breaks `sf` deploy at conversion with the misleading error "unable to find matching
+        parent xml file". Broker_Protection_Access is the precedent for this pattern; it is
+        used here because the rationale below is far longer than the 255-character cap on
+        <description>.
+
+        WHY Disposition__c.Wire_Verification_Completed__c IS GRANTED HERE (added 2026-08-09,
+        code review W2). Metadata-API-deployed custom fields arrive with NO field permissions
+        for ANY profile, System Administrator included - a trap this repo has already paid for
+        (see ARCHITECTURE.md and the deal-driver gate incident, where a bare admin threw on the
+        very field they had just deployed). The consequence here is worse than an admin simply
+        not seeing a field: AN APPROVAL PAGE SILENTLY OMITS FIELDS THE APPROVER CANNOT READ.
+        Wire_Verification_Completed__c is on Closing_Approval's approvalPageFields precisely so
+        the approver sees the wire state when deciding (Gate 1, Q4), so without this grant an
+        administrator acting as approver gets a Closing approval page with the wire state
+        simply absent - no error, no blank, nothing. The design fails invisibly, which is the
+        outcome Q4 existed to prevent.
+
+        READ-ONLY on purpose: the field is DERIVED, maintained by the Wire_Verification_Rollup
+        flow from the most recent Wire, and its own <description> says DO NOT HAND-EDIT. An
+        editable grant would let an admin hand-set the anti-fraud gate the validation rule
+        reads. Contrast Lease_Inquiry__c.OneDrive_URL__c below, which is editable because it is
+        hand-entered.
+
+        The two NAMED approvers do not depend on this set - they are covered by
+        DPEG_Principal_PSG -> DPEG_Disposition_View, which already carries readable=true on the
+        same field. This entry closes the ADMIN approver case only.
+
+        POST-DEPLOY GATE (design section 8, gate A4): after deploying, open the Closing approval
+        page as EACH persona that can approve - including an administrator - and confirm the
+        Wire Verification Completed row is actually rendered. An admin smoke test alone proves
+        nothing about the named approvers, and vice versa; FLS truth lives in the org, not in
+        this repo, because profiles/** is .forceignore'd.
+
+        WARNING: a PermissionSet deploy REPLACES this file's entire <fieldPermissions> set. Any
+        org-side-only FLS grant not represented here is silently wiped by the next deploy of
+        this file, even one made for an unrelated reason. Reconcile against the org before
+        deploying; do not "keep it org-side so a redeploy can't disturb it".
+
+        RECONCILED AGAINST THE ORG 2026-08-09 (Tranche 3B). This set, together with
+        DPEG_Acquisition_Edit, DPEG_Acquisition_View and DPEG_Acquisitions, was retrieved from
+        the default org and compared field-by-field, object-by-object, record-type-by-record-type
+        against the repo copy: ZERO org-only grants were found in any of the four, so nothing
+        in the org is at risk of being wiped by this deploy. Every difference ran the other way
+        (repo ahead of org) and is the Tranche 2 / 3A / 3B work that has not been deployed yet.
+
+        WHY LOI__c.Disposition__c IS GRANTED HERE (added 2026-08-09, Tranche 3B). Same reason as
+        the Disposition__c fields above: Metadata-API-deployed custom fields arrive with NO field
+        permissions for ANY profile, System Administrator included, so without this entry an
+        administrator cannot see or set the lookup that distinguishes a sell-side LOI from a
+        buy-side one. It is EDITABLE, unlike the derived counters above, because it is
+        hand-entered (or pre-filled by a related-list New button) rather than maintained by a
+        flow. The two new LOI record types are granted below for the same class of reason - a
+        record type is invisible until it is granted, and Modify All Data is an OBJECT
+        permission that confers no record-type access.
+    -->
+    <description>Restores tab visibility and FLS the Admin profile granted (Profiles excluded from deployment, see .forceignore). Grants Visible on every custom tab, FLS on eight fields (see the comment), and Opportunity + Disposition + NDA + LOI RecordType visibility.</description>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contract_Review__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.NDA_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Signed_NDA_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Wire_Verification_Completed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Primary_NDA__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Lease_Inquiry__c.OneDrive_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.Counter_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Is_Decline_Allowed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.Party_Role__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
+    <recordTypeVisibilities>
+        <recordType>Contract_Review__c.Acquisition_PSA</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Contract_Review__c.Disposition_PSA</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Disposition__c.Off_Market</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Disposition__c.On_Market</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>LOI__c.Acquisition_LOI</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>LOI__c.Disposition_LOI</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>NDA__c.Acquisition_NDA</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>NDA__c.Disposition_NDA</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>Opportunity.Commercial</recordType>
         <visible>true</visible>

@@ -8,10 +8,39 @@ import getVersions from '@salesforce/apex/PsaVersionController.getVersions';
 import saveVersion from '@salesforce/apex/PsaVersionController.saveVersion';
 
 const LEFT = { alignment: 'left' };
-// [background, dot, label] soft pills per direction (matches the lv-* list chrome).
+/**
+ * [background, dot, label] soft pills per PSA_Version__c.Direction__c value (matches the lv-*
+ * list chrome).
+ *
+ * 🔴 'Buyer' IS A REQUIRED KEY, NOT A NICETY. Direction__c carries three values since Tranche 3C
+ * and PsaVersionService DERIVES which one it stores from the parent Contract Review's side of the
+ * deal: 'Ours' is DPEG on both sides, while the counterparty is 'Seller' on a purchase and 'Buyer'
+ * on a sale. Without this key a Buyer version fell through `|| DIRECTION.Seller` and rendered the
+ * pill "Seller" — labelling the buyer as the seller on a record whose stored value was already
+ * correct. That is a display defect on top of a right answer, which is the hardest kind to notice.
+ *
+ * The colour follows the ROLE, not the word: 'Buyer' shares the counterparty orange with 'Seller'
+ * because on their own side of the deal they are the same party, and DPEG keeps blue on both.
+ * Identical to lwc/loiCounterOffer's map, deliberately — the two cards sit one tab apart.
+ */
 const DIRECTION = {
     Seller: ['#fff1e0', '#FB8C00', 'Seller'],
+    Buyer:  ['#fff1e0', '#FB8C00', 'Buyer'],
     Ours:   ['#e8f1fc', '#1E88E5', 'Ours']
+};
+
+/**
+ * Ball_In_Court__c value -> badge caption. Same three-token contract as DIRECTION above: 'Us' is
+ * DPEG on both sides, and the counterparty is 'Seller' on a purchase, 'Buyer' on a sale.
+ *
+ * ⚠ The previous code was a ternary — `=== 'Us' ? 'our court' : 'seller court'` — so EVERY
+ * non-'Us' value read as "seller", which named the wrong party on a sale and would also have
+ * captioned a blank field. A lookup with an explicit fallback cannot do either.
+ */
+const BALL_LABEL = {
+    Us: 'Ball: our court',
+    Seller: 'Ball: seller court',
+    Buyer: 'Ball: buyer court'
 };
 const pillWrap = (bg) => `display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:4px;font-weight:600;color:#3e3e3e;background:${bg}`;
 const pillDot = (c) => `width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0`;
@@ -62,9 +91,44 @@ const COLUMNS = [
 
 // PSA Version Log: the full contract negotiation history (Junior's Section 15).
 // Every draft/counter is logged with who sent it; saving flips the Contract
-// Review's Ball In Court and derives its Negotiation Status. Works on the
-// Opportunity Contract tab (via Primary_Contract__c) and directly on the
-// Contract Review record page.
+// Review's Ball In Court. Works on the Opportunity Contract tab (via
+// Primary_Contract__c) and directly on the Contract Review record page.
+//
+// ⚠ It does NOT derive Negotiation Status any more — that stopped on 2026-08-05 (the two counter
+// values were removed from the restricted picklist); the status is moved only by the deal driver
+// through Advance Stage. PsaVersionService's header carries the full note.
+//
+// ── SIDE-AWARENESS (Tranche 3C fix pass, 2026-08-10) ────────────────────────
+// This card serves BOTH an acquisition PSA and a DISPOSITION PSA, and the counterparty's name
+// inverts between them: on a purchase DPEG is the buyer and the counterparty is the SELLER; on a
+// sale DPEG is the seller and the counterparty is the BUYER. PsaVersionService derives and stores
+// the correct token from the parent Contract Review's record type (falling back to its
+// Disposition__c lookup), so this change fixes the two places the DISPLAY still hardcoded buy-side
+// wording (DIRECTION had no 'Buyer' key; ballBadgeLabel was a two-way ternary). See the token
+// contract in objects/Contract_Review__c/fields/Ball_In_Court__c and
+// objects/PSA_Version__c/fields/Direction__c. The identical pair of edits landed on
+// lwc/loiCounterOffer in 3B.
+//
+// ⚠ WHAT IS *NOT* FIXED HERE, AND WHY — the `directionOptions` picker still reads "Seller sent us
+// a version" / "Our redline to seller" on a disposition PSA. It is FUNCTIONALLY correct: 'Seller'
+// is the incumbent wire token meaning "the counterparty" on both sides, and the service rewrites
+// it to 'Buyer' before storing, so a disposition user who picks it gets the right record. Only the
+// two labels read buy-side. Correcting them needs the Contract Review's SIDE on the client, and
+// the only signals are RecordTypeId and Disposition__c — and `Disposition__c` is a Tranche 3C
+// field whose FLS acquisitions personas are deliberately NOT granted (which is precisely why
+// ContractReviewSelector.selectNegotiationContextById reads it WITH SYSTEM_MODE). Wiring it here
+// would make the LIVE acquisition version card depend on an FLS grant it does not have — trading a
+// wrong label for a broken card. If this is worth fixing, the safe shape is a server-supplied side
+// flag on the existing getVersions response, and one shape can serve this card AND loiCounterOffer
+// (review suggestion S2).
+//
+// ⚠ AND A MEASURED SCOPE LIMIT ON THE BALL BADGE: `hasBall` is `isOnOpportunity && !!oppBall`, and
+// `oppBall` is wired only from Opportunity.Primary_Contract__r. A disposition PSA has no
+// Opportunity — its Opportunity__c is deliberately blank, which is what stops
+// ContractExecutionService minting a phantom acquisition Transaction — so the badge does not
+// render for it TODAY at all. The ballBadgeLabel fix is therefore correctness-in-advance, not a
+// visible repair; do not report it as one. The DIRECTION pill fix IS visible now: this card is on
+// Contract_Review_Record_Page.
 export default class PsaVersionLog extends LightningElement {
     @api recordId;
     @api objectApiName;
@@ -153,7 +217,9 @@ export default class PsaVersionLog extends LightningElement {
         return this.oppBall === 'Us' ? 'slds-badge slds-theme_warning' : 'slds-badge';
     }
     get ballBadgeLabel() {
-        return this.oppBall === 'Us' ? 'Ball: our court' : 'Ball: seller court';
+        // Explicit lookup, never a two-way ternary — see BALL_LABEL. The fallback is deliberately
+        // party-neutral: naming a party the field does not name is exactly the defect being fixed.
+        return BALL_LABEL[this.oppBall] || 'Ball: with the counterparty';
     }
 
     get rows() {

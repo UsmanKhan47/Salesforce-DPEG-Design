@@ -11,6 +11,15 @@
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>
+        <comment>NDA Record Page - D20/C2. Added 2026-08-09 with the NDAs related list on Disposition_Record_Page. Without this override an NDA opened from that list inside this app renders on whichever page the org assigns, which is not where Advance Stage and Mark Declined live. Acquisition.app is untouched.</comment>
+        <content>NDA_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>NDA__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
         <comment>Property Asset Record Page</comment>
         <content>Property_Asset_Record_Page</content>
         <formFactor>Large</formFactor>

@@ -3,10 +3,16 @@
  * .claude/rules/apex-layering-rule.md ("All SOQL must live in Selector classes. Nothing else
  * queries that object.").
  *
- * Consumer: OpportunityActionPermissionService — the permission gate behind the Opportunity stage
- * quick actions (Begin Review, Send to Development / Construction Review, Initiate Underwriting,
- * Initiate LOI, Advance to PSA, Move to About to Close, Close Deal, Submit for Approval). It
- * answers "is the RUNNING user flagged as a deal driver?".
+ * Consumers, one per gate — TWO gates, TWO fields, TWO methods, never merged (see
+ * selectDispositionDriverFlagForCurrentUser for why merging them would break both):
+ *   - OpportunityActionPermissionService — the ACQUISITIONS gate behind the Opportunity stage
+ *     quick actions (Begin Review, Send to Development / Construction Review, Initiate
+ *     Underwriting, Initiate LOI, Advance to PSA, Move to About to Close, Close Deal, Submit for
+ *     Approval) and the acquisition record types of the six stage-controlled child objects. It
+ *     answers "is the RUNNING user flagged as a deal driver?".
+ *   - DispositionActionPermissionService — the DISPOSITION gate (added 2026-08-09, D15/Q1) behind
+ *     the stage quick actions on the disposition record types. Same question, different
+ *     population, different field.
  *
  * ── SCOPE: THE RUNNING USER ONLY ──────────────────────────────────────────────
  * Every method here is hard-filtered to `Id = UserInfo.getUserId()` and takes no user parameter.
@@ -72,6 +78,47 @@ public with sharing class UserSelector {
         List<User> rows = [
             SELECT Id,
                    Deal_Driver__c
+            FROM User
+            WHERE Id = :runningUserId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+        return rows.isEmpty() ? null : rows[0];
+    }
+
+    /**
+     * The running user's DISPOSITION-driver flag — factor (a) + (b) of the disposition stage
+     * action gate (decision D15/Q1). The sell-side twin of the method above, in every respect
+     * including the `WITH USER_MODE` contract.
+     *
+     * 🔴 IT IS A SEPARATE QUERY ON A SEPARATE FIELD, AND MERGING THE TWO WOULD BREAK BOTH GATES.
+     * A single `SELECT Deal_Driver__c, Disposition_Driver__c` looks tidier and costs one query
+     * instead of two — and it is WRONG, because `WITH USER_MODE` throws when the running user
+     * cannot read ANY selected field. An acquisitions deal driver holding only
+     * `Acquisition_Deal_Driver` would make the merged read throw on `Disposition_Driver__c`, and
+     * the calling service converts a throw to `false` — silently DENYING a legitimate deal driver
+     * the acquisition actions they have always had. The throw is the denial signal for the field
+     * being read, so one field per query is what keeps the two gates independent.
+     *
+     * NOT-FOUND CONTRACT — returns `null` rather than throwing when no row comes back, matching
+     * its twin. The caller treats `null` as DENIED, so the gate fails closed even in a state that
+     * cannot occur.
+     *
+     * @return the running user with Id and Disposition_Driver__c populated; `null` if no row
+     *         matched.
+     * @throws System.QueryException when the running user lacks FLS read on
+     *         `User.Disposition_Driver__c`. EXPECTED for anyone outside the
+     *         `Disposition_Deal_Driver` permission set — it IS factor (a). Callers must treat it
+     *         as a denial, never as a system fault to retry.
+     * @example
+     * User runningUser = UserSelector.selectDispositionDriverFlagForCurrentUser();
+     * Boolean isDispositionDriver = runningUser != null && runningUser.Disposition_Driver__c == true;
+     */
+    public static User selectDispositionDriverFlagForCurrentUser() {
+        Id runningUserId = UserInfo.getUserId();
+        List<User> rows = [
+            SELECT Id,
+                   Disposition_Driver__c
             FROM User
             WHERE Id = :runningUserId
             WITH USER_MODE

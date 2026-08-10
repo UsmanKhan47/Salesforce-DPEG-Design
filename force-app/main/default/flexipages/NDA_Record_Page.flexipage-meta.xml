@@ -1,5 +1,67 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with a misleading
+         "unable to find matching parent xml file" error.
+
+         ACTION BAR REBUILT 2026-08-09 UNDER DECISION D20/C1. Before this change the list held
+         ONE entry, NDA__c.Advance_Stage, gated on {!$User.Deal_Driver__c} EQUAL true. Because
+         enableActionsConfiguration is true, THAT LIST IS THE ENTIRE ACTION BAR - nothing is
+         inherited - and a DISPOSITION driver holds Disposition_Deal_Driver, which grants no FLS
+         on User.Deal_Driver__c, so the criterion could never evaluate true for them. A
+         disposition NDA showed NO BUTTONS AT ALL to the only persona meant to work it, and
+         Mark Declined appeared nowhere, leaving the quick action, lwc/ndaMarkDeclined,
+         NDA_DISPOSITION_EXPLICIT_TARGETS and the Declined Path step all dead.
+
+         ⚠ DYNAMIC ACTIONS WAS ALREADY ON HERE AND WAS NOT ENABLED ANYWHERE NEW. Turning it on
+         a page where it is off SILENTLY EMPTIES that page's action bar - it discards every
+         inherited action - which cost three pages their buttons in this repo. This edit only
+         adds entries to a list that already existed.
+
+         THREE ENTRIES, EVERY RULE A PURE CHAIN OF ANDs. A flexipage booleanFilter has NO
+         negation operator, and this repo has MEASURED that a parenthesised OR
+         (`1 AND 2 AND (3 OR 4)`) deploys, survives a retrieve, and is STILL NOT HONOURED BY THE
+         RENDERER - the button stayed visible. See LOI__c.Is_Advance_Allowed__c's header. So the
+         two personas are expressed as TWO SEPARATE ENTRIES for the same action rather than as
+         one entry with an OR. Do not merge them.
+
+         🔴 THE DUPLICATE-ENTRY SHAPE HAS NO IN-REPO PRECEDENT. A sweep of every flexipage found
+         NO other file listing the same action twice (the duplicate values that sweep does turn
+         up are all parentFieldApiName, not actions). So this is the FIRST use of the shape here
+         and it is a DEPLOY-AND-RENDER GATE, not a settled pattern: confirm at check-only that
+         two valueListItems carrying the same <value> are accepted, and confirm in the org that
+         a user holding BOTH driver flags does not see Advance Stage rendered twice on a
+         disposition NDA. If duplicates are rejected outright, the fallback is to give the
+         disposition persona its own quick action rather than to reintroduce an OR.
+
+         WHY ENTRY 1 DELIBERATELY DOES NOT REFERENCE Is_Decline_Allowed__c.
+         Adding `Is_Decline_Allowed__c EQUAL false` to the acquisition entry would make the two
+         Advance Stage entries provably mutually exclusive and would stop an acquisition driver
+         seeing a button that always refuses on a disposition NDA. It was REJECTED because it
+         would make a CURRENTLY WORKING button depend on a BRAND-NEW field's FLS, across every
+         acquisition permission set plus any profile-provisioned persona this repo cannot see
+         (profiles are .forceignore'd) - i.e. the change made to fix a no-buttons defect would
+         become its own newest cause of one. ARCHITECTURE.md records the same reasoning for
+         keeping Routing_Attempt_Count__c out of selectById. The new field's FLS therefore gates
+         only the DISPOSITION entries, where today's state is "no buttons at all" and the worst
+         case of a missing grant is NO WORSE THAN TODAY, never a regression.
+
+         TWO RESIDUALS THAT BUYS, BOTH COSMETIC AND BOTH DELIBERATE:
+           (a) an acquisition driver opening a DISPOSITION NDA sees Advance Stage and gets a
+               refusal from RecordStageAdvanceService, whose gate for RT_DISPOSITION_NDA is
+               DISPOSITION_DRIVER. They can reach those rows because the acquisition sets keep
+               viewAllRecords on NDA__c.
+           (b) a user holding BOTH driver flags may see Advance Stage twice on a disposition NDA.
+         Neither can write anything the server would not already accept - the server-side gate is
+         asserted in RecordStageAdvanceController regardless of what this page shows.
+
+         WHY NE 'Declined' HAD TO BE ADDED EXPLICITLY: the previous rule's NE 'Signed' does NOT
+         exclude Declined, so Advance Stage showed on a declined NDA and then reported
+         "There is no next step available from the Declined stage."
+
+         ⚠ ENTRY 2 NEEDS NO SEPARATE NE 'Declined': Is_Decline_Allowed__c is already false on a
+         Declined NDA, so `EQUAL true` carries that exclusion. Entry 3 needs no status test at
+         all for the same reason - that is the whole point of the field. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -9,7 +71,7 @@
                         <valueListItems>
                             <value>NDA__c.Advance_Stage</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$User.Deal_Driver__c}</leftValue>
                                     <operator>EQUAL</operator>
@@ -19,6 +81,48 @@
                                     <leftValue>{!Record.Status__c}</leftValue>
                                     <operator>NE</operator>
                                     <rightValue>Signed</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Declined</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>NDA__c.Advance_Stage</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Decline_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Status__c}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Signed</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>NDA__c.Mark_Declined</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Decline_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

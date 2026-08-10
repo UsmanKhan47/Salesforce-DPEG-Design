@@ -1,6 +1,9 @@
 /**
  * @description Tests RecordStageAdvanceController — the @AuraEnabled boundary for the generic
- * "advance stage" quick action on the five stage-controlled acquisitions child objects.
+ * "advance stage" quick action on the SIX stage-controlled child objects. ⚠ "five acquisitions
+ * child objects" is what this said until 2026-08-09; Contract_Review__c joined earlier, and since
+ * Tranches 3A/3B both NDA__c and LOI__c also serve the DISPOSITION module through their second
+ * record type, which answers to a different persona.
  *
  * The controller is thin, so these tests are about the BOUNDARY, not the stage maps (those are
  * pinned verbatim in RecordStageAdvanceServiceTest). Specifically they pin:
@@ -35,6 +38,12 @@ private class RecordStageAdvanceControllerTest {
         delete [SELECT Id FROM NDA__c WHERE Opportunity__c = :deal.Id];
         TestDataFactory.createNda(deal.Id, true);
         TestDataFactory.createLoi(deal.Id, true);
+        // ⚠ Added in Tranche 3B. Underwriting__c is the only stage-controlled object left whose
+        // permission gate is knowable from the Id ALONE (one configured sequence, so gateFor()
+        // short-circuits and reads nothing). NDA__c and LOI__c now both LOAD the row to pick their
+        // record type's gate, which a bare Standard User cannot do on an OWD-Private object — see
+        // the note on refusesAUserWhoIsNotADealDriverAndWritesNothing.
+        TestDataFactory.createUnderwriting(deal.Id, true);
     }
 
     private static Id dealId() {
@@ -47,6 +56,10 @@ private class RecordStageAdvanceControllerTest {
 
     private static NDA__c nda() {
         return [SELECT Id, Status__c FROM NDA__c LIMIT 1];
+    }
+
+    private static Underwriting__c underwriting() {
+        return [SELECT Id, Stage__c FROM Underwriting__c LIMIT 1];
     }
 
     @isTest
@@ -274,9 +287,19 @@ private class RecordStageAdvanceControllerTest {
         Test.stopTest();
     }
 
+    /**
+     * ⚠ SUBJECT MOVED FROM LOI__c TO Underwriting__c IN TRANCHE 3B — a behavioural consequence, not
+     * tidying. Since LOI__c gained two record types, resolving its gate LOADS the row, and a bare
+     * Standard User cannot read an OWD-Private LOI: the selector raises System.QueryException
+     * before the gate is consulted, and this test would then "pass" on a read failure while proving
+     * nothing about the assert. Underwriting__c is equally Private and equally DEAL_DRIVER-gated
+     * but has ONE configured sequence, so gateFor() short-circuits and reads nothing. The full
+     * consequence — a caller who cannot read the record gets the GENERIC message rather than the
+     * denial wording — is written up on the twin test in RecordStageAdvanceServiceTest.
+     */
     @isTest
     static void refusesAUserWhoIsNotADealDriverAndWritesNothing() {
-        Id loiId = loi().Id;
+        Id underwritingId = underwriting().Id;
         User bareUser = buildStandardUser('rsac');
         System.runAs(new User(Id = UserInfo.getUserId())) {
             insert bareUser;   // setup DML, isolated from the record DML in @TestSetup
@@ -287,7 +310,7 @@ private class RecordStageAdvanceControllerTest {
         OpportunityActionPermissionService.clearCache();
         System.runAs(bareUser) {
             try {
-                RecordStageAdvanceController.advance(loiId);
+                RecordStageAdvanceController.advance(underwritingId);
                 // Reached only if NO exception was raised, i.e. the assert did not run at all.
                 // Failing HERE, by name, is the point: without it a missing gate lets the stage
                 // write proceed and the test reds much later on whatever the downstream cascade
@@ -308,9 +331,89 @@ private class RecordStageAdvanceControllerTest {
         Test.stopTest();
 
         Assert.isTrue(refused, 'The @AuraEnabled entry point must refuse a non-deal-driver');
+        Assert.areEqual('Requested',
+            [SELECT Stage__c FROM Underwriting__c WHERE Id = :underwritingId].Stage__c,
+            'A refused call must not write: the stage must still be Requested. A changed stage '
+            + 'here would mean the assert ran AFTER the DML instead of before it');
+    }
+
+    /**
+     * The SAME refusal through advanceTo, which is a second, independently reachable @AuraEnabled
+     * entry point. Added 2026-08-09 with the disposition NDA's Mark Declined action: that bundle
+     * calls advanceTo, so until now the branch-target route had no proof at all that its
+     * permission assert ran before its DML — and `advance` being gated says nothing about
+     * `advanceTo` being gated. Its catch ORDER matters for the same reason: an
+     * AccessDeniedException reaching the generic clause would tell a user to refresh the page over
+     * a permissions problem.
+     *
+     * ⚠ IT DENIES BY SEEDING THE GATE'S CACHE RATHER THAN BY System.runAs, AND IT HAS TO
+     * (Tranche 3B). advanceTo only exists on objects with an explicit-target allow-list, and after
+     * 3B BOTH such objects (LOI__c, NDA__c) are multi-record-type — so resolving the gate LOADS the
+     * row, which a bare Standard User cannot do on an OWD-Private object: the selector would raise
+     * System.QueryException and the refusal would come from the READ, not from the assert, making
+     * the wording assertion below meaningless. Seeding the cache runs as the admin (so the load
+     * succeeds) with the gate answering false (so the assert is what refuses), which is precisely
+     * the thing under test. Same technique and same justification as
+     * RecordStageAdvanceServiceTest.theGateIsResolvedPerRecordTypeNotPerObject. The REAL-persona
+     * denial is still covered end to end by refusesAUserWhoIsNotADealDriverAndWritesNothing above.
+     */
+    @isTest
+    static void advanceToRefusesAUserWhoIsNotADealDriverAndWritesNothing() {
+        Id loiId = loi().Id;
+
+        Test.startTest();
+        Boolean refused = false;
+        OpportunityActionPermissionService.clearCache();     // clearCache() resets the field, so
+        OpportunityActionPermissionService.cachedHasDealActionAccess = false;   // seed AFTER it
+        try {
+            RecordStageAdvanceController.advanceTo(loiId, 'Completed');
+            Assert.fail('advanceTo must REFUSE a non-deal-driver. It returned normally, so '
+                + 'RecordStageAdvanceService.assertStageActionAccess did not run on this entry '
+                + 'point — which would leave the explicit-target route ungated while the '
+                + 'derived-hop route is gated.');
+        } catch (AuraHandledException e) {
+            refused = true;
+            Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE,
+                e.getMessage(),
+                'A denial must surface the agreed denial wording, not the generic '
+                + '"could not be updated" message');
+        }
+        OpportunityActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'advanceTo must refuse a non-deal-driver');
         Assert.areEqual('Draft', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
-            'A refused call must not write: the stage must still be Draft. A changed stage here '
-            + 'would mean the assert ran AFTER the DML instead of before it');
+            'A refused explicit-target call must not write');
+    }
+
+    /**
+     * advanceTo's GENERIC clause. A deleted Id makes the fetch-for-use selector throw
+     * System.QueryException, which is not user-actionable and must be masked with a fixed message
+     * and a logged stack — never with platform text concatenated into it.
+     *
+     * ⚠ This is also the one visible consequence of the 2026-08-09 call-order change: the
+     * allow-list check now happens AFTER load(), so a non-existent Id with a disallowed target
+     * raises QueryException here where it used to raise RecordStageAdvanceException. Both land on
+     * a fixed message at this boundary, which is exactly why no user-visible wording changed —
+     * and this test is what keeps that true.
+     */
+    @isTest
+    static void advanceToOnAMissingRecordIsMaskedByTheGenericCatch() {
+        LOI__c record = loi();
+        Id deletedId = record.Id;
+        delete record;
+
+        Test.startTest();
+        try {
+            RecordStageAdvanceController.advanceTo(deletedId, 'Completed');
+            Assert.fail('advanceTo on a deleted record should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.areNotEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE,
+                e.getMessage(),
+                'An unexpected read failure must NOT be reported as a permissions problem — that '
+                + 'is what the catch order exists to prevent, in both directions');
+        }
+        Test.stopTest();
     }
 
     /**

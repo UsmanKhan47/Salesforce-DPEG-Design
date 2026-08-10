@@ -12,11 +12,27 @@
  *
  * Peak sell dates use PAST dates so the countdown resolves to a stable 'Now',
  * keeping the derived Sell Meter label independent of the run date.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE 'override' ROW ACTION (Gate 1 Q2 = confirm-then-create)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The yellow row's ENABLED button used to be a silent no-op — handleRowAction
+ * early-returned on anything but 'initiate'. It now confirms via
+ * LightningConfirm.open() and then makes the IDENTICAL findOrCreate call.
+ *
+ * lightning/confirm's real sfdx-lwc-jest stub THROWS on .open() by design, so the
+ * module is replaced with a jest.fn here (the pattern every c/dealActionGuard
+ * consumer suite uses). It is reset to resolve(true) in beforeEach so the
+ * happy-path tests pass; the cancel test overrides it to resolve(false).
+ *
+ * 🔴 The load-bearing pair is confirm-then-create vs cancel-creates-nothing: a
+ * confirmation that does not actually gate the Apex call is worse than none.
  */
 import { createElement } from 'lwc';
 import SellMeterList from 'c/sellMeterList';
 import getPortfolio from '@salesforce/apex/SellMeterController.getPortfolio';
 import findOrCreate from '@salesforce/apex/DispositionController.findOrCreate';
+import LightningConfirm from 'lightning/confirm';
 
 jest.mock(
     'lightning/navigation',
@@ -58,6 +74,11 @@ jest.mock(
     { virtual: true }
 );
 
+jest.mock('lightning/confirm', () => ({
+    __esModule: true,
+    default: { open: jest.fn() }
+}));
+
 // Mixed-band portfolio (emitted out of band order to prove the GREEN/YELLOW/RED sort).
 const PORTFOLIO = [
     { id: 'a0P0000000000RED', name: 'Cedar Commons', noi: 500000, mktCapRate: 8.0, targetPrice: 6000000, peakSellDate: '2020-06-01', projectedValueAtPeak: 6500000, sellMeter: 'RED' },
@@ -81,11 +102,20 @@ function datatable(element) {
     return element.shadowRoot.querySelector('c-list-datatable');
 }
 
+// A MACROTASK, not a bare microtask. The override path awaits the confirm promise
+// BEFORE the Apex promise, so a single Promise.resolve() does not reliably drain the
+// chain (the c-advance-record-stage suite hit the same trap). Strictly more draining
+// than the microtask version this replaced, so the pre-existing tests are unaffected.
 function flushPromises() {
-    return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe('c-sell-meter-list', () => {
+    beforeEach(() => {
+        // Default happy state for the override dialog: the user confirms.
+        LightningConfirm.open.mockResolvedValue(true);
+    });
+
     afterEach(() => {
         while (document.body.firstChild) {
             document.body.removeChild(document.body.firstChild);
@@ -243,7 +273,7 @@ describe('c-sell-meter-list', () => {
         consoleError.mockRestore();
     });
 
-    it('ROW ACTION (non-initiate): Hold/Override are inert — no Apex call', async () => {
+    it('ROW ACTION (hold): the red row is inert — no confirm, no Apex call', async () => {
         const element = createComponent();
 
         getPortfolio.emit(PORTFOLIO);
@@ -259,6 +289,153 @@ describe('c-sell-meter-list', () => {
         );
         await flushPromises();
 
+        expect(LightningConfirm.open).not.toHaveBeenCalled();
+        expect(findOrCreate).not.toHaveBeenCalled();
+    });
+
+    // ── The 'override' action (yellow band). Previously unhandled: the enabled ──
+    // ── button was a silent no-op. These four tests are the fence.             ──
+
+    it('ROW ACTION (override confirmed): confirms first, then calls the SAME findOrCreate', async () => {
+        findOrCreate.mockResolvedValue('a0D0000000000002');
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        const navHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        element.addEventListener('navigate', navHandler);
+
+        getPortfolio.emit(PORTFOLIO);
+        await Promise.resolve();
+
+        datatable(element).dispatchEvent(
+            new CustomEvent('rowaction', {
+                detail: {
+                    action: { name: 'override' },
+                    row: { id: 'a0P000000000YEL', name: 'Harbor Point' }
+                }
+            })
+        );
+        await flushPromises();
+        await flushPromises();
+        await flushPromises();
+
+        expect(LightningConfirm.open).toHaveBeenCalledTimes(1);
+        // The prompt has to name the property and say what "override" means, or the user
+        // is confirming a word rather than a decision.
+        const confirmArgs = LightningConfirm.open.mock.calls[0][0];
+        expect(confirmArgs.message).toContain('Harbor Point');
+        expect(confirmArgs.theme).toBe('warning');
+
+        // Identical to the Initiate call — an override must not diverge from an initiate.
+        expect(findOrCreate).toHaveBeenCalledTimes(1);
+        expect(findOrCreate).toHaveBeenCalledWith({ assetId: 'a0P000000000YEL' });
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('success');
+        // A DISTINCT success toast: the user must be able to tell an override apart from
+        // a routine initiate in the record's history.
+        expect(toastHandler.mock.calls[0][0].detail.title).toContain('override');
+
+        expect(navHandler).toHaveBeenCalledTimes(1);
+        expect(
+            navHandler.mock.calls[0][0].detail.pageReference.attributes.recordId
+        ).toBe('a0D0000000000002');
+    });
+
+    it('ROW ACTION (override cancelled): creates nothing and says nothing', async () => {
+        LightningConfirm.open.mockResolvedValue(false);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        const navHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        element.addEventListener('navigate', navHandler);
+
+        getPortfolio.emit(PORTFOLIO);
+        await Promise.resolve();
+
+        datatable(element).dispatchEvent(
+            new CustomEvent('rowaction', {
+                detail: {
+                    action: { name: 'override' },
+                    row: { id: 'a0P000000000YEL', name: 'Harbor Point' }
+                }
+            })
+        );
+        await flushPromises();
+        await flushPromises();
+
+        expect(LightningConfirm.open).toHaveBeenCalledTimes(1);
+        expect(findOrCreate).not.toHaveBeenCalled();
+        // No toast on cancel — the user already knows they cancelled.
+        expect(toastHandler).not.toHaveBeenCalled();
+        expect(navHandler).not.toHaveBeenCalled();
+    });
+
+    it('ROW ACTION (override refused server-side): surfaces the sell-meter message verbatim', async () => {
+        // DispositionService's gate refuses a RED asset with an authored, user-safe
+        // message. It must reach the toast intact rather than being replaced by
+        // generic wording — that is the whole reason DispositionController has a
+        // dedicated SellMeterGateException catch.
+        findOrCreate.mockRejectedValue({
+            body: {
+                message:
+                    'This property is not ready to sell - its peak sell date is more than 90 days away, so a disposition cannot be initiated yet.'
+            }
+        });
+        const consoleError = jest
+            .spyOn(console, 'error')
+            .mockImplementation(() => {});
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        const navHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        element.addEventListener('navigate', navHandler);
+
+        getPortfolio.emit(PORTFOLIO);
+        await Promise.resolve();
+
+        datatable(element).dispatchEvent(
+            new CustomEvent('rowaction', {
+                detail: {
+                    action: { name: 'override' },
+                    row: { id: 'a0P000000000YEL', name: 'Harbor Point' }
+                }
+            })
+        );
+        await flushPromises();
+        await flushPromises();
+        await flushPromises();
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.message).toContain(
+            'not ready to sell'
+        );
+        expect(navHandler).not.toHaveBeenCalled();
+
+        consoleError.mockRestore();
+    });
+
+    it('ROW ACTION (unknown action): still inert — the guard accepts exactly two names', async () => {
+        const element = createComponent();
+
+        getPortfolio.emit(PORTFOLIO);
+        await Promise.resolve();
+
+        datatable(element).dispatchEvent(
+            new CustomEvent('rowaction', {
+                detail: {
+                    action: { name: 'somethingElse' },
+                    row: { id: 'a0P000000000GRN', name: 'Gateway Plaza' }
+                }
+            })
+        );
+        await flushPromises();
+
+        expect(LightningConfirm.open).not.toHaveBeenCalled();
         expect(findOrCreate).not.toHaveBeenCalled();
     });
 

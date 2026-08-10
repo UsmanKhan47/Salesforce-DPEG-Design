@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT and must stay that way. A comment
+        placed ABOVE <RecordType> breaks `sf` deploy at source conversion with the misleading
+        error "unable to find matching parent xml file". The <description> below is deliberately
+        short because RecordType.description is capped at 255 CHARACTERS - a cap this programme
+        has now breached FIVE times, every one caught only by measuring.
+
+        THE SELL-SIDE PSA. DPEG is the SELLER, so OUR legal issues the first draft and the
+        counterparty is the BUYER. Parented by Disposition__c; Opportunity__c stays blank, and
+        that blank is load-bearing - ContractExecutionService.handleExecution already drops any
+        Contract Review with a null Opportunity__c, which is why the disposition PSA cannot
+        create a phantom acquisition Transaction__c.
+
+        ⚠ BOTH RECORD TYPES EXPOSE THE SAME FOUR Negotiation_Status__c VALUES, AND THAT IS THE
+        POINT - IT IS NOT A COPY-PASTE THAT SOMEONE FORGOT TO SPECIALISE. Initial Draft ->
+        Revised -> Ready for Execution -> Executed are ALREADY exactly the four states the
+        client document names for the sell-side PSA. This is the one place in Tranche 3 where
+        the two sides genuinely share a vocabulary: LOI__c needed five new stage values and
+        NDA__c needed a whole second set, but the PSA needed none. The consequence is concrete -
+        Contract_Review__c keeps ONE stage map in RecordStageAdvanceService and needs no
+        record-type-aware branch, unlike LOI__c and NDA__c. Adding a disposition-only status
+        here would silently drag that Apex change back into scope.
+
+        WHAT THE TWO TYPES ACTUALLY DIFFER ON is exactly two things: the counterparty token in
+        Ball_In_Court__c (Buyer here, Seller on Acquisition_PSA) and which parent lookup is
+        populated. That is the whole delta.
+
+        🔴 'Buyer' vs 'Seller' IS THE INVERSION THIS TYPE EXISTS TO FIX. On a sale DPEG *is* the
+        seller, so Ball_In_Court__c = 'Seller' would name DPEG - the same party 'Us' already
+        names - and the field would carry no information at all. 'Us' is side-neutral and is
+        exposed on both types; only the counterparty token flips. 'Buyer' was ADDED to the
+        master value set in this same change, never renamed from 'Seller': a rename is a removal
+        plus an add, which triggers the standing picklist-removal sweep rule and forces a
+        migration on live acquisition rows that are correctly 'Seller' today.
+        ⚠ Record-type picklist restriction is UI-ONLY and is NOT enforced by Apex DML. This file
+        stops a USER picking 'Seller' on a sale; it does not stop CODE writing it.
+        PsaVersionService is the only writer and is the only place that can actually enforce it.
+
+        EVERY PICKLIST ON THE OBJECT IS LISTED HERE, INCLUDING ONES THIS CHANGE DOES NOT ALTER.
+        A record type file that OMITS a picklist silently drops ALL of that picklist's values
+        for the type. Contract_Review__c has exactly THREE picklists: Ball_In_Court__c,
+        Negotiation_Status__c and Stage__c. The fields/ directory was walked field by field to
+        establish that, and the walk corrected the design document, which also named
+        Asset_Type__c and Deal_Type__c - both are formula TEXT fields, not picklists.
+
+        🔴 Stage__c IS A DERIVED FIELD. Contract_Review_Stage_Sync recomputes it from
+        Negotiation_Status__c on every save, and a direct write to it COMMITS AND IS SILENTLY
+        DISCARDED - measured org behaviour. It is listed here only so its values do not vanish
+        from the type. The disposition PSA must drive Negotiation_Status__c, never Stage__c.
+        ⚠ Its three stage labels (PSA Drafting / Review / Contract Execution) are buy-side
+        wording that reads acceptably on a sale and are DELIBERATELY NOT relabelled: the sync
+        flow maps Negotiation_Status__c onto these exact strings, so renaming them would break
+        it for both types to improve wording for one.
+
+        THE THREE isActive=false LEGACY Stage__c VALUES ARE DELIBERATELY OMITTED
+        ('Contract Execution (Signed)', 'Contract Negotiation', 'Prepare'). An inactive value is
+        unselectable org-wide, so listing it grants nothing, while naming a value the platform
+        does not consider live risks the exact "picklist value does not exist" rejection that
+        cost 3A a two-phase deploy. ⚠ NO IN-REPO PRECEDENT EXISTS EITHER WAY - a sweep of every
+        recordType file found none that references a field carrying inactive values, so this is
+        a DEPLOY GATE, not a settled pattern.
+
+        NO URL-ENCODING IS NEEDED IN THIS FILE. Inside a RecordType a picklist fullName must be
+        URL-encoded (repo precedent: Prepare%2FReview on LOI__c, Dead%2FPass in Opportunity's
+        business processes). Every value listed here contains only letters and spaces - spaces
+        are NOT encoded - so all fullNames are literal. The one value that would have needed it,
+        'Contract Execution (Signed)', is inactive and omitted.
+
+        NO <businessProcess> ELEMENT. That element applies to Opportunity, Case, Lead and
+        Solution only.
+
+        🔴 HANDOFF - APEX, NOT BUILT HERE. ContractExecutionService needs a record-type branch so
+        an EXECUTED SALE moves Disposition__c.Disposition_Stage__c to 'Closing' instead of
+        stamping an Opportunity. That is the behavioural half of this record type and without it
+        Disposition_PSA is inert past Executed. It is developer work and was explicitly out of
+        3C's declarative scope, as is the OpportunityReviewService:100 acquisition stamp
+        (D16.3) documented in Acquisition_PSA's header.
+    -->
+    <fullName>Disposition_PSA</fullName>
+    <active>true</active>
+    <description>The sell-side PSA. DPEG is the seller, so our legal drafts first and the counterparty is the Buyer; Ball In Court reads Us / Buyer. Parented by Disposition; Opportunity stays blank. Same four Negotiation Status values as the acquisition type.</description>
+    <label>Disposition PSA</label>
+    <picklistValues>
+        <picklist>Ball_In_Court__c</picklist>
+        <values>
+            <fullName>Us</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Buyer</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Negotiation_Status__c</picklist>
+        <values>
+            <fullName>Initial Draft</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Revised</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Ready for Execution</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Executed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Stage__c</picklist>
+        <values>
+            <fullName>PSA Drafting</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Review</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contract Execution</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

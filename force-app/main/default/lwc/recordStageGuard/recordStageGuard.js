@@ -3,9 +3,16 @@ import LightningConfirm from 'lightning/confirm';
 import hasStageActionAccess from '@salesforce/apex/RecordStageAdvanceController.hasStageActionAccess';
 
 /**
- * recordStageGuard — shared pre-flight for the headless stage quick action on the five
- * stage-controlled acquisitions child objects (NDA__c, LOI__c, Underwriting__c,
+ * recordStageGuard — shared pre-flight for the headless stage quick actions on the SIX
+ * stage-controlled child objects (NDA__c, LOI__c, Contract_Review__c, Underwriting__c,
  * Construction_Feasibility_Review__c, Development_Feasibility_Review__c).
+ *
+ * ⚠ NOT "the five ACQUISITIONS child objects", which is what this header used to say. Since
+ * Tranche 3A (2026-08-09) NDA__c also serves the DISPOSITION module through its Disposition_NDA
+ * record type, and that record type answers to a DIFFERENT persona (DISPOSITION_DRIVER, backed by
+ * User.Disposition_Driver__c). That is not a change to this module at all — and the fact that it
+ * needed none is the payoff of the per-record signature described below. The server dispatches;
+ * this file never learned a persona's name.
  *
  * A JS-only utility module (no template, isExposed=false), deliberately SEPARATE from `c/utils`,
  * which is contractually pure, stateless formatting only.

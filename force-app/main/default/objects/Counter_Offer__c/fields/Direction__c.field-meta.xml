@@ -1,7 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, INSIDE THE ROOT ELEMENT, AND IT MUST STAY THAT WAY.
+        A comment placed ABOVE <CustomField> breaks `sf` deploy at source conversion with the
+        misleading error "unable to find matching parent xml file for CustomField". Precedent:
+        Broker_Protection_Access.permissionset-meta.xml.
+
+        THE TOKEN CONTRACT - IDENTICAL TO LOI__c.Ball_In_Court__c, AND THE TWO MUST BE READ
+        TOGETHER because CounterOfferService flips one from the other:
+
+          Ours   = DPEG. Correct on BOTH sides - side-neutral, like Ball_In_Court__c's 'Us'.
+          Seller = THE COUNTERPARTY, ON BOTH SIDES. This is the INCUMBENT WIRE TOKEN the
+                   deployed lwc/loiCounterOffer picker already sends; it must keep being
+                   accepted on a sale or that Save button dies against a restricted picklist.
+          Buyer  = THE COUNTERPARTY, DISPOSITION ONLY. Added 2026-08-09.
+
+        ADD ONLY - NOTHING IS RENAMED. A picklist rename is a removal plus an add: it triggers
+        the standing picklist-removal sweep rule and forces a data migration on live acquisition
+        counter-offer rows for zero benefit. This field is <restricted>true</restricted>, so the
+        value must exist in the master value set before Apex can write it - four tests were
+        failing INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST against exactly this gap.
+
+        Counter_Offer__c HAS NO RECORD TYPES, so unlike LOI__c.Ball_In_Court__c there is no
+        per-type restriction available here and all three values are selectable on every counter
+        offer. Directionality is therefore enforced by the SERVICE, not by metadata: the parent
+        LOI's record type decides which token is written. Do not read the presence of 'Buyer' on
+        an acquisition counter offer as sanctioned - it is unreachable through the UI the service
+        drives, not blocked by the platform.
+    -->
     <fullName>Direction__c</fullName>
-    <description>Who made this counter: Seller (their counter to us) or Ours (our counter to the seller). Drives the LOI ball-in-court flip and the counter notifications.</description>
+    <description>Who made this counter. Ours = DPEG on either side. Seller = the counterparty on either side, and the incumbent wire token. Buyer = the counterparty on a disposition LOI only. Drives the ball-in-court flip and the counter notifications.</description>
     <label>Direction</label>
     <required>false</required>
     <trackTrending>false</trackTrending>
@@ -19,6 +47,11 @@
                 <fullName>Ours</fullName>
                 <default>false</default>
                 <label>Ours</label>
+            </value>
+            <value>
+                <fullName>Buyer</fullName>
+                <default>false</default>
+                <label>Buyer</label>
             </value>
         </valueSetDefinition>
     </valueSet>

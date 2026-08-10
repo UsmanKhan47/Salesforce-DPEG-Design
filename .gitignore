@@ -36,3 +36,6 @@ Thumbs.db
 # copies agents wrote under force-app/ (2026-08-05).
 **/.claude/agent-memory-local/
 .claude/agent-memory-local/
+
+# Agent-local memory written into package dirs by subagents — never deploy, never commit
+force-app/**/.claude/

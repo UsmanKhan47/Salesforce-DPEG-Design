@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The BUY-SIDE NDA path, for the Acquisition_NDA record type.
+        Four steps: Pending -> Sent -> Received -> Signed (decision D14.1).
+
+        Pending, Sent and Signed are copied BYTE-IDENTICAL - <fieldNames> AND <info> text -
+        from the now-deactivated NDA_Path. Nothing was reworded: the Tranche 2 discipline was
+        that a carried-forward step must stay identical unless the step genuinely does not
+        exist on that record type, and all three of these do.
+
+        RECEIVED IS THE ONE NEW STEP, and it is the only new content in this file. It sits
+        between Sent and Signed and names the distinction the source document draws at Part 1
+        lines 38 and 41 - "NDA not yet received from broker" vs "the NDA has been received".
+        Its <fieldNames> are Date_Sent__c and OneDrive_URL__c because those are the two fields
+        a user actually works at this point: confirm how long it has been out, and attach the
+        returned document. Counter_Signed_Date__c is NOT surfaced here - it is disposition-only
+        (on an acquisition DPEG is the party signing, not the counter-signer).
+
+        DELIBERATELY NOT REWORDED, though it now reads slightly early: the Sent step still says
+        "follow up until it comes back signed", where the process now has it come back RECEIVED
+        first and Signed after. Editing it would be an unrequested change to carried-forward
+        text, which is the exact discipline Tranche 2's review credited. If the business wants
+        it reworded, that is a separate one-line change.
+
+        Not Sent and Declined do not appear because the Acquisition_NDA record type restricts
+        them out; they belong to NDA_Path_Disposition.
+
+        Step ORDER in this file is the intended path order. Runtime display order comes from the
+        Status__c picklist value order (sorted=false), which is Pending, Sent, Received, Signed,
+        Not Sent, Declined - so the four values this type exposes already fall in the right
+        sequence with no reordering of the master value set.
+    -->
+    <active>true</active>
+    <entityName>NDA__c</entityName>
+    <fieldName>Status__c</fieldName>
+    <masterLabel>NDA Path Acquisition</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Counterparty_Name__c</fieldNames>
+        <fieldNames>Method__c</fieldNames>
+        <info>NDA opened for the deal. Confirm the counterparty and how it will be sent, then send it out.</info>
+        <picklistValueName>Pending</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Sent__c</fieldNames>
+        <fieldNames>OneDrive_URL__c</fieldNames>
+        <info>NDA sent to the counterparty. Track the days out and follow up until it comes back signed.</info>
+        <picklistValueName>Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Sent__c</fieldNames>
+        <fieldNames>OneDrive_URL__c</fieldNames>
+        <info>The NDA has come back from the broker but is not yet fully executed. Attach the returned document and check it before marking it Signed - NDA Signed stays FALSE at this step, so the deal still cannot advance to Underwriting.</info>
+        <picklistValueName>Received</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Signed__c</fieldNames>
+        <fieldNames>NDA_Signed__c</fieldNames>
+        <info>NDA fully executed. NDA Signed = TRUE is what unlocks advancing the deal to Underwriting.</info>
+        <picklistValueName>Signed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Acquisition_NDA</recordTypeName>
+</PathAssistant>
