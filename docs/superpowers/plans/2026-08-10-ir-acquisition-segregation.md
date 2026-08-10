@@ -1277,13 +1277,19 @@ sf apex run --file scripts/apex/verify-record-type-backfill.apex 2>&1 | grep -E 
 
 Group membership is not deployable. Verify in-org that `DPEG_Acquisitions_Team`, `DPEG_Transactions_Team`, `DPEG_Property_Mgmt_Team` and `Investor_Relations` all contain the right users. **An empty group plus Private OWD means that whole team loses access the moment you flip.**
 
-- [ ] **Step 3: Flip Account OWD**
+- [ ] **Step 3: Flip Account AND Contact OWD**
 
-Setup → Sharing Settings → Edit → Account and Contract: **Private**. Leave "Contact" set to *Controlled by Parent*.
+🔴 **Three OWDs change here, not two.** Task 0 measured the org via `EntityDefinition.InternalSharingModel` and found **Contact is `ReadWrite`, not `ControlledByParent`** — the repo's `Contact.object-meta.xml` is wrong. Contact does **not** inherit Account sharing today, so flipping Account alone would leave every Contact Public Read/Write and deliver no Contact boundary at all.
+
+Setup → Sharing Settings → Edit:
+- **Account and Contract: `Private`**
+- **Contact: `Controlled by Parent`** ← the correction. Safe because the org has **0 Contacts without an Account** (measured 2026-08-10); under `Controlled by Parent` an Account-less Contact would be visible to its owner alone.
+
+Setting Contact to `Controlled by Parent` rather than `Private` is deliberate: it makes the Contact boundary *derived from* the Account boundary, so the two cannot drift apart. `<contactAccessLevel>` in the Task 11 Account rules is then the single mechanism carrying Contact access.
 
 - [ ] **Step 4: Flip Lead OWD**
 
-Same screen, Lead: **Private**. If Task 0's G2 already found it Private, this is a no-op — confirm rather than skip.
+Same screen, Lead: **Private**. Task 0 measured it as `ReadWriteTransfer`, so this is a real change, not a no-op.
 
 - [ ] **Step 5: Wait for recalculation, then read both back**
 

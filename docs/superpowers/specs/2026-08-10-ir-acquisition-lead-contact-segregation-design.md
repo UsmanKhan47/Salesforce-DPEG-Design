@@ -28,7 +28,7 @@ Today the two populations would be indistinguishable and mutually visible. The r
 |---|---|---|
 | No record types on Lead, Contact or Account | `objects/{Lead,Contact,Account}/` — no `recordTypes/` directory | Clean slate; nothing to migrate. |
 | `Account.sharingModel = ReadWrite` (Public) | `Account.object-meta.xml` | Every Account is visible to every user with Account Read. |
-| `Contact.sharingModel = ControlledByParent` | `Contact.object-meta.xml` | Contact visibility is entirely a function of Account visibility. **Combined with the row above, every Contact in the org is currently visible to everyone with Contact Read.** |
+| 🔴 **`Contact` OWD is `ReadWrite` in the org, NOT `ControlledByParent`** | `EntityDefinition.InternalSharingModel`, measured 2026-08-10 — the repo's `Contact.object-meta.xml` claims `ControlledByParent` and is **wrong** | **Contact does not inherit Account sharing today.** Every Contact is Public Read/Write on its own account. Flipping only Account to Private would deliver no Contact boundary whatsoever. See §3 — Task 12 therefore flips **three** OWDs. Third confirmed case of this repo's non-deployable metadata being fiction. |
 | `Contact.sharingRules` is empty; `Account.sharingRules` is empty | `sharingRules/` | Record-level segregation for these objects is unbuilt. |
 | `Lead.sharingModel` reads `ReadWriteTransfer` in the repo | `Lead.object-meta.xml` | **Unverified.** OWD on standard objects is not deployable metadata, so the repo file never reconciles with the org. Must be read from Setup. |
 | One Lead sharing rule: `Lead_Acquisition_Queue_RW` (Acquisition queue → `DPEG_Acquisitions_Team`) | `sharingRules/Lead.sharingRules-meta.xml` | Preserved unchanged. |
@@ -49,7 +49,7 @@ Rather than flipping three OWDs, flip **two** and let the existing `ControlledBy
 | Object | OWD today | OWD after | Segregation mechanism |
 |---|---|---|---|
 | **Account** | `ReadWrite` | **`Private`** | Record types `Broker_Firm` / `Investor_Entity` + criteria-based sharing rules |
-| **Contact** | `ControlledByParent` | **unchanged** | Inherits its Account. Record types `Broker` / `Investor` for layout, FLS and reporting only — **not** for sharing. |
+| **Contact** | `ReadWrite` (measured) | **`ControlledByParent`** | Inherits its Account once changed. Record types `Broker` / `Investor` for layout, FLS and reporting only — **not** for sharing. ⚠ The design originally read "unchanged" on the false premise that the org already matched the repo. |
 | **Lead** | `ReadWriteTransfer` (unverified) | **`Private`** | Record types `Acquisition_Broker` / `IR_Investor` + criteria-based sharing rules |
 
 **Why Account rather than Contact as the sharing boundary:** making Contact `Private` is a second org-wide OWD change with its own recalculation and blast radius, and it buys nothing. Because a person is **never both** a broker and an investor, the firm/entity *is* the correct boundary — there is no case where one Account's Contacts must split across teams. One OWD change on the parent, one mental model, one recalculation. It also leaves the `contactAccessLevel` setting on roles inert, removing an axis that is easy to get wrong.
