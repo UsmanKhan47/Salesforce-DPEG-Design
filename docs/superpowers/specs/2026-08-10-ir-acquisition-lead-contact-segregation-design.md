@@ -1,8 +1,35 @@
 # IR / Acquisitions segregation — Lead, Contact and Account
 
 **Date:** 2026-08-10
-**Status:** Design approved, not yet planned or implemented
+**Status:** 🔴 **AMENDED 2026-08-10 AFTER DEPLOYMENT — SCOPE REDUCED TO LEAD ONLY. READ THE AMENDMENT BEFORE ANYTHING ELSE.**
 **Author:** Design session with Akbar Zaidi
+
+---
+
+## ⚠ AMENDMENT — Account and Contact are NOT a security boundary
+
+**The user reversed a founding premise of this document after seeing the boundary working**, and the reversal is deliberate, not a defect. Both questions were asked explicitly and answered:
+
+- *Should Investor Relations see broker contacts and accounts?* → **Yes — brokers are shared reference data.**
+- *Should Acquisitions see investor contacts and accounts?* → **Yes — fully visible both ways.**
+
+**Therefore:**
+
+| | Original design | Now |
+| --- | --- | --- |
+| **Lead** | segregated | **segregated — this is the only real boundary** |
+| **Contact** | segregated, inheriting Account | **shared reference data. Record types are for layout, FLS and reporting ONLY.** |
+| **Account** | **the sharing boundary** | **shared reference data. NOT a boundary.** |
+
+**What this invalidates below.** §3's core argument — "Account is the boundary, Contact inherits it" — no longer describes the requirement. The Account criteria-based sharing rules in §4 still exist and still function, but they are no longer *enforcing* anything: they merely deliver access that Public OWD would deliver more simply and more robustly. §5's enforcement table protects a boundary that is no longer wanted on those two objects.
+
+**What survives, and is deployed and verified:** the Lead half in full — `Lead.Acquisition_Broker` / `Lead.IR_Investor`, Lead OWD `Private`, `Lead_Acquisition_Broker` and `Lead_IR_Investor`, the `viewAllRecords` removal, and the record-type stamping across the inbound-email, portal and conversion paths. Measured: Junior read+edit on all open Leads, Nikhil read-only, both via `RowCause: Rule` shares.
+
+🔴 **"Visible to everyone" must NOT be implemented with sharing rules.** It currently works only because the right users happen to be in the right groups. A user outside those groups is blind, and a record whose owner sits outside the model gets **no share row at all** — already observed on a system-owned Account. The correct implementation is **Public Read/Write OWD on Account and Contact**, plus object CRUD on the permission sets. Object CRUD was in fact the whole of the reported problem: Danish had no Account/Contact object permission, which no OWD or sharing rule could ever have fixed.
+
+**Open question, not yet answered:** whether the real intent is *contact records* visible to all while *investor financial data* (commitments, bank details, distributions) stays confidential. That is **field-level security and separate objects**, not record sharing, and it belongs in the IR module design rather than here.
+
+---
 
 ---
 
