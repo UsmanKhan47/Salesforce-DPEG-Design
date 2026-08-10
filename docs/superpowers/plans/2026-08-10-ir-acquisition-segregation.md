@@ -196,6 +196,29 @@ Same shape. Use these exact values:
 | `Account/recordTypes/Broker_Firm.recordType-meta.xml` | `Broker_Firm` | `Broker Firm` | **This is the actual sharing boundary for both Account and Contact.** Shared to Acquisitions, Transactions AND Property Management — all three consume broker Contacts through `Broker_Assignment__c.Broker__c`, `Lease_Inquiry__c.Broker__c` and `Opportunity.Broker__c`. The split is "everyone except IR", not two-way. |
 | `Account/recordTypes/Investor_Entity.recordType-meta.xml` | `Investor_Entity` | `Investor Entity` | The IR boundary. Assumes investors are modelled as **entities** (LLCs, trusts, funds), each with an Account — see the spec §3 switch point if that turns out to be wrong. |
 
+- [ ] **Step 3b: 🔴 ENUMERATE EVERY PICKLIST ON ALL SIX RECORD TYPES**
+
+**This step was missing from the plan's first draft and is a Critical defect fix (Task 1 review, 2026-08-10).** The templates in Steps 1-3 above show only `fullName` / `active` / `description` / `label`; that shape is **incomplete for this repo**.
+
+**A record type file that omits a picklist silently drops ALL of that picklist's values from that record type.** This project has already been bitten by it on five objects — every record type under `NDA__c`, `Contract_Review__c`, `Disposition__c` and `LOI__c` enumerates every picklist and carries a warning comment saying exactly this. Read `objects/LOI__c/recordTypes/Acquisition_LOI.recordType-meta.xml` for the house pattern.
+
+The blast radius here is larger than on those custom objects, because Lead, Contact and Account are **standard objects with many standard picklists**, and Task 7 backfills every existing record onto these types:
+
+- `Lead.Status` in this org is customised — `New / Under Review / Qualified / Converted / Disqualified`. Dropping it breaks the Lead Path, `LeadActionPermissionService`, `EmailToLeadService.STATUS_NEW`, `BrokerPortalService`, `TestDataFactory` and the live inbound pipeline at once.
+- Also affected: `Lead.LeadSource`, `Rating`, `Industry`, `Salutation`, `Deal_Type__c`, `Asset_Type__c`, `Disqualification_Reason__c`, `Sale_Process__c`, `Parse_Confidence__c`, `Broker_Priority__c`; `Contact.LeadSource`, `Salutation`, `Broker_Status__c`, `Broker_Specialty__c`, `Broker_Priority__c`; `Account.Type`, `Industry`, `Rating`, `Ownership`, `AccountSource` and every other picklist those three objects carry.
+
+🔴 **Derive the values from the ORG, not from the repo's field files.** `sf project retrieve` UNIONS local and remote picklist values, so a repo field file can list values the org no longer has. Enumerate from a live describe:
+
+```bash
+sf sobject describe --sobject Lead --target-org usman-dpeg > /tmp/lead-describe.json
+sf sobject describe --sobject Contact --target-org usman-dpeg > /tmp/contact-describe.json
+sf sobject describe --sobject Account --target-org usman-dpeg > /tmp/account-describe.json
+```
+
+For each object, list every field of type `picklist` or `multipicklist` where `active` is true, and write a `<picklistValues>` block per picklist into **both** of that object's record types. Preserve the current `<default>` — exactly one value may be default per picklist, or none.
+
+⚠ Both record types on an object get the **same, complete** value set at this stage. Narrowing a value set per record type is a *later*, deliberate change (that is how `NDA__c` restricts `Declined` to the disposition type) and is explicitly **not** in scope here — this task must be behaviour-neutral for every existing record.
+
 - [ ] **Step 4: Deploy and verify all six exist in the org**
 
 ```bash
