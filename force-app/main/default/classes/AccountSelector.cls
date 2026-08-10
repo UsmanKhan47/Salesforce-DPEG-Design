@@ -11,7 +11,8 @@
  *   • LeadConvertMatchService.matchForConversion -> selectByNames (Smart Lead Conversion: resolves
  *     an existing brokerage-firm Account by exact name when a converting Lead has no matching
  *     Contact, so the new Contact lands under the firm that already exists instead of minting a
- *     second Account). Internal, user-initiated path — USER_MODE.
+ *     second Account). Internal, user-initiated path — USER_MODE. **Scoped to Account.Broker_Firm
+ *     (2026-08-10, IR segregation) — see that method's ApexDoc.**
  *
  * DOMAIN NOTE — in this app an Account IS a brokerage firm (see BrokerFirmController, which
  * aggregates every Opportunity on an Account into that firm's deal counts). "Account name" and
@@ -59,11 +60,21 @@ public with sharing class AccountSelector {
      * No LIMIT: this is a bulk read for N Leads at once, so the per-name "LIMIT 1" is applied by
      * the caller when it builds its map. Adding LIMIT here would silently drop other names' rows.
      *
+     * RECORD TYPE SCOPE (2026-08-10, IR segregation). Restricted to Account.Broker_Firm. The
+     * broker and investor populations are disjoint by policy, so this filter changes no behaviour
+     * today — it makes the guarantee STRUCTURAL. Without it, one shared firm name between a
+     * brokerage and an investor entity would attach an acquisition deal's new Contact to an
+     * Investor_Entity Account, which is precisely the boundary this module exists to hold.
+     *
+     * ⚠ An Account on the MASTER record type will not match. That is intended and is why the
+     * Task 3 backfill is gated on a zero-row query before OWD flips.
+     *
      * @param names Account names to resolve (typically the converting Leads' Company values);
      *              null or empty returns an empty list WITHOUT querying, so callers pay no SOQL
      *              for an empty key set.
-     * @return Matching Accounts (Id, Name, CreatedDate) ordered CreatedDate ASC, Id ASC; an empty
-     *         list when the input is null/empty or nothing matches (never null).
+     * @return Matching Broker_Firm-record-type Accounts (Id, Name, CreatedDate) ordered
+     *         CreatedDate ASC, Id ASC; an empty list when the input is null/empty, nothing
+     *         matches, or the only matches are on a non-Broker_Firm record type (never null).
      * @throws System.QueryException when the running user lacks Read on Account (USER_MODE).
      *         Deliberately left to propagate — LeadConvertMatchService owns the fail-soft decision.
      * @example
@@ -77,6 +88,7 @@ public with sharing class AccountSelector {
             SELECT Id, Name, CreatedDate
             FROM Account
             WHERE Name IN :names
+              AND RecordType.DeveloperName = 'Broker_Firm'
             WITH USER_MODE
             ORDER BY CreatedDate ASC, Id ASC
         ];

@@ -37,14 +37,37 @@ private class LeadConvertMatchServiceTest {
         return l;
     }
 
-    /** An Account with an exact, controlled Name (the factory's names are deliberately unique). */
+    /**
+     * An Account with an exact, controlled Name (the factory's names are deliberately unique).
+     *
+     * ⚠ STAMPED Account.Broker_Firm (2026-08-10, IR segregation, Task 6). AccountSelector.
+     * selectByNames — the query this whole suite is testing — is now scoped to
+     * RecordType.DeveloperName = 'Broker_Firm'; an unstamped (Master) Account would silently
+     * stop matching and every "does/does not match" assertion below would be testing the wrong
+     * thing (record-type mismatch, not the D1/D2 decision logic this suite exists to pin).
+     */
     private static Account buildFirm(String name) {
-        return new Account(Name = name, BillingCity = 'Houston', BillingState = 'TX');
+        return new Account(Name = name, BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
     }
 
-    /** A Contact carrying a controlled Email, optionally orphaned (accountId = null). */
+    /**
+     * A Contact carrying a controlled Email, optionally orphaned (accountId = null).
+     *
+     * ⚠ STAMPED Contact.Broker (2026-08-10, IR segregation, Task 6) — same reasoning as
+     * buildFirm above, for ContactSelector.selectByEmails.
+     */
     private static Contact buildBroker(String email, Id accountId) {
-        return new Contact(FirstName = 'Broker', LastName = 'Person', Email = email, AccountId = accountId);
+        return new Contact(FirstName = 'Broker', LastName = 'Person', Email = email, AccountId = accountId,
+            RecordTypeId = brokerRecordTypeId());
+    }
+
+    private static Id brokerFirmRecordTypeId() {
+        return Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().get('Broker_Firm').getRecordTypeId();
+    }
+
+    private static Id brokerRecordTypeId() {
+        return Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get('Broker').getRecordTypeId();
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────────

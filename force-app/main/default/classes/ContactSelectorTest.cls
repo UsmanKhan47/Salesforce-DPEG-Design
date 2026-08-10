@@ -447,6 +447,35 @@ private class ContactSelectorTest {
         Assert.areEqual(newer.Id, rows[1].Id, 'The newer row sorts second');
     }
 
+    /**
+     * IR segregation (2026-08-10, Task 6). The broker and investor populations are disjoint by
+     * policy, so this pins the STRUCTURAL guarantee: even a fabricated shared-email collision
+     * between a broker and an investor Contact must not surface an IR Contact as a lead-conversion
+     * match target — see the RECORD TYPE SCOPE note on ContactSelector.selectByEmails's ApexDoc.
+     */
+    @isTest
+    static void selectByEmails_investorContact_isExcluded() {
+        Account investorAccount = TestDataFactory.createAccount(false);
+        investorAccount.RecordTypeId = [SELECT Id FROM RecordType
+            WHERE SobjectType = 'Account' AND DeveloperName = 'Investor_Entity' LIMIT 1].Id;
+        insert investorAccount;
+
+        Contact investor = TestDataFactory.createContact(investorAccount.Id, false);
+        investor.Email = 'shared.address@example.invalid';
+        investor.RecordTypeId = [SELECT Id FROM RecordType
+            WHERE SobjectType = 'Contact' AND DeveloperName = 'Investor' LIMIT 1].Id;
+        insert investor;
+
+        Test.startTest();
+        List<Contact> matched = ContactSelector.selectByEmails(
+            new Set<String>{ 'shared.address@example.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(0, matched.size(),
+            'An investor Contact must never be a lead-conversion match target - attaching an '
+            + 'acquisition deal to an IR Contact would drag it across the security boundary.');
+    }
+
     @isTest
     static void selectByEmails_noMatch_returnsEmpty() {
         Account firm = TestDataFactory.createAccount(true);

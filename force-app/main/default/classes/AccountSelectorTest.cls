@@ -7,6 +7,13 @@
  * these tests is controlling the Name value under test, matching the pattern
  * `LeadConvertMatchServiceTest.buildFirm` already uses for the same reason.
  *
+ * RECORD TYPE SCOPE (2026-08-10, IR segregation, Task 6). Because these fixtures are built with
+ * raw `new Account(...)` rather than `TestDataFactory.createAccount` (which auto-stamps
+ * Account.Broker_Firm — see TestDataFactory.createAccounts), every fixture below that must MATCH
+ * `selectByNames` now stamps `RecordTypeId = brokerFirmRecordTypeId()` explicitly via the helper
+ * at the bottom of this class. `selectByEmailsIgnoresInvestorContacts`'s ContactSelectorTest twin
+ * is `selectByNames_investorEntityAccount_isExcluded` below.
+ *
  * @see force-app/main/default/classes/AccountSelector.cls
  * @see force-app/main/default/classes/LeadConvertMatchServiceTest.cls (the sole consumer's own
  *      integration-level coverage of this same query, including the D2 oldest-wins tie-break)
@@ -18,10 +25,12 @@ private class AccountSelectorTest {
 
     @isTest
     static void selectByNames_exactNameMatch_returnsTheAccount() {
-        Account firm = new Account(Name = 'Selector Test Firm LLC', BillingCity = 'Houston', BillingState = 'TX');
+        Account firm = new Account(Name = 'Selector Test Firm LLC', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
         insert firm;
         // An unrelated Account with a different name must not leak into the result.
-        insert new Account(Name = 'A Totally Different Firm', BillingCity = 'Dallas', BillingState = 'TX');
+        insert new Account(Name = 'A Totally Different Firm', BillingCity = 'Dallas', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
 
         Test.startTest();
         List<Account> rows = AccountSelector.selectByNames(new Set<String>{ 'Selector Test Firm LLC' });
@@ -41,7 +50,8 @@ private class AccountSelectorTest {
      */
     @isTest
     static void selectByNames_caseInsensitiveMatch_stillReturnsTheAccount() {
-        Account firm = new Account(Name = 'MIXED CASE FIRM NAME', BillingCity = 'Houston', BillingState = 'TX');
+        Account firm = new Account(Name = 'MIXED CASE FIRM NAME', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
         insert firm;
 
         Test.startTest();
@@ -64,9 +74,11 @@ private class AccountSelectorTest {
         // express this tie-break — and the org's Account duplicate rule is active by design, so
         // the seed must allow-save (see TestDataFactory.insertAllowingDuplicates). This does not
         // weaken the test: the rows, their Names, their Ids and their CreatedDates are unchanged.
-        Account newer = new Account(Name = 'Ambiguous Selector Firm', BillingCity = 'Houston', BillingState = 'TX');
+        Account newer = new Account(Name = 'Ambiguous Selector Firm', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
         TestDataFactory.insertAllowingDuplicates(new List<Account>{ newer }); // first -> lower Id, recent CreatedDate
-        Account older = new Account(Name = 'Ambiguous Selector Firm', BillingCity = 'Houston', BillingState = 'TX');
+        Account older = new Account(Name = 'Ambiguous Selector Firm', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
         TestDataFactory.insertAllowingDuplicates(new List<Account>{ older }); // second -> higher Id
         Test.setCreatedDate(older.Id, Datetime.now().addYears(-2));
 
@@ -83,7 +95,8 @@ private class AccountSelectorTest {
 
     @isTest
     static void selectByNames_noMatch_returnsEmpty() {
-        insert new Account(Name = 'Unrelated Firm', BillingCity = 'Houston', BillingState = 'TX');
+        insert new Account(Name = 'Unrelated Firm', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
 
         Test.startTest();
         List<Account> rows = AccountSelector.selectByNames(new Set<String>{ 'Nobody Named This' });
@@ -133,7 +146,8 @@ private class AccountSelectorTest {
             String token = String.valueOf(Math.abs(Crypto.getRandomLong())).right(9);
             String name = 'BulkFirm' + token + 'Idx' + i;
             names.add(name);
-            firms.add(new Account(Name = name, BillingCity = 'Houston', BillingState = 'TX'));
+            firms.add(new Account(Name = name, BillingCity = 'Houston', BillingState = 'TX',
+                RecordTypeId = brokerFirmRecordTypeId()));
         }
         TestDataFactory.insertAllowingDuplicates(firms);
 
@@ -142,5 +156,45 @@ private class AccountSelectorTest {
         Test.stopTest();
 
         Assert.areEqual(BULK_N, rows.size(), 'All 251 distinctly-named Accounts must be returned in one query');
+    }
+
+    /**
+     * IR segregation (2026-08-10, Task 6). The broker and investor populations are disjoint by
+     * policy, so this pins the STRUCTURAL guarantee: even a fabricated shared-name collision
+     * between a brokerage firm and an investor entity must not surface an IR Account as a
+     * lead-conversion match target — see the RECORD TYPE SCOPE note on
+     * AccountSelector.selectByNames's ApexDoc. Mirrors
+     * ContactSelectorTest.selectByEmails_investorContact_isExcluded.
+     */
+    @isTest
+    static void selectByNames_investorEntityAccount_isExcluded() {
+        Account investorAccount = new Account(Name = 'Shared Name Investor Entity',
+            BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = [SELECT Id FROM RecordType
+                WHERE SobjectType = 'Account' AND DeveloperName = 'Investor_Entity' LIMIT 1].Id);
+        insert investorAccount;
+
+        Test.startTest();
+        List<Account> matched = AccountSelector.selectByNames(
+            new Set<String>{ 'Shared Name Investor Entity' });
+        Test.stopTest();
+
+        Assert.areEqual(0, matched.size(),
+            'An investor Account must never be a lead-conversion match target - attaching an '
+            + 'acquisition deal\'s new Contact to it would drag it across the security boundary.');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * The Account.Broker_Firm record type Id, resolved via describe (no SOQL, no FLS/sharing
+     * dependency) — mirrors TestDataFactory's own private `recordTypeId` helper. Used to stamp
+     * fixtures built with raw `new Account(...)` (see the class header note) so they match
+     * `selectByNames`'s 2026-08-10 RecordType.DeveloperName = 'Broker_Firm' scope.
+     */
+    private static Id brokerFirmRecordTypeId() {
+        return Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().get('Broker_Firm').getRecordTypeId();
     }
 }
