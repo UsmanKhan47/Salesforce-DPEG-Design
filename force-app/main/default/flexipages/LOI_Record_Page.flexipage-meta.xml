@@ -1,5 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error.
+
+         TWO DISPOSITION ENTRIES ADDED 2026-08-09 (Tranche 3B). The four pre-existing entries
+         are UNTOUCHED, byte for byte.
+
+         ⚠ DYNAMIC ACTIONS WAS ALREADY ON HERE (enableActionsConfiguration = true) AND WAS NOT
+         ENABLED ANYWHERE NEW. Turning it on a page where it is OFF silently EMPTIES that page's
+         action bar - it discards every inherited action - which cost three pages their buttons
+         in this repo. This edit only appends entries to a list that already existed.
+
+         THE TWO NEW ENTRIES DRIVE THE SELL-SIDE NEGOTIATION LOOP. The disposition path is
+         Received -> Under Review -> Countered by DPEG -> Counter Received from Buyer ->
+         Executed, and the middle two are a CYCLE ("it goes round until both sides are agreed").
+         A linear NEXT_STAGE map cannot express a back-edge, so each loop stage gets a button
+         naming the other. See the two quickActions/LOI__c.Mark_* files for the full reasoning.
+
+         🔴 THERE IS NO RECORD-TYPE CRITERION ON EITHER NEW ENTRY, AND THAT IS CORRECT RATHER
+         THAN AN OMISSION. objects/LOI__c/recordTypes/*.recordType-meta.xml both record the
+         load-bearing property that THE TWO STAGE VALUE SETS ARE FULLY DISJOINT - no Stage__c
+         value appears on both record types - so a rule keyed on a stage value is SELF-LIMITING
+         to its own record type. 'Countered by DPEG' and 'Counter Received from Buyer' exist
+         ONLY on Disposition_LOI, so these buttons are structurally unreachable on an
+         acquisition LOI. This is the same mechanism that lets the four acquisition entries
+         (Prepare/Review, Sent) stay record-type-agnostic. ⚠ CONTRAST NDA__c, whose Sent and
+         Signed ARE shared, which is why NDA_Record_Page needed Is_Decline_Allowed__c as an
+         explicit discriminator and this page needs no equivalent. If a future change makes any
+         LOI stage value shared across the two record types, EVERY rule on this page must be
+         revisited.
+
+         EVERY RULE IS A PURE CHAIN OF ANDs. A flexipage booleanFilter has no negation operator,
+         and this repo has MEASURED that a parenthesised OR ('1 AND 2 AND (3 OR 4)') deploys,
+         survives a retrieve, and is STILL NOT HONOURED BY THE RENDERER - the button stayed
+         visible. Neither new entry needs an OR; if a future one does, express it as two
+         separate valueListItems (the shape NDA_Record_Page introduced) rather than as an OR.
+
+         ✅ THE 3B KNOWN GAP (D22) IS CLOSED HERE, 2026-08-09. LOI__c.Advance_Stage NOW HAS A
+         SECOND ENTRY for the disposition persona. The gap was: the single entry was gated on
+         {!$User.Deal_Driver__c} EQUAL true, and a disposition driver holds
+         Disposition_Deal_Driver, which grants NO FLS on Deal_Driver__c - a visibility rule
+         reading a field the running user cannot read evaluates FALSE - so that criterion could
+         never be true for them, and there was no linear walk for Received -> Under Review or
+         Counter Received from Buyer -> Executed. Same shape as D20/C1 on NDA_Record_Page.
+
+         🔴 IT WAS CORRECT NOT TO GUESS IT IN 3B - THE FORMULA REALLY WAS BROKEN.
+         The entry's second criterion is {!Record.Is_Advance_Allowed__c}, and 3B flagged that
+         formula as ACQUISITION-SHAPED without knowing which way it failed. Analysed term by
+         term for this change, it returned TRUE at Executed - the DISPOSITION TERMINAL STAGE -
+         because it excluded only Completed. So copying the entry in 3B would NOT have produced
+         "a button that never shows"; it would have produced the OPPOSITE and worse defect: a
+         button rendered on a FINISHED disposition LOI that then refuses the click. That is
+         D20/C1's `NE 'Signed'` not excluding `Declined`, one object later.
+         Is_Advance_Allowed__c has been extended with `TEXT(Stage__c) <> "Executed"` in the same
+         change; see that field's own header for why it carries NO RecordType test.
+
+         THE TWO ENTRIES ARE THE DUPLICATE-ENTRY SHAPE, NOT AN OR - the same shape
+         NDA_Record_Page introduced the same day, and for the same measured reason: a
+         parenthesised OR deploys, survives a retrieve, and is NOT honoured by the renderer.
+         Do not merge them. ⚠ That shape's deploy-and-render gate is INHERITED, not re-proven
+         here: confirm at check-only that two valueListItems carrying the same <value> are
+         accepted, and confirm in the org that a user holding BOTH driver flags does not see
+         Advance Stage rendered twice. NDA_Record_Page's header carries the full note and the
+         fallback (a disposition-specific quick action) if duplicates are rejected outright.
+
+         BOTH ENTRIES SHARE Is_Advance_Allowed__c, which differs from NDA_Record_Page's split.
+         There it took two different discriminators because NDA Status__c values are SHARED
+         across record types. Here the two Stage__c value sets are fully disjoint, so ONE
+         formula naming both terminal stages serves both personas, and the only difference
+         between the entries is which driver flag they read.
+
+         RESIDUAL, COSMETIC AND DELIBERATE, mirroring NDA_Record_Page's: an acquisition driver
+         opening a disposition LOI still sees Advance Stage and gets a refusal from
+         RecordStageAdvanceService's record-type-scoped gate. Nothing here can write what the
+         server would refuse - RecordStageAdvanceController asserts the gate regardless of what
+         this page renders.
+    -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -49,6 +126,22 @@
                             </visibilityRule>
                         </valueListItems>
                         <valueListItems>
+                            <value>LOI__c.Advance_Stage</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_Advance_Allowed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
                             <value>LOI__c.Mark_Countered</value>
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
@@ -77,6 +170,38 @@
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>Sent</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>LOI__c.Mark_Countered_By_DPEG</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Counter Received from Buyer</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>LOI__c.Mark_Counter_Received</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Countered by DPEG</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

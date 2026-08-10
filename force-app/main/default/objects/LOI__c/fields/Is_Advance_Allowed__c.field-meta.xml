@@ -17,14 +17,47 @@
          bypassed by calling the Apex directly.
 
          ⚠ TEXT() compares, never ISPICKVAL: 'Prepare/Review' carries a literal slash. Same reason
-         RecordStageAdvanceService's header gives for the future validation rules. -->
+         RecordStageAdvanceService's header gives for the future validation rules.
+
+         ================================================================================
+         D22 (2026-08-09) — THIS FIELD IS NO LONGER ACQUISITION-ONLY, AND THE `Executed`
+         CLAUSE IS WHY.
+         ================================================================================
+         3B gave LOI__c a Disposition_LOI record type whose Stage__c value set ends at
+         `Executed`, not `Completed`. The original formula excluded only `Completed`, so it
+         returned TRUE at `Executed` — the DISPOSITION TERMINAL STAGE — and the Advance
+         Stage button rendered on a finished disposition LOI and then refused the click.
+
+         This is the SAME DEFECT as D20/C1 one object later: there, `NE 'Signed'` failed to
+         exclude `Declined`; here, `<> "Completed"` fails to exclude `Executed`. Both come
+         from a terminal-state test written against one record type's value set and then
+         inherited by a second record type with a different one. When a third value set is
+         ever added to this object, add its terminal value here in the same change.
+
+         ZERO BEHAVIOUR CHANGE ON ACQUISITION. `Executed` is not a member of the
+         Acquisition_LOI record type's Stage__c value set, so on an acquisition LOI the new
+         clause is TRUE for every reachable stage and the field's value is unchanged for
+         every acquisition row. Verified against the record-type value sets, not assumed.
+
+         ⚠ DO NOT ADD A `RecordType.DeveloperName` TEST TO THIS FORMULA. It is not needed —
+         the value sets are disjoint at the terminal stage, so naming both terminals is
+         sufficient — and it would make a LIVE, WORKING acquisition button newly dependent
+         on a merge field it does not use today. That is precisely the trade
+         NDA_Record_Page rejected when it declined to reach for the same discriminator on
+         Is_Decline_Allowed__c: adding a new dependency to a working path in order to fix an
+         unrelated path is a regression risk taken for no gain.
+
+         ⚠ The `Sent` clause remains ACQUISITION-SHAPED and is deliberately left alone.
+         `Sent` is not on the disposition value set either, so it is inert there for the
+         same reason `Executed` is inert on acquisition. -->
     <fullName>Is_Advance_Allowed__c</fullName>
     <label>Is Advance Allowed</label>
-    <description>Backs the Advance Stage button's visibility on the LOI record page. True when the generic one-hop advance is legitimate: not at the terminal Completed stage, not at Sent (where the named Counter and Completed buttons take over the branch), not at Prepare/Review unless the LOI is Approved, and not while an approval is pending. Kept as a formula so the visibility rule is a pure chain of ANDs and so the same expression can back a validation rule that enforces it server-side.</description>
-    <inlineHelpText>System field. True when the Advance Stage button should be available on this LOI. It turns off at Sent, where Counter and Completed replace it, and at Prepare/Review until the LOI has been approved.</inlineHelpText>
+    <description>Backs the Advance Stage button's visibility on the LOI record page, on BOTH record types. True when the generic one-hop advance is legitimate: not at a terminal stage (Completed on acquisition, Executed on disposition), not at Sent, not at Prepare/Review unless the LOI is Approved, and not while an approval is pending. Kept as a formula so the visibility rule stays a pure chain of ANDs and so one expression can also back a server-side validation rule.</description>
+    <inlineHelpText>System field. True when the Advance Stage button should be available on this LOI, on either record type. It turns off at the terminal stage (Completed or Executed), at Sent, and at Prepare/Review until the LOI has been approved.</inlineHelpText>
     <type>Checkbox</type>
     <formula><![CDATA[AND(
   TEXT(Stage__c) <> "Completed",
+  TEXT(Stage__c) <> "Executed",
   TEXT(Stage__c) <> "Sent",
   OR(
     TEXT(Stage__c) <> "Prepare/Review",

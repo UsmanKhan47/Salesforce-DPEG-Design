@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Disposition_Stage__c</field>
+        <field>Selected_Broker__c</field>
+        <field>Brokers_Contacted__c</field>
+        <field>Responses_Received__c</field>
+        <field>Submission_Deadline__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+        </assignedApprover>
+        <label>Principal Review</label>
+        <name>Principal_Review_Step</name>
+    </approvalStep>
+    <description>Principal sign-off on the listing broker chosen from the BOV responses. EITHER principal (Ali or Nikhil) decides - first response wins: the first approval approves and the first rejection rejects; the second principal is never waited for and their work item is withdrawn. Entry: the disposition is at BOV Outreach. This is self-limiting to the On Market path because BOV Outreach exists only in the On_Market value set - no RecordType criterion is needed and none should be added. No field updates fire on approval or rejection.</description>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
+    <entryCriteria>
+        <criteriaItems>
+            <field>Disposition__c.Disposition_Stage__c</field>
+            <operation>equals</operation>
+            <value>BOV Outreach</value>
+        </criteriaItems>
+    </entryCriteria>
+    <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>Broker Selection Approval</label>
+    <processOrder>2</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+</ApprovalProcess>

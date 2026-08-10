@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The SELL-SIDE LOI path, for the Disposition_LOI record type.
+        Five steps: Received -> Under Review -> Countered by DPEG -> Counter Received from
+        Buyer -> Executed (Part 2 lines 55-74).
+
+        NONE OF THIS TEXT IS CARRIED FORWARD, and that is correct rather than a lapse of the
+        copy-byte-identical discipline: the two stage sets are FULLY DISJOINT, so there is no
+        shared step whose text could be reused. The direction is reversed - on an acquisition
+        DPEG drafts the LOI and sends it OUT, so LOI_Path_Acquisition starts at Draft; on a
+        disposition the LOI ARRIVES from the buyer through the appointed broker, so this path
+        starts at Received and has no Draft, no Prepare/Review and no Sent.
+
+        NO <fieldNames> ON ANY STEP, DELIBERATELY, AND IT IS A COPY-FORWARD RATHER THAN AN
+        OMISSION. LOI_Path - the __MASTER__ path both new files supersede - declares no key
+        fields on any of its five steps, so neither new file does. Contrast NDA_Path_Disposition,
+        which DOES carry key fields, because NDA_Path did. The convention is the object's, not
+        the tranche's. Adding key fields here would make the two LOI paths asymmetric for no
+        requested reason and would introduce an FLS dependency this path does not have today.
+
+        THE MIDDLE OF THIS PATH IS A LOOP, NOT A LINE, WHICH IS WHY THERE ARE TWO COUNTER
+        STAGES WHERE THE ACQUISITION SIDE HAS ONE. We counter (Countered by DPEG), the buyer
+        counters back (Counter Received from Buyer), "and it goes round until both sides are
+        agreed". A Path renders steps in one order, so the loop-back reads as a step going
+        backwards; that is expected. The forward exit from Counter Received from Buyer is
+        Executed and the loop-back is Countered by DPEG - two named actions, not one Advance.
+
+        STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THIS FILE. Runtime display order
+        comes from Stage__c's picklist value order (sorted=false) filtered by this record type;
+        the order in this file is only for readability. The five values here were APPENDED to
+        Stage__c after the five acquisition values, which renders this path in exactly the
+        sequence below AND leaves LOI_Path_Acquisition byte-identical to LOI_Path. Appending was
+        sufficient only because the sets are disjoint - a value a record type does not expose
+        cannot occupy a position in that record type's rendering. Contrast NDA__c: its Not Sent
+        had to be moved AHEAD of Sent in the master ordering because appending put the
+        disposition STARTING state third, telling the user the process begins at Sent. Anyone
+        re-ordering Stage__c must re-check BOTH LOI record type files.
+
+        Draft, Prepare/Review, Sent, Counter and Completed do not appear because the
+        Disposition_LOI record type restricts them out; they belong to LOI_Path_Acquisition.
+        The Submit for Approval action does not surface on this path either - it is gated on
+        {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record type does not carry.
+
+        COUNTERS ARE RECORDED ON Counter_Offer__c, WHICH IS INHERITED FROM THE ACQUISITION SIDE
+        (decision D6) - that reuse is what makes "every round is recorded" achievable at all.
+        Two things about it are NOT yet resolved and are raised as recommendations rather than
+        being silently handled here: Counter_Offer__c.Direction__c offers Seller / Ours, and
+        LOI__c.Ball_In_Court__c offers Us / Seller - on a sale the counterparty is the BUYER, so
+        'Seller' would mean DPEG, which inverts the field's meaning rather than merely reading
+        oddly. Until that is decided, read those two fields on a disposition LOI with care.
+
+        THE OFFER IS CAPTURE AND COMPARISON; THE NEGOTIATION IS HERE. Disposition_Offer__c holds
+        each offer as it arrives - buyer, amount, due diligence and closing periods - and offers
+        are compared against one another; once one is taken forward the LOI process begins and
+        all the negotiation happens on this record. Retiring the negotiation fields from the
+        offer is a separate, later, DESTRUCTIVE wave that cannot start until this path is live.
+
+        POST-DEPLOY: this path renders nothing until the Disposition_LOI record type is assigned
+        in the profiles in use and a disposition LOI actually exists.
+    -->
+    <active>true</active>
+    <entityName>LOI__c</entityName>
+    <fieldName>Stage__c</fieldName>
+    <masterLabel>LOI Path Disposition</masterLabel>
+    <pathAssistantSteps>
+        <info>The buyer's letter of intent has arrived, normally through the appointed broker. Log it against this disposition and record the price and key terms exactly as offered - this is the buyer's position, not ours.</info>
+        <picklistValueName>Received</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>The terms are being reviewed internally. Work through price, due diligence period, closing period and earnest money against what the disposition needs, and decide whether to counter or to execute as offered.</info>
+        <picklistValueName>Under Review</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>We have countered the buyer's terms. Log the counter in the Counter History so our price and the date it went out are recorded - every round of this negotiation is kept, not just the final number.</info>
+        <picklistValueName>Countered by DPEG</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>The buyer has countered back. Log their counter in the Counter History, then take one of two routes: counter again to keep the negotiation going, or execute if the terms are now agreed. It goes round until both sides align.</info>
+        <picklistValueName>Counter Received from Buyer</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Both sides are agreed and the LOI is signed. Attach the executed document, then move the disposition on to PSA - on a sale our own legal team prepares the contract and issues the first draft.</info>
+        <picklistValueName>Executed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Disposition_LOI</recordTypeName>
+</PathAssistant>

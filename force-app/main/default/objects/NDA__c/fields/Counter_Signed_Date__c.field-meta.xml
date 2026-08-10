@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Counter_Signed_Date__c</fullName>
+    <description>The date DPEG counter-signed this NDA. Added 2026-08-09 (Part 2 line 114, "we counter-sign both"). Before this field NDA__c carried only the single boolean NDA_Signed__c plus Date_Signed__c, which record the COUNTERPARTY half of the signature and cannot express that our half is still outstanding. NAMING IS DELIBERATELY INCONSISTENT WITH ITS SIBLINGS AND THAT IS NOT DRIFT: Date_Sent__c and Date_Signed__c pre-date ARCHITECTURE.md rule 6, which requires a date-only field to carry the Date SUFFIX; this new field conforms to the rule rather than to the neighbours, exactly as the Tranche 3 design directs. It is a RECORD OF FACT, not a gate input - the all-signed release gate (All_NDAs_Signed_Before_Progression) keys on Status__c = Signed alone, per design Q6, because the document states one release condition and requiring two would be an invention. Exposed on the Disposition NDA layout only.</description>
+    <inlineHelpText>Enter the date DPEG counter-signed this NDA. Leave blank until we have signed our half. This is a record of fact only - it does not gate the disposition; marking Status = Signed is what releases information.</inlineHelpText>
+    <label>Counter Signed Date</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

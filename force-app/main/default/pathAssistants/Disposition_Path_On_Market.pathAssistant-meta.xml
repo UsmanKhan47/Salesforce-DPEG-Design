@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The BROKER-LISTED disposition path, for the On_Market record type.
+        Eight steps: Disposition Readiness, BOV Outreach, Active Listing, Call for Offers,
+        LOI, PSA, Closing, Completed.
+
+        Five steps (Disposition Readiness, BOV Outreach, Active Listing, Closing, Completed)
+        were copied from the now-deactivated Disposition_Path. FOUR of them are still
+        BYTE-IDENTICAL - fieldNames AND info text - and Active Listing is STILL one of them:
+        its info was rewritten 2026-08-10 (retraction below), and the IDENTICAL rewrite was
+        applied to Disposition_Path in the same change, so the carry-over this comment
+        describes did not break.
+
+        🔴 THE ACTIVE LISTING CLOCK IS NO LONGER AN OPEN QUESTION - RETRACTED 2026-08-10 BY
+        D27.1 / D28-Q2. The superseded sentences are quoted and retracted rather than deleted,
+        because "leave it alone, a question is open" is the exact instruction that left this
+        Path contradicting the LWC beside it for a whole tranche:
+
+            RETRACTED: "The Active Listing text is under an OPEN question (the source document
+            says ~2 months with a month-1 check, this text says a 6-week clock) and was copied
+            forward UNEDITED on purpose. Editing it here would silently pre-empt that
+            question."
+
+        WHAT ANSWERED IT: D27.1 - THE DOCUMENT WON. The marketing period is 60 days with a
+        30-day traction checkpoint, and traction is logged offers and NOTHING else (D28-Q1;
+        "real interest" stays a human judgement made in the internal discussion and is
+        deliberately not modelled as a field, so this text must not imply the system can see
+        it). THE RECONCILIATION HAS NOW HAPPENED: the Active Listing info below states that
+        model, and every band it names is one DispositionTractionService computes - NOT_LISTED,
+        ON_TRACK, CHECKPOINT_DUE at day 30, REVIEW_OVERDUE at day 40, HARD_STOP at day 60, all
+        short-circuited to ON_TRACK by a single logged offer. That service decides a band
+        nowhere else; this text must never state a threshold it does not hold.
+
+        TWO THINGS WERE DROPPED AND MUST NOT COME BACK. "Escalation to Ali" promised a
+        notification D9 defers, so nothing sends it - the same stale-promise defect that
+        condemned the retired listingAlerts mock. And the week-numbered milestones are BANNED
+        STRINGS in lwc/listingAlerts/__tests__/listingAlerts.test.js, which asserts the sibling
+        traction panel never renders them; a Path rendering them next to that panel is exactly
+        the one-screen contradiction BrokerListingController's header exists to prevent.
+
+        CLOSING IS THE ONE DEVIATION, added 2026-08-09 on the code review's C1 finding. Its
+        fieldNames are unchanged and the original two sentences are unchanged; a third
+        sentence was APPENDED telling the user to complete the wire verification BEFORE
+        submitting the Closing approval. That ordering is not a preference - Closing_Approval
+        sets recordEditability AdminOnly, so while it is pending the Disposition is locked and
+        Wire_Verification_Rollup cannot write the flag (it now fails soft rather than rolling
+        the Wire save back). Signposting the sequence is what stops the user discovering it.
+        The IDENTICAL sentence is on Disposition_Path_Off_Market's Closing step - these two
+        must stay in step with each other.
+
+        Call for Offers, LOI and PSA are new, text-only steps: none of them has a
+        Disposition__c field to surface. PSA_Executed__c deliberately STAYS on the Closing
+        step where it is today - moving it to the new PSA step is defensible but changes
+        deployed behaviour for no requested benefit.
+
+        Step ORDER in this file is the design's path order for readability. Runtime display
+        order comes from the Disposition_Stage__c picklist value order (sorted=false), not
+        from this file, so a retrieve will re-serialise these alphabetically.
+    -->
+    <active>true</active>
+    <entityName>Disposition__c</entityName>
+    <fieldName>Disposition_Stage__c</fieldName>
+    <masterLabel>Disposition Path On Market</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Property_Asset__c</fieldNames>
+        <info>Confirm the asset metrics and Argus signal support the sell decision before advancing to BOV Outreach.</info>
+        <picklistValueName>Disposition Readiness</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Package_Sent__c</fieldNames>
+        <fieldNames>Submission_Deadline__c</fieldNames>
+        <info>Send OM packages to 5-6 brokers. Matrix auto-generates when 3+ BOV responses are received.</info>
+        <picklistValueName>BOV Outreach</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Selected_Broker__c</fieldNames>
+        <info>The 60-day marketing clock runs from the Listing Date on this Disposition and does not start until that date is set. Traction means logged offers and nothing else. With none: day 30 is the traction checkpoint, where the team discusses internally and decides whether to change the broker; day 40 is review overdue; day 60 is Hard Stop. A single logged offer clears the checkpoint at any point.</info>
+        <picklistValueName>Active Listing</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Best-and-final round. The call-for-offers date is tracked on the Broker Listing record (Call For Offers Date), not on the Disposition, so it cannot be shown as a Path field here - open the related Broker Listing to set it. Offers arriving in this round are captured as Disposition Offer records.</info>
+        <picklistValueName>Call for Offers</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>LOI is a phase of this disposition, not a separate record - the disposition-side LOI record arrives in a later change. Until then the negotiation stays on the Disposition Offer record: drive it through Offer Status and the DPEG Counter Price, DPEG Counter Date, Buyer Counter Price and Final Agreed Price fields.</info>
+        <picklistValueName>LOI</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>PSA is a phase of this disposition, not a separate record - the disposition-side contract has no record yet and arrives in a later change. PSA Executed on this Disposition is the only marker; tick it on the Closing step once the purchase and sale agreement is signed.</info>
+        <picklistValueName>PSA</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>PSA_Executed__c</fieldNames>
+        <fieldNames>Title_Company__c</fieldNames>
+        <info>PSA Executed = TRUE spawns closing tasks. Wire fraud prevention gate (6 fields) must be complete before wiring. Complete the wire verification BEFORE submitting the Closing approval - the approval locks this Disposition, so a Wire saved while it is pending will not update the Wire Verification Completed flag until the approval resolves.</info>
+        <picklistValueName>Closing</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Closing_Date__c</fieldNames>
+        <fieldNames>Net_Sale_Proceeds__c</fieldNames>
+        <info>Deal closed. Confirm the closing date, net sale proceeds, and that the closing statement is on file.</info>
+        <picklistValueName>Completed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>On_Market</recordTypeName>
+</PathAssistant>

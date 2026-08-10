@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Offers_Due_Soon</fullName>
+    <!--
+        =====================================================================================
+        THIS IS THE ONLY SURFACE FOR THE CALL FOR OFFERS STAMP. IT IS NOT DECORATION.
+        =====================================================================================
+        Added 2026-08-10 (Tranche 4A, decision D26.1). Not requested by the client document;
+        added because without it the feature is write only in practice.
+
+        D9 defers the T minus 2 day notification, and Gate 1 Q1 scoped the stamp to
+        OPPORTUNITY ONLY. The Lead view of the same name cannot cover this: it lives on Lead,
+        it filters Lead.Offer_Due_Date__c, and it excludes Converted rows, so under Q1 it can
+        never show a stamped record. Opportunity.Offer_Due_Date__c is on the Opportunity
+        Layout, so the date is visible once a human opens the deal, but before this view no
+        Opportunity list view filtered on it at all. There is therefore no alert of any kind
+        behind this list: someone has to choose to open it.
+
+        WINDOW: LAST_N_DAYS:7 through NEXT_N_DAYS:30. Deliberately NOT the Lead view's
+        TODAY through NEXT_N_DAYS:14, for two reasons.
+
+        1. THE REAR VIEW WEEK. With the notification deferred, a view whose lower bound is
+           TODAY drops the row at midnight on the due date, which is the exact moment a missed
+           deadline becomes worth seeing. Seven days back keeps a just missed deadline visible
+           long enough for someone to notice and chase it. On a Lead that trade is fine (early
+           funnel triage); on a live deal it is not.
+        2. THIRTY DAYS FORWARD, NOT FOURTEEN. The stamp lands on a live deal that may be sitting
+           in Underwriting_Approval or LOI_Approval. Fourteen days is inside the time an
+           approval round can take, so a fourteen day horizon can surface a deadline the team
+           can no longer act on. Thirty days gives room to plan the response.
+
+        Blank dates need no filter of their own: a null Offer_Due_Date__c fails both
+        comparisons, so unstamped deals are excluded automatically.
+
+        STAGE EXCLUSION uses the LITERAL 'Dead/Pass', not the 'Dead%2FPass' form. The encoded
+        form is required inside BusinessProcess, RecordType and picklist metadata only; the
+        deployed Dead_Deals list view on this same object is the local precedent for the
+        literal form in a ListView filter.
+
+        NO Is_Best_And_Final__c COLUMN, BY DECISION. Gate 1 Q3 = best and final is NOT BUILT
+        (user: "leave it"). The client document's "best and final requirement held alongside
+        it" is a decided gap, not an oversight. Do not add the field or a column for it here
+        without reopening that decision.
+        =====================================================================================
+    -->
+    <columns>OPPORTUNITY.NAME</columns>
+    <columns>Property_Address__c</columns>
+    <columns>Offer_Due_Date__c</columns>
+    <columns>Listing_Broker_Name__c</columns>
+    <columns>Listing_Broker_Email__c</columns>
+    <columns>OPPORTUNITY.STAGE_NAME</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Offer_Due_Date__c</field>
+        <operation>greaterOrEqual</operation>
+        <value>LAST_N_DAYS:7</value>
+    </filters>
+    <filters>
+        <field>Offer_Due_Date__c</field>
+        <operation>lessOrEqual</operation>
+        <value>NEXT_N_DAYS:30</value>
+    </filters>
+    <filters>
+        <field>OPPORTUNITY.STAGE_NAME</field>
+        <operation>notEqual</operation>
+        <value>Closed Won,Dead/Pass</value>
+    </filters>
+    <label>Offers Due Soon</label>
+</ListView>

@@ -1,6 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
-    <active>true</active>
+    <!--
+        DEACTIVATED 2026-08-09, NOT DELETED, AND THAT IS DELIBERATE.
+
+        NDA__c gained two record types in this tranche (Acquisition_NDA, Disposition_NDA). A
+        Path is configured PER RECORD TYPE, and recordTypeName CANNOT BE RE-POINTED on an
+        existing PathAssistant - so this __MASTER__ path is superseded by two new files,
+        NDA_Path_Acquisition and NDA_Path_Disposition, exactly as Tranche 2 superseded
+        Disposition_Path with Disposition_Path_On_Market / _Off_Market.
+
+        It is retained rather than deleted because it is the record of the guidance text the
+        acquisition steps were copied from. NDA_Path_Acquisition carries the Pending, Sent and
+        Signed <info> text and <fieldNames> BYTE-IDENTICAL to the three steps below; the only
+        addition there is a new Received step between Sent and Signed.
+
+        Once record types exist, a __MASTER__ path renders for the Master type only - which
+        after the row migration is NO ROWS. Leaving it active would therefore do nothing useful
+        and would make the Path configuration ambiguous to the next reader.
+
+        ORDER OF OPERATIONS AT DEPLOY: profile record-type assignment and the row migration off
+        Master must both complete BEFORE the two new paths are relied on, for the same reason
+        Tranche 2's gate A2 exists - a row still on Master matches no record-type Path and
+        renders a Path with no current position.
+    -->
+    <active>false</active>
     <entityName>NDA__c</entityName>
     <fieldName>Status__c</fieldName>
     <masterLabel>NDA Path</masterLabel>

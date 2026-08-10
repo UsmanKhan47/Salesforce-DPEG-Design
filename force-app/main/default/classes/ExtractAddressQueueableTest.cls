@@ -3796,4 +3796,776 @@ private class ExtractAddressQueueableTest {
             'nor the Gated_Call_For_Offers view, whose filter is startsWith \'Not Routed\' — this '
             + 'email WAS routed, to a Lead');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TRANCHE 4B, 2026-08-10 — THE CALL-FOR-OFFERS GATE BECOMES A BRANCH.
+    // Decisions D3 (suppression UNCHANGED) / D8 (claim-pipeline matching only) /
+    // D26 (Q1 Opportunity only, Q2 attachments stay suppressed, Q3 no best-and-final).
+    //
+    // 🔴 THE FIVE PRE-EXISTING callForOffers_* TESTS ABOVE ARE UNMODIFIED, AND THAT IS THE
+    // POINT. They are the D3 regression guard: every one of them pitches an address with no
+    // registry row, so every one takes the NO-MATCH path, and the no-match path must stay
+    // byte-identical to the pre-4B behaviour (same label, no Lead, no registry row, no
+    // submission row, Task logged with no target). If one of them ever needs editing, the
+    // no-match path has DRIFTED — fix the code, not the test.
+    //
+    // ⚠ NO 251-RECORD TEST, for the reason already stated in this class's header: a literal
+    // 251 is unreachable here (System.enqueueJob caps at 50, and 251 properties in one email
+    // would exhaust SOQL at ~14-24 — which is why MAX_PROPERTIES is 10). The narrowed
+    // exemption's specified replacements are used instead: a 10-property volume case, a
+    // 15-property truncation case, governor headroom read from the IN-ASYNC statics, a mixed
+    // outcome, and the Q2 carrier pin.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE PINNED BUDGET FOR THE CALL-FOR-OFFERS BRANCH. It had none before 4B, so nothing
+     * would have caught a per-property query creeping in.
+     *
+     * CEILINGS, not equalities, and deliberately so — unlike the winner path's exact 43/7,
+     * this branch's query count VARIES LEGITIMATELY with how many properties match:
+     * findMatchingRegistry costs 1 on an exact hit and 2 on a miss (the fuzzy 90-day scan), and
+     * resolveLiveRecord costs 1 only when a registry row was found. Pinning an equality would
+     * make the test fail on a fixture change rather than on a regression.
+     *
+     * Worst case at N = MAX_PROPERTIES = 10, all matched: <= 3 reads per property (30) plus the
+     * ONE bulk stamp read, on top of the branch's fixed prologue/epilogue cost. Against the
+     * async cap of 200 and 150.
+     *
+     * ⚠ IF THIS EVER COMES UNDER PRESSURE THE FIX IS A TRANSACTION-SCOPED MEMO OF
+     * PropertyRegistrySelector.selectRecentWithWinner, NOT A RAISED BUDGET — and that memo
+     * touches the claim path, so it is a separate design, not a patch here.
+     */
+    private static final Integer CFO_QUERY_BUDGET = 60;   // async cap is 200
+    private static final Integer CFO_DML_BUDGET = 8;      // async cap is 150
+
+    /**
+     * A call-for-offers blast naming `addresses`, each carrying `offerDueDate`.
+     *
+     * @param brokerEmail   The envelope broker address (also the model's broker_email, so U1 is
+     *                      a no-op and these tests measure the 4B branch only).
+     * @param addresses     The property addresses the campaign names.
+     * @param offerDueDate  The `offer_due_date` stamped on every property; null omits the key.
+     * @param listingBroker The `listing_broker_name` / `listing_broker_email` pair; null omits
+     *                      both, which is the shape where the extraction says NOTHING about a
+     *                      listing broker. ⚠ CORRECTED 2026-08-10 (review finding W1): this
+     *                      used to read "which is what exercises the envelope-sender fallback".
+     *                      There is no longer a fallback — null now means the deal keeps
+     *                      whatever listing broker it already carries, which is exactly what
+     *                      `callForOffers_noListingBrokerInTheBody_leavesTheDealsRealBrokerAlone`
+     *                      pins.
+     */
+    private static void setCallForOffersPropertiesMock(String brokerEmail, List<String> addresses,
+            Date offerDueDate, String listingBroker) {
+        List<Map<String, Object>> properties = new List<Map<String, Object>>();
+        for (String address : addresses) {
+            Map<String, Object> property = new Map<String, Object>{ 'property_address' => address };
+            if (offerDueDate != null) {
+                property.put('offer_due_date', String.valueOf(offerDueDate));
+            }
+            properties.add(property);
+        }
+        Map<String, Object> emailLevel = new Map<String, Object>{
+            'email_category' => 'call_for_offers',
+            'category_confidence' => 0.95,
+            'is_acquisition_related' => true,
+            'confidence' => 0.96,
+            'broker_name' => 'Blast Broker',
+            'broker_email' => brokerEmail,
+            'sent_datetime' => ''
+        };
+        if (listingBroker != null) {
+            emailLevel.put('listing_broker_name', listingBroker);
+            emailLevel.put('listing_broker_email', 'listing.' + brokerEmail);
+        }
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(emailLevel, properties)));
+    }
+
+    /**
+     * A registry row for `normalizedKey` whose winning Lead has been CONVERTED — the ONLY shape
+     * Q1 stamps, because resolveLiveRecord returns an Opportunity Id only for a converted winner.
+     *
+     * @param normalizedKey The normalized address to register.
+     * @return The Opportunity conversion created.
+     */
+    private static Id registerConvertedWinner(String normalizedKey) {
+        return registerConvertedWinners(new List<String>{ normalizedKey })[0];
+    }
+
+    /**
+     * The bulk form — N registry rows, each with its own CONVERTED winning Lead, index-aligned
+     * to `normalizedKeys`.
+     *
+     * ⚠ BULKED DELIBERATELY, and not for tidiness: the ten-property volume test needs ten
+     * converted winners, and doing that one at a time would spend ~10 LeadStatus queries plus
+     * ten separate `LeadConvertTrigger` executions (`LeadConvertService` is pinned at 2 SOQL /
+     * 3 DML each) in the pre-`Test.startTest()` bucket — enough to make the FIXTURE, rather than
+     * the code under test, the thing that hits a governor limit. One status query, two bulk
+     * inserts and one bulk `Database.convertLead` instead.
+     *
+     * The Opportunity cascade is NOT suppressed: `setDoNotCreateOpportunity(true)` throws
+     * UNKNOWN_EXCEPTION on this org, and the cascade's Opportunity is precisely what this
+     * feature stamps.
+     *
+     * @param normalizedKeys Normalized addresses to register, in order.
+     * @return The conversion-created Opportunity Ids, index-aligned to the input.
+     */
+    private static List<Id> registerConvertedWinners(List<String> normalizedKeys) {
+        List<Lead> winners = TestDataFactory.createLeads(normalizedKeys.size(), true);
+
+        List<Property_Registry__c> registries = new List<Property_Registry__c>();
+        for (Integer i = 0; i < normalizedKeys.size(); i++) {
+            registries.add(new Property_Registry__c(
+                Property_Key__c = normalizedKeys[i],
+                Normalized_Address__c = normalizedKeys[i],
+                Winning_Lead__c = winners[i].Id,
+                Registered_DateTime__c = Datetime.now()));
+        }
+        insert registries;
+
+        String convertedStatus =
+            [SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel;
+        List<Database.LeadConvert> converts = new List<Database.LeadConvert>();
+        for (Lead winner : winners) {
+            Database.LeadConvert lc = new Database.LeadConvert();
+            lc.setLeadId(winner.Id);
+            lc.setConvertedStatus(convertedStatus);
+            converts.add(lc);
+        }
+
+        List<Id> opportunityIds = new List<Id>();
+        for (Database.LeadConvertResult result : Database.convertLead(converts, true)) {
+            Assert.isTrue(result.isSuccess(),
+                'The fixture Leads must convert for these tests to mean anything');
+            opportunityIds.add(result.getOpportunityId());
+        }
+        return opportunityIds;
+    }
+
+    // ── T10: the label's two deployed list-view couplings ────────────────────
+
+    @isTest
+    static void callForOffersMatchedOutcome_keepsBothListViewCouplings() {
+        // PURE string-contract test — no DML, no SOQL, no mock. It cannot be vacuous and costs
+        // nothing. A Javadoc warning is not enforcement; this assertion is.
+        String label = ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS_MATCHED;
+
+        Assert.isTrue(label.startsWith('Not Routed'),
+            '🔴 Gated_Call_For_Offers filter 1 is startsWith \'Not Routed\'. Break this and the '
+            + 'matched population vanishes from the ONLY surface for the call-for-offers '
+            + 'misclassification watch — with no compile error and no other failing test');
+        Assert.isTrue(label.contains('call for offers'),
+            '🔴 and filter 2 (added by Tranche 4A) is contains \'call for offers\', which is what '
+            + 'keeps a MULTI-PROPERTY email in the view: buildMultiSummary prefixes '
+            + '\'Multi-Property (N): \', which does NOT start with \'Not Routed\'');
+        Assert.isFalse(label.startsWith('Not Acquisition'),
+            'and it must NOT pollute the separate deployed Gated_Not_Acquisition view — a '
+            + 'call-for-offers blast IS acquisition-related, DPEG simply does not work them');
+        Assert.areNotEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS, label,
+            'The matched and unmatched populations must be distinguishable at a glance');
+    }
+
+    // ── T5 / T6: the no-match path is byte-identical ─────────────────────────
+
+    @isTest
+    static void callForOffers_noRegistryMatch_isByteIdenticalToThePre4bBehaviour() {
+        // 🔴 THE D3 REGRESSION GUARD, stated as one test rather than left implicit in the five
+        // pre-existing ones. Address that matches nothing -> today's label verbatim, no record,
+        // no Lead, no registry row, no submission row, and the Task still logged so a
+        // redelivery cannot re-run the pipeline.
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+        Integer registriesBefore = [SELECT COUNT() FROM Property_Registry__c];
+        Integer subsBefore = [SELECT COUNT() FROM Competing_Broker_Submission__c];
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'nomatch.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4001 Unmatched Way',
+            'Offers due soon on 4001 Unmatched Way.',
+            'msg-cfo-nomatch@example.invalid', null, null);
+        setCallForOffersPropertiesMock('nomatch.blast@rcm.example.invalid',
+            new List<String>{ '4001 Unmatched Way' }, Date.today().addDays(12), null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Status__c, Outcome__c, Result_Record_Id__c, Routed_Record_Ids__c, Error__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS, updated.Outcome__c,
+            'BYTE-IDENTICAL. A single unmatched property yields exactly one outcome, so '
+            + 'buildOutcomeSummary returns the label verbatim — no suffix, no Multi-Property prefix');
+        Assert.areEqual('Processed', updated.Status__c, 'A gate that matched nothing is still a clean terminal state');
+        Assert.isNull(updated.Error__c, 'and nothing failed');
+        Assert.isNull(updated.Result_Record_Id__c, 'No deal matched, so the email is filed on nothing');
+        Assert.isNull(updated.Routed_Record_Ids__c,
+            'buildRoutedAudit still returns null below two outcomes — unchanged from before 4B');
+
+        Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead], 'D3: NO LEAD, EVER, ON THIS BRANCH');
+        Assert.areEqual(registriesBefore, [SELECT COUNT() FROM Property_Registry__c],
+            'D3: no registry claim either — an exclusive beating a blast is the DESIRED arbitration');
+        Assert.areEqual(subsBefore, [SELECT COUNT() FROM Competing_Broker_Submission__c],
+            'and no competing-submission row');
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM Task WHERE Inbound_Message_Id__c = 'msg-cfo-nomatch@example.invalid'
+        ], 'THE TASK MUST STILL BE LOGGED — an unrecorded Message-ID means a platform redelivery '
+            + 're-runs the entire pipeline');
+    }
+
+    // ── The core feature: match and stamp ────────────────────────────────────
+
+    @isTest
+    static void callForOffers_matchedConvertedWinner_stampsTheDealAndFilesTheEmailOnIt() {
+        Id dealId = registerConvertedWinner('4100 matched ave');
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+        Integer registriesBefore = [SELECT COUNT() FROM Property_Registry__c];
+        Integer subsBefore = [SELECT COUNT() FROM Competing_Broker_Submission__c];
+        Date due = Date.today().addDays(11);
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4100 Matched Ave | Offers due',
+            'Offers are due on 4100 Matched Ave.',
+            'msg-cfo-matched@example.invalid', null, null);
+        setCallForOffersPropertiesMock('listings@buildout.example.invalid',
+            new List<String>{ '4100 Matched Ave' }, due, 'Dana Lister');
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Opportunity stamped = [
+            SELECT Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+            FROM Opportunity WHERE Id = :dealId
+        ];
+        Assert.areEqual(due, stamped.Offer_Due_Date__c,
+            'THE FEATURE: the offer deadline lands on the live deal the claim pipeline resolved');
+        Assert.areEqual('Dana Lister', stamped.Listing_Broker_Name__c,
+            '⚠ THE BODY-NAMED LISTING BROKER WINS OVER THE ENVELOPE HERE, AND THAT IS DELIBERATE. '
+            + 'The envelope in this fixture is listings@buildout — a BLAST PLATFORM, which is '
+            + 'exactly U1\'s documented residual and exactly the traffic this branch handles. U1\'s '
+            + 'envelope-first rule governs ARBITRATION; nothing here arbitrates, and writing a '
+            + 'platform address into a field a human reads as "who do I call" would be wrong');
+        Assert.areEqual('listing.listings@buildout.example.invalid', stamped.Listing_Broker_Email__c, '');
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Status__c, Outcome__c, Result_Record_Id__c, Error__c, Property_Count__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS_MATCHED, updated.Outcome__c,
+            'The matched population gets its own label so a human can tell it from the unmatched one');
+        Assert.areEqual('Processed', updated.Status__c, '');
+        Assert.isNull(updated.Error__c, 'An unlocked deal refuses nothing');
+        Assert.areEqual(dealId, updated.Result_Record_Id__c,
+            'and Result_Record_Id__c names the deal the email was filed on');
+        Assert.areEqual(1, updated.Property_Count__c,
+            'Property_Count__c is now populated on this branch — it was always null before 4B, and '
+            + 'without it the truncation signal ([truncated: X of M]) has no denominator');
+
+        // 🔴 D3 — the suppression is UNCHANGED even on a MATCH.
+        Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead],
+            'A matched call-for-offers email STILL creates no Lead');
+        Assert.areEqual(registriesBefore, [SELECT COUNT() FROM Property_Registry__c],
+            'and still takes no registry claim — the registry is READ here, never written');
+        Assert.areEqual(subsBefore, [SELECT COUNT() FROM Competing_Broker_Submission__c],
+            'and writes no competing submission');
+        Assert.areEqual(0, [SELECT COUNT() FROM Property_Claim_Lock__c],
+            'and takes NO cluster lock — a branch that claims nothing must not enrol itself in the '
+            + 'deadlock ordering contract');
+
+        // The email is held alongside the deadline: the Task attaches via WhatId.
+        Task logged = [
+            SELECT WhatId, WhoId, Thread_Key__c FROM Task
+            WHERE Inbound_Message_Id__c = 'msg-cfo-matched@example.invalid'
+        ];
+        Assert.areEqual(dealId, logged.WhatId,
+            'InboundEmailActivityService.attachTo uses WhatId for anything that is not a '
+            + 'Lead/Contact — the same path branches (b) and (d) already take onto a converted winner');
+        Assert.isNull(logged.WhoId, '');
+        Assert.isNotNull(logged.Thread_Key__c,
+            '⚠ KNOWN, ACCEPTED CONSEQUENCE: this Task is now a THREAD ANCHOR on the deal, so later '
+            + 'replies in the campaign thread will route to the Opportunity and the EAC Thread '
+            + 'Adopter will begin re-pointing captured replies onto it. Both are behaviour changes '
+            + 'on live features and belong in the UAT script');
+    }
+
+    // ── 🔴 W1: no listing broker in the body -> the deal keeps the one it knows ──
+
+    @isTest
+    static void callForOffers_noListingBrokerInTheBody_leavesTheDealsRealBrokerAlone() {
+        // 🔴 THE TEST THAT WOULD HAVE CAUGHT REVIEW FINDING W1 (2026-08-10), AND THE REASON THE
+        // DEFECT SHIPPED IS THAT NOTHING COVERED THIS PATH: every other matched test either
+        // passes an explicit listing broker or never asserts the broker fields at all.
+        //
+        // The branch used to fall back to the ENVELOPE SENDER when the body named no listing
+        // broker. On THIS branch the envelope is systematically a blast platform
+        // (listings@buildout.com / RCM / Crexi — U1's own documented residual), and
+        // CallForOffersStampService overwrites last-email-wins, so an unrelated marketing blast
+        // REPLACED the real listing broker on a live deal with a platform mailbox — or with
+        // whoever that blast happened to name.
+        //
+        // The rule the fix encodes, and the reason the two field groups differ: a DEADLINE is a
+        // fact about the CAMPAIGN, so the newest email is the authority and last-wins is right.
+        // The LISTING BROKER on a live deal is a fact about the TRANSACTION, and a third party's
+        // blast is not newer information about it.
+        Id dealId = registerConvertedWinner('4900 realbroker way');
+
+        // The deal already carries the REAL listing broker. This is exactly the state
+        // LeadConvertService leaves behind — it copies Lead.Listing_Broker_Name__c /
+        // Listing_Broker_Email__c onto the Opportunity at conversion, off the WINNING broker's
+        // own email — written explicitly here so the precondition is visible in this test
+        // rather than inherited from another class's behaviour.
+        update new Opportunity(Id = dealId,
+            Listing_Broker_Name__c = 'Real Deal Broker',
+            Listing_Broker_Email__c = 'real.broker@brokerage.example.invalid');
+
+        Date due = Date.today().addDays(9);
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4900 RealBroker Way', 'Offers are due.',
+            'msg-cfo-realbroker@example.invalid', null, null);
+        // listingBroker = null omits BOTH listing_broker keys, which is the whole point of the
+        // fixture: the extraction says nothing about a listing broker, so there is nothing to
+        // write and the old code reached for the envelope instead.
+        setCallForOffersPropertiesMock('listings@buildout.example.invalid',
+            new List<String>{ '4900 RealBroker Way' }, due, null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Opportunity stamped = [
+            SELECT Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+            FROM Opportunity WHERE Id = :dealId
+        ];
+        Assert.areEqual(due, stamped.Offer_Due_Date__c,
+            '🔴 PRECONDITION, AND IT IS WHAT MAKES THIS TEST NON-VACUOUS: the branch really did '
+            + 'match this deal and really did write to it. Without the deadline landing, the two '
+            + 'assertions below would pass on an email that never reached the deal at all');
+        Assert.areEqual('Real Deal Broker', stamped.Listing_Broker_Name__c,
+            '🔴 W1: the deal KEEPS the listing broker it already knows. The old fallback wrote '
+            + 'this job\'s resolved SENDER identity here — \'Blast Broker\' in this fixture');
+        Assert.areEqual('real.broker@brokerage.example.invalid', stamped.Listing_Broker_Email__c,
+            '🔴 W1, and this is the damaging half: the old fallback replaced a real listing '
+            + 'broker\'s address with the blast platform\'s mailbox — an address nobody at DPEG '
+            + 'can call about this deal');
+        Assert.areNotEqual('listings@buildout.example.invalid', stamped.Listing_Broker_Email__c,
+            'asserted separately so the failure message names the platform address directly if '
+            + 'the envelope fallback is ever restored');
+
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS_MATCHED,
+            [SELECT Outcome__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id].Outcome__c,
+            'and the email is STILL reported as matched — dropping the fallback changes what is '
+            + 'WRITTEN, never whether the deal was found');
+    }
+
+    // ── T9 / Q1: an UNCONVERTED winner is a no-match, by decision ────────────
+
+    @isTest
+    static void callForOffers_matchedButWinnerNotConverted_stampsNothing() {
+        // 🔴 D26 Q1 = OPPORTUNITY ONLY, asserted explicitly rather than left implicit. Registry
+        // rows are created the moment a Lead is minted and conversion happens later, so at any
+        // given time MOST registry winners are unconverted — this branch is INERT for them. That
+        // is the user's decision WITH the consequence stated, not a defect. Lead.Offer_Due_Date__c
+        // and Lead.Listing_Broker_*__c all exist and are deliberately NOT written.
+        Lead openWinner = TestDataFactory.createLead(true);
+        TestDataFactory.createPropertyRegistry('4200 unconverted rd', openWinner.Id, true);
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'unconverted.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4200 Unconverted Rd', 'Offers due.',
+            'msg-cfo-unconverted@example.invalid', null, null);
+        setCallForOffersPropertiesMock('unconverted.blast@rcm.example.invalid',
+            new List<String>{ '4200 Unconverted Rd' }, Date.today().addDays(8), null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Outcome__c, Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS, updated.Outcome__c,
+            'An unconverted winner is reported as a NO-MATCH, byte-identical to before 4B');
+        Assert.isNull(updated.Result_Record_Id__c,
+            'and the email is filed on nothing — it is NOT filed onto the husk Lead');
+
+        Lead reloaded = [
+            SELECT Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+            FROM Lead WHERE Id = :openWinner.Id
+        ];
+        Assert.isNull(reloaded.Offer_Due_Date__c,
+            '🔴 Lead.Offer_Due_Date__c EXISTS and is DELIBERATELY NOT USED (D26 Q1). If this ever '
+            + 'starts being populated, Q1 has been reversed without a decision');
+        Assert.isNull(reloaded.Listing_Broker_Name__c, '');
+        Assert.isNull(reloaded.Listing_Broker_Email__c, '');
+    }
+
+    // ── 🔴 Q2: the carrier release pin ───────────────────────────────────────
+
+    @isTest
+    static void callForOffers_matchedWithCarrier_releasesTheCarrierAndNeverEnqueues() {
+        // 🔴 THE HIGHEST-VALUE TEST IN THIS SECTION. Before 4B a call-for-offers email produced
+        // NO routed record, so enqueueAttachmentPersist's empty-targets decision released the
+        // carrier and this traffic cost ZERO ContentPublications — the invariant ARCHITECTURE.md
+        // states as "a gated email (D2 / U2) releases its carrier instead of enqueueing, so the
+        // pipeline's highest-volume junk costs zero publications".
+        //
+        // 4B makes this branch produce a MATCHED OPPORTUNITY ID, so `targets` is NON-EMPTY and
+        // that decision no longer catches it. Without the explicit suppression the file job
+        // would switch ON for marketed campaign OM decks — the bulkiest attachments this module
+        // sees — against the org-wide rolling 2,500/24h quota behind the 2026-08-06 outage that
+        // destroyed every attachment-bearing inbound email.
+        //
+        // Deleting the suppression makes THIS test fail and nothing else.
+        Id dealId = registerConvertedWinner('4300 carrier ave');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'carrier.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4300 Carrier Ave', 'OM attached.',
+            'msg-cfo-carrier@example.invalid', null, null);
+        givePendingCarrier(staging.Id, 'campaign-om.pdf');
+        setCallForOffersPropertiesMock('carrier.blast@rcm.example.invalid',
+            new List<String>{ '4300 Carrier Ave' }, Date.today().addDays(6), null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Outcome__c, Result_Record_Id__c, Attachment_Status__c, Dropped_Attachment_Notes__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(dealId, updated.Result_Record_Id__c,
+            '🔴 PRECONDITION, AND IT IS WHAT MAKES THIS TEST NON-VACUOUS: the branch really did '
+            + 'produce a NON-EMPTY target list. Without this the release below would prove only '
+            + 'that the old empty-targets path still works');
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS_MATCHED, updated.Outcome__c, '');
+
+        Assert.isNull(ExtractAddressQueueable.lastRunEnqueuedTargets,
+            '🔴 THE FILE JOB MUST NOT BE ENQUEUED, EVEN WITH A MATCHED DEAL TO LINK TO (D26 Q2). '
+            + 'lastRunEnqueuedTargets is the decision seam — a non-null value here means the '
+            + 'ContentPublication quota is now being spent on marketed campaign blasts');
+        Assert.areEqual(0, [SELECT COUNT() FROM Attachment WHERE ParentId = :staging.Id],
+            'and the carrier is RELEASED, not left Pending forever — the user asked for suppression '
+            + 'AND for the bytes not to be stranded');
+        Assert.areEqual(InboundEmailStagingService.ATTACHMENT_STATUS_NOT_SAVED,
+            updated.Attachment_Status__c, '');
+        Assert.isTrue(updated.Dropped_Attachment_Notes__c.contains('call for offers'),
+            'The release reason must NAME this branch, so a human recovering the bytes from Notes & '
+            + 'Attachments knows why they were dropped. Actual: ' + updated.Dropped_Attachment_Notes__c);
+        Assert.areEqual(0, [SELECT COUNT() FROM ContentVersion],
+            'ZERO ContentPublications consumed — the whole point');
+        Assert.areEqual(0, [
+            SELECT COUNT() FROM AsyncApexJob WHERE ApexClass.Name = 'AttachmentPersistQueueable'
+        ], '');
+    }
+
+    // ── T1 + T3: volume and the new pinned budget ────────────────────────────
+
+    @isTest
+    static void callForOffers_tenProperties_allMatched_stampsEveryDealInsideTheBudget() {
+        // §7 items 1 + 3 for this branch — the MAX_PROPERTIES volume case AND the headroom
+        // guard, asserted together because they describe the same execution.
+        //
+        // 🔴 THE COUNTERS ARE READ FROM lastRunQueryCount / lastRunDmlCount, NEVER FROM Limits.*
+        // AFTER Test.stopTest(). stopTest RESTORES the pre-test counters, so the obvious
+        // assertion would be silently vacuous — this class's standing rule.
+        List<String> blastAddresses = new List<String>();
+        List<String> registryKeys = new List<String>();
+        for (Integer i = 1; i <= 10; i++) {
+            String address = String.valueOf(4400 + i) + ' Blast St';
+            blastAddresses.add(address);
+            registryKeys.add(PropertyMatchingService.normalizeAddress(address));
+        }
+        List<Id> dealIds = registerConvertedWinners(registryKeys);
+        Date due = Date.today().addDays(21);
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'portfolio.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 10-asset portfolio', 'Portfolio offering, offers due.',
+            'msg-cfo-volume10@example.invalid', null, null);
+        setCallForOffersPropertiesMock('portfolio.blast@rcm.example.invalid', blastAddresses, due, null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(10, [
+            SELECT COUNT() FROM Opportunity WHERE Id IN :dealIds AND Offer_Due_Date__c = :due
+        ], 'All ten matched deals must be stamped — one email, one bulk update');
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Status__c, Outcome__c, Error__c, Property_Count__c, Routed_Record_Ids__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.isNull(updated.Error__c, 'No property should have failed. Actual: ' + updated.Error__c);
+        Assert.areEqual('Processed', updated.Status__c, '');
+        Assert.areEqual(10, updated.Property_Count__c, '');
+        Assert.areEqual(10, updated.Routed_Record_Ids__c.split('\n').size(),
+            'One audit line per property — the only place the full property-to-deal mapping exists');
+        Assert.isTrue(updated.Outcome__c.startsWith(ExtractAddressQueueable.OUTCOME_MULTI_PREFIX + ' (10)'),
+            'Actual: ' + updated.Outcome__c);
+
+        // 🔴 THE MULTI-PROPERTY LIST-VIEW TRAP, MEASURED RATHER THAN FEARED. 4A flagged a
+        // residual: Outcome__c is Text(255) and a long multi-property summary could lose the
+        // trailing segment naming the call-for-offers outcome. It cannot happen on THIS branch,
+        // and the reason is structural — buildMultiSummary GROUPS BY LABEL, so the summary's
+        // length is bounded by the number of DISTINCT labels (two here), never by N.
+        Assert.isTrue(updated.Outcome__c.length() < 255,
+            'The summary must fit Outcome__c without clipping. Length ' + updated.Outcome__c.length()
+            + ', actual: ' + updated.Outcome__c);
+        Assert.isTrue(updated.Outcome__c.contains('call for offers'),
+            '🔴 and it must still satisfy the widened Gated_Call_For_Offers filter 2 — filter 1 '
+            + '(startsWith \'Not Routed\') CANNOT match a Multi-Property summary, which is exactly '
+            + 'why Tranche 4A widened the view. Actual: ' + updated.Outcome__c);
+
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount <= CFO_QUERY_BUDGET,
+            'GOVERNOR HEADROOM: 10 matched properties consumed '
+            + ExtractAddressQueueable.lastRunQueryCount + ' SOQL queries against a budget of '
+            + CFO_QUERY_BUDGET + '. If this fails, a change has added per-property queries — fix '
+            + 'that rather than raising the budget. ⚠ And if the pressure is findMatchingRegistry\'s '
+            + 'fuzzy 90-day scan, the fix is a transaction-scoped memo, which touches the CLAIM '
+            + 'path and is a separate design');
+        Assert.isTrue(ExtractAddressQueueable.lastRunDmlCount <= CFO_DML_BUDGET,
+            'and ' + ExtractAddressQueueable.lastRunDmlCount + ' DML statements against a budget of '
+            + CFO_DML_BUDGET + '. The stamp is ONE bulk update for the whole email regardless of '
+            + 'how many deals matched — if this climbs with N, someone has moved it into the loop');
+        Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount > 0,
+            'Sanity: the telemetry must actually have been captured, or both assertions are vacuous');
+    }
+
+    // ── T2: truncation ───────────────────────────────────────────────────────
+
+    @isTest
+    static void callForOffers_fifteenProperties_truncatesVisiblyAtTheCap() {
+        // §7 item 2 for this branch. Truncation bounds the per-property query cost, which is what
+        // keeps the budget above meaningful — so it must be VISIBLE, never silent.
+        List<String> blastAddresses = new List<String>();
+        for (Integer i = 1; i <= 15; i++) {
+            blastAddresses.add(String.valueOf(4500 + i) + ' Overflow St');
+        }
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'overflow.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 15-asset portfolio', 'Large portfolio offering.',
+            'msg-cfo-volume15@example.invalid', null, null);
+        setCallForOffersPropertiesMock('overflow.blast@rcm.example.invalid',
+            blastAddresses, Date.today().addDays(30), null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Outcome__c, Property_Count__c, Routed_Record_Ids__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(15, updated.Property_Count__c,
+            'Property_Count__c records what the extraction FOUND (M), pre-truncation');
+        Assert.areEqual(ExtractAddressQueueable.MAX_PROPERTIES,
+            updated.Routed_Record_Ids__c.split('\n').size(),
+            'Only MAX_PROPERTIES are attempted — the gap between this and Property_Count__c IS the signal');
+        Assert.isTrue(updated.Outcome__c.contains('[truncated: 10 of 15]'),
+            'and the outcome states the truncation explicitly. Actual: ' + updated.Outcome__c);
+        Assert.isTrue(updated.Outcome__c.contains('call for offers'),
+            'while still satisfying the widened Gated_Call_For_Offers filter. Actual: ' + updated.Outcome__c);
+        Assert.isTrue(updated.Outcome__c.length() < 255,
+            'Even a truncated multi-property summary fits Outcome__c. Length '
+            + updated.Outcome__c.length() + ', actual: ' + updated.Outcome__c);
+        Assert.areEqual(0, [SELECT COUNT() FROM Lead WHERE Property_Address__c LIKE '%Overflow St'],
+            'D3: a 15-property blast still creates no Lead of any kind — the spillover note is '
+            + 'deliberately NOT built here, because only createLead consumes it');
+    }
+
+    // ── T4: mixed outcome ────────────────────────────────────────────────────
+
+    @isTest
+    static void callForOffers_mixedMatchedAndUnmatched_stampsOnlyTheMatchAndStaysInTheWatchView() {
+        // §7 item 4. Three properties: one resolves to a converted winner, one to an UNCONVERTED
+        // winner (a no-match by Q1), and one to nothing at all. The critical property is
+        // INDEPENDENCE — the two non-matches must not stop the one match from being stamped.
+        Id dealId = registerConvertedWinner('4601 mixed st');
+        Lead openWinner = TestDataFactory.createLead(true);
+        TestDataFactory.createPropertyRegistry('4602 mixed st', openWinner.Id, true);
+        Date due = Date.today().addDays(17);
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'mixed.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 3-asset portfolio', 'Three assets, offers due.',
+            'msg-cfo-mixed@example.invalid', null, null);
+        setCallForOffersPropertiesMock('mixed.blast@rcm.example.invalid',
+            new List<String>{ '4601 Mixed St', '4602 Mixed St', '4603 Mixed St' }, due, null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(due, [SELECT Offer_Due_Date__c FROM Opportunity WHERE Id = :dealId].Offer_Due_Date__c,
+            'The one matched deal is stamped, independently of the two that did not match');
+        Assert.isNull([SELECT Offer_Due_Date__c FROM Lead WHERE Id = :openWinner.Id].Offer_Due_Date__c,
+            'and the unconverted winner is untouched (Q1)');
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Outcome__c, Result_Record_Id__c, Routed_Record_Ids__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(dealId, updated.Result_Record_Id__c,
+            'The matched deal is the PRIMARY record — PRIORITY_REPEAT outranks the unmatched '
+            + 'properties\' PRIORITY_NO_PROPERTY');
+        Assert.isTrue(updated.Outcome__c.contains(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS_MATCHED),
+            'The summary must name the matched population. Actual: ' + updated.Outcome__c);
+        Assert.isTrue(updated.Outcome__c.startsWith(ExtractAddressQueueable.OUTCOME_MULTI_PREFIX),
+            'Three outcomes means a Multi-Property summary — which does NOT start with '
+            + '\'Not Routed\'. Actual: ' + updated.Outcome__c);
+        Assert.isTrue(updated.Outcome__c.contains('call for offers'),
+            '🔴 THE 4A WIDENING IS WHAT KEEPS THIS ROW IN Gated_Call_For_Offers. Filter 1 cannot '
+            + 'match it; filter 2 (contains \'call for offers\') can. Actual: ' + updated.Outcome__c);
+        Assert.areEqual(3, updated.Routed_Record_Ids__c.split('\n').size(),
+            'All three properties are audited, matched or not — the audit is the only per-address record');
+    }
+
+    // ── T7: the approval-lock / refusal path ─────────────────────────────────
+
+    @isTest
+    static void callForOffers_stampThrows_stillReachesFinishAndLogsTheTask() {
+        // 🔴 THE MOST IMPORTANT TEST IN THIS SECTION AFTER THE CARRIER PIN. It is the §3.5 /
+        // D26 finding-2 guard, and it is about ONE property: finish() IS UNCONDITIONALLY
+        // REACHABLE.
+        //
+        // If a stamp failure escaped routeCallForOffers into execute()'s catch, finish() would
+        // NEVER RUN — no Task, no recorded RFC Message-ID — and the platform redelivering this
+        // message would re-run the ENTIRE pipeline from the top, on a branch that reads a live
+        // registry. The branch's own try/catch is what prevents that.
+        //
+        // The failure is injected through CallForOffersStampService.simulateStampFailure, which
+        // THROWS rather than performing a failing DML — the same decision, for the same layering
+        // reason, as this class's own forceRouteFailure seam. It is not a stand-in for the
+        // production refusal (that is ENTITY_IS_LOCKED, an approval lock SYSTEM_MODE does not
+        // lift, unreachable from @isTest); it is the strictly WORSE case, an exception escaping
+        // the service entirely, and containing it is what this test proves.
+        Id dealId = registerConvertedWinner('4700 locked way');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'locked.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4700 Locked Way', 'Offers due.',
+            'msg-cfo-locked@example.invalid', null, null);
+        setCallForOffersPropertiesMock('locked.blast@rcm.example.invalid',
+            new List<String>{ '4700 Locked Way' }, Date.today().addDays(4), null);
+
+        Test.startTest();
+        CallForOffersStampService.simulateStampFailure = true;
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+        CallForOffersStampService.simulateStampFailure = false;
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Status__c, Outcome__c, Error__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual('Error', updated.Status__c,
+            'A failed stamp must surface as an Error on the staging row, never as a stamp that '
+            + 'silently did not happen');
+        Assert.isNotNull(updated.Error__c, 'and the failure must be recorded durably');
+        Assert.isTrue(updated.Error__c.contains(String.valueOf(dealId)),
+            'NAMING THE RECORD — a human triaging Error__c has nothing else to go on. Actual: '
+            + updated.Error__c);
+
+        Assert.areEqual(1, [
+            SELECT COUNT() FROM Task WHERE Inbound_Message_Id__c = 'msg-cfo-locked@example.invalid'
+        ], '🔴 THE LOAD-BEARING ASSERTION: finish() STILL RAN. The Task exists, so the Message-ID '
+            + 'is recorded and a platform redelivery of this message cannot re-run the pipeline. '
+            + 'Delete the try/catch in the call-for-offers branch and this is the assertion that '
+            + 'goes red');
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS, updated.Outcome__c,
+            'and the row still carries a findable label. The failure happened before any outcome '
+            + 'was added, so the branch\'s empty-outcomes fallback supplies today\'s label — never '
+            + 'a blank Outcome__c that no list view can find');
+
+        Assert.isNull([SELECT Offer_Due_Date__c FROM Opportunity WHERE Id = :dealId].Offer_Due_Date__c,
+            'Precondition: the stamp really did fail, or every assertion above is vacuous');
+    }
+
+    // ── T8: the same campaign, twice, end to end ─────────────────────────────
+
+    @isTest
+    static void callForOffers_sameCampaignTwice_theSecondEmailIsStillFiledOnTheDeal() {
+        // Two DISTINCT emails about the same campaign (distinct Message-IDs, so the redelivery
+        // guard does NOT short-circuit and the branch genuinely runs twice).
+        //
+        // ⚠ RENAMED 2026-08-10 (review finding S3). It used to be called
+        // `..._theSecondPassStampsNothingNew` and it selected `LastModifiedDate` without ever
+        // asserting on it — so nothing here distinguished "skipped" from "rewrote the same
+        // value", and the name over-claimed. THE NO-CHANGE SKIP IS PROVEN WHERE IT CAN BE
+        // PROVEN: `CallForOffersStampServiceTest.stamp_replayedWithIdenticalValues_isAZeroDmlNoOp`
+        // asserts it on DML COUNT, which is the only thing that tells the two apart. What THIS
+        // test is for is the other half — that a repeat campaign email is still MATCHED, still
+        // FILED on the deal, and still creates no Lead. Idempotency is about not re-WRITING,
+        // never about ignoring the email.
+        Id dealId = registerConvertedWinner('4800 idempotent ave');
+        Date due = Date.today().addDays(19);
+
+        Inbound_Email_Staging__c first = insertStaging(
+            'repeat.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4800 Idempotent Ave', 'Offers due.',
+            'msg-cfo-idem-1@example.invalid', null, null);
+        Inbound_Email_Staging__c second = insertStaging(
+            'repeat.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'REMINDER: Call for Offers | 4800 Idempotent Ave', 'Offers due.',
+            'msg-cfo-idem-2@example.invalid', null, null);
+        setCallForOffersPropertiesMock('repeat.blast@rcm.example.invalid',
+            new List<String>{ '4800 Idempotent Ave' }, due, null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(first.Id, null, null));
+        System.enqueueJob(new ExtractAddressQueueable(second.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(due,
+            [SELECT Offer_Due_Date__c FROM Opportunity WHERE Id = :dealId].Offer_Due_Date__c,
+            'The deadline is stamped once and stays');
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS_MATCHED, [
+            SELECT Outcome__c FROM Inbound_Email_Staging__c WHERE Id = :second.Id
+        ].Outcome__c,
+            'The second email still MATCHES and is still filed on the deal — idempotency is about '
+            + 'not re-WRITING, never about ignoring the email');
+        Assert.areEqual(2, [
+            SELECT COUNT() FROM Task WHERE WhatId = :dealId
+        ], 'Both emails are logged on the deal; each has its own Message-ID');
+        Assert.areEqual(0, [SELECT COUNT() FROM Lead WHERE Property_Address__c = '4800 Idempotent Ave'],
+            'and neither creates a Lead');
+    }
+
+    // ── The degraded / addressless shape ─────────────────────────────────────
+
+    @isTest
+    static void callForOffers_noAddressableProperty_takesTheByteIdenticalNoMatchPath() {
+        // The LLM-degraded and name-only shapes both land here: buildWorkList returns empty, so
+        // there is nothing to match and exactly one outcome is emitted with today's label.
+        // ⚠ NOTE THE ASYMMETRY WITH BRANCH (c), AND THAT IT IS CORRECT: branch (c) stamps the
+        // first property onto a Lead it creates. This branch creates no Lead, so there is
+        // nothing to stamp a property block onto — the extraction survives on the staging row.
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'noaddr.blast@rcm.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | The Grand Portfolio', 'A named portfolio with no street address.',
+            'msg-cfo-noaddr@example.invalid', null, null);
+        setCallForOffersPropertiesMock('noaddr.blast@rcm.example.invalid',
+            new List<String>{ '   ' }, Date.today().addDays(5), null);
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updated = [
+            SELECT Outcome__c, Result_Record_Id__c, Error__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_CALL_FOR_OFFERS, updated.Outcome__c,
+            'An addressless call-for-offers email keeps today\'s label exactly');
+        Assert.isNull(updated.Result_Record_Id__c, '');
+        Assert.isNull(updated.Error__c, 'An empty work-list is not an error');
+        Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead], 'and still no Lead');
+    }
 }

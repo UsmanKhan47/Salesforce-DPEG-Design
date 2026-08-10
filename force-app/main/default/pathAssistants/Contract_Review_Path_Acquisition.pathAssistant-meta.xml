@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The BUY-SIDE PSA path, for the Acquisition_PSA record type.
+        Four steps: Initial Draft -> Revised -> Ready for Execution -> Executed.
+
+        EVERY <info> TEXT BELOW IS COPIED BYTE-IDENTICAL FROM Contract_Review_Negotiation_Path,
+        the __MASTER__ path this file supersedes (now deactivated, retained as the record of
+        that text). Nothing on the acquisition side is reworded, re-ordered, added or dropped by
+        this tranche. The absence of <fieldNames> on every step is ALSO carried forward
+        deliberately - the master path declared none, and adding key fields here would change
+        what an acquisition user sees on a live Path for no requested reason.
+
+        ⚠ THE FIRST STEP CONTAINS `&amp;amp;amp;` AND THAT IS NOT A TYPO INTRODUCED HERE - it is
+        the master path's own bytes, reproduced exactly. Whether it renders as an ampersand or
+        as the literal text depends on how the Path component treats the stored string, which
+        this repo has never confirmed. It is left alone on the byte-identical rule; if it is
+        ever judged wrong it should be fixed as its own change, on both this file and the
+        deactivated original, not silently while doing something else. The new disposition path
+        sidesteps the question by using the word "and".
+
+        ⚠ DRIVEN BY Negotiation_Status__c, NOT Stage__c - inherited from the master path and
+        still the load-bearing reason this Path works. Stage__c is a DERIVED PROJECTION:
+        Contract_Review_Stage_Sync recomputes it from Negotiation_Status__c on every save and a
+        direct write to it commits and is silently discarded. 'Revised' and 'Ready for
+        Execution' BOTH project to 'Review', so a Stage__c Path would sit still through one of
+        the Advance Stage clicks. On Negotiation_Status__c the Path and the button are the SAME
+        sequence.
+
+        WHY A NEW FILE AT ALL. A Path is configured PER RECORD TYPE and recordTypeName cannot be
+        re-pointed on an existing PathAssistant, so a __MASTER__ path cannot be adopted by a new
+        record type. Same shape as Tranche 2's Disposition_Path split, 3A's NDA_Path split and
+        3B's LOI_Path split.
+
+        STEP ORDER COMES FROM THE PICKLIST, NOT FROM THIS FILE. Negotiation_Status__c is ordered
+        Initial Draft, Revised, Ready for Execution, Executed (sorted=false), which is exactly
+        the intended line. ⚠ UNLIKE LOI__c AND NDA__c THERE WAS NO ORDERING PROBLEM TO SOLVE
+        HERE, because no value was added: both record types expose the SAME four values, so the
+        two PSA paths render the same sequence and differ only in wording.
+
+        POST-DEPLOY: this path renders nothing until every existing Contract Review row has been
+        migrated off Master onto Acquisition_PSA and the record type is assigned in the profiles
+        in use - the same gate Tranche 2's A2 established, for the same reason.
+    -->
+    <active>true</active>
+    <entityName>Contract_Review__c</entityName>
+    <fieldName>Negotiation_Status__c</fieldName>
+    <masterLabel>Contract Review Path Acquisition</masterLabel>
+    <pathAssistantSteps>
+        <info>Draft the purchase &amp;amp; sale agreement from the agreed LOI terms. Circulate the first draft and capture the PSA date.</info>
+        <picklistValueName>Initial Draft</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Review the PSA internally. Validate terms, contingencies and timelines. Redlines happen here: log every exchange with Log Version — each one records who sent it and flips Ball In Court — and stay on this step for as long as the negotiation runs. Advance only once the document is final.</info>
+        <picklistValueName>Revised</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Terms are locked and the document is final. Route for signature. Advancing from here executes the contract, so confirm every contingency and date is agreed first.</info>
+        <picklistValueName>Ready for Execution</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>PSA fully executed — this hands the deal off to the Transactions team: the Opportunity is stamped Contract Signed (Day 0) and the Transaction record is created automatically. The execution date is stamped for you.</info>
+        <picklistValueName>Executed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Acquisition_PSA</recordTypeName>
+</PathAssistant>

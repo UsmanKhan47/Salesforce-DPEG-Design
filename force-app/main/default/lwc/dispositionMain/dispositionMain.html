@@ -11,7 +11,13 @@
     <template if:true={isActiveListing}>
         <c-broker-listing record-id={recordId}></c-broker-listing>
         <div class="listing-row">
-            <c-listing-alerts></c-listing-alerts>
+            <!--
+              ⚠ record-id ADDED 2026-08-10 (Tranche 5B). It was the ONLY child on this page
+              without it — harmless while c-listing-alerts was a static mock, and fatal the
+              moment it reads anything. Do not remove it: the traction panel has no other
+              route to the Disposition.
+            -->
+            <c-listing-alerts record-id={recordId}></c-listing-alerts>
             <c-backup-brokers record-id={recordId}></c-backup-brokers>
         </div>
     </template>

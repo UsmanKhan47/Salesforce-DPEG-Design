@@ -1,6 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!-- ⚠ DRIVEN BY Negotiation_Status__c, NOT Stage__c. Replaces Contract_Review_Path (now
+    <!-- DEACTIVATED 2026-08-09 (Tranche 3C), NOT DELETED, AND THAT IS DELIBERATE.
+
+         Contract_Review__c gained two record types in this tranche (Acquisition_PSA,
+         Disposition_PSA). A Path is configured PER RECORD TYPE, and recordTypeName CANNOT BE
+         RE-POINTED on an existing PathAssistant - so this __MASTER__ path is superseded by two
+         new files, Contract_Review_Path_Acquisition and Contract_Review_Path_Disposition,
+         exactly as Tranche 2 superseded Disposition_Path, 3A superseded NDA_Path and 3B
+         superseded LOI_Path.
+
+         It is retained rather than deleted because it is the record of the guidance text the
+         ACQUISITION steps were copied from. Contract_Review_Path_Acquisition carries all four
+         <info> texts BYTE-IDENTICAL to the steps below - including the `&amp;amp;amp;` in the first
+         one - and like this file it declares no <fieldNames> on any step; that absence was
+         copied forward too rather than being "improved".
+
+         Once record types exist, a __MASTER__ path renders for the Master type only - which
+         after the row migration is NO ROWS. Leaving it active would do nothing useful and would
+         make the Path configuration ambiguous to the next reader.
+
+         ORDER OF OPERATIONS AT DEPLOY: profile record-type assignment and the migration of every
+         existing Contract Review row off Master onto Acquisition_PSA must both complete BEFORE
+         the two new paths are relied on - a row still on Master matches no record-type Path and
+         renders a Path with no current position. Same gate as Tranche 2's A2.
+
+         Everything below this line is the ORIGINAL note and remains accurate about the field
+         choice, which both successor files inherit unchanged.
+         ====================================================================================
+         ⚠ DRIVEN BY Negotiation_Status__c, NOT Stage__c. Replaces Contract_Review_Path (now
          inactive), which could not simply be re-pointed: the Metadata API refuses to change
          fieldName on an existing PathAssistant.
 
@@ -24,7 +51,7 @@
          sits on 'Revised' instead of dropping off the Path — which is why this step's coaching text
          tells the user to stay here and keep logging versions. Do not reintroduce a counter status
          without also revisiting PsaVersionService, which deliberately no longer writes this field. -->
-    <active>true</active>
+    <active>false</active>
     <entityName>Contract_Review__c</entityName>
     <fieldName>Negotiation_Status__c</fieldName>
     <masterLabel>Contract Review Negotiation Path</masterLabel>

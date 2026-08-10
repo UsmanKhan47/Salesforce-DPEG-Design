@@ -310,6 +310,84 @@ private class OpportunitySelectorTest {
             'All 251 deals with a Primary LOI are read by their Ids in a single bulk Set<Id> query');
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectCallForOffersTargetsByIds — Broker Protection's call-for-offers stamp
+    // (Tranche 4B, 2026-08-10). The ONE WITH SYSTEM_MODE method on this class.
+    //
+    // ⚠ THERE IS DELIBERATELY NO System.runAs FLS TEST HERE, AND THAT IS NOT AN
+    // OMISSION. A SYSTEM_MODE read cannot be made to fail on FLS by construction, so
+    // a runAs test asserting "it did not throw" would pass identically if the method
+    // were WITH USER_MODE against an admin — i.e. it would be UNFALSIFIABLE, the same
+    // trap recorded for the system-mode write elsewhere in this repo. What CAN be
+    // falsified is the field list (a narrowed SELECT breaks the no-change skip in
+    // CallForOffersStampService, silently turning every redelivery into a write), and
+    // that is what the tests below pin. The mode's real proof is post-deploy gate G5,
+    // run as the pipeline principal rather than as an admin.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectCallForOffersTargetsByIds_selectsEveryFieldTheStampCompares() {
+        Opportunity deal = TestDataFactory.createOpportunity(null, false);
+        deal.Offer_Due_Date__c = Date.today().addDays(9);
+        deal.Listing_Broker_Name__c = 'Pat Lister';
+        deal.Listing_Broker_Email__c = 'pat.lister@example.invalid';
+        insert deal;
+
+        Test.startTest();
+        List<Opportunity> result =
+            OpportunitySelector.selectCallForOffersTargetsByIds(new Set<Id>{ deal.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'The matched deal must come back');
+        Assert.areEqual(Date.today().addDays(9), result[0].Offer_Due_Date__c,
+            'Offer_Due_Date__c must be SELECTed — CallForOffersStampService compares against it to '
+            + 'decide whether anything would change, and an unselected field would read null, '
+            + 'making every redelivery an unnecessary write on a live deal');
+        Assert.areEqual('Pat Lister', result[0].Listing_Broker_Name__c,
+            'Listing_Broker_Name__c must be SELECTed for the same reason');
+        Assert.areEqual('pat.lister@example.invalid', result[0].Listing_Broker_Email__c,
+            'Listing_Broker_Email__c must be SELECTed for the same reason');
+    }
+
+    @isTest
+    static void selectCallForOffersTargetsByIds_nullOrEmpty_returnsEmptyListAndCostsNoQuery() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Opportunity> forNull = OpportunitySelector.selectCallForOffersTargetsByIds(null);
+        List<Opportunity> forEmpty =
+            OpportunitySelector.selectCallForOffersTargetsByIds(new Set<Id>());
+        Integer after = Limits.getQueries();
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'Null ids short-circuit to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'Empty ids short-circuit to an empty list, not null');
+        Assert.areEqual(before, after,
+            'and the short-circuit must cost NO query — this is what keeps an all-unmatched '
+            + 'call-for-offers blast exactly as cheap as it was before Tranche 4B');
+    }
+
+    @isTest
+    static void selectCallForOffersTargetsByIds_isOneQueryForManyDeals() {
+        // The constancy property, not the volume: CallForOffersStampService reads ONE time for a
+        // whole email no matter how many of its properties matched. Ten is MAX_PROPERTIES, the
+        // real production ceiling for one email — 251 deals in one call-for-offers email is
+        // unreachable (ExtractAddressQueueable caps at 10) and testing it would encode a state
+        // production cannot produce.
+        List<Opportunity> deals = TestDataFactory.createOpportunities(10, true);
+        Set<Id> ids = (new Map<Id, Opportunity>(deals)).keySet();
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Opportunity> result = OpportunitySelector.selectCallForOffersTargetsByIds(ids);
+        Integer after = Limits.getQueries();
+        Test.stopTest();
+
+        Assert.areEqual(10, result.size(), 'Every requested deal is returned in one bulk read');
+        Assert.areEqual(1, after - before,
+            'EXACTLY one query for ten deals. If this becomes 10, someone has moved the read '
+            + 'inside a per-property loop and the pinned call-for-offers governor budget is next');
+    }
+
     /** A syntactically valid Opportunity Id that resolves to no row (create then delete). */
     private static Id ghostOpportunityId() {
         Opportunity ghost = TestDataFactory.createOpportunity(null, true);

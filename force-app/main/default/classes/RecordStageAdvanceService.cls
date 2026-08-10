@@ -1,9 +1,12 @@
 /**
- * RecordStageAdvanceService — ONE generic stage-advance service for the five acquisitions
- * CHILD objects whose Lightning Path is a straight line:
+ * RecordStageAdvanceService — ONE generic stage-advance service for the SIX acquisitions /
+ * disposition CHILD objects whose stage is driven by a button rather than by the Path:
  *
- *   NDA__c                              (Status__c)  Pending -> Sent -> Signed
- *   LOI__c                              (Stage__c)   Draft -> Prepare/Review -> Sent -> Counter -> Completed
+ *   NDA__c                              (Status__c)  PER RECORD TYPE — see below
+ *   LOI__c                              (Stage__c)   PER RECORD TYPE — see below
+ *   Contract_Review__c        (Negotiation_Status__c) PER RECORD TYPE — see below, and read the
+ *                                                    note there: the two types share ONE SEQUENCE
+ *                                                    and differ ONLY in the GATE
  *   Underwriting__c                     (Stage__c)   Requested -> In Progress -> [approval] -> Approved -> Completed
  *   Construction_Feasibility_Review__c  (Stage__c)   Requested -> Site Visit -> Condition Assessment
  *                                                    -> Cost Estimate -> Share Opinion -> Completed
@@ -15,25 +18,184 @@
  * the permission is asserted server-side, and any future validation rule's message is surfaced to
  * the user instead of being swallowed.
  *
+ * ── 🔴 THE MAPS ARE PER RECORD TYPE, NOT PER OBJECT (Tranche 3A, 2026-08-09) ──
+ * THREE of the six objects now carry record types. TWO of them have DIFFERENT stage sequences
+ * (D7 / D14.1 / D6); the third has ONE sequence and TWO GATES (D16.3, Tranche 3C):
+ *
+ *   NDA__c
+ *   Acquisition_NDA   Pending  -> Sent -> Received -> Signed        explicit targets: none
+ *                     gate: DEAL_DRIVER
+ *   Disposition_NDA   Not Sent -> Sent -> Signed                    explicit targets: {Declined}
+ *                     gate: DISPOSITION_DRIVER
+ *
+ *   LOI__c            (Tranche 3B, 2026-08-09 — this was the config addition the note at
+ *                      CONFIG_BY_TYPE predicted, and it changed nothing below the config)
+ *   Acquisition_LOI   Draft -> Prepare/Review -> Sent -> Counter -> Completed
+ *                     explicit targets: {Counter, Completed}       gate: DEAL_DRIVER
+ *   Disposition_LOI   Received -> Under Review -> Countered by DPEG
+ *                       -> Counter Received from Buyer -> Executed
+ *                     explicit targets: {Countered by DPEG,       gate: DISPOSITION_DRIVER
+ *                       Counter Received from Buyer} — the negotiation LOOP, added at the
+ *                       Tranche 3B close-out (2026-08-09)
+ *
+ *   Contract_Review__c (Tranche 3C, 2026-08-09 — the case that proves the gate and the sequence
+ *                      are INDEPENDENT axes)
+ *   Acquisition_PSA   Initial Draft -> Revised -> Ready for Execution -> Executed
+ *                     explicit targets: none                       gate: DEAL_DRIVER
+ *   Disposition_PSA   Initial Draft -> Revised -> Ready for Execution -> Executed  (THE SAME MAP
+ *                     OBJECT, shared by reference — see CONTRACT_REVIEW_NEXT_STAGE)
+ *                     explicit targets: none                       gate: DISPOSITION_DRIVER
+ *
+ * ── 🔴 WHY Contract_Review__c IS SPLIT AT ALL WHEN ITS VALUES ARE IDENTICAL ──
+ * This is the question a reader arrives with, and "it needed no change" is the wrong answer.
+ * ESTABLISHED 2026-08-09, not assumed:
+ *   - THE SEQUENCE genuinely needs NO change. Both record type files expose the SAME four
+ *     Negotiation_Status__c values, and Disposition_PSA's own header states that is deliberate
+ *     ("Initial Draft -> Revised -> Ready for Execution -> Executed are ALREADY exactly the four
+ *     states the client document names for the sell-side PSA"). So both types share ONE map
+ *     OBJECT, by reference, not two copies. Copying it would invite the two to drift apart while
+ *     the requirement is that they cannot.
+ *   - THE GATE MUST change. A disposition persona holds `Disposition_Deal_Driver`, which grants
+ *     FLS on `User.Disposition_Driver__c` and NOT on `User.Deal_Driver__c` (measured across every
+ *     permission set in the repo: exactly one set grants each field, and they are disjoint). Left
+ *     at the single-sequence DEAL_DRIVER config, `hasStageActionAccess` and
+ *     `assertStageActionAccess` would REFUSE every disposition PSA for the only persona meant to
+ *     work it — the sell-side PSA would be unadvanceable from its own record page.
+ * ⇒ SHARING A SEQUENCE IS NOT SHARING A GATE. Anyone who checks only the picklists concludes "no
+ *   change needed" and ships a dead feature.
+ *
+ * ⚠ AND THE SPLIT COSTS ONE QUERY, WHICH IS NOT FREE AND IS WORTH KNOWING. `gateFor()`
+ * short-circuits only for an object with ONE configured sequence, so Contract_Review__c now LOADS
+ * the row inside `hasStageActionAccess` — a `cacheable=true` path invoked once per record view.
+ * That is the same price NDA__c has paid since 3A and LOI__c since 3B, and it is accepted for the
+ * same reason: the gate is a property of the record type and the record type is a property of the
+ * row. Pinned by gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject.
+ *
+ * ── 🔴 THE GATE IS PER RECORD TYPE TOO, SINCE 2026-08-09 ─────────────────────
+ * It used to live on StageConfig (per object) because all six objects answered to one persona.
+ * That stopped being true the moment `NDA__c` served both modules: an acquisitions deal driver
+ * must not be able to drive a SALE's NDA, nor a sale driver an acquisition's, merely because the
+ * two share a table. The gate therefore moved onto StageTypeConfig alongside `nextStage` and
+ * `explicitTargets` — all three are the per-record-type configuration, and keeping them in one
+ * object is what stops a future change extending one and forgetting the others.
+ *
+ * The visible consequence is in hasStageActionAccess(), which now LOADS the row for a
+ * multi-record-type object (see its own header for the two small behavioural changes that
+ * follow). Objects with a single sequence short-circuit and still pay nothing.
+ *
+ * ⚠ ON NDA__c, 'Sent' and 'Signed' are SHARED by both value sets, so the CURRENT STAGE ALONE DOES
+ * NOT IDENTIFY THE PATH. From 'Sent' an acquisition NDA advances to 'Received' and a disposition
+ * NDA advances to 'Signed'. That single fact is why an object-keyed map cannot express this feature
+ * and why the record type has to be read off the record.
+ *
+ * ⚠ ON LOI__c THE TWO STAGE SETS ARE FULLY DISJOINT, AND THAT DOES **NOT** MAKE THE RECORD TYPE
+ * REDUNDANT HERE. Disjoint sets mean the stage alone identifies the path for a flexipage
+ * VISIBILITY rule, which is why the LOI record-type files say so. It does not follow for this
+ * service, for three separate reasons, any one of which is sufficient:
+ *   1. the PERMISSION GATE is not a function of the current stage at all — hasStageActionAccess is
+ *      asked before any stage is known to the client, and answering it needs the record type;
+ *   2. the EXPLICIT-TARGET allow-list is checked against a caller-supplied string, so deriving the
+ *      allow-list from the record's current stage would let a row parked on a shared/unknown stage
+ *      inherit the wrong list;
+ *   3. Apex DML does not enforce record-type picklist restriction, so a row CAN carry an off-set
+ *      stage — at which point "the sets are disjoint" is an assumption about data, not a fact.
+ * Deriving the sequence from the stage value would also silently break the day any LOI stage is
+ * shared, with no compile error and no failing walk test.
+ *
+ * 🔴 THE EXPLICIT-TARGET ALLOW-LIST IS PER RECORD TYPE TOO, AND THAT IS THE SECURITY HALF OF THIS
+ * CHANGE — NOT A TIDY-UP. Record-type picklist restrictions are enforced by the UI ONLY; Apex DML
+ * does not enforce them. So an object-level allow-list containing 'Declined' (for the disposition
+ * NDA's Mark Declined action) would let a hand-crafted advanceTo(acquisitionNdaId, 'Declined')
+ * write a disposition-only value onto an acquisition NDA — the exact hole the allow-list exists to
+ * close, re-opened one layer up. Making only nextStage record-type-aware LOOKS finished and is not.
+ * Pinned by RecordStageAdvanceServiceTest.acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget.
+ *
+ * ⚠ THE SAME HOLE EXISTS IN BOTH DIRECTIONS ON LOI__c, WHICH IS WHY THE 3B CONFIG SPLITS
+ * LOI_EXPLICIT_TARGETS RATHER THAN SHARING IT. Held at object level, {Counter, Completed} would be
+ * writable onto a DISPOSITION LOI — a value set that record type does not carry at all — and the
+ * disposition type's own {Countered by DPEG, Counter Received from Buyer} would be writable onto an
+ * ACQUISITION LOI, which carries neither. Pinned in both directions by
+ * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget /
+ * dispositionLoiRefusesTheAcquisitionExplicitTargets.
+ *
+ * 🔴 THAT SECOND DIRECTION STOPPED BEING HYPOTHETICAL AT THE 3B CLOSE-OUT. Until the loop actions
+ * landed, Disposition_LOI supplied NO explicit targets, so the acquisition-side test could only
+ * prove "the acquisition list has not silently widened to the union". It now has two real
+ * disposition-only values to leak, and both are refused — which is the shape the test was written
+ * in advance for.
+ *
+ * ── ⚠ THE CALL ORDER CHANGED, AND advanceTo's CHANGE IS THE LOAD-BEARING ONE ──
+ * configFor() resolves from Id.getSObjectType() alone, so it still runs FIRST — it is what proves
+ * the object is stage-controlled before load() is asked to dispatch, and it supplies the stage FIELD
+ * NAME. What moved is the choice of MAP: the record type is not knowable until the row is in hand,
+ * so map selection now happens AFTER load().
+ *
+ *   advance()    load() already ran before the map was consulted. Order effectively unchanged.
+ *   advanceTo()  🔴 THE ALLOW-LIST CHECK NOW HAPPENS AFTER THE LOAD, where it used to happen
+ *                before it. It has to: the allow-list is a property of the record type, and the
+ *                record type is a property of the row. One visible consequence — advanceTo against
+ *                a NON-EXISTENT Id and a disallowed target now raises System.QueryException where
+ *                it previously raised RecordStageAdvanceException. Both surface a fixed generic
+ *                message at the controller, so no user-visible wording changes.
+ *
+ * ── THE null / Master FALLBACK IS LOAD-BEARING, NOT DEFENSIVE ────────────────
+ * Between the record-type deploy (T1) and the row migration (GATE T-B) every existing NDA, LOI and
+ * Contract Review sits on the Master record type, and today — before T1 — none of the three has a
+ * RecordTypeId field at all. Each StageConfig therefore names a defaultTypeKey pointing at the
+ * ACQUISITION map, which is what keeps live rows advancing through that window. An object with no
+ * record types (THREE of the six, since Tranche 3C) keeps a single map and never pays a describe:
+ * record-type awareness degrades to exactly today's behaviour.
+ *
+ * ⚠ ON Contract_Review__c THE FALLBACK IS QUIETER THAN ON THE OTHER TWO, AND THAT CUTS BOTH WAYS.
+ * Because both PSA types share one sequence, a Master-type row advances CORRECTLY through the
+ * fallback — the walk works, the toasts are right, nothing looks wrong. The only thing the fallback
+ * gets wrong is the GATE (DEAL_DRIVER), so an unmigrated sell-side PSA is simply un-advanceable by
+ * the disposition persona and perfectly advanceable by an acquisitions one. There is no loud
+ * symptom to lead anyone to gate T-B here.
+ *
+ * ⚠ The fallback is safe on LOI__c for the same reason it is safe on NDA__c and for no other:
+ * every LOI in the org today is buy-side by construction, because the Disposition__c lookup and the
+ * sell-side stages arrive in this same tranche. It is a MIGRATION-WINDOW guarantee, not a general
+ * one — the day a Master-type row can legitimately be sell-side, this fallback starts applying
+ * buy-side stages and the ACQUISITIONS gate to a sale.
+ *
+ * ⚠ A REAL, NAMED record type with no map is a different case and is REFUSED, not defaulted. A
+ * silent fallback there would apply the acquisition sequence to a record the acquisition sequence
+ * does not describe — and, because DML does not enforce record-type picklist restrictions, would
+ * happily write an off-set value. Failing loudly is also what makes a typo in a map key falsifiable
+ * (Apex Map<String,...> keys are case-SENSITIVE while getDeveloperName() returns the metadata
+ * casing, so a mis-cased key would otherwise degrade in silence).
+ *
  * ── ⚠ THERE ARE TWO STAGE SERVICES. KNOW WHICH ONE YOU ARE EDITING ────────────
  *   StageAdvanceService        — OPPORTUNITY only. Its advance() BRANCHES into an approval
  *                                submission, and its advanceTo() exists because Opportunity has
  *                                parallel record-type branches (Land / Commercial) and an off-ramp;
  *                                that is why it carries ALLOWED_EXPLICIT_TARGETS.
- *   RecordStageAdvanceService  — THIS CLASS. The five child objects above. Every path is LINEAR,
- *                                so there is no branch, no off-ramp, and no explicit target.
+ *   RecordStageAdvanceService  — THIS CLASS. The six child objects above, carrying NINE
+ *                                StageTypeConfigs since Tranche 3C (NDA 2, LOI 2, Contract Review
+ *                                2, plus one each for the three record-type-free objects). THREE
+ *                                of the nine are not straight lines, and each is a
+ *                                DIFFERENT shape: the ACQUISITION LOI BRANCHES at 'Sent', the
+ *                                DISPOSITION NDA has the 'Declined' OFF-RAMP, and the DISPOSITION
+ *                                LOI is a LOOP (Countered by DPEG <-> Counter Received from Buyer).
+ *                                All three reach their extra stages through a per-record-type
+ *                                allow-list rather than a free-form write. ⚠ Every exception is
+ *                                RECORD-TYPE-scoped, never object-scoped — the ACQUISITION NDA and
+ *                                BOTH PSA types are genuinely linear and offer no explicit target
+ *                                at all.
  * They are deliberately NOT merged: folding a live, gated, deployed feature into a new one buys
  * tidiness and costs a re-test of the Opportunity approval hand-off. They DO share the permission
  * service (OpportunityActionPermissionService) and the confirm/guard shape on the client. Same
  * "know which one you are editing" convention as the three LeadConvert* classes.
  *
- * ── 🔴 EXPOSES advance(recordId) ONLY — NO GENERIC advanceTo ──────────────────
- * A generic explicit-target write across five objects would re-open exactly the hole
+ * ── 🔴 THERE IS NO *GENERIC* advanceTo, AND THERE MUST NEVER BE ONE ──────────
+ * A generic explicit-target write across six objects would re-open exactly the hole
  * StageAdvanceService.ALLOWED_EXPLICIT_TARGETS was created to close: any holder of class access
- * could write any stage on any of five objects, skipping every hop. advance() derives the target
- * from the map, so it CANNOT skip a hop. All five paths are linear, so an explicit target would
- * serve nothing. Add one only when an object gains a branch or an off-ramp — and give it an
- * allow-list on day one.
+ * could write any stage on any of six objects, skipping every hop. advance() derives the target
+ * from the map, so it CANNOT skip a hop. advanceTo() exists only for the three
+ * branch / off-ramp / loop cases and writes NOTHING that is not on the allow-list FOR THAT RECORD
+ * TYPE. Adding a branch action means adding its stage to that record type's set — never widening
+ * the check.
  *
  * ── WHY THE MAPS ARE APEX AND NOT CUSTOM METADATA ────────────────────────────
  * A Stage_Map__mdt would let an admin change a stage map with no deploy and no review, which is the
@@ -47,9 +209,13 @@
  * ── LAYERING ─────────────────────────────────────────────────────────────────
  * Service (ARCHITECTURE.md §2 / .claude/rules/apex-layering-rule.md). It holds ZERO SOQL: every read
  * goes to the object's own selector via selectStageRequiredById. There is deliberately NO dynamic
- * SOQL — a generic Database.query() over five objects would violate the selector rule, skip
- * WITH USER_MODE and add an injection surface. The cost is a five-branch dispatch in load(), which
+ * SOQL — a generic Database.query() over six objects would violate the selector rule, skip
+ * WITH USER_MODE and add an injection surface. The cost is a six-branch dispatch in load(), which
  * is two lines per object and compile-checked.
+ *
+ * ⚠ Record-type resolution adds ZERO queries. RecordTypeId rides along on the selector read that
+ * already happens, and the Id -> developer name step is a DESCRIBE
+ * (getRecordTypeInfosById().get(id).getDeveloperName()), not a lookup on RecordType.
  *
  * ── WRITE MODE (design decision D1): plain `update`, i.e. SYSTEM MODE ─────────
  * Matches StageAdvanceService.setStage exactly. The control here is the permission gate plus the
@@ -88,23 +254,38 @@ public with sharing class RecordStageAdvanceService {
     public class AccessDeniedException extends Exception {}
 
     /**
-     * Which permission gate an object's stage action answers to. An enum, not a String, so a new
-     * object cannot be wired to a gate that does not exist (.claude/rules — "use enums over string
-     * constants").
+     * Which permission gate a RECORD TYPE's stage action answers to. An enum, not a String, so a
+     * new object cannot be wired to a gate that does not exist (.claude/rules — "use enums over
+     * string constants").
      *
-     * DEAL_DRIVER is the TWO-FACTOR Opportunity gate: FLS read on `User.Deal_Driver__c` (granted
-     * only by the `Acquisition_Deal_Driver` permission set) AND that flag true on the running user.
-     * All five objects here are acquisitions deal children sharing that persona, and the LOI and
-     * Underwriting record pages already carry the identical `{!$User.Deal_Driver__c} EQUAL true`
-     * Dynamic Actions visibility rule — so this choice costs zero new permission machinery.
+     * Both members are TWO-FACTOR gates of identical shape — FLS read on a `User` checkbox
+     * (granted only by that gate's own permission set) AND that checkbox true on the running
+     * user's own record — differing only in which field and which population:
      *
-     * ⚠ It is deliberately NOT a permission-set MEMBERSHIP check. Membership and the flag are
-     * DIFFERENT QUESTIONS: a user holding `Acquisition_Deal_Driver` with `Deal_Driver__c = false` is
+     *   DEAL_DRIVER         `User.Deal_Driver__c`        / `Acquisition_Deal_Driver`
+     *                       The acquisitions deal children. The LOI and Underwriting record pages
+     *                       already carry the identical `{!$User.Deal_Driver__c} EQUAL true`
+     *                       Dynamic Actions visibility rule, so this costs no new machinery.
+     *   DISPOSITION_DRIVER  `User.Disposition_Driver__c` / `Disposition_Deal_Driver`
+     *                       WIRED 2026-08-09 (Tranche 3A, decision D15/Q1), now that both the
+     *                       field and the permission set exist. Until then the value was
+     *                       deliberately NOT declared: an unwired enum member is indistinguishable
+     *                       from a wired one at a glance, and passesGate's `when else` would have
+     *                       denied it silently for every disposition user.
+     *
+     * 🔴 THE GATE IS A PROPERTY OF THE RECORD TYPE, NOT OF THE OBJECT — that is the point of
+     * wiring it here rather than reusing DEAL_DRIVER for `NDA__c` wholesale. One object serves
+     * both modules, and an acquisitions deal driver must not be able to drive a sale's NDA (or
+     * the reverse) merely because the two share a table.
+     *
+     * ⚠ NEITHER is a permission-set MEMBERSHIP check, and that is not an oversight. Membership and
+     * the flag are DIFFERENT QUESTIONS: a user holding the permission set with the flag `false` is
      * denied today and would be GRANTED by a membership check — a silent widening of a live
      * authorization boundary. See OpportunityActionPermissionService's header.
      */
     public enum StageActionGate {
-        DEAL_DRIVER
+        DEAL_DRIVER,
+        DISPOSITION_DRIVER
     }
 
     private static final String NO_RECORD_MESSAGE = 'No record was provided.';
@@ -112,23 +293,127 @@ public with sharing class RecordStageAdvanceService {
         'This action is not available on this record.';
     private static final String NO_STAGE_MESSAGE =
         'This record has no stage set, so it cannot be advanced.';
+    /**
+     * Distinct from UNSUPPORTED_OBJECT_MESSAGE on purpose: the object IS stage-controlled, but the
+     * record sits on a record type this service has no sequence for. Separate wording so the
+     * condition is falsifiable in a test and so the reader of a toast can tell "wrong object" from
+     * "unconfigured record type" — two different fixes.
+     */
+    private static final String UNSUPPORTED_RECORD_TYPE_MESSAGE =
+        'This action is not configured for this record type.';
+
+    /** The standard field carrying the row's record type. Compared case-insensitively — see recordTypeIdOf. */
+    private static final String RECORD_TYPE_ID_FIELD = 'RecordTypeId';
+
+    /**
+     * The map key used by an object with NO record types at all — Underwriting__c,
+     * Construction_Feasibility_Review__c, Development_Feasibility_Review__c.
+     *
+     * A sentinel rather than a real developer name so it can never collide with one, and so a
+     * reader can see at a glance which configs are record-type-aware.
+     *
+     * ⚠ ITS DOC COMMENT USED TO OFFER A SECOND USE — "or because its types deliberately share one
+     * sequence (Contract_Review__c…)" — AND THAT WAS WRONG, corrected in Tranche 3C. Sharing a
+     * SEQUENCE is not sharing a GATE, and this key carries BOTH. Contract_Review__c's two types do
+     * share their sequence (by reference, one map object) and answer to two DIFFERENT personas, so
+     * it is keyed by developer name like NDA__c and LOI__c. There is now no object in the config
+     * that has record types AND uses this key, and there should not be one: an object that has
+     * record types has, by construction, a question this key cannot answer.
+     */
+    private static final String SINGLE_TYPE_KEY = '__DEFAULT__';
+
+    /** NDA__c record type developer names (D7 / D14.1). Case must match the metadata exactly. */
+    private static final String RT_ACQUISITION_NDA = 'Acquisition_NDA';
+    private static final String RT_DISPOSITION_NDA = 'Disposition_NDA';
+
+    /**
+     * LOI__c record type developer names (D6, Tranche 3B). Case must match
+     * objects/LOI__c/recordTypes/ exactly — these strings are Map keys and Apex Map<String, …>
+     * keys are case-SENSITIVE, so a mis-cased constant would route every disposition LOI to the
+     * acquisition fallback with no error anywhere.
+     */
+    private static final String RT_ACQUISITION_LOI = 'Acquisition_LOI';
+    private static final String RT_DISPOSITION_LOI = 'Disposition_LOI';
+
+    /**
+     * Contract_Review__c record type developer names (D16.3, Tranche 3C). Case must match
+     * objects/Contract_Review__c/recordTypes/ exactly — these strings are Map keys and Apex
+     * Map<String, …> keys are case-SENSITIVE, so a mis-cased constant would route every
+     * disposition PSA to the acquisition fallback with no error anywhere. That degradation is
+     * QUIETER here than on NDA__c / LOI__c, because the fallback map is the SAME map and the walk
+     * would still work perfectly — only the GATE would be wrong.
+     */
+    private static final String RT_ACQUISITION_PSA = 'Acquisition_PSA';
+    private static final String RT_DISPOSITION_PSA = 'Disposition_PSA';
 
     // ─────────────────────────────────────────────────────────────────────────
     // STAGE MAPS — current stage -> the single next stage.
-    // Each map is the object's Path, minus its terminal stage (which has no entry and therefore
-    // yields the "no next step available" message). Values are the DECODED runtime picklist
-    // strings; 'Prepare/Review' carries a literal slash, which is why the future validation rules
-    // must use TEXT(...) compares rather than ISPICKVAL.
+    // Each map is one PATH, minus its terminal stage (which has no entry and therefore yields the
+    // "no next step available" message). Values are the DECODED runtime picklist strings;
+    // 'Prepare/Review' carries a literal slash, which is why the future validation rules must use
+    // TEXT(...) compares rather than ISPICKVAL.
+    //
+    // ⚠ An object with record types has ONE MAP PER RECORD TYPE. Do not merge two record types'
+    // maps into one even when they share values — see the 'Sent' divergence in the class header.
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** NDA__c.Status__c — Pending -> Sent -> Signed. 'Signed' is terminal. */
-    private static final Map<String, String> NDA_NEXT_STAGE = new Map<String, String>{
+    /**
+     * NDA__c.Status__c / Acquisition_NDA — Pending -> Sent -> Received -> Signed. 'Signed' is
+     * terminal.
+     *
+     * ⚠ 'Received' was INSERTED between 'Sent' and 'Signed' by decision D14.1 (2026-08-09). The
+     * source document describes the acquisition NDA as Pending -> Received -> Signed; D14.1 reads
+     * that as the broker-facing milestones and keeps 'Sent' as the internal step it pairs with
+     * Date_Sent__c. Retaining 'Sent' is what makes the change ADDITIVE — every existing acquisition
+     * NDA keeps a valid value and no row migration is needed for the value set itself.
+     */
+    private static final Map<String, String> NDA_ACQUISITION_NEXT_STAGE = new Map<String, String>{
         'Pending' => 'Sent',
+        'Sent' => 'Received',
+        'Received' => 'Signed'
+    };
+
+    /**
+     * NDA__c.Status__c / Disposition_NDA — Not Sent -> Sent -> Signed. 'Signed' is terminal.
+     *
+     * 🔴 'Sent' MAPS SOMEWHERE ELSE HERE THAN IT DOES ON THE ACQUISITION MAP ABOVE. That is not an
+     * inconsistency to reconcile; it is the requirement. A disposition NDA goes straight from Sent
+     * to Signed (there is no "received back from the broker" step on a sale, because DPEG issues
+     * the NDA), while an acquisition NDA passes through 'Received'.
+     */
+    private static final Map<String, String> NDA_DISPOSITION_NEXT_STAGE = new Map<String, String>{
+        'Not Sent' => 'Sent',
         'Sent' => 'Signed'
     };
 
-    /** LOI__c.Stage__c — Draft -> Prepare/Review -> Sent -> Counter -> Completed. */
-    private static final Map<String, String> LOI_NEXT_STAGE = new Map<String, String>{
+    /**
+     * The disposition NDA's off-ramp, reached by the Mark Declined quick action rather than by
+     * advance() — 'Declined' is a terminal alternative to 'Signed', not a forward hop, so no single
+     * derived target from 'Sent' can express both.
+     *
+     * 🔴 THIS SET IS THE REASON THE ALLOW-LIST HAD TO BECOME RECORD-TYPE-AWARE. The Mark Declined
+     * action keys on Status__c = 'Sent', a value SHARED by both NDA record types (§3.2 of the
+     * design). Held at object level, this set would make advanceTo(acquisitionNdaId, 'Declined')
+     * succeed, because Apex DML does not enforce record-type picklist restrictions. The acquisition
+     * NDA supplies NO explicit targets at all, so advanceTo cannot move it.
+     *
+     * The action itself is `quickActions/NDA__c.Mark_Declined` -> `c/ndaMarkDeclined`, which
+     * passes this exact literal as a module constant. It is no longer "a future action".
+     *
+     * ⚠ 'Declined' is deliberately NOT in NDA_DISPOSITION_NEXT_STAGE. It is a TERMINAL ALTERNATIVE
+     * to 'Signed', not a forward hop — putting it there would make the ordinary Advance Stage
+     * button decline the NDA.
+     */
+    private static final Set<String> NDA_DISPOSITION_EXPLICIT_TARGETS = new Set<String>{
+        'Declined'
+    };
+
+    /**
+     * LOI__c.Stage__c / Acquisition_LOI — Draft -> Prepare/Review -> Sent -> Counter -> Completed.
+     * 'Completed' is terminal. UNCHANGED by Tranche 3B: this is the live, deployed buy-side
+     * sequence and the only edit it received was its name.
+     */
+    private static final Map<String, String> LOI_ACQUISITION_NEXT_STAGE = new Map<String, String>{
         'Draft' => 'Prepare/Review',
         'Prepare/Review' => 'Sent',
         'Sent' => 'Counter',
@@ -136,8 +421,96 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
+     * LOI__c.Stage__c / Disposition_LOI — Received -> Under Review -> Countered by DPEG ->
+     * Counter Received from Buyer -> Executed. 'Executed' is terminal.
+     *
+     * 🔴 THE DIRECTION IS REVERSED, WHICH IS WHY THIS IS A SECOND MAP RATHER THAN A LONGER ONE.
+     * On a purchase DPEG DRAFTS the LOI and SENDS it, so the path starts at 'Draft'. On a sale the
+     * LOI ARRIVES from the buyer through the appointed broker, so it starts at 'Received' — there
+     * is no Draft, no Prepare/Review and no Sent. Not one value is shared with the acquisition map.
+     *
+     * ✅ THE "OPEN" NOTE THAT USED TO SIT HERE IS CLOSED — see LOI_DISPOSITION_EXPLICIT_TARGETS
+     * immediately below. This map stays exactly as it was: it is the LINE through the loop, and the
+     * two loop edges are reached by advanceTo() instead. The line is what advance() walks, so
+     * 'Counter Received from Buyer' still derives 'Executed' and never derives a cycle.
+     */
+    private static final Map<String, String> LOI_DISPOSITION_NEXT_STAGE = new Map<String, String>{
+        'Received' => 'Under Review',
+        'Under Review' => 'Countered by DPEG',
+        'Countered by DPEG' => 'Counter Received from Buyer',
+        'Counter Received from Buyer' => 'Executed'
+    };
+
+    /**
+     * The sell-side NEGOTIATION LOOP, reached by two named quick actions rather than by advance().
+     *
+     * 🔴 THIS SET EXISTS BECAUSE A Map<String, String> CANNOT HOLD A CYCLE. The document (Part 2
+     * line 244) says the negotiation "goes round until both sides are agreed", so
+     * 'Countered by DPEG' <-> 'Counter Received from Buyer' is a two-edge cycle. LOI_DISPOSITION_-
+     * NEXT_STAGE holds ONE value per key, so it can express at most one of those edges; the other
+     * — the BACK-edge from 'Counter Received from Buyer' to 'Countered by DPEG' — is provably
+     * unreachable through advance() at any price. That is what an explicit target is for.
+     *
+     * ⚠ BOTH EDGES ARE LISTED, NOT JUST THE BACK-EDGE, AND THAT IS DELIBERATE.
+     * 'Counter Received from Buyer' IS the derived hop from 'Countered by DPEG', so listing it here
+     * makes c/loiMarkCounterReceived overlap c/advanceRecordStage at that one stage. Two reasons
+     * that beat the tidier one-edge version, both recorded on
+     * quickActions/LOI__c.Mark_Counter_Received:
+     *   1. SYMMETRY — a user driving a loop should see the same shape of control at both of its
+     *      stages; naming one direction and leaving the other as an anonymous "advance" invites a
+     *      guess about which button does what.
+     *   2. INDEPENDENCE — if a later change re-points the derived hop out of 'Countered by DPEG',
+     *      a page relying on Advance Stage for that edge silently loses it. An explicit target
+     *      cannot drift that way.
+     * The cost is one redundant button on one stage. Do not "tidy" this down to one entry without
+     * moving the other edge somewhere it can be expressed, which today is nowhere.
+     *
+     * 🔴 IT IS PER RECORD TYPE, AND THAT IS THE SECURITY HALF — NOT A TIDY-UP. Neither value exists
+     * on Acquisition_LOI's value set, and Apex DML DOES NOT ENFORCE record-type picklist
+     * restriction, so an object-level list would let advanceTo(acquisitionLoiId, 'Countered by
+     * DPEG') park a purchase on a sell-side stage that matches neither the acquisition Path nor any
+     * flexipage rule keyed on it. Exactly the hole NDA__c's 'Declined' target opened one tranche
+     * earlier. Pinned by acquisitionLoiRefusesADispositionStageAsAnExplicitTarget (the refusal) and
+     * dispositionLoiAcceptsTheNegotiationLoopTargets (its complement — without which the refusal
+     * could pass simply because these values were configured nowhere at all).
+     *
+     * ⚠ NEITHER VALUE IS A DERIVABLE FORWARD HOP OUT OF ITS OWN SOURCE STAGE IN THE SENSE THAT
+     * MATTERS: adding an explicit target never lets a caller SKIP a hop here, because both stages
+     * sit adjacent in the sequence. Contrast LOI_ACQUISITION_EXPLICIT_TARGETS, which deliberately
+     * excludes 'Prepare/Review' and 'Sent' precisely because listing them WOULD skip the approval
+     * gate. There is no equivalent gate on the sell side — the disposition LOI has no approval
+     * process — so no transition is bypassed by these two entries.
+     *
+     * The actions are `quickActions/LOI__c.Mark_Countered_By_DPEG` -> `c/loiMarkCounteredByDpeg`
+     * and `quickActions/LOI__c.Mark_Counter_Received` -> `c/loiMarkCounterReceived`; each passes
+     * its value as a hardcoded module constant, which is the property that makes this list
+     * meaningful.
+     *
+     * ⚠ 'Executed' is deliberately NOT here. It is the derived hop from 'Counter Received from
+     * Buyer' and belongs to advance(); listing it would add a second route to the terminal stage
+     * for no gain. 'Received' and 'Under Review' are absent for the same reason.
+     */
+    private static final Set<String> LOI_DISPOSITION_EXPLICIT_TARGETS = new Set<String>{
+        'Countered by DPEG',
+        'Counter Received from Buyer'
+    };
+
+    /**
      * Contract_Review__c.Negotiation_Status__c — Initial Draft -> Revised -> Ready for Execution
      * -> Executed. 'Executed' is terminal.
+     *
+     * 🔴 ONE MAP, SHARED BY BOTH RECORD TYPES BY REFERENCE (Tranche 3C, 2026-08-09). Acquisition_PSA
+     * and Disposition_PSA both point at THIS object in CONFIG_BY_TYPE. That is deliberate and is the
+     * opposite of the NDA__c / LOI__c treatment: there the two value sets genuinely differ, so two
+     * maps are the requirement. Here Disposition_PSA's own record type file records that the four
+     * values are ALREADY exactly the sell-side states, so DUPLICATING this map would create two
+     * things that must stay equal and give a future editor a way to make them unequal. Sharing the
+     * reference makes divergence unexpressible.
+     *
+     * ⚠ IF THE TWO SIDES EVER DO DIVERGE, SPLIT INTO TWO NAMED MAPS — do not add a value here and
+     * restrict it in the record type file. Record-type picklist restriction is UI-ONLY and is not
+     * enforced by Apex DML, so a sell-side-only status added to this shared map would be writable
+     * onto an acquisition PSA by advance() itself.
      *
      * 🔴 THIS OBJECT'S STAGE FIELD IS Negotiation_Status__c, NOT Stage__c — THE ONLY EXCEPTION
      * BESIDES THE NDA, AND FOR A COMPLETELY DIFFERENT REASON.
@@ -159,9 +532,16 @@ public with sharing class RecordStageAdvanceService {
      *    user sees a success toast and a stationary Path. That is correct, not a repeat of the
      *    defect above — the status genuinely advanced.
      * 2. The final hop, Ready for Execution -> Executed, is NOT just a status write. It fires
-     *    ContractReviewTrigger -> ContractExecutionService, which stamps the Opportunity (Contract
-     *    Signed, Day 0) and CREATES THE Transaction__c. Adding or reordering entries around
-     *    'Executed' changes when that handoff fires.
+     *    ContractReviewTrigger -> ContractExecutionService, and since Tranche 3C that service has
+     *    TWO ARMS keyed on which parent lookup is populated:
+     *      Opportunity__c set -> stamps the Opportunity (Contract Signed, Day 0) + 3 notifications
+     *      Disposition__c set -> moves Disposition__c.Disposition_Stage__c to 'Closing'
+     *    Adding or reordering entries around 'Executed' changes when BOTH handoffs fire.
+     *    ⚠ The sentence here used to say this hop "CREATES THE Transaction__c". That has been
+     *    FALSE since 2026-08-05 — creation moved to ContractExecutionService
+     *    .openTransactionsOnAboutToClose, keyed on Opportunity.StageName = 'About to Close'. The
+     *    hop still stamps the Day-0 DATE that the later creation reads back, so the two remain
+     *    coupled; they simply no longer run together.
      *
      * Seller Counter and Buyer Counter are deliberately absent: they are branch states, and the
      * user chose (2026-08-05) to record them by editing the field rather than with named buttons.
@@ -174,20 +554,31 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
-     * 🔴 THE LOI PATH IS NO LONGER LINEAR (2026-08-05) — the ONLY object here that branches.
+     * 🔴 THE ACQUISITION LOI PATH IS NOT LINEAR (2026-08-05) — it branches at 'Sent'.
      *
      * At 'Sent' a broker either counters or accepts, so the deal driver gets two named buttons
      * instead of one generic Advance Stage: Counter and Completed. 'Completed' cannot be reached by
-     * advance() from 'Sent' — LOI_NEXT_STAGE derives 'Counter' — so it needs an explicit target.
+     * advance() from 'Sent' — LOI_ACQUISITION_NEXT_STAGE derives 'Counter' — so it needs an
+     * explicit target.
      *
-     * This is the allow-list the class header demanded on day one, and it is deliberately PER
-     * OBJECT: the other four configs pass no explicit targets at all, so advanceTo() is structurally
-     * unreachable for them. Membership is limited to the two stages that legitimately have no single
-     * derivable predecessor from 'Sent'. 'Prepare/Review' and 'Sent' are deliberately EXCLUDED —
-     * they are derivable forward hops belonging to advance(), and listing them would let a direct
-     * Apex call skip the approval gate the LOI page enforces at Prepare/Review.
+     * Membership is limited to the two stages that legitimately have no single derivable
+     * predecessor from 'Sent'. 'Prepare/Review' and 'Sent' are deliberately EXCLUDED — they are
+     * derivable forward hops belonging to advance(), and listing them would let a direct Apex call
+     * skip the approval gate the LOI page enforces at Prepare/Review.
+     *
+     * 🔴 THIS SET WAS OBJECT-LEVEL UNTIL TRANCHE 3B AND IS NOW PER RECORD TYPE. Neither value
+     * exists on Disposition_LOI's value set, and Apex DML does not enforce record-type picklist
+     * restriction — so an object-level list would let advanceTo(dispositionLoiId, 'Completed')
+     * write an acquisition-only stage onto a sale, exactly the hole the NDA's 'Declined' target
+     * opened one tranche earlier.
+     *
+     * ⚠ THE SENTENCE THAT USED TO END THIS BLOCK — "the disposition type supplies NO explicit
+     * targets at all, which makes advanceTo() structurally unreachable for it" — WAS TRUE ONLY
+     * UNTIL THE 3B CLOSE-OUT AND IS NOW FALSE. Disposition_LOI has its own two-value set
+     * (LOI_DISPOSITION_EXPLICIT_TARGETS, the negotiation loop). The leak is therefore live in BOTH
+     * directions and both are tested.
      */
-    private static final Set<String> LOI_EXPLICIT_TARGETS = new Set<String>{
+    private static final Set<String> LOI_ACQUISITION_EXPLICIT_TARGETS = new Set<String>{
         'Counter',
         'Completed'
     };
@@ -256,6 +647,13 @@ public with sharing class RecordStageAdvanceService {
      * Only populated where the absence of a hop is a RULE rather than the end of the path. Without
      * this, the Underwriting refusal reads exactly like a terminal stage and looks like a defect;
      * with it, the message names the action that actually performs the transition.
+     *
+     * ⚠ DELIBERATELY NOT record-type-aware, and the two multi-type objects are safe for two
+     * DIFFERENT reasons. NDA__c: the only shared stage values ('Sent', 'Signed') have a hop or are
+     * terminal on BOTH record types, so neither reaches this map. LOI__c: the two value sets are
+     * fully DISJOINT, so a key can only ever match one record type's stage in the first place. If
+     * either ever stops being true, widen the key to `<label>|<recordTypeKey>|<currentStage>`
+     * rather than adding a second map.
      */
     private static final Map<String, String> NO_NEXT_STEP_HINTS = new Map<String, String>{
         'Underwriting|In Progress' =>
@@ -263,41 +661,95 @@ public with sharing class RecordStageAdvanceService {
             + 'Use Submit for Approval.'
     };
 
-    /** Per-object configuration: display label, stage field API name, stage map, permission gate. */
-    private class StageConfig {
-        private final String label;
-        private final String stageField;
-        private final Map<String, String> nextStage;
+    /**
+     * ONE record type's stage sequence: the permission gate, the derived-hop map, and the explicit
+     * targets advanceTo() may write for that record type and no other.
+     *
+     * These three travel together on purpose. They are the only pieces of configuration that
+     * differ per record type, and separating them into parallel maps keyed by developer name would
+     * let one be extended without the others — which is exactly the half-finished shape this
+     * change exists to avoid (a record-type-aware nextStage with an object-wide allow-list, or an
+     * object-wide gate).
+     *
+     * ⚠ THE GATE MOVED HERE FROM StageConfig ON 2026-08-09, and that is a real behavioural change,
+     * not a refactor: `NDA__c`'s two record types now answer to two DIFFERENT personas — and since
+     * Tranche 3C so do `Contract_Review__c`'s, which is the case that PROVES `gate` and `nextStage`
+     * are INDEPENDENT axes: those two types share one `nextStage` map object and differ ONLY in
+     * this field. The three record-type-free objects each name their gate exactly once, so nothing
+     * about them changed.
+     */
+    private class StageTypeConfig {
+        /** The permission gate this RECORD TYPE's stage actions answer to. */
         private final StageActionGate gate;
+        private final Map<String, String> nextStage;
         /**
-         * The ONLY stages advanceTo() will write for this object. Empty for an object whose path is
-         * still linear, which makes advanceTo() unreachable there — the allow-list is per object
-         * precisely so a branch on one object cannot open explicit writes on the other four.
+         * The ONLY stages advanceTo() will write for this record type. Empty for a linear sequence,
+         * which makes advanceTo() structurally unreachable there.
          */
         private final Set<String> explicitTargets;
 
-        /** Linear path: no branch, so no explicit target is permitted at all. */
+        /** Linear sequence: no branch, so no explicit target is permitted at all. */
+        private StageTypeConfig(StageActionGate gate, Map<String, String> nextStage) {
+            this(gate, nextStage, new Set<String>());
+        }
+
+        private StageTypeConfig(
+            StageActionGate gate,
+            Map<String, String> nextStage,
+            Set<String> explicitTargets
+        ) {
+            this.gate = gate;
+            this.nextStage = nextStage;
+            this.explicitTargets = explicitTargets;
+        }
+    }
+
+    /**
+     * Per-OBJECT configuration: display label, stage field API name, and the per-RECORD-TYPE
+     * sequences (each of which carries its own permission gate).
+     *
+     * ⚠ THE GATE IS NO LONGER HERE. It moved onto StageTypeConfig on 2026-08-09 when
+     * DISPOSITION_DRIVER was wired, because `NDA__c`'s two record types answer to two different
+     * personas. Nothing on this class is record-type-invariant except the label and the stage
+     * FIELD — and the field genuinely is: a record type cannot change which column a stage lives
+     * in.
+     */
+    private class StageConfig {
+        private final String label;
+        private final String stageField;
+        /**
+         * The key used when the row's record type is null or Master.
+         *
+         * 🔴 INVARIANT: it MUST be a key of byRecordType. Both constructors below satisfy it by
+         * construction, and the config is a single static literal a reviewer reads in one screen —
+         * so this is deliberately not re-checked at runtime, which would add an unreachable branch
+         * to a class whose coverage is otherwise all live code. A violation surfaces immediately as
+         * a NullPointerException inside sequenceFor(), on the first click, for every record.
+         */
+        private final String defaultTypeKey;
+        /** Sequences keyed by record type DEVELOPER NAME, or by SINGLE_TYPE_KEY when invariant. */
+        private final Map<String, StageTypeConfig> byRecordType;
+
+        /** An object whose sequence does not vary by record type. */
         private StageConfig(
             String label,
             String stageField,
-            Map<String, String> nextStage,
-            StageActionGate gate
+            StageTypeConfig onlySequence
         ) {
-            this(label, stageField, nextStage, gate, new Set<String>());
+            this(label, stageField, SINGLE_TYPE_KEY,
+                new Map<String, StageTypeConfig>{ SINGLE_TYPE_KEY => onlySequence });
         }
 
         private StageConfig(
             String label,
             String stageField,
-            Map<String, String> nextStage,
-            StageActionGate gate,
-            Set<String> explicitTargets
+            String defaultTypeKey,
+            Map<String, StageTypeConfig> byRecordType
         ) {
-            this.explicitTargets = explicitTargets;
             this.label = label;
             this.stageField = stageField;
-            this.nextStage = nextStage;
-            this.gate = gate;
+            this.defaultTypeKey = defaultTypeKey;
+            this.byRecordType = byRecordType;
         }
     }
 
@@ -306,43 +758,117 @@ public with sharing class RecordStageAdvanceService {
      * key is compile-checked and a renamed object breaks the build instead of silently disabling
      * the action.
      *
-     * ⚠ NDA__c's stage field is `Status__c`; the other four use `Stage__c`. That difference is the
-     * reason this config carries the field name per object rather than hardcoding `Stage__c`.
+     * ⚠ NDA__c's stage field is `Status__c` and Contract_Review__c's is `Negotiation_Status__c`;
+     * the other four use `Stage__c`. That difference is the reason this config carries the field
+     * name per object rather than hardcoding `Stage__c`.
+     *
+     * ✅ ADDING LOI__c's TWO RECORD TYPES (Tranche 3B) AND THEN Contract_Review__c's (Tranche 3C)
+     * WERE CONFIG ADDITIONS, NOT REFACTORS — EXACTLY AS THIS NOTE PREDICTED, BOTH TIMES. 3B cost
+     * four edits (the five-argument constructor, two sequences, defaultTypeKey, RecordTypeId on
+     * LoiSelector). 3C cost THREE: the five-argument constructor, the two record-type constants,
+     * and RecordTypeId on ContractReviewSelector.selectStageRequiredById. It needed NO new sequence
+     * at all — both its types point at CONTRACT_REVIEW_NEXT_STAGE by reference — which is the case
+     * this seam was never explicitly designed for and absorbed anyway.
+     * NOT ONE LINE BELOW THIS MAP HAS CHANGED SINCE 3A — advance(), advanceTo(), sequenceFor(),
+     * gateFor(), load() and setStage() are byte-identical. That is the property the 3A seam was
+     * built for, now demonstrated twice.
      */
     private static final Map<Schema.SObjectType, StageConfig> CONFIG_BY_TYPE =
         new Map<Schema.SObjectType, StageConfig>{
+            // ⚠ THREE record-type-aware objects since Tranche 3C (NDA__c here, LOI__c and
+            // Contract_Review__c below), and ALL THREE split their two types across DIFFERENT
+            // PERSONAS. defaultTypeKey is the
+            // ACQUISITION sequence on both so Master / pre-migration rows keep advancing — and,
+            // note, keep answering to DEAL_DRIVER, which is the conservative fallback: it grants
+            // the disposition buttons to nobody new during the deploy window rather than to
+            // everybody.
             NDA__c.SObjectType => new StageConfig(
-                'NDA', 'Status__c', NDA_NEXT_STAGE, StageActionGate.DEAL_DRIVER),
+                'NDA', 'Status__c',
+                RT_ACQUISITION_NDA,
+                new Map<String, StageTypeConfig>{
+                    RT_ACQUISITION_NDA => new StageTypeConfig(
+                        StageActionGate.DEAL_DRIVER, NDA_ACQUISITION_NEXT_STAGE),
+                    RT_DISPOSITION_NDA => new StageTypeConfig(
+                        StageActionGate.DISPOSITION_DRIVER,
+                        NDA_DISPOSITION_NEXT_STAGE, NDA_DISPOSITION_EXPLICIT_TARGETS)
+                }),
+            // Tranche 3B (D6). ⚠ The two stage sets are DISJOINT, unlike NDA__c's — but that buys
+            // nothing here; see the class header for the three reasons this service still needs the
+            // record type. defaultTypeKey is Acquisition_LOI: every LOI in the org today is
+            // buy-side by construction, because the Disposition__c lookup arrives in this tranche.
             LOI__c.SObjectType => new StageConfig(
-                'LOI', 'Stage__c', LOI_NEXT_STAGE, StageActionGate.DEAL_DRIVER,
-                LOI_EXPLICIT_TARGETS),
+                'LOI', 'Stage__c',
+                RT_ACQUISITION_LOI,
+                new Map<String, StageTypeConfig>{
+                    RT_ACQUISITION_LOI => new StageTypeConfig(
+                        StageActionGate.DEAL_DRIVER,
+                        LOI_ACQUISITION_NEXT_STAGE, LOI_ACQUISITION_EXPLICIT_TARGETS),
+                    // ⚠ The sell-side path is a LOOP, not a line: its two explicit targets are the
+                    // two edges of the Countered by DPEG <-> Counter Received from Buyer cycle,
+                    // which a Map<String,String> cannot hold. This set is ALSO what refuses
+                    // 'Counter' and 'Completed' here — see LOI_ACQUISITION_EXPLICIT_TARGETS — and
+                    // is what stops its own two values being written onto an acquisition LOI.
+                    RT_DISPOSITION_LOI => new StageTypeConfig(
+                        StageActionGate.DISPOSITION_DRIVER,
+                        LOI_DISPOSITION_NEXT_STAGE, LOI_DISPOSITION_EXPLICIT_TARGETS)
+                }),
             // ⚠ 'Negotiation_Status__c', NOT 'Stage__c' — Stage__c is derived and unwritable here.
             // See CONTRACT_REVIEW_NEXT_STAGE above before changing this.
+            //
+            // ✅ TRANCHE 3C, 2026-08-09 — SPLIT EXACTLY AS THE NOTE THAT USED TO SIT HERE
+            // PREDICTED. That note read: "Tranche 3C gives this object two record types that SHARE
+            // these four values — but it will still need SPLITTING here, because sharing a SEQUENCE
+            // is not sharing a GATE." It was right, and the split is the ONLY change this object
+            // needed: the sequence is untouched and BOTH types point at the SAME map object.
+            //
+            // 🔴 THE TWO StageTypeConfigs DIFFER IN EXACTLY ONE ARGUMENT — the gate. If a future
+            // reader is tempted to collapse them back into the single-sequence constructor,
+            // re-read the class header: a disposition persona has no FLS on User.Deal_Driver__c
+            // (measured), so DEAL_DRIVER refuses every sell-side PSA and the feature is dead for
+            // the only persona that owns it.
+            //
+            // defaultTypeKey is Acquisition_PSA, the CONSERVATIVE fallback: a Master / pre-T-B row
+            // keeps its existing sequence AND keeps answering to DEAL_DRIVER, so the deploy window
+            // grants the new buttons to nobody new rather than to everybody. Safe here for the same
+            // reason as on NDA__c and LOI__c and for no other — every Contract Review in the org
+            // today is buy-side by construction, because Contract_Review__c.Disposition__c arrives
+            // in this same tranche and OpportunityReviewService (the only automated creator) sets
+            // Opportunity__c alone.
             Contract_Review__c.SObjectType => new StageConfig(
-                'Contract Review', 'Negotiation_Status__c', CONTRACT_REVIEW_NEXT_STAGE,
-                StageActionGate.DEAL_DRIVER),
+                'Contract Review', 'Negotiation_Status__c',
+                RT_ACQUISITION_PSA,
+                new Map<String, StageTypeConfig>{
+                    RT_ACQUISITION_PSA => new StageTypeConfig(
+                        StageActionGate.DEAL_DRIVER, CONTRACT_REVIEW_NEXT_STAGE),
+                    // Same map OBJECT, not a copy — divergence is unexpressible by construction.
+                    RT_DISPOSITION_PSA => new StageTypeConfig(
+                        StageActionGate.DISPOSITION_DRIVER, CONTRACT_REVIEW_NEXT_STAGE)
+                }),
             Underwriting__c.SObjectType => new StageConfig(
-                'Underwriting', 'Stage__c', UNDERWRITING_NEXT_STAGE, StageActionGate.DEAL_DRIVER),
+                'Underwriting', 'Stage__c',
+                new StageTypeConfig(StageActionGate.DEAL_DRIVER, UNDERWRITING_NEXT_STAGE)),
             Construction_Feasibility_Review__c.SObjectType => new StageConfig(
                 'Construction Feasibility Review', 'Stage__c',
-                CONSTRUCTION_REVIEW_NEXT_STAGE, StageActionGate.DEAL_DRIVER),
+                new StageTypeConfig(StageActionGate.DEAL_DRIVER, CONSTRUCTION_REVIEW_NEXT_STAGE)),
             Development_Feasibility_Review__c.SObjectType => new StageConfig(
                 'Development Feasibility Review', 'Stage__c',
-                DEVELOPMENT_REVIEW_NEXT_STAGE, StageActionGate.DEAL_DRIVER)
+                new StageTypeConfig(StageActionGate.DEAL_DRIVER, DEVELOPMENT_REVIEW_NEXT_STAGE))
         };
 
     /**
      * Moves the record to the single next stage for its current stage.
      *
-     * The target is DERIVED from the object's map and can never be supplied by the caller, so this
-     * method cannot skip a hop.
+     * The target is DERIVED from the record's own record-type sequence and can never be supplied by
+     * the caller, so this method cannot skip a hop and cannot cross into another record type's
+     * value set.
      *
-     * @param recordId the NDA / LOI / Underwriting / Construction or Development Feasibility Review
-     *                 record to advance (required)
+     * @param recordId the NDA / LOI / Contract Review / Underwriting / Construction or Development
+     *                 Feasibility Review record to advance (required)
      * @return a user-facing confirmation message, e.g. 'LOI moved to Sent.'
      * @throws RecordStageAdvanceException when recordId is null, the object is not stage-controlled,
-     *         the record has no stage set, there is no next step from the current stage, or the
-     *         write is blocked (the block's message is surfaced verbatim)
+     *         the record has no stage set, the record sits on a record type with no configured
+     *         sequence, there is no next step from the current stage, or the write is blocked (the
+     *         block's message is surfaced verbatim)
      * @throws System.QueryException when recordId matches no record
      * @example
      * String msg = RecordStageAdvanceService.advance(loiId);
@@ -356,7 +882,11 @@ public with sharing class RecordStageAdvanceService {
             throw new RecordStageAdvanceException(NO_STAGE_MESSAGE);
         }
 
-        String target = config.nextStage.get(currentStage);
+        // ⚠ The sequence is chosen from the LOADED record, not from the Id — see the call-order
+        // note in the class header. On an object with one sequence this costs nothing at all.
+        StageTypeConfig sequence = sequenceFor(config, record);
+
+        String target = sequence.nextStage.get(currentStage);
         if (target == null) {
             throw new RecordStageAdvanceException(noNextStepMessage(config, currentStage));
         }
@@ -367,15 +897,25 @@ public with sharing class RecordStageAdvanceService {
      * Moves the record to an EXPLICIT stage, which must be on that object's allow-list.
      *
      * Added 2026-08-05 for the LOI 'Sent' branch — a broker either counters or accepts, so the deal
-     * driver needs two named buttons where advance() can only derive one. It mirrors
-     * StageAdvanceService.advanceTo, including the reason that method exists at all.
+     * driver needs two named buttons where advance() can only derive one. Extended 2026-08-09 for
+     * the disposition NDA's 'Declined' off-ramp, and again at the Tranche 3B close-out for the
+     * DISPOSITION LOI'S NEGOTIATION LOOP — the sharpest case of the three, because its back-edge
+     * ('Counter Received from Buyer' -> 'Countered by DPEG') is not merely inconvenient to derive,
+     * it is PROVABLY inexpressible in a Map<String, String> that already maps that key forward. It
+     * mirrors StageAdvanceService.advanceTo, including the reason that method exists at all.
      *
-     * 🔴 THE ALLOW-LIST IS THE WHOLE POINT AND IS PER OBJECT. Without it, any holder of controller
-     * access could write ANY stage on ANY of five objects, skipping every hop and every gate — the
-     * exact hole StageAdvanceService.ALLOWED_EXPLICIT_TARGETS was created to close. Four of the five
-     * objects supply no explicit targets, so this method cannot write to them at all. Adding a
-     * branch action means adding its stage to that object's set; do NOT add derivable forward hops,
-     * which belong to advance() and therefore cannot skip a step.
+     * 🔴 THE ALLOW-LIST IS THE WHOLE POINT AND IS PER RECORD TYPE. Without it, any holder of
+     * controller access could write ANY stage on ANY of six objects, skipping every hop and every
+     * gate — the exact hole StageAdvanceService.ALLOWED_EXPLICIT_TARGETS was created to close. Held
+     * at OBJECT level it would be only half closed: 'Declined' belongs to the disposition NDA, but
+     * Apex DML does not enforce record-type picklist restrictions, so an object-level list would
+     * write it onto an acquisition NDA just as happily. Adding a branch action means adding its
+     * stage to that RECORD TYPE's set; do NOT add derivable forward hops, which belong to advance()
+     * and therefore cannot skip a step.
+     *
+     * ⚠ THE ALLOW-LIST CHECK IS AFTER load(), NOT BEFORE IT. It has to be — the list is a property
+     * of the record type, and the record type is a property of the row. See the class header for
+     * the one visible consequence (a non-existent Id now raises QueryException here).
      *
      * The rejection message deliberately does NOT echo the supplied value back: a legitimate caller
      * can never reach that branch (each bundle passes a hardcoded constant), so the only way in is a
@@ -383,11 +923,12 @@ public with sharing class RecordStageAdvanceService {
      * wording choice as StageAdvanceService.
      *
      * @param recordId the stage-controlled record to move (required)
-     * @param target   the destination stage; must be on this object's allow-list
+     * @param target   the destination stage; must be on this RECORD TYPE's allow-list
      * @return a user-facing confirmation message, e.g. 'LOI moved to Completed.'
      * @throws RecordStageAdvanceException when recordId is null, target is blank, target is not an
-     *         allowed explicit target for this object, the object is not stage-controlled, or the
-     *         write is blocked (the block's message is surfaced verbatim)
+     *         allowed explicit target for this record's record type, the object is not
+     *         stage-controlled, the record sits on a record type with no configured sequence, or
+     *         the write is blocked (the block's message is surfaced verbatim)
      * @throws System.QueryException when recordId matches no record
      * @example
      * String msg = RecordStageAdvanceService.advanceTo(loiId, 'Completed');
@@ -397,32 +938,67 @@ public with sharing class RecordStageAdvanceService {
             throw new RecordStageAdvanceException('No target stage was provided.');
         }
         StageConfig config = configFor(recordId);
-        if (!config.explicitTargets.contains(target)) {
+        SObject record = load(recordId);
+        StageTypeConfig sequence = sequenceFor(config, record);
+        if (!sequence.explicitTargets.contains(target)) {
             throw new RecordStageAdvanceException('That stage is not available from this action.');
         }
-        return setStage(load(recordId), config, target);
+        return setStage(record, config, target);
     }
 
     /**
      * Whether the running user may drive the stage action on this record. The UX gate behind
      * RecordStageAdvanceController.hasStageActionAccess.
      *
-     * DISPATCHES to the object's configured gate; it does NOT merge gates. Today all five objects
-     * answer to DEAL_DRIVER, but the dispatch is what makes adding a differently-personed object a
-     * config line rather than a rewrite.
+     * DISPATCHES to the RECORD TYPE's configured gate; it does NOT merge gates. THREE of the six
+     * objects answer wholly to DEAL_DRIVER (`Underwriting__c` and the two Feasibility Reviews); the
+     * other three — `NDA__c`, `LOI__c` and, since Tranche 3C, `Contract_Review__c` — answer to
+     * DEAL_DRIVER on their `Acquisition_*` type and DISPOSITION_DRIVER on their `Disposition_*`
+     * type.
      *
-     * @param recordId the record whose object decides which gate applies (required)
-     * @return true when the running user passes that object's gate
-     * @throws RecordStageAdvanceException when recordId is null or the object is not stage-controlled
-     * @throws System.QueryException when the permission machinery itself fails unexpectedly.
-     *         Deliberately NOT swallowed — a fault must not read as a denial. The controller masks
-     *         and logs it; the LWC treats a thrown check exactly like false, so the gate still fails
-     *         CLOSED end to end.
+     * ⚠ IT NOW LOADS THE RECORD — but only when it has to. Since 2026-08-09 the gate is a property
+     * of the record type, and the record type is a property of the row, so an object with more
+     * than one configured sequence costs ONE extra SOQL here (a `cacheable=true` path invoked once
+     * per record view — the design accepts that). An object with a single sequence short-circuits
+     * and still costs ZERO queries, the same optimisation sequenceKeyFor already makes.
+     *
+     * ⚠ TWO CONSEQUENCES, BOTH SMALL AND BOTH REAL:
+     *   - `advance()` on an NDA now costs 2 SOQL for the pair (this check, then the service's own
+     *     load) rather than 1, because the controller asserts BEFORE calling advance and each call
+     *     is independent. Acceptable on a per-click singleton; sharing the row between them would
+     *     mean changing the controller's shape for one query.
+     *   - A NON-EXISTENT NDA Id now raises System.QueryException here where it previously returned
+     *     the object-level answer. The controller maps that to its fixed generic message, so the
+     *     gate still fails CLOSED and no user-visible wording changes.
+     *
+     * @param recordId the record whose object AND record type decide which gate applies (required)
+     * @return true when the running user passes that record type's gate
+     * @throws RecordStageAdvanceException when recordId is null, the object is not
+     *         stage-controlled, or the record sits on a record type with no configured sequence
+     * @throws System.QueryException when recordId matches no record, or when the permission
+     *         machinery itself fails unexpectedly. Deliberately NOT swallowed — a fault must not
+     *         read as a denial. The controller masks and logs it; the LWC treats a thrown check
+     *         exactly like false, so the gate still fails CLOSED end to end.
      * @example
      * if (!RecordStageAdvanceService.hasStageActionAccess(loiId)) { return; }
      */
     public static Boolean hasStageActionAccess(Id recordId) {
-        return passesGate(configFor(recordId).gate);
+        return passesGate(gateFor(configFor(recordId), recordId));
+    }
+
+    /**
+     * The gate governing THIS record.
+     *
+     * The `size() == 1` short-circuit is a correctness statement as much as an optimisation: an
+     * object with one configured sequence has one gate BY CONSTRUCTION, so loading the row could
+     * not change the answer — and paying a query per record view on the four objects that will
+     * never need it would be a real cost for no information.
+     */
+    private static StageActionGate gateFor(StageConfig config, Id recordId) {
+        if (config.byRecordType.size() == 1) {
+            return config.byRecordType.get(config.defaultTypeKey).gate;
+        }
+        return sequenceFor(config, load(recordId)).gate;
     }
 
     /**
@@ -469,34 +1045,122 @@ public with sharing class RecordStageAdvanceService {
     }
 
     /**
+     * The stage sequence that governs THIS record — chosen by record type, which is why it takes a
+     * loaded record and not an Id.
+     *
+     * FALLBACK RULES, in order, each for a different reason:
+     *   1. The object has exactly ONE sequence  -> that sequence, with no describe at all. THREE of
+     *      the six objects since Tranche 3C, and the whole reason record-type awareness is free for
+     *      them. ⚠ "One sequence" means one StageTypeConfig, NOT one map: Contract_Review__c has
+     *      two configs sharing one map and correctly does NOT take this branch, because its two
+     *      configs carry different GATES.
+     *   2. RecordTypeId is null or unqueried    -> defaultTypeKey (the ACQUISITION sequence). This
+     *      is the deploy window: before T1 the field does not exist, and between T1 and the row
+     *      migration every live row is on Master.
+     *   3. The record type is Master            -> defaultTypeKey, same window, same reason.
+     *   4. A real, NAMED record type with no configured sequence -> REFUSED. Never defaulted; see
+     *      the class header for why a silent fallback here is unsafe rather than merely untidy.
+     */
+    private static StageTypeConfig sequenceFor(StageConfig config, SObject record) {
+        return config.byRecordType.get(sequenceKeyFor(config, record));
+    }
+
+    private static String sequenceKeyFor(StageConfig config, SObject record) {
+        if (config.byRecordType.size() == 1) {
+            return config.defaultTypeKey;
+        }
+        Id recordTypeId = recordTypeIdOf(record);
+        if (recordTypeId == null) {
+            return config.defaultTypeKey;
+        }
+        Schema.RecordTypeInfo info = record.getSObjectType()
+            .getDescribe()
+            .getRecordTypeInfosById()
+            .get(recordTypeId);
+        if (info == null || info.isMaster()) {
+            return config.defaultTypeKey;
+        }
+        String developerName = info.getDeveloperName();
+        if (!config.byRecordType.containsKey(developerName)) {
+            throw new RecordStageAdvanceException(UNSUPPORTED_RECORD_TYPE_MESSAGE);
+        }
+        return developerName;
+    }
+
+    /**
+     * The loaded record's RecordTypeId, or null when the object carries no record types, when the
+     * selector did not select the field, or when the row genuinely has none.
+     *
+     * ⚠ getPopulatedFieldsAsMap() rather than record.get('RecordTypeId') because it NEVER THROWS.
+     * MEASURED on usman-dpeg 2026-08-09, both halves:
+     *   - get('RecordTypeId') on a record whose SELECT omitted it -> System.SObjectException;
+     *   - get('RecordTypeId') on a record whose SELECT included it, value null -> null.
+     * THREE of the six selectors here deliberately do not select RecordTypeId, so the direct read
+     * would turn "this object has no record types" into a runtime failure for them.
+     *
+     * ⚠ ALSO MEASURED, and it is the reason this returns null so often: a field that WAS queried
+     * but is NULL is DROPPED from getPopulatedFieldsAsMap() entirely —
+     * `SELECT Id, Status__c, RecordTypeId` on a Master-type row yields the key set {Id, Status__c}.
+     * So this method cannot distinguish "not selected" from "selected and empty", and it does not
+     * need to: both mean "no record type to key on", and both must take the default sequence. A
+     * caller wanting to assert the field was actually SELECTED must use get() and expect the
+     * SObjectException — see NdaSelectorTest.
+     *
+     * ⚠ The key comparison is case-INSENSITIVE deliberately. Apex Map<String, Object> keys are
+     * case-SENSITIVE, while the casing of that map's keys is chosen by the platform. A mismatch
+     * would return null and route every record to the fallback sequence — a silent degradation
+     * whose only symptom is "the disposition NDA behaves like an acquisition one". The map holds a
+     * handful of entries, so the scan costs nothing.
+     */
+    private static Id recordTypeIdOf(SObject record) {
+        Map<String, Object> populated = record.getPopulatedFieldsAsMap();
+        for (String fieldName : populated.keySet()) {
+            if (RECORD_TYPE_ID_FIELD.equalsIgnoreCase(fieldName)) {
+                return (Id) populated.get(fieldName);
+            }
+        }
+        return null;
+    }
+
+    /**
      * Loads the record through its own selector.
      *
      * Deliberately a chain of SObjectType TOKEN comparisons rather than an Apex `switch on`: Apex's
      * switch accepts a String or an enum but not a Schema.SObjectType, so a switch here would have
-     * to key on the object's API NAME as a string literal — trading compile-checking for five
+     * to key on the object's API NAME as a string literal — trading compile-checking for six
      * stringly-typed keys, for no benefit. Every branch is a static, fully-literal, WITH USER_MODE
      * selector call: zero dynamic SOQL and zero string-built queries.
+     *
+     * ⚠ The local is named `objectType`, not `recordType`. Since 2026-08-09 this class also deals
+     * in RECORD types, and a Schema.SObjectType called `recordType` is now actively misleading.
+     *
+     * ⚠ A selector whose object is record-type-aware MUST select RecordTypeId — today NdaSelector
+     * (3A), LoiSelector (3B) and ContractReviewSelector (3C). Omitting it does not fail; it
+     * degrades to the default sequence, silently. All three selector methods carry a DO-NOT-NARROW
+     * note saying so. ⚠ ContractReviewSelector's is the easiest to talk yourself out of, because
+     * that object's two record types share a stage sequence — but they do NOT share a gate, and the
+     * gate is resolved from the same field.
      *
      * FETCH-FOR-USE: each selector method throws System.QueryException on a miss (repo contract).
      */
     private static SObject load(Id recordId) {
-        Schema.SObjectType recordType = recordId.getSObjectType();
-        if (recordType == NDA__c.SObjectType) {
+        Schema.SObjectType objectType = recordId.getSObjectType();
+        if (objectType == NDA__c.SObjectType) {
             return NdaSelector.selectStageRequiredById(recordId);
         }
-        if (recordType == LOI__c.SObjectType) {
+        if (objectType == LOI__c.SObjectType) {
             return LoiSelector.selectStageRequiredById(recordId);
         }
-        if (recordType == Underwriting__c.SObjectType) {
+        if (objectType == Underwriting__c.SObjectType) {
             return UnderwritingSelector.selectStageRequiredById(recordId);
         }
-        if (recordType == Construction_Feasibility_Review__c.SObjectType) {
+        if (objectType == Construction_Feasibility_Review__c.SObjectType) {
             return ConstructionFeasibilityReviewSelector.selectStageRequiredById(recordId);
         }
-        if (recordType == Development_Feasibility_Review__c.SObjectType) {
+        if (objectType == Development_Feasibility_Review__c.SObjectType) {
             return DevelopmentFeasibilityReviewSelector.selectStageRequiredById(recordId);
         }
-        if (recordType == Contract_Review__c.SObjectType) {
+        if (objectType == Contract_Review__c.SObjectType) {
             return ContractReviewSelector.selectStageRequiredById(recordId);
         }
         // Unreachable in practice — configFor() already rejected every unsupported type before this
@@ -506,14 +1170,18 @@ public with sharing class RecordStageAdvanceService {
     }
 
     /**
-     * Asks the object's configured gate. A gate with no branch here denies — an unwired gate must
-     * never read as a grant.
+     * Asks the record type's configured gate. A gate with no branch here DENIES — an unwired gate
+     * must never read as a grant, which is exactly why DISPOSITION_DRIVER was not declared until
+     * the day its field, its permission set and this branch all landed together.
      */
     private static Boolean passesGate(StageActionGate gate) {
         Boolean allowed = false;
         switch on gate {
             when DEAL_DRIVER {
                 allowed = OpportunityActionPermissionService.hasDealActionAccess();
+            }
+            when DISPOSITION_DRIVER {
+                allowed = DispositionActionPermissionService.hasDispositionActionAccess();
             }
             when else {
                 allowed = false;

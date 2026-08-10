@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        RecordType.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API. Do not paste this back into
+        <description>. NOTE ALSO: the comment must sit INSIDE the root element - a comment
+        placed ABOVE <RecordType> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        THE DIRECT, UNLISTED DISPOSITION PATH.
+        Disposition Readiness, NDA, Disposition Offer, LOI, PSA, Closing, Completed.
+
+        No broker is engaged, so there is no BOV Outreach, no Active Listing and no Call for
+        Offers - those three stages are restricted OUT here. Disposition_Stage__c is
+        restricted to the SEVEN off-market stages.
+
+        A disposition is created On Market by default (DispositionService.findOrCreate stamps
+        On_Market explicitly); switch it to Off Market early, while the record is still at
+        Disposition Readiness.
+
+        Sell_Decision_Trigger__c is enumerated in full because a record type file must list
+        EVERY picklist on the object or values are silently dropped from that type.
+        Disposition__c has exactly two picklists today.
+
+        No <businessProcess> - that element is for Opportunity, Case, Lead and Solution only.
+    -->
+    <fullName>Off_Market</fullName>
+    <active>true</active>
+    <description>The direct, unlisted disposition path: Readiness, NDA, Disposition Offer, LOI, PSA, Closing, Completed. No broker is engaged, so BOV Outreach, Active Listing and Call for Offers are restricted out. See the XML comment in this file.</description>
+    <label>Off Market</label>
+    <picklistValues>
+        <picklist>Disposition_Stage__c</picklist>
+        <values>
+            <fullName>Disposition Readiness</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>NDA</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Disposition Offer</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>LOI</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>PSA</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Closing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Completed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Sell_Decision_Trigger__c</picklist>
+        <values>
+            <fullName>Sell Meter Green</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Principal Decision</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Fund Maturity</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Market Opportunity</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

@@ -1,23 +1,45 @@
 <template>
     <div class="card">
-        <div class="section-header">Automated Alerts</div>
-        <div class="alert-list">
-            <div class="alert-row">
-                <span class="alert-trigger trigger--muted">Day 21</span>
-                <span class="alert-desc">No offers → email to Junior</span>
+        <div class="section-header">Listing Traction</div>
+
+        <template if:true={hasError}>
+            <div class="wire-error" role="alert">
+                <lightning-icon
+                    icon-name="utility:error"
+                    size="x-small"
+                    variant="error"
+                ></lightning-icon>
+                <span>Listing traction could not be loaded: {errorMessage}</span>
             </div>
-            <div class="alert-row">
-                <span class="alert-trigger trigger--yellow">Week 4</span>
-                <span class="alert-desc">YELLOW flag on Junior dashboard</span>
+        </template>
+
+        <template if:true={isLoading}>
+            <div class="loading-msg">Loading listing traction…</div>
+        </template>
+
+        <template if:true={hasTraction}>
+            <div class="band-row">
+                <span class={badgeClass}>{traction.label}</span>
             </div>
-            <div class="alert-row">
-                <span class="alert-trigger trigger--red">Week 6</span>
-                <span class="alert-desc">Hard prompt + alert to Junior + Ali</span>
-            </div>
-            <div class="alert-row">
-                <span class="alert-trigger trigger--green">Offer in</span>
-                <span class="alert-desc">Clock PAUSES · Disposition Offer created</span>
-            </div>
-        </div>
+            <p class="band-detail">{traction.detail}</p>
+
+            <template if:true={traction.isListed}>
+                <div class="clock-track">
+                    <div class={clockBarClass} style={clockBarStyle}></div>
+                </div>
+            </template>
+
+            <dl class="milestone-list">
+                <template for:each={milestones} for:item="m">
+                    <div key={m.key} class="milestone-row">
+                        <dt class="milestone-term">{m.term}</dt>
+                        <dd class="milestone-value">
+                            <span class="milestone-primary">{m.value}</span>
+                            <span class="milestone-note">{m.note}</span>
+                        </dd>
+                    </div>
+                </template>
+            </dl>
+        </template>
     </div>
 </template>

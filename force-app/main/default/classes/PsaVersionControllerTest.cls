@@ -113,10 +113,16 @@ private class PsaVersionControllerTest {
         }
     }
 
-    // Covers saveVersion's generic write catch: a deleted parent Contract Review Id makes the
-    // child PSA_Version__c insert fail (INVALID_CROSS_REFERENCE_KEY) under admin — the
-    // deterministic way to reach the write-failure catch without a bare user. Kept apart from
-    // the bare-user read test to avoid MIXED_DML_OPERATION.
+    // Covers saveVersion's generic (non-PsaVersionException) catch with a deleted parent Contract
+    // Review Id, under admin — the deterministic way to reach it without a bare user. Kept apart
+    // from the bare-user read test to avoid MIXED_DML_OPERATION.
+    //
+    // ⚠ WHICH EXCEPTION REACHES THE CATCH CHANGED ON 2026-08-10, THE ASSERTION DID NOT. It used to
+    // be the child PSA_Version__c insert failing with INVALID_CROSS_REFERENCE_KEY; PsaVersionService
+    // now LOADS the parent first (it derives the Seller/Buyer counterparty label from the parent's
+    // record type), so a deleted Id raises System.QueryException one step earlier. Both are caught
+    // by the same `catch (Exception e)` and both produce the same fixed WRITE_FAILURE_MESSAGE, so
+    // the branch and the user-visible wording are unchanged — only the route in.
     @isTest
     static void writeFailureThrowsAuraHandledException() {
         Contract_Review__c cr = newContract();

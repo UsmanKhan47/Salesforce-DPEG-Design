@@ -1,11 +1,18 @@
 /**
- * Trigger handler for Opportunity. Routes the after-insert and after-update
- * contexts to OpportunityReviewService:
+ * Trigger handler for Opportunity. Routes the after-insert and after-update contexts to
+ * FOUR service calls — two review concerns and two STAGE-KEYED HANDOFFS to other modules:
  *
- *   - createReviewRecords opens the matching feasibility / Contract Review /
- *     Underwriting child when the Opp enters (or flips an input flag for) the
- *     relevant stage.
- *   - ensureNda opens the deal's NDA on creation.
+ *   - OpportunityReviewService.createReviewRecords opens the matching feasibility /
+ *     Contract Review / Underwriting / LOI child when the Opp enters (or flips an input
+ *     flag for) the relevant stage.
+ *   - OpportunityReviewService.ensureNda opens the deal's NDA on creation.
+ *   - ContractExecutionService.openTransactionsOnAboutToClose  ('About to Close')
+ *   - PropertyAssetService.ensureOnClosedWon                   ('Closed Won')
+ *
+ * ⚠ The last two are NOT review children and deliberately do not live in
+ * OpportunityReviewService. They are here because the TRIGGER POINT is the deal's stage:
+ * each is the moment Acquisitions hands a deal to another module (Transactions, then
+ * Property Management). Each service's own header carries the full argument.
  *
  * Behaviour preservation note: the previous trigger passed the old-map only on
  * update (null on insert) to BOTH service calls. That is reproduced here by
@@ -38,5 +45,14 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
         // still stamps the Day 0 this step reads back. Moved off ContractReviewTrigger on
         // 2026-08-05: the trigger point is now the deal's stage, not the contract's status.
         ContractExecutionService.openTransactionsOnAboutToClose(opps, priorById);
+        // Entering 'Closed Won' turns the deal into a managed asset (Tranche 5A / D27.3).
+        // It lives in PropertyAssetService rather than OpportunityReviewService because a
+        // Property_Asset__c is not a REVIEW child and is not part of the deal tree — it is the
+        // PROPERTY MANAGEMENT HANDOFF, the same argument ContractExecutionService won above.
+        // 🔴 And it lives on THIS trigger rather than in the Transaction_Complete_Close flow
+        // because StageAdvanceService.NEXT_STAGE maps BOTH 'PSA' and 'About to Close' to
+        // 'Closed Won', so a deal driver can close a deal with no Transaction__c at all;
+        // building it in that flow would have missed half the closes, invisibly.
+        PropertyAssetService.ensureOnClosedWon(opps, priorById);
     }
 }

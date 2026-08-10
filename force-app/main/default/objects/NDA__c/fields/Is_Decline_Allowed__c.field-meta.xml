@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+         <CustomField> breaks `sf` deploy at source conversion with a misleading
+         "unable to find matching parent xml file" error.
+
+         DESIGN 4.4, BUILT 2026-08-09 UNDER DECISION D20/C1. It did not exist when 3A shipped,
+         which is half of why the Mark Declined quick action and lwc/ndaMarkDeclined had nowhere
+         to appear: the flexipage rule they were designed for had nothing to bind to.
+
+         WHY A FIELD AT ALL, RATHER THAN A STATUS TEST IN THE VISIBILITY RULE.
+         'Sent' and 'Signed' are SHARED by BOTH record types (see Status__c's own description),
+         so Status__c ALONE CANNOT IDENTIFY THE RECORD TYPE and therefore cannot drive a
+         disposition-only button. A flexipage visibility rule cannot express a record-type test
+         directly, so the discriminator has to be a field on the record.
+
+         WHY A PURE CHAIN OF ANDs MATTERS, AND WHY THIS FIELD MAKES ONE POSSIBLE.
+         LOI__c.Is_Advance_Allowed__c exists for the same reason and its header records the
+         measurement: a flexipage booleanFilter has NO negation operator, and a parenthesised OR
+         (`1 AND 2 AND (3 OR 4)`) DEPLOYED AND SURVIVED A RETRIEVE while the RENDERER did not
+         honour it - the button stayed visible. Whether the renderer honours those parentheses
+         has never been confirmed in this repo, so both this field and that one exist to keep
+         every visibility rule a pure chain of ANDs. Do not "simplify" the rule back into an OR.
+
+         SCOPE: TRUE ON A Disposition_NDA THAT IS NOT ALREADY DECLINED - three states, not one.
+         The code review suggested `TEXT(Status__c) = "Sent"`. That is NARROWER than what the
+         platform actually permits and it would remove a documented recovery route:
+
+           - RecordStageAdvanceService.NDA_DISPOSITION_EXPLICIT_TARGETS is {'Declined'} and
+             advanceTo() imposes NO from-stage precondition, so Declined is reachable from ANY
+             disposition status. The button should not claim otherwise.
+           - NDA_Path_Disposition's header states that MOVING A SIGNED NDA TO DECLINED IS SAFE
+             AND IS THE INTENDED RECOVERY (NDA_Signed_Status_Sync re-derives NDA_Signed__c and
+             never clears Date_Signed__c). Under D20 that route matters MORE than it used to:
+             allowDelete stays FALSE, so re-declining is now the ONLY way to take a party back
+             out of the all-signed gate's arithmetic.
+           - 'Not Sent' -> 'Declined' is a real refusal (a party who says no before it goes out).
+
+         The one state that must be excluded is Declined itself, where the action is a no-op.
+
+         RECORDTYPE, NOT `NOT(ISBLANK(Disposition__c))`. The review suggested the lookup test;
+         the record type is the authoritative discriminator, and an acquisition NDA carrying a
+         Disposition__c value (data load, seed, API) would show a Mark Declined button that
+         advanceTo() then STRUCTURALLY REFUSES, because Acquisition_NDA supplies no explicit
+         targets at all. RecordType.DeveloperName has in-repo precedent that has passed this
+         org's check-only validation: All_NDAs_Signed_Before_Progression uses the same merge
+         field, and Salesforce's own "Tips for Referencing Record Types in Formulas" prefers it
+         over the $RecordType global everywhere except default-value formulas.
+         🔴 IF THE DEPLOY REJECTS THE MERGE FIELD, the formula's FIRST LINE is the only thing to
+         change - substitute NOT(ISBLANK(Disposition__c)). Nothing else in this file is in doubt.
+         It is a NAME comparison, not an Id, so it survives an org rebuild, but it breaks if the
+         Disposition_NDA record type is ever renamed - the accepted trade that same guidance
+         describes.
+
+         🔴 FLS IS LOAD-BEARING AND IS THE C1 FAILURE MODE REPEATING IF IT IS MISSED.
+         A flexipage visibility rule referencing {!Record.Is_Decline_Allowed__c} evaluates FALSE
+         for any user without FLS READ on it - which is exactly the mechanism that made
+         {!$User.Deal_Driver__c} unreachable for the disposition persona. A field deployed
+         through the Metadata API arrives with NO field permissions for ANY profile, System
+         Administrator included, so the grants ship in the SAME change as the field:
+         DPEG_Disposition_Edit, DPEG_Disposition_View and DPEG_Admin_Access all carry it, read
+         only. NO CLAIM is made here about which other principals can or cannot read it -
+         profiles are .forceignore'd in this repo, so no file-based check can establish one.
+
+         ⚠ DELIBERATELY NOT REFERENCED BY THE ACQUISITION Advance Stage RULE. Making the
+         currently-working acquisition button depend on a brand-new field's FLS would have made
+         this change its own newest single point of failure, across every acquisition permission
+         set plus any profile-provisioned persona this repo cannot see. Same reasoning
+         ARCHITECTURE.md records for keeping Routing_Attempt_Count__c out of selectById. The
+         residual that buys is named in NDA_Record_Page's own comment. -->
+    <fullName>Is_Decline_Allowed__c</fullName>
+    <label>Is Decline Allowed</label>
+    <description>Backs the Mark Declined button's visibility, and the disposition half of Advance Stage, on the NDA record page. True on a Disposition_NDA that has not already been declined - Not Sent, Sent or Signed. Kept as a formula so both visibility rules stay a pure chain of ANDs, because a flexipage booleanFilter has no negation operator and this repo has measured that a parenthesised OR deploys but is not honoured by the renderer. Status__c alone cannot drive this: Sent and Signed are shared by both record types.</description>
+    <inlineHelpText>System field. True when this NDA can still be marked Declined - it is a disposition NDA and is not already Declined. Declining is how a party is taken out of the all-signed release gate; NDAs are never deleted.</inlineHelpText>
+    <type>Checkbox</type>
+    <formula><![CDATA[AND(
+  RecordType.DeveloperName = "Disposition_NDA",
+  TEXT(Status__c) <> "Declined"
+)]]></formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>

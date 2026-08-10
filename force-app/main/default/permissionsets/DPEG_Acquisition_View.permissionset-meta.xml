@@ -194,6 +194,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Contract_Review__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Contract_Review__c.Execution_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -654,6 +659,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>LOI__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>LOI__c.Due_Diligence_Days__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -795,6 +805,16 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>NDA__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Counter_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Party_Role__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

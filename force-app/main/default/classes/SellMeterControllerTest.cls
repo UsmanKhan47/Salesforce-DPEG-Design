@@ -7,6 +7,14 @@
  * RunLocalTests" rather than a defect — see the final report. Adds exact
  * boundary coverage (30 / 90 days), an empty-portfolio scenario, and a
  * 251-record data-volume read test per .claude/rules/bulk-test-rule.md.
+ *
+ * ⚠ THE BAND FUNCTION MOVED, THE ASSERTIONS DID NOT. bandForPeak now lives in
+ * SellMeterService (so the server-side disposition gate and this read path share one
+ * implementation); SellMeterController delegates to it. Every band assertion below is
+ * UNCHANGED and still exercises the controller end to end, which is the point — a verbatim
+ * move should be invisible to this suite, and if it is not, the move was not verbatim.
+ * The band function's own boundary fence lives in SellMeterServiceTest; the value of the
+ * tests here is that they prove the CONTROLLER still bands correctly through the delegation.
  * @author Unit Testing Agent
  */
 @isTest

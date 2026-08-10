@@ -1,6 +1,7 @@
 import { LightningElement, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import LightningConfirm from 'lightning/confirm';
 import getPortfolio from '@salesforce/apex/SellMeterController.getPortfolio';
 import findOrCreate from '@salesforce/apex/DispositionController.findOrCreate';
 
@@ -157,9 +158,24 @@ export default class SellMeterList extends NavigationMixin(LightningElement) {
         if (!this.isLastPage) this._page = this.page + 1;
     }
 
+    /**
+     * Row-button dispatcher for the three sell-meter actions.
+     *
+     * - `initiate` (GREEN)   creates the disposition immediately.
+     * - `override` (YELLOW)  confirms FIRST, then creates via the identical call.
+     * - `hold`     (RED)     returns early. The button is already `disabled`, and since
+     *                        this change the server refuses a RED asset too — the client
+     *                        early-return is now the outermost of three defences, not the
+     *                        only one.
+     *
+     * ⚠ `override` was previously unhandled, so the yellow row's ENABLED button was a
+     * silent no-op — a live defect this restores. Do not narrow the guard back to
+     * `!== 'initiate'`.
+     */
     handleRowAction(event) {
         const action = event.detail && event.detail.action;
-        if (!action || action.name !== 'initiate') {
+        const name = action && action.name;
+        if (name !== 'initiate' && name !== 'override') {
             return;
         }
         const row = event.detail.row || {};
@@ -168,9 +184,61 @@ export default class SellMeterList extends NavigationMixin(LightningElement) {
             this._toast('Could not initiate', 'No property asset is linked to this row.', 'error');
             return;
         }
+        if (name === 'override') {
+            this._confirmOverride(row).then((confirmed) => {
+                // A cancel does nothing and says nothing — the user already knows they cancelled.
+                if (confirmed === true) {
+                    this._createDisposition(row, true);
+                }
+            });
+            return;
+        }
+        this._createDisposition(row, false);
+    }
+
+    /**
+     * Yellow-band confirmation (Gate 1 Q2 = confirm-then-create).
+     *
+     * Uses `lightning/confirm` directly and NOT c/dealActionGuard: that util imports an
+     * Opportunity permission controller at module scope, which would give the Disposition
+     * dashboard a hard dependency on an Opportunity gate for ten lines of code.
+     * ARCHITECTURE.md §5 already records that the guard utils must not be merged.
+     *
+     * A toast cannot be used here — it is fire-and-forget and returns nothing, so it cannot
+     * carry a yes/no answer. LightningConfirm.open() returns Promise<boolean>.
+     *
+     * There is deliberately NO override reason field and NO approval: the source document
+     * asks for neither, and inventing either is out of scope.
+     */
+    _confirmOverride(row) {
+        const property = row.name || 'this property';
+        return LightningConfirm.open({
+            variant: 'header',
+            label: 'Override the sell meter?',
+            theme: 'warning',
+            message:
+                `${property} is not at peak yet — its peak sell date is 31 to 90 days away. ` +
+                'Initiating a disposition now overrides the sell meter. Continue?'
+        }).catch(() => false);
+    }
+
+    /**
+     * The single creation call shared by Initiate and Override — deliberately identical
+     * apart from the toast title, so an override can never diverge from an initiate.
+     *
+     * The server may still refuse (DispositionService's sell-meter gate). When it does, the
+     * refusal arrives as an AuraHandledException whose message is authored to be shown, so
+     * `error.body.message` is surfaced verbatim rather than replaced with generic wording.
+     */
+    _createDisposition(row, isOverride) {
+        const assetId = row.id;
         findOrCreate({ assetId })
             .then((dispId) => {
-                this._toast('Disposition ready', `Opened the disposition for ${row.name || 'this property'}.`, 'success');
+                const title = isOverride ? 'Disposition initiated (override)' : 'Disposition ready';
+                const message = isOverride
+                    ? `Overrode the sell meter and opened the disposition for ${row.name || 'this property'}.`
+                    : `Opened the disposition for ${row.name || 'this property'}.`;
+                this._toast(title, message, 'success');
                 this[NavigationMixin.Navigate]({
                     type: 'standard__recordPage',
                     attributes: { recordId: dispId, actionName: 'view' }

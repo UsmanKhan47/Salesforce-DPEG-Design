@@ -86,6 +86,57 @@ private class OpportunityReviewServiceTest {
             'No duplicate LOI on re-save');
     }
 
+    /**
+     * 🔴 UNCONDITIONAL BY DESIGN — D16.3, Tranche 3B. The LOI twin of
+     * ensureNda_stampsTheAcquisitionRecordType, and it must NOT be guarded on isAvailable().
+     *
+     * The stamp in the service IS guarded, deliberately and for a reason RE-ARGUED for this block
+     * rather than inherited from ensureNda (D20/W2): the LOI stage is entered by the LOI approval's
+     * own field update, so an unguarded stamp that hit an unavailable record type would throw
+     * INVALID_CROSS_REFERENCE_KEY inside the APPROVAL transaction and the approver could not
+     * approve at all. Production therefore degrades safely — and THIS is where the loudness lives
+     * instead.
+     *
+     * ⚠ IT RE-QUERIES RecordTypeId. A creation that SUCCEEDED is not evidence the type landed: the
+     * in-memory copy carries whatever was assigned, guard or no guard, and D13 residual 1 measured
+     * an inserted row reading back null while the describe resolved a real Id.
+     *
+     * ⚠ HONEST LIMIT, the same one the OwnerId assertion above carries: this runs as an ADMIN, and
+     * the block runs in production as the APPROVER — a principal on a profile T-A1 is most likely
+     * to have missed. Green here does not prove the approver can stamp. Gate T-A1 must be verified
+     * for the approving principals' profile specifically.
+     */
+    @isTest
+    static void loiBlock_stampsTheAcquisitionRecordType() {
+        Test.startTest();
+        Opportunity o = newOpp('LOI');
+        insert o;
+        Test.stopTest();
+
+        LOI__c created = [
+            SELECT Id, RecordTypeId FROM LOI__c WHERE Opportunity__c = :o.Id LIMIT 1
+        ];
+
+        Schema.RecordTypeInfo acquisitionInfo = Schema.SObjectType.LOI__c
+            .getRecordTypeInfosByDeveloperName()
+            .get('Acquisition_LOI');
+        Assert.isNotNull(acquisitionInfo,
+            'PRECONDITION: the LOI__c "Acquisition_LOI" record type does not exist in this org. '
+            + 'objects/LOI__c/recordTypes/ must deploy BEFORE this class (metadata before Apex). '
+            + 'Available: '
+            + Schema.SObjectType.LOI__c.getRecordTypeInfosByDeveloperName().keySet());
+
+        Assert.areEqual(acquisitionInfo.getRecordTypeId(), created.RecordTypeId,
+            'D16.3: the LOI auto-created on entry to the LOI stage must carry the Acquisition_LOI '
+            + 'record type. A NULL value here means the record type resolved a real Id but is not '
+            + 'AVAILABLE to the running user, so the deliberate isAvailable() guard in '
+            + 'OpportunityReviewService.acquisitionLoiRecordTypeId() silently no-opped — that is '
+            + 'post-deploy gate T-A1 (profile record-type assignment) not having run, and until it '
+            + 'does every acquisition LOI lands on Master, which matches NEITHER LOI Path and '
+            + 'exposes all TEN Stage__c values. Do not soften this assertion to obtain a green '
+            + 'suite; run T-A1.');
+    }
+
     @isTest
     static void ndaOpensOnNewOpportunity() {
         Test.startTest();
@@ -105,6 +156,60 @@ private class OpportunityReviewServiceTest {
         update new Opportunity(Id = o.Id, Underwriting_Notes__c = 'touch');
         System.assertEquals(1, [SELECT COUNT() FROM NDA__c WHERE Opportunity__c = :o.Id],
             'No duplicate NDA on re-save');
+    }
+
+    /**
+     * 🔴 D16.3 — THE REGRESSION GUARD, AND IT IS UNCONDITIONAL BY DESIGN. DO NOT WRAP IT IN
+     * `if (isAvailable()) { ... }`.
+     *
+     * OpportunityReviewService.ensureNda predates NDA__c's record types and stamped none, so
+     * once Tranche 3A adds Acquisition_NDA / Disposition_NDA every auto-created acquisition
+     * NDA would silently land on MASTER — matching neither NDA Path, exposing all six
+     * Status__c values, and sitting outside the RecordType-scoped NDA sharing rules this same
+     * tranche introduces. That is damage to a LIVE flow, and it happens one deal at a time
+     * with no error anywhere.
+     *
+     * The production stamp is deliberately GUARDED on isAvailable() (see the service header:
+     * ensureNda is on the critical path of EVERY Opportunity insert, Database.convertLead
+     * included, and an after-insert exception rolls the deal back). This test is where the
+     * softness ends. It re-reads RecordTypeId from the database rather than trusting the
+     * in-memory row, because a creation that SUCCEEDED is not evidence the type landed —
+     * exactly the lesson behind D13 residual 1, post-deploy gate T-A1, and
+     * TestDataFactoryTest.createDisposition_defaultOverload_stampsOnMarketRecordType.
+     *
+     * ⚠ EXPECT THIS TO BE RED UNTIL GATE T-A1 RUNS. objects/NDA__c/recordTypes/ deploying is
+     * NOT enough — a record type assigned to no profile resolves a real Id and is still
+     * unavailable to everyone, System Administrator included (Modify All Data is an OBJECT
+     * permission and confers no record-type access). Report the failure; do not soften it.
+     */
+    @isTest
+    static void ensureNda_stampsTheAcquisitionRecordType() {
+        Test.startTest();
+        Opportunity o = newOpp('New');
+        insert o;
+        Test.stopTest();
+
+        NDA__c created = [
+            SELECT Id, RecordTypeId FROM NDA__c WHERE Opportunity__c = :o.Id LIMIT 1
+        ];
+
+        Schema.RecordTypeInfo acquisitionInfo = Schema.SObjectType.NDA__c
+            .getRecordTypeInfosByDeveloperName()
+            .get('Acquisition_NDA');
+        Assert.isNotNull(acquisitionInfo,
+            'PRECONDITION: the NDA__c "Acquisition_NDA" record type does not exist in this org. '
+            + 'objects/NDA__c/recordTypes/ must deploy BEFORE this class (metadata before Apex, '
+            + 'design §6 T1). Available: '
+            + Schema.SObjectType.NDA__c.getRecordTypeInfosByDeveloperName().keySet());
+
+        Assert.areEqual(acquisitionInfo.getRecordTypeId(), created.RecordTypeId,
+            'D16.3: the NDA auto-created by ensureNda must carry the Acquisition_NDA record '
+            + 'type. A NULL value here means the record type resolved a real Id but is not '
+            + 'AVAILABLE to the running user, so the deliberate isAvailable() guard in '
+            + 'OpportunityReviewService.acquisitionNdaRecordTypeId() silently no-opped — that is '
+            + 'post-deploy gate T-A1 (profile record-type assignment) not having run, and until '
+            + 'it does every acquisition NDA in the org is created on Master. Do not soften this '
+            + 'assertion to obtain a green suite; run T-A1.');
     }
 
     @isTest
@@ -210,6 +315,69 @@ private class OpportunityReviewServiceTest {
         Opportunity stamped = [SELECT Primary_Contract__c FROM Opportunity WHERE Id = :o.Id];
         System.assertEquals(crs[0].Id, stamped.Primary_Contract__c,
             'Opportunity.Primary_Contract__c should point at the new Contract Review');
+    }
+
+    /**
+     * 🔴 UNCONDITIONAL BY DESIGN — D16.3, Tranche 3C. The third and last of the trio
+     * (ensureNda_stampsTheAcquisitionRecordType, loiBlock_stampsTheAcquisitionRecordType). It must
+     * NOT be guarded on isAvailable().
+     *
+     * The stamp in the service IS guarded, deliberately, and the argument was RE-ARGUED for THIS
+     * block rather than inherited from either sibling (D20/W2). It is neither ensureNda's
+     * (every Opportunity insert, lead conversion included) nor the LOI block's (runs as a
+     * read-only approver inside an approval): this block runs as a DEAL DRIVER WHO HAS EDIT. What
+     * still rules out an unguarded stamp is (a) 'PSA' has exactly ONE route in
+     * (StageAdvanceService.advance from 'LOI'), so blocking it parks every deal in the org at LOI
+     * and the whole contract module becomes unreachable; and (b) this insert shares ONE all-or-none
+     * transaction with four sibling children and runs FIRST, so its failure aborts their creation
+     * too. Full text in the service header.
+     *
+     * ⚠ IT RE-QUERIES RecordTypeId. A creation that SUCCEEDED is not evidence the type landed: the
+     * in-memory copy carries whatever was assigned, guard or no guard, and D13 residual 1 measured
+     * an inserted row reading back null while the describe resolved a real Id.
+     *
+     * ⚠ THIS OBJECT'S FAILURE MODE IS QUIETER THAN ITS TWO SIBLINGS', WHICH IS WHY THE TEST MATTERS
+     * MORE HERE. A Master-type NDA or LOI is visibly broken — the stage map does not fit it. A
+     * Master-type Contract Review advances PERFECTLY (both PSA record types share one
+     * Negotiation_Status__c sequence); it is wrong only about its Path, its Ball_In_Court__c value
+     * set and which persona may drive it. Nothing in the UI would lead anyone to gate T-A1.
+     */
+    @isTest
+    static void contractReviewBlock_stampsTheAcquisitionRecordType() {
+        Opportunity o = newOpp('Under Review');
+        insert o;
+        TestDataFactory.signPrimaryNda(o);
+        TestDataFactory.placeApprovedLoi(o);
+
+        Test.startTest();
+        o.StageName = 'PSA';
+        update o;
+        Test.stopTest();
+
+        Contract_Review__c created = [
+            SELECT Id, RecordTypeId FROM Contract_Review__c WHERE Opportunity__c = :o.Id LIMIT 1
+        ];
+
+        Schema.RecordTypeInfo acquisitionInfo = Schema.SObjectType.Contract_Review__c
+            .getRecordTypeInfosByDeveloperName()
+            .get('Acquisition_PSA');
+        Assert.isNotNull(acquisitionInfo,
+            'PRECONDITION FAILED: the Contract_Review__c "Acquisition_PSA" record type does not '
+            + 'exist in this org. objects/Contract_Review__c/recordTypes/ must deploy BEFORE this '
+            + 'class (metadata before Apex). Available: '
+            + Schema.SObjectType.Contract_Review__c.getRecordTypeInfosByDeveloperName().keySet());
+
+        Assert.areEqual(acquisitionInfo.getRecordTypeId(), created.RecordTypeId,
+            'PRECONDITION FAILED / post-deploy gate T-A1 — D16.3: the Contract Review auto-created '
+            + 'on entry to the PSA stage must carry the Acquisition_PSA record type. A NULL value '
+            + 'here means the record type resolved a real Id but is not AVAILABLE to the running '
+            + 'user, so the deliberate isAvailable() guard in '
+            + 'OpportunityReviewService.acquisitionPsaRecordTypeId() silently no-opped — that is '
+            + 'gate T-A1 (profile record-type assignment) not having run, and until it does every '
+            + 'acquisition Contract Review lands on Master, matching NEITHER PSA Path and exposing '
+            + 'the UNION of both types\' Ball_In_Court__c values (so a purchase offers "Buyer", '
+            + 'which names DPEG itself). Do not soften this assertion to obtain a green suite; run '
+            + 'T-A1.');
     }
 
     @isTest

@@ -1,5 +1,104 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE <Flow>
+         breaks `sf` deploy at source conversion with the misleading "unable to find matching
+         parent xml file" error.
+
+         =====================================================================
+         2026-08-10 (Tranche 3C follow up) ENTRY CONDITION ADDED, fTitle WIDENED. NOTHING ELSE.
+         =====================================================================
+         Until this change the <start> element carried NO filters, NO filterLogic and NO
+         filterFormula, so this flow fired on EVERY PSA_Version__c insert and notified BOTH
+         Acquisitions_Team and Legal_Team. That was harmless only because no disposition PSA
+         version had ever existed. THE C2 FIX IS EXACTLY WHAT MAKES THEM START EXISTING:
+         PsaVersionService now accepts a sell side token and DispositionStageEntryService
+         auto-creates a Disposition_PSA Contract Review on stage entry, so the first sell side
+         redline would have told the acquisitions team about a sale.
+
+         This is the IDENTICAL shape as flows/Counter_Offer_Notify, gated the same day as review
+         critical C4. That review and design §4.12 named only the Counter Offer flow; this one is
+         the same defect one object over, found by the 3C developer while fixing C2.
+
+         🔴 THIS SUPPRESSES AN EXISTING NOTIFICATION. IT DOES NOT CREATE ONE. Read that before
+         "restoring" the ungated start element. D9 puts every notification in this programme, all
+         14 on the disposition side, OUT OF SCOPE, and D15 finding #4 states the distinction
+         explicitly: "Gating that flow is scope CONTAINMENT, not a new notification, and is
+         therefore not covered by D9's deferral." Removing this criterion does not restore parity;
+         it re opens a cross module leak.
+
+         =====================================================================
+         THE TRAVERSAL NAME IS Contract_Review__r, AND IT IS NOT THE relationshipName.
+         =====================================================================
+         ⚠ Do not copy this name from the field file's <relationshipName>PSA_Versions</relationshipName>.
+         That is the CHILD side name, used going parent to children
+         (Contract_Review__c.PSA_Versions__r). The PARENT traversal used here is derived from the
+         LOOKUP FIELD's own API name, PSA_Version__c.Contract_Review__c, giving Contract_Review__r.
+         It is therefore NOT LOI__r, which is what the sibling Counter_Offer_Notify uses; the two
+         flows are the same shape over different parents.
+
+         The discriminator is on the PARENT, so a condition row cannot express it: a record
+         triggered flow's CONDITION BUILDER offers only fields on the triggering object, and
+         PSA_Version__c carries no Disposition lookup and no record types of its own (deliberately,
+         per the Tranche 3 design, which keeps record types on Contract_Review__c and off its
+         children). Reaching a related record is what FORMULA entry conditions exist for
+         (Winter '23, "Use Formulas as Flow Entry Conditions"). Hence <filterFormula> rather than
+         <filters>/<filterLogic>: the two are alternatives, never both.
+
+         ⚠ ONE HOP ONLY, AND DELIBERATELY NOT A RECORD TYPE TEST.
+         $Record.Contract_Review__r.Disposition__c is a single lookup traversal to a stored field.
+         Contract_Review__r.RecordType.DeveloperName would be a SECOND hop and is not available in
+         an entry formula, so keying on the lookup is not a preference here, it is the only
+         expressible option. Contract_Review__c.Disposition__c's own field header states the same
+         rule from the other end: "THE LOOKUP, NOT THE RECORD TYPE, IS THE DISCRIMINATOR anything
+         outside the record page should test."
+
+         ⚠ SECOND filterFormula IN THE REPO, after Counter_Offer_Notify. Neither is deployed yet.
+         Confirm at check only that the element is accepted at API 67.0, and confirm in the org
+         that an ACQUISITION PSA version STILL produces both notifications: an entry condition that
+         silently matches nothing looks identical to a working gate from outside.
+
+         =====================================================================
+         IT FAILS IN THE SAFE DIRECTION, AND THE PARENT IS ALWAYS THERE.
+         =====================================================================
+         PSA_Version__c.Contract_Review__c is <required>true</required> with a Restrict delete
+         constraint, so the traversal can never dangle. On an acquisition PSA the parent's
+         Disposition__c is blank by construction (OpportunityReviewService creates acquisition
+         Contract Reviews with only Opportunity__c set), so ISBLANK is TRUE, the flow fires, and
+         Acquisitions_Team and Legal_Team are unaffected. The failure mode of a wrong answer is an
+         extra notification to the existing audience, never a missing one.
+
+         =====================================================================
+         fTitle NOW TREATS 'Buyer' AS THE COUNTERPARTY. THAT IS A DIVERGENCE FROM C4, ON PURPOSE.
+         =====================================================================
+         The second order defect is the same one review C4 named on Counter_Offer_Notify: fTitle
+         branched on Direction__c = 'Seller' only, and 3C added 'Buyer' as the sell side
+         counterparty token, so a buyer's version fell to the else branch and announced "PSA
+         version sent to seller" when the buyer sent it.
+
+         On Counter_Offer_Notify that branch was LEFT ALONE because the gate was judged to remove
+         the whole population that could reach it. HERE IT DOES NOT, so the same reasoning reaches
+         the opposite answer. PsaVersionService.isSaleSide is RECORD TYPE FIRST and falls back to
+         the lookup, so a Contract Review carrying the Disposition_PSA record type with a BLANK
+         Disposition__c lookup is sale side to the SERVICE (it writes 'Buyer') and acquisition side
+         to THIS GATE (ISBLANK is true, so the flow fires). The lookup is deliberately not required,
+         so a hand created Disposition PSA reaches that state through the ordinary UI. The
+         auto create path is safe (DispositionStageEntryService always sets Disposition__c), and a
+         hand edited 'Buyer' on an acquisition version is the same narrow residual C4 recorded.
+
+         The widening is a STRICT NO OP on every value the acquisition side actually produces:
+         PsaVersionService stores 'Ours' or 'Seller' there, and both take exactly the branch they
+         took before. Only 'Buyer', which was previously wrong wherever it appeared, changes. Both
+         'Seller' and 'Buyer' mean THE COUNTERPARTY per the Direction__c token contract; 'Ours'
+         means DPEG on either side.
+
+         🔴 RESIDUAL, NAMED RATHER THAN FIXED: for that same blank lookup row the GATE also fails
+         open, so Acquisitions_Team still hears about a sale, merely with a correct title now. This
+         file cannot close that: the formula's only discriminator IS the blank lookup. The real fix
+         is upstream, making Disposition__c required on the Disposition_PSA record type or having
+         the service refuse a sale side write without it, and both are outside this one file edit.
+         The else branch's "sent to seller" is likewise acquisition vocabulary and would name DPEG
+         on a sale; it is left because the gate removes every sale the service can produce.
+    -->
     <actionCalls>
         <name>Notify_Acquisitions</name>
         <label>Notify Acquisitions</label>
@@ -72,6 +171,7 @@
         <nameSegment>GroupNotifier</nameSegment>
     </actionCalls>
     <apiVersion>67.0</apiVersion>
+    <description>Notifies Acquisitions_Team and Legal_Team when a PSA version is logged. Gated 2026-08-10 to ACQUISITION PSAs (Contract_Review__r.Disposition__c blank): that SUPPRESSES an over-broad existing notification, not a new one. Do not remove it.</description>
     <environments>Default</environments>
     <formulas>
         <name>fBody</name>
@@ -81,7 +181,7 @@
     <formulas>
         <name>fTitle</name>
         <dataType>String</dataType>
-        <expression>IF(ISPICKVAL({!$Record.Direction__c}, &apos;Seller&apos;),
+        <expression>IF(OR(ISPICKVAL({!$Record.Direction__c}, &apos;Seller&apos;), ISPICKVAL({!$Record.Direction__c}, &apos;Buyer&apos;)),
 &apos;PSA version received - ball in our court&apos;,
 &apos;PSA version sent to seller&apos;)</expression>
     </formulas>
@@ -94,6 +194,7 @@
         <connector>
             <targetReference>Notify_Acquisitions</targetReference>
         </connector>
+        <filterFormula>ISBLANK({!$Record.Contract_Review__r.Disposition__c})</filterFormula>
         <object>PSA_Version__c</object>
         <recordTriggerType>Create</recordTriggerType>
         <triggerType>RecordAfterSave</triggerType>

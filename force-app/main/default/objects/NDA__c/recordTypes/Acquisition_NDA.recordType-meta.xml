@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        RecordType.Description is capped at 255 characters. The full rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API. Do not paste this back into
+        <description>. NOTE ALSO: the comment must sit INSIDE the root element - a comment
+        placed ABOVE <RecordType> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        THE BUY-SIDE NDA. Parented by Opportunity__c. Four states:
+        Pending -> Sent -> Received -> Signed.
+
+        WHY FOUR AND NOT THREE (decision D14.1, 2026-08-09). The source document describes
+        Pending -> Received -> Signed, which reads as the broker-facing milestones rather than
+        the full internal process. The org already ran Pending -> Sent -> Signed, with
+        Date_Sent__c pairing to Sent and RecordStageAdvanceService encoding that hop. Adding
+        Received rather than RENAMING Sent is what makes this change purely ADDITIVE: every
+        acquisition NDA already in the org keeps a valid value, Date_Sent__c keeps the state it
+        pairs with, and THERE IS NO DATA MIGRATION on this side. Received is the distinction the
+        document itself draws at Part 1 lines 38 and 41 - "NDA not yet received from broker" vs
+        "the NDA has been received".
+
+        WHAT IS RESTRICTED OUT: Not Sent and Declined. Both belong to the disposition path.
+        Declined in particular must never be reachable here - an acquisition NDA has no
+        decline off-ramp in the document, and the Opportunity gate
+        NDA_Signed_Before_Deal_Progression keys on NDA_Signed__c, which the
+        NDA_Signed_Status_Sync flow derives from Status__c.
+
+        WARNING - RECORD-TYPE PICKLIST RESTRICTION IS UI-ONLY. It is NOT enforced by Apex DML.
+        A hand-crafted advanceTo(acquisitionNdaId, 'Declined') would still write, which is why
+        RecordStageAdvanceService's explicit-target allow-list has to become record-type-aware
+        in the same tranche. That is Apex work and lives in the parallel developer change.
+
+        Party_Role__c IS ENUMERATED HERE WITH NO DEFAULT, DELIBERATELY. A record type cannot
+        expose an empty picklist, so both values must be listed; but Buyer/Introducing Broker
+        are counterparty roles in a SALE. On an acquisition DPEG is itself the buyer, so a
+        default of Buyer would silently name US - the same meaning inversion ARCHITECTURE.md
+        records for Ball_In_Court__c. The field is also excluded from the acquisition layout.
+        Counter_Signed_Date__c is likewise disposition-only and is a plain Date, so it needs no
+        entry here at all.
+
+        EVERY PICKLIST ON THE OBJECT IS ENUMERATED - Status__c, Method__c and Party_Role__c -
+        because a record type file that omits a picklist silently drops all of its values from
+        that type. Precedent: objects/Disposition__c/recordTypes/Off_Market.recordType-meta.xml.
+        NDA__c has exactly three picklists after this tranche.
+
+        No <businessProcess> - that element is for Opportunity, Case, Lead and Solution only.
+
+        POST-DEPLOY, NOT DEPLOYABLE: this record type must be assigned in every profile in use
+        (System Administrator included - Modify All Data is an OBJECT permission and confers no
+        record-type access), a per-profile DEFAULT must be chosen, and the existing NDA rows
+        must be migrated off Master (branch on the parent: Disposition__c populated ->
+        Disposition_NDA, else Acquisition_NDA). profiles/** is .forceignore'd in this repo, so
+        none of that can be deployed from here.
+    -->
+    <fullName>Acquisition_NDA</fullName>
+    <active>true</active>
+    <description>The buy-side NDA, parented by Opportunity. Four states: Pending, Sent, Received, Signed (decision D14.1 - Received was ADDED, Sent retained, so no data migration). Not Sent and Declined are restricted out. See the XML comment in this file.</description>
+    <label>Acquisition NDA</label>
+    <picklistValues>
+        <picklist>Method__c</picklist>
+        <values>
+            <fullName>DocuSign</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Wet Sign</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Party_Role__c</picklist>
+        <values>
+            <fullName>Buyer</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Introducing Broker</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Status__c</picklist>
+        <values>
+            <fullName>Pending</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Sent</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Received</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Signed</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

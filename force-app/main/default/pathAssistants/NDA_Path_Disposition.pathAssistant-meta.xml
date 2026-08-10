@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The SELL-SIDE NDA path, for the Disposition_NDA record type.
+        Four steps: Not Sent -> Sent -> Signed, plus Declined as a terminal off-ramp
+        (Part 2 lines 28-41).
+
+        NONE OF THIS TEXT IS CARRIED FORWARD, and that is correct rather than a lapse of the
+        copy-byte-identical discipline: only the Sent and Signed VALUES are shared with the
+        acquisition path, and both mean something different here. On an acquisition DPEG is the
+        party receiving confidential information and signing; on a disposition DPEG is the party
+        DISCLOSING it, collecting one NDA from the prospective buyer and one from the
+        introducing broker, and counter-signing both. The acquisition Signed text names
+        "advancing the deal to Underwriting", an Opportunity stage no disposition NDA has.
+
+        DECLINED IS A TERMINAL OFF-RAMP, NOT A FORWARD STEP. It renders last, the same shape as
+        Dead/Pass on the Opportunity path, and is accepted as such. It is deliberately the only
+        step with no <fieldNames>: the NDA fields it would surface (Date_Signed__c,
+        Counter_Signed_Date__c) are precisely the ones that must stay blank, and Notes__c is a
+        Long Text Area, which is not a supported Path key field.
+
+        MOVING A SIGNED NDA TO DECLINED IS SAFE AND IS THE INTENDED RECOVERY: the before-save
+        flow NDA_Signed_Status_Sync defaults everything that is not Signed to
+        NDA_Signed__c = FALSE, and it never clears Date_Signed__c - so the historical signature
+        date is retained while the record stops counting as signed.
+
+        THE RELEASE GATE LIVES ON THE PARENT, NOT HERE. Nothing is shared with a prospective
+        buyer until EVERY NDA on the disposition that was not DECLINED reads Signed; that is
+        enforced by All_NDAs_Signed_Before_Progression on Disposition__c, which blocks every
+        forward stage from NDA onward on an Off_Market disposition. The step text below says so,
+        because the Path is where a user will look first when the stage refuses to move.
+
+        ⚠ THE DECLINED EXCLUSION IS NEW (2026-08-09, DECISION D20/C2) AND IT CHANGED WHAT THE
+        DECLINED STEP MEANS. That step used to end "delete this NDA rather than leaving it
+        Declined", because a declined NDA counted toward the outstanding total and blocked the
+        disposition forever. D20 refuses deletion - allowDelete stays FALSE on NDA__c, since a
+        declined NDA is the audit evidence of a party who refused to sign - and fixes the
+        arithmetic instead, in NDA_Signed_Rollup's Is_Row_Signed decision, which now counts a
+        Declined row toward NEITHER counter. The step text was corrected in the same change.
+
+        THAT ALSO PROMOTES THE Signed -> Declined RECOVERY DESCRIBED BELOW from a curiosity to
+        THE ONLY WAY to take a party back out of the release gate's arithmetic. Marking an NDA
+        Declined - not deleting it - is now the sanctioned exit, which is why
+        NDA__c.Is_Decline_Allowed__c is true at Signed as well as at Not Sent and Sent.
+
+        Pending and Received do not appear because the Disposition_NDA record type restricts
+        them out; they belong to NDA_Path_Acquisition.
+
+        DocuSign is not licensed yet (decision D2) - these states are driven by hand and the
+        executed file is attached to the record. Method__c already offers DocuSign, so an
+        envelope callback can drive the same states later without reshaping this path.
+
+        STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THIS FILE. Runtime display order
+        comes from the Status__c picklist value order (sorted=false); the order in this file is
+        only for readability. The master set is deliberately ordered
+        Pending, Not Sent, Sent, Received, Signed, Declined so that BOTH record types render
+        correctly with one ordering: acquisition sees Pending -> Sent -> Received -> Signed and
+        disposition sees Not Sent -> Sent -> Signed -> Declined.
+
+        NOT SENT SITS SECOND IN THE MASTER SET ON PURPOSE, AND MOVING IT IS SAFE. It was
+        originally appended fifth, which rendered this path as Sent, Signed, Not Sent, Declined -
+        putting the STARTING state third. That is not cosmetic: a Path is a progress indicator,
+        so it told the user the process begins at Sent, and it disagreed with the step order in
+        this very file. Placing it ahead of Sent cannot disturb the acquisition path because
+        Acquisition_NDA RESTRICTS NOT SENT OUT ENTIRELY - a value a record type does not expose
+        cannot occupy a position in that record type's rendering. Anyone re-ordering this
+        picklist again must re-check that claim against BOTH record type files.
+    -->
+    <active>true</active>
+    <entityName>NDA__c</entityName>
+    <fieldName>Status__c</fieldName>
+    <masterLabel>NDA Path Disposition</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Counterparty_Name__c</fieldNames>
+        <fieldNames>Party_Role__c</fieldNames>
+        <fieldNames>Method__c</fieldNames>
+        <info>An interested party has been identified but the NDA has not gone out yet. Record who they are and whether this is the prospective Buyer or the Introducing Broker who brought them - DPEG collects one NDA per party.</info>
+        <picklistValueName>Not Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Sent__c</fieldNames>
+        <fieldNames>OneDrive_URL__c</fieldNames>
+        <info>NDA sent to this party. Track the days out and chase it - nothing about the property is shared with anyone until every NDA on this disposition is Signed, so an outstanding NDA holds the whole disposition at the NDA stage.</info>
+        <picklistValueName>Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Signed__c</fieldNames>
+        <fieldNames>Counter_Signed_Date__c</fieldNames>
+        <fieldNames>NDA_Signed__c</fieldNames>
+        <info>NDA fully executed. Record the date the counterparty signed and the date DPEG counter-signed, and attach the executed file. Signed is what releases information - once EVERY NDA on this disposition reads Signed, the disposition can move past the NDA stage.</info>
+        <picklistValueName>Signed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>This party refused to sign, so nothing is shared with them. Declined is a dead end for this NDA record, not for the disposition: a declined NDA counts as neither outstanding nor signed, so it no longer holds the disposition at the NDA stage. Keep the record - it is the evidence that this party refused. Do not delete it.</info>
+        <picklistValueName>Declined</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Disposition_NDA</recordTypeName>
+</PathAssistant>

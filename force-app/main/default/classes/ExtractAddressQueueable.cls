@@ -40,12 +40,20 @@
  *                -> NO LEAD, NO CLAIM, Task logged, outcome recorded.
  *           SOFT (false but less certain) -> continue, Parse_Confidence__c = LOW,
  *                and STILL CLAIM.
- *    7b. CALL-FOR-OFFERS GATE (2026-08-03, intake-rules-v2 / U2). email_category is
- *           'call_for_offers' -> NO LEAD, NO CLAIM, Task logged. Unconditional: DPEG does not
- *           work marketed call-for-offers campaigns. Nothing is lost — the staging row keeps
- *           the raw body and the full Extracted_JSON__c, and the Gated_Call_For_Offers list
- *           view is how the population is found. Deliberately POST-CALLOUT: see the
- *           SENDER_CONTAINS block for why a pre-callout blast filter is still prohibited.
+ *    7b. CALL-FOR-OFFERS BRANCH (2026-08-03 as a bare gate / 2026-08-10 as a branch —
+ *           intake-rules-v2 U2, then Tranche 4B D3+D8+D26). email_category is
+ *           'call_for_offers' -> STILL NO LEAD AND STILL NO CLAIM, Task logged. Unconditional:
+ *           DPEG does not work marketed call-for-offers campaigns. Since 4B it ALSO matches
+ *           each named property through the CLAIM PIPELINE ONLY (registry -> resolveLiveRecord)
+ *           and, when that resolves a CONVERTED winner's Opportunity, stamps the deal's
+ *           Offer_Due_Date__c / Listing_Broker_Name__c / Listing_Broker_Email__c and files the
+ *           email on it. Where nothing matches, nothing is created — byte-identical to the
+ *           pre-4B behaviour. 🔴 ATTACHMENTS STAY SUPPRESSED on this branch even though it now
+ *           produces routed record Ids (D26 Q2) — see suppressFilePersist. Nothing is lost —
+ *           the staging row keeps the raw body and the full Extracted_JSON__c, and the
+ *           Gated_Call_For_Offers list view is how the population is found. Deliberately
+ *           POST-CALLOUT: see the SENDER_CONTAINS block for why a pre-callout blast filter is
+ *           still prohibited. See routeCallForOffers.
  *    8. Build the property work-list: drop blank addresses, de-duplicate on the NORMALIZED
  *           address, SORT by cluster key, truncate to MAX_PROPERTIES.
  *           Empty work-list -> (c) NO-PROPERTY: ONE Lead, no claim, done.
@@ -80,9 +88,16 @@
  *    9.  ONE Task per DISTINCT routed record, ONE bulk DML, ASCENDING PRIORITY (C-2 / C-3) —
  *        which is what makes branch (a) possible for the NEXT email. Each Task now names the
  *        SENDER (2026-08-04) — see "THE SENDER SHOWN ON THE LOGGED TASK" below.
- *    9b. ONE bulk DML linking this email's already-persisted Salesforce Files to THE SAME
- *        ORDERED TARGET LIST (2026-08-05) — see "ATTACHMENT LINKING" below. Skipped entirely
- *        when the email carried no retained attachment.
+ *    9b. NO FILE DML HERE — CORRECTED 2026-08-10. This step used to read "ONE bulk DML linking
+ *        this email's already-persisted Salesforce Files to THE SAME ORDERED TARGET LIST", and
+ *        that has been untrue since 2026-08-06, when routed linking LEFT finish() with the
+ *        carrier redesign. finish() now hands the carrier BYTES to a THIRD transaction: it
+ *        ENQUEUES AttachmentPersistQueueable with IDS ONLY, or RELEASES the carrier when there
+ *        is nothing to link to. See "ATTACHMENT HANDOFF" below and enqueueAttachmentPersist's
+ *        four decisions. 🔴 The enqueue lives in finish() and NOWHERE ELSE — that location is
+ *        the redelivery guard. ⚠ Since Tranche 4B the U2 call-for-offers branch reaches this
+ *        step with a NON-EMPTY target list and must still RELEASE; `suppressFilePersist` is
+ *        what makes it, and finish() is now the load-bearing method of that whole branch.
  *    10. Stamp staging: Outcome__c (summary), Result_Record_Id__c (primary),
  *        Routed_Record_Ids__c (all N), Property_Count__c, Processed_DateTime__c.
  *
@@ -250,7 +265,9 @@
  * and every write through the service that owns that object (EmailToLeadService for the Lead —
  * both its insert and, on the lost-race path, its delete; PropertyClaimService for the
  * registry/submissions, InboundEmailActivityService for the Task, InboundEmailStagingService
- * for the staging row, InboundEmailAttachmentService for the carrier release). The only external call is via
+ * for the staging row, InboundEmailAttachmentService for the carrier release,
+ * CallForOffersStampService for the Opportunity stamp on the U2 branch — the module's ONLY
+ * Opportunity writer). The only external call is via
  * LLMExtractionCalloutService, the dedicated callout wrapper — this class implements
  * Database.AllowsCallouts so that boundary can run here and be mocked via HttpCalloutMock.
  *
@@ -421,6 +438,43 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * of what the pipeline actually did at the time.
      */
     public static final String OUTCOME_CALL_FOR_OFFERS = 'Not Routed (call for offers)';
+
+    /**
+     * U2's SECOND label, added 2026-08-10 (Tranche 4B, decisions D3 / D8 / D26). The email is
+     * still gated — no Lead, no claim, ever — but the property it named matched a live deal
+     * through the CLAIM PIPELINE, so that deal was stamped with the offer due date and the
+     * listing broker, and the email itself was filed on it.
+     *
+     * 🔴 THE PREFIX IS LOAD-BEARING FOR THE SAME TWO REASONS OUTCOME_CALL_FOR_OFFERS' IS, AND
+     * BOTH DEPLOYED FILTERS ARE SATISFIED DELIBERATELY, NOT BY LUCK:
+     *   1. It MUST start with 'Not Routed' — `Gated_Call_For_Offers` filter 1 is
+     *      `startsWith 'Not Routed'`. Nothing was ROUTED here in this module's sense: no Lead
+     *      was created and no claim was taken, so the prefix is honest as well as required.
+     *   2. It MUST contain 'call for offers' — `Gated_Call_For_Offers` filter 2 (added by
+     *      Tranche 4A) is `contains 'call for offers'`, and that filter is what keeps a
+     *      MULTI-PROPERTY call-for-offers email in the view: `buildMultiSummary` prefixes
+     *      `'Multi-Property (N): '`, which does NOT start with 'Not Routed'. Before 4B the U2
+     *      gate always produced exactly one outcome so the case could not arise; this branch
+     *      produces one outcome PER PROPERTY, so it arises on the first email naming two.
+     *   3. It must NOT start with 'Not Acquisition' — that prefix belongs to the separate
+     *      deployed `Gated_Not_Acquisition` view, and a call-for-offers blast IS
+     *      acquisition-related (DPEG simply does not work them).
+     *
+     * ⚠ NO DEPLOYED FILTER READS PAST 'call for offers'. The ' — deal updated' suffix exists
+     * purely so a human scanning `Gated_Call_For_Offers` can tell the matched population from
+     * the unmatched one, so the suffix — em dash included — may be reworded freely. The
+     * PREFIX and the PHRASE may not. Pinned by
+     * `ExtractAddressQueueableTest.callForOffersMatchedOutcome_keepsBothListViewCouplings`,
+     * because a Javadoc warning is not enforcement.
+     *
+     * ⚠ IT DESCRIBES THE MATCH, NOT THE WRITE. A deal LOCKED by its own approval matches, is
+     * filed on, and refuses the stamp — that email carries this label AND `Status__c = 'Error'`
+     * with the refusal named in `Error__c`. That is this class's standing partial-success
+     * contract (outcomes and errors are both recorded), not a contradiction.
+     */
+    public static final String OUTCOME_CALL_FOR_OFFERS_MATCHED =
+        'Not Routed (call for offers) — deal updated';
+
     /** Stable, filterable prefix for a multi-property summary, e.g.
      *  'Multi-Property (3): 1 New Lead (winner), 1 Competing Submission, 1 Repeat'. */
     public static final String OUTCOME_MULTI_PREFIX = 'Multi-Property';
@@ -667,6 +721,38 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     private Id spilloverLeadId;
 
     /**
+     * 🔴 U2 / D26 Q2 — THE CALL-FOR-OFFERS BRANCH MUST NEVER ENQUEUE THE FILE JOB, EVEN THOUGH
+     * IT NOW PRODUCES ROUTED RECORD IDs. THIS FLAG IS THE ENFORCEMENT, AND IT IS NOT OPTIONAL.
+     *
+     * `enqueueAttachmentPersist` decides on `targets.isEmpty()`. Before Tranche 4B a gated
+     * call-for-offers email produced NO routed record, so its DECISION 3 (the NO-TARGETS
+     * release — the numbering is `enqueueAttachmentPersist`'s own, where this flag is now
+     * decision 2) fired and the carrier was
+     * RELEASED at zero cost — which is exactly what `ARCHITECTURE.md` means by *"a gated email
+     * (D2 / U2) releases its carrier instead of enqueueing, so the pipeline's highest-volume
+     * junk costs zero publications and leaves zero residual bytes."* The 4B branch stamps a
+     * matched Opportunity Id onto its outcome, so `targets` becomes NON-EMPTY, and without
+     * this flag the file job would silently switch ON for the module's bulkiest traffic
+     * (marketed campaign OM decks) — spending from the org-wide rolling 2,500/24h
+     * `ContentPublication` quota that caused the 2026-08-06 total outage.
+     *
+     * The user's Gate 1 answer was explicit: KEEP ATTACHMENTS SUPPRESSED, and the branch must
+     * RELEASE the carrier rather than merely decline to enqueue, so no bytes are stranded
+     * Pending forever.
+     *
+     * ⚠ WHY A FLAG AND NOT "just call releaseCarrier() in the branch". `releaseCarrier` writes
+     * the DATABASE; the in-memory `staging.Attachment_Status__c` this instance holds would
+     * still read 'Pending', so `enqueueAttachmentPersist`'s own carrier check would pass and it
+     * would enqueue anyway. An explicit flag consulted at the decision point is the only shape
+     * that cannot be defeated by that stale read.
+     *
+     * ⚠ IT IS DELIBERATELY NARROW. Do not generalise it into "suppress files for gates" — the
+     * D2 hard gate already gets the same outcome for free, through the empty-targets path, and
+     * a broader flag would obscure which decision this actually encodes.
+     */
+    private Boolean suppressFilePersist = false;
+
+    /**
      * One property's routing result: what happened, where it landed, and how important that
      * landing is relative to the email's other results.
      */
@@ -827,9 +913,38 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             }
 
             if (isCallForOffersGated(extraction)) {
-                // U2 CALL-FOR-OFFERS GATE. Same shape as the hard gate immediately above, and
-                // deliberately so — no Lead, no claim, Task still logged by finish().
-                outcomes.add(new RoutingOutcome(OUTCOME_CALL_FOR_OFFERS, null, null, PRIORITY_NO_PROPERTY));
+                // U2 CALL-FOR-OFFERS GATE. THE SUPPRESSION IS UNCHANGED (D3): no Lead, no
+                // registry claim, no competing submission — ever, on this branch. Since
+                // 2026-08-10 it ALSO matches the named properties against the claim pipeline
+                // and stamps any live deal it finds (D8 / D26); see routeCallForOffers.
+                //
+                // 🔴 THE try/catch IS THE MOST IMPORTANT LINE IN THIS BLOCK, AND IT IS NOT
+                // DEFENSIVE PROGRAMMING — IT IS THE REDELIVERY CONTRACT. If a stamp failure
+                // escaped to execute()'s catch below, finish() would NEVER RUN: the Task would
+                // never be logged, the RFC Message-ID would never be recorded, and the platform
+                // redelivering this message would re-run the ENTIRE pipeline from the top. The
+                // per-property isolation catch in routeProperties is the exact precedent, and
+                // routingErrors is the same durable channel (finish() persists it to Error__c
+                // and markRouted derives Status__c 'Error' from it).
+                //
+                // Nothing is caught and discarded: the failure text is recorded, the Task is
+                // still logged, and the staging row still gets its outcome summary.
+                suppressFilePersist = true;
+                try {
+                    routeCallForOffers(extraction);
+                } catch (Exception e) {
+                    String errorText = describeFailure(e);
+                    routingErrors.add(errorText);
+                    System.debug(LoggingLevel.ERROR,
+                        'ExtractAddressQueueable.routeCallForOffers failed for staging '
+                        + stagingId + ': ' + errorText);
+                }
+                if (outcomes.isEmpty()) {
+                    // Belt and braces: routeCallForOffers guarantees at least one outcome, but
+                    // if it died before adding any, the row must still carry today's label —
+                    // never a blank Outcome__c that no list view can find.
+                    outcomes.add(new RoutingOutcome(OUTCOME_CALL_FOR_OFFERS, null, null, PRIORITY_NO_PROPERTY));
+                }
                 finish();
                 return;
             }
@@ -1091,6 +1206,222 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
                     null, property.normalizedAddress, PRIORITY_NO_PROPERTY));
             }
         }
+    }
+
+    /**
+     * U2 CALL-FOR-OFFERS ROUTING (Tranche 4B, 2026-08-10 — decisions D3 / D8 / D26).
+     *
+     * ═══ 🔴 WHAT THIS BRANCH STILL DOES NOT DO, AND MUST NEVER DO ═══
+     * NO LEAD. NO `Property_Registry__c` CLAIM. NO `Competing_Broker_Submission__c` ROW. NO
+     * `Property_Claim_Lock__c` LOCK. D3 is explicit that the 2026-08-03 suppression is NOT
+     * reversed, and the enforcement here is structural rather than conditional: this method
+     * calls neither `createLead` nor `PropertyClaimService`, so there is no input that can
+     * reach either. `isCallForOffersGated` itself is untouched, and its Javadoc's "no Lead, no
+     * claim" contract stays literally true.
+     *
+     * The registry read is deliberately LOCK-FREE. `findMatchingRegistry` takes no lock, and
+     * taking the cluster lock here would enrol a branch that claims nothing into the deadlock
+     * ORDERING CONTRACT that exists solely to protect claimants — cost with no benefit. (The
+     * work-list is still built in cluster-key order, because it is `buildWorkList`'s output and
+     * reusing that function is what makes this branch normalize addresses IDENTICALLY BY
+     * CONSTRUCTION to the claim path rather than by convention — the EmailThreadAnchorService
+     * lesson. Ordering is a free side effect here, not a requirement.)
+     *
+     * ═══ WHAT IT ADDS: MATCH, THEN STAMP ═══
+     *   1. Build the work-list with the SAME `buildWorkList` the claim path uses. ⚠ It does
+     *      NOT set `pendingSpillover` — that field is consumed only by `createLead`, which
+     *      never runs here, so setting it would be a vestigial write.
+     *   2. Per property, in order: `findMatchingRegistry` -> `resolveLiveRecord`. D8 forbids an
+     *      address-based Opportunity query; the claim pipeline is the ONLY match route.
+     *   3. Q1 = OPPORTUNITY ONLY. `resolveLiveRecord` returns an Opportunity Id only for a
+     *      CONVERTED winner; an UNCONVERTED winner comes back as the Lead Id unchanged and is
+     *      treated as a NO-MATCH. ⚠ Registry rows are created the moment a Lead is minted and
+     *      conversion happens later, so at any given time most registry winners are unconverted
+     *      — this branch is therefore INERT for the majority of matches. That is the user's
+     *      decision (D26 Q1), stated with the consequence, not a defect to "fix" here.
+     *   4. ONE `CallForOffersStampService.stamp(...)` call for the whole email — 1 SOQL and at
+     *      most 1 DML regardless of how many deals matched.
+     *   5. One `RoutingOutcome` PER PROPERTY: the matched label carrying the deal Id at
+     *      `PRIORITY_REPEAT` (which already means "filed onto an existing record, no claim
+     *      taken" — exactly this branch, so no fifth PRIORITY_* constant is invented), or
+     *      today's label with a null record Id at `PRIORITY_NO_PROPERTY`.
+     *
+     * ═══ THE NO-MATCH PATH IS BYTE-IDENTICAL TO THE PRE-4B BEHAVIOUR ═══
+     * One property that matches nothing yields exactly one outcome, so `buildOutcomeSummary`
+     * returns `OUTCOME_CALL_FOR_OFFERS` verbatim, `primaryRecordId()` is null, and
+     * `buildRoutedAudit()` still returns null (it needs two outcomes). The five deployed
+     * `callForOffers_*` tests pass unmodified, and so does the `Gated_Call_For_Offers` view.
+     * ⚠ ONE FIELD IS DELIBERATELY NOT BYTE-IDENTICAL: `Property_Count__c` was always null on
+     * this branch and now records what the extraction found, because the truncation signal
+     * (` [truncated: X of M]`) is meaningless without it and the watch list view already
+     * displays that column. Additive; no test or filter asserted the null.
+     *
+     * ═══ 🔴 TWO KNOWN, ACCEPTED CONSEQUENCES OF FILING THE EMAIL ON THE DEAL ═══
+     * The Task `finish()` logs now attaches to the matched Opportunity via
+     * `InboundEmailActivityService.attachTo`, which uses `WhatId` for anything that is not a
+     * Lead/Contact — the same path branches (b) and (d) already take onto a converted winner,
+     * so this is an exercised shape and not a new one. But that Task carries `Thread_Key__c`
+     * and `Inbound_Message_Id__c`, which makes it a THREAD ANCHOR on the deal:
+     *   • later replies in that campaign thread will resolve to the Opportunity through
+     *     `findRecordByReplyHeaders` (branch (a)),
+     *   • the EAC Thread Adopter will begin re-pointing captured replies' `RelatedToId` onto it,
+     *     and
+     *   • 🔴 THOSE FOLLOW-UPS NO LONGER REACH THE LLM AT ALL — the consequence that is easiest to
+     *     miss, because it is a LOSS rather than an addition. Branch (a) returns BEFORE the
+     *     callout (`routePrologueWithoutCallout`), so once this branch's Task carries a `WhatId`,
+     *     every later message in that thread is filed on the Opportunity with
+     *     `Extracted_JSON__c = {"skipped":"reply"}`: no callout, no extraction, NO CLAIM. And a
+     *     campaign thread is exactly where a follow-up says *"also available: 123 New St."* — so
+     *     a NEW property named in a reply to a call-for-offers blast is never claimed, and a
+     *     later broker submitting it wins outright. This is the standing branch-(a) trade-off
+     *     already argued above ("THE GATE CAN ONLY EVER SUPPRESS A NEW CONVERSATION, NEVER AN
+     *     EXISTING ONE"), applied unchanged — a header identity match must still outrank a
+     *     classifier's opinion — so it is ACCEPTED, not a defect. What is new is the TRAFFIC
+     *     CLASS it now covers: before 4B a call-for-offers email produced no routed record, so
+     *     its Task carried no target and its thread anchored nothing.
+     * All three are BEHAVIOUR CHANGES ON LIVE FEATURES and belong in the UAT script.
+     * `Task.Subject` remains a non-matching field (nothing in this repo matches pipeline Tasks
+     * by Subject), so the attribution prefix is unaffected.
+     *
+     * ═══ FILES STAY SUPPRESSED (D26 Q2) ═══
+     * `suppressFilePersist` is set by the caller BEFORE this runs, so the carrier is RELEASED
+     * rather than converted even though `targets` is now non-empty. See that member's Javadoc.
+     *
+     * @param extraction The parsed extraction; its properties are matched, never claimed.
+     */
+    private void routeCallForOffers(LLMExtractionResult extraction) {
+        propertyCount = (extraction.properties == null) ? 0 : extraction.properties.size();
+        List<PropertyExtraction> candidates = buildWorkList(extraction.properties);
+        candidateCount = candidates.size();
+
+        if (candidates.isEmpty()) {
+            // No addressable property at all — including the LLM-degraded shape. Byte-identical
+            // to the pre-4B gate: one outcome, today's label, no record.
+            outcomes.add(new RoutingOutcome(OUTCOME_CALL_FOR_OFFERS, null, null, PRIORITY_NO_PROPERTY));
+            return;
+        }
+
+        // ⚠ THE LISTING BROKER COMES FROM THE EXTRACTION AND FROM NOWHERE ELSE. THERE IS
+        // DELIBERATELY NO ENVELOPE-SENDER FALLBACK, AND THE ABSENCE IS THE POINT — an earlier
+        // draft of this branch had one (`: senderName` / `: senderEmail`), it read well, and it
+        // was wrong. Do not restore it.
+        //
+        // 🔴 WHY IT WAS WRONG: it is U1's own documented BLAST-PLATFORM RESIDUAL turned into a
+        // write. ARCHITECTURE.md (INTAKE RULES V2 rule 1) records that a broker submitting
+        // through RCM / Crexi / Buildout arrives with an envelope From of the PLATFORM
+        // (`listings@buildout.com`), and a call-for-offers blast is EXACTLY that traffic — so on
+        // this branch the envelope is systematically a platform mailbox rather than a person.
+        // Combined with `CallForOffersStampService`'s last-email-wins overwrite, the fallback
+        // replaced the REAL listing broker on a LIVE DEAL — the one `LeadConvertService` copied
+        // off the winning broker's own email at conversion — with a blast platform's mailbox, or
+        // with whoever an unrelated marketing blast happened to name.
+        //
+        // 🔴 THE TWO FIELD GROUPS ARE NOT THE SAME KIND OF FACT, WHICH IS WHY ONE OVERWRITES AND
+        // THE OTHER DOES NOT EVEN FALL BACK. An offer deadline is a fact about THE CAMPAIGN, so
+        // the newest email is the authority and last-wins is right. The listing broker on a live
+        // deal is a fact about THE TRANSACTION, and a third party's blast is not newer
+        // information about it. A blank value is how that is expressed: `buildChange` ignores a
+        // null/blank incoming value entirely, so the deal keeps the broker it already knows AND
+        // the deadline still lands.
+        //
+        // These two fields remain the RIGHT source when they ARE populated — including under U1,
+        // because `demoteBodyBroker` moves a demoted body-named broker INTO
+        // listingBrokerName/Email, so they already hold whoever U1 concluded was the listing
+        // contact. Display-only either way: neither reaches Property_Key__c, Broker_Email__c or
+        // Lead.Email. `senderName` / `senderEmail` are still resolved for the Task this email is
+        // logged against; they are simply not a source for a deal field.
+        String listingBrokerName = extraction.listingBrokerName;
+        String listingBrokerEmail = extraction.listingBrokerEmail;
+
+        List<PropertyExtraction> workList = new List<PropertyExtraction>();
+        Map<String, Id> dealByAddress = new Map<String, Id>();
+        List<CallForOffersStampService.StampRequest> requests =
+            new List<CallForOffersStampService.StampRequest>();
+
+        for (Integer i = 0; i < candidates.size() && i < MAX_PROPERTIES; i++) {
+            PropertyExtraction property = candidates[i];
+            workList.add(property);
+
+            Id deal = findLiveDealForProperty(property.normalizedAddress);
+            if (deal == null) {
+                continue;
+            }
+            dealByAddress.put(property.normalizedAddress, deal);
+
+            CallForOffersStampService.StampRequest request =
+                new CallForOffersStampService.StampRequest();
+            request.recordId = deal;
+            // PER PROPERTY, not per email: `offer_due_date` is a property-level key, and a
+            // portfolio blast can quote different deadlines for different assets.
+            request.offerDueDate = property.offerDueDate;
+            request.listingBrokerName = listingBrokerName;
+            request.listingBrokerEmail = listingBrokerEmail;
+            requests.add(request);
+        }
+
+        // ONE call for the whole email. An empty request list costs zero SOQL and zero DML —
+        // the service returns before its own read — so an all-unmatched blast is exactly as
+        // cheap as it was before 4B.
+        CallForOffersStampService.StampResult stampResult =
+            CallForOffersStampService.stamp(requests);
+        // 🔴 REFUSALS ARE RECORDED DURABLY, NEVER SWALLOWED. routingErrors is persisted to
+        // Error__c by finish(), and markRouted derives Status__c 'Error' from it — so a deal
+        // LOCKED by its own approval is visible as an error on the staging row rather than as
+        // a stamp that silently did not happen. (The counter-example to avoid is
+        // EmailThreadAdopterService.lastRunFailureCodes, which dies with the transaction.)
+        routingErrors.addAll(stampResult.refusals);
+        // AND SO IS A DEAL THAT COULD NOT BE READ BACK (review finding S4). A refusal needs a
+        // SaveResult; a deal the selector never returned produces none, so without this line it
+        // would land in no population at all and this email would still report
+        // OUTCOME_CALL_FOR_OFFERS_MATCHED — '— deal updated' for a stamp that never happened.
+        // Expected to be empty against today's ReadWrite OWD; see StampResult's Javadoc for the
+        // two ways it is not.
+        routingErrors.addAll(stampResult.missing);
+
+        for (PropertyExtraction property : workList) {
+            Id deal = dealByAddress.get(property.normalizedAddress);
+            outcomes.add(deal == null
+                ? new RoutingOutcome(
+                    OUTCOME_CALL_FOR_OFFERS, null, property.normalizedAddress, PRIORITY_NO_PROPERTY)
+                : new RoutingOutcome(
+                    OUTCOME_CALL_FOR_OFFERS_MATCHED, deal, property.normalizedAddress, PRIORITY_REPEAT));
+        }
+    }
+
+    /**
+     * The LIVE DEAL for one normalized address, via the claim pipeline only (D8), or null.
+     *
+     * Two reads at most, and both already exist on the competing/repeat branches, so this
+     * introduces no new query SHAPE — only new call sites:
+     *   1. `findMatchingRegistry` — one exact `Property_Key__c` lookup, plus a fuzzy 90-day
+     *      scan ONLY when the exact lookup misses.
+     *   2. `resolveLiveRecord` — one read, only when a registry row was found.
+     *
+     * 🔴 Q1 = OPPORTUNITY ONLY. Anything else — an UNCONVERTED winner Lead, a Contact from a
+     * conversion that created no Opportunity, or a null — is a NO-MATCH, and the email is
+     * reported exactly as it was before 4B. `Lead.Offer_Due_Date__c` and
+     * `Lead.Listing_Broker_*__c` all exist and are deliberately NOT written (D26 Q1).
+     *
+     * ⚠ ACCEPTED BLIND SPOT (D8, stated rather than hidden): a MANUALLY-created deal has no
+     * registry row and therefore cannot be matched at all. Those emails fall through to
+     * no-match, where — per D3 and per the client document — nothing is created.
+     *
+     * ⚠ THE FUZZY SCAN IS THE DOMINANT COST OF THIS BRANCH: a full 90-day registry read, once
+     * per UNMATCHED property. Branch (d) already pays it, so it is not a new query, but a
+     * 10-property blast pays it ten times. If the pinned budget ever comes under pressure the
+     * fix is a TRANSACTION-SCOPED MEMO of `PropertyRegistrySelector.selectRecentWithWinner`,
+     * NOT a raised budget — and that memo touches the claim path, so it is a separate design.
+     *
+     * @param normalized The normalized property address; blank yields null.
+     * @return The matched Opportunity Id, or null when there is no live deal to stamp.
+     */
+    private Id findLiveDealForProperty(String normalized) {
+        Property_Registry__c winner = PropertyMatchingService.findMatchingRegistry(normalized);
+        if (winner == null || winner.Winning_Lead__c == null) {
+            return null;
+        }
+        Id live = PropertyMatchingService.resolveLiveRecord(winner.Winning_Lead__c);
+        return (live != null && live.getSObjectType() == Opportunity.SObjectType) ? live : null;
     }
 
     /**
@@ -1593,15 +1924,27 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * 🔴 ANYONE WHO MOVES THIS ENQUEUE OUT OF finish(), OR MAKES THE SKIP PATH CALL finish(),
      * SILENTLY RE-OPENS DUPLICATE FILES ON LIVE LEADS. There is no dedupe to catch it.
      *
-     * ═══ THREE DECISIONS, EACH COSTING NOTHING WHEN IT DOES NOT APPLY ═══
+     * ═══ FOUR DECISIONS, EACH COSTING NOTHING WHEN IT DOES NOT APPLY ═══
      *   1. NO CARRIER (`Attachment_Status__c != 'Pending'`) -> return. The overwhelming majority
      *      of emails. Zero DML, zero enqueue, and the predicate is FREE because
      *      `InboundEmailStagingSelector.selectById` already loaded the field.
-     *   2. NO TARGETS (a D2 / U2 gate produced no routed record) -> RELEASE the carrier instead.
-     *      There is nothing to file a file on and there never will be, so this is the highest-
-     *      volume junk in the pipeline being made to cost zero publications AND zero residual
-     *      bytes.
-     *   3. OTHERWISE -> enqueue with Ids only.
+     *   2. 🔴 CALL-FOR-OFFERS (`suppressFilePersist`) -> RELEASE, unconditionally, EVEN WHEN
+     *      TARGETS EXIST. Added 2026-08-10 (Tranche 4B, D26 Q2). Before 4B the U2 gate produced
+     *      no routed record, so decision 3 released the carrier and this traffic cost ZERO
+     *      `ContentPublication`s — which is the invariant `ARCHITECTURE.md` states as *"a gated
+     *      email (D2 / U2) releases its carrier instead of enqueueing, so the pipeline's
+     *      highest-volume junk costs zero publications."* 4B makes that branch produce a matched
+     *      Opportunity Id, so decision 3 would no longer catch it and the file job would switch
+     *      ON for marketed campaign decks — the bulkiest attachments this module sees — against
+     *      the org-wide rolling 2,500/24h quota behind the 2026-08-06 total outage. THIS CHECK
+     *      MUST STAY ABOVE DECISION 3; below it, it is dead code on exactly the emails that
+     *      matter. Pinned by
+     *      `ExtractAddressQueueableTest.callForOffers_matchedWithCarrier_releasesTheCarrierAndNeverEnqueues`.
+     *   3. NO TARGETS (a D2 gate, or a call-for-offers email that matched nothing) -> RELEASE the
+     *      carrier instead. There is nothing to file a file on and there never will be, so this
+     *      is the highest-volume junk in the pipeline being made to cost zero publications AND
+     *      zero residual bytes.
+     *   4. OTHERWISE -> enqueue with Ids only.
      *
      * ═══ ITS OWN try/catch, AND THE `Test.isRunningTest()` GUARD ═══
      * Wrapped because it runs AFTER `markRouted`: a chain failure must never turn a correctly
@@ -1621,6 +1964,12 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             if (staging == null
                     || !InboundEmailStagingService.ATTACHMENT_STATUS_PENDING
                             .equals(staging.Attachment_Status__c)) {
+                return;
+            }
+            if (suppressFilePersist) {
+                // 🔴 DECISION 2 — D26 Q2. Deliberately ABOVE the targets check: the whole point
+                // is that a call-for-offers email now HAS targets and must still never convert.
+                releaseCarrier('gated - call for offers, files not retained');
                 return;
             }
             if (targets == null || targets.isEmpty()) {
@@ -2409,6 +2758,15 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * One condition, deliberately: `email_category == 'call_for_offers'`. DPEG does not work
      * mass-marketed call-for-offers campaigns, so a Lead for one is never wanted — the rule is a
      * business fact, not a tuning problem, and it is stated here exactly as the user stated it.
+     *
+     * ⚠ THIS PREDICATE IS UNCHANGED BY TRANCHE 4B (2026-08-10) AND EVERY CLAIM BELOW STILL
+     * HOLDS LITERALLY. What changed is only what the CALLER does after this returns true: it
+     * now also matches the named properties against the registry and stamps any live deal it
+     * finds (`routeCallForOffers`). No Lead, no registry row, no submission row, no lock — see
+     * that method's header, and D3 in `agent-output/stage-by-stage-decisions.md`, which is
+     * explicit that the 2026-08-03 suppression is NOT reversed. 🔴 Do not weaken, widen or
+     * "tidy" this predicate in order to reach the stamp: the stamp is downstream of it, and
+     * softening it would re-enable Lead creation for marketed blasts.
      *
      * ═══ 🔴 THE STAGING ROW PRESERVES THE EMAIL. IT DOES NOT PRESERVE THE CLAIM. ═══
      * An earlier version of this comment said "nothing is lost". That OVERSTATES it, and the

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        The SELL-SIDE PSA path, for the Disposition_PSA record type.
+        Four steps: Initial Draft -> Revised -> Ready for Execution -> Executed.
+
+        THE VALUES ARE IDENTICAL TO THE ACQUISITION PATH; ONLY THE WORDING DIFFERS, AND THAT IS
+        THE WHOLE POINT OF THIS FILE. Unlike LOI__c and NDA__c, the PSA needed no new picklist
+        values at all - the client document's four sell-side states are already exactly
+        Initial Draft / Revised / Ready for Execution / Executed. What inverts is WHO ACTS:
+
+          - OUR legal issues the FIRST DRAFT on a sale. On a purchase we receive the seller's
+            paper and redline it. That inversion is the reason this file exists.
+          - The counterparty is the BUYER, so Ball In Court reads Us / Buyer here and
+            Us / Seller on the acquisition type.
+          - Execution hands off to CLOSING on the Disposition, not to the Transactions team on
+            an Opportunity.
+
+        ⚠ THE 'Executed' STEP DELIBERATELY DOES NOT PROMISE AUTOMATION. The acquisition step
+        says the Opportunity is stamped and the Transaction created, because that is built and
+        live. The equivalent sell-side behaviour - moving Disposition_Stage__c to 'Closing' - is
+        an APEX branch in ContractExecutionService that is NOT part of 3C and is not built yet.
+        The wording therefore tells the user what should now be true and asks them to confirm
+        it, which is honest whether or not the branch has shipped, and does not have to be
+        rewritten when it does. Do not "upgrade" this text to assert automation until that
+        branch is deployed and verified.
+
+        NO AMPERSAND ENTITIES ANYWHERE IN THIS FILE - "purchase and sale agreement" is written
+        out. The master path carries `&amp;amp;amp;` in its first step and whether that renders as an
+        ampersand or literally has never been confirmed in this repo; the acquisition path
+        reproduces it byte-identically under the do-not-reword rule, and this new file simply
+        avoids inheriting the question.
+
+        ⚠ DRIVEN BY Negotiation_Status__c, NOT Stage__c - the same constraint as the acquisition
+        path and the same reason. Stage__c is a DERIVED PROJECTION recomputed by
+        Contract_Review_Stage_Sync on every save, and a direct write to it commits and is
+        silently discarded. 'Revised' and 'Ready for Execution' both project onto 'Review', so a
+        Stage__c Path would sit still through one of the Advance Stage clicks. The disposition
+        PSA must drive Negotiation_Status__c, never Stage__c.
+
+        STEP ORDER COMES FROM THE PICKLIST, NOT FROM THIS FILE, and needed no adjustment: both
+        record types expose the same four values in the master ordering, so nothing had to be
+        appended or re-sequenced. Contrast NDA__c, where 'Not Sent' had to be moved AHEAD of
+        'Sent' because the two sets overlap and appending rendered the disposition starting
+        state third.
+
+        POST-DEPLOY: this path renders nothing until the Disposition_PSA record type is assigned
+        in the profiles in use and a disposition Contract Review actually carries it.
+    -->
+    <active>true</active>
+    <entityName>Contract_Review__c</entityName>
+    <fieldName>Negotiation_Status__c</fieldName>
+    <masterLabel>Contract Review Path Disposition</masterLabel>
+    <pathAssistantSteps>
+        <info>Our legal issues the first draft of the purchase and sale agreement, built from the agreed LOI terms. On a sale we hold the pen — send the draft to the buyer and capture the PSA date.</info>
+        <picklistValueName>Initial Draft</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>The buyer has come back. Work the redlines here: log every exchange with Log Version — each one records who sent it and flips Ball In Court between Us and Buyer — and stay on this step for as long as the negotiation runs. Advance only once the document is final.</info>
+        <picklistValueName>Revised</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Terms are locked and the document is final. Route for signature by both parties. Advancing from here executes the contract and commits the sale, so confirm every contingency, price and date is agreed first.</info>
+        <picklistValueName>Ready for Execution</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>PSA fully executed — the sale is committed and the deal moves into Closing. Confirm the Disposition has advanced to the Closing stage, then coordinate the closing wire and the disposition checklist from there.</info>
+        <picklistValueName>Executed</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Disposition_PSA</recordTypeName>
+</PathAssistant>

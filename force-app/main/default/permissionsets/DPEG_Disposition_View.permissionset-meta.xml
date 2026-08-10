@@ -1,6 +1,368 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Read-only Disposition module access for the Principal persona: Read + View All on the 5 DISP objects, full FLS, no Create/Edit/Delete.</description>
+    <!--
+        This comment must sit INSIDE the root element. A comment placed ABOVE <PermissionSet>
+        breaks `sf` deploy at conversion with the misleading error "unable to find matching
+        parent xml file". Broker_Protection_Access is the precedent for this pattern.
+
+        NDA__c CARRIES viewAllRecords=true, AND THAT IS AN ACCEPTED, INFORMED WIDENING - NOT
+        DRIFT, AND NOT SOMETHING TO TIDY AWAY (user decision 2026-08-09, decisions file D12/W3;
+        raised as code review W3).
+
+        Gate 1 Q7 specified a plain allowRead on NDA__c plus FLS on Status__c, so that the BOV
+        Outreach tile could report real NDA status instead of a hard-coded value. What shipped
+        is allowRead PLUS viewAllRecords, mirroring DPEG_Acquisition_View.
+
+        WHY THE PLAIN READ WOULD HAVE BEEN WRONG: NDA__c is sharingModel Private with no
+        relevant sharing rule, and one NDA__c object serves BOTH the acquisition and the
+        disposition module. A disposition user with a plain read therefore sees only the NDA
+        rows shared to them - which for most rows is none - so the pill would report "No NDA"
+        for an NDA THAT EXISTS AND IS SIGNED. That is a false compliance negative: the tile
+        would LIE BY OMISSION, which is the exact defect this grant was added to fix, and it is
+        strictly worse than the hard-coded value it replaced because it looks authoritative.
+
+        WHAT IT COSTS, STATED PLAINLY: a disposition-only persona can now read EVERY NDA in the
+        org, including acquisition NDAs, in a security model the 2026-07-22 RBAC build
+        deliberately partitioned by module. Read-only; no create, edit or delete on NDA__c.
+
+        THE CORRECT LONG-TERM SHAPE IS view-all SCOPED TO DISPOSITION NDAs. That is not
+        expressible today: it needs record types on NDA__c, which Tranche 3 (decision D7) adds.
+        REVISIT THEN - and only then. Narrowing this to a plain read before those record types
+        exist re-opens the lying pill; the same comment is on DPEG_Disposition_Edit and both
+        must move together.
+
+        ================================================================================
+        SUPERSEDED 2026-08-09 BY DECISION D17. viewAllRecords ON NDA__c IS NOW FALSE.
+        The block above is KEPT AS HISTORY. It no longer describes the grant.
+        ================================================================================
+
+        WHAT D17 DOES HERE: viewAllRecords on NDA__c drops to FALSE. allowRead stays true;
+        allowCreate, allowEdit and allowDelete stay false - this is the READ-ONLY Principal
+        persona and its CRUD is untouched. Record visibility now comes from CRITERIA-BASED
+        SHARING RULES on NDA__c scoped to RecordTypeId = NDA__c.Disposition_NDA - see
+        sharingRules/NDA__c.sharingRules-meta.xml.
+
+        WHY THIS SUPERSEDES RATHER THAN CONTRADICTS THE TEXT ABOVE: that text did not argue
+        org-wide visibility was desirable. It said the correct shape - view-all SCOPED TO
+        DISPOSITION NDAs - "is not expressible today: it needs record types on NDA__c, which
+        Tranche 3 (decision D7) adds. REVISIT THEN." THE RECORD TYPES NOW EXIST. D17 is that
+        revisit. The org-wide grant existed only because the scoping mechanism did not.
+
+        🔴 THIS SET IS THE REASON THE SECOND SHARING RULE EXISTS. This is the persona held by
+        the PRINCIPALS via DPEG_Principal_PSG, and principals are not necessarily members of
+        DPEG_Acquisitions_Team - the group every other disposition child object shares to. With
+        viewAllRecords gone and only a team rule in place, principals would have silently lost
+        NDA visibility entirely, and the BOV Outreach pill would report "No NDA" for NDAs that
+        exist - the exact defect the D12/W3 text above was written to prevent. The rule
+        NDA_Disposition_Principals_R shares Disposition_NDA rows to the Principals group at
+        Read, which is the strictly lower access this persona needs.
+
+        🔴 GROUP MEMBERSHIP IS ORG STATE AND IS NOT DEPLOYABLE. If the Principals group is empty
+        or wrong after deploy, this persona sees no NDAs at all. Post-deploy gate.
+
+        🔴 DEPLOY SHARING RULES ONE AT A TIME - a batch rolls all of them back in this org.
+
+        NOTE the two files still move together on viewAllRecords, as the text above requires -
+        both went to false in the same change. They DIVERGE on CRUD only: D16.1 gave
+        DPEG_Disposition_Edit allowEdit=true and deliberately left this set read-only.
+    -->
+    <!--
+        AMENDED 2026-08-09 BY DECISION D20.1 - LOI__c READ ONLY, SCOPED BY SHARING RULE.
+
+        This set granted NO LOI__c ACCESS AT ALL, so the disposition LOI that Tranche 3B builds
+        would have been INVISIBLE to the Principal persona - the same gap D17 had just closed for
+        NDA__c, caught BEFORE the build this time rather than in review.
+
+        WHAT IS GRANTED: object allowRead only. NO create, NO edit, NO delete, and 🔴 NO
+        viewAllRecords - matching how this set now treats NDA__c and diverging deliberately from
+        the four older DISP objects, which still carry viewAllRecords=true. Visibility comes from
+        the criteria sharing rule LOI_Disposition_Principals_R on RecordTypeId =
+        LOI__c.Disposition_LOI (see sharingRules/LOI__c.sharingRules-meta.xml).
+
+        🔴 WHY SCOPING MATTERS MORE ON LOI THAN IT DID ON NDA. An ACQUISITION LOI carries the
+        approval flags that gate PSA entry (Underwriting_Approved_Before_LOI,
+        Approved_LOI_Before_PSA). An object-wide read here would hand the disposition personas
+        the acquisition approval surface, which is the NDA compounding error repeated on a
+        higher-value object.
+
+        🔴 THIS SET IS AGAIN THE REASON A SECOND SHARING RULE EXISTS - identical reasoning to the
+        D17 block above. Principals hold this set through DPEG_Principal_PSG and are NOT
+        necessarily members of DPEG_Acquisitions_Team, so a team-only rule would leave them
+        seeing zero disposition LOIs. LOI_Disposition_Principals_R shares to the Principals group
+        at Read. 🔴 Group membership is org state and is NOT deployable: if Principals is empty
+        or wrong after deploy, this persona sees nothing and that looks identical to "there are
+        no LOIs". Post-deploy gate, verified AS THE PERSONA, not as an administrator.
+        🔴 Deploy sharing rules ONE AT A TIME - a batch rolls all of them back in this org.
+
+        FLS MIRRORS DPEG_Disposition_Edit'S FIELD LIST AT editable=false THROUGHOUT, INCLUDING
+        ITS OMISSIONS. LOI_Status__c, Approved_By__c, Approved_Date__c, Approval_Comments__c,
+        ARC__c, Opportunity__c and Property__c are deliberately absent from both sets - they are
+        the acquisition approval machinery. Keeping the two lists identical in membership and
+        different only in the editable flag is what makes a future divergence visible as a
+        divergence.
+
+        NDA__c.Is_Decline_Allowed__c IS GRANTED READ HERE TOO, even though this persona cannot
+        press Mark Declined. The field backs a flexipage visibility rule, and a rule referencing
+        a field the running user cannot read evaluates FALSE rather than erroring - so withholding
+        it would silently change what this persona sees on the page for a reason unrelated to
+        their access level. Read is the honest grant.
+
+        🔴 A PermissionSet DEPLOY REPLACES THIS SET'S ENTIRE GRANT LIST - it does not merge, and
+        an org-side-only grant not represented here is wiped by the next deploy of this file.
+        ⚠ THAT RECONCILIATION WAS NOT PERFORMED FOR THIS EDIT: a retrieve of this set from
+        usman-dpeg on 2026-08-09 did not return it. The likely explanation is that 3A is not
+        deployed and it does not yet exist there (D14) - an inference, NOT a measurement.
+        Confirm before deploy.
+    -->
+    <!--
+        AMENDED 2026-08-09 (Tranche 3B) - Counter_Offer__c: OBJECT READ ONLY, NO CREATE, NO EDIT,
+        NO DELETE, NO viewAllRecords, PLUS THE EIGHT FIELDS THE COUNTER CARD READS, ALL AT
+        editable=false. The full reasoning lives in the matching block on DPEG_Disposition_Edit;
+        only what is DIFFERENT for this persona is written out here.
+
+        THE GAP: this set granted NO Counter_Offer__c ACCESS AT ALL, so the counter history on a
+        disposition LOI would have thrown for the Principal. CounterOfferSelector.selectByLoiId
+        is WITH USER_MODE, and USER_MODE THROWS on an object the running principal cannot read -
+        it does not degrade to an empty list.
+
+        THE EIGHT FIELDS ARE THE SELECTOR'S EXACT FIELD LIST INCLUDING ITS WHERE-CLAUSE FIELD
+        (LOI__c). USER_MODE enforces FLS on filter fields too. The list is deliberately IDENTICAL
+        IN MEMBERSHIP to DPEG_Disposition_Edit's and differs ONLY in the editable flag, which is
+        the same discipline the LOI__c and NDA__c lists follow on these two files - it is what
+        makes a future divergence visible AS a divergence rather than as a typo.
+
+        🔴 THIS PERSONA IS THE SHARPEST CASE OF THE VISIBILITY RESIDUAL, AND IT IS WHY THE
+        RESIDUAL IS WORTH A DECISION RATHER THAN A SHRUG. Counter_Offer__c is Private OWD with a
+        LOOKUP (not master-detail) parent, so it does NOT inherit visibility from the LOI; a
+        criteria sharing rule is required and CANNOT BE WRITTEN TODAY (the object has no record
+        types, no stored field identifies the deal side, and the platform does not support
+        formula fields in sharing-rule criteria). A Principal CREATES NOTHING, so unlike the Edit
+        persona they do not even see their own rows by ownership - with no rule they see ZERO
+        counter offers, and the card renders an EMPTY history rather than erroring. That is the
+        identical silent gap NDA_Disposition_Principals_R and LOI_Disposition_Principals_R were
+        each written to prevent, and it is the reason this residual is reported rather than
+        absorbed. An approver reading an empty negotiation history has no way to tell it apart
+        from a negotiation that has had no rounds.
+
+        🔴 A PermissionSet DEPLOY REPLACES THIS SET'S ENTIRE GRANT LIST - it does not merge.
+        ⚠ RECONCILIATION AGAINST THE ORG WAS NOT PERFORMED FOR THIS EDIT, and that is stated
+        rather than implied: the retrieve caveat in the D20.1 block above applies unchanged - a
+        retrieve of this set from usman-dpeg on 2026-08-09 did not return it, most likely because
+        3A/3B are not deployed there (D14), which is an INFERENCE and not a measurement. These
+        additions were written from the repo copy. Confirm before deploy.
+    -->
+    <!--
+        AMENDED 2026-08-09 BY DECISION D21 - Counter_Offer__c: viewAllRecords FALSE -> TRUE.
+        allowEdit STAYS FALSE. THIS RESOLVES THE RESIDUAL THE BLOCK ABOVE REPORTED RATHER THAN
+        ABSORBED, and that block is KEPT AS HISTORY. The full reasoning lives in the matching
+        block on DPEG_Disposition_Edit; only what is DIFFERENT for this persona is written here.
+
+        WHAT THIS GRANTS, STATED PLAINLY AND WITHOUT SOFTENING: a disposition persona can now READ
+        EVERY COUNTER OFFER IN THE ORG, acquisition rows included - DPEG's own negotiating position
+        on live PURCHASES, exposed to personas the 2026-07-22 RBAC build partitioned into the
+        disposition module. Same class of informed widening as D12/W3 on NDA__c.
+
+        🔴 THIS SET IS THE REASON THE DECISION WAS NEEDED AT ALL, WHICH IS WHY THE RATIONALE READS
+        SLIGHTLY DIFFERENTLY HERE. The block above already identified this persona as the sharpest
+        case: a PRINCIPAL CREATES NOTHING, so under Private OWD they do not even see rows by
+        ownership the way the Edit persona does. With viewAllRecords false and no sharing rule
+        available they saw ZERO counter offers - and the failure is SILENT, because an unshared row
+        is FILTERED OUT of a WITH USER_MODE query rather than refused. CounterOfferSelector
+        .selectByLoiId returned an empty list, so the card rendered an EMPTY negotiation history on
+        a disposition LOI and an approver had no way to tell that apart from a deal that has had no
+        counter rounds. An approver reading a silently empty history is the failure mode
+        NDA_Disposition_Principals_R and LOI_Disposition_Principals_R were each written to prevent
+        on their own objects; a visible-but-wide history beats an invisible one.
+
+        WHY THE NARROW D17/D20.1 SHAPE WAS NOT USED - three blockers, each sufficient alone, all
+        re-verified against this branch on 2026-08-09:
+          1. Counter_Offer__c HAS NO RECORD TYPES (the object folder holds the object file and
+             fields/ only), so the 'RecordTypeId equals ...Disposition_*' criterion both the NDA__c
+             and LOI__c rules use has nothing to name.
+          2. Direction__c CANNOT DISCRIMINATE: per its own token contract 'Seller' means THE
+             COUNTERPARTY ON BOTH SIDES, so a rule keyed on 'Seller' or 'Ours' captures ACQUISITION
+             rows, while one keyed on the disposition-only 'Buyer' MISSES every disposition row
+             whose latest counter came from us.
+          3. FORMULA FIELDS ARE NOT SUPPORTED IN CRITERIA-BASED SHARING RULE CRITERIA - a platform
+             restriction, so deriving the side from the parent LOI in a formula is unavailable.
+
+        🔴 THE NARROW LONG-TERM FIX, NAMED SO A FUTURE READER CAN FIND IT: a STORED DISCRIMINATOR
+        CHECKBOX on Counter_Offer__c (an Is_Disposition__c) set by CounterOfferService on save,
+        plus a criteria-based sharing rule keyed on that checkbox and a plain read in place of this
+        grant. The service ALREADY COMPUTES THE VALUE - isSaleSide(parent) runs on every
+        saveCounterOffer to pick the Buyer/Seller counterparty label - so the stamp costs no extra
+        SOQL and no extra DML. It is the platform's own documented workaround for blocker 3.
+        ⚠ It needs a BACKFILL as well as a field: pre-existing rows would read false and so be
+        INVISIBLE under the new rule. Field plus automation plus backfill, then the swap.
+
+        🔴 allowEdit IS DELIBERATELY FALSE AND MUST NOT BE "TIDIED" TO MATCH THE READ GRANT. This
+        is the READ-ONLY Principal persona and its CRUD is untouched: allowCreate, allowEdit and
+        allowDelete all stay false. Read and edit are separable on this object because
+        CounterOfferService writes in SYSTEM MODE (plain DML, which does not consult the running
+        persona's object CRUD), so nothing about the counter card depends on an edit grant here.
+        Raising allowEdit to follow the widened read would let a disposition persona REWRITE the
+        recorded history of a live acquisition negotiation - the exact compounding error D17 spent
+        a decision unwinding on NDA__c earlier today, where viewAllRecords and allowEdit combined
+        to reach past an acceptance argued on VISIBILITY GROUNDS ALONE. The same reduction was
+        applied to DPEG_Disposition_Edit in this change, where allowEdit went TRUE to FALSE; the
+        two files are aligned on Counter_Offer__c CRUD and both must move together.
+
+        ================================================================================
+        RECONCILIATION AGAINST THE ORG - PERFORMED THIS TIME, CORRECTING THE STANDING CAVEAT
+        REPEATED IN THE TWO BLOCKS ABOVE.
+        ================================================================================
+
+        🔴 A PermissionSet DEPLOY REPLACES THIS SET'S ENTIRE GRANT LIST - it does not merge, and an
+        org-side-only grant absent from this file is WIPED by the next deploy of it, even one made
+        for an unrelated reason. The blocks above record that reconciliation was NOT performed and
+        that "a retrieve did not return it, most likely because 3A is not deployed (D14) - an
+        INFERENCE, not a measurement."
+
+        THAT INFERENCE IS NOW FALSIFIED ON ITS FACTUAL HALF. A PermissionSet retrieve into a
+        scratch directory on 2026-08-09 SUCCEEDED and returned this set: it EXISTS in usman-dpeg,
+        created and last modified 2026-07-22T08:41:49Z, the RBAC build date. What remains true is
+        that 3A/3B are undeployed, so the org copy is the 2026-07-22 BASELINE rather than absent.
+
+        WHAT THE NORMALIZED DIFF MEASURED (org copy against this file, XML-parsed, order
+        independent):
+            org copy  : 5 objectPermissions, 62 fieldPermissions
+            this file : 8 objectPermissions, 100 fieldPermissions
+            ORG-ONLY objectPermissions ......... NONE
+            ORG-ONLY fieldPermissions .......... NONE
+            value differences on grants present in BOTH ... NONE
+        So on the evidence of that retrieve there is nothing in this set org-side for a deploy of
+        this file to wipe; every difference is an addition this branch makes.
+
+        ⚠ SCOPE OF THAT CLAIM, STATED SO IT IS NOT OVER-READ: it concerns THIS PERMISSION SET as
+        retrieved on 2026-08-09 and nothing else. It says nothing about profiles (profiles/** is
+        .forceignore'd here, so profile-level FLS is invisible to any file-based check), nothing
+        about other permission sets, and nothing about org state after that date. Re-run the
+        retrieve and the diff immediately before deploying.
+    -->
+    <!--
+        AMENDED 2026-08-09 BY DECISION D23 - Contract_Review__c AND PSA_Version__c: OBJECT READ
+        ONLY, NO CREATE, NO EDIT, NO DELETE, 🔴 NO viewAllRecords, plus the same FLS list as
+        DPEG_Disposition_Edit at editable=false throughout. The full reasoning lives in the
+        matching block on that file; only what is DIFFERENT for THIS persona is written here.
+
+        THE GAP: this set granted NEITHER OBJECT AT ANY LEVEL, so the sell side PSA that Tranche 3C
+        builds would have been invisible to the Principal. Third time this shape has appeared
+        (NDA__c at D17, LOI__c at D20.1, now the PSA) and the third time it is closed the same way.
+
+        WHY A CRITERIA RULE AND NOT A WIDENING. Contract_Review__c clears the two blockers that
+        forced D21 into an org wide viewAllRecords on Counter_Offer__c: it now HAS record types
+        (Acquisition_PSA / Disposition_PSA) and it HAS a stored discriminator (Disposition__c).
+        Visibility comes from the criteria rules in
+        sharingRules/Contract_Review__c.sharingRules-meta.xml.
+
+        🔴 THIS SET IS AGAIN THE REASON A SECOND SHARING RULE EXISTS, and the reasoning is identical
+        to the D17 and D20.1 blocks above. Principals hold this set through DPEG_Principal_PSG and
+        are NOT necessarily members of DPEG_Acquisitions_Team, the group every other disposition
+        child object shares to. A team only rule would leave them seeing ZERO disposition PSAs, and
+        that failure is SILENT: an unshared row is filtered out of a WITH USER_MODE query rather
+        than refused. Contract_Review_Disp_Principals_R shares Disposition_PSA rows to the
+        Principals group at Read, which is the strictly lower access this persona needs.
+
+        FLS MIRRORS DPEG_Disposition_Edit'S LIST IN MEMBERSHIP AND DIFFERS ONLY IN THE editable
+        FLAG, INCLUDING ITS OMISSIONS - the same discipline the NDA__c, LOI__c and Counter_Offer__c
+        lists follow on these two files, and what makes a future divergence read as a divergence
+        rather than a typo. Asset_Type__c, Deal_Type__c and Summary__c are absent from BOTH sets:
+        all three are formulas over Opportunity__r, which is blank by design on a Disposition_PSA,
+        so they are structurally empty on every row this persona sees.
+
+        Opportunity__c IS GRANTED READ HERE TOO, even though this persona edits nothing. It is a
+        SELECT field in ContractReviewSelector.selectOpportunityIdRequiredById and
+        .selectByOpportunityIds, both WITH USER_MODE, and USER_MODE throws rather than degrading on
+        a selected field the running principal cannot read. Read is the honest grant; the
+        editable=false that protects the blank on the Edit set is automatic here.
+
+        Stage__c and Latest_Version__c are read only on the Edit set as well, for reasons given
+        there (Stage__c is recomputed by Contract_Review_Stage_Sync and silently discards direct
+        writes; Latest_Version__c is a PsaVersionService maintained counter). On THIS set nothing
+        is editable anyway, so the two carry no distinction here and are listed for membership
+        parity only.
+
+        🔴 PSA_Version__c HAS NO SHARING RULE AND THIS PERSONA IS THE SHARPEST CASE. Its parent
+        field is a LOOKUP, not a master detail, and the object is Private OWD, so it does NOT
+        inherit the parent scoping this change ships. A PRINCIPAL CREATES NOTHING, so unlike the
+        Edit persona they do not even see rows by ownership: with no rule they see ZERO PSA
+        versions and the version history renders EMPTY rather than erroring. ⚠ AND THE DAMAGE IS
+        NOT ONLY VISUAL - PsaVersionSelector's `SELECT COUNT()` is WITH USER_MODE and
+        PsaVersionService writes `priorCount + 1` into Latest_Version__c, so a user who cannot see
+        the priors counts zero and rewinds the counter to 1. The three closure options are set out
+        in full in the matching block on DPEG_Disposition_Edit; picking one is a user decision, as
+        it was at D21.
+
+        NO recordTypeVisibilities ARE ADDED HERE. Record type visibility governs create and record
+        type change, not read, and this persona creates nothing - the same placement NDA__c and
+        LOI__c use on these two files.
+
+        🔴 A PermissionSet DEPLOY REPLACES THIS SET'S ENTIRE GRANT LIST. The reconciliation recorded
+        in the block above (retrieve of 2026-08-09, no org only grants) is CITED, not re run, for
+        this edit. Re run the retrieve and the diff immediately before deploying.
+        🔴 Deploy sharing rules ONE AT A TIME; a batch rolls all of them back in this org. Expect
+        the two new rules to fail check only validation until the record types land (D19.2) - that
+        is phase two, not a defect. Verify AS THE PERSONA, never as an administrator.
+    -->
+    <!--
+        AMENDED 2026-08-09 BY DECISION D24 - PSA_Version__c: viewAllRecords FALSE to TRUE. Object
+        read stays READ ONLY (allowCreate, allowEdit and allowDelete were already false on this
+        set and are untouched). The full reasoning lives in the matching D24 block on
+        DPEG_Disposition_Edit; only what is DIFFERENT for THIS persona is written here.
+
+        This SUPERSEDES the "🔴 PSA_Version__c HAS NO SHARING RULE AND THIS PERSONA IS THE
+        SHARPEST CASE" section of the D23 block above, and its header line "🔴 NO
+        viewAllRecords", both KEPT AS HISTORY. That section said the three closure options were a
+        user decision, as at D21. The user has picked option (a).
+
+        WHAT THIS GRANTS, WITHOUT SOFTENING: a Principal can now READ EVERY PSA VERSION IN THE
+        ORG, acquisition rows included - the full redline history of every live PURCHASE, which
+        terms DPEG conceded and in what order. Informed widening of the same class as NDA__c at
+        D12/W3 and Counter_Offer__c at D21.
+
+        WHY THIS SET IS THE SHARPEST CASE, AND WHY A LOOKUP CHILD LEFT NO OTHER OPTION TODAY.
+        PSA_Version__c's parent field is a LOOKUP, not a master detail, and the object is Private
+        OWD, so it does NOT inherit the Contract_Review__c scoping this tranche ships; the parent
+        rules reach the parent and stop. A PRINCIPAL CREATES NOTHING, so unlike the Edit persona
+        they do not even see rows by ownership: with no rule they saw ZERO versions. 🔴 AND THE
+        FAILURE IS SILENT - an unshared row is FILTERED OUT of a WITH USER_MODE query rather than
+        refused, so the version history renders EMPTY and an approver cannot tell that apart from
+        a PSA with no redline rounds. That is precisely the failure
+        Contract_Review_Disp_Principals_R exists to prevent on the parent, one object further
+        down.
+
+        THE TWO ALTERNATIVES REJECTED (stated here too, because this file is read on its own):
+        MASTER DETAIL conversion would make the object ControlledByParent and need no field, no
+        Apex and no rule, but it FORCES CASCADE DELETE - deleting a Contract Review would destroy
+        its whole version history, the opposite of the allowDelete=false discipline. A STORED
+        DISCRIMINATOR checkbox plus a criteria rule is the narrow long term shape, but it is a
+        FIELD plus APEX plus a BACKFILL of existing rows, not a sharing change. A criteria rule on
+        today's schema was never available: no record types, and Direction__c means the
+        counterparty on BOTH sides.
+
+        🔴 THE COUNTER CORRUPTION IS FIXED IN APEX, NOT HERE. The D23 block above reports that
+        PsaVersionSelector's `SELECT COUNT()` is WITH USER_MODE and PsaVersionService writes
+        `priorCount + 1` into Latest_Version__c, so a user who could not see the priors counted
+        zero and rewound the counter to 1. That is being closed in a separate Apex change (the
+        count moves to WITH SYSTEM_MODE under the ARCHITECTURE.md §2 automation path exception,
+        computing a DERIVED FIELD rather than serving a human's read; 3B
+        LoiSelector.selectNegotiationContextById precedent). THIS GRANT IS NOT THAT FIX. It masks
+        the symptom for this persona only while it is in force, so do not treat the Apex change as
+        redundant and do not re solve the counter with permissions - the next persona without the
+        grant would corrupt the data rather than merely fail to read it.
+
+        NO recordTypeVisibilities ARE ADDED. PSA_Version__c has no record types; that is also why
+        no criteria rule was expressible for it.
+
+        🔴 A PermissionSet DEPLOY REPLACES THIS SET'S ENTIRE GRANT LIST. The reconciliation
+        recorded in the D21 block above (retrieve of 2026-08-09, no org only grants) is CITED, NOT
+        RE RUN, for this edit. Re run the retrieve and the diff immediately before deploying.
+        🔴 No sharing rule is shipped for PSA_Version__c by this decision and none is pending;
+        view all covers it on both disposition sets. The D23 Contract_Review__c rules are
+        unchanged and still deploy ONE AT A TIME. Verify AS THE PERSONA, never as an
+        administrator.
+    -->
+    <description>Read-only Disposition module access for the Principal persona: Read + View All on the 4 DISP objects, Counter_Offer__c and PSA_Version__c, no Create/Edit/Delete. NDA__c, LOI__c and Contract_Review__c read is sharing-rule scoped.</description>
     <fieldPermissions>
         <editable>false</editable>
         <field>BOV_Submission__c.BOV_Amount__c</field>
@@ -113,6 +475,91 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Contract_Review__c.Ball_In_Court__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Contract_Value__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Execution_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Latest_Version__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Negotiation_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.PSA_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contract_Review__c.Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.Counter_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.Counter_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.Counter_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.Counter_Response__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.Direction__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.LOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.Revision_Number__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Counter_Offer__c.Subsequent_Version__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Disposition__c.Accepted_Offer_Price__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -208,6 +655,26 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Disposition__c.NDA_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Signed_NDA_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Wire_Verification_Completed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Primary_NDA__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Disposition_Offer__c.Buyer_Counter_Price__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -274,6 +741,156 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Disposition_Offer__c.Offer_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Ball_In_Court__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Closing_Period_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Counter_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Counter_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Counter_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Counter_Response__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Counter_Response_Due__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Due_Diligence_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Earnest_Money__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Final_Agreed_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Is_Advance_Allowed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.LOI_Signed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.LOI_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.NOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Offer_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Offer_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.OneDrive_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Square_Footage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Submitted_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Title_Company__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Counter_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Is_Decline_Allowed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Party_Role__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>PSA_Version__c.Direction__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>PSA_Version__c.Document_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>PSA_Version__c.Summary__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>PSA_Version__c.Version_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -356,6 +973,51 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Wire__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>NDA__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>LOI__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Counter_Offer__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Contract_Review__c</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>PSA_Version__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
 </PermissionSet>

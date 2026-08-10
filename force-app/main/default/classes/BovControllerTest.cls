@@ -5,6 +5,24 @@
  * NULLS-LAST ordering test, an empty-list scenario, a below-threshold
  * matrixGenerated boundary, a delete-based negative scenario, and a 251-record
  * data-volume read test per .claude/rules/bulk-test-rule.md.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * DISPOSITION FOUNDATIONS: OutreachSummary.ndaStatus
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * The BOV Outreach tile used to render a hard-coded "Signed" NDA pill, misreporting a
+ * COMPLIANCE state on every disposition. It now carries the real Status__c of the
+ * disposition's most recent NDA__c, or null when there is none.
+ *
+ * ⚠ THE FAIL-SOFT CATCH IN BovController.readNdaStatusFailSoft IS NOT COVERED HERE, AND
+ * THAT IS A KNOWN, ACCEPTED GAP — not an oversight. It only fires when the running user
+ * can read Disposition__c but NOT NDA__c, and there is no way to construct that principal
+ * in Apex in this org: a bare Standard User throws on the Disposition read FIRST (which is
+ * what readPathsThrowAuraHandledException exercises), and every permission set that grants
+ * Disposition__c now also grants NDA__c (Gate 1 Q7), so no assignable persona sits in the
+ * gap. Design §5.6 says the same thing in general terms — "an FLS test that runs as an
+ * admin cannot fail" — and names persona acceptance testing (§8 gate B5) as the only real
+ * proof. A @TestVisible seam was deliberately NOT added: it would put test-only branching
+ * into a live read path to cover three lines of defence-in-depth.
  * @author Unit Testing Agent
  */
 @isTest
@@ -129,6 +147,84 @@ private class BovControllerTest {
         Test.stopTest();
 
         System.assertEquals(false, s.matrixGenerated, 'Below the 3-response threshold, the matrix should not be flagged generated');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ndaStatus — the real NDA pill (replaces the hard-coded 'Signed')
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** A disposition-parented NDA: NDA__c is dual-parented and both lookups are optional. */
+    private static NDA__c dispositionNda(Id dispositionId, String status) {
+        NDA__c nda = TestDataFactory.createNda(null, false);
+        nda.Disposition__c = dispositionId;
+        nda.Status__c = status;
+        insert nda;
+        return nda;
+    }
+
+    /**
+     * 🔴 THE DEFECT THIS CLOSES. The pill previously read "Signed" on every disposition
+     * whether or not an NDA existed. The @TestSetup disposition has NO NDA, so the honest
+     * answer is null — and asserting NULL here is what makes the old hard-coded value
+     * impossible to reintroduce on the server side.
+     */
+    @isTest
+    static void testGetOutreachSummary_noNda_ndaStatusIsNull() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+
+        Test.startTest();
+        BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
+        Test.stopTest();
+
+        Assert.isNull(s.ndaStatus,
+            'With no NDA on the disposition the status must be null, not a hard-coded "Signed"');
+    }
+
+    @isTest
+    static void testGetOutreachSummary_withNda_returnsItsRealStatus() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        dispositionNda(d.Id, 'Pending');
+
+        Test.startTest();
+        BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual('Pending', s.ndaStatus,
+            'The pill must show the NDA\'s REAL status, including an unflattering one');
+    }
+
+    /** Many NDAs, one pill: the most recently created row wins (mirrors the selector contract). */
+    @isTest
+    static void testGetOutreachSummary_multipleNdas_showsTheLatest() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        NDA__c older = dispositionNda(d.Id, 'Pending');
+        dispositionNda(d.Id, 'Signed');
+        // In-transaction CreatedDate ties would make ORDER BY CreatedDate DESC arbitrary.
+        Test.setCreatedDate(older.Id, System.now().addMinutes(-5));
+
+        Test.startTest();
+        BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual('Signed', s.ndaStatus, 'The latest NDA defines the pill');
+    }
+
+    /**
+     * An NDA hanging off an OPPORTUNITY must never leak into a disposition's pill —
+     * NDA__c is dual-parented, so this is a live confusion risk rather than a hypothetical.
+     */
+    @isTest
+    static void testGetOutreachSummary_opportunityNdaDoesNotLeakIn() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        TestDataFactory.createNda(opp.Id, true);
+
+        Test.startTest();
+        BovController.OutreachSummary s = BovController.getOutreachSummary(d.Id);
+        Test.stopTest();
+
+        Assert.isNull(s.ndaStatus,
+            'An Opportunity-parented NDA is not this disposition\'s NDA and must not populate the pill');
     }
 
     /**

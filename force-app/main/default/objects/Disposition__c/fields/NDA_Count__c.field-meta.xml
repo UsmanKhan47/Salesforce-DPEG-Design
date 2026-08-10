@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>NDA_Count__c</fullName>
+    <defaultValue>0</defaultValue>
+    <description>DERIVED - DO NOT HAND-EDIT. Total number of NDA__c records whose Disposition__c lookup points at this disposition, maintained by the NDA_Signed_Rollup flow. It exists because NDA__c.Disposition__c is a LOOKUP, not Master-Detail, so a roll-up summary field is unavailable and a validation rule cannot count children. Read together with Signed_NDA_Count__c by All_NDAs_Signed_Before_Progression. TWO FIELDS, NOT ONE: a single "unsigned count" reads 0 for a disposition on which NO NDA was ever collected, which would let the release gate PASS on exactly the case the gate exists to catch. Rows created before this field existed hold null rather than 0, which is why every reader wraps it in BLANKVALUE.</description>
+    <inlineHelpText>Set automatically from the NDA records linked to this disposition. To change it, add or remove an NDA; do not edit it here.</inlineHelpText>
+    <label>NDA Count</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

@@ -33,10 +33,18 @@
         <members>CounterOfferControllerTest</members>
         <members>DealMessageController</members>
         <members>DealMessageControllerTest</members>
+        <members>DispositionActionPermissionService</members>
+        <members>DispositionActionPermissionServiceTest</members>
         <members>DispositionController</members>
         <members>DispositionControllerTest</members>
+        <members>DispositionNdaStampQueueable</members>
+        <members>DispositionService</members>
+        <members>DispositionServiceTest</members>
+        <members>DispositionStageEntryService</members>
+        <members>DispositionStageEntryServiceTest</members>
         <members>DispositionTaskController</members>
         <members>DispositionTaskControllerTest</members>
+        <members>DispositionTriggerHandler</members>
         <members>ForgotPasswordController</members>
         <members>ForgotPasswordControllerTest</members>
         <members>GroupNotifier</members>
@@ -54,6 +62,8 @@
         <members>MicrobatchSelfRegControllerTest</members>
         <members>MyProfilePageController</members>
         <members>MyProfilePageControllerTest</members>
+        <members>NdaSelector</members>
+        <members>NdaSelectorTest</members>
         <members>OnboardingController</members>
         <members>OnboardingControllerTest</members>
         <members>OnboardingTaskRollupService</members>
@@ -65,12 +75,16 @@
         <members>OpportunityFunnelController</members>
         <members>OpportunityReviewService</members>
         <members>OpportunityReviewServiceTest</members>
+        <members>PropertyAssetSelector</members>
+        <members>PropertyAssetSelectorTest</members>
         <members>PsaVersionController</members>
         <members>PsaVersionControllerTest</members>
         <members>RentRollController</members>
         <members>RentRollControllerTest</members>
         <members>SellMeterController</members>
         <members>SellMeterControllerTest</members>
+        <members>SellMeterService</members>
+        <members>SellMeterServiceTest</members>
         <members>SiteLoginController</members>
         <members>SiteLoginControllerTest</members>
         <members>SiteRegisterController</members>
@@ -81,6 +95,8 @@
         <members>TaskFanoutServiceTest</members>
         <members>TaskRollupService</members>
         <members>TaskRollupServiceTest</members>
+        <members>TestDataFactory</members>
+        <members>TestDataFactoryTest</members>
         <members>TransactionController</members>
         <members>TransactionControllerTest</members>
         <members>TransactionTaskController</members>
@@ -131,6 +147,7 @@
     </types>
     <types>
         <members>ContractReviewTrigger</members>
+        <members>DispositionTrigger</members>
         <members>LeadConvertTrigger</members>
         <members>OpportunityReviewTrigger</members>
         <members>TaskRollupTrigger</members>
@@ -142,6 +159,9 @@
         <name>AppMenu</name>
     </types>
     <types>
+        <members>Disposition__c.Broker_Selection_Approval</members>
+        <members>Disposition__c.Closing_Approval</members>
+        <members>Disposition__c.Sale_Decision_Approval</members>
         <members>Opportunity.LOI_Approval</members>
         <members>Opportunity.Underwriting_Approval</members>
         <name>ApprovalProcess</name>
@@ -332,6 +352,7 @@
         <members>Contract_Review__c.Ball_In_Court__c</members>
         <members>Contract_Review__c.Contract_Value__c</members>
         <members>Contract_Review__c.Deal_Type__c</members>
+        <members>Contract_Review__c.Disposition__c</members>
         <members>Contract_Review__c.Execution_Date__c</members>
         <members>Contract_Review__c.Latest_Version__c</members>
         <members>Contract_Review__c.Negotiation_Status__c</members>
@@ -355,7 +376,7 @@
         <members>Deal_Message__c.Contract_Review__c</members>
         <members>Deal_Message__c.Details__c</members>
         <members>Deal_Message__c.Direction__c</members>
-        <members>Deal_Message__c.Entry_DateTime__c</members>        <members>Deal_Message__c.LOI__c</members>
+        <members>Deal_Message__c.LOI__c</members>
         <members>Deal_Message__c.Method__c</members>
         <members>Deal_Message__c.Revision__c</members>
         <members>Deal_Message__c.Underwriting__c</members>
@@ -405,17 +426,21 @@
         <members>Disposition__c.Disposition_Stage__c</members>
         <members>Disposition__c.Gross_Sale_Proceeds__c</members>
         <members>Disposition__c.Listing_Date__c</members>
+        <members>Disposition__c.NDA_Count__c</members>
         <members>Disposition__c.Net_Sale_Proceeds__c</members>
         <members>Disposition__c.Next_Broker_Checkin__c</members>
         <members>Disposition__c.PSA_Executed__c</members>
         <members>Disposition__c.Package_Sent__c</members>
+        <members>Disposition__c.Primary_NDA__c</members>
         <members>Disposition__c.Property_Asset__c</members>
         <members>Disposition__c.Responses_Received__c</members>
         <members>Disposition__c.Selected_Broker__c</members>
         <members>Disposition__c.Sell_Decision_Trigger__c</members>
         <members>Disposition__c.Selling_Costs__c</members>
+        <members>Disposition__c.Signed_NDA_Count__c</members>
         <members>Disposition__c.Submission_Deadline__c</members>
         <members>Disposition__c.Title_Company__c</members>
+        <members>Disposition__c.Wire_Verification_Completed__c</members>
         <members>Insurance_Policy__c.Carrier__c</members>
         <members>Insurance_Policy__c.Days_To_Expiry__c</members>
         <members>Insurance_Policy__c.Expiry_Date__c</members>
@@ -433,6 +458,7 @@
         <members>LOI__c.Counter_Received_Date__c</members>
         <members>LOI__c.Counter_Response_Due__c</members>
         <members>LOI__c.Counter_Response__c</members>
+        <members>LOI__c.Disposition__c</members>
         <members>LOI__c.Due_Diligence_Days__c</members>
         <members>LOI__c.Earnest_Money__c</members>
         <members>LOI__c.Final_Agreed_Price__c</members>
@@ -470,7 +496,7 @@
         <members>Lead.Property_Address__c</members>
         <members>Lease_Activity__c.Ball_In_Court__c</members>
         <members>Lease_Activity__c.Details__c</members>
-        <members>Lease_Activity__c.Entry_DateTime__c</members>        <members>Lease_Activity__c.Lease_Inquiry__c</members>
+        <members>Lease_Activity__c.Lease_Inquiry__c</members>
         <members>Lease_Activity__c.Logged_By__c</members>
         <members>Lease_Inquiry__c.Aging__c</members>
         <members>Lease_Inquiry__c.Ball_In_Court__c</members>
@@ -525,11 +551,13 @@
         <members>Lease__c.Stage__c</members>
         <members>Lease__c.Target_Execution_Date__c</members>
         <members>Lease__c.Tenant_Name__c</members>
+        <members>NDA__c.Counter_Signed_Date__c</members>
         <members>NDA__c.Counterparty_Name__c</members>
         <members>NDA__c.Date_Sent__c</members>
         <members>NDA__c.Date_Signed__c</members>
         <members>NDA__c.Days_Out__c</members>
         <members>NDA__c.Disposition__c</members>
+        <members>NDA__c.Is_Decline_Allowed__c</members>
         <members>NDA__c.Method__c</members>
         <members>NDA__c.NDA_Expiry_Date__c</members>
         <members>NDA__c.NDA_Signed__c</members>
@@ -537,6 +565,7 @@
         <members>NDA__c.Notes__c</members>
         <members>NDA__c.OneDrive_URL__c</members>
         <members>NDA__c.Opportunity__c</members>
+        <members>NDA__c.Party_Role__c</members>
         <members>NDA__c.Status__c</members>
         <members>Offering__c.IR_Owner__c</members>
         <members>Offering__c.Opportunity__c</members>
@@ -629,7 +658,6 @@
         <members>Property_Asset__c.Argus_Value__c</members>
         <members>Property_Asset__c.Closing_Date__c</members>
         <members>Property_Asset__c.Final_Purchase_Price__c</members>
-        <members>Property_Asset__c.Readiness_Score__c</members>
         <members>Property_Asset__c.Market_Cap_Rate__c</members>
         <members>Property_Asset__c.NOI__c</members>
         <members>Property_Asset__c.Peak_Sell_Date__c</members>
@@ -637,6 +665,7 @@
         <members>Property_Asset__c.Property_Name__c</members>
         <members>Property_Asset__c.Property_Type__c</members>
         <members>Property_Asset__c.Property__c</members>
+        <members>Property_Asset__c.Readiness_Score__c</members>
         <members>Property_Asset__c.Sell_Readiness_Band__c</members>
         <members>Property_Asset__c.Sell_Readiness_Score__c</members>
         <members>Property_Asset__c.Status__c</members>
@@ -670,7 +699,7 @@
         <members>Property__c.YoY_Growth__c</members>
         <members>Property__c.Zip__c</members>
         <members>Renewal_Activity__c.Details__c</members>
-        <members>Renewal_Activity__c.Entry_DateTime__c</members>        <members>Renewal_Activity__c.Lease_Renewal__c</members>
+        <members>Renewal_Activity__c.Lease_Renewal__c</members>
         <members>Renewal_Activity__c.Method__c</members>
         <members>Rent_Step__c.Monthly_Rent__c</members>
         <members>Rent_Step__c.Note__c</members>
@@ -756,6 +785,7 @@
         <members>Unit__c.Tenant_Name__c</members>
         <members>Unit__c.Yardi_Unit_Id__c</members>
         <members>User.Deal_Driver__c</members>
+        <members>User.Disposition_Driver__c</members>
         <members>Wire__c.Confirmed_Wire_Amount__c</members>
         <members>Wire__c.Disposition__c</members>
         <members>Wire__c.Verbal_Verification_Completed__c</members>
@@ -765,12 +795,12 @@
         <members>Wire__c.Wire_Instructions_Source__c</members>
         <members>Work_Order_Activity__c.Actor__c</members>
         <members>Work_Order_Activity__c.Detail__c</members>
-        <members>Work_Order_Activity__c.Entry_DateTime__c</members>        <members>Work_Order_Activity__c.Kind__c</members>
+        <members>Work_Order_Activity__c.Kind__c</members>
         <members>Work_Order_Activity__c.Work_Order__c</members>
         <members>Work_Order__c.Category__c</members>
-        <members>Work_Order__c.Completed_DateTime__c</members>        <members>Work_Order__c.Delay_Reason__c</members>
+        <members>Work_Order__c.Delay_Reason__c</members>
         <members>Work_Order__c.Description__c</members>
-        <members>Work_Order__c.First_Touched_DateTime__c</members>        <members>Work_Order__c.Hours_Open__c</members>
+        <members>Work_Order__c.Hours_Open__c</members>
         <members>Work_Order__c.Is_Escalation__c</members>
         <members>Work_Order__c.Is_Open__c</members>
         <members>Work_Order__c.Owner_Role__c</members>
@@ -778,9 +808,9 @@
         <members>Work_Order__c.Priority__c</members>
         <members>Work_Order__c.Property_Asset__c</members>
         <members>Work_Order__c.Property_Display_Name__c</members>
-        <members>Work_Order__c.Reported_DateTime__c</members>        <members>Work_Order__c.Resolution_Days__c</members>
+        <members>Work_Order__c.Resolution_Days__c</members>
         <members>Work_Order__c.SLA_Breached__c</members>
-        <members>Work_Order__c.SLA_Due_DateTime__c</members>        <members>Work_Order__c.SLA_Health__c</members>
+        <members>Work_Order__c.SLA_Health__c</members>
         <members>Work_Order__c.SLA_Target_Hours__c</members>
         <members>Work_Order__c.Status__c</members>
         <members>Work_Order__c.Subject__c</members>
@@ -1456,6 +1486,7 @@
         <members>Lease_Inquiry_Signed_Date</members>
         <members>Lease_Inquiry_Stage_Timer</members>
         <members>Lease_Renewal_Status_Sync</members>
+        <members>NDA_Signed_Rollup</members>
         <members>Opportunity_Initiate_Underwriting</members>
         <members>Opportunity_LOI_Prep_Stamp</members>
         <members>Opportunity_UW_Approved_Notify</members>
@@ -1464,6 +1495,7 @@
         <members>Transaction_Complete_Close</members>
         <members>Transaction_Task_Fanout</members>
         <members>Underwriting_Opp_Sync</members>
+        <members>Wire_Verification_Rollup</members>
         <members>Work_Order_Touch_Sync</members>
         <name>Flow</name>
     </types>
@@ -1748,6 +1780,7 @@
     <types>
         <members>activeTransactionsList</members>
         <members>advanceDealStage</members>
+        <members>advanceRecordStage</members>
         <members>backupBrokers</members>
         <members>bovComparisonMatrix</members>
         <members>bovOutreach</members>
@@ -1787,6 +1820,11 @@
         <members>listDatatable</members>
         <members>listingAlerts</members>
         <members>loiCounterOffer</members>
+        <members>loiMarkCompleted</members>
+        <members>loiMarkCounterReceived</members>
+        <members>loiMarkCountered</members>
+        <members>loiMarkCounteredByDpeg</members>
+        <members>ndaMarkDeclined</members>
         <members>onboardingCardChild</members>
         <members>onboardingChecklist</members>
         <members>onboardingChecklistProgress</members>
@@ -1801,6 +1839,7 @@
         <members>psaVersionLog</members>
         <members>recentLeads</members>
         <members>recentOpportunities</members>
+        <members>recordStageGuard</members>
         <members>renewalAttention</members>
         <members>renewalKpis</members>
         <members>renewalList</members>
@@ -2109,14 +2148,22 @@
         <members>Broker_Assignment_Path</members>
         <members>Construction_Feasibility_Path</members>
         <members>Contract_Review_Path</members>
+        <members>Contract_Review_Path_Acquisition</members>
+        <members>Contract_Review_Path_Disposition</members>
         <members>Development_Feasibility_Path</members>
         <members>Disposition_Path</members>
+        <members>Disposition_Path_Off_Market</members>
+        <members>Disposition_Path_On_Market</members>
         <members>LOI_Path</members>
+        <members>LOI_Path_Acquisition</members>
+        <members>LOI_Path_Disposition</members>
         <members>Lead_Funnel_Path</members>
         <members>Lease_Inquiry_Path</members>
         <members>Lease_Path</members>
         <members>Lease_Renewal_Path</members>
         <members>NDA_Path</members>
+        <members>NDA_Path_Acquisition</members>
+        <members>NDA_Path_Disposition</members>
         <members>Onboarding_Path</members>
         <members>Transaction_Path</members>
         <members>Underwriting_Path</members>
@@ -2128,7 +2175,11 @@
         <members>Acquisition_Deal_Driver</members>
         <members>Acquisitions_Dashboard_Access</members>
         <members>DPEG_Acquisitions</members>
+        <members>DPEG_Admin_Access</members>
+        <members>DPEG_Disposition_Edit</members>
+        <members>DPEG_Disposition_View</members>
         <members>Disposition_Dashboard_Access</members>
+        <members>Disposition_Deal_Driver</members>
         <members>Property_Management_Access</members>
         <members>Transaction_App_Access</members>
         <members>sfdcInternalInt__sfdc_nc_constraints_engine_deploy</members>
@@ -2198,12 +2249,20 @@
         <members>Case.NewChildCase</members>
         <members>CollaborationGroup.NewGroupMember</members>
         <members>CollaborationGroup.NewGroupRecord</members>
+        <members>Contract_Review__c.Advance_Stage</members>
         <members>FeedItem.NewTaskFromFeedItem</members>
         <members>GuestCommunityCase</members>
+        <members>LOI__c.Advance_Stage</members>
         <members>LOI__c.Edit_LOI</members>
+        <members>LOI__c.Mark_Completed</members>
+        <members>LOI__c.Mark_Counter_Received</members>
+        <members>LOI__c.Mark_Countered</members>
+        <members>LOI__c.Mark_Countered_By_DPEG</members>
         <members>LOI__c.Submit_for_Approval</members>
         <members>LogACall</members>
+        <members>NDA__c.Advance_Stage</members>
         <members>NDA__c.Edit_NDA</members>
+        <members>NDA__c.Mark_Declined</members>
         <members>NewAccount</members>
         <members>NewCase</members>
         <members>NewCommunityCase</members>
@@ -2251,8 +2310,16 @@
         <name>QuickAction</name>
     </types>
     <types>
+        <members>Contract_Review__c.Acquisition_PSA</members>
+        <members>Contract_Review__c.Disposition_PSA</members>
+        <members>Disposition__c.Off_Market</members>
+        <members>Disposition__c.On_Market</members>
+        <members>LOI__c.Acquisition_LOI</members>
+        <members>LOI__c.Disposition_LOI</members>
         <members>Metric.Completion</members>
         <members>Metric.Progress</members>
+        <members>NDA__c.Acquisition_NDA</members>
+        <members>NDA__c.Disposition_NDA</members>
         <members>Opportunity.Commercial</members>
         <members>Opportunity.Land</members>
         <name>RecordType</name>
@@ -2968,6 +3035,8 @@
     </types>
     <types>
         <members>Deal_Message__c.Exactly_One_Parent</members>
+        <members>Disposition__c.All_NDAs_Signed_Before_Progression</members>
+        <members>Disposition__c.Wire_Complete_Before_Completed</members>
         <members>Opportunity.NDA_Signed_Before_Underwriting</members>
         <name>ValidationRule</name>
     </types>
@@ -3017,5 +3086,5 @@
         <members>Work_Order_Touch_Sync</members>
         <name>WorkflowFlowAutomation</name>
     </types>
-    <version>62.0</version>
+    <version>67.0</version>
 </Package>

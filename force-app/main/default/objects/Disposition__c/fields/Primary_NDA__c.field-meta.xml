@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Primary_NDA__c</fullName>
+    <!--
+        Decision D16.2 (Tranche 3A). The disposition twin of Opportunity.Primary_NDA__c,
+        whose shape this file copies. This comment is INSIDE the root element on purpose:
+        a comment above the root breaks `sf` at source conversion.
+
+        THE STAMP IS LOAD-BEARING, NOT BOOKKEEPING. The NDA auto-create trigger writes
+        this when it creates the disposition's NDA, and downstream automation resolves the
+        NDA it acts on THROUGH this lookup. An NDA created without the stamp leaves the
+        resolution with nothing to find, and the failure is silent - the same shape as the
+        Underwriting-gate defect that Opportunity.Primary_LOI__c was added to prevent.
+
+        relationshipName is PrimaryDispositions, so the child relationship it creates on
+        NDA__c does not collide with PrimaryOpportunities (Opportunity.Primary_NDA__c).
+
+        deleteConstraint is SetNull, matching the Opportunity twin: deleting an NDA must
+        clear the pointer, never cascade into the disposition.
+
+        FLS is read-only in every set that carries it, because the trigger is the writer.
+    -->
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The primary NDA for this disposition - stamped by the NDA auto-create trigger and used to resolve the NDA that the disposition page and downstream automation act on.</description>
+    <inlineHelpText>Set automatically when the disposition NDA is created. It points automation at the right NDA, so it is not maintained by hand.</inlineHelpText>
+    <label>Primary NDA</label>
+    <referenceTo>NDA__c</referenceTo>
+    <relationshipLabel>Dispositions (Primary NDA)</relationshipLabel>
+    <relationshipName>PrimaryDispositions</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

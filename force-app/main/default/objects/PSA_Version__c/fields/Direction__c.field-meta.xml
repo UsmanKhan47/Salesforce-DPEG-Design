@@ -1,7 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, INSIDE THE ROOT ELEMENT, AND IT MUST STAY THAT WAY.
+        A comment placed ABOVE <CustomField> breaks `sf` deploy at source conversion with the
+        misleading error "unable to find matching parent xml file for CustomField".
+
+        THE TOKEN CONTRACT - DELIBERATELY WORD-FOR-WORD THE SAME AS
+        Counter_Offer__c.Direction__c. The two fields are siblings: one records a round of LOI
+        counters, the other a round of PSA redlines, and both are flipped into a ball-in-court
+        value by their service. Keeping one vocabulary is what lets PsaVersionService's
+        direction branch be a parallel of CounterOfferService's rather than a second dialect.
+
+          Ours   = DPEG. Correct on BOTH sides - side-neutral, like Ball_In_Court__c's 'Us'.
+          Seller = THE COUNTERPARTY, ON BOTH SIDES. This is the INCUMBENT WIRE TOKEN that the
+                   deployed PSA-version UI already sends; it must keep being accepted on a sale
+                   or that Save dies against a restricted picklist.
+          Buyer  = THE COUNTERPARTY, DISPOSITION ONLY. Added 2026-08-09.
+
+        WHY 'Buyer' IS THE ADDED VALUE, AND WHY THE INVERSION IS REAL. On a purchase DPEG is
+        the buyer, so the party sending a draft at us is the seller and 'Seller' reads
+        correctly. ON A SALE DPEG *IS* THE SELLER, so 'Seller' would name DPEG - the exact
+        party 'Ours' already names - and the field would say nothing. The counterparty on a
+        sale is the BUYER, so that is what the new token names. This is the same inversion
+        recorded for Counter_Offer__c.Direction__c, LOI__c.Ball_In_Court__c and
+        Contract_Review__c.Ball_In_Court__c.
+
+        ADD ONLY - NOTHING IS RENAMED, and that is the D-series ruling applied, not a
+        preference. Renaming 'Seller' to 'Buyer' would be a REMOVAL plus an add: it triggers
+        the standing picklist-removal sweep rule (grep the repo AND query the org first) and
+        forces a data migration on every live ACQUISITION PSA version row - all of which are
+        correctly 'Seller' already - in exchange for nothing. The acquisition side is not
+        wrong; it is the disposition side that has no token.
+
+        THE FIELD IS <restricted>true</restricted>, SO THE VALUE MUST EXIST HERE BEFORE APEX
+        CAN WRITE IT. This is not theoretical: Counter_Offer__c's own header records four tests
+        failing INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST against exactly this gap. The developer
+        change that teaches PsaVersionService to choose a token is BLOCKED until this file
+        deploys.
+
+        PSA_Version__c HAS NO RECORD TYPES - deliberately, per the Tranche 3 design, which
+        keeps record types on Contract_Review__c and off its children. So unlike
+        Contract_Review__c.Ball_In_Court__c there is no per-type restriction available here and
+        all three values are selectable on every PSA version. Directionality is enforced by the
+        SERVICE, not by metadata: the parent Contract Review's record type decides which token
+        is written. Do not read the presence of 'Buyer' on an acquisition PSA version as
+        sanctioned - it is unreachable through the UI the service drives, not blocked by the
+        platform.
+    -->
     <fullName>Direction__c</fullName>
-    <description>Who sent this PSA version: Seller (their draft/counter to us) or Ours (our redline back). Drives the ball-in-court flip and the negotiation-status derivation.</description>
+    <description>Who sent this PSA version. Ours = DPEG on either side. Seller = the counterparty on either side, and the incumbent wire token. Buyer = the counterparty on a disposition PSA only, added because on a sale DPEG is itself the seller. Drives the ball-in-court flip and the negotiation-status derivation.</description>
     <label>Direction</label>
     <required>false</required>
     <trackTrending>false</trackTrending>
@@ -19,6 +66,11 @@
                 <fullName>Ours</fullName>
                 <default>false</default>
                 <label>Ours</label>
+            </value>
+            <value>
+                <fullName>Buyer</fullName>
+                <default>false</default>
+                <label>Buyer</label>
             </value>
         </valueSetDefinition>
     </valueSet>

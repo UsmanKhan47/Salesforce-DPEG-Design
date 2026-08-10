@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT MUST SIT INSIDE THE ROOT ELEMENT. A comment placed ABOVE <QuickAction>
+        breaks `sf` deploy at source conversion with the misleading error "unable to find
+        matching parent xml file". Precedent: Broker_Protection_Access.permissionset-meta.xml.
+
+        DISPOSITION LOI ONLY. One half of the sell-side negotiation LOOP.
+
+        WHY A LOOP NEEDS EXPLICIT BUTTONS AT ALL. The sell-side path is
+        Received -> Under Review -> Countered by DPEG -> Counter Received from Buyer ->
+        Executed, and the document says the negotiation "goes round until both sides are
+        agreed". Countered by DPEG <-> Counter Received from Buyer is therefore a CYCLE, and
+        RecordStageAdvanceService holds a LINEAR Map<String,String> NEXT_STAGE per object -
+        one key, one value - which cannot express a back-edge. Advance Stage walks the line;
+        these two actions drive the loop. This action supplies the BACK-EDGE (the one edge a
+        linear map provably cannot reach): Counter Received from Buyer -> Countered by DPEG.
+
+        PATTERN: headless quick action backed by an LWC, mirroring NDA__c.Mark_Declined from
+        Tranche 3A. actionSubtype Action + type LightningWebComponent + an empty template is
+        what makes it headless; the LWC is invoked on click, owns its own confirm and toasts,
+        and must call getRecordNotifyChange on success because the write is imperative Apex
+        and happens behind LDS's back (ARCHITECTURE.md §5, the middle column of the
+        three-guard table).
+
+        🔴 THE LWC BUNDLE IS NOT IN THIS TRANCHE'S DECLARATIVE SCOPE. The expected name is
+        lwc/loiMarkCounteredByDpeg. It is the developer's file. This quick action WILL FAIL
+        DEPLOY until that bundle exists - deploy them together, not in either order alone.
+
+        🔴 IT ALSO NEEDS AN APEX ALLOW-LIST ENTRY. RecordStageAdvanceService exposes advance()
+        only; an explicit target must be added to the LOI DISPOSITION explicit-target set
+        ('Countered by DPEG'), record-type-scoped. Record-type picklist restriction is UI-ONLY
+        and is NOT enforced by Apex DML, so an object-level allow-list would let this value be
+        written onto an ACQUISITION LOI, whose Stage__c does not carry it. The allow-list is
+        the only thing that actually refuses that.
+
+        LABEL WORDING IS THE TARGET STAGE, DELIBERATELY. Unlike LOI__c.Advance_Stage - which
+        backs a derived hop and must stay generic - this action has exactly ONE target, so the
+        label can name it and the confirm prompt can too.
+    -->
+    <actionSubtype>Action</actionSubtype>
+    <label>Countered by DPEG</label>
+    <lightningWebComponent>loiMarkCounteredByDpeg</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

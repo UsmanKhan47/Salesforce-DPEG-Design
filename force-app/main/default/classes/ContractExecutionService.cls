@@ -18,6 +18,32 @@
  * handleExecution still stamps Day 0 — and openTransactionsOnAboutToClose READS THAT STAMP BACK to
  * date the 75-task checklist, so the two remain coupled even though they no longer run together.
  * Do not re-add Transaction creation to handleExecution.
+ *
+ * ── 🔴 handleExecution NOW HAS TWO ARMS, ONE PER SIDE OF THE HOUSE (Tranche 3C, 2026-08-09) ──
+ * `Contract_Review__c` gained an `Acquisition_PSA` / `Disposition_PSA` record-type pair (D6/D16.3),
+ * so one `Executed` event now means two different things:
+ *
+ *   ACQUISITION  (Opportunity__c set)   -> stamp the Opportunity (Contract Signed, Day 0) + notify
+ *   DISPOSITION  (Disposition__c set)   -> move Disposition__c.Disposition_Stage__c to 'Closing'
+ *
+ * ⚠ THE BRANCH IS ADDITIVE, NOT DEFENSIVE, AND THE DIFFERENCE MATTERS TO ANYONE PRICING IT. An
+ * earlier brief warned that an executed SALE would mint a phantom acquisition `Transaction__c`.
+ * THAT RISK NO LONGER EXISTS and nothing here guards against it: Transaction creation left this
+ * method on 2026-08-05 for `openTransactionsOnAboutToClose`, which keys on
+ * `Opportunity.StageName = 'About to Close'` — a stage a disposition Contract Review can never
+ * reach — and the acquisition arm below has ALWAYS dropped a Contract Review with a null
+ * `Opportunity__c`. So the disposition arm adds behaviour; it prevents nothing.
+ *
+ * 🔴 THE DISCRIMINATOR IS THE PARENT LOOKUP, NOT THE RECORD TYPE, AND THAT IS DELIBERATE. Each arm
+ * keys on its own lookup being non-null. Three reasons, in order of force:
+ *   1. It is what `Contract_Review__c.Disposition__c`'s own field metadata mandates — "this lookup,
+ *      NOT the record type, is the discriminator anything outside the record page should test".
+ *   2. It WORKS DURING THE MIGRATION WINDOW. Between the record-type deploy and post-deploy gate
+ *      T-B every row sits on Master, so a record-type test would classify every disposition PSA as
+ *      neither arm and silently do nothing at all.
+ *   3. The two arms are then independent by construction rather than by an else-branch: a
+ *      malformed row carrying BOTH parents runs both arms, and a row carrying neither runs
+ *      neither. An if/else on record type would have had to invent an answer for both cases.
  */
 public with sharing class ContractExecutionService {
 
@@ -25,6 +51,16 @@ public with sharing class ContractExecutionService {
 
     /** The Opportunity stage that opens the transaction. */
     @TestVisible private static final String ABOUT_TO_CLOSE = 'About to Close';
+
+    /**
+     * The Disposition stage an executed sell-side PSA advances the sale to (Tranche 3C).
+     *
+     * ⚠ It is `Disposition__c.Disposition_Stage__c`, NOT `Contract_Review__c.Stage__c`. The latter
+     * is a DERIVED PROJECTION recomputed by the `Contract_Review_Stage_Sync` before-save flow on
+     * every save, so a direct write to it COMMITS AND IS SILENTLY DISCARDED (measured 2026-08-05 on
+     * CTR-0000). Nothing in this class writes it.
+     */
+    @TestVisible private static final String DISPOSITION_CLOSING = 'Closing';
 
     /**
      * Opens the Transaction__c (and, through it, the Day-0 task checklist) when a deal ENTERS the
@@ -106,16 +142,51 @@ public with sharing class ContractExecutionService {
         }
     }
 
+    /**
+     * PSA execution handoff, both sides of the house.
+     *
+     * ⚠ THE TWO ARMS ARE INDEPENDENTLY GUARDED, AND THE `executedOppIds.isEmpty()` EARLY RETURN
+     * THAT USED TO SIT HERE HAS MOVED INSIDE THE ACQUISITION ARM. Left where it was, an
+     * all-disposition trigger chunk (zero Opportunity parents — the ordinary case for a sale)
+     * would have returned before the disposition arm ever ran, and the whole feature would have
+     * been dead while every acquisition test stayed green. That is the single easiest way to get
+     * this change wrong.
+     *
+     * @param newCrs Trigger.new
+     * @param oldMap Trigger.oldMap on update; null on insert.
+     */
     public static void handleExecution(List<Contract_Review__c> newCrs, Map<Id, Contract_Review__c> oldMap) {
         Set<Id> executedOppIds = new Set<Id>();
+        Set<Id> executedDispositionIds = new Set<Id>();
         for (Contract_Review__c cr : newCrs) {
             Contract_Review__c prior = (oldMap == null) ? null : oldMap.get(cr.Id);
             Boolean justExecuted = cr.Negotiation_Status__c == EXECUTED
                 && (prior == null || prior.Negotiation_Status__c != EXECUTED);
-            if (justExecuted && cr.Opportunity__c != null) {
+            if (!justExecuted) {
+                continue;
+            }
+            // Two independent `if`s, never if/else — see the discriminator note in the class
+            // header. A row with both parents runs both arms; a row with neither runs neither.
+            if (cr.Opportunity__c != null) {
                 executedOppIds.add(cr.Opportunity__c);
             }
+            if (cr.Disposition__c != null) {
+                executedDispositionIds.add(cr.Disposition__c);
+            }
         }
+
+        stampOpportunities(executedOppIds);
+        advanceDispositionsToClosing(executedDispositionIds);
+    }
+
+    /**
+     * The ACQUISITION arm — unchanged behaviour, extracted from handleExecution in Tranche 3C so
+     * the two sides are separately readable and the disposition arm cannot be short-circuited by
+     * the acquisition arm's early return.
+     *
+     * @param executedOppIds Opportunities whose PSA just became Executed; empty-safe.
+     */
+    private static void stampOpportunities(Set<Id> executedOppIds) {
         if (executedOppIds.isEmpty()) {
             return;
         }
@@ -162,6 +233,103 @@ public with sharing class ContractExecutionService {
                 o.Name + ': the contract is signed - DD materials are ready for review.', o.Id));
         }
         GroupNotifier.notify(notifications);
+    }
+
+    /**
+     * The DISPOSITION arm (Tranche 3C, 2026-08-09) — an executed sell-side PSA moves the sale to
+     * `Closing`.
+     *
+     * 🔴 THIS IS THE FIRST MACHINE WRITER OF `Disposition__c.Disposition_Stage__c` IN THE
+     * APPLICATION. Two deployed artifacts assert in their own XML comments that the field is
+     * "written by nothing but user edits — the Path, the Details section and inline edit":
+     * `objects/Disposition__c/validationRules/All_NDAs_Signed_Before_Progression` (which names
+     * this change explicitly as the moment its claim expires) and
+     * `.../Wire_Complete_Before_Completed`. THAT CLAIM IS NOW FALSE IN BOTH FILES and must be
+     * corrected there. It is NOT corrected in this change: `objects/` was out of scope for the
+     * Tranche 3C Apex build, so it is carried as a handoff rather than silently left to rot.
+     *
+     * ── 🔴 THREE THINGS CAN BLOCK THIS WRITE, AND ONLY ONE OF THEM IS A PERMISSION ──
+     * This is the D16.2 / Tranche-2-C1 decision applied deliberately. Each obstacle needs its own
+     * mechanism; none of the three substitutes for another:
+     *
+     *  1. CRUD / FLS — whoever executes a PSA (Legal, a deal driver) is not necessarily an EDITOR
+     *     of `Disposition__c`. Answered by `AccessLevel.SYSTEM_MODE`, the same justification the
+     *     two sibling DMLs in this class carry.
+     *
+     *  2. AN APPROVAL LOCK — `Disposition__c` is the entry object of THREE approval processes, all
+     *     `recordEditability = AdminOnly`. 🔴 `SYSTEM_MODE` DOES NOT LIFT AN APPROVAL LOCK (measured
+     *     in this repo twice: `OpportunityReviewService`'s LOI back-stamp, and Tranche 2's C1
+     *     finding). Answered by `allOrNone = false` — see the trade below.
+     *
+     *  3. A VALIDATION RULE — `All_NDAs_Signed_Before_Progression` gates entry to `Closing` on an
+     *     OFF-MARKET disposition until every non-Declined NDA is Signed. That rule is CORRECT and
+     *     must keep firing here: an executed PSA does not entitle a sale to skip the release gate.
+     *     Also answered by `allOrNone = false`.
+     *
+     * ── WHY allOrNone = false, STATED AS A TRADE RATHER THAN AS A SAFETY FEATURE ──
+     * An all-or-none update would roll back THE PSA EXECUTION ITSELF — the Contract Review's
+     * `Executed` status, the parent stamp, the notifications — in order to protect a stage advance.
+     * The legal state is the irreplaceable half; the stage is derivable. So the write fails soft.
+     *
+     * 🔴 ITS RESIDUAL IS REAL AND IS NOT HARMLESS: the disposition sits at `PSA` while its Contract
+     * Review reads `Executed`. Do not describe that as benign. What makes it ACCEPTABLE is that it
+     * is VISIBLE — both records are on screen, they disagree, and any user can advance the stage by
+     * hand once the block clears. Contrast the alternative, which is a rolled-back execution the
+     * user is told nothing useful about.
+     *
+     * ── WHY NOT A QUEUEABLE, WHICH IS THE OTHER HALF OF THE D16.2 PATTERN ──
+     * `OpportunityReviewService` defers its parent stamp to `LoiPrimaryStampQueueable` because the
+     * lock is released BY THE VERY TRANSACTION doing the deferring (both approvals set
+     * `finalApprovalRecordLock = false`, so the record unlocks at commit — exactly when the
+     * queueable runs). 🔴 THAT REASONING DOES NOT TRANSFER HERE AND MUST NOT BE COPIED, which is
+     * precisely the mistake code review W1 caught in `DispositionNdaStampQueueable`, which had
+     * copied it verbatim. Here the triggering event is a Contract Review save; it releases no
+     * disposition approval, so a PENDING approval OUTLIVES any queueable this transaction could
+     * enqueue. Deferring would buy nothing and would cost the failure its visibility: a failed
+     * `AsyncApexJob` nobody watches instead of two records that visibly disagree.
+     *
+     * ── WHY THE NO-CHANGE FILTER, WHICH IS THE HALF THAT IS EASY TO SKIP ──
+     * Rows already at `Closing` are dropped BEFORE the DML. This is Tranche 2's C1 remedy
+     * (`Flag_Changed` no-change Decision) in Apex, and it is not merely tidy: `Closing_Approval`'s
+     * entry criteria IS `Disposition_Stage__c equals Closing`, so a re-executed PSA on a
+     * disposition already at Closing-under-approval fires a write that CHANGES NOTHING and CAN ONLY
+     * FAIL. Filtering makes the common re-execution a genuine no-op instead of a swallowed error.
+     * It also makes the operation idempotent, which is the property the re-execution test pins.
+     *
+     * Bulk-safe and CONSTANT in the number of dispositions: ONE selector query, ONE bulk
+     * `Database.update`, no SOQL or DML in a loop.
+     *
+     * @param executedDispositionIds Dispositions whose sell-side PSA just became Executed;
+     *                               empty-safe.
+     */
+    private static void advanceDispositionsToClosing(Set<Id> executedDispositionIds) {
+        if (executedDispositionIds.isEmpty()) {
+            return;
+        }
+
+        List<Disposition__c> stageUpdates = new List<Disposition__c>();
+        // A disposition the running user cannot SEE is simply absent from this result (the read is
+        // SYSTEM_MODE but the selector is `with sharing`), and an absent Id is therefore never
+        // written — the write is driven by what came BACK, not by what went in. That is the correct
+        // direction: skip rather than guess.
+        for (Disposition__c d : DispositionSelector.selectStagesByIds(executedDispositionIds)) {
+            if (DISPOSITION_CLOSING.equals(d.Disposition_Stage__c)) {
+                continue; // no-change filter — see the header
+            }
+            stageUpdates.add(new Disposition__c(
+                Id = d.Id,
+                Disposition_Stage__c = DISPOSITION_CLOSING
+            ));
+        }
+        if (stageUpdates.isEmpty()) {
+            return;
+        }
+
+        // allOrNone = false + SYSTEM_MODE. Both are load-bearing and neither covers the other's
+        // obstacle — see the header. The results are deliberately NOT inspected: there is no
+        // recovery action available in an after-update trigger, and the residual is visible on the
+        // records themselves.
+        Database.update(stageUpdates, false, AccessLevel.SYSTEM_MODE);
     }
 
     /**

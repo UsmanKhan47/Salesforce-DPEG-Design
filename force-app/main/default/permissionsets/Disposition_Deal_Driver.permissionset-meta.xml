@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        This comment is INSIDE the root element deliberately - a comment above the root
+        breaks `sf` at source conversion with "unable to find matching parent xml file".
+        Broker_Protection_Access / DPEG_Admin_Access are the precedents for this pattern;
+        it is used here because the rationale is longer than the 255-character cap on
+        <description>.
+
+        WHY THIS IS ITS OWN SET (added 2026-08-09, Tranche 3A, decision D15/Q1; the name is
+        the one the design fixed in option (d)). It is the disposition twin of
+        Acquisition_Deal_Driver and follows that precedent rather than folding the grant
+        into DPEG_Disposition_Edit. The gate is TWO-FACTOR: assignment of this set, which
+        carries the FLS, is factor (a); User.Disposition_Driver__c = true is factor (b).
+        Putting the FLS on the broad disposition edit set would hand factor (a) to that
+        set's whole population as a side effect of editing dispositions, leaving a
+        one-factor gate - the exact widening RecordStageAdvanceService's and
+        OpportunityActionPermissionService's headers say a membership check must not
+        introduce. A broad set is also redeployed far more often, which matters because a
+        PermissionSet deploy REPLACES its entire grant list rather than merging into it
+        (measured twice on this project, 2026-08-05 and 2026-08-06).
+
+        WHY THE FLS GRANT IS LOAD-BEARING AND NOT COSMETIC. The gate reads
+        User.Disposition_Driver__c WITH USER_MODE. USER_MODE THROWS on a field the running
+        principal cannot read - it does not degrade - and the service converts that throw to
+        false. Separately, a field deployed through the Metadata API arrives carrying no
+        field permissions of its own, which is why this grant ships in the same change as
+        the field rather than being left to be added later. Without it the two-factor gate
+        has no reachable true branch for anyone, and the failure presents as a quiet denial
+        rather than as an error.
+
+        ASSIGNMENT IS AN ORG ACTION, NOT DEPLOYABLE METADATA. Deploying this set grants
+        nobody anything until it is assigned, and factor (b) must also be set on each
+        driver's own User record. A smoke test performed as an administrator exercises
+        neither factor - acceptance-test as a real disposition-driver persona.
+    -->
+    <description>Marks the disposition deal driver: grants read on User.Disposition_Driver__c so the disposition stage quick actions show only for holders whose Disposition_Driver__c = true. Not assigned to approvers.</description>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>User.Disposition_Driver__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Disposition Deal Driver</label>
+</PermissionSet>

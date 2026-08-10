@@ -25,6 +25,28 @@ for (Integer i = 0; i < needActive; i++) {
 }
 if (!props.isEmpty()) { insert props; }
 
+// ── On_Market record type (decision D11 / Gate 1 Q1) ────────────────────────────────
+// Every Disposition seeded below is stamped On_Market. Leaving RecordTypeId unset lands
+// the record on MASTER: no Path, and all ten stage values selectable — precisely the
+// state post-deploy gate A2 exists to eliminate, so an unstamped seed would recreate the
+// problem the migration fixes.
+//
+// A DESCRIBE, NOT A QUERY. `[SELECT Id FROM RecordType WHERE ...].Id` throws a
+// QueryException when the record type is absent, and in an anonymous-Apex script that
+// aborts mid-run and leaves the org half-seeded. The describe returns null instead, which
+// is a legitimate answer (§4 record-type metadata not deployed yet, or not available to
+// the running user) and the platform default then applies. Same shape as
+// DispositionService.onMarketRecordTypeId() and TestDataFactory.dispositionRecordTypeId(),
+// so all three agree. Costs no SOQL.
+//
+// 'BOV Outreach' and 'Active Listing' below are On_Market-only stage values, so the stamp
+// and the stages agree.
+Schema.RecordTypeInfo onMarketInfo =
+    Schema.SObjectType.Disposition__c.getRecordTypeInfosByDeveloperName().get('On_Market');
+Id onMarketRtId = (onMarketInfo != null && onMarketInfo.isAvailable())
+    ? onMarketInfo.getRecordTypeId()
+    : null;
+
 // --- Dispositions: 5 BOV Outreach, 2 Active Listing (1 alert due), avg 38 days on market ---
 List<Property_Asset__c> assets = [SELECT Id FROM Property_Asset__c WHERE Status__c = 'Active' ORDER BY CreatedDate ASC LIMIT 2];
 Id pa0 = assets[0].Id;
@@ -47,6 +69,9 @@ if (needListed >= 2) {
     ds.add(new Disposition__c(
         Disposition_Stage__c = 'Active Listing', Property_Asset__c = pa1,
         Listing_Date__c = Date.today().addDays(-41)));
+}
+if (onMarketRtId != null) {
+    for (Disposition__c d : ds) { d.RecordTypeId = onMarketRtId; }
 }
 if (!ds.isEmpty()) { insert ds; }
 

@@ -1,7 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, INSIDE THE ROOT ELEMENT, AND IT MUST STAY THAT WAY.
+        A comment placed ABOVE <CustomField> breaks `sf` deploy at source conversion with the
+        misleading error "unable to find matching parent xml file for CustomField". Precedent:
+        Broker_Protection_Access.permissionset-meta.xml. The <description> below is a short
+        summary; the rationale lives here so it never has to be trimmed to fit a cap.
+
+        THE TOKEN CONTRACT. Three values, and which of them means DPEG depends on WHICH SIDE OF
+        THE DEAL the parent LOI sits on. Getting this wrong inverts the field:
+
+          Us     = DPEG. Correct on BOTH record types - "us" is side-neutral.
+          Seller = THE COUNTERPARTY, ON BOTH SIDES. On an acquisition the counterparty really
+                   is the seller. On a disposition it is not, but this is the INCUMBENT WIRE
+                   TOKEN that the deployed lwc/loiCounterOffer picker already sends, so the
+                   value must keep working on a sale - refusing it there would leave that Save
+                   button dead against a restricted picklist.
+          Buyer  = THE COUNTERPARTY, DISPOSITION ONLY. Added 2026-08-09.
+
+        BUYER IS ADDED, NOTHING IS RENAMED. Renaming Seller -> Buyer on the disposition side
+        was rejected outright: a picklist rename is a REMOVAL plus an add, which triggers the
+        standing picklist-removal sweep rule (grep the repo AND query the org first) and forces
+        a data migration on live acquisition rows for zero benefit. Both fields here are
+        <restricted>true</restricted>, so the value has to exist in the master value set before
+        any Apex can write it - four tests were failing INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST
+        against exactly this gap.
+
+        BUYER IS RESTRICTED OUT OF THE Acquisition_LOI RECORD TYPE, DELIBERATELY. On a purchase
+        DPEG *is* the buyer, so 'Buyer' there would name DPEG and mean the opposite of what it
+        means on a sale - the same inversion this value exists to fix. Acquisition_LOI therefore
+        continues to enumerate Us/Seller only; Disposition_LOI enumerates all three.
+        WARNING: record-type picklist restriction is UI-ONLY and is NOT enforced by Apex DML, so
+        that exclusion does not stop a direct write of 'Buyer' onto an acquisition LOI. The
+        enforcement that actually holds is the record-type-aware allow-list in
+        RecordStageAdvanceService plus whichever service stamps this field.
+
+        A RECORD TYPE FILE THAT OMITS A PICKLIST SILENTLY DROPS ALL OF ITS VALUES from that
+        type, so both LOI__c record types enumerate this field in full. Adding a value here
+        without adding it to Disposition_LOI.recordType-meta.xml makes it invisible on the very
+        record type it was added for.
+    -->
     <fullName>Ball_In_Court__c</fullName>
-    <description>Whose turn it is in the LOI negotiation. Flipped automatically by CounterOfferController when a counter is logged (seller counter -&gt; Us; our counter -&gt; Seller).</description>
+    <description>Whose turn it is in the LOI negotiation. Us = DPEG on either side. Seller = the counterparty on either side. Buyer = the counterparty on a disposition LOI only, restricted out of Acquisition_LOI because DPEG is the buyer there. See the XML comment.</description>
     <label>Ball In Court</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
@@ -20,6 +60,11 @@
                 <fullName>Seller</fullName>
                 <default>false</default>
                 <label>Seller</label>
+            </value>
+            <value>
+                <fullName>Buyer</fullName>
+                <default>false</default>
+                <label>Buyer</label>
             </value>
         </valueSetDefinition>
     </valueSet>

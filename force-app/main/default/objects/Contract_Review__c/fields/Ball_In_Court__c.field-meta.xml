@@ -1,7 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, INSIDE THE ROOT ELEMENT, AND IT MUST STAY THAT WAY.
+        A comment placed ABOVE <CustomField> breaks `sf` deploy at source conversion with the
+        misleading error "unable to find matching parent xml file for CustomField".
+
+        'Buyer' ADDED 2026-08-09 (Tranche 3C). Token contract, identical to
+        LOI__c.Ball_In_Court__c and to both Direction__c fields:
+
+          Us     = DPEG. Correct on BOTH sides - side-neutral.
+          Seller = THE COUNTERPARTY on an ACQUISITION, and the incumbent wire token that
+                   PsaVersionService already writes. It is NOT removed.
+          Buyer  = THE COUNTERPARTY on a DISPOSITION.
+
+        WHY THIS FILE IS IN 3C AT ALL. It was not on the dispatched file list, but the
+        Disposition_PSA record type cannot expose a correct counterparty token unless one
+        exists in this master value set: a record type may only restrict the values a field
+        already has, and this field is <restricted>true</restricted>, so Apex cannot write a
+        token that is absent here either. Shipping the record type without this value would
+        leave a sell-side PSA whose only counterparty option is 'Seller' - which on a sale
+        names DPEG, the same party 'Us' already names. That is the exact inversion the record
+        type exists to fix, so omitting it would have made 3C self-defeating rather than merely
+        incomplete. Recorded here because it is a scope addition, not an inherited decision.
+
+        ADD ONLY - NOTHING IS RENAMED. A rename is a removal plus an add: it triggers the
+        standing picklist-removal sweep rule and forces a migration on live acquisition rows
+        that are correctly 'Seller' today, for zero benefit.
+
+        UNLIKE Counter_Offer__c AND PSA_Version__c, THIS FIELD'S OBJECT DOES HAVE RECORD TYPES,
+        so the restriction here is real rather than service-enforced: Acquisition_PSA exposes
+        Us + Seller only, Disposition_PSA exposes Us + Buyer only. ⚠ Record-type picklist
+        restriction is UI-ONLY and is NOT enforced by Apex DML, so it stops a user picking
+        'Seller' on a sale but does not stop code writing it. PsaVersionService is the only
+        writer and is where that is actually enforced.
+    -->
     <fullName>Ball_In_Court__c</fullName>
-    <description>Whose turn it is in the PSA negotiation. Flipped automatically by PsaVersionController when a version is logged (seller version -&gt; Us; our version -&gt; Seller).</description>
+    <description>Whose turn it is in the PSA negotiation. Flipped automatically by PsaVersionController when a version is logged (their version -&gt; Us; our version -&gt; the counterparty). The counterparty token differs by record type: Seller on an acquisition PSA, Buyer on a disposition PSA, because on a sale DPEG is itself the seller.</description>
     <label>Ball In Court</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
@@ -20,6 +54,11 @@
                 <fullName>Seller</fullName>
                 <default>false</default>
                 <label>Seller</label>
+            </value>
+            <value>
+                <fullName>Buyer</fullName>
+                <default>false</default>
+                <label>Buyer</label>
             </value>
         </valueSetDefinition>
     </valueSet>
