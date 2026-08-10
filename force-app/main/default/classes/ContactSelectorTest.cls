@@ -67,14 +67,29 @@ private class ContactSelectorTest {
      * Standard User owns them (removing sharing as a variable and isolating the FLS
      * question). The User + PermissionSetAssignment DML is isolated in its own runAs
      * block to avoid MIXED_DML_OPERATION with the non-setup Contact DML.
+     *
+     * ⚠ ALSO GRANTS DPEG_Contact_Edit (added 2026-08-10, fix round 1). TestDataFactory now
+     * stamps every factory Contact onto the Contact.Broker record type (IR/Acquisitions
+     * segregation, Task 3), and DPEG_Acquisitions alone does not carry that record type's
+     * visibility - only DPEG_Contact_Edit / DPEG_Contact_View do (Task 2). Without this grant
+     * TestDataFactory.recordTypeId's isAvailable() guard degrades this persona to an unstamped
+     * (default-record-type) Contact rather than throwing - but that would silently defeat this
+     * test's own stated intent, "mirrors the real broker-options persona": a persona reading the
+     * broker-options list must be able to see and create Broker-typed Contacts in the first
+     * place, so DPEG_Contact_Edit belongs on this fixture on the merits, independent of the
+     * factory change that surfaced its absence.
      */
     @isTest
     static void selectBrokersOrderedByName_standardUserWithGrants_userModeReturnsRows() {
         User standardUser = buildStandardUser();
-        Id permSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Acquisitions' LIMIT 1].Id;
+        Id acqPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Acquisitions' LIMIT 1].Id;
+        Id contactEditPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Contact_Edit' LIMIT 1].Id;
         System.runAs(new User(Id = UserInfo.getUserId())) {
             insert standardUser;
-            insert new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = permSetId);
+            insert new List<PermissionSetAssignment>{
+                new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = acqPermSetId),
+                new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = contactEditPermSetId)
+            };
         }
 
         Test.startTest();
