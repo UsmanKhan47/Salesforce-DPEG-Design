@@ -884,6 +884,67 @@ separate design.
 
 ---
 
+## D27 — The last three open questions, closed. 2026-08-10.
+
+### D27.1 — Marketing clock: **THE DOCUMENT WINS — ~2 months, month-1 traction check.**
+
+`docs/DPEG-Stage-by-Stage.docx` Part 2 line 213 is authoritative over the deployed Path guidance
+(`Disposition_Path…` — *"6-week marketing clock… Week 4 triggers YELLOW flag. Week 6 triggers Hard Stop
++ escalation to Ali"*). That text is now **wrong and must be corrected**, on BOTH paths.
+
+⚠ It was deliberately copied forward **verbatim** through Tranches 2 and 3 precisely so this decision
+would not be silently pre-empted. It can now be edited. Unblocks the **Active Listing traction monitor
+and broker-change mechanism** — the last unbuilt item in Part 2 that is not Call for Offers — built to a
+**60-day clock with a 30-day checkpoint**.
+
+### D27.2 — Dead/Pass is **NOT terminal. The recovery route stays.**
+
+The document's *"the only way out"* is read as **"Dead/Pass is the only exit from the pipeline"**, not
+*"Dead/Pass is irreversible"*. `No_Backward_Stage_Movement`'s own comment documents the two-save
+Dead/Pass round-trip as the **sanctioned recovery** for a mistakenly advanced deal, chosen over a bypass
+permission the user rejected (D4 of the original stage-control work). Making it terminal would remove the
+only recovery that exists and reopen that rejected permission under another name. **No change.**
+
+### 🔴 D27.3 — `Property_Asset__c` IS NOT auto-created anywhere. Build it on Closed Won.
+
+The user asked me to check, believing it was already automatic. **Measured, repo-wide:**
+
+| Source | Creates `Property_Asset__c`? |
+| --- | --- |
+| Apex (`classes/`, `triggers/`) | **None** — only `TestDataFactory` (test data) |
+| Flows | **None** — not one flow even *references* the object |
+| Seed scripts | **Nine** (`seed-broker-assignments`, `-dispositions`, `-lease-inquiries`, `-lease-renewals`, `-leasing-dashboard`, `-onboarding`, `-pm-dashboard`, `-rent-roll`, `-work-orders`) |
+
+**So every `Property_Asset__c` in the org today came from a seed script**, which is exactly why it looked
+automatic. In a real deployment, Closed Won stamps `Deal_Status__c = 'Asset Under Management'` and **no
+asset record is ever created** — leaving the whole Property Management tree (Units, Rent Steps,
+Onboarding, CAM, Delinquency, Insurance, Broker Assignments, Lease Inquiries, Lease Renewals, Work
+Orders — all parented to it) with nothing to hang from.
+
+**Decision: auto-create `Property_Asset__c` on Closed Won**, per the user's instruction ("if not then
+create it on closed won") and the document's *"the property becomes asset"* (Part 1 line 182).
+
+⚠ Design notes for whoever builds it:
+- `Property_Asset__c.Property__c` is a Lookup to `Property__c`, and `Property__c` is created at lead
+  conversion by `LeadConvertService` — so the parent always exists by Closed Won.
+- **Idempotency is mandatory** — never a second asset for one property. `OpportunityReviewService`'s
+  `ensure*` pattern is the precedent.
+- ⚠ **`Transaction_Complete_Close` already fires on Closed Won** and stamps `Deal_Category__c`,
+  `Deal_Status__c` and `StageName`. Decide deliberately whether the creation joins that flow or takes its
+  own path, and whether it belongs in Apex or declarative.
+- ⚠ **Record-type stamping applies** if `Property_Asset__c` ever gains record types — and the
+  guarded-vs-unconditional question must be **re-argued**, not inherited (three prior instances, three
+  different justifications: D16.3, 3B's LOI, 3C's PSA).
+- ⚠ Verification must **read the created record back**, not trust the insert — the standing lesson from
+  gate A2 and `TestDataFactoryTest`.
+
+### D27.4 — Branch topology: **user will sort it.** No git operations from me.
+
+Work is committed as `3e798d2` + `fce1996` on `feature/ir-acquisitions-segregation`;
+`feature/stage-by-stage-alignment` still points at `main`.
+
+---
+
 ## OPEN — remaining questions, each blocking its own item
 
 1. ~~**Acquisition NDA middle state**~~ — ✅ **RESOLVED by D14.1: four states, additive.**
