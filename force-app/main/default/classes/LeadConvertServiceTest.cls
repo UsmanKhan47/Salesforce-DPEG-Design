@@ -70,8 +70,9 @@ private class LeadConvertServiceTest {
 
     /**
      * Slack allowed between a 1-record and a SCALE_N-record invocation. Deliberately small: the
-     * service's own cost is constant (2 SOQL / 3 DML, 4 worst case), and a change that added ONE query per Lead
-     * would show up as +SCALE_N-1, which no plausible tolerance hides.
+     * service's own cost is constant (2 SOQL / ≤5 DML — raised from ≤4 in the IR segregation
+     * change, which added the Contact/Account record-type stamp), and a change that added ONE
+     * query per Lead would show up as +SCALE_N-1, which no plausible tolerance hides.
      */
     private static final Integer SCALE_TOLERANCE = 5;
 
@@ -145,11 +146,18 @@ private class LeadConvertServiceTest {
      * Re-reads converted Leads with EVERY field the service touches, so a test can hand the same
      * records back to `stampConvertedOpportunities` directly. `oldMap = null` makes the service
      * treat them as just-converted (see its `justConverted` guard).
+     *
+     * ⚠ ConvertedAccountId was ADDED here 2026-08-10 (IR segregation, Task 5). Without it,
+     * stampConvertedPartyRecordTypes' read of l.ConvertedAccountId throws
+     * `SObjectException: SObject row was retrieved via SOQL without querying the requested
+     * field` for every test that drives the service directly off this helper's output — the
+     * live trigger path is unaffected because Trigger.new in an after-update trigger already
+     * carries every field.
      */
     private static List<Lead> reReadForReRun(Set<Id> leadIds) {
         return [
             SELECT Id, Name, Company, Street, City, State, PostalCode,
-                   IsConverted, ConvertedOpportunityId, ConvertedContactId,
+                   IsConverted, ConvertedOpportunityId, ConvertedContactId, ConvertedAccountId,
                    Deal_Type__c, Asset_Type__c, Property_Name__c, Property_Address__c,
                    Guidance_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,
                    Guidance_Cap_Rate__c, Offer_Due_Date__c, Sale_Process__c, Parse_Confidence__c,
@@ -591,6 +599,70 @@ private class LeadConvertServiceTest {
         Assert.isTrue(roles[0].IsPrimary, 'and it is still primary');
     }
 
+    /**
+     * IR segregation (2026-08-10) — job 5. Database.convertLead does not map record types onto
+     * the Contact or Account it creates; without the explicit stamp the converted Contact takes
+     * the running user's PROFILE default, which is unverifiable from source (profiles are
+     * .forceignore'd) and may be Investor rather than Broker.
+     */
+    @isTest
+    static void conversionStampsBrokerRecordTypesOnContactAndAccount() {
+        Lead l = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(l.Id);
+        lc.setConvertedStatus(convertedStatus());
+        Database.LeadConvertResult res = Database.convertLead(lc);
+        Test.stopTest();
+
+        Assert.isTrue(res.isSuccess(), 'Conversion must succeed.');
+
+        Contact c = [SELECT RecordType.DeveloperName FROM Contact WHERE Id = :res.getContactId()];
+        Account a = [SELECT RecordType.DeveloperName FROM Account WHERE Id = :res.getAccountId()];
+
+        Assert.areEqual('Broker', c.RecordType.DeveloperName,
+            'Conversion does not map Contact record types - without the explicit stamp the converted '
+            + 'Contact takes the running user profile default, which may be Investor.');
+        Assert.areEqual('Broker_Firm', a.RecordType.DeveloperName,
+            'An Account left off Broker_Firm matches no sharing rule once Account OWD is Private.');
+    }
+
+    /**
+     * The Task 5 bulk claim, pinned directly: 251 converted Leads processed through ONE
+     * stampConvertedOpportunities invocation cost the SAME <=5 DML statements a single Lead
+     * does — proof that stampConvertedPartyRecordTypes's two new statements are batched once
+     * per invocation, never once per record.
+     *
+     * ⚠ Database.convertLead itself caps a single call's LeadConvert list at 200 (see
+     * bulkConversion251LeadsCreatesPropertiesAndStampsOpportunities), so the 251 Leads are
+     * converted across two chunks first — outside the measured window — then re-read and driven
+     * through the service directly in ONE call, which is the only way to observe a single
+     * invocation's cost at this volume without also measuring convertLead's own chunking
+     * overhead.
+     */
+    @isTest
+    static void conversionDmlIsConstantAcross251Leads() {
+        List<Lead> leads = TestDataFactory.createLeads(BULK_N, true);
+        String status = convertedStatus();
+        convertChunk(leads, 0, 200, status);
+        convertChunk(leads, 200, BULK_N, status);
+
+        List<Lead> reRun = reReadForReRun(idsOf(leads));
+        Assert.areEqual(BULK_N, reRun.size(), 'All 251 leads converted ahead of the re-run');
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        LeadConvertService.stampConvertedOpportunities(reRun, null);
+        Integer dmlDelta = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        Assert.isTrue(dmlDelta <= 5,
+            'LeadConvertService is pinned at <=5 DML statements, CONSTANT in batch size. It moved '
+            + 'from 3 to 5 in the IR segregation change to stamp the converted Contact and Account '
+            + 'record types. A number that grows with record count means a statement moved inside a loop.');
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     // 6. NULL SAFETY — the ordinary case for a thin email.
     // ═════════════════════════════════════════════════════════════════════════
@@ -739,8 +811,8 @@ private class LeadConvertServiceTest {
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * THE HIGHEST-VALUE ASSERTION IN THIS CLASS. LeadConvertService's contract is 2 SOQL / 3 DML
-     * (4 worst case) PER INVOCATION regardless of batch size; a change that put one query inside
+     * THE HIGHEST-VALUE ASSERTION IN THIS CLASS. LeadConvertService's contract is 2 SOQL / ≤5 DML
+     * PER INVOCATION regardless of batch size; a change that put one query inside
      * the per-Lead loop must fail here rather than in production.
      *
      * ⚠ WHY A COMPARISON RATHER THAN AN ABSOLUTE BUDGET: the measured window contains the whole
