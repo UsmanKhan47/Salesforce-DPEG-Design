@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is capped
+        at 255 characters. The comment must sit INSIDE the root element - one placed above the
+        root breaks `sf` deploy at source conversion.
+
+        WHY THIS RULE IS SECURITY, NOT DATA HYGIENE. Contact OWD is ControlledByParent, so a
+        Contact is visible to exactly the people who can see its Account. The Account record type
+        is what the criteria-based sharing rules key on. A Broker Contact parented to an
+        Investor_Entity Account is therefore visible to Investor Relations and invisible to
+        Acquisitions - the exact leak this feature exists to prevent - and nothing else in the
+        system would notice.
+
+        IT BLOCKS REPARENTING AS WELL AS CREATION, deliberately. Moving a Contact between
+        Accounts is the quieter half of the leak: no field on the Contact changes, so no audit
+        trail reads as suspicious.
+
+        A Contact with NO Account is permitted (Contact.AccountId is optional and the standard
+        Contact Layout allows it). Such a Contact is owner-visible only under ControlledByParent,
+        so it cannot leak across the boundary - it is simply invisible, which fails safe.
+
+        RECORD-TYPE FORMULA SYNTAX: `RecordType.DeveloperName` (own record) and
+        `Account.RecordType.DeveloperName` (cross-object, traversing the Account lookup) are used
+        as documented, standard Salesforce formula syntax - RecordType is an ordinary relationship
+        field on the object, not a `$`-prefixed global variable, so no `$RecordType` form applies
+        here. No in-repo validationRule or formula-field precedent references RecordType in
+        formula (non-SOQL) context as of 2026-08-10; this is UNVERIFIED against the target org
+        because org deploys are paused for this workstream. Verify at the next coordinated
+        deploy/verification pass.
+    -->
+    <fullName>Record_Type_Matches_Account</fullName>
+    <active>true</active>
+    <description>A Contact's record type must match its Account's. Contact sharing is inherited from the Account, so a mismatch leaks the Contact to the wrong team. See the XML comment in this file.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(AccountId)),
+    NOT(ISBLANK(TEXT(Account.RecordType.DeveloperName))),
+    OR(
+        AND(
+            RecordType.DeveloperName = "Broker",
+            Account.RecordType.DeveloperName &lt;&gt; "Broker_Firm"
+        ),
+        AND(
+            RecordType.DeveloperName = "Investor",
+            Account.RecordType.DeveloperName &lt;&gt; "Investor_Entity"
+        )
+    )
+)</errorConditionFormula>
+    <errorDisplayField>AccountId</errorDisplayField>
+    <errorMessage>A Broker contact must belong to a Broker Firm account, and an Investor contact to an Investor Entity account. Record-level access is inherited from the account, so a mismatch would expose this contact to the wrong team.</errorMessage>
+</ValidationRule>
