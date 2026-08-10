@@ -510,6 +510,57 @@ public with sharing class LeadConvertService {
      * Both use allOrNone = false for the same reason the Property insert does: a failure to
      * stamp a record type must not roll back the structural RecordTypeId / Property__c link on
      * the Opportunity, which `update updates` guarantees all-or-none above.
+     *
+     * ═══ FIX ROUND 1 (2026-08-10) — DIAGNOSED: THIS IS A PROVISIONING GAP, NOT AN APEX DEFECT ═══
+     * conversionStampsBrokerRecordTypesOnContactAndAccount failed with "Actual: null" after
+     * deploy. Reproduced live via a savepoint-wrapped anonymous-Apex probe against usman-dpeg
+     * (rolled back, no permanent org change) rather than by inspection:
+     *   - recordTypeId(Contact.SObjectType, 'Broker') and recordTypeId(Account.SObjectType,
+     *     'Broker_Firm') both resolve non-null Ids, but Schema.RecordTypeInfo.isAvailable()
+     *     returns FALSE for both, for the exact principal every Apex test and anonymous
+     *     execution runs as in this org (usman.khan.dpeg@avanzasolutions.com, System
+     *     Administrator profile, WITH DPEG_Admin_Access assigned).
+     *   - Forcing the identical Database.update the guard would otherwise skip confirms
+     *     isAvailable() is telling the truth, not lying: it fails with
+     *     INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY, "invalid record type" (the update path)
+     *     and INVALID_CROSS_REFERENCE_KEY, "Record Type ID... isn't valid for the user" (the
+     *     insert path) — the same shape TestDataFactory.recordTypeId's header already documents
+     *     for this org.
+     *   - ConvertedContactId / ConvertedAccountId ARE populated correctly at this point (verified
+     *     by direct read-back), and nothing runs afterward to clear a stamp that never landed —
+     *     ruling out hypotheses 2-4 the fix-round brief asked to check first.
+     *   - ROOT CAUSE, confirmed by a read-only metadata retrieve of the LIVE org copy of
+     *     DPEG_Admin_Access (not the repo file): the org's deployed permission set does NOT
+     *     contain the six IR-segregation <recordTypeVisibilities> entries the repo file declares
+     *     (Account.Broker_Firm, Account.Investor_Entity, Contact.Broker, Contact.Investor,
+     *     Lead.Acquisition_Broker, Lead.IR_Investor) — only the pre-existing ones (Contract
+     *     Review / Disposition / LOI / NDA / Opportunity) are live. Task 2's grant was committed
+     *     to source but never actually landed in the org; the record types themselves (Task 1)
+     *     did land, which is why they resolve to a non-null Id and why this looked like a
+     *     visibility-check bug rather than a deploy gap. THIS APEX WAS NEVER THE PROBLEM — the
+     *     guard is doing exactly what it is supposed to do, silently and correctly, in front of a
+     *     principal the org has not yet provisioned. Remedy is a permission-set redeploy, out of
+     *     this class's scope and out of Apex's control entirely — no code change here can fix it.
+     *
+     * ═══ HOW A SKIPPED STAMP BECOMES VISIBLE ═══ (the fix-round brief's "think carefully" ask)
+     * allOrNone = false is kept for the reason stated above; a hard throw here would take down
+     * every conversion in the chunk over a record-type problem unrelated to the deal itself — the
+     * same reasoning that keeps the Property insert non-blocking. Silently unstamped can never
+     * become PERMANENTLY invisible, though, because two things are already true and neither is
+     * new machinery:
+     *   1. conversionStampsBrokerRecordTypesOnContactAndAccount is exactly the read-back
+     *      assertion this class's own FLS POSTURE section (above) already mandates for a
+     *      not-obviously-a-bug blank field — "query the row directly to tell the two apart." It
+     *      is what caught this gap the moment the code reached a real org, before any user did.
+     *   2. There is no sanctioned way to make an in-transaction signal LOUDER without either
+     *      violating this repo's "no System.debug in production code" rule or reintroducing the
+     *      unconditional-throw failure mode this guard exists to prevent (ARCHITECTURE.md §2's
+     *      automation-path exception; the same ContentPublication-shaped hazard TestDataFactory's
+     *      recordTypeId() header already cites). The correct lever is therefore OPERATIONAL, not
+     *      code: re-run this test (or the UAT persona check the FLS POSTURE paragraph already
+     *      prescribes) after any permission-set deploy that touches record-type visibility, and
+     *      treat a null RecordType.DeveloperName read-back as "provisioning gap," never as "the
+     *      stamp code is broken."
      */
     private static void stampConvertedPartyRecordTypes(List<Lead> convertedLeads) {
         Id contactRt = recordTypeId(Contact.SObjectType, 'Broker');
