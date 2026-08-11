@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Referred_By__c</fullName>
+    <description>Free-text name of the person or firm who referred this investor Lead (e.g. "Jane Smith, ABC Wealth Partners"). Deliberately Text, not a Lookup, even though ARCHITECTURE.md rule 3 reserves a bare object-name field for a relationship to that object: the referrer is very often NOT a Salesforce record at all (an external advisor, friend, or unrepresented individual), so a Contact/Lead lookup would fail to capture the common case. Do not "correct" this into a lookup.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Enter who referred this investor (name and/or firm).</inlineHelpText>
+    <label>Referred By</label>
+    <length>255</length>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -33,6 +33,7 @@
     <active>true</active>
     <description>Blocks Lead conversion unless Property Address and Email are both filled, subject to an org setting verified before deploy. See the XML comment in this file.</description>
     <errorConditionFormula>AND(
+    RecordType.DeveloperName = &apos;Acquisition_Broker&apos;,
     ISCHANGED(IsConverted),
     IsConverted,
     OR(

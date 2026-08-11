@@ -37,6 +37,7 @@
     <active>true</active>
     <description>Blocks a Lead from moving to Under Review or Qualified unless Property Address and Email are both filled. See the XML comment in this file for full rationale.</description>
     <errorConditionFormula>AND(
+    RecordType.DeveloperName = &apos;Acquisition_Broker&apos;,
     ISCHANGED(Status),
     NOT(IsConverted),
     OR(
