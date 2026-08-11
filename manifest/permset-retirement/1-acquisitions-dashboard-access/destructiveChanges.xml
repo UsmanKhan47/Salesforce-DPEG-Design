@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Retires exactly ONE permission set: Acquisitions_Dashboard_Access
+
+    Each stage under manifest/permset-retirement/ is independent and separately runnable, so a
+    soak or a rollback on one set never blocks another.
+
+    DELETION IS IRREVERSIBLE IN THE ORG. Do not run this until every step for this set in
+    docs/permission-set-retirement-runbook.md is complete: the residual closed and deployed, the
+    replacement sets ASSIGNED IN-ORG, the in-org VERIFY signed off, and this set unassigned from
+    every user and removed from every permission set group.
+
+    A set that is still assigned, or that is still a permission set group member, makes this
+    deploy FAIL, and it fails AFTER any constructive half of the same deploy has already applied.
+
+    The exact deploy command is in the runbook, section 5. It is deliberately NOT reproduced here
+    because an XML comment cannot contain a double hyphen, which every sf CLI flag begins with.
+    -->
+    <types>
+        <members>Acquisitions_Dashboard_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

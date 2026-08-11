@@ -2171,17 +2171,12 @@
         <name>PathAssistant</name>
     </types>
     <types>
-        <members>Acquisition_App_Access</members>
         <members>Acquisition_Deal_Driver</members>
-        <members>Acquisitions_Dashboard_Access</members>
-        <members>DPEG_Acquisitions</members>
         <members>DPEG_Admin_Access</members>
         <members>DPEG_Disposition_Edit</members>
         <members>DPEG_Disposition_View</members>
         <members>Disposition_Dashboard_Access</members>
         <members>Disposition_Deal_Driver</members>
-        <members>Property_Management_Access</members>
-        <members>Transaction_App_Access</members>
         <members>sfdcInternalInt__sfdc_nc_constraints_engine_deploy</members>
         <members>sfdcInternalInt__sfdc_scrt2</members>
         <name>PermissionSet</name>

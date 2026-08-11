@@ -1,5 +1,58 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        This comment sits INSIDE the root element deliberately - a comment above the root breaks
+        `sf` at source conversion with "unable to find matching parent xml file".
+        Disposition_Deal_Driver / Broker_Protection_Access / DPEG_Admin_Access are the precedents.
+        Added 2026-08-10 by the permission set cleanup (KEEP item K4): this set already carried the
+        full rationale in its disposition TWIN and only a one-line description here, which made the
+        acquisitions half look like the trivial one-field set it is safe to fold away. It is not.
+
+        🔴 DO NOT FOLD THIS SET INTO DPEG_Acquisition_Edit, AND DO NOT DELETE IT AS "TRIVIAL".
+        This is a LAYER-5 AUTHORIZATION FLAG set: exactly one fieldPermissions entry, on a User
+        field, read by a two-factor gate. It is the twin of Disposition_Deal_Driver, whose own
+        comment argues the same case for the sell side.
+
+        THE GATE IS TWO-FACTOR (ARCHITECTURE.md section 2, "Opportunity deal-action gate is
+        TWO-FACTOR"). OpportunityActionPermissionService.hasDealActionAccess() requires BOTH:
+          (a) CAPABILITY    - assignment of a set granting FLS read on User.Deal_Driver__c, i.e.
+                              THIS set. UserSelector reads the field WITH USER_MODE, and USER_MODE
+                              THROWS rather than degrades, so an unassigned user makes the query
+                              throw and the service converts that throw to false.
+          (b) AUTHORIZATION - Deal_Driver__c = true on the running user's OWN User record.
+        The six deployed Dynamic Actions visibility rules on Opportunity_Record_Page ask the
+        identical question ({!$User.Deal_Driver__c} EQUAL true), so the button chrome and the
+        server-side assertion agree by construction.
+
+        THREE WAYS TO BREAK IT, ALL OF WHICH LOOK LIKE TIDYING:
+          1. Moving this fieldPermission into DPEG_Acquisition_Edit (or into the new
+             Opportunity_Stage_Actions_Access capability set) hands factor (a) to that set's
+             ENTIRE population as a side effect of editing acquisitions. The gate becomes
+             one-factor for everyone who holds it.
+          2. Replacing the gate with a permission-set MEMBERSHIP check does the same thing in
+             code: a holder of this set with Deal_Driver__c = false is DENIED today and would be
+             GRANTED by a membership check.
+             OpportunityActionPermissionServiceTest.hasDealActionAccess_membershipWithoutTheFlag_isStillDenied
+             exists to go red if anyone tries. Do not modify that test.
+          3. Deleting this set as a "trivial one-field set" denies EVERY deal driver - silently.
+             The USER_MODE read throws, the service returns false, and the buttons simply stop
+             working. No error surfaces anywhere.
+
+        THE CAPABILITY HALF NOW LIVES IN Opportunity_Stage_Actions_Access (added 2026-08-10).
+        The two sets are the two factors of one gate and must never be merged, in either
+        direction. That file carries the mirror of this note.
+
+        ASSIGNMENT IS AN ORG ACTION, NOT DEPLOYABLE METADATA, and this set is assigned DIRECTLY
+        rather than through DPEG_Junior_Analyst_PSG - deliberately, because its population is
+        narrower than any group's. Deploying it grants nobody anything.
+
+        ⚠ AN ADMIN SMOKE TEST PROVES NOTHING ABOUT THIS GATE. A bare System Administrator has no
+        FLS on User.Deal_Driver__c either - Metadata-API-deployed custom fields arrive with no
+        field permissions for ANY profile, System Administrator included, and Modify All Data is
+        an OBJECT permission that confers no FLS. That is precisely why the service checks Modify
+        All Data BEFORE it reads the flag; reversing those two statements locks out every
+        administrator. Acceptance-test as a real deal-driver persona.
+    -->
     <description>Marks the &quot;Junior&quot; deal-driver: grants read on User.Deal_Driver__c so the deal-driving quick actions (stage advances; Submit for Approval) show only for holders whose Deal_Driver__c = true. Not assigned to approvers.</description>
     <fieldPermissions>
         <editable>false</editable>

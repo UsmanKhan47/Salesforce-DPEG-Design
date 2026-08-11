@@ -2,8 +2,35 @@
 <PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
     <description>Junior Acquisitions Analyst: Edit on Acquisition + Disposition + Contact (brokers), View-only on Transaction + Property Management + Task checklist fields, plus Acquisition/Disposition/Transaction app+tab visibility (no PM app).</description>
     <label>DPEG Junior Analyst PSG</label>
+    <!--
+        Opportunity_Stage_Actions_Access joined this group on 2026-08-10 and THIS GROUP ONLY.
+        It is the layer-4 CAPABILITY set for the Opportunity and child-object stage quick
+        actions; the Junior Analyst is the only deal-driver persona. The other three groups are
+        deliberately excluded: DPEG_Principal_PSG approves rather than drives and is read-only on
+        Opportunity by design; DPEG_Transaction_Team holds Opportunity read-only; and
+        DPEG_Property_Management_Team is out of module.
+
+        ⚠ ORDER MATTERS AND THE ORDER IS NOT OBVIOUS. On the day it was added this membership
+        granted ZERO additional effective access, because the same four Apex classes were still
+        in DPEG_Apex_Access, which is also in this group - permission sets union. The membership
+        only becomes load-bearing once StageAdvanceController and OpportunityApprovalController
+        are removed from that catch-all. So: DEPLOY AND JOIN FIRST -> WAIT FOR GROUP
+        RECALCULATION (status must read Updated) -> VERIFY AS A REAL DEAL DRIVER -> ONLY THEN
+        TRIM DPEG_Apex_Access. Reversing those two deploys breaks every deal-driver stage button
+        in the window between them.
+
+        ⚠ THIS MEMBERSHIP IS NOT THE WHOLE GATE. Driving a stage also requires factor (a),
+        Acquisition_Deal_Driver's FLS read on User.Deal_Driver__c, AND factor (b),
+        Deal_Driver__c = true on the driver's own User record. Acquisition_Deal_Driver is
+        assigned DIRECTLY rather than through this group on purpose: adding it here would hand
+        factor (a) to the group's ENTIRE population in one move, collapsing the gate to the
+        single remaining factor for everyone in it. Note that (b) is a field VALUE on a User
+        record - no permission set can grant it, which is exactly why the two factors are
+        independent and why only (a) is at risk from a membership change.
+    -->
     <permissionSets>DPEG_Base_Access</permissionSets>
     <permissionSets>DPEG_Apex_Access</permissionSets>
+    <permissionSets>Opportunity_Stage_Actions_Access</permissionSets>
     <permissionSets>DPEG_Acquisition_Edit</permissionSets>
     <permissionSets>DPEG_Disposition_Edit</permissionSets>
     <permissionSets>DPEG_Transaction_View</permissionSets>
