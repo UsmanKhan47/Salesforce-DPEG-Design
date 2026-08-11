@@ -56,8 +56,76 @@
         flow. The two new LOI record types are granted below for the same class of reason - a
         record type is invisible until it is granted, and Modify All Data is an OBJECT
         permission that confers no record-type access.
+
+        ══════════════════════════════════════════════════════════════════════════════════
+        2026-08-10 - PERMISSION SET CLEANUP. TWO CHANGES, AND THE SECOND IS A BUG FIX.
+        ══════════════════════════════════════════════════════════════════════════════════
+
+        (A) THE FOUR applicationVisibilities WERE MOVED HERE FROM Acquisition_App_Access
+        (Gate 1, Q3). That set is being retired: its four app grants are 100% covered by
+        DPEG_App_Acquisition / _Disposition / _Transaction / _PropertyMgmt for every PERSONA,
+        but the administrator usman.khan.dpeg is in NO permission set group and holds NONE of
+        those four sets, so Acquisition_App_Access was the only thing making the four Lightning
+        apps visible to them. Because profiles/** is .forceignore'd, deleting it without this
+        move would remove the admin's own App Launcher entries with nothing in source to restore
+        them. Putting the grants HERE is what makes the restoration DEPLOYABLE - which is the
+        stated purpose of this set - rather than four manual assignments repeated on every org
+        rebuild. THE APPS MUST BE VISIBLE HERE AND VERIFIED BEFORE Acquisition_App_Access IS
+        UNASSIGNED. Never the other way round.
+
+        (B) 🔴 SIX recordTypeVisibilities WERE ADDED TO STOP THIS FILE SILENTLY WIPING THEM.
+        Account.Broker_Firm, Account.Investor_Entity, Contact.Broker, Contact.Investor,
+        Lead.Acquisition_Broker and Lead.IR_Investor were LIVE IN THE ORG on this set and were
+        ABSENT FROM THIS FILE. A PermissionSet deploy REPLACES the whole grant list rather than
+        merging into it, so the very next deploy of this file - including the app move in (A),
+        made for an entirely unrelated reason - would have destroyed all six with no error and no
+        warning. That is the identical failure that took down Broker Protection twice
+        (2026-08-05 and 2026-08-06). Measured by retrieving this set from usman-dpeg into a
+        scratch directory and diffing normalized grant lists: org 59 grants, repo 53, six
+        org-only, zero repo-only.
+
+        ⚠ THE 2026-08-09 RECONCILIATION NOTE ABOVE IS THEREFORE NOT A STANDING GUARANTEE. It
+        said "ZERO org-only grants were found" and it is retained as the record of what was true
+        that day, but it did not hold one day later. Re-run the diff before EVERY deploy of this
+        file; do not cite that paragraph as a reason to skip it.
+
+        ⚠ CONSEQUENCE TO KNOW BEFORE DEPLOYING THIS FILE ANYWHERE BUT usman-dpeg: those six
+        record types exist in the ORG but NOT in this repo (no recordTypes/ files for them), and
+        they are not alone - the org also holds permission sets and a group that were built
+        directly in usman-dpeg and never brought into source. Deploying this file to usman-dpeg
+        SUCCEEDS because the record types are present there. Deploying it to a scratch org built
+        from this repo alone will FAIL on all six. The alternative - leaving them out -
+        guarantees a silent wipe on the next deploy to the org that actually matters, which is
+        strictly worse. Bringing the unsourced metadata into source is the real fix and is out of
+        this change's scope; it is recorded in docs/permission-set-retirement-runbook.md.
+
+        🔴 DO NOT "TIDY" THE SIX recordTypeVisibilities BELOW BECAUSE THEIR RECORD TYPES ARE NOT
+        IN THIS REPO. They are live grants in the org. Removing them from this file is exactly
+        the silent wipe this whole comment exists to prevent.
+
+        ⚠ RELATED, NOT FIXED HERE, AND MORE DANGEROUS: the DPEG_Principal_PSG group in the ORG
+        carries a member that the repo copy of that group does NOT list. A PermissionSetGroup
+        deploy REPLACES its member list wholesale, so deploying the repo copy would silently
+        revoke that access for every principal. No change in this cleanup deploys that group -
+        but anyone who does, for any reason, must reconcile it first.
     -->
-    <description>Restores tab visibility and FLS the Admin profile granted (Profiles excluded from deployment, see .forceignore). Grants Visible on every custom tab, FLS on eight fields (see the comment), and Opportunity + Disposition + NDA + LOI RecordType visibility.</description>
+    <applicationVisibilities>
+        <application>Acquisition</application>
+        <visible>true</visible>
+    </applicationVisibilities>
+    <applicationVisibilities>
+        <application>Disposition</application>
+        <visible>true</visible>
+    </applicationVisibilities>
+    <applicationVisibilities>
+        <application>Property_Management</application>
+        <visible>true</visible>
+    </applicationVisibilities>
+    <applicationVisibilities>
+        <application>Transaction</application>
+        <visible>true</visible>
+    </applicationVisibilities>
+    <description>Restores what the Admin profile grants but never deploys (profiles are .forceignored): every custom tab, ten field grants, the four Lightning apps, and the Opportunity/Disposition/NDA/LOI/Account/Contact/Lead record types. See the in-file comment.</description>
     <fieldPermissions>
         <editable>true</editable>
         <field>Contract_Review__c.Disposition__c</field>
@@ -110,6 +178,37 @@
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
+    <!--
+      The six Account / Contact / Lead entries below were RECONCILED IN FROM THE ORG on
+      2026-08-10 - they were live on this set in usman-dpeg and missing from this file, so the
+      next deploy of it would have destroyed them. See section (B) of the header comment. Do not
+      remove them without first confirming, against the org, that nothing depends on them; and
+      note that they reference record types which exist in the ORG but not in this repo.
+    -->
+    <recordTypeVisibilities>
+        <recordType>Account.Broker_Firm</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Account.Investor_Entity</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Contact.Broker</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Contact.Investor</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Lead.Acquisition_Broker</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Lead.IR_Investor</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>Account.Broker_Firm</recordType>
         <visible>true</visible>

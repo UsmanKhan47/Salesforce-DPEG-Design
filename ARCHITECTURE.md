@@ -221,7 +221,7 @@ This is observable, not theoretical: the platform generated these classes at **t
 - **Error handling at LWC boundary:** `@AuraEnabled` methods throw `AuraHandledException` with user-safe messages.
 - **Test data:** always use `TestDataFactory` (`force-app/main/default/classes/TestDataFactory.cls` — **it exists and is the org-wide factory**; do not stand up a competing per-feature factory). Never `@isTest(SeeAllData=true)`.
 - **Coverage target:** 90%+ per class, **team-owned classes only** (see _Scope_ above).
-- **⚠ Permission set metadata deploys REPLACE, not merge, their `<fieldPermissions>` set.** A `PermissionSet` deploy overwrites the org's entire field-permission list for that set with exactly what the file declares — an org-side-only FLS grant that isn't represented in the file **will be silently wiped by the next deploy of that same file**, even one made for an unrelated reason. This bit Broker Protection twice, 2026-08-05 and again 2026-08-06 (`Broker_Protection_Access.permissionset-meta.xml`'s own XML comment carries the full incident writeup): an org-side-only `Task.WhoId` grant, created by hand to unblock the live pipeline, was wiped by a later deploy of the same file made for an unrelated field-casing fix, and every inbound email routing to a Lead or Contact then threw `System.DmlException | Operation failed due to fields being inaccessible on Sobject Task` until the field was declared in-file. **Any FLS grant that matters must be declared IN the permission set file** — "keep it org-side so a redeploy can't disturb it" is exactly backwards. This trap is especially sharp in this repo because `profiles/**` is `.forceignore`d, so a profile-level FLS gap is invisible to any file-based check and the only defensible place to declare a grant is a permission set that is actually in source.
+- **⚠ Permission set metadata deploys REPLACE, not merge, their `<fieldPermissions>` set.** A `PermissionSet` deploy overwrites the org's entire field-permission list for that set with exactly what the file declares — an org-side-only FLS grant that isn't represented in the file **will be silently wiped by the next deploy of that same file**, even one made for an unrelated reason. This bit Broker Protection twice, 2026-08-05 and again 2026-08-06 (`Broker_Protection_Access.permissionset-meta.xml`'s own XML comment carries the full incident writeup): an org-side-only `Task.WhoId` grant, created by hand to unblock the live pipeline, was wiped by a later deploy of the same file made for an unrelated field-casing fix, and every inbound email routing to a Lead or Contact then threw `System.DmlException | Operation failed due to fields being inaccessible on Sobject Task` until the field was declared in-file. **Any FLS grant that matters must be declared IN the permission set file** — "keep it org-side so a redeploy can't disturb it" is exactly backwards. This trap is especially sharp in this repo because `profiles/**` is `.forceignore`d, so a profile-level FLS gap is invisible to any file-based check and the only defensible place to declare a grant is a permission set that is actually in source. **⚠ The identical hazard applies one layer up, to a `PermissionSetGroup`'s membership list, not only to a `PermissionSet`'s own grants — found during the 2026-08-10 permission set cleanup, one day after a clean 2026-08-09 reconciliation.** `DPEG_Admin_Access` carried six `recordTypeVisibilities` live in `usman-dpeg` and absent from the repo file; separately, a deployed group was found carrying a member the repo copy of that group does not list, which a deploy would have revoked for every user in the group. Reconcile group membership against the org before deploying a `PermissionSetGroup`, exactly as for a `PermissionSet`'s grants — see the Permission Set Architecture subsection below for the full model and both findings.
 
 #### `WITH SYSTEM_MODE` — the automation-path exception
 
@@ -942,6 +942,126 @@ Four properties are shared and load-bearing in both:
 
 **Known, deliberately deferred (review S2):** neither `lwc/loiCounterOffer` nor `lwc/psaVersionLog` re-words its `directionOptions` picker on a sale. Both are functionally correct (the service rewrites the token); only the two labels read buy-side. The safe fix is a **server-supplied side flag on the existing read response** — never a client-side `Disposition__c` read, which would make the live acquisition cards depend on an FLS grant acquisitions personas deliberately lack. One shape serves both.
 
+### Permission Set Architecture — the seven-layer model (added 2026-08-10)
+
+The 2026-08-10 permission set cleanup — which added `Opportunity_Stage_Actions_Access`, the
+Opportunity twin of `Lead_Stage_Actions_Access` — made explicit a layering model the split sets had
+already followed **implicitly** since the 2026-07-22 RBAC build. This subsection is that model,
+written down so a future reviewer can tell a deliberate structure from an accident before they "fix"
+it. The one-time migration mechanics, the per-set residual arithmetic and the staged retirement
+runbook live in `docs/permission-set-retirement-runbook.md` and `docs/2026-08-10-permission-set-
+cleanup.md`; this section states the **standing rules**, not the migration itself.
+
+**Seven layers, one job each:**
+
+| # | Layer | Contains ONLY | Examples |
+| --- | --- | --- | --- |
+| 1 | Base | license-level `userPermissions` | `DPEG_Base_Access` |
+| 2 | App visibility | `applicationVisibilities` + `tabSettings` | `DPEG_App_Acquisition`, `_Disposition`, `_Transaction`, `_PropertyMgmt` |
+| 3 | Module data | `objectPermissions` + `fieldPermissions` + `recordTypeVisibilities`, for ONE module at ONE access level | `DPEG_Acquisition_Edit`/`_View`, `DPEG_Disposition_Edit`/`_View`, `DPEG_PropertyMgmt_Edit`/`_View`, `DPEG_Transaction_Edit`/`_View`, `DPEG_Contact_Edit`/`_View` |
+| 3b | Module data, fine-grained | a deliberate SUBSET of a layer-3 set, existing so a persona can take one object without the whole module | `DPEG_Opportunity_View`, `DPEG_Property_View`, `DPEG_PropertyAsset_View`, `DPEG_Task_Edit`, `DPEG_TaskChecklist_View` |
+| 4 | Capability | `classAccesses` + the platform `userPermissions` a named feature needs | `Lead_Stage_Actions_Access`, `Opportunity_Stage_Actions_Access`, `Broker_Protection_Access` |
+| 5 | Authorization flag | exactly ONE `fieldPermissions` entry on a `User.*` field, read by a two-factor gate | `Acquisition_Deal_Driver`, `Disposition_Deal_Driver` |
+| 6 | Persona group | a `PermissionSetGroup` composing layers 1–5 | `DPEG_Junior_Analyst_PSG`, `DPEG_Principal_PSG`, `DPEG_Transaction_Team`, `DPEG_Property_Management_Team` |
+| 7 | Profile restoration | tabs / FLS / apps / record types the profile grants but that never deploy | `DPEG_Admin_Access` — exists ONLY because `profiles/**` is `.forceignore`d |
+
+A user is assigned a **group** (layer 6), not a list of individual sets. The two deliberate exceptions
+are layer-5 flag sets and layer-4 capability sets whose population is narrower than any group, which
+are assigned directly (`Acquisition_Deal_Driver`, `Disposition_Deal_Driver`).
+
+**Subset ≠ duplicate.** `DPEG_Opportunity_View`, `DPEG_Property_View` and `DPEG_PropertyAsset_View`
+are each a strict subset of a larger layer-3 set (`DPEG_Acquisition_View` for the first two,
+`DPEG_PropertyMgmt_View` for the third) and are **correct, not redundant** — they exist so the
+Transaction team can read Opportunity/Property without inheriting the rest of Acquisitions (LOI, NDA,
+Underwriting, Counter Offer, PSA Version, Deal Message), and so any non-PM persona can read the
+Property Asset (Sell Meter / Disposition surfaces) without pulling in the 15-object PM module.
+Collapsing either pair to "remove duplication" forces over-granting. `DPEG_PropertyMgmt_Edit` /
+`_View` overlapping on 13 of their 15 objects is the identical pattern one level up: `_View` alone
+carries the read-only carve-out for the Yardi-mirrored `Work_Order__c` / `Work_Order_Activity__c`
+(§1: "mirrored **read-only** from Yardi. No write-back except the Delay Reason flag"), which is why
+`DPEG_Property_Management_Team` composes **both** — merging them would make the read-only mirror
+editable. Name subset sets so a future reviewer finds the reason before they find the redundancy.
+
+**The capability/authorization split, generalised.** The "Opportunity deal-action gate is TWO-FACTOR"
+subsection above describes one instance of a general pattern: a layer-4 capability set answers "can
+this code be reached at all", and a layer-5 authorization-flag set answers "is this specific user
+allowed". `Opportunity_Stage_Actions_Access` (capability — Apex invoke on
+`OpportunityActionPermissionController`, `StageAdvanceController`, `OpportunityApprovalController`,
+`RecordStageAdvanceController`) and `Acquisition_Deal_Driver` (authorization — FLS read on
+`User.Deal_Driver__c`) are the two factors of that one gate and **must never be merged in either
+direction** — moving the FLS into the capability set, or replacing the flag read with a permission-set
+MEMBERSHIP check, both collapse two factors to one for the whole population of whichever set absorbs
+the other. `OpportunityActionPermissionServiceTest.hasDealActionAccess_membershipWithoutTheFlag_isStillDenied`
+is the falsifier; do not modify it. The disposition side follows the identical shape:
+`Disposition_Deal_Driver` (FLS on `User.Disposition_Driver__c`) is `RecordStageAdvanceController`'s
+authorization half for the `Disposition_NDA` record type's gate, reached through
+`DispositionActionPermissionService` — same two classes of set, same non-negotiable separation.
+
+**🔴 A permission set cannot be narrowed below the population that must ask it a question — the
+non-obvious rule this cleanup discovered, and the reason it belongs in this document rather than only
+in a design doc.** Apex class access is granted PER-CLASS, not per-method, so a class holding both a
+permission-QUESTION method and an ACTION method cannot be narrowed at all: `RecordStageAdvanceController`
+holds the cacheable `hasStageActionAccess` (called by `c/recordStageGuard` for **any** user who clicks,
+driver or not) alongside `advance`/`advanceTo`, so no edit to any permission set separates them — it
+must stay in the broad `DPEG_Apex_Access` catch-all *and* in its capability set.
+`OpportunityActionPermissionController` is the same shape for one method: its own class header states
+that a non-driver must still be able to invoke `hasDealActionAccess()` so it can honestly answer
+`false`. Narrowing either class's access does not fail open or closed cleanly — it fails **loud and
+wrong**: `c/dealActionGuard` and `c/recordStageGuard` both push `error.body.message` straight into a
+toast, so a non-authorized user would see raw platform text ("You do not have access to the Apex class
+named …") instead of the clean denial §5 requires. **The gate still fails CLOSED, so no automated test
+catches this** — it is a message-quality and diagnosability defect, not a security hole, which is
+exactly what makes it worth writing down rather than trusting review to catch it a second time.
+`DPEG_Apex_Access` therefore shed only the two ACTION-ONLY classes on 2026-08-10
+(`StageAdvanceController`, `OpportunityApprovalController` — each reachable only after its guard has
+already returned `true`), going from **28 classes to 26**, while `OpportunityActionPermissionController`
+and `RecordStageAdvanceController` stay in both the catch-all and their capability set on purpose. The
+identical, older precedent is `LeadActionPermissionController`, which has sat in both
+`DPEG_Apex_Access` and `Lead_Stage_Actions_Access` since the original RBAC build for the same reason —
+this is not a new exception, it is the second instance of an existing one.
+
+**Residual analysis before retirement — pairwise overlap does NOT prove coverage.** The measured
+proof: a repo-wide grep for the `standard-Task` tab returns exactly two files —
+`Property_Management_Access` and `Transaction_App_Access` — both of which were on the 2026-08-10
+retirement list. No `DPEG_App_*` set, no module set, and not `DPEG_Admin_Access` carries it. Retiring
+both, as the pairwise overlap numbers alone suggested was safe, would have deleted the Salesforce
+Tasks tab from the repo entirely, with no deploy error and no failing test. Measured residuals
+(grants present in the doomed set and absent from the union of its named replacements, computed
+against **deployed org state**, not repo files, because several repo files are ahead of the org):
+`Acquisitions_Dashboard_Access` 0/3, `Acquisition_App_Access` 0/4, `Transaction_App_Access` 15/56,
+`Property_Management_Access` 39/225, `DPEG_Acquisitions` 59/459. Only the first two are proven-zero;
+the other three carry named, unresolved residuals — service-class access that needs verifying rather
+than assuming (a class invoked only from a Flow/trigger may need no class access at all),
+`Task`/`Event` field `editable` bits, `allowDelete` rights, and — for Property Management — a genuine
+**policy** question about whether Work Order write access should be restored or the documented
+read-only Yardi-mirror contract simply enforced by the retirement. Full per-set breakdown:
+`docs/permission-set-retirement-runbook.md` §4.
+
+**Retirement order is GRANT → VERIFY in-org → REMOVE assignment → DELETE — never delete first.** Every
+step in between has an in-org half that no deploy performs or verifies: `PermissionSetAssignment` and
+`PermissionSetGroup` membership are not deployable metadata, and `profiles/**` is `.forceignore`d, so
+there is no profile-level fallback if a retirement removes access a doomed set was silently the only
+source of. The full sequence this program runs (RECONCILE → CLOSE RESIDUAL → GRANT → VERIFY → REMOVE
+→ SOAK → DELETE) and the staged retirements it governs are in
+`docs/permission-set-retirement-runbook.md`; this subsection states the rule, that document runs it.
+
+**Reconcile org → repo before editing ANY existing permission set — including a `PermissionSetGroup`.**
+The Standards bullet above already states the per-set field-permission hazard and its general fix; two
+2026-08-10 findings sharpen it (full writeup: `docs/2026-08-10-permission-set-cleanup.md`). First,
+`DPEG_Admin_Access` carried six `recordTypeVisibilities` live in the org and absent from the repo file
+one day after a 2026-08-09 reconciliation had recorded zero org-only grants in it — proof that a past
+clean reconciliation is a snapshot, not a standing guarantee. Second, a deployed **`PermissionSetGroup`
+was found carrying a member the repo copy of that group does not list** — the identical
+REPLACE-not-merge hazard one layer up, on group membership rather than field permissions. A group
+deploy replaces its member list wholesale, so deploying a repo copy that is missing a member silently
+revokes that member's access for every user in the group. **Reconcile a `PermissionSetGroup`'s
+membership against the org before deploying it, exactly as you would a `PermissionSet`'s grants.**
+
+⚠ More generally, this org contains metadata that has no counterpart in this repo at all — permission
+sets, groups and record types built directly in `usman-dpeg`. A green deploy against `usman-dpeg`
+therefore does **not** establish that the same source deploys to a fresh scratch org, and the repo is
+not a complete description of the org's access model.
+
 ### Reference Implementations
 
 - Selector pattern: `.claude/skills/sf-apex/references/AccountSelector.cls`
@@ -983,6 +1103,54 @@ the API key lives entirely in the `OpenAI_Credential` External Credential's `Nam
 authentication parameter, entered in Setup **post-deploy**. Full justification is in the class header
 of `LLMExtractionCalloutService.cls`; see `docs/2026-07-24-broker-protection.md` for the complete
 feature writeup.
+
+### 3.4 Deliberate, Temporary Exception — Direct Microsoft Graph Callout (SharePoint)
+
+Salesforce holds a `SharePoint` Named Credential pointing **directly** at
+`https://graph.microsoft.com/v1.0`, authenticated by the `SharePoint_Credential` External Credential
+(OAuth 2.0, client-credentials flow, Entra app registration in the DPEG tenant). This bypasses §3.1's
+ASB-only rule and is the **second** such exception after §3.3. The user explicitly acknowledged and
+accepted this exception at the design gate on 2026-08-10.
+
+**Why:** no ASB SharePoint/Graph spoke exists, so there is nothing on the bus to route to — the same
+condition that justified §3.3. Document storage for the acquisitions deal tree is a first-party
+Microsoft 365 tenant DPEG already owns and administers, so no third-party secret is being spread
+across systems: the only credential involved is DPEG's own Entra client secret.
+
+**Scope and reversibility:** the exception is confined to one Named Credential and one External
+Credential. Retiring it means repointing the Named Credential's URL at the ASB spoke and moving the
+client secret into ASB's secrets vault; no Apex signature changes, because every future callout would
+go through `callout:SharePoint/...`. **Retire this exception when ASB exposes a SharePoint/Graph
+spoke.**
+
+**Credentials are never hardcoded.** The client secret lives entirely in the `SharePoint_Credential`
+External Credential's `SharePoint_Principal` authentication parameter, entered in Setup **post-deploy**,
+and is never serialized into metadata or source control. The client ID
+(`1d572fdf-ab40-4a45-ba61-97243274b6ee`) is a public application identifier and is not a secret.
+
+⚠ **`SharePoint_Credential` itself is deliberately NOT shipped as metadata in this repo** — unlike
+`OpenAI_Credential`. The OAuth 2.0 / client-credentials `ExternalCredential` XML shape could not be
+confirmed via `salesforce-api-context` MCP at API 67.0 (the tool is unavailable in this environment),
+and the one in-repo precedent, `OpenAI_Credential`, is `authenticationProtocol Custom` — a different
+protocol with a different parameter shape that does not reliably transfer to OAuth. Per the design's
+own fallback (`agent-output/design-requirements-sharepoint-credentials.md` §3 A1 / §10), a malformed
+guess here fails at token-acquisition time with an opaque Azure error, which is worse than not
+shipping the file — so the External Credential is created **by hand in Setup** (Authentication
+Protocol = OAuth 2.0, Flow = Client Credentials with Client Secret, one Named Principal literally
+named `SharePoint_Principal`), and only `SharePoint.namedCredential-meta.xml` +
+`SharePoint_Integration_Access.permissionset-meta.xml` are deployed metadata. **The permission set
+will not deploy until the hand-built External Credential exists in the org** — it references
+`SharePoint_Credential-SharePoint_Principal` by name.
+
+**Access:** granted by the `SharePoint_Integration_Access` permission set (External Credential
+Principal Access + `UserExternalCredential` read — the latter required to invoke ANY Named
+Credential, per the `Broker_Protection_Access` precedent found live 2026-08-01). ⚠
+`PermissionSetAssignment` is not deployable metadata — assignment is an in-org step and is not
+represented in this repo.
+
+⚠ **This is the second direct-callout exception.** §3.1 still describes the intended architecture,
+but two standing exceptions is the point at which a third should trigger a review of whether the rule
+or the reality needs to change, rather than another exception block.
 
 ---
 

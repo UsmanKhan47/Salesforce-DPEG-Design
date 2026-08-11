@@ -9,10 +9,12 @@
  * USER_MODE PROOF NUANCE (design mismatch flagged to the orchestrator): unlike the
  * Task standard-object proof, this query selects the CUSTOM Contact.Broker_Firm__c
  * and filters the CUSTOM Contact.Is_Broker__c. A bare Standard User has no FLS on
- * those custom fields, so USER_MODE would throw. The DPEG_Acquisitions permission
- * set is the ONLY permset granting them, so the runAs proof assigns it — mirroring
- * the real broker-options persona, and confirming USER_MODE returns rows once the
- * grants are present.
+ * those custom fields, so USER_MODE would throw. The runAs proof therefore assigns
+ * DPEG_Contact_Edit, the layer-3 module set that owns broker Contact access —
+ * mirroring the real broker-options persona, and confirming USER_MODE returns rows
+ * once the grants are present. (This read DPEG_Acquisitions until 2026-08-10; that
+ * monolith was retired and it was never the ONLY grantor — DPEG_Contact_Edit and
+ * DPEG_Contact_View both carry these fields.)
  *
  * @see force-app/main/default/classes/TaskSelectorTest.cls (P4 standard-object template)
  * @see agent-output/p4-selector-design.md (§3 #19, §5, §7)
@@ -61,6 +63,20 @@ private class ContactSelectorTest {
 
     /**
      * Standard-object USER_MODE proof (design §5/§7). A freshly created Standard
+     * User granted the DPEG_Contact_Edit permission set (which grants Contact CRUD
+     * plus FLS on the custom Contact.Is_Broker__c / Broker_Firm__c this query touches)
+     * reads broker rows under WITH USER_MODE. The broker Contacts are inserted INSIDE
+     * runAs so the Standard User owns them (removing sharing as a variable and isolating
+     * the FLS question). The User + PermissionSetAssignment DML is isolated in its own
+     * runAs block to avoid MIXED_DML_OPERATION with the non-setup Contact DML.
+     *
+     * ⚠ This named DPEG_Acquisitions until 2026-08-10, when that legacy monolith was
+     * retired (docs/permission-set-retirement-runbook.md). The query below resolves a
+     * permission set BY NAME, so deleting the named set fails this test with
+     * "System.QueryException: List has no rows for assignment to SObject" rather than
+     * with an FLS assertion — i.e. the failure does NOT look like a permission problem.
+     * DPEG_Contact_Edit is the conformant successor: it is the layer-3 module set that
+     * owns broker Contact access, so it is the correct grant to prove FLS with here.
      * User granted the DPEG_Acquisitions permission set (which grants FLS on the
      * custom Contact.Is_Broker__c / Broker_Firm__c this query touches) reads broker
      * rows under WITH USER_MODE. The broker Contacts are inserted INSIDE runAs so the
@@ -82,6 +98,7 @@ private class ContactSelectorTest {
     @isTest
     static void selectBrokersOrderedByName_standardUserWithGrants_userModeReturnsRows() {
         User standardUser = buildStandardUser();
+        Id permSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Contact_Edit' LIMIT 1].Id;
         Id acqPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Acquisitions' LIMIT 1].Id;
         Id contactEditPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Contact_Edit' LIMIT 1].Id;
         System.runAs(new User(Id = UserInfo.getUserId())) {
@@ -101,9 +118,9 @@ private class ContactSelectorTest {
             List<Contact> rows = ContactSelector.selectBrokersOrderedByName();
 
             Assert.areEqual(2, rows.size(),
-                'A Standard User granted DPEG_Acquisitions reads broker Contacts under WITH USER_MODE');
+                'A Standard User granted DPEG_Contact_Edit reads broker Contacts under WITH USER_MODE');
             Assert.isNotNull(rows[0].Broker_Firm__c,
-                'Broker_Firm__c (custom, FLS-controlled) is readable under USER_MODE once DPEG_Acquisitions grants it');
+                'Broker_Firm__c (custom, FLS-controlled) is readable under USER_MODE once DPEG_Contact_Edit grants it');
         }
         Test.stopTest();
     }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Intentionally EMPTY. A destructive deploy still requires a package.xml; this one
+         declares no members, so the deploy performs deletions only. Do not add members here.
+         The comment sits INSIDE the root element by repo convention: a comment placed above
+         the root breaks source conversion with a misleading "unable to find matching parent
+         xml file" error. -->
+    <version>67.0</version>
+</Package>

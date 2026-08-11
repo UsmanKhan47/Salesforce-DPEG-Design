@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        This comment sits INSIDE the root element deliberately. A comment placed ABOVE
+        <PermissionSet> breaks `sf` at source conversion with the misleading error "unable to
+        find matching parent xml file". Disposition_Deal_Driver, Broker_Protection_Access and
+        DPEG_Admin_Access are the precedents for this pattern; it is used here because the
+        rationale below is far longer than the 255-character cap on <description>.
+
+        WHAT THIS SET IS (added 2026-08-10). It is the Opportunity twin of
+        Lead_Stage_Actions_Access: a LAYER-4 CAPABILITY set, carrying Apex invoke access for the
+        stage quick actions and nothing else. Four classAccesses is the whole file. Every
+        omission below is deliberate and each is argued in its own paragraph - none of them is
+        an oversight, and none of them should be "completed" by a later tidy-up pass.
+
+        ─────────────────────────────────────────────────────────────────────────────
+        1. WHY THERE IS NO User.Deal_Driver__c FLS HERE - THE TWO-FACTOR SEPARATION
+        ─────────────────────────────────────────────────────────────────────────────
+        THE RULE: this set carries the CAPABILITY (invoke the controllers).
+        Acquisition_Deal_Driver carries the AUTHORIZATION (User.Deal_Driver__c FLS). They are
+        two factors of one gate and must never be merged, in either direction. DO NOT ADD A
+        fieldPermissions ENTRY FOR ANY User.* FIELD TO THIS FILE.
+
+        OpportunityActionPermissionService.hasDealActionAccess() asks two independent questions
+        (ARCHITECTURE.md section 2, "Opportunity deal-action gate is TWO-FACTOR"):
+          (a) CAPABILITY  - can the user reach the code at all? Today: Apex class access.
+          (b) AUTHORIZATION - FLS read on User.Deal_Driver__c (WITH USER_MODE inside
+              UserSelector; a denial THROWS and the service converts the throw to false) AND
+              Deal_Driver__c = true on the running user's own User record.
+
+        Acquisition_Deal_Driver exists solely to carry (b) and contains exactly one grant. If
+        this set also granted that FLS, the gate would not break today - the flag would still be
+        false for a non-driver - but the SEPARATION would be gone, and the next reviewer who
+        finds User FLS sitting in a capability set will reasonably fold the flag set into it, at
+        which point MEMBERSHIP SILENTLY BECOMES AUTHORIZATION for this set's whole population.
+        OpportunityActionPermissionServiceTest.hasDealActionAccess_membershipWithoutTheFlag_isStillDenied
+        is the falsifier that goes red if anyone tries; do not modify that test.
+
+        The identical rule governs User.Disposition_Driver__c / Disposition_Deal_Driver, which
+        RecordStageAdvanceController reaches through the Disposition_NDA record type's gate.
+        Neither User field belongs in this file.
+
+        ─────────────────────────────────────────────────────────────────────────────
+        2. WHY THERE ARE NO objectPermissions - AND WHY THIS DIFFERS FROM THE LEAD TWIN
+        ─────────────────────────────────────────────────────────────────────────────
+        Lead_Stage_Actions_Access carries Account / Contact / Lead object grants because
+        Database.convertLead writes to Account and Contact, which the Lead module sets do not
+        otherwise cover. The Opportunity actions have no analogue: DPEG_Acquisition_Edit already
+        grants Opportunity and all six stage-controlled child objects (LOI__c, NDA__c,
+        Underwriting__c, Contract_Review__c, Development_Feasibility_Review__c,
+        Construction_Feasibility_Review__c), and every deal driver holds it through
+        DPEG_Junior_Analyst_PSG. Adding those objects here would create exactly the duplication
+        this set was introduced alongside a cleanup to REMOVE. Omitting them is the point.
+
+        ─────────────────────────────────────────────────────────────────────────────
+        3. WHY THERE ARE NO fieldPermissions AT ALL - MEASURED, NOT ASSUMED
+        ─────────────────────────────────────────────────────────────────────────────
+        RecordStageAdvanceService.load() dispatches to each object's own selectStageRequiredById,
+        all of which are WITH USER_MODE - and USER_MODE THROWS rather than degrades, so an
+        ungranted field would be a hard failure, not a blank. Every stage field those six queries
+        select was checked against DPEG_Acquisition_Edit UNION DPEG_Disposition_Edit on
+        2026-08-10, in BOTH the deployed org state (retrieved from usman-dpeg) and the repo
+        state, and all six are readable AND editable in both:
+
+            NDA__c.Status__c                             LOI__c.Stage__c
+            Underwriting__c.Stage__c                     Contract_Review__c.Negotiation_Status__c
+            Construction_Feasibility_Review__c.Stage__c  Development_Feasibility_Review__c.Stage__c
+
+        The seventh selected field, RecordTypeId, carries no field-level security at all, so it
+        cannot be granted anywhere and needs no entry. Those FLS grants are load-bearing, but
+        they live in the MODULE DATA sets where they belong. Duplicating them here would put one
+        grant in two homes and would make this file a second place to maintain when a stage field
+        is renamed.
+
+        ─────────────────────────────────────────────────────────────────────────────
+        4. WHY THERE ARE NO userPermissions
+        ─────────────────────────────────────────────────────────────────────────────
+        Lead_Stage_Actions_Access carries ConvertLeads because Lead conversion is gated by a
+        platform user permission. Opportunity stage advance and Submit for Approval have no
+        equivalent platform user permission. There is nothing to grant, not something omitted.
+
+        ─────────────────────────────────────────────────────────────────────────────
+        5. TWO OF THESE FOUR CLASS GRANTS ARE A DELIBERATE DUPLICATE OF DPEG_Apex_Access
+        ─────────────────────────────────────────────────────────────────────────────
+        THIS IS THE SPECIFIC THING A FUTURE "NO DUPLICATION" PASS WILL TRY TO REMOVE. It is
+        correct and it must stay. OpportunityActionPermissionController and
+        RecordStageAdvanceController are granted BOTH here and in DPEG_Apex_Access, because both
+        hold a permission-QUESTION method that a NOT-authorized user must still be able to
+        reach so it can honestly answer false. If class access were narrowed to the deal-driver
+        population, an unauthorized user's call would fail with an Apex access error instead of a
+        clean denial, and lwc/dealActionGuard and lwc/recordStageGuard both surface
+        error.body.message straight into a toast - so the user would see raw platform text
+        ("You do not have access to the Apex class named ..."), which ARCHITECTURE.md section 5
+        forbids. The gate still fails CLOSED, so this is a message-quality and diagnosability
+        defect rather than a security hole - but it is an avoidable regression.
+
+        RecordStageAdvanceController is worse than a preference: APEX CLASS ACCESS IS PER-CLASS,
+        NOT PER-METHOD, and that one class holds both the cacheable question
+        (hasStageActionAccess, called by recordStageGuard for anyone who clicks) and the actions
+        (advance / advanceTo). It is structurally un-narrowable.
+
+        Lead_Stage_Actions_Access already does exactly this with LeadActionPermissionController,
+        for exactly this reason. That is the established precedent, not an inconsistency.
+
+        Only the two ACTION-ONLY classes were shed from DPEG_Apex_Access in the same change -
+        StageAdvanceController and OpportunityApprovalController - because both are reachable
+        only after a guard has already returned true, so a non-driver never calls them.
+
+        ─────────────────────────────────────────────────────────────────────────────
+        6. THE NAME SAYS "OPPORTUNITY"; THE SET ALSO CARRIES A DISPOSITION PATH (Gate 1, Q1)
+        ─────────────────────────────────────────────────────────────────────────────
+        RecordStageAdvanceController also serves the Disposition_NDA record type, whose gate is
+        DISPOSITION_DRIVER / User.Disposition_Driver__c - NOT the Opportunity gate. So a set
+        named for Opportunity carries the capability for a disposition action too.
+
+        This is harmless today only because DPEG_Junior_Analyst_PSG is the single persona holding
+        both DPEG_Acquisition_Edit and DPEG_Disposition_Edit. IT BECOMES A NAMING DEFECT THE DAY A
+        DISPOSITION-ONLY PERSONA EXISTS, who would then be assigned an "Opportunity" set in order
+        to drive a sale. The name was accepted at Gate 1 as requested; splitting into two
+        capability sets now would add a set to solve a problem nobody has. Revisit at the moment a
+        disposition-only persona is created - that is the trigger, not a calendar date.
+
+        ─────────────────────────────────────────────────────────────────────────────
+        7. SEQUENCING - THIS SET AND THE DPEG_Apex_Access TRIM ARE ONE CHANGE, IN ORDER
+        ─────────────────────────────────────────────────────────────────────────────
+        While the four classes remain in DPEG_Apex_Access (which is in all four PSGs), adding
+        this set to DPEG_Junior_Analyst_PSG grants ZERO additional effective access - permission
+        sets union, so the classes are already reachable. This set only becomes load-bearing at
+        the moment the two action controllers leave the catch-all. Therefore: DEPLOY AND JOIN
+        FIRST, WAIT FOR PERMISSION SET GROUP RECALCULATION, VERIFY, TRIM SECOND. Never the
+        reverse - the reverse order breaks the live deal-driver buttons between the two deploys.
+
+        ASSIGNMENT IS AN ORG ACTION, NOT DEPLOYABLE METADATA. Deploying this set grants nobody
+        anything until DPEG_Junior_Analyst_PSG finishes recalculating. And an administrator smoke
+        test proves nothing about this gate: a bare System Administrator has no FLS on
+        User.Deal_Driver__c either (Metadata-API-deployed custom fields arrive with no field
+        permissions for ANY profile), which is why the service checks Modify All Data BEFORE it
+        reads the flag. Acceptance-test as a real deal-driver persona.
+    -->
+    <classAccesses>
+        <apexClass>OpportunityActionPermissionController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>OpportunityApprovalController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>RecordStageAdvanceController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>StageAdvanceController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <description>Capability set for the Opportunity and child-object stage quick actions: Apex invoke access only. It does NOT grant User.Deal_Driver__c FLS - that is Acquisition_Deal_Driver&apos;s job and the gate is two-factor. Assign with DPEG_Acquisition_Edit.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Opportunity Stage Actions Access</label>
+</PermissionSet>

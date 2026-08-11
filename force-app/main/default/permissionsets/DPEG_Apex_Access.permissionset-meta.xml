@@ -69,14 +69,63 @@
         <apexClass>OnboardingController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      ══ STAGE-ACTION CLASSES: TWO LEFT THIS SET ON 2026-08-10, TWO STAYED. READ BEFORE EDITING. ══
+
+      The four Opportunity / child-object stage-action controllers all moved into the new layer-4
+      capability set Opportunity_Stage_Actions_Access. Only TWO were REMOVED from here:
+
+          REMOVED  StageAdvanceController          (was immediately below this comment)
+          REMOVED  OpportunityApprovalController   (was immediately below this comment)
+
+      Both are ACTION-ONLY and are reachable only after lwc/dealActionGuard has already called
+      hasDealActionAccess() and received true, so a non-driver never invokes them. Narrowing them
+      to the deal-driver population costs nobody a clean denial.
+
+      🔴 THE OTHER TWO DELIBERATELY STAYED, AND MUST NOT BE "FINISHED OFF" BY A LATER PASS:
+
+          KEPT  OpportunityActionPermissionController   (see below, in alphabetical position)
+          KEPT  RecordStageAdvanceController            (see below, in alphabetical position)
+
+      Both hold a permission-QUESTION method whose entire job is to answer FALSE honestly for a
+      user who is NOT authorized. If class access were limited to the deal-driver personas, an
+      unauthorized user's call would fail with an Apex access error instead of a clean denial -
+      and lwc/dealActionGuard and lwc/recordStageGuard both push error.body.message straight into
+      a toast, so the user would be shown raw platform text ("You do not have access to the Apex
+      class named ..."), which ARCHITECTURE.md section 5 forbids. The gate still fails CLOSED, so
+      this is a message-quality and diagnosability regression rather than a security hole - but it
+      is entirely avoidable. OpportunityActionPermissionController's own class header states this
+      requirement in writing.
+
+      RecordStageAdvanceController is stronger than a preference: APEX CLASS ACCESS IS PER-CLASS,
+      NOT PER-METHOD, and that single class holds both the cacheable question
+      (hasStageActionAccess, called by recordStageGuard for ANY user who clicks) and the actions
+      (advance / advanceTo). It is structurally un-narrowable - there is no edit to this file that
+      separates them.
+
+      Those two class grants therefore appear in BOTH this file and
+      Opportunity_Stage_Actions_Access. THAT DUPLICATION IS DELIBERATE AND IS NOT THE DUPLICATION
+      THE 2026-08-10 CLEANUP WAS REMOVING. LeadActionPermissionController below is the identical,
+      older precedent - it sits in both this set and Lead_Stage_Actions_Access for exactly the
+      same reason.
+
+      ⚠ SEQUENCING: this removal is the destructive half of a two-deploy change and must go
+      SECOND. Opportunity_Stage_Actions_Access must already be deployed, already be a member of
+      DPEG_Junior_Analyst_PSG, and that group must have finished recalculating, before these two
+      classes leave this file. Verify afterwards as BOTH a real deal driver (buttons still work)
+      AND a non-driver (clean denial toast, NOT raw platform Apex-access text) - the non-driver
+      check is the one that would catch an error in the reasoning above.
+    -->
     <classAccesses>
         <apexClass>OpportunityActionPermissionController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
-    <classAccesses>
-        <apexClass>OpportunityApprovalController</apexClass>
-        <enabled>true</enabled>
-    </classAccesses>
+    <!--
+      OpportunityApprovalController was REMOVED here on 2026-08-10 and now lives only in
+      Opportunity_Stage_Actions_Access. Action-only: its single calling bundle
+      (submitForApproval) calls dealActionGuard.guardDealAction first, so a non-driver never
+      reaches it and loses no clean denial. Do not restore it here - see the long note above.
+    -->
     <classAccesses>
         <apexClass>OpportunityDocStatusController</apexClass>
         <enabled>true</enabled>
@@ -101,10 +150,13 @@
         <apexClass>SellMeterController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
-    <classAccesses>
-        <apexClass>StageAdvanceController</apexClass>
-        <enabled>true</enabled>
-    </classAccesses>
+    <!--
+      StageAdvanceController was REMOVED here on 2026-08-10 and now lives only in
+      Opportunity_Stage_Actions_Access. Action-only: every one of its four calling bundles
+      (advanceDealStage, dealSendToDevelopmentReview, dealSendToConstructionReview,
+      dealMoveToAboutToClose) calls dealActionGuard.guardDealAction first, so a non-driver never
+      reaches it and loses no clean denial. Do not restore it here - see the long note above.
+    -->
     <classAccesses>
         <apexClass>TransactionController</apexClass>
         <enabled>true</enabled>
