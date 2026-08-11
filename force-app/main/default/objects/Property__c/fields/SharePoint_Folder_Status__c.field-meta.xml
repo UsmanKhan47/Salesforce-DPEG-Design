@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SharePoint_Folder_Status__c</fullName>
+    <description>State of the SharePoint deal-folder creation for this property. This is DealFolderSweepBatch's work queue field, not bookkeeping — the sweep selects rows in Pending/Failed and leaves Created/Skipped alone.</description>
+    <label>SharePoint Folder Status</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Pending</fullName>
+                <default>false</default>
+                <label>Pending</label>
+            </value>
+            <value>
+                <fullName>Created</fullName>
+                <default>false</default>
+                <label>Created</label>
+            </value>
+            <value>
+                <fullName>Failed</fullName>
+                <default>false</default>
+                <label>Failed</label>
+            </value>
+            <value>
+                <fullName>Skipped</fullName>
+                <default>false</default>
+                <label>Skipped</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -27,17 +27,26 @@
         single remaining factor for everyone in it. Note that (b) is a field VALUE on a User
         record - no permission set can grant it, which is exactly why the two factors are
         independent and why only (a) is at risk from a membership change.
+
+        SharePoint_Integration_Access joined this group on 2026-08-11 (SharePoint deal-folder
+        feature, design D1-A/scoped-persona user decision) and THIS GROUP ONLY. The user
+        deliberately declined DPEG_Transaction_Team even though the design doc's default
+        recommendation lists both persona groups - do not "correct" this by adding it there.
+        Membership was reconciled against the org before this edit; the deployed group carried no
+        member absent from this file (see ARCHITECTURE.md §2's 2026-08-10 finding on this exact
+        hazard - a PermissionSetGroup deploy replaces its member list wholesale).
     -->
-    <permissionSets>DPEG_Base_Access</permissionSets>
-    <permissionSets>DPEG_Apex_Access</permissionSets>
-    <permissionSets>Opportunity_Stage_Actions_Access</permissionSets>
     <permissionSets>DPEG_Acquisition_Edit</permissionSets>
-    <permissionSets>DPEG_Disposition_Edit</permissionSets>
-    <permissionSets>DPEG_Transaction_View</permissionSets>
-    <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
-    <permissionSets>DPEG_Contact_Edit</permissionSets>
+    <permissionSets>DPEG_Apex_Access</permissionSets>
     <permissionSets>DPEG_App_Acquisition</permissionSets>
     <permissionSets>DPEG_App_Disposition</permissionSets>
     <permissionSets>DPEG_App_Transaction</permissionSets>
+    <permissionSets>DPEG_Base_Access</permissionSets>
+    <permissionSets>DPEG_Contact_Edit</permissionSets>
+    <permissionSets>DPEG_Disposition_Edit</permissionSets>
+    <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
     <permissionSets>DPEG_TaskChecklist_View</permissionSets>
+    <permissionSets>DPEG_Transaction_View</permissionSets>
+    <permissionSets>Opportunity_Stage_Actions_Access</permissionSets>
+    <permissionSets>SharePoint_Integration_Access</permissionSets>
 </PermissionSetGroup>

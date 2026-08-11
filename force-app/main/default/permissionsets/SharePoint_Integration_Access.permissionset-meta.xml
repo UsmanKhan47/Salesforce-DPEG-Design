@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        🔴 THIS SET WILL NOT DEPLOY UNTIL "SharePoint_Credential" EXISTS IN THE ORG.
+        `externalCredentialPrincipalAccesses.externalCredentialPrincipal` below references
+        "SharePoint_Credential-SharePoint_Principal" by name. Per the admin-agent decision recorded
+        in ARCHITECTURE.md §3.4, the `SharePoint_Credential` External Credential is deliberately NOT
+        shipped as metadata in this repo (the OAuth 2.0 / client-credentials ExternalCredential XML
+        shape could not be confirmed via salesforce-api-context MCP at API 67.0, and the in-repo
+        precedent, OpenAI_Credential, is authenticationProtocol "Custom" — a different protocol with
+        a different parameter shape that does not transfer). It must be created BY HAND in Setup
+        first (Auth. Protocol = OAuth 2.0, Flow = Client Credentials with Client Secret, one Named
+        Principal literally named "SharePoint_Principal"). Deploy this permission set (and
+        SharePoint.namedCredential-meta.xml) only after that manual step is done.
+
+        UserExternalCredential object read is REQUIRED TO USE ANY Named Credential at all —
+        precedent: Broker_Protection_Access.permissionset-meta.xml carries the identical grant with
+        the identical justification ("without object read on UserExternalCredential the callout
+        throws before sending", found via debug log 2026-08-01 on this same org). Do not omit it.
+
+        No fieldPermissions, no classAccesses — there is no Apex in this request (design-requirements-
+        sharepoint-credentials.md §4). Keeping this file at zero field permissions also means the
+        REPLACE-not-merge permission-set-deploy hazard documented in ARCHITECTURE.md §2 (Standards)
+        has nothing to destroy on a future redeploy of this file.
+    -->
+    <description>Grants External Credential Principal Access to SharePoint_Credential (Microsoft Graph OAuth) plus UserExternalCredential read, required to invoke the SharePoint Named Credential. See ARCHITECTURE.md §3.4.</description>
+    <externalCredentialPrincipalAccesses>
+        <enabled>true</enabled>
+        <externalCredentialPrincipal>SharePoint_Credential-SharePoint_Principal</externalCredentialPrincipal>
+    </externalCredentialPrincipalAccesses>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>SharePoint Integration Access</label>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>UserExternalCredential</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+</PermissionSet>

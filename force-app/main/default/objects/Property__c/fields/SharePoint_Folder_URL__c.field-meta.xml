@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SharePoint_Folder_URL__c</fullName>
+    <description>webUrl of this property's SharePoint deal folder, returned by the Graph API create-folder callout. Blank until DealFolderService successfully creates (or finds, via conflictBehavior "rename") the folder.</description>
+    <label>SharePoint Folder URL</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Url</type>
+</CustomField>
