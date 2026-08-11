@@ -19,16 +19,21 @@
  *     repeat broker attaches instead of duplicating; internal, USER_MODE). This is
  *     the FIRST outer-class method here that reads the FLS-permissionable
  *     Contact.Email, so it is the first that can throw on FLS for a legitimate
- *     internal user — its caller owns the fail-soft.
+ *     internal user — its caller owns the fail-soft. **Scoped to Contact.Broker
+ *     (2026-08-10, IR segregation) — see that method's ApexDoc.**
  *
  * MODE — mixed, per method (each method's ApexDoc restates its own mode):
  *   • selectBrokersOrderedByName uses `WITH USER_MODE` (API 67). Design §5
  *     classifies the standard fields touched here: Name is permissionable=false
  *     (always readable). The query also selects the custom Contact.Broker_Firm__c
  *     and filters on the custom Contact.Is_Broker__c; BOTH are FLS-controlled custom
- *     fields granted by the DPEG_Acquisitions permission set (the only permset
- *     granting them — see the SelectorTest runAs proof). USER_MODE therefore
- *     enforces the running user's FLS on those custom fields.
+ *     fields granted by the DPEG_Acquisitions permission set (see the SelectorTest
+ *     runAs proof). ⚠ CORRECTED 2026-08-10 (IR segregation, Task 6): DPEG_Acquisitions
+ *     is NOT the only permset granting them — DPEG_Contact_Edit / DPEG_Contact_View
+ *     (Task 2) also grant Contact-field FLS to reach the Contact.Broker record type,
+ *     and the SelectorTest runAs fixture itself now assigns both. USER_MODE therefore
+ *     enforces the running user's FLS on those custom fields, from whichever permset
+ *     supplies it.
  *   • selectBrokersRankedByClosedVolume and selectTopBrokersByActiveListings use
  *     `WITH USER_MODE`. They select Name (permissionable=false) plus SEVEN custom
  *     Contact fields (Broker_Firm__c, Broker_Specialty__c, Broker_Status__c,
@@ -213,11 +218,21 @@ public with sharing class ContactSelector {
      * QueryException and falls back to no-match so conversion never regresses (see
      * LeadConvertMatchService's fail-soft section). Left to propagate here by design.
      *
+     * RECORD TYPE SCOPE (2026-08-10, IR segregation). Restricted to Contact.Broker. The broker
+     * and investor populations are disjoint by policy, so this filter changes no behaviour
+     * today — it makes the guarantee STRUCTURAL. Without it, one shared email address between
+     * a broker and an investor would attach an acquisition deal to an IR Contact and its
+     * Investor_Entity Account, which is precisely the boundary this module exists to hold.
+     *
+     * ⚠ A Contact on the MASTER record type will not match. That is intended and is why the
+     * Task 3 backfill is gated on a zero-row query before OWD flips.
+     *
      * @param emails Broker email addresses to resolve (the converting Leads' Email values); null
      *               or empty returns an empty list WITHOUT querying.
-     * @return Matching Contacts with an Account (Id, Email, AccountId, CreatedDate) ordered
-     *         CreatedDate ASC, Id ASC; an empty list when the input is null/empty or nothing
-     *         matches (never null).
+     * @return Matching Broker-record-type Contacts with an Account (Id, Email, AccountId,
+     *         CreatedDate) ordered CreatedDate ASC, Id ASC; an empty list when the input is
+     *         null/empty, nothing matches, or the only matches are on a non-Broker record type
+     *         (never null).
      * @throws System.QueryException when the running user lacks read on Contact or Contact.Email.
      * @example
      * List<Contact> brokers = ContactSelector.selectByEmails(new Set<String>{ 'broker@firm.com' });
@@ -229,7 +244,9 @@ public with sharing class ContactSelector {
         return [
             SELECT Id, Email, AccountId, CreatedDate
             FROM Contact
-            WHERE Email IN :emails AND AccountId != null
+            WHERE Email IN :emails
+              AND AccountId != null
+              AND RecordType.DeveloperName = 'Broker'
             WITH USER_MODE
             ORDER BY CreatedDate ASC, Id ASC
         ];

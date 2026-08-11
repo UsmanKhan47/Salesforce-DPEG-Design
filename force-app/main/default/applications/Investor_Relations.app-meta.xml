@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        CustomApplication.Description is capped at 255 characters. The full rationale below
+        is operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
+        be. Do not paste this back into <description>.
+
+        DPEG Investor Relations is the IR-record-type Lead/Contact/Account population,
+        segregated from Acquisitions. No actionOverrides: this task creates the app shell
+        only, on standard object pages; a dedicated IR record page is a follow-up, not part
+        of this task.
+    -->
+    <brand>
+        <headerColor>#0B5394</headerColor>
+        <logo>DPEG_Logo_Clear</logo>
+        <logoVersion>1</logoVersion>
+        <shouldOverrideOrgTheme>true</shouldOverrideOrgTheme>
+    </brand>
+    <description>DPEG Investor Relations - IR-record-type Lead/Contact/Account population, segregated from Acquisitions. App shell only; dedicated IR record page is a follow-up.</description>
+    <formFactors>Large</formFactors>
+    <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
+    <isNavPersonalizationDisabled>false</isNavPersonalizationDisabled>
+    <isNavTabPersistenceDisabled>false</isNavTabPersistenceDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
+    <label>Investor Relations</label>
+    <navType>Standard</navType>
+    <tabs>standard-Lead</tabs>
+    <tabs>standard-Contact</tabs>
+    <tabs>standard-Account</tabs>
+    <tabs>standard-report</tabs>
+    <uiType>Lightning</uiType>
+</CustomApplication>

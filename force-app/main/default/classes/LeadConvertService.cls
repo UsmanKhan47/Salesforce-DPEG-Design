@@ -1,7 +1,7 @@
 /**
  * Runs on lead conversion (from LeadConvertTrigger). Conversion is the approval to
  * underwrite (no separate lead-approval gate), so the converting user is stamped on
- * the Opportunity as Lead Approved By. Beyond that, four jobs in one transaction:
+ * the Opportunity as Lead Approved By. Beyond that, five jobs in one transaction:
  *
  *   1. Deal type / record type — carries the lead's Deal Type onto the new
  *      Opportunity and sets the matching Opportunity record type (Land or
@@ -28,6 +28,13 @@
  *   4. BROKER CONTACT ROLE (S2, 2026-08-03) — the submitting broker becomes visible
  *      on the deal as a primary OpportunityContactRole with Role = 'Broker'.
  *
+ *   5. BROKER RECORD TYPE STAMP (IR segregation, 2026-08-10) — Database.convertLead does NOT
+ *      map record types onto the Contact or the Account it creates; they take whatever is
+ *      default for the RUNNING USER'S PROFILE, which is unverifiable from source (profiles are
+ *      .forceignore'd in this repo) and can differ per persona. This stamps Contact.Broker and
+ *      Account.Broker_Firm deterministically, so the converted Account always lands on the
+ *      record type the post-OWD-flip sharing rules key on — see stampConvertedPartyRecordTypes.
+ *
  * ═══ THE OCR IS A READ-THEN-WRITE, NEVER A BLIND INSERT ═══
  * ⚠ STANDARD LEAD CONVERSION ALREADY CREATES AN OpportunityContactRole for the converted
  * Contact — IsPrimary = true, Role BLANK. Inserting our own row would therefore leave the
@@ -38,7 +45,7 @@
  * is correct whether or not the platform creates the row — it does not depend on undocumented
  * conversion behaviour — and it is naturally idempotent if this path ever re-runs.
  *
- * ═══ BULK SHAPE IS A CONTRACT: 2 SOQL, 3 DML (≤4 WORST CASE), CONSTANT ═══
+ * ═══ BULK SHAPE IS A CONTRACT: 2 SOQL, ≤5 DML, CONSTANT — WAS ≤4, RAISED 2026-08-10 ═══
  *   SOQL 1 — RecordTypeSelector (Land / Commercial)
  *   SOQL 2 — OpportunityContactRoleSelector (the rows conversion already created)
  *   DML  1 — Database.insert(properties, false)
@@ -46,10 +53,22 @@
  *   DML  3 — Database.update(roleUpdates, false)  ┐ the contact-role write, PARTITIONED.
  *   DML  4 — Database.insert(roleInserts, false)  ┘ Each is isEmpty()-guarded, and standard
  *            conversion always creates the role row, so the ORDINARY case is all-updates and
- *            spends exactly ONE statement here — 3 DML total. A batch mixing deals that have a
- *            conversion-created role with deals that do not would spend both, i.e. 4. That
- *            mixed batch is not reachable through this path (conversion behaves uniformly), so
- *            the bound is ≤4 rather than 3 purely as an honest statement of the code.
+ *            spends exactly ONE statement here. A batch mixing deals that have a
+ *            conversion-created role with deals that do not would spend both. That mixed batch
+ *            is not reachable through this path (conversion behaves uniformly).
+ *   DML  5 — Database.update(contactUpdates, false)  (IR segregation, 2026-08-10) — stamps
+ *            Contact.Broker onto every converted Contact in the chunk, ONE statement.
+ *   DML  6 — Database.update(accountUpdates, false)  (IR segregation, 2026-08-10) — stamps
+ *            Account.Broker_Firm onto every DISTINCT converted Account in the chunk, ONE
+ *            statement. "Distinct" matters here: several Leads can converge on ONE Account
+ *            (LeadConvertMatchService reusing an existing broker firm), and a duplicate Id in
+ *            one update statement throws DUPLICATE_VALUE — see stampConvertedPartyRecordTypes.
+ *
+ *   Both DML 5 and DML 6 are isEmpty()-guarded and CONSTANT IN BATCH SIZE — one statement for
+ *   every converted Contact in the chunk, one for every distinct converted Account, never one
+ *   per record. They are never both absent (every conversion produces a Contact and an
+ *   Account), so the honest worst case actually reachable through this path is DML 1, 2, one of
+ *   {3 or 4}, 5, 6 — five statements. The class-level contract is therefore 2 SOQL / ≤5 DML.
  *
  *   ⚠ WHY NOT ONE upsert: partitioning costs one conditional statement and removes an unknown.
  *   insert and update on OpportunityContactRole are certainly supported — the platform creates
@@ -156,8 +175,10 @@ public with sharing class LeadConvertService {
         // 2. Stamp every Opportunity: structural fields plus the deal-process set.  [SOQL 1, DML 2]
         List<Opportunity> updates = buildOpportunityUpdates(oppToLead, oppToPropertyId);
         update updates;
-        // 3. Put the converted Contact on the deal as the primary Broker.  [SOQL 2, DML 3]
+        // 3. Put the converted Contact on the deal as the primary Broker.  [SOQL 2, DML 3/4]
         stampBrokerContactRoles(oppToLead);
+        // 4. Stamp the converted Contact and Account with their broker record types.  [DML 5, DML 6]
+        stampConvertedPartyRecordTypes(oppToLead.values());
     }
 
     /**
@@ -464,6 +485,124 @@ public with sharing class LeadConvertService {
     /** Stable composite key for an (Opportunity, Contact) pair. */
     private static String pairKey(Id opportunityId, Id contactId) {
         return String.valueOf(opportunityId) + '|' + String.valueOf(contactId);
+    }
+
+    /**
+     * Stamp Contact.Broker and Account.Broker_Firm onto the records standard conversion just
+     * created (IR segregation, 2026-08-10).
+     *
+     * WHY THIS EXISTS. Database.convertLead does NOT map record types onto the Contact or the
+     * Account — they take whatever is default for the RUNNING USER'S PROFILE. Profiles are
+     * .forceignore'd in this repo, so that default is unverifiable from source and can differ
+     * per persona. Once Account OWD is Private, an Account on the wrong record type (or none)
+     * matches no sharing rule and takes its Contacts with it, because Contact is
+     * ControlledByParent. Deterministic beats depending on a file we cannot read.
+     *
+     * GOVERNOR CONTRACT — this raises the class budget from 3 DML to ≤5, and that was a
+     * deliberate decision, not drift (see the class header). Both statements are
+     * isEmpty()-guarded and both are CONSTANT IN BATCH SIZE, which is the property that
+     * actually matters: one statement for every converted Contact in the chunk, one for every
+     * converted Account, never one per record. A matched Account (LeadConvertMatchService
+     * reusing an existing broker firm) is already stamped from the Task 3 backfill, so the
+     * ordinary repeat-broker path writes fewer rows — but the statement count is what is
+     * pinned, so the contract states the worst case.
+     *
+     * Both use allOrNone = false for the same reason the Property insert does: a failure to
+     * stamp a record type must not roll back the structural RecordTypeId / Property__c link on
+     * the Opportunity, which `update updates` guarantees all-or-none above.
+     *
+     * ═══ FIX ROUND 1 (2026-08-10) — DIAGNOSED: THIS IS A PROVISIONING GAP, NOT AN APEX DEFECT ═══
+     * conversionStampsBrokerRecordTypesOnContactAndAccount failed with "Actual: null" after
+     * deploy. Reproduced live via a savepoint-wrapped anonymous-Apex probe against usman-dpeg
+     * (rolled back, no permanent org change) rather than by inspection:
+     *   - recordTypeId(Contact.SObjectType, 'Broker') and recordTypeId(Account.SObjectType,
+     *     'Broker_Firm') both resolve non-null Ids, but Schema.RecordTypeInfo.isAvailable()
+     *     returns FALSE for both, for the exact principal every Apex test and anonymous
+     *     execution runs as in this org (usman.khan.dpeg@avanzasolutions.com, System
+     *     Administrator profile, WITH DPEG_Admin_Access assigned).
+     *   - Forcing the identical Database.update the guard would otherwise skip confirms
+     *     isAvailable() is telling the truth, not lying: it fails with
+     *     INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY, "invalid record type" (the update path)
+     *     and INVALID_CROSS_REFERENCE_KEY, "Record Type ID... isn't valid for the user" (the
+     *     insert path) — the same shape TestDataFactory.recordTypeId's header already documents
+     *     for this org.
+     *   - ConvertedContactId / ConvertedAccountId ARE populated correctly at this point (verified
+     *     by direct read-back), and nothing runs afterward to clear a stamp that never landed —
+     *     ruling out hypotheses 2-4 the fix-round brief asked to check first.
+     *   - ROOT CAUSE, confirmed by a read-only metadata retrieve of the LIVE org copy of
+     *     DPEG_Admin_Access (not the repo file): the org's deployed permission set does NOT
+     *     contain the six IR-segregation <recordTypeVisibilities> entries the repo file declares
+     *     (Account.Broker_Firm, Account.Investor_Entity, Contact.Broker, Contact.Investor,
+     *     Lead.Acquisition_Broker, Lead.IR_Investor) — only the pre-existing ones (Contract
+     *     Review / Disposition / LOI / NDA / Opportunity) are live. Task 2's grant was committed
+     *     to source but never actually landed in the org; the record types themselves (Task 1)
+     *     did land, which is why they resolve to a non-null Id and why this looked like a
+     *     visibility-check bug rather than a deploy gap. THIS APEX WAS NEVER THE PROBLEM — the
+     *     guard is doing exactly what it is supposed to do, silently and correctly, in front of a
+     *     principal the org has not yet provisioned. Remedy is a permission-set redeploy, out of
+     *     this class's scope and out of Apex's control entirely — no code change here can fix it.
+     *
+     * ═══ HOW A SKIPPED STAMP BECOMES VISIBLE ═══ (the fix-round brief's "think carefully" ask)
+     * allOrNone = false is kept for the reason stated above; a hard throw here would take down
+     * every conversion in the chunk over a record-type problem unrelated to the deal itself — the
+     * same reasoning that keeps the Property insert non-blocking. Silently unstamped can never
+     * become PERMANENTLY invisible, though, because two things are already true and neither is
+     * new machinery:
+     *   1. conversionStampsBrokerRecordTypesOnContactAndAccount is exactly the read-back
+     *      assertion this class's own FLS POSTURE section (above) already mandates for a
+     *      not-obviously-a-bug blank field — "query the row directly to tell the two apart." It
+     *      is what caught this gap the moment the code reached a real org, before any user did.
+     *   2. There is no sanctioned way to make an in-transaction signal LOUDER without either
+     *      violating this repo's "no System.debug in production code" rule or reintroducing the
+     *      unconditional-throw failure mode this guard exists to prevent (ARCHITECTURE.md §2's
+     *      automation-path exception; the same ContentPublication-shaped hazard TestDataFactory's
+     *      recordTypeId() header already cites). The correct lever is therefore OPERATIONAL, not
+     *      code: re-run this test (or the UAT persona check the FLS POSTURE paragraph already
+     *      prescribes) after any permission-set deploy that touches record-type visibility, and
+     *      treat a null RecordType.DeveloperName read-back as "provisioning gap," never as "the
+     *      stamp code is broken."
+     */
+    private static void stampConvertedPartyRecordTypes(List<Lead> convertedLeads) {
+        Id contactRt = recordTypeId(Contact.SObjectType, 'Broker');
+        Id accountRt = recordTypeId(Account.SObjectType, 'Broker_Firm');
+
+        List<Contact> contactUpdates = new List<Contact>();
+        List<Account> accountUpdates = new List<Account>();
+        Set<Id> seenAccountIds = new Set<Id>();
+
+        for (Lead l : convertedLeads) {
+            if (contactRt != null && l.ConvertedContactId != null) {
+                contactUpdates.add(new Contact(Id = l.ConvertedContactId, RecordTypeId = contactRt));
+            }
+            // Several Leads can converge on ONE Account (Smart Lead Conversion reuses a firm),
+            // and a duplicate Id in one DML statement throws DUPLICATE_VALUE.
+            if (accountRt != null && l.ConvertedAccountId != null && seenAccountIds.add(l.ConvertedAccountId)) {
+                accountUpdates.add(new Account(Id = l.ConvertedAccountId, RecordTypeId = accountRt));
+            }
+        }
+
+        if (!contactUpdates.isEmpty()) {
+            Database.update(contactUpdates, false);
+        }
+        if (!accountUpdates.isEmpty()) {
+            Database.update(accountUpdates, false);
+        }
+    }
+
+    /**
+     * The Id of a record type by developer name, or null when it does not exist in this org or
+     * is not available to the running user. A describe, not a query — it costs no SOQL, so the
+     * class's 2-SOQL contract is unchanged. Guarded on isAvailable() (not just non-null)
+     * because this is a USER-INITIATED path (conversion), unlike the automation-path helpers in
+     * EmailToLeadService / TestDataFactory that guard on null only — see ARCHITECTURE.md §2's
+     * WITH SYSTEM_MODE automation-path table and the 2026-08-10 measured finding that record
+     * type visibility is enforced on Apex DML unconditionally.
+     */
+    private static Id recordTypeId(Schema.SObjectType sobjType, String developerName) {
+        Schema.RecordTypeInfo info = sobjType.getDescribe()
+            .getRecordTypeInfosByDeveloperName()
+            .get(developerName);
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 
     private static String firstNonBlank(List<String> values) {

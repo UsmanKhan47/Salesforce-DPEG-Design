@@ -78,6 +78,24 @@ private class LeadConvertActionServiceTest {
         return l;
     }
 
+    /**
+     * The Account.Broker_Firm / Contact.Broker record type Ids, resolved via describe — IR
+     * segregation (2026-08-10, Task 6). The four SMART CONVERSION fixtures below build a
+     * pre-existing Contact/Account by hand (not via TestDataFactory, which auto-stamps these)
+     * specifically so `LeadConvertMatchService` (via `ContactSelector.selectByEmails` /
+     * `AccountSelector.selectByNames`) can find and attach to them; both selectors are now scoped
+     * to the Broker / Broker_Firm record types, so an unstamped fixture would silently stop
+     * matching and each "attaches instead of duplicating" assertion below would fail for the
+     * wrong reason (record-type mismatch, not a real regression in the attach logic).
+     */
+    private static Id brokerFirmRecordTypeId() {
+        return Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().get('Broker_Firm').getRecordTypeId();
+    }
+
+    private static Id brokerRecordTypeId() {
+        return Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get('Broker').getRecordTypeId();
+    }
+
     @isTest
     static void convert_singleLead_returnsOpportunityIdAndRunsFullConversionPipeline() {
         // Arrange
@@ -211,11 +229,13 @@ private class LeadConvertActionServiceTest {
     @isTest
     static void convert_existingContactAndAccount_attachesInsteadOfCreatingDuplicates() {
         // Arrange — the broker's existing firm + Contact.
-        Account firm = new Account(Name = 'Repeat Broker Firm LLC', BillingCity = 'Houston', BillingState = 'TX');
+        Account firm = new Account(Name = 'Repeat Broker Firm LLC', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
         insert firm;
         Contact broker = new Contact(
             FirstName = 'Repeat', LastName = 'Broker',
-            Email = 'repeat.broker@firm.invalid', AccountId = firm.Id
+            Email = 'repeat.broker@firm.invalid', AccountId = firm.Id,
+            RecordTypeId = brokerRecordTypeId()
         );
         insert broker;
 
@@ -360,11 +380,13 @@ private class LeadConvertActionServiceTest {
      */
     @isTest
     static void convert_attachingToExistingContact_repointsTheAnchorTask() {
-        Account firm = new Account(Name = 'Anchor Firm LLC', BillingCity = 'Houston', BillingState = 'TX');
+        Account firm = new Account(Name = 'Anchor Firm LLC', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
         insert firm;
         Contact broker = new Contact(
             FirstName = 'Anchor', LastName = 'Broker',
-            Email = 'anchor.broker@firm.invalid', AccountId = firm.Id
+            Email = 'anchor.broker@firm.invalid', AccountId = firm.Id,
+            RecordTypeId = brokerRecordTypeId()
         );
         insert broker;
 
@@ -411,13 +433,15 @@ private class LeadConvertActionServiceTest {
      */
     @isTest
     static void convert_attachingToExistingContact_doesNotOverwriteExistingFieldValues() {
-        Account firm = new Account(Name = 'Pristine Firm LLC', BillingCity = 'Houston', BillingState = 'TX');
+        Account firm = new Account(Name = 'Pristine Firm LLC', BillingCity = 'Houston', BillingState = 'TX',
+            RecordTypeId = brokerFirmRecordTypeId());
         insert firm;
         Contact broker = new Contact(
             FirstName = 'Pristine', LastName = 'Broker',
             Email = 'pristine.broker@firm.invalid',
             Title = 'Managing Director', Phone = '713-555-0100',
-            AccountId = firm.Id
+            AccountId = firm.Id,
+            RecordTypeId = brokerRecordTypeId()
         );
         insert broker;
 

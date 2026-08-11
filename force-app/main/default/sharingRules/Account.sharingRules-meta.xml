@@ -1,3 +1,75 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
-
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <sharingCriteriaRules>
+        <fullName>Account_Broker_Firm_Internal_Acquisitions</fullName>
+        <label>Account Broker Firm Internal - Acquisitions</label>
+        <accessLevel>Edit</accessLevel>
+        <accountSettings>
+            <caseAccessLevel>None</caseAccessLevel>
+            <contactAccessLevel>Edit</contactAccessLevel>
+            <opportunityAccessLevel>None</opportunityAccessLevel>
+        </accountSettings>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Broker Firm</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Account_Broker_Firm_Internal_Transactions</fullName>
+        <label>Account Broker Firm Internal - Transactions</label>
+        <accessLevel>Edit</accessLevel>
+        <accountSettings>
+            <caseAccessLevel>None</caseAccessLevel>
+            <contactAccessLevel>Edit</contactAccessLevel>
+            <opportunityAccessLevel>None</opportunityAccessLevel>
+        </accountSettings>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Broker Firm</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Transactions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Account_Broker_Firm_Internal_PropertyMgmt</fullName>
+        <label>Account Broker Firm Internal - Property Mgmt</label>
+        <accessLevel>Edit</accessLevel>
+        <accountSettings>
+            <caseAccessLevel>None</caseAccessLevel>
+            <contactAccessLevel>Edit</contactAccessLevel>
+            <opportunityAccessLevel>None</opportunityAccessLevel>
+        </accountSettings>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Broker Firm</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Property_Mgmt_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Account_Investor_Entity_IR</fullName>
+        <label>Account Investor Entity - IR</label>
+        <accessLevel>Edit</accessLevel>
+        <accountSettings>
+            <caseAccessLevel>None</caseAccessLevel>
+            <contactAccessLevel>Edit</contactAccessLevel>
+            <opportunityAccessLevel>None</opportunityAccessLevel>
+        </accountSettings>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Investor Entity</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Investor_Relations</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+</SharingRules>

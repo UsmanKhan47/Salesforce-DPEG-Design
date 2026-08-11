@@ -252,6 +252,72 @@ public with sharing class TestDataFactory {
         }
     }
 
+    /**
+     * The Id of a record type by developer name, or null when it does not exist in this org OR
+     * is not available to the running user (which, inside System.runAs, is the impersonated user).
+     *
+     * ⚠ REVERSED 2026-08-10 (fix round 1) — READ BEFORE CHANGING THIS METHOD AGAIN.
+     *
+     * The first pass of this helper guarded on `info != null` alone, deliberately omitting
+     * `isAvailable()`, on the reasoning that "Apex DML writes in system mode regardless, so
+     * isAvailable() would never block the write - it would only leave records unstamped."
+     * That reasoning was WRONG and was falsified by a live reproduction, not by inspection:
+     *
+     *   ContactSelectorTest.selectBrokersOrderedByName_standardUserWithGrants_userModeReturnsRows
+     *   System.DmlException: INVALID_CROSS_REFERENCE_KEY, Record Type ID: this ID value isn't
+     *   valid for the user: 012iw0000009xtjAAA: [RecordTypeId]
+     *     Class.TestDataFactory.insertIf: line 161
+     *     Class.TestDataFactory.createBrokerContacts: line 504
+     *
+     * That insert is a PLAIN `insert records;` - no WITH USER_MODE, no AccessLevel.USER_MODE
+     * anywhere in its path - which is already the CRUD/FLS-bypassing default every other DML
+     * statement in this factory uses, executed inside System.runAs(standardUser). It still threw.
+     * Record-type visibility is enforced by a layer the AccessLevel enum does not reach: it is
+     * checked against the EFFECTIVE RUNNING USER's profile/permission-set record-type
+     * assignments at DML time, for every insert/update of that record's type, independent of
+     * whether the surrounding DML is CRUD/FLS-checked (WITH USER_MODE) or CRUD/FLS-bypassing
+     * (the default, or AccessLevel.SYSTEM_MODE) - AccessLevel governs CRUD, FLS and sharing only.
+     * Assigning a RecordTypeId the running user cannot access throws INVALID_CROSS_REFERENCE_KEY
+     * unconditionally; there is no DML mode that downgrades that into "insert succeeds, unstamped."
+     *
+     * So the real choice was never "throws vs. silently unstamped" - it was always "throws vs.
+     * doesn't set RecordTypeId at all," and only `isAvailable()` can tell those apart before the
+     * DML fires. Guarding on `info != null` alone described an outcome (a quietly unstamped
+     * record) that this DML layer cannot actually produce for an unavailable-but-existing record
+     * type; the actual failure mode is a hard exception, in the transaction of whichever test (or
+     * later, production principal) is under-provisioned - the same shape as this repo's
+     * ContentPublication incident (see ARCHITECTURE.md §2, InboundEmailAttachmentService), where
+     * an unconditional write became a single point of failure for a transaction that had nothing
+     * to do with the write's own purpose.
+     *
+     * Null is therefore a legitimate answer for TWO reasons, not one: the record type does not
+     * exist in this org (lets Tasks 1 and 3 land in either order), OR it exists but is not
+     * available to the running user - in which case the caller leaves RecordTypeId unset and the
+     * platform applies whichever default record type IS available to that user, so a
+     * deliberately under-provisioned test persona (this codebase's `*_minimumAccessUserNoFLS_*`
+     * pattern is pervasive - see TaskSelectorTest, OnboardingTaskRollupServiceTest,
+     * TaskRollupServiceTest) can still call createLead/createAccount/createContact without the
+     * factory itself becoming a new, unrelated point of failure for a test whose entire purpose
+     * is to exercise that restricted persona.
+     *
+     * `isAvailable()` reflects the CONTEXT user, and inside System.runAs the context user is the
+     * impersonated one - this is the same mechanism every FLS/permission probe in this suite
+     * already depends on (PermissionSetAssignmentSelector, UserSelector, the whole
+     * `WITH USER_MODE` testing pattern), so it needs no new proof here; verified for the admin
+     * test-running user specifically (System Administrator returns isAvailable() = true for all
+     * three record types), so this reinstatement does not regress
+     * TestDataFactoryTest.factoryStampsAcquisitionSideRecordTypes, which runs as that user.
+     *
+     * A describe, not a query - it costs no SOQL, which matters because this runs inside every
+     * governor-pinned test in the suite.
+     */
+    private static Id recordTypeId(Schema.SObjectType sobjType, String developerName) {
+        Schema.RecordTypeInfo info = sobjType.getDescribe()
+            .getRecordTypeInfosByDeveloperName()
+            .get(developerName);
+        return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+    }
+
     private static void requireId(Id value, String label) {
         if (value == null) {
             throw new TestDataFactoryException(label + ' is required and cannot be null.');
@@ -443,6 +509,12 @@ public with sharing class TestDataFactory {
                 Phone = '713-555-' + String.valueOf(i).leftPad(4, '0')
             ));
         }
+        Id brokerFirmRt = recordTypeId(Account.SObjectType, 'Broker_Firm');
+        if (brokerFirmRt != null) {
+            for (Account a : accounts) {
+                a.RecordTypeId = brokerFirmRt;
+            }
+        }
         insertIf(doInsert, accounts);
         return accounts;
     }
@@ -470,6 +542,12 @@ public with sharing class TestDataFactory {
                 Phone = '713-555-' + String.valueOf(i).leftPad(4, '0'),
                 AccountId = accountId
             ));
+        }
+        Id brokerRt = recordTypeId(Contact.SObjectType, 'Broker');
+        if (brokerRt != null) {
+            for (Contact c : contacts) {
+                c.RecordTypeId = brokerRt;
+            }
         }
         insertIf(doInsert, contacts);
         return contacts;
@@ -529,6 +607,12 @@ public with sharing class TestDataFactory {
                 Guidance_Price__c = 1000000 + (i * 1000),
                 Guidance_Cap_Rate__c = 6.5
             ));
+        }
+        Id acqRt = recordTypeId(Lead.SObjectType, 'Acquisition_Broker');
+        if (acqRt != null) {
+            for (Lead l : leads) {
+                l.RecordTypeId = acqRt;
+            }
         }
         insertIf(doInsert, leads);
         return leads;

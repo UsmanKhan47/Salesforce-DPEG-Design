@@ -1455,7 +1455,7 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Lead</object>
-        <viewAllRecords>true</viewAllRecords>
+        <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
         <allowCreate>false</allowCreate>
@@ -1556,4 +1556,8 @@
         <object>NDA__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <recordTypeVisibilities>
+        <recordType>Lead.Acquisition_Broker</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
 </PermissionSet>

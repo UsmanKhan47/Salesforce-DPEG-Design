@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Account and Contact are shared reference data, visible to every DPEG persona - only
+        Lead remains a segregated boundary (2026-08-10). This set gives read-only Account
+        access to personas that previously had none (Transaction, Property Management), so
+        object CRUD stops being a hard ceiling for them. Deliberately NO viewAllRecords -
+        record visibility still comes from OWD/sharing, not from this permission set. Field
+        list mirrors DPEG_IR_View's already-deployed, dry-run-validated Account field set
+        (standard fields only - Account carries no custom fields in this org). Both
+        Broker_Firm and Investor_Entity record types are visible, since both populations are
+        now shared reference data rather than segregated by persona.
+    -->
+    <description>Read-only access to Account (all record types), full FLS on standard fields. Shared reference data - no longer a security boundary. No viewAllRecords.</description>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.AccountSource</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Description</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Industry</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Ownership</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Phone</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Type</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Website</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>DPEG Account View Only</label>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Account</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <recordTypeVisibilities>
+        <recordType>Account.Broker_Firm</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Account.Investor_Entity</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+</PermissionSet>

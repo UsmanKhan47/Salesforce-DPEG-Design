@@ -77,14 +77,36 @@ private class ContactSelectorTest {
      * with an FLS assertion — i.e. the failure does NOT look like a permission problem.
      * DPEG_Contact_Edit is the conformant successor: it is the layer-3 module set that
      * owns broker Contact access, so it is the correct grant to prove FLS with here.
+     * User granted the DPEG_Acquisitions permission set (which grants FLS on the
+     * custom Contact.Is_Broker__c / Broker_Firm__c this query touches) reads broker
+     * rows under WITH USER_MODE. The broker Contacts are inserted INSIDE runAs so the
+     * Standard User owns them (removing sharing as a variable and isolating the FLS
+     * question). The User + PermissionSetAssignment DML is isolated in its own runAs
+     * block to avoid MIXED_DML_OPERATION with the non-setup Contact DML.
+     *
+     * ⚠ ALSO GRANTS DPEG_Contact_Edit (added 2026-08-10, fix round 1). TestDataFactory now
+     * stamps every factory Contact onto the Contact.Broker record type (IR/Acquisitions
+     * segregation, Task 3), and DPEG_Acquisitions alone does not carry that record type's
+     * visibility - only DPEG_Contact_Edit / DPEG_Contact_View do (Task 2). Without this grant
+     * TestDataFactory.recordTypeId's isAvailable() guard degrades this persona to an unstamped
+     * (default-record-type) Contact rather than throwing - but that would silently defeat this
+     * test's own stated intent, "mirrors the real broker-options persona": a persona reading the
+     * broker-options list must be able to see and create Broker-typed Contacts in the first
+     * place, so DPEG_Contact_Edit belongs on this fixture on the merits, independent of the
+     * factory change that surfaced its absence.
      */
     @isTest
     static void selectBrokersOrderedByName_standardUserWithGrants_userModeReturnsRows() {
         User standardUser = buildStandardUser();
         Id permSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Contact_Edit' LIMIT 1].Id;
+        Id acqPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Acquisitions' LIMIT 1].Id;
+        Id contactEditPermSetId = [SELECT Id FROM PermissionSet WHERE Name = 'DPEG_Contact_Edit' LIMIT 1].Id;
         System.runAs(new User(Id = UserInfo.getUserId())) {
             insert standardUser;
-            insert new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = permSetId);
+            insert new List<PermissionSetAssignment>{
+                new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = acqPermSetId),
+                new PermissionSetAssignment(AssigneeId = standardUser.Id, PermissionSetId = contactEditPermSetId)
+            };
         }
 
         Test.startTest();
@@ -440,6 +462,35 @@ private class ContactSelectorTest {
         Assert.areEqual(older.Id, rows[0].Id,
             'CreatedDate ASC must put the OLDER row first even though it has the HIGHER Id');
         Assert.areEqual(newer.Id, rows[1].Id, 'The newer row sorts second');
+    }
+
+    /**
+     * IR segregation (2026-08-10, Task 6). The broker and investor populations are disjoint by
+     * policy, so this pins the STRUCTURAL guarantee: even a fabricated shared-email collision
+     * between a broker and an investor Contact must not surface an IR Contact as a lead-conversion
+     * match target — see the RECORD TYPE SCOPE note on ContactSelector.selectByEmails's ApexDoc.
+     */
+    @isTest
+    static void selectByEmails_investorContact_isExcluded() {
+        Account investorAccount = TestDataFactory.createAccount(false);
+        investorAccount.RecordTypeId = [SELECT Id FROM RecordType
+            WHERE SobjectType = 'Account' AND DeveloperName = 'Investor_Entity' LIMIT 1].Id;
+        insert investorAccount;
+
+        Contact investor = TestDataFactory.createContact(investorAccount.Id, false);
+        investor.Email = 'shared.address@example.invalid';
+        investor.RecordTypeId = [SELECT Id FROM RecordType
+            WHERE SobjectType = 'Contact' AND DeveloperName = 'Investor' LIMIT 1].Id;
+        insert investor;
+
+        Test.startTest();
+        List<Contact> matched = ContactSelector.selectByEmails(
+            new Set<String>{ 'shared.address@example.invalid' });
+        Test.stopTest();
+
+        Assert.areEqual(0, matched.size(),
+            'An investor Contact must never be a lead-conversion match target - attaching an '
+            + 'acquisition deal to an IR Contact would drag it across the security boundary.');
     }
 
     @isTest
