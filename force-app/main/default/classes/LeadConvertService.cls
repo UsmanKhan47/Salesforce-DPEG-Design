@@ -533,7 +533,7 @@ public with sharing class LeadConvertService {
      *     DPEG_Admin_Access (not the repo file): the org's deployed permission set does NOT
      *     contain the six IR-segregation <recordTypeVisibilities> entries the repo file declares
      *     (Account.Broker_Firm, Account.Investor_Entity, Contact.Broker, Contact.Investor,
-     *     Lead.Acquisition_Broker, Lead.IR_Investor) — only the pre-existing ones (Contract
+     *     Lead.Acquisition_Broker) — only the pre-existing ones (Contract
      *     Review / Disposition / LOI / NDA / Opportunity) are live. Task 2's grant was committed
      *     to source but never actually landed in the org; the record types themselves (Task 1)
      *     did land, which is why they resolve to a non-null Id and why this looked like a

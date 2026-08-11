@@ -23,7 +23,6 @@
     <permissionSets>DPEG_Transaction_View</permissionSets>
     <permissionSets>DPEG_PropertyMgmt_View</permissionSets>
     <permissionSets>DPEG_Contact_View</permissionSets>
-    <permissionSets>DPEG_IR_View</permissionSets>
     <permissionSets>DPEG_App_Acquisition</permissionSets>
     <permissionSets>DPEG_App_Disposition</permissionSets>
     <permissionSets>DPEG_App_Transaction</permissionSets>

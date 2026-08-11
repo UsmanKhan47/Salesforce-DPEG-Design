@@ -4,7 +4,7 @@ description: "MUST BE USED as the FINAL STEP after all development and testing i
 model: opus
 color: red
 memory: local
-tools: Read, Write, Edit, Glob, Grep
+tools: "*"
 ---
 
 # Salesforce DevOps Agent

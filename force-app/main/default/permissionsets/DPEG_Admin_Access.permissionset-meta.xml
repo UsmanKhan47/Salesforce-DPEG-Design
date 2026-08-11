@@ -179,7 +179,7 @@
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
     <!--
-      The six Account / Contact / Lead entries below were RECONCILED IN FROM THE ORG on
+      The five Account / Contact / Lead entries below were RECONCILED IN FROM THE ORG on
       2026-08-10 - they were live on this set in usman-dpeg and missing from this file, so the
       next deploy of it would have destroyed them. See section (B) of the header comment. Do not
       remove them without first confirming, against the org, that nothing depends on them; and
@@ -203,10 +203,6 @@
     </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>Lead.Acquisition_Broker</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Lead.IR_Investor</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
@@ -251,10 +247,6 @@
     </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>Lead.Acquisition_Broker</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Lead.IR_Investor</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
