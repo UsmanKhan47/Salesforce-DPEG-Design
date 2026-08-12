@@ -10,10 +10,11 @@
 
         🔴 DO NOT FOLD THIS SET INTO DPEG_Acquisition_Edit, AND DO NOT DELETE IT AS "TRIVIAL".
         This is a LAYER-5 AUTHORIZATION set: it carries the Acquisition_Deal_Actions custom
-        permission - the live authorization grant, read via FeatureManagement.checkPermission -
-        plus the retired User.Deal_Driver__c fieldPermissions entry, kept only as a rollback
-        lever. It is the twin of Disposition_Deal_Driver, whose own comment argues the same case
-        for the sell side.
+        permission - the live authorization grant, read via FeatureManagement.checkPermission.
+        The retired User.Deal_Driver__c fieldPermissions entry that used to sit alongside it as
+        a rollback lever was REMOVED 2026-08-12 (Phase 2 Step 1 of retiring the driver-flag
+        concept - see the PHASE 2 note below). It is the twin of Disposition_Deal_Driver, whose
+        own comment argues the same case for the sell side.
 
         THE GATE IS TWO-FACTOR (ARCHITECTURE.md section 2, "Opportunity deal-action gate is
         TWO-FACTOR"). OpportunityActionPermissionService.hasDealActionAccess() requires BOTH:
@@ -82,24 +83,29 @@
         UPDATED — a later developer pass swapped OpportunityActionPermissionService.cls off
         User.Deal_Driver__c entirely: it now calls
         FeatureManagement.checkPermission('Acquisition_Deal_Actions') as the sole
-        server-side authorization check. The FLS-flag mechanism described above this note is
-        RETIRED and governs nothing; it is left in place, superseded, as the rollback lever
-        only, and is deleted in a separate, later phase.
-        Because this set is assigned directly to the same population the flag used to gate,
-        granting the permission here changed nothing about who holds it - it rode the
-        existing population by construction, same as the fieldPermissions grant. The
-        fieldPermissions grant above is KEPT, not removed, as that rollback lever.
+        server-side authorization check. The FLS-flag mechanism described above this note was
+        RETIRED and governed nothing from that point on; it was left in place, superseded, as
+        a rollback lever pending live UI verification.
+
+        🔬 PHASE 2 STEP 1 (2026-08-12) — THE ROLLBACK LEVER IS SPENT, NOT HELD IN RESERVE.
+        The custom-permission token was verified directly in the Lightning UI: on one NDA__c
+        record sitting at the one remaining stage-criterion gap, the Advance Stage action was
+        HIDDEN for a System Administrator holding no custom permission and VISIBLE for the real
+        Junior Analyst persona holding Acquisition_Deal_Actions via this set. That confirms
+        {!$Permission.CustomPermission.Acquisition_Deal_Actions} is honoured correctly by every
+        one of the 24 acquisition/disposition-gated FlexiPage criteria and by the sole Apex
+        consumer, with nothing still depending on the FLS flag in either direction. The
+        User.Deal_Driver__c fieldPermissions grant has therefore been REMOVED from this file —
+        it is not a rollback path any more, it is a deleted one. Reverting to flag-based
+        visibility would require recreating the field, not just re-adding a grant here.
+        User.Deal_Driver__c itself is NOT deleted by this step — that is a separate, later,
+        destructive deploy.
     -->
-    <description>Marks the &quot;Junior&quot; deal-driver. Grants the Acquisition_Deal_Actions custom permission (the live server-side authorization check). The User.Deal_Driver__c FLS grant is retired and kept only as a rollback lever.</description>
+    <description>Marks the &quot;Junior&quot; deal-driver. Grants the Acquisition_Deal_Actions custom permission (the live server-side authorization check). The retired User.Deal_Driver__c FLS grant was removed 2026-08-12 (Phase 2 Step 1) — see the class comment.</description>
     <customPermissions>
         <enabled>true</enabled>
         <name>Acquisition_Deal_Actions</name>
     </customPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>User.Deal_Driver__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Acquisition Deal Driver</label>
 </PermissionSet>

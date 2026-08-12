@@ -42,34 +42,39 @@
 
         🔬 PHASE 1 (2026-08-12) of retiring the driver-flag concept — see
         agent-output/design-requirements-custom-permissions.md. The customPermissions grant
-        below adds Disposition_Deal_Actions to this set, ON TOP OF the fieldPermissions grant
-        above, NOT in place of it. This is the layer-5 AUTHORIZATION TOKEN the 6
-        disposition-gated flexipage criteria are repointed to
+        below added Disposition_Deal_Actions to this set, ON TOP OF the fieldPermissions grant
+        that used to sit alongside it, NOT in place of it. This is the layer-5 AUTHORIZATION
+        TOKEN the 6 disposition-gated flexipage criteria are repointed to
         ({!$Permission.CustomPermission.Disposition_Deal_Actions}). Because this set is the
-        SAME set already carrying the flag's FLS grant, to the SAME population, granting the
+        SAME set that used to carry the flag's FLS grant, to the SAME population, granting the
         custom permission here changed nothing about who held it — it rode the existing
         population by construction, exactly as Acquisition_Deal_Driver's own spike addition
         did.
         UPDATED — a later developer pass swapped DispositionActionPermissionService.cls off
         User.Disposition_Driver__c entirely: it now calls
         FeatureManagement.checkPermission('Disposition_Deal_Actions') as the sole server-side
-        authorization check. The FLS-flag mechanism is RETIRED and governs nothing; it is left
-        in place, superseded, as the rollback lever only, and is deleted in a separate, later
-        phase (design doc section 6).
+        authorization check. The FLS-flag mechanism was RETIRED and governed nothing from that
+        point on; it was left in place, superseded, as a rollback lever pending live UI
+        verification.
+
+        🔬 PHASE 2 STEP 1 (2026-08-12) — THE ROLLBACK LEVER IS SPENT, NOT HELD IN RESERVE.
+        The custom-permission token was verified directly in the Lightning UI (see
+        Acquisition_Deal_Driver's own header for the full observation, which covers both
+        sides of the gate — the two custom permissions are consumed identically by the
+        FlexiPage renderer). The User.Disposition_Driver__c fieldPermissions grant has
+        therefore been REMOVED from this file — it is not a rollback path any more, it is a
+        deleted one. Reverting to flag-based visibility would require recreating the field,
+        not just re-adding a grant here. User.Disposition_Driver__c itself is NOT deleted by
+        this step — that is a separate, later, destructive deploy.
         🔴 DO NOT move this customPermissions grant to DPEG_Disposition_Edit or any layer-4
         capability set — see the CustomPermission file's own header for why that is a live
         widening, not a tidy-up.
     -->
-    <description>Marks the disposition deal driver. Grants the Disposition_Deal_Actions custom permission (the live server-side authorization check). The User.Disposition_Driver__c FLS grant is retired and kept only as a rollback lever.</description>
+    <description>Marks the disposition deal driver. Grants the Disposition_Deal_Actions custom permission (the live server-side authorization check). The retired User.Disposition_Driver__c FLS grant was removed 2026-08-12 (Phase 2 Step 1) — see the class comment.</description>
     <customPermissions>
         <enabled>true</enabled>
         <name>Disposition_Deal_Actions</name>
     </customPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>User.Disposition_Driver__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Disposition Deal Driver</label>
 </PermissionSet>
