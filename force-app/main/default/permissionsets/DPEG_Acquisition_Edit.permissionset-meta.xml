@@ -1437,6 +1437,38 @@
         <field>Underwriting__c.Year_5_IRR__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+    <!--
+        W4 (code review, design residual R5): SharePoint_Folder_ID__c / SharePoint_Folder_URL__c are
+        editable=false on purpose — hand-blanking Folder ID causes the next sweep to create a
+        DUPLICATE SharePoint folder that succeeds silently (Graph conflictBehavior=rename → "<Name> 1").
+        SharePoint_Folder_Status__c / SharePoint_Folder_Error__c stay editable=true on purpose —
+        clearing Status does NOT recover the row: the sweep locator is
+        SharePoint_Folder_Status__c IN ('Pending','Failed') (PropertySelector.folderSweepLocator),
+        so a null/cleared status falls permanently outside its reach. The recovery action is SETTING
+        Status to 'Pending', which is what puts the row back on DealFolderSweepBatch's work queue —
+        that is the reason these two fields must stay editable. DealFolderService writes all four via
+        AccessLevel.SYSTEM_MODE, so none of this FLS affects the automation.
+    -->
+        <editable>true</editable>
+        <field>Property__c.SharePoint_Folder_Error__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.SharePoint_Folder_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.SharePoint_Folder_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.SharePoint_Folder_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Acquisition Edit</label>
     <objectPermissions>

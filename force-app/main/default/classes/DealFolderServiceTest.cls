@@ -1,0 +1,1000 @@
+/**
+ * Tests for DealFolderService — the SharePoint deal-folder orchestration service.
+ *
+ * ═══ TWO CALLING STYLES, DELIBERATELY MIXED ═══
+ * Tests that must prove SYNC WIRING (the trigger really does stamp/enqueue correctly, and really
+ * does not roll back a Closed Won) go THROUGH the real trigger: `TestDataFactory` fixtures +
+ * `close()` (an `update` on `Opportunity.StageName`) + ONE `Test.startTest()/stopTest()` pair, the
+ * same shape `PropertyAssetServiceTest` uses. Tests that isolate a single ASYNC-layer branch (the
+ * budget guard, the disabled-mid-flight stamp, a partial subfolder failure) call
+ * `DealFolderService.createFolders(ids)` DIRECTLY — that method is PUBLIC precisely because it is
+ * meant to be invoked from an async context, and calling it directly from a test is simpler and
+ * fully deterministic (no enqueue/chain timing to reason about). Both styles are legitimate; each
+ * test's own name says which one it is.
+ *
+ * ═══ 🔴 THE DUPLICATE-FOLDER FALSIFIER (§7 of the design doc) IS THE MOST IMPORTANT TEST HERE ═══
+ * `duplicateFolderFalsifier_...` proves that closing 251 deals whose properties ALREADY carry a
+ * `SharePoint_Folder_ID__c` costs ZERO callouts and ZERO enqueues — the guard that stops
+ * `conflictBehavior: rename` from quietly minting a second folder for every re-close, sweep pass or
+ * concurrent second close.
+ *
+ * ═══ ⚠ Test.startTest()/Test.stopTest() MAY BE CALLED ONLY ONCE PER TEST METHOD ═══
+ * (measured elsewhere in this repo — a second call throws). Any scenario needing "attempt once,
+ * fix the cause, retry" (the credential-denied → sweep-recovery story) is therefore necessarily
+ * split across TWO test methods, one here proving the FIRST half (stamps Failed with the hint) and
+ * one in `DealFolderSweepBatchTest` proving the SECOND half (the sweep recovers it).
+ *
+ * ═══ WHAT THIS SUITE CANNOT PROVE — SAID OUT LOUD, NOT HIDDEN ═══
+ * `PropertySelector.selectFolderStateByIds` / `queryFolderSweep` run `WITH SYSTEM_MODE` inside a
+ * `private without sharing` inner class specifically so the running principal's FLS and sharing
+ * cannot change the answer — an admin-run `System.runAs` "it still works" assertion would pass
+ * whether or not that inner class existed, and would falsify nothing (identical reasoning already
+ * recorded in `PropertySelectorTest`'s header for `selectAssetSeedByIds`). What the decision rests
+ * on is measured repo/org state (`Property__c` is `sharingModel = Private`; its one sharing rule is
+ * an owner rule scoped to the `Acquisition` queue, which does not reach a `LeadConvertService`-owned
+ * Property) recorded in the selector's own header, and is provable only by a real post-deploy gate
+ * run as a genuinely under-provisioned persona (e.g. `DPEG_Transaction_Team`) — not from Apex.
+ *
+ * No @TestSetup: every method builds exactly the fixtures it needs, so a shared scaffold row can
+ * never leak into a count-based assertion (same discipline as `PropertyAssetServiceTest`).
+ *
+ * @see DealFolderService.cls
+ * @see PropertyAssetServiceTest.cls (the sibling precedent this suite's shape follows)
+ * @author Unit Testing Agent
+ */
+@isTest
+private class DealFolderServiceTest {
+
+    /** .claude/rules/bulk-test-rule.md — 251 forces a SECOND Opportunity trigger chunk. */
+    private static final Integer BULK_N = 251;
+    private static final String CLOSED_WON = 'Closed Won';
+    private static final String SITE_ID = 'contoso-site';
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // FIXTURE HELPERS
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Inserts `count` properties and `count` Opportunities, one Opportunity per property, already
+     * prepared to cross the two Closed Won validation gates (`NDA_Signed_Before_Deal_Progression`
+     * and `Contract_Signed_Before_Closed_Won`) — the identical fixture shape
+     * `PropertyAssetServiceTest.dealsReadyToClose` uses, reproduced here rather than shared because
+     * that helper is `private` to its own test class.
+     *
+     * @param count      How many pairs.
+     * @param properties Out-parameter: the inserted properties, index-aligned to the result.
+     * @return The inserted, gate-ready Opportunities, left at 'New'.
+     */
+    private static List<Opportunity> dealsReadyToClose(Integer count, List<Property__c> properties) {
+        properties.addAll(TestDataFactory.createProperties(count, false));
+        insert properties;
+
+        List<Opportunity> opps = TestDataFactory.createOpportunities(count, false);
+        for (Integer i = 0; i < count; i++) {
+            opps[i].Property__c = properties[i].Id;
+        }
+        insert opps;
+
+        TestDataFactory.signPrimaryNda(opps);
+        TestDataFactory.signContract(opps);
+        return opps;
+    }
+
+    /** Moves already-prepared deals to Closed Won in one bulk DML. */
+    private static void close(List<Opportunity> opps) {
+        for (Opportunity o : opps) {
+            o.StageName = CLOSED_WON;
+        }
+        update opps;
+    }
+
+    /** Inserts the org-default `SharePoint_Config__c` row, enabled, with the given site id. */
+    private static void enableSharePoint(String siteId) {
+        insert new SharePoint_Config__c(
+            SetupOwnerId = UserInfo.getOrganizationId(),
+            Is_Enabled__c = true,
+            Site_ID__c = siteId
+        );
+    }
+
+    /** Re-queries every SharePoint field for the given properties, ordered by Name. */
+    private static List<Property__c> propertiesFor(List<Property__c> properties) {
+        Set<Id> ids = new Map<Id, Property__c>(properties).keySet();
+        return [
+            SELECT Id, Name, SharePoint_Folder_ID__c, SharePoint_Folder_URL__c,
+                   SharePoint_Folder_Status__c, SharePoint_Folder_Error__c
+            FROM Property__c
+            WHERE Id IN :ids
+            ORDER BY Name
+        ];
+    }
+
+    /** Simulates the credential-denied transport failure a running user with no External
+     *  Credential Principal Access produces. */
+    private class ThrowingCalloutMock implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            throw new CalloutException('Unable to resolve external credential principal for user');
+        }
+    }
+
+    /** A trivial no-op Queueable that exists ONLY to consume a slot in
+     *  `Limits.getQueueableJobs()` — mirrors `EmailMessageTriggerHandlerTest`'s identical filler
+     *  precedent for the EAC pipeline's own `System.enqueueJob` guard. */
+    private class NoOpQueueable implements Queueable {
+        public void execute(QueueableContext ctx) {
+            // Deliberately empty. Its only job is to occupy one of the 50 queueable slots.
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 sanitizeFolderName — A PURE FUNCTION. Every rule, in the order the header documents.
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /** The exact example from the method's own Javadoc — the illegal-char replacement, whitespace
+     *  collapse and trailing-dot strip working together on one realistic marketing-text name. */
+    @isTest
+    static void sanitize_javadocExample_matchesExactly() {
+        Assert.areEqual('1400 Royal Ln Suite B',
+            DealFolderService.sanitizeFolderName('  1400 Royal Ln / Suite B... '), '');
+    }
+
+    /** Every character in the illegal set, each replaced with a space (not deleted), so two words
+     *  either side of a slash still read as two words rather than merging into one. */
+    @isTest
+    static void sanitize_everyIllegalCharacter_replacedWithSpaceAndCollapsed() {
+        // A " * : < > ? / \ | between each letter — one instance of each of the nine illegal chars.
+        String input = 'A"B*C:D<E>F?G/H\\I|J';
+        Assert.areEqual('A B C D E F G H I J', DealFolderService.sanitizeFolderName(input), '');
+    }
+
+    @isTest
+    static void sanitize_controlCharacter_convertedToSpace() {
+        String input = 'A' + String.fromCharArray(new List<Integer>{ 7 }) + 'B'; // BEL, 0x07
+        Assert.areEqual('A B', DealFolderService.sanitizeFolderName(input), '');
+    }
+
+    @isTest
+    static void sanitize_leadingAndTrailingWhitespace_trimmed() {
+        Assert.areEqual('Magnolia Crossing',
+            DealFolderService.sanitizeFolderName('   Magnolia Crossing   '), '');
+    }
+
+    @isTest
+    static void sanitize_trailingDotsAndSpaces_stripped() {
+        Assert.areEqual('Magnolia Crossing',
+            DealFolderService.sanitizeFolderName('Magnolia Crossing... '), '');
+    }
+
+    @isTest
+    static void sanitize_leadingTildeDollarPrefix_stripped() {
+        Assert.areEqual('Temp Deal Folder',
+            DealFolderService.sanitizeFolderName('~$Temp Deal Folder'), '');
+    }
+
+    @isTest
+    static void sanitize_repeatedLeadingTildeDollarPrefix_allStripped() {
+        Assert.areEqual('Config', DealFolderService.sanitizeFolderName('~$~$Config'), '');
+    }
+
+    @isTest
+    static void sanitize_overLength_clampedToMaxNameChars() {
+        String result = DealFolderService.sanitizeFolderName('A'.repeat(250));
+        Assert.areEqual(200, result.length(), 'MAX_NAME_CHARS is 200 — see the class header');
+    }
+
+    /** 🔴 THE ORDER-OF-OPERATIONS PIN. The clamp runs BEFORE the trailing-dot strip specifically so
+     *  a dot landing exactly at the cut point is still removed — reversing the order would leave a
+     *  name SharePoint rejects. Constructed so the 200-char clamp lands exactly on a '.'. */
+    @isTest
+    static void sanitize_clampLandingOnATrailingDot_stripsItAfterClamping() {
+        String raw = 'A'.repeat(199) + '.' + 'A'.repeat(50); // clamp(0,200) ends exactly on the dot
+        String result = DealFolderService.sanitizeFolderName(raw);
+        Assert.areEqual(199, result.length(),
+            'The dot introduced AT the clamp point must still be stripped afterwards');
+        Assert.isFalse(result.endsWith('.'), 'Actual: ' + result);
+    }
+
+    @isTest
+    static void sanitize_reservedNames_rejectedCaseInsensitively() {
+        List<String> reserved = new List<String>{
+            'CON', 'con', 'PRN', 'AUX', 'NUL', 'COM1', 'com1', 'LPT9', 'DESKTOP.INI', 'desktop.ini', '.LOCK'
+        };
+        for (String name : reserved) {
+            Assert.areEqual('', DealFolderService.sanitizeFolderName(name),
+                name + ' is a reserved name and must sanitize to empty');
+        }
+    }
+
+    @isTest
+    static void sanitize_vtiPrefix_rejectedCaseInsensitively() {
+        Assert.areEqual('', DealFolderService.sanitizeFolderName('_vti_something'), '');
+        Assert.areEqual('', DealFolderService.sanitizeFolderName('_VTI_Something'), '');
+    }
+
+    @isTest
+    static void sanitize_wholeStringIllegal_sanitizesToEmpty() {
+        Assert.areEqual('', DealFolderService.sanitizeFolderName('***///:::'), '');
+    }
+
+    @isTest
+    static void sanitize_nullOrBlank_returnsEmptyNeverNull() {
+        Assert.areEqual('', DealFolderService.sanitizeFolderName(null), '');
+        Assert.areEqual('', DealFolderService.sanitizeFolderName('     '), '');
+    }
+
+    @isTest
+    static void sanitize_ordinaryPropertyName_isUnaffected() {
+        Assert.areEqual('Magnolia Crossing',
+            DealFolderService.sanitizeFolderName('Magnolia Crossing'), '');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE DUPLICATE-FOLDER FALSIFIER — the single most valuable test in this suite
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 251 deals close against 251 properties that ALREADY carry a SharePoint folder — simulating
+     * a re-close, a concurrent second close, or a sweep pass arriving after a prior success. The
+     * idempotency guard must find them all already foldered and do NOTHING external.
+     */
+    @isTest
+    static void duplicateFolderFalsifier_bulk251CloseAgainstAlreadyFolderedProperties_zeroCalloutsZeroEnqueues() {
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('should-never-be-used', null));
+        Test.setMock(HttpCalloutMock.class, mock);
+        enableSharePoint(SITE_ID);
+
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(BULK_N, properties);
+
+        List<Property__c> alreadyFoldered = new List<Property__c>();
+        for (Integer i = 0; i < properties.size(); i++) {
+            alreadyFoldered.add(new Property__c(
+                Id = properties[i].Id,
+                SharePoint_Folder_ID__c = 'existing-item-' + i,
+                SharePoint_Folder_URL__c = 'https://contoso.sharepoint.com/x/existing-' + i,
+                SharePoint_Folder_Status__c = 'Created'
+            ));
+        }
+        update alreadyFoldered;
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        close(opps); // 251-record Closed Won update — TWO trigger chunks (200 + 51)
+        Test.stopTest();
+
+        Assert.areEqual(0, DealFolderService.runCalloutCount,
+            'THE DUPLICATE-FOLDER FALSIFIER: every property already had a folder — ZERO callouts');
+        Assert.areEqual(0, DealFolderService.runEnqueueCount,
+            'and ZERO async jobs enqueued — there is nothing owed in either chunk');
+        Assert.areEqual(0, mock.requestCount,
+            'Corroborated at the transport layer: the mock must never be invoked at all');
+        Assert.areEqual(2, DealFolderService.runInvocations,
+            'The sync path still ran once per trigger chunk — it just found nothing owed, so no '
+            + 'async invocation ever follows');
+        Assert.areEqual(2, DealFolderService.runQueryCount,
+            'One idempotency read per chunk (2), and no async read follows either');
+        Assert.areEqual(0, DealFolderService.runDmlCount,
+            'Every property was ALREADY "Created" — there is nothing to converge, so zero DML too');
+
+        List<Property__c> after = propertiesFor(properties);
+        for (Property__c p : after) {
+            Assert.areEqual('Created', p.SharePoint_Folder_Status__c, '');
+            Assert.isTrue(p.SharePoint_Folder_ID__c.startsWith('existing-item-'),
+                'The original folder id must survive UNTOUCHED — no duplicate was minted. Actual: '
+                + p.SharePoint_Folder_ID__c);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // 251-RECORD BULK CLOSE — fresh properties, real (mocked) folder creation, constant budget
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 251 FRESH deals (no pre-existing folders) close in one transaction. Proves three things at
+     * once: (1) exactly ONE enqueue per trigger chunk — 2 total, never 251; (2) the sync path's
+     * SOQL/DML is CONSTANT per invocation; (3) each of the two chained-off async jobs is bounded
+     * to `MAX_PROPERTIES_PER_TRANSACTION` (10) properties (70 callouts), deferring the remainder
+     * rather than attempting all of them and risking an uncatchable LimitException.
+     *
+     * The arithmetic, so a future reader does not have to re-derive it:
+     *   251 records -> 2 trigger chunks (200 + 51) -> 2 sync invocations, 2 enqueues
+     *   Each of the 2 enqueued jobs runs (chaining is suppressed under @isTest) -> 2 async invocations
+     *   runInvocations = 4 (2 sync + 2 async);  runQueryCount = 4 (1 per invocation)
+     *   runDmlCount    = 4 (1 per invocation, since every invocation has something to stamp)
+     *   runCalloutCount = 140 (2 jobs x 10 properties x 7 callouts)
+     *   runFoldersCreated = 20; runSubfoldersCreated = 120; runDeferred = 190 + 41 = 231
+     * Do not shrink the record count and do not relax the budget to make this pass.
+     */
+    @isTest
+    static void bulk251EnteringClosedWon_enqueuesExactlyTwoChunksOnAConstantBudget() {
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('created-item', 'https://contoso.sharepoint.com/x/created'));
+        Test.setMock(HttpCalloutMock.class, mock);
+        enableSharePoint(SITE_ID);
+
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(BULK_N, properties);
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        close(opps);
+        Test.stopTest();
+
+        Assert.areEqual(2, DealFolderService.runEnqueueCount,
+            '251 Opportunities is 2 trigger chunks -> exactly ONE enqueue per chunk, NEVER one per deal');
+        Assert.areEqual(4, DealFolderService.runInvocations,
+            '2 sync (one per chunk) + 2 async (one per chained job, chaining suppressed under @isTest)');
+        Assert.areEqual(4, DealFolderService.runQueryCount,
+            'CONSTANT 1 SOQL per invocation regardless of chunk size. If this reds because the '
+            + 'number grew with the record count, a query moved into a loop');
+        Assert.areEqual(4, DealFolderService.runDmlCount,
+            'CONSTANT 1 bulk DML per invocation (2 sync Pending-stamps + 2 async Created-stamps)');
+        Assert.areEqual(140, DealFolderService.runCalloutCount,
+            '2 jobs x 10 properties (MAX_PROPERTIES_PER_TRANSACTION) x 7 callouts (1 parent + 6 subfolders)');
+        Assert.areEqual(20, DealFolderService.runFoldersCreated, '10 properties processed per job x 2 jobs');
+        Assert.areEqual(120, DealFolderService.runSubfoldersCreated, '20 parents x 6 subfolders each');
+        Assert.areEqual(231, DealFolderService.runDeferred,
+            '(200 - 10) from chunk 1 job + (51 - 10) from chunk 2 job = 190 + 41');
+
+        List<Property__c> after = propertiesFor(properties);
+        Integer createdCount = 0;
+        Integer pendingCount = 0;
+        for (Property__c p : after) {
+            if ('Created'.equals(p.SharePoint_Folder_Status__c)) {
+                createdCount++;
+                Assert.areEqual('created-item', p.SharePoint_Folder_ID__c, '');
+            } else if ('Pending'.equals(p.SharePoint_Folder_Status__c)) {
+                pendingCount++;
+            }
+        }
+        Assert.areEqual(20, createdCount,
+            'Exactly 20 properties (10 per job) were actually processed within the callout budget');
+        Assert.areEqual(231, pendingCount,
+            'The rest stay Pending — untouched, deferred, and picked up by the next sweep pass');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE SYNCHRONOUS PATH NEVER THROWS — worst-case inputs, one at a time
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /** A deal with no Property__c is SKIPPED, not thrown on — the deal must still close. */
+    @isTest
+    static void nullProperty_isSkippedNotThrown_dealStillCloses_andIsCounted() {
+        List<Opportunity> opps = TestDataFactory.createOpportunities(3, true);
+        TestDataFactory.signPrimaryNda(opps);
+        TestDataFactory.signContract(opps);
+        for (Opportunity o : opps) {
+            Assert.isNull(o.Property__c, 'Precondition: a manually built deal has no Property');
+        }
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        close(opps); // must NOT throw
+        Test.stopTest();
+
+        for (Opportunity o : [SELECT StageName FROM Opportunity WHERE Id IN :opps]) {
+            Assert.areEqual(CLOSED_WON, o.StageName, 'A missing Property must never block a close');
+        }
+        Assert.areEqual(3, DealFolderService.runSkippedNoProperty, 'The skip is counted, per deal');
+        Assert.areEqual(0, DealFolderService.runQueryCount,
+            'With nothing to claim the guard returns before any read');
+        Assert.areEqual(0, DealFolderService.runDmlCount, 'and writes nothing');
+        Assert.areEqual(0, DealFolderService.runEnqueueCount, 'and enqueues nothing');
+    }
+
+    /** A property whose Name sanitizes to nothing usable must not block the close either. */
+    @isTest
+    static void unnamableProperty_neverThrows_dealClosesAndIsStampedSkipped() {
+        enableSharePoint(SITE_ID);
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+        update new Property__c(Id = properties[0].Id, Name = '***///:::');
+
+        Test.setMock(HttpCalloutMock.class,
+            new SharePointCalloutMock(201, SharePointCalloutMock.successBody('unused', null)));
+        Test.startTest();
+        close(opps); // must NOT throw
+        Test.stopTest();
+
+        Assert.areEqual(CLOSED_WON, [SELECT StageName FROM Opportunity WHERE Id = :opps[0].Id].StageName,
+            'An unnamable property must never block a close');
+        Property__c p = propertiesFor(properties)[0];
+        Assert.areEqual('Skipped', p.SharePoint_Folder_Status__c, '');
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('nothing SharePoint accepts'),
+            'Actual: ' + p.SharePoint_Folder_Error__c);
+    }
+
+    /** The integration switched OFF must not block a close. */
+    @isTest
+    static void configDisabled_neverThrows_dealClosesAndIsStampedSkipped() {
+        insert new SharePoint_Config__c(
+            SetupOwnerId = UserInfo.getOrganizationId(), Is_Enabled__c = false, Site_ID__c = SITE_ID);
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        Test.startTest();
+        close(opps); // must NOT throw
+        Test.stopTest();
+
+        Assert.areEqual(CLOSED_WON, [SELECT StageName FROM Opportunity WHERE Id = :opps[0].Id].StageName, '');
+        Assert.areEqual('Skipped', propertiesFor(properties)[0].SharePoint_Folder_Status__c, '');
+    }
+
+    /** 🔴 No org-default row AT ALL — the baseline state of a fresh org/scratch org. Must not
+     *  block a close, and must not fall back to any hardcoded site id (design D7). */
+    @isTest
+    static void configAbsentEntirely_neverThrows_dealClosesAndIsStampedSkipped_noHardcodedFallback() {
+        // Deliberately NO SharePoint_Config__c row inserted anywhere in this test.
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('should-never-be-used', null));
+        Test.setMock(HttpCalloutMock.class, mock);
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        Test.startTest();
+        close(opps); // must NOT throw
+        Test.stopTest();
+
+        Assert.areEqual(CLOSED_WON, [SELECT StageName FROM Opportunity WHERE Id = :opps[0].Id].StageName, '');
+        Assert.areEqual('Skipped', propertiesFor(properties)[0].SharePoint_Folder_Status__c, '');
+        Assert.areEqual(0, mock.requestCount,
+            'PROOF THERE IS NO HARDCODED SITE-ID FALLBACK: with no configuration at all, ZERO '
+            + 'callouts must be made — a fallback here is how production folders end up in a POC library');
+    }
+
+    /** A Graph callout that returns 500 must not block a close. */
+    @isTest
+    static void calloutThat500s_neverThrows_dealClosesAndIsStampedFailed() {
+        enableSharePoint(SITE_ID);
+        Test.setMock(HttpCalloutMock.class,
+            new SharePointCalloutMock(500, SharePointCalloutMock.errorBody('Internal server error')));
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        Test.startTest();
+        close(opps); // must NOT throw
+        Test.stopTest();
+
+        Assert.areEqual(CLOSED_WON, [SELECT StageName FROM Opportunity WHERE Id = :opps[0].Id].StageName, '');
+        Property__c p = propertiesFor(properties)[0];
+        Assert.areEqual('Failed', p.SharePoint_Folder_Status__c, '');
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('HTTP 500'), 'Actual: ' + p.SharePoint_Folder_Error__c);
+    }
+
+    /** A transport-level exception (the credential-grant shape) must not block a close. */
+    @isTest
+    static void transportExceptionOnCallout_neverThrows_dealCloses() {
+        enableSharePoint(SITE_ID);
+        Test.setMock(HttpCalloutMock.class, new ThrowingCalloutMock());
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        Test.startTest();
+        close(opps); // must NOT throw
+        Test.stopTest();
+
+        Assert.areEqual(CLOSED_WON, [SELECT StageName FROM Opportunity WHERE Id = :opps[0].Id].StageName, '');
+        Assert.areEqual('Failed', propertiesFor(properties)[0].SharePoint_Folder_Status__c, '');
+    }
+
+    /**
+     * 🔴 THE BELT-AND-SUSPENDERS TEST: several worst-case properties, closing in ONE bulk update,
+     * with a mock that succeeds for some names and fails for others. None of them may take any of
+     * the others — or the transaction — down.
+     */
+    @isTest
+    static void mixedWorstCaseInputsInOneBulkClose_noneThrowAndEveryDealCloses() {
+        enableSharePoint(SITE_ID);
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(4, properties);
+        // [0] a normal name (succeeds), [1] unnamable, [2] a 500 failure, [3] normal (succeeds)
+        update new Property__c(Id = properties[1].Id, Name = '///***');
+        Opportunity noPropertyDeal = TestDataFactory.createOpportunity(null, true);
+        TestDataFactory.signPrimaryNda(new List<Opportunity>{ noPropertyDeal });
+        TestDataFactory.signContract(new List<Opportunity>{ noPropertyDeal });
+        opps.add(noPropertyDeal);
+
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('mixed-ok', null));
+        mock.withOverride(properties[2].Name, 500, SharePointCalloutMock.errorBody('boom'));
+        Test.setMock(HttpCalloutMock.class, mock);
+
+        Test.startTest();
+        close(opps); // 5 deals, one bulk DML — must NOT throw
+        Test.stopTest();
+
+        for (Opportunity o : [SELECT StageName FROM Opportunity WHERE Id IN :opps]) {
+            Assert.areEqual(CLOSED_WON, o.StageName,
+                'Every deal must close regardless of what happened to its SharePoint folder');
+        }
+        Map<Id, Property__c> byId = new Map<Id, Property__c>(propertiesFor(properties));
+        Assert.areEqual('Created', byId.get(properties[0].Id).SharePoint_Folder_Status__c, '');
+        Assert.areEqual('Skipped', byId.get(properties[1].Id).SharePoint_Folder_Status__c, '');
+        Assert.areEqual('Failed', byId.get(properties[2].Id).SharePoint_Folder_Status__c, '');
+        Assert.areEqual('Created', byId.get(properties[3].Id).SharePoint_Folder_Status__c, '');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // STAGE-ENTRY DETECTION
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 DIAGNOSED 2026-08-11 — this test used to read the class-static run counters AFTER
+     * `Test.stopTest()` and expected `runInvocations == 1`. That is wrong for a reason that has
+     * nothing to do with the re-save being tested: `close(opps)` above ALREADY enqueues a
+     * `DealFolderQueueable` for this property (the ordinary, correct synchronous behaviour of a
+     * deal ENTERING Closed Won). `Test.startTest()`/`Test.stopTest()` may be called only once per
+     * test method (measured elsewhere in this suite), so that pending job cannot be drained before
+     * the re-save is measured — it drains at the SAME `Test.stopTest()` call this test already
+     * uses, and its execution legitimately increments the very counters `resetRunCounters()` had
+     * just zeroed. `runInvocations` therefore reads 2 by design: one synchronous call for the
+     * re-save (which the GUARD declines — zero query/DML/enqueue) and one ASYNC call for the
+     * original close's job settling — a real invocation, just not one caused by this test's re-save.
+     * Reading the statics after `stopTest()` conflates the two. This is the identical trap
+     * `EmailThreadAdopterServiceTest`'s header documents for its own trigger-fired queueable:
+     * counter assertions must snapshot into locals INSIDE the test, before any unrelated async
+     * settle can contaminate them.
+     *
+     * The fix below does two things, neither of which is "expect 2 instead of 1":
+     *   1. Snapshots the re-save's OWN contribution into locals immediately after `update opps;`,
+     *      before `Test.stopTest()` lets the unrelated original-close job run — isolating exactly
+     *      what the re-save cost, which is what this test is actually meant to prove.
+     *   2. Asserts the property that matters per the class's own "duplicate-folder falsifier"
+     *      contract: after the original job finally settles, the property carries exactly ONE
+     *      folder (`CALLOUTS_PER_PROPERTY` total callouts, `Created` status) — never a second,
+     *      renamed folder from a phantom re-claim.
+     */
+    @isTest
+    static void reSavingAnAlreadyClosedDeal_costsNothing() {
+        enableSharePoint(SITE_ID);
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('resave-item', null));
+        Test.setMock(HttpCalloutMock.class, mock);
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+        close(opps); // ENTERS Closed Won — legitimately stamps Pending and enqueues ONE job
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        opps[0].Description = 'unrelated later edit';
+        update opps; // still Closed Won — did NOT just enter it
+
+        // Snapshot NOW, before Test.stopTest() drains the ORIGINAL close()'s pending queueable —
+        // see the class-header diagnosis above for why reading the statics after stopTest() would
+        // silently count that unrelated settle as though this re-save caused it.
+        Integer invocationsFromResave = DealFolderService.runInvocations;
+        Integer queriesFromResave = DealFolderService.runQueryCount;
+        Integer dmlFromResave = DealFolderService.runDmlCount;
+        Integer enqueuesFromResave = DealFolderService.runEnqueueCount;
+        Integer calloutsFromResave = DealFolderService.runCalloutCount;
+        Test.stopTest(); // drains the ORIGINAL close()'s job — unrelated to the assertions below
+
+        Assert.areEqual(1, invocationsFromResave,
+            'the re-save itself invoked the sync entry point exactly once — it is the GUARD that declines');
+        Assert.areEqual(0, queriesFromResave, 'a save that enters no stage costs ZERO queries');
+        Assert.areEqual(0, dmlFromResave, 'and zero DML');
+        Assert.areEqual(0, enqueuesFromResave,
+            'and zero enqueues — the re-save must never queue a second job for a property already claimed');
+        Assert.areEqual(0, calloutsFromResave,
+            'and zero callouts from the re-save itself — it never reaches the async layer at all');
+
+        // The property that matters: exactly ONE folder exists, from the original close's settle —
+        // the re-save must never mint a second, renamed duplicate under conflictBehavior: rename.
+        Property__c p = [
+            SELECT SharePoint_Folder_Status__c, SharePoint_Folder_ID__c
+            FROM Property__c WHERE Id = :properties[0].Id
+        ];
+        Assert.areEqual('Created', p.SharePoint_Folder_Status__c,
+            'the ORIGINAL close\'s async job — not the re-save — created the one and only folder');
+        Assert.areEqual(DealFolderService.CALLOUTS_PER_PROPERTY, mock.requestCount,
+            'exactly one folder tree was ever built for this property — a re-save that queued a '
+            + 'second job would double this count');
+    }
+
+    @isTest
+    static void aStageMoveThatIsNotClosedWon_costsNothing() {
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        opps[0].StageName = 'Under Review';
+        update opps;
+        Test.stopTest();
+
+        Assert.areEqual(0, DealFolderService.runQueryCount, '');
+        Assert.areEqual(0, DealFolderService.runDmlCount, '');
+        Assert.areEqual(0, DealFolderService.runEnqueueCount, '');
+    }
+
+    /** A record INSERTED directly at Closed Won (data load / migration) counts as ENTERING. */
+    @isTest
+    static void dealInsertedDirectlyAtClosedWon_alsoClaimsAFolder() {
+        enableSharePoint(SITE_ID);
+        Test.setMock(HttpCalloutMock.class,
+            new SharePointCalloutMock(201, SharePointCalloutMock.successBody('insert-path-item', null)));
+        Property__c property = TestDataFactory.createProperty(true);
+        Opportunity opp = TestDataFactory.createOpportunity(null, false);
+        opp.Property__c = property.Id;
+        opp.StageName = CLOSED_WON;
+
+        Test.startTest();
+        insert opp;
+        Test.stopTest();
+
+        Property__c p = [SELECT SharePoint_Folder_Status__c FROM Property__c WHERE Id = :property.Id];
+        Assert.areEqual('Created', p.SharePoint_Folder_Status__c,
+            'Inserting AT Closed Won IS entering it — a data load must not skip the folder claim');
+    }
+
+    /** TWO deals closing against ONE property in the SAME chunk must claim (and enqueue for) that
+     *  property only ONCE — the de-duplication is structural (Set<Id>), not incidental. */
+    @isTest
+    static void twoDealsOnOnePropertyInOneChunk_claimTheFolderOnlyOnce() {
+        enableSharePoint(SITE_ID);
+        Test.setMock(HttpCalloutMock.class,
+            new SharePointCalloutMock(201, SharePointCalloutMock.successBody('shared-item', null)));
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(2, properties);
+        opps[1].Property__c = properties[0].Id;
+        update opps;
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        close(opps);
+        Test.stopTest();
+
+        Assert.areEqual(1, DealFolderService.runEnqueueCount,
+            'One chunk, one property owed (deduped) -> exactly one enqueue');
+        Assert.areEqual(7, DealFolderService.runCalloutCount,
+            'Exactly one folder tree (1 parent + 6 subfolders) for the one distinct property');
+        Property__c shared = [SELECT SharePoint_Folder_Status__c FROM Property__c WHERE Id = :properties[0].Id];
+        Assert.areEqual('Created', shared.SharePoint_Folder_Status__c, '');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 W-B — THE ENQUEUE GUARD ITSELF, PINNED (code re-review finding)
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * `claimFolders`'s own 17-line comment calls `Limits.getQueueableJobs() <
+     * Limits.getLimitQueueableJobs()` "the ONLY thing standing between this feature and a
+     * rolled-back deal close" and explicitly forbids tightening it into an unconditional enqueue —
+     * yet before this test, DELETING that `if` wrapper made no test go red. This is the falsifier.
+     *
+     * Every queueable slot is filled BEFORE the close, so `claimFolders`'s own enqueue attempt
+     * finds zero headroom left — deliberately, via `System.enqueueJob(new NoOpQueueable())`, never
+     * the real `DealFolderQueueable` (which would itself attempt real work at `Test.stopTest()` and
+     * confuse what this test is isolating).
+     *
+     * ═══ WHY THIS GENUINELY FALSIFIES REMOVING THE `if` ═══
+     * `System.enqueueJob` at the 50-job cap raises `System.LimitException`, and SP-R1 (cited in
+     * this class's own header, and reproduced by `EmailMessageTriggerHandlerTest`'s identical
+     * guard) measured that an Apex limit exception of that family is NOT intercepted by
+     * `catch (Exception)` — which is exactly the shape wrapping this call one level up in
+     * `ensureOnClosedWon`. So an unconditional enqueue here would throw straight through that catch
+     * and take the whole `update opps` below down with it. Concretely: if a future change deletes
+     * the `if` guard, `close(opps)` on the line below THROWS instead of returning, this test method
+     * itself goes red (an uncaught exception fails the test), and none of the assertions after it
+     * even run. That is a stronger falsifier than an assertion could be on its own — the guard's
+     * absence breaks the test's own control flow, not just a checked value.
+     *
+     * Both halves of "skipping is safe" are asserted, because either alone would be insufficient:
+     * the enqueue must actually have been suppressed (`runEnqueueCount == 0`), AND the
+     * skipped property must be recoverable rather than silently lost (`SharePoint_Folder_Status__c`
+     * still reads the sweeper's OWN work-queue value, `'Pending'` — see
+     * `PropertySelector.queryFolderSweep`'s locator). The Opportunity reaching `Closed Won` proves
+     * the transaction did not roll back — the never-throw rule this whole class exists to uphold.
+     *
+     * ⚠ `@SuppressWarnings` mirrors `EmailMessageTriggerHandlerTest`'s precedent — deliberately
+     * consuming the queueable limit in a loop is the only way to reach the guard's skip branch.
+     */
+    @SuppressWarnings('PMD.OperationWithLimitsInLoop')
+    @isTest
+    static void queueableSlotsExhausted_enqueueGuardSkipsInsteadOfThrowing_dealStillClosesAndStaysPending() {
+        enableSharePoint(SITE_ID);
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        Integer cap = Limits.getLimitQueueableJobs();
+        while (Limits.getQueueableJobs() < cap) {
+            System.enqueueJob(new NoOpQueueable());
+        }
+        Assert.areEqual(cap, Limits.getQueueableJobs(),
+            'Precondition: every queueable slot must be consumed, or this test proves nothing');
+
+        // Reaching this line at all, and returning from it, is half the proof — see the header.
+        // An unguarded enqueue inside claimFolders() would throw System.LimitException here and
+        // roll back this Closed Won update along with it.
+        close(opps);
+        Test.stopTest();
+
+        Assert.areEqual(0, DealFolderService.runEnqueueCount,
+            'THE GUARD MUST HAVE SUPPRESSED THE ENQUEUE — every slot was already consumed before '
+            + 'claimFolders() ran, so System.enqueueJob must never have been called');
+        Assert.areEqual(CLOSED_WON,
+            [SELECT StageName FROM Opportunity WHERE Id = :opps[0].Id].StageName,
+            'The deal close itself must survive a fully-exhausted queueable budget — nothing rolled back');
+        Assert.areEqual('Pending', propertiesFor(properties)[0].SharePoint_Folder_Status__c,
+            'Skipping the enqueue is SAFE, not merely non-fatal, ONLY because Pending is '
+            + 'DealFolderSweepBatch\'s own work queue (PropertySelector.queryFolderSweep\'s locator '
+            + 'is SharePoint_Folder_Status__c IN (\'Pending\',\'Failed\')) — the row stays '
+            + 'recoverable by the scheduled sweep rather than silently and permanently lost.');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // CONFIG SAFETY — the async layer's OWN re-check (config can change between claim and job)
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /** Exercises `skipAllAsDisabled` directly — the async-side branch that fires if the setting
+     *  is switched off between the sync claim and the job actually running. */
+    @isTest
+    static void createFolders_calledWithConfigDisabled_stampsSkippedAndMakesZeroCallouts() {
+        // Deliberately NO SharePoint_Config__c row — mirrors "disabled or unconfigured" uniformly.
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('should-not-be-used', null));
+        Test.setMock(HttpCalloutMock.class, mock);
+        Property__c property = TestDataFactory.createProperty(true);
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        List<Id> deferred = DealFolderService.createFolders(new List<Id>{ property.Id });
+        Test.stopTest();
+
+        Assert.isTrue(deferred.isEmpty(), 'Nothing is deferred — it is SKIPPED outright, never retried blindly');
+        Assert.areEqual('Skipped', [SELECT SharePoint_Folder_Status__c FROM Property__c WHERE Id = :property.Id]
+            .SharePoint_Folder_Status__c, '');
+        Assert.areEqual(0, mock.requestCount, 'Never guess a site id — zero callouts');
+        Assert.areEqual(1, DealFolderService.runSkippedDisabled, '');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // THE CALLOUT-COUNT BUDGET GUARD — direct call, deterministic
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * `hasBudgetForOneProperty`'s COUNT check, isolated: manually burn callout headroom down to
+     * fewer than `CALLOUTS_PER_PROPERTY` (7) remaining, in the SAME governor transaction as the
+     * `createFolders` call under test, then prove the property is DEFERRED rather than attempted —
+     * the guard that converts what would otherwise be an uncatchable `LimitException` into one
+     * more chained link.
+     */
+    @isTest
+    static void createFolders_calloutBudgetNearlyExhausted_defersRatherThanRisking() {
+        enableSharePoint(SITE_ID);
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('burn-id', 'https://contoso.sharepoint.com/x/burn'));
+        Test.setMock(HttpCalloutMock.class, mock);
+        Property__c property = TestDataFactory.createProperty(true);
+        // This test calls DealFolderService.createFolders(...) DIRECTLY, bypassing claimFolders() —
+        // the ONLY code that stamps Pending on the sync path. TestDataFactory leaves the status
+        // NULL, so without this stamp the property would already be non-Pending going in and the
+        // "left EXACTLY as it was — still Pending" assertion below would prove nothing. Seed the
+        // fixture to the state claimFolders() would have already put it in by the time an async job
+        // ever sees it.
+        update new Property__c(Id = property.Id, SharePoint_Folder_Status__c = 'Pending');
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        SharePointCalloutService burner = new SharePointCalloutService();
+        for (Integer i = 0; i < 95; i++) {
+            burner.createFolder(SITE_ID, null, null, 'Burn ' + i);
+        }
+        // Fewer than 5 of the 100-per-transaction callout budget remain — less than the 7 one
+        // property's folder tree needs.
+        List<Id> deferred = DealFolderService.createFolders(new List<Id>{ property.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, deferred.size(),
+            'With fewer than 7 callouts of headroom left, the property must be DEFERRED');
+        Assert.areEqual(property.Id, deferred[0], '');
+        Assert.areEqual(0, DealFolderService.runFoldersCreated, 'Nothing was attempted for this property');
+        Assert.areEqual(1, DealFolderService.runDeferred, '');
+        Assert.areEqual('Pending',
+            [SELECT SharePoint_Folder_Status__c FROM Property__c WHERE Id = :property.Id].SharePoint_Folder_Status__c,
+            'A deferred property is left EXACTLY as it was — still Pending for the next link/sweep. '
+            + 'NOTE: a NULL-status property is invisible to PropertySelector.queryFolderSweep '
+            + '(locator is SharePoint_Folder_Status__c IN (\'Pending\',\'Failed\')), so "deferred rows '
+            + 'are recoverable" holds only because the synchronous claimFolders() path stamps Pending '
+            + 'BEFORE any async job runs — this fixture reproduces that coupling deliberately.');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // RESIDUAL R2 — PARTIAL SUBFOLDER FAILURE IS TERMINAL "Created", NOT "Failed"
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 PINNED SO A FUTURE "FIX" HAS TO JUSTIFY ITSELF. The parent folder succeeds; one of the
+     * six lifecycle subfolders is refused. The property must stamp "Created", NOT "Failed" — the
+     * parent id IS the idempotency guard, so re-running the six subfolder calls under
+     * `conflictBehavior: rename` would produce a duplicate like "01 - NDA 1" rather than repairing
+     * anything (design residual R2).
+     */
+    @isTest
+    static void createFolders_oneSubfolderRefused_parentStampedCreatedNotFailed() {
+        enableSharePoint(SITE_ID);
+        Property__c property = TestDataFactory.createProperty(true); // Name = 'Test Property 0'
+
+        SharePointCalloutMock mock = new SharePointCalloutMock(201,
+            SharePointCalloutMock.successBody('parent-item-1', 'https://contoso.sharepoint.com/x/parent'));
+        mock.withOverride('04 - PSA', 500, SharePointCalloutMock.errorBody('blocked by a retention policy'));
+        Test.setMock(HttpCalloutMock.class, mock);
+
+        DealFolderService.resetRunCounters();
+        Test.startTest();
+        List<Id> deferred = DealFolderService.createFolders(new List<Id>{ property.Id });
+        Test.stopTest();
+
+        Assert.isTrue(deferred.isEmpty(), '');
+        Property__c p = [
+            SELECT SharePoint_Folder_ID__c, SharePoint_Folder_URL__c, SharePoint_Folder_Status__c,
+                   SharePoint_Folder_Error__c
+            FROM Property__c WHERE Id = :property.Id
+        ];
+        Assert.areEqual('Created', p.SharePoint_Folder_Status__c,
+            'A refused SUBFOLDER after a successful PARENT must stamp Created, never Failed');
+        Assert.areEqual('parent-item-1', p.SharePoint_Folder_ID__c, 'The parent folder id must still be stored');
+        Assert.areEqual('https://contoso.sharepoint.com/x/parent', p.SharePoint_Folder_URL__c, '');
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('04 - PSA'),
+            'The missing subfolder must be NAMED so a human can create it by hand. Actual: '
+            + p.SharePoint_Folder_Error__c);
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('by hand'), 'Actual: ' + p.SharePoint_Folder_Error__c);
+        Assert.areEqual(1, DealFolderService.runFoldersCreated, '');
+        Assert.areEqual(5, DealFolderService.runSubfoldersCreated, 'Five of the six subfolders succeeded');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // RESIDUAL R4 — A webUrl OVER 255 CHARS IS OMITTED, NOT TRUNCATED
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void createFolders_webUrlLongerThan255Chars_isOmittedNotStored_andNoted() {
+        enableSharePoint(SITE_ID);
+        Property__c property = TestDataFactory.createProperty(true);
+        String longUrl = 'https://contoso.sharepoint.com/sites/x/' + 'y'.repeat(230); // > 255 chars
+        Test.setMock(HttpCalloutMock.class,
+            new SharePointCalloutMock(201, SharePointCalloutMock.successBody('item-long-url', longUrl)));
+
+        Test.startTest();
+        DealFolderService.createFolders(new List<Id>{ property.Id });
+        Test.stopTest();
+
+        Property__c p = [
+            SELECT SharePoint_Folder_ID__c, SharePoint_Folder_URL__c, SharePoint_Folder_Status__c,
+                   SharePoint_Folder_Error__c
+            FROM Property__c WHERE Id = :property.Id
+        ];
+        Assert.areEqual('Created', p.SharePoint_Folder_Status__c,
+            'The folder DID get created — an oversized URL must not fail the whole property');
+        Assert.areEqual('item-long-url', p.SharePoint_Folder_ID__c, '');
+        Assert.isNull(p.SharePoint_Folder_URL__c,
+            'A URL over 255 chars must be OMITTED, not truncated — half a URL is worse than none');
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('too long'), 'Actual: ' + p.SharePoint_Folder_Error__c);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // CREDENTIAL-DENIED PATH — first half (see DealFolderSweepBatchTest for the recovery half)
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * `SharePoint_Integration_Access` is granted to `DPEG_Junior_Analyst_PSG` only, so any deal
+     * closed via the Transactions persona's route runs this job as a user with no credential grant
+     * and every callout is refused with 401/403. This must land VISIBLY on the property, with a
+     * hint naming the exact known gap — never silently.
+     */
+    @isTest
+    static void credentialDenied401_stampsFailedWithTheCredentialHint() {
+        enableSharePoint(SITE_ID);
+        Test.setMock(HttpCalloutMock.class, new SharePointCalloutMock(401,
+            SharePointCalloutMock.errorBody('The user has no access to the requested resource')));
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        Test.startTest();
+        close(opps);
+        Test.stopTest();
+
+        Property__c p = propertiesFor(properties)[0];
+        Assert.areEqual('Failed', p.SharePoint_Folder_Status__c, '');
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('HTTP 401'), 'Actual: ' + p.SharePoint_Folder_Error__c);
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('LIKELY CAUSE'),
+            'The credential-gap hint must be present for a 401. Actual: ' + p.SharePoint_Folder_Error__c);
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('SharePoint_Integration_Access'),
+            'The hint must name the EXACT permission set gap. Actual: ' + p.SharePoint_Folder_Error__c);
+        Assert.isNull(p.SharePoint_Folder_ID__c, 'No folder was actually created');
+    }
+
+    @isTest
+    static void credentialDenied403_alsoStampsFailedWithTheCredentialHint() {
+        enableSharePoint(SITE_ID);
+        Test.setMock(HttpCalloutMock.class,
+            new SharePointCalloutMock(403, SharePointCalloutMock.errorBody('Forbidden')));
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        Test.startTest();
+        close(opps);
+        Test.stopTest();
+
+        Property__c p = propertiesFor(properties)[0];
+        Assert.areEqual('Failed', p.SharePoint_Folder_Status__c, '');
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('LIKELY CAUSE'), 'Actual: ' + p.SharePoint_Folder_Error__c);
+    }
+
+    /** A 500 (an ordinary Graph failure, NOT the credential shape) must NOT carry the credential
+     *  hint — conflating the two would send an operator chasing the wrong fix. */
+    @isTest
+    static void ordinary500Failure_doesNotCarryTheCredentialHint() {
+        enableSharePoint(SITE_ID);
+        Test.setMock(HttpCalloutMock.class,
+            new SharePointCalloutMock(500, SharePointCalloutMock.errorBody('transient Graph error')));
+        List<Property__c> properties = new List<Property__c>();
+        List<Opportunity> opps = dealsReadyToClose(1, properties);
+
+        Test.startTest();
+        close(opps);
+        Test.stopTest();
+
+        Property__c p = propertiesFor(properties)[0];
+        Assert.areEqual('Failed', p.SharePoint_Folder_Status__c, '');
+        Assert.isFalse(p.SharePoint_Folder_Error__c.contains('LIKELY CAUSE'),
+            'A 500 is an ordinary Graph failure, not the credential shape — the hint must not appear. '
+            + 'Actual: ' + p.SharePoint_Folder_Error__c);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // markFailed — the Finalizer's write path, isolated
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void markFailed_onAPendingRow_stampsFailedWithTheMessage() {
+        Property__c property = TestDataFactory.createProperty(true);
+        update new Property__c(Id = property.Id, SharePoint_Folder_Status__c = 'Pending');
+
+        Test.startTest();
+        DealFolderService.markFailed(new List<Id>{ property.Id }, 'the job died mid-flight');
+        Test.stopTest();
+
+        Property__c p = [SELECT SharePoint_Folder_Status__c, SharePoint_Folder_Error__c
+                          FROM Property__c WHERE Id = :property.Id];
+        Assert.areEqual('Failed', p.SharePoint_Folder_Status__c, '');
+        Assert.isTrue(p.SharePoint_Folder_Error__c.contains('the job died mid-flight'), '');
+    }
+
+    /** 🔴 THE RE-READ-BEFORE-WRITE GUARANTEE. An EARLIER chained link may already have committed a
+     *  folder id for this property by the time a LATER link dies. `markFailed` must not drag an
+     *  already-`Created` row back to `Failed`. */
+    @isTest
+    static void markFailed_onAnAlreadyCreatedRow_doesNotDowngradeIt() {
+        Property__c property = TestDataFactory.createProperty(true);
+        update new Property__c(
+            Id = property.Id,
+            SharePoint_Folder_ID__c = 'already-created-item',
+            SharePoint_Folder_Status__c = 'Created'
+        );
+
+        Test.startTest();
+        DealFolderService.markFailed(new List<Id>{ property.Id }, 'a later link in the same payload died');
+        Test.stopTest();
+
+        Property__c p = [SELECT SharePoint_Folder_ID__c, SharePoint_Folder_Status__c, SharePoint_Folder_Error__c
+                          FROM Property__c WHERE Id = :property.Id];
+        Assert.areEqual('Created', p.SharePoint_Folder_Status__c,
+            'An already-Created row must NEVER be dragged back to Failed');
+        Assert.areEqual('already-created-item', p.SharePoint_Folder_ID__c, '');
+        Assert.isNull(p.SharePoint_Folder_Error__c, 'No failure note should be written over a real success');
+    }
+
+    @isTest
+    static void markFailed_nullOrEmptyIds_isANoOp() {
+        Test.startTest();
+        DealFolderService.markFailed(null, 'unused');
+        DealFolderService.markFailed(new List<Id>(), 'unused');
+        Test.stopTest();
+
+        Assert.isTrue(true, 'Must not throw for a null or empty payload');
+    }
+}

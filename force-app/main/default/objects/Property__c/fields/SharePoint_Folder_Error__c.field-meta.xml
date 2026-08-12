@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SharePoint_Folder_Error__c</fullName>
+    <description>Durable failure surface for the SharePoint deal-folder callout — the HTTP status/body or exception message from the most recent failed attempt. Blank does not mean nothing was ever attempted; check SharePoint_Folder_Status__c for that.</description>
+    <inlineHelpText>Populated by DealFolderService/DealFolderSweepBatch on a failed folder-create callout.</inlineHelpText>
+    <label>SharePoint Folder Error</label>
+    <length>4096</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>
