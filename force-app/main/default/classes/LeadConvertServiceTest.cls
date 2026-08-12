@@ -153,10 +153,17 @@ private class LeadConvertServiceTest {
      * field` for every test that drives the service directly off this helper's output — the
      * live trigger path is unaffected because Trigger.new in an after-update trigger already
      * carries every field.
+     *
+     * ⚠ RecordTypeId was ADDED here 2026-08-12 for exactly the same reason, one field later:
+     * justConvertedByOpportunity now reads l.RecordTypeId to exclude Investor_Onboarding Leads
+     * from the whole acquisitions cascade (see LeadConvertService's IR section). That read is
+     * deliberately a direct field access rather than a defensive one, so a caller that forgets the
+     * field fails LOUDLY here instead of silently running the cascade over an investor's Contact —
+     * which means this SELECT is the thing that has to keep up, and that is the intended trade.
      */
     private static List<Lead> reReadForReRun(Set<Id> leadIds) {
         return [
-            SELECT Id, Name, Company, Street, City, State, PostalCode,
+            SELECT Id, Name, Company, Street, City, State, PostalCode, RecordTypeId,
                    IsConverted, ConvertedOpportunityId, ConvertedContactId, ConvertedAccountId,
                    Deal_Type__c, Asset_Type__c, Property_Name__c, Property_Address__c,
                    Guidance_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,

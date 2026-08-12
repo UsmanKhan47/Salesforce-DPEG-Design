@@ -4,7 +4,7 @@
         <name>Notify_Acquisitions_Team</name>
         <label>Notify Acquisitions Team</label>
         <locationX>176</locationX>
-        <locationY>288</locationY>
+        <locationY>396</locationY>
         <actionName>GroupNotifier</actionName>
         <actionType>apex</actionType>
         <flowTransactionModel>CurrentTransaction</flowTransactionModel>
@@ -51,14 +51,7 @@
             <targetReference>Notify_Acquisitions_Team</targetReference>
         </connector>
         <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
-        <filterLogic>and</filterLogic>
-        <filters>
-            <field>IsConverted</field>
-            <operator>EqualTo</operator>
-            <value>
-                <booleanValue>true</booleanValue>
-            </value>
-        </filters>
+        <filterFormula>AND({!$Record.IsConverted}, {!$Record.RecordType.DeveloperName} = &apos;Acquisition_Broker&apos;)</filterFormula>
         <object>Lead</object>
         <recordTriggerType>Update</recordTriggerType>
         <triggerType>RecordAfterSave</triggerType>

@@ -35,6 +35,44 @@
  *      Account.Broker_Firm deterministically, so the converted Account always lands on the
  *      record type the post-OWD-flip sharing rules key on — see stampConvertedPartyRecordTypes.
  *
+ * ═══ 🔴 INVESTOR RELATIONS LEADS ARE EXCLUDED FROM ALL FIVE JOBS (2026-08-12) ═══
+ * justConvertedByOpportunity SKIPS any Lead on the `Investor_Onboarding` record type, so an IR
+ * conversion reaches none of the work above. This guard is NOT defensive tidying — it is the only
+ * thing protecting the IR/Acquisitions segregation boundary, and it replaced a protection that was
+ * accidental.
+ *
+ * WHAT CHANGED. InvestorLeadConvertService converts an IR Lead onto a pre-existing investor
+ * Contact and must leave no Opportunity behind. It used to suppress the Opportunity with
+ * Database.LeadConvert.setDoNotCreateOpportunity(true), which meant ConvertedOpportunityId stayed
+ * null and this method's `if (oppToLead.isEmpty()) return;` early return did the protecting — by
+ * side effect, not by intent. That flag does not work in this org (it makes convertLead return
+ * UNKNOWN_EXCEPTION for every Lead — see LeadConvertActionService's header and
+ * LeadConvertActionServiceTest lines 11-14), so IR now lets the Opportunity be created and DELETES
+ * it afterwards. The early return therefore no longer fires for IR, and without this guard every
+ * job above would run on an investor.
+ *
+ * WHY IT MATTERS MOST FOR JOB 5. createProperties, buildOpportunityUpdates and
+ * stampBrokerContactRoles all write to records IR throws away seconds later (the Opportunity and
+ * its temporary Account) — wrong, but self-cleaning. stampConvertedPartyRecordTypes is different:
+ * it writes RecordTypeId = Contact.Broker onto the investor's REAL, DURABLE Contact, which
+ * survives. That is a silent re-classification of an investor as a broker, and because Contact OWD
+ * is ControlledByParent and the sharing rules key on record type, it is a visibility change, not a
+ * cosmetic one.
+ *
+ * ⚠ THE RECORD TYPE IS RESOLVED BY DEVELOPER NAME AT RUNTIME, AND DELIBERATELY NOT
+ * isAvailable()-GUARDED — unlike recordTypeId() below, which serves a WRITE. This one serves an
+ * EXCLUSION: whether the running user may USE the Investor_Onboarding record type has nothing to
+ * do with whether a Lead already carries it, and folding isAvailable() in here would silently
+ * re-open the cascade for exactly the personas least likely to notice. An org with no such record
+ * type resolves it to null and the guard is inert, so Acquisitions-only orgs behave exactly as
+ * before. It is a describe, so it costs no SOQL and the 2-SOQL contract above is unchanged.
+ *
+ * ⚠ IT READS Lead.RecordTypeId DIRECTLY, so a caller handing this method Leads queried WITHOUT
+ * that field gets a loud SObjectException rather than a silent segregation breach. Trigger.new
+ * always carries it; the one direct caller in the test suite selects it explicitly (see
+ * LeadConvertServiceTest.reReadForReRun, which took the same treatment for ConvertedAccountId on
+ * 2026-08-10).
+ *
  * ═══ THE OCR IS A READ-THEN-WRITE, NEVER A BLIND INSERT ═══
  * ⚠ STANDARD LEAD CONVERSION ALREADY CREATES AN OpportunityContactRole for the converted
  * Contact — IsPrimary = true, Role BLANK. Inserting our own row would therefore leave the
@@ -110,6 +148,12 @@ public with sharing class LeadConvertService {
     /** OpportunityContactRole.Role value identifying the submitting broker on a deal (S2). */
     private static final String BROKER_ROLE = 'Broker';
 
+    /**
+     * The Lead record type owned by Investor Relations. Every Lead carrying it is excluded from
+     * this entire service — see the IR section of the class header for why.
+     */
+    private static final String IR_LEAD_RECORD_TYPE = 'Investor_Onboarding';
+
     /** Opportunity.Name is a Text field, max 120 characters. */
     private static final Integer OPPORTUNITY_NAME_MAX = 120;
 
@@ -126,6 +170,12 @@ public with sharing class LeadConvertService {
     private static Set<String> saleProcessValuesCache;
     private static Set<String> parseConfidenceValuesCache;
     private static Set<String> contactRoleValuesCache;
+
+    // The Investor_Onboarding Lead record type Id. Memoized with a separate "resolved" flag
+    // because null is a LEGITIMATE answer (an org without the IR record type), not a cache miss —
+    // without the flag every invocation in such an org would re-describe forever.
+    private static Id irLeadRecordTypeIdCache;
+    private static Boolean irLeadRecordTypeResolved = false;
 
     /** Active values on Property__c.Asset_Type__c. */
     private static Set<String> assetTypeValues() {
@@ -160,6 +210,29 @@ public with sharing class LeadConvertService {
     }
 
     /**
+     * The Id of the `Investor_Onboarding` Lead record type, or null when this org has no such
+     * record type. Resolved by DEVELOPER NAME through a describe — never a hardcoded Id, so this
+     * repo deploys to any org — and it costs no SOQL, so the class's 2-SOQL contract is unchanged.
+     *
+     * 🔴 DELIBERATELY NOT isAvailable()-GUARDED, unlike recordTypeId() below. That helper feeds a
+     * WRITE, where an unavailable record type would fail the DML, so skipping it is correct there.
+     * This one feeds an EXCLUSION: whether the RUNNING USER may use the IR record type says
+     * nothing about whether the LEAD already carries it. Adding isAvailable() here would make an
+     * acquisitions persona (or any principal the IR record type is not assigned to) silently run
+     * the full cascade over an investor's Contact — the exact failure this guard exists to stop.
+     */
+    private static Id irLeadRecordTypeId() {
+        if (!irLeadRecordTypeResolved) {
+            Schema.RecordTypeInfo info = Lead.SObjectType.getDescribe()
+                .getRecordTypeInfosByDeveloperName()
+                .get(IR_LEAD_RECORD_TYPE);
+            irLeadRecordTypeIdCache = (info == null) ? null : info.getRecordTypeId();
+            irLeadRecordTypeResolved = true;
+        }
+        return irLeadRecordTypeIdCache;
+    }
+
+    /**
      * Called from the Lead after-update trigger. For each lead that just
      * converted (and created an Opportunity): build its Property, stamp the
      * Opportunity's Property link / Deal Type / RecordTypeId plus the deal-process
@@ -185,10 +258,25 @@ public with sharing class LeadConvertService {
      * The leads that just converted in this transaction (IsConverted false -> true) AND produced
      * an Opportunity, keyed by that Opportunity. The false->true edge is what makes the stamp fire
      * exactly once per lead, so nothing downstream needs its own re-entry guard.
+     *
+     * 🔴 INVESTOR RELATIONS LEADS ARE EXCLUDED HERE, AND THIS IS THE WHOLE OF THAT GUARD. Every
+     * other method in this class consumes the map this one returns, so one skip keeps an IR
+     * conversion out of all five jobs — including the Contact record-type overwrite that would
+     * otherwise land permanently on the investor's real Contact. See the IR section of the class
+     * header for the full argument; note especially that an IR conversion now DOES carry a
+     * ConvertedOpportunityId (InvestorLeadConvertService deletes that Opportunity moments later),
+     * so the `!= null` test below no longer excludes it and the record type is the only signal
+     * left.
      */
     private static Map<Id, Lead> justConvertedByOpportunity(List<Lead> newLeads, Map<Id, Lead> oldMap) {
+        Id irRecordTypeId = irLeadRecordTypeId();
         Map<Id, Lead> oppToLead = new Map<Id, Lead>();
         for (Lead l : newLeads) {
+            // Reads Lead.RecordTypeId directly on purpose: a caller that queried Leads without it
+            // gets a loud SObjectException rather than a silent segregation breach.
+            if (irRecordTypeId != null && irRecordTypeId == l.RecordTypeId) {
+                continue;
+            }
             Lead prior = (oldMap == null) ? null : oldMap.get(l.Id);
             Boolean justConverted = l.IsConverted && (prior == null || !prior.IsConverted);
             if (justConverted && l.ConvertedOpportunityId != null) {
