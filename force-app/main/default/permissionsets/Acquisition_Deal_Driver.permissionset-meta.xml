@@ -52,8 +52,25 @@
         an OBJECT permission that confers no FLS. That is precisely why the service checks Modify
         All Data BEFORE it reads the flag; reversing those two statements locks out every
         administrator. Acceptance-test as a real deal-driver persona.
+
+        🔬 SPIKE ADDITION (2026-08-12) — DOES NOT YET CHANGE THE GATE ABOVE. Everything stated
+        above this line is still true: the live gate is still the two-factor User.Deal_Driver__c
+        flag read, unchanged. The customPermissions grant below is ONLY for a P0 spike proving
+        whether {!$Permission.Acquisition_Deal_Actions} is honoured by the FlexiPage renderer at
+        API 67.0, ahead of the wider 24-rule migration in
+        agent-output/design-requirements-custom-permissions.md. It is consumed by exactly ONE
+        FlexiPage criterion (Development_Feasibility_Review_Record_Page) and by NO Apex. Because
+        this set is assigned directly to the same population as the flag (see above), granting the
+        permission here changes nothing about who holds it - it rides the existing population by
+        construction, same as the fieldPermissions grant. Revert = delete the customPermissions
+        block below + the CustomPermission file + the one flexipage criterion; the
+        fieldPermissions grant above is untouched either way.
     -->
     <description>Marks the &quot;Junior&quot; deal-driver: grants read on User.Deal_Driver__c so the deal-driving quick actions (stage advances; Submit for Approval) show only for holders whose Deal_Driver__c = true. Not assigned to approvers.</description>
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Acquisition_Deal_Actions</name>
+    </customPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>User.Deal_Driver__c</field>

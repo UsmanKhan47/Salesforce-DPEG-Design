@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, DELIBERATELY.
+        CustomPermission.Description is capped at 255 characters (measured 2026-08-12 via a
+        failed dry-run deploy of this file's first draft: "Value too long for field:
+        Description maximum length is: 255"). Broker_Protection_Access carries the same
+        workaround for the identical reason (see its own header comment). A comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs.
+
+        SPIKE (2026-08-12) — proves whether a {!$Permission.X} FlexiPage Dynamic Actions
+        visibility rule is honoured by the RENDERER, not merely deployed, at API 67.0 -
+        see agent-output/design-requirements-custom-permissions.md section 7.1. This repo has
+        measured a flexipage construct that deployed green, survived a retrieve, and was
+        silently ignored by the renderer (Is_Decline_Allowed__c's parenthesised-OR finding), so
+        a green deploy of this permission is NOT proof it works.
+
+        This is NOT yet the layer-5 authorization token for the real Acquisitions deal-action
+        gate - Apex still reads User.Deal_Driver__c unchanged. It is granted only through
+        Acquisition_Deal_Driver (see that file's own SPIKE ADDITION comment) and is referenced
+        by exactly ONE FlexiPage criterion (Development_Feasibility_Review_Record_Page). If the
+        spike fails, delete this file, the customPermissions block in
+        Acquisition_Deal_Driver.permissionset-meta.xml, and revert that one flexipage criterion.
+    -->
+    <label>Acquisition Deal Actions</label>
+    <description>SPIKE (2026-08-12): proves $Permission FlexiPage visibility rules render correctly at API 67.0. See design-requirements-custom-permissions.md.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>
