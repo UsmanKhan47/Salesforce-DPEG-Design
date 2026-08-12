@@ -331,6 +331,7 @@ private class OpportunitySelectorTest {
         deal.Offer_Due_Date__c = Date.today().addDays(9);
         deal.Listing_Broker_Name__c = 'Pat Lister';
         deal.Listing_Broker_Email__c = 'pat.lister@example.invalid';
+        deal.Sale_Process__c = 'On-Market Listing';
         insert deal;
 
         Test.startTest();
@@ -347,6 +348,11 @@ private class OpportunitySelectorTest {
             'Listing_Broker_Name__c must be SELECTed for the same reason');
         Assert.areEqual('pat.lister@example.invalid', result[0].Listing_Broker_Email__c,
             'Listing_Broker_Email__c must be SELECTed for the same reason');
+        Assert.areEqual('On-Market Listing', result[0].Sale_Process__c,
+            '🔴 Sale_Process__c JOINED THIS FIELD SET 2026-08-12 and is not optional — it is read '
+            + 'for the identical reason as the other three: an unselected field reads null, so '
+            + 'buildChange would treat every deal as if it had no sale process on file and write '
+            + 'the same value again on every redelivery of the same campaign email');
     }
 
     @isTest

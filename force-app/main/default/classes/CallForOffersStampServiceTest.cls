@@ -42,6 +42,16 @@
  * cannot produce, the anti-pattern that rule's own exemption exists to prevent. The constancy
  * property (1 SOQL / <= 1 DML at N = 10) is asserted instead, which is what would actually
  * catch a bulkification regression.
+ *
+ * ⚠ 2026-08-12 — Sale_Process__c JOINED THE STAMP SET (Defect 4,
+ * agent-output/design-requirements-pipeline-defects.md). A new "Sale_Process__c" section near
+ * the bottom mirrors the OVERWRITE / null-preserves / no-change-skip tests already pinned above
+ * for `Offer_Due_Date__c`, and adds ONE test this field alone needs:
+ * `stamp_saleProcessOffListValue_isDroppedButTheRestOfTheRowStillStamps`, which uses the new
+ * `simulateSaleProcessValues` seam — the ONLY way the restricted-picklist describe guard can be
+ * made to fire in a test, because every value reaching `buildChange` through the real pipeline
+ * has already been validated against `Lead.Sale_Process__c`, which is byte-identical to
+ * `Opportunity.Sale_Process__c` today.
  */
 @isTest
 private class CallForOffersStampServiceTest {
@@ -61,7 +71,8 @@ private class CallForOffersStampServiceTest {
 
     private static Opportunity reload(Id recordId) {
         return [
-            SELECT Id, Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+            SELECT Id, Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
+                   Sale_Process__c
             FROM Opportunity WHERE Id = :recordId
         ];
     }
@@ -69,14 +80,25 @@ private class CallForOffersStampServiceTest {
     // ── The happy path ───────────────────────────────────────────────────────
 
     @isTest
-    static void stamp_blankDeal_writesAllThreeFields() {
+    static void stamp_blankDeal_writesAllFourFields() {
+        // ⚠ RENAMED 2026-08-12 (code review S1): the method used to be named
+        // "...writesAllThreeFields" from before Sale_Process__c joined the stamp set. The
+        // service now writes FOUR fields on a blank deal — Offer_Due_Date__c,
+        // Listing_Broker_Name__c, Listing_Broker_Email__c AND Sale_Process__c — and the name
+        // and the request/assertions below are updated to match, rather than leaving the
+        // "happy path" test as the one place in this class that still exercises only three of
+        // the four last-wins fields.
         Opportunity deal = TestDataFactory.createOpportunity(null, true);
+
+        CallForOffersStampService.StampRequest req =
+            request(deal.Id, DUE, 'Pat Lister', 'pat.lister@example.invalid');
+        req.saleProcess = 'Call for Offers'; // an ACTIVE Opportunity.Sale_Process__c value —
+        // see stamp_saleProcessOnListValue_isWrittenAgainstTheRealLiveDescribe below, which
+        // proves this exact value against the real live describe, not a simulated set.
 
         Test.startTest();
         CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
-            new List<CallForOffersStampService.StampRequest>{
-                request(deal.Id, DUE, 'Pat Lister', 'pat.lister@example.invalid')
-            });
+            new List<CallForOffersStampService.StampRequest>{ req });
         Test.stopTest();
 
         Assert.areEqual(1, result.stamped.size(), 'The one deal must be stamped');
@@ -88,6 +110,10 @@ private class CallForOffersStampServiceTest {
         Assert.areEqual(DUE, stamped.Offer_Due_Date__c, 'The offer deadline is the point of the feature');
         Assert.areEqual('Pat Lister', stamped.Listing_Broker_Name__c, '');
         Assert.areEqual('pat.lister@example.invalid', stamped.Listing_Broker_Email__c, '');
+        Assert.areEqual('Call for Offers', stamped.Sale_Process__c,
+            'THE FOURTH FIELD: Sale_Process__c joined the stamp set 2026-08-12 and belongs in the '
+            + 'happy-path test alongside the other three, not only in the dedicated Sale_Process__c '
+            + 'section further down this class');
     }
 
     // ── The overwrite rule ───────────────────────────────────────────────────
@@ -344,6 +370,153 @@ private class CallForOffersStampServiceTest {
         Opportunity stamped = reload(deal.Id);
         Assert.areEqual(DUE, stamped.Offer_Due_Date__c, 'THE DEADLINE STILL LANDS — that is the point');
         Assert.isNull(stamped.Listing_Broker_Email__c, 'and the unusable address is simply not written');
+    }
+
+    // ── Sale_Process__c (Defect 4, added 2026-08-12) ─────────────────────────
+    //
+    // MEASURED: after a call-for-offers stamp, Opportunity.Sale_Process__c still read
+    // 'Off-Market' while the very extraction that produced the stamp returned
+    // sale_process = 'Call for Offers'. Sale_Process__c joins the LAST-WINS set (the deadline's
+    // rule, not the listing broker's — see buildChange's own comment for the argument) and
+    // carries ONE guard the other three stamped fields do not need: it is a RESTRICTED
+    // picklist, so it is describe-guarded against the LIVE Opportunity.Sale_Process__c value
+    // set rather than a hardcoded list.
+
+    @isTest
+    static void stamp_saleProcess_isOverwrittenByTheNewerEmail() {
+        // The overwrite half of the rule, mirroring stamp_existingDate_isOVERWRITTENByTheNewerEmail
+        // for the field this fix adds. 'Off-Market' is what LeadConvertService would have carried
+        // onto the deal at conversion; a later call-for-offers email is newer information that the
+        // seller has since moved the asset to a marketed process, and the deal must not keep
+        // contradicting what the pipeline now knows.
+        Opportunity deal = TestDataFactory.createOpportunity(null, false);
+        deal.Sale_Process__c = 'Off-Market';
+        insert deal;
+
+        CallForOffersStampService.StampRequest req = request(deal.Id, DUE, null, null);
+        req.saleProcess = 'Call for Offers';
+
+        Test.startTest();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(), 'The date alone would be a change; the sale process changes too');
+        Assert.areEqual('Call for Offers', reload(deal.Id).Sale_Process__c,
+            'LAST-WINS: a deal reading Off-Market while this pipeline holds an email announcing a '
+            + 'call for offers is actively misleading the deal team — the same "campaign fact that '
+            + 'changes" argument as the offer deadline, not the listing broker\'s fill-if-present one');
+    }
+
+    @isTest
+    static void stamp_saleProcessNullIncoming_neverErasesWhatTheDealAlreadyKnows() {
+        // The other half of the rule, mirroring stamp_nullIncomingValues_neverBlankWhatIsAlreadyThere:
+        // an email that says nothing about sale_process must not blank a value the deal already has.
+        Opportunity deal = TestDataFactory.createOpportunity(null, false);
+        deal.Sale_Process__c = 'On-Market Listing';
+        insert deal;
+
+        CallForOffersStampService.StampRequest req = request(deal.Id, DUE, null, null); // the date forces a write
+        req.saleProcess = null;
+
+        Test.startTest();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(), 'The deadline alone is a change, so the row is written');
+        Assert.areEqual('On-Market Listing', reload(deal.Id).Sale_Process__c,
+            'A null incoming sale_process means "this email said nothing about it", NEVER "clear it"');
+    }
+
+    @isTest
+    static void stamp_saleProcessUnchanged_isDroppedFromTheNoChangeSkip() {
+        // The idempotency half, mirroring stamp_replayedWithIdenticalValues_isAZeroDmlNoOp for this
+        // one field in isolation: a request whose sale_process already matches the stored value must
+        // not, by itself, cost the deal a write.
+        Opportunity deal = TestDataFactory.createOpportunity(null, false);
+        deal.Sale_Process__c = 'Call for Offers';
+        insert deal;
+
+        CallForOffersStampService.StampRequest req = new CallForOffersStampService.StampRequest();
+        req.recordId = deal.Id;
+        req.saleProcess = 'Call for Offers';
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        Integer dmlAfter = Limits.getDmlStatements();
+        Test.stopTest();
+
+        Assert.areEqual(1, result.unchanged.size(),
+            'Nothing this email carries is new to the deal, including the sale process');
+        Assert.areEqual(dmlBefore, dmlAfter,
+            'ZERO DML. A field-by-field no-change skip must hold for THIS field too, or a replayed '
+            + 'call-for-offers email starts churning LastModifiedDate on a live deal again');
+    }
+
+    @isTest
+    static void stamp_saleProcessOffListValue_isDroppedButTheRestOfTheRowStillStamps() {
+        // 🔴 THE DESCRIBE GUARD, MADE FALSIFIABLE. Every value that reaches buildChange has
+        // already been validated by LLMExtractionParser against Lead.Sale_Process__c, and the
+        // Lead and Opportunity picklists are byte-identical TODAY — so no input reachable
+        // through the real pipeline can be off-list, the guard never fires on a real email, and
+        // no test could otherwise tell "the guard works" from "there is no guard". Injecting a
+        // set that OMITS 'Call for Offers' and then supplying exactly that value makes the drop
+        // OBSERVABLE. This is the ONLY test in this class that uses simulateSaleProcessValues.
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+
+        CallForOffersStampService.StampRequest req =
+            request(deal.Id, DUE, 'Pat Lister', 'pat.lister@example.invalid');
+        req.saleProcess = 'Call for Offers';
+
+        Test.startTest();
+        CallForOffersStampService.simulateSaleProcessValues = new Set<String>{
+            'Off-Market', 'On-Market Listing', 'Auction' // 'Call for Offers' deliberately OMITTED
+        };
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        CallForOffersStampService.simulateSaleProcessValues = null;
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(),
+            'THE WHOLE POINT: one bad picklist value must not cost the row the rest of its stamp');
+        Assert.areEqual(0, result.refusals.size(),
+            'The guard drops the value BEFORE the DML, so there is nothing to refuse. Refusals: '
+            + result.refusals);
+
+        Opportunity stamped = reload(deal.Id);
+        Assert.isNull(stamped.Sale_Process__c,
+            '🔴 THE LOAD-BEARING ASSERTION: an off-list value is DROPPED rather than pushed to the '
+            + 'DML, where it would fail INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST and take the '
+            + 'deadline and listing-broker stamp down with it in the same row');
+        Assert.areEqual(DUE, stamped.Offer_Due_Date__c,
+            'AND THE DEADLINE STILL LANDS — a dropped Sale_Process__c must not touch either of the '
+            + 'other two fields in the same StampRequest');
+        Assert.areEqual('Pat Lister', stamped.Listing_Broker_Name__c, '');
+    }
+
+    @isTest
+    static void stamp_saleProcessOnListValue_isWrittenAgainstTheRealLiveDescribe() {
+        // The seam's counterpart, WITHOUT it: proves the guard's normal path (the real
+        // Opportunity.Sale_Process__c describe, not a simulated set) accepts a genuine value.
+        // simulateSaleProcessValues is left untouched/null here on purpose.
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+
+        CallForOffersStampService.StampRequest req =
+            request(deal.Id, DUE, 'Pat Lister', 'pat.lister@example.invalid');
+        req.saleProcess = 'Auction';
+
+        Test.startTest();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(), '');
+        Assert.areEqual(0, result.refusals.size(), '');
+        Assert.areEqual('Auction', reload(deal.Id).Sale_Process__c,
+            'Against the REAL live picklist (no seam active), a genuine value is written normally');
     }
 
     // ── Partial success ──────────────────────────────────────────────────────

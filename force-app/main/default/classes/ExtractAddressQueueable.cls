@@ -560,9 +560,38 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * STANDS FOR THE PRE-CALLOUT FILTER. intake-rules-v2 introduced a business rule that reads
      * like its opposite — mass-marketed call-for-offers blasts should not become Leads — and the
      * two are reconciled by the sentence three paragraphs up: "Bulk mail must reach the LLM and be
-     * classified there." The new suppression (`isCallForOffersGated`) runs AFTER THE CALLOUT, on
-     * the model's own `email_category` + `category_confidence`, behind an admin toggle that ships
-     * OFF. That is precisely what this comment asked for.
+     * classified there." The new suppression (`isCallForOffersGated`) runs AFTER THE CALLOUT.
+     * That much is precisely what this comment asked for.
+     *
+     * 🔴 CORRECTED 2026-08-12 — DO NOT READ THAT SUPPRESSION AS TWO-FACTOR OR AS OPTIONAL. This
+     * paragraph used to describe the gate as running "on the model's own `email_category` +
+     * `category_confidence`, behind an admin toggle that ships OFF". NONE OF THAT IS TRUE, and it
+     * never was in shipped code. `isCallForOffersGated` is one statement: it tests `email_category`
+     * ALONE, UNCONDITIONALLY. There is no confidence threshold, no Custom Metadata and no toggle
+     * anywhere in this feature — that machinery was designed and then DELETED before the feature
+     * shipped, because the user's rule is categorical. So the suppression is ONE MODEL OPINION,
+     * live on every email, with NO DETERMINISTIC BACKSTOP.
+     *
+     * ⚠ AND `category_confidence` IS NOT THE MISSING SECOND FACTOR — IT IS MEASURED-DEAD FOR THIS
+     * FAILURE. On 2026-08-12 an ordinary offering memorandum from ONE named broker was gated here
+     * and lost its registry claim to a different broker; the model returned `category_confidence`
+     * 1.0 on it, so NO threshold on that field, anywhere in its range, would have prevented it. The
+     * value is parsed and stored as tuning data only — see `isCallForOffersGated`'s Javadoc.
+     *
+     * 🔴 WHY THE CORRECTION MATTERS AT THIS SPOT SPECIFICALLY: this is the paragraph a future
+     * engineer reads before reconsidering the DETERMINISTIC transport-layer corroboration factor
+     * (recipient count, `Precedence: bulk`, `List-Unsubscribe:`, a platform sender domain) that the
+     * design recommended and the user DECLINED at Gate 1 on 2026-08-12. Told the gate was already
+     * two-factor and toggleable, they would conclude that residual was closed. It is open. The only
+     * levers today are (a) sharpening the classifier wording in `LLMExtractionCalloutService`'s
+     * enriched block — where the 2026-08-12 fix added an explicit mass-send PRECEDENCE rule — or
+     * (b) raising that deterministic factor as a new change.
+     *
+     * ⚠ AND (b) WOULD NOT WEAKEN THE PROHIBITION BELOW — the two are not the same thing. Such a
+     * factor would be read AFTER the callout, as corroboration REQUIRED BEFORE SUPPRESSING, i.e. it
+     * can only ever make suppression harder. Putting the same signal in the PRE-callout filter
+     * suppresses on the header alone and makes suppression easier, which is what the paragraphs
+     * above forbid. Do not cite one as licence for the other.
      *
      * 🔴 SO: DO NOT ADD `bulk`, `List-Unsubscribe`, OR ANY OTHER BLAST SIGNAL TO SENDER_CONTAINS /
      * SENDER_EXACT / the header pre-filter, and do not read U2 as licence to. A pre-callout blast
@@ -1240,7 +1269,9 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      *      — this branch is therefore INERT for the majority of matches. That is the user's
      *      decision (D26 Q1), stated with the consequence, not a defect to "fix" here.
      *   4. ONE `CallForOffersStampService.stamp(...)` call for the whole email — 1 SOQL and at
-     *      most 1 DML regardless of how many deals matched.
+     *      most 1 DML regardless of how many deals matched. ⚠ Since 2026-08-12 the request also
+     *      carries `sale_process`, PER PROPERTY like the deadline; the service describe-guards it
+     *      against the live restricted picklist. No extra query, no extra statement.
      *   5. One `RoutingOutcome` PER PROPERTY: the matched label carrying the deal Id at
      *      `PRIORITY_REPEAT` (which already means "filed onto an existing record, no claim
      *      taken" — exactly this branch, so no fifth PRIORITY_* constant is invented), or
@@ -1356,6 +1387,14 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             request.offerDueDate = property.offerDueDate;
             request.listingBrokerName = listingBrokerName;
             request.listingBrokerEmail = listingBrokerEmail;
+            // PER PROPERTY, for the same reason offerDueDate is: a portfolio blast can market
+            // different assets through different processes. LAST-WINS like the deadline and
+            // UNLIKE the listing broker — see CallForOffersStampService.buildChange for the
+            // argument, and note the service DESCRIBE-GUARDS this value against
+            // Opportunity.Sale_Process__c before writing it. The value reaching here has already
+            // been validated by LLMExtractionParser against Lead.Sale_Process__c, which is a
+            // DIFFERENT picklist that merely happens to match today.
+            request.saleProcess = property.saleProcess;
             requests.add(request);
         }
 
@@ -1463,6 +1502,23 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * WITH an address wins it outright. The only mitigation is human, which is what
      * OUTCOME_NO_ADDRESS exists to make possible.
      *
+     * ═══ LABEL FIX, 2026-08-12 — AND IT IS THE `OUTCOME_NO_ADDRESS` QUEUE IT PROTECTS ═══
+     * The residual above is the whole reason the label matters: OUTCOME_NO_ADDRESS names the
+     * population a human must chase an address for BEFORE a later broker claims the property.
+     * A live internal email ("Team lunch Friday + Q3 expense reports") landed in it, because the
+     * model returned one structurally EMPTY property object and `firstProperty` accepted any
+     * non-null element. `firstProperty` now skips an object that states nothing, so this method's
+     * unchanged `stampable == null` test resolves such an email to OUTCOME_NO_PROPERTY instead.
+     *
+     * ⚠ NOTHING ELSE MOVED. The Lead is still created (explicit user decision — branch (c) is
+     * also the LLM-outage landing point and suppressing it here would be a second, differently
+     * motivated change), the two label constants keep their exact text, and no historical row is
+     * back-filled — standing precedent in this class. Neither constant is named by any deployed
+     * `Inbound_Email_Staging__c` list-view filter (verified 2026-08-12 across all eight views;
+     * `Gated_Not_Acquisition` filters `startsWith 'Not Acquisition'`, `Gated_Call_For_Offers`
+     * `startsWith 'Not Routed'` OR `contains 'call for offers'`, and neither matches a
+     * `New Lead (...)` label), so the reclassification is invisible to every deployed view.
+     *
      * @param extraction The parsed extraction.
      */
     private void routeNoProperty(LLMExtractionResult extraction) {
@@ -1487,19 +1543,40 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     }
 
     /**
-     * The first non-null property in the model's own array order, or null when the email carried
-     * none. Branch (c) fires only when the work-list is empty, so in branch (c) EVERY property is
-     * addressless — there is no mixed case to reason about and no "best" candidate to choose.
+     * The first property in the model's own array order that actually SAYS something, or null
+     * when the email carried none. Branch (c) fires only when the work-list is empty, so in
+     * branch (c) EVERY property is addressless — there is no mixed case to reason about and no
+     * "best" candidate to choose.
+     *
+     * ═══ 🔴 LABEL FIX, 2026-08-12 — "NON-NULL" WAS THE WRONG TEST ═══
+     * MEASURED: an internal email ("Team lunch Friday + Q3 expense reports") came back with ONE
+     * property object in which EVERY field was empty. This method returned the first NON-NULL
+     * element, an empty object is non-null, so `stampable` was non-null and `routeNoProperty`
+     * chose OUTCOME_NO_ADDRESS — "New Lead (property, no address)", which is the population an
+     * administrator works in order to CHASE THE MISSING ADDRESS. A team-lunch email in that
+     * queue makes the queue itself untrustworthy, which is the actual cost.
+     *
+     * ⚠ THIS CHANGES THE LABEL, AND ONLY THE LABEL, FOR THAT SHAPE. It does NOT make branch (c)
+     * unreachable and does NOT stop the Lead being created — `routeProperties` falls into
+     * `routeNoProperty` whenever the WORK-LIST is empty, and `buildWorkList` already drops blank
+     * addresses, so an email with zero properties and an email with one empty property have
+     * always behaved identically here. Branch (c) creating a Lead is by design (it is also the
+     * LLM-outage landing point) and is retained by explicit user decision.
+     *
+     * ⚠ THE SKIP TEST IS `hasNoExtractedValues()`, NOT "no name and no address" — see that
+     * method's Javadoc. A property described only by its FACTS ("128-unit multifamily, 6.2 cap")
+     * has neither a name nor an address and is precisely what OUTCOME_NO_ADDRESS exists for; the
+     * narrower test keeps its deal block and its label intact.
      *
      * @param properties The parsed properties; null/empty is tolerated.
-     * @return The property to stamp, or null.
+     * @return The property to stamp, or null when every element is absent or says nothing.
      */
     private static PropertyExtraction firstProperty(List<PropertyExtraction> properties) {
         if (properties == null) {
             return null;
         }
         for (PropertyExtraction property : properties) {
-            if (property != null) {
+            if (property != null && !property.hasNoExtractedValues()) {
                 return property;
             }
         }
@@ -1844,10 +1921,19 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     }
 
     /**
-     * Whether a parsed property belongs in the "not routed" footer: it exists, it is NOT the one
-     * already stamped onto the Lead (D13, identity comparison — PropertyExtraction defines no
-     * equals(), and two properties in one email can legitimately share every field value), and its
-     * address does not normalize to a usable claim key.
+     * Whether a parsed property belongs in the "not routed" footer: it exists, it SAYS
+     * something, it is NOT the one already stamped onto the Lead (D13, identity comparison —
+     * PropertyExtraction defines no equals(), and two properties in one email can legitimately
+     * share every field value), and its address does not normalize to a usable claim key.
+     *
+     * ⚠ THE `hasNoExtractedValues()` TERM IS PART OF THE SAME 2026-08-12 LABEL FIX AND MUST NOT
+     * BE DROPPED AS "REDUNDANT". `firstProperty` now skips an empty property object, so `exclude`
+     * is null for exactly the email that carries one — and without this term the footer would
+     * print `- (unidentified property) (no usable address)` into `Deal_Notes__c` on the very Lead
+     * the fix exists to clean up, turning one junk label into one junk paragraph. An object that
+     * states nothing is not a property that failed to route; there is nothing to footnote.
+     * (It is also a strict improvement on the addressable path: that line has never carried
+     * information for any caller.)
      *
      * @param property The candidate; null is tolerated.
      * @param exclude  The property stamped onto the Lead, or null.
@@ -1855,6 +1941,7 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      */
     private static Boolean isFootnotable(PropertyExtraction property, PropertyExtraction exclude) {
         return property != null
+            && !property.hasNoExtractedValues()
             && property != exclude
             && String.isBlank(PropertyMatchingService.normalizeAddress(property.propertyAddress));
     }
@@ -2795,6 +2882,39 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * related to call for offers then we must not store it as a lead, simple"), taken literally
      * because the business rule is categorical. It is written down so the asymmetry is a decision
      * on the record rather than something a future reader discovers and quietly "fixes".
+     *
+     * ═══ 🔴 2026-08-12 — THE RISK ABOVE STOPPED BEING HYPOTHETICAL, AND THIS PREDICATE IS
+     * STILL ONE MODEL OPINION ═══
+     * MEASURED on live traffic: an ORDINARY offering memorandum from ONE named broker — property
+     * name, address, square feet, occupancy, guidance price, cap rate, plus the sentence "Offers
+     * due 30 September 2026" — was classified `call_for_offers` at `category_confidence` 1.0.
+     * This gate suppressed it, and a DIFFERENT broker who sent the SAME property without a
+     * deadline line won the registry claim outright. Most brokered OMs state a bid deadline, so
+     * the gated population was ORDINARY traffic rather than the tail case this Javadoc assumed.
+     *
+     * WHAT WAS DONE: the CLASSIFIER was narrowed in `LLMExtractionCalloutService`'s enriched
+     * block — `call_for_offers` now requires a mass-distribution shape, a stated offers-due date
+     * is explicitly neither sufficient nor evidence, and the measured email appears as the
+     * canonical NEGATIVE exemplar. THIS PREDICATE IS UNCHANGED, deliberately: U2's core business
+     * rule is untouched, so a genuine marketed blast still produces no Lead and no claim.
+     *
+     * 🔴 WHAT WAS NOT DONE, BY EXPLICIT USER DECISION AT GATE 1 — AND THE RESIDUAL IT LEAVES.
+     * The design recommended making this gate TWO-FACTOR, where the second factor is of a
+     * DIFFERENT KIND from the first: a deterministic transport-layer blast signal Apex can check
+     * (recipient count, `Precedence: bulk`, `List-Unsubscribe:`, a platform sender domain), so a
+     * named broker emailing DPEG directly could never be suppressed however the model read the
+     * prose. The user chose the prompt-only fix. CONSEQUENCE: suppression here still rests
+     * ENTIRELY on model judgement with NO DETERMINISTIC BACKSTOP, so the same failure class can
+     * recur with different wording, and when it does the loss is again a permanently unclaimed
+     * property recoverable only by manual registry surgery. That is a known accepted residual,
+     * not an oversight — do not record it as fixed.
+     *
+     * ⚠ AND `category_confidence` IS NOT THE LEVER FOR IT. It was 1.0 on the measured email, so
+     * NO threshold on that field anywhere in its range would have prevented this. The paragraph
+     * below still holds for the tuning purpose it describes, but the reservation it makes ("if a
+     * threshold is ever reintroduced, gate on THIS field") is MEASURED-DEAD for this specific
+     * failure. The two live levers are: sharpen the classifier wording again, or revisit the
+     * deterministic second factor.
      *
      * ═══ ⚠ WHY category_confidence IS PARSED BUT DELIBERATELY NOT GATED ON ═══
      * The model returns `category_confidence` and the parser reads it into

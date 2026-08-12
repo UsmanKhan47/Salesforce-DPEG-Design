@@ -4,8 +4,9 @@
  *
  * One inbound call-for-offers email can name several properties; each property that the
  * claim pipeline can match to a CONVERTED winner resolves to a live deal, and this class
- * stamps that deal's call-for-offers block: `Offer_Due_Date__c`, `Listing_Broker_Name__c`
- * and `Listing_Broker_Email__c`. It does nothing else — no stage change, no child record,
+ * stamps that deal's call-for-offers block: `Offer_Due_Date__c`, `Listing_Broker_Name__c`,
+ * `Listing_Broker_Email__c` and — since 2026-08-12 — `Sale_Process__c`. It does nothing else
+ * — no stage change, no child record,
  * no notification (D9), no Lead and no registry claim (D3, which is enforced upstream in
  * `ExtractAddressQueueable` and can never be reached from here because this class holds no
  * Lead or registry DML of any kind).
@@ -34,6 +35,19 @@
  * transaction-scoped static the way `EmailThreadAdopterService.lastRunFailureCodes` is (that
  * shape makes a total failure indistinguishable from "nothing needed doing"). The caller
  * funnels `refusals` into `Inbound_Email_Staging__c.Error__c`, which is durable.
+ *
+ * ═══ Sale_Process__c JOINED THE LAST-WINS SET 2026-08-12 — AND IS THE ONLY DESCRIBE-GUARDED
+ * FIELD HERE ═══
+ * MEASURED on a live run: after a call-for-offers stamp the deal still read
+ * `Sale_Process__c = 'Off-Market'` while the same extraction returned
+ * `sale_process = 'Call for Offers'`. It is a fact about THE CAMPAIGN, in the deadline's class
+ * rather than the listing broker's — the full argument is at the write itself in `buildChange`,
+ * where a future reader will actually be standing. Two things it does NOT change: the three
+ * shared guards (never write blank, never churn an unchanged deal, merge by `recordId` first)
+ * and the governor shape (`getDescribe()` is a describe, not a query, so the pinned
+ * `1 SOQL / <=1 DML` is untouched). 🔴 The one thing it DOES add is a restricted-picklist
+ * describe guard the other three fields do not need and must not be "harmonised" away — see
+ * `saleProcessValues()`.
  *
  * ═══ THE OVERWRITE RULE: LAST EMAIL WINS, PER FIELD, NEVER WITH NULL ═══
  * A call-for-offers deadline is a fact that CHANGES ("deadline extended to Friday"), and the
@@ -112,6 +126,78 @@ public with sharing class CallForOffersStampService {
     private static final Integer LEN_LISTING_BROKER_NAME = 120;
 
     /**
+     * Active values of `Opportunity.Sale_Process__c`, resolved once per transaction.
+     *
+     * 🔴 THIS IS THE ONE GUARD THE OTHER THREE STAMPED FIELDS DO NOT NEED, AND IT IS THE MOST
+     * LIKELY WAY A CORRECT-LOOKING IMPLEMENTATION OF THIS FIELD BREAKS IN PRODUCTION.
+     * `Sale_Process__c` is a RESTRICTED picklist (`<restricted>true</restricted>`, four values:
+     * Off-Market / On-Market Listing / Call for Offers / Auction). An off-list value does NOT
+     * fail at compile time — it fails the DML at runtime with
+     * `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`. ⚠ `allOrNone = false` limits that to the ONE
+     * row, so it does not take the statement down; what it DOES take down is that deal's
+     * deadline and listing-broker stamp in the same row, reported as a refusal that reads like
+     * an approval lock. Guarding AT SOURCE — dropping the value rather than pushing it — is what
+     * keeps a bad picklist value from costing a deal the rest of its stamp.
+     *
+     * ⚠ THE PARSER'S EXISTING GUARD IS NOT THIS GUARD, AND THE DIFFERENCE IS THE WHOLE POINT.
+     * `LLMExtractionParser.parseProperty` already validates `sale_process` against
+     * **`Lead.Sale_Process__c`** (it is parsing a value bound for a Lead). This writes
+     * **`Opportunity.Sale_Process__c`** — a DIFFERENT picklist that merely happens to be
+     * byte-identical today. The moment the two drift, the parser's guard passes a value this
+     * field rejects, and nothing else in the chain would notice.
+     *
+     * `getDescribe()` is a DESCRIBE, not a query: it consumes no SOQL limit, so this cannot move
+     * the class's pinned `1 SOQL / <=1 DML` budget. Same mechanism, same reasoning, as
+     * `LeadConvertService.saleProcessValues()` — which describe-guards this very field for this
+     * very reason. Deliberately NOT a hardcoded list: a value deactivated in Setup must stop
+     * being written without a deploy.
+     */
+    private static Set<String> saleProcessValuesCache;
+
+    /**
+     * TEST-ONLY SEAM #3 — replaces the live picklist describe with a caller-supplied set.
+     *
+     * 🔴 IT EXISTS BECAUSE THE DESCRIBE GUARD IS OTHERWISE UNFALSIFIABLE. Every value that can
+     * reach `buildChange` has already been validated against `Lead.Sale_Process__c` by
+     * `LLMExtractionParser`, and the two picklists are byte-identical today — so no input
+     * reachable through the real pipeline can be off-list, the guard never fires, and no test
+     * can distinguish "the guard works" from "there is no guard". Injecting a set that OMITS a
+     * value the caller then supplies makes the drop OBSERVABLE, which is the only way this guard
+     * is covered at all. (Same problem and same remedy as the `LeadConvertService` and
+     * `PropertyAssetService` describe-guard tests.)
+     *
+     * ⚠ A PLAIN FIELD PLUS AN ACCESSOR METHOD, NEVER THE LAZY STATIC-PROPERTY IDIOM
+     * (`private static Set<String> x { get { if (x == null) ... return x; } set; }`). That idiom
+     * is widely cited and is INFINITE RECURSION in Apex once the getter body references the
+     * property itself — a runtime failure no compile step catches. This shape has no such edge.
+     *
+     * NEVER set this outside a test class.
+     */
+    @TestVisible
+    private static Set<String> simulateSaleProcessValues = null;
+
+    /**
+     * @return The active values of `Opportunity.Sale_Process__c`; memoized per transaction, and
+     *         overridden wholesale by `simulateSaleProcessValues` when a test has supplied one.
+     */
+    private static Set<String> saleProcessValues() {
+        if (simulateSaleProcessValues != null) {
+            return simulateSaleProcessValues;
+        }
+        if (saleProcessValuesCache == null) {
+            Set<String> values = new Set<String>();
+            for (Schema.PicklistEntry entry
+                    : Opportunity.Sale_Process__c.getDescribe().getPicklistValues()) {
+                if (entry.isActive()) {
+                    values.add(entry.getValue());
+                }
+            }
+            saleProcessValuesCache = values;
+        }
+        return saleProcessValuesCache;
+    }
+
+    /**
      * TEST-ONLY SEAM #1 — makes `stamp` THROW before doing anything.
      *
      * 🔴 IT EXISTS BECAUSE THE FAILURE IT MODELS IS THE ONE SAFETY PROPERTY OF THE WHOLE
@@ -168,6 +254,12 @@ public with sharing class CallForOffersStampService {
         public String listingBrokerName;
         /** The listing broker's address, or null. Sanitized to a valid 80-char Email here. */
         public String listingBrokerEmail;
+        /**
+         * `sale_process` for the property that matched this deal, or null. LAST-WINS, and
+         * DESCRIBE-GUARDED against the live `Opportunity.Sale_Process__c` picklist before it is
+         * written — see `saleProcessValues()` and `buildChange`.
+         */
+        public String saleProcess;
     }
 
     /**
@@ -329,6 +421,9 @@ public with sharing class CallForOffersStampService {
             if (String.isBlank(merged.listingBrokerEmail)) {
                 merged.listingBrokerEmail = request.listingBrokerEmail;
             }
+            if (String.isBlank(merged.saleProcess)) {
+                merged.saleProcess = request.saleProcess;
+            }
         }
         return byRecord;
     }
@@ -338,8 +433,9 @@ public with sharing class CallForOffersStampService {
      *
      * Applies the class header's rule per field: a non-null incoming value OVERWRITES, a
      * null one is ignored, and an incoming value EQUAL to the stored one is not a change.
-     * Values are clipped/sanitized to their destination here because this class is the only
-     * writer of these three fields in the module — the length belongs with the write.
+     * Values are clipped, sanitized or describe-guarded to their destination here because this
+     * class is the only writer of these four fields in the module — the constraint belongs with
+     * the write.
      *
      * @param deal    The stored row, as read by the selector.
      * @param request The merged incoming values for that deal.
@@ -368,6 +464,42 @@ public with sharing class CallForOffersStampService {
         String email = InboundEmailFieldUtil.sanitizeEmail(request.listingBrokerEmail);
         if (String.isNotBlank(email) && email != deal.Listing_Broker_Email__c) {
             change.Listing_Broker_Email__c = email;
+            changed = true;
+        }
+
+        // ═══ Sale_Process__c — LAST-WINS, AND IT IS THE DEADLINE'S KIND OF FACT, NOT THE
+        // LISTING BROKER'S (added 2026-08-12) ═══
+        // MEASURED: after a call-for-offers stamp a deal still read Sale_Process__c = 'Off-Market'
+        // while the very extraction that produced the stamp returned sale_process = 'Call for
+        // Offers'. The deal contradicted what the pipeline knew.
+        //
+        // 🔴 WHICH OF THIS CLASS'S TWO PER-FIELD RULES APPLIES IS THE WHOLE DECISION, so argue it
+        // rather than pattern-match it. The offer deadline is LAST-WINS because it is a fact about
+        // THE CAMPAIGN and it genuinely CHANGES ("extended to Friday") — fill-if-blank would
+        // freeze the first date and make an extension invisible. The listing broker is not even a
+        // FALLBACK because it is a fact about THE TRANSACTION, and a third party's blast is not
+        // newer information about who is running DPEG's deal. Sale process is a fact about the
+        // CAMPAIGN, in the deadline's class exactly: "this asset is now being sold via a call for
+        // offers" describes how the SELLER is running the process, it is the same subject the
+        // deadline describes, and it genuinely changes when an off-market deal goes to a marketed
+        // campaign. A deal reading 'Off-Market' while this pipeline holds an email announcing a
+        // call for offers is actively misleading the deal team, which is the cost of getting this
+        // classification wrong in the other direction.
+        //
+        // 🔴 AND IT CARRIES ONE GUARD THE OTHER THREE DO NOT NEED: Sale_Process__c is a RESTRICTED
+        // picklist, so an off-list value is an INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST at DML time
+        // that costs this deal its deadline and broker stamp too. The value is checked against the
+        // LIVE picklist and DROPPED if absent — never pushed, never checked against a hardcoded
+        // list. See saleProcessValues(): the parser's existing guard is against Lead's picklist,
+        // not this one. The three shared guards are unchanged — a blank incoming value is never
+        // written (an email silent about the process must not erase what the deal knows), an
+        // already-equal value is not a change (the zero-DML replay guarantee), and requests were
+        // merged by recordId before we got here.
+        String saleProcess = request.saleProcess;
+        if (String.isNotBlank(saleProcess)
+                && saleProcessValues().contains(saleProcess)
+                && saleProcess != deal.Sale_Process__c) {
+            change.Sale_Process__c = saleProcess;
             changed = true;
         }
 

@@ -360,10 +360,18 @@ public with sharing class OpportunitySelector {
      * this returns a List and is called ONCE per email regardless of property count. Never
      * call it per property.
      *
+     * ⚠ `Sale_Process__c` JOINED THE FIELD SET 2026-08-12 AND IS NOT OPTIONAL. It is read for
+     * the SAME reason as the other three: `CallForOffersStampService.buildChange` compares the
+     * incoming value against the stored one so an already-current deal is dropped from the
+     * update list entirely (zero DML — the idempotency guarantee). Selecting one fewer field
+     * than the service writes would make every replay of the same campaign email churn
+     * `LastModifiedDate` on a live deal. Whatever this method selects and whatever that method
+     * writes must stay the same set.
+     *
      * @param opportunityIds Matched deal Ids to load (bound with IN); null/empty-safe.
-     * @return Opportunities with Id, Offer_Due_Date__c, Listing_Broker_Name__c and
-     *         Listing_Broker_Email__c populated; an empty list when the input is
-     *         null/empty (never null).
+     * @return Opportunities with Id, Offer_Due_Date__c, Listing_Broker_Name__c,
+     *         Listing_Broker_Email__c and Sale_Process__c populated; an empty list when the
+     *         input is null/empty (never null).
      * @example
      * List&lt;Opportunity&gt; targets =
      *     OpportunitySelector.selectCallForOffersTargetsByIds(matchedIds);
@@ -373,7 +381,8 @@ public with sharing class OpportunitySelector {
             return new List<Opportunity>();
         }
         return [
-            SELECT Id, Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+            SELECT Id, Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
+                   Sale_Process__c
             FROM Opportunity
             WHERE Id IN :opportunityIds
             WITH SYSTEM_MODE

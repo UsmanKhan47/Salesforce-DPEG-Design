@@ -136,6 +136,67 @@ public class PropertyExtraction implements Comparable {
     public String clusterKey;
 
     /**
+     * TRUE when the model returned a property OBJECT that states nothing whatsoever — every
+     * extracted member null or blank. Such an object is a structural artefact of the response
+     * schema, not a property.
+     *
+     * ═══ WHY THIS EXISTS (defect fix, 2026-08-12) ═══
+     * A live internal email ("Team lunch Friday + Q3 expense reports") came back with ONE
+     * property object in which every field was empty. `ExtractAddressQueueable.firstProperty`
+     * returns the first NON-NULL element, and an empty object is non-null, so branch (c)
+     * labelled the resulting Lead `OUTCOME_NO_ADDRESS` ("New Lead (property, no address)") —
+     * the population an administrator is meant to CHASE A MISSING ADDRESS for. A team-lunch
+     * email sitting in that queue is a defect in the queue, not merely a cosmetic one.
+     *
+     * 🔴 THE PREDICATE IS "STATES NOTHING AT ALL", DELIBERATELY NOT "HAS NO NAME AND NO
+     * ADDRESS", AND THE DIFFERENCE IS A REAL POPULATION. An email that describes a property
+     * only by its facts — "128-unit multifamily, 6.2 cap, $14M, seller is a 1031 buyer" —
+     * carries no name and no address AND IS EXACTLY WHAT `OUTCOME_NO_ADDRESS` IS FOR. Skipping
+     * on name-and-address alone would strip that Lead's whole deal block (FIX 2's
+     * `applyPropertyBlock` stamp) and relabel a genuine chase-the-address property as "no
+     * property". Requiring EVERY member to be empty is the narrower rule and is the one that
+     * matches the observed artefact exactly.
+     *
+     * ⚠ `normalizedAddress` and `clusterKey` are EXCLUDED on purpose: they are routing keys
+     * derived by `ExtractAddressQueueable`, not values the email stated, so counting them would
+     * make the answer depend on when the predicate is called.
+     *
+     * ⚠ IT LIVES ON THE DTO, NOT ON ITS CALLER, so the field list it walks is maintained beside
+     * the fields themselves. A new member added above without a line here silently narrows the
+     * predicate, which is the one way this can rot — the same reason the parser's own field
+     * mapping lives next to these declarations.
+     *
+     * @return true when the email stated nothing about this property.
+     * @example
+     * // not a property at all — neither stamp it onto a Lead nor footnote it:
+     * if (property.hasNoExtractedValues()) { continue; }
+     */
+    public Boolean hasNoExtractedValues() {
+        return String.isBlank(propertyName)
+            && String.isBlank(propertyAddress)
+            && String.isBlank(assetType)
+            && String.isBlank(dealType)
+            && String.isBlank(saleProcess)
+            && String.isBlank(zoning)
+            && String.isBlank(sellerEntity)
+            && String.isBlank(dealRoomLink)
+            && guidancePrice == null
+            && guidancePriceLow == null
+            && guidancePriceHigh == null
+            && capRate == null
+            && noi == null
+            && occupancyPct == null
+            && adr == null
+            && buildingSf == null
+            && lotSizeAcres == null
+            && unitCount == null
+            && yearBuilt == null
+            && yearRenovated == null
+            && waltYears == null
+            && offerDueDate == null;
+    }
+
+    /**
      * Total order over (clusterKey, normalizedAddress) — the lock-acquisition order that
      * prevents AB-BA deadlocks between concurrent multi-property emails. See the class
      * header for why this is load-bearing.
