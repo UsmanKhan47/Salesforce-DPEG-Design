@@ -1,7 +1,25 @@
 /**
  * @description Tests RecordStageAdvanceService — the generic stage-advance service behind the
  * "advance stage" quick action on NDA__c, LOI__c, Contract_Review__c, Underwriting__c,
- * Construction_Feasibility_Review__c and Development_Feasibility_Review__c.
+ * Construction_Feasibility_Review__c, Development_Feasibility_Review__c and, since 2026-08-12,
+ * Transaction__c.
+ *
+ * ── ✅ Transaction__c COVERAGE ADDED (2026-08-12, live UI testing fix set) ────
+ * transactionWalksOpenContractThroughToClosedWon pins the user-confirmed sequence (picklist order,
+ * NOT the Path step-text's implied order — see TRANSACTION_NEXT_STAGE's own header for why those
+ * two readings disagree). transactionAdvanceToIsStructurallyUnreachable is the falsifier for the
+ * EMPTY explicit-target allow-list: Transaction__c's path is a straight line with no branch, off-
+ * ramp or loop, so advanceTo() must refuse every target, including a real, valid stage value
+ * ('Post-Closing') — the sharper failure mode than a nonsense string, because it proves the refusal
+ * comes from the allow-list being empty rather than the target being unrecognised.
+ * transactionGateDeniesABareUserAndGrantsAPermissionSetHolder is the one gate test in this class
+ * that needs NO cache-seeding trick: TRANSACTION_STAGE_ACTIONS is Transaction__c's gate and it never
+ * loads the record (single sequence — see gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject
+ * below), so a bare user's OWD/CRUD on Transaction__c is never even reached and a real
+ * System.runAs proof is possible end to end. The gate's OWN membership-vs-flag argument, group
+ * expansion and admin-bypass proofs live in TransactionActionPermissionServiceTest — this class
+ * only proves the DISPATCH (gateFor -> TRANSACTION_STAGE_ACTIONS -> TransactionActionPermissionService)
+ * is wired, not the gate's internals.
  *
  * ── HOW THE STAGE MAPS ARE PINNED ────────────────────────────────────────────
  * Each object gets a WALK test that calls advance() repeatedly until it is refused and asserts the
@@ -431,6 +449,22 @@ private class RecordStageAdvanceServiceTest {
     }
 
     /**
+     * Inserts a standalone Transaction__c at 'Open Contract' with the Day-0 fan-out SUPPRESSED
+     * (Contract_Executed_Date__c = null — same technique TransactionSelectorTest uses), so this
+     * class's stage-map and gate tests are not coupled to TaskFanoutService's async side effects.
+     * Parented to nothing: RecordStageAdvanceService reads only Id and Stage__c for this object
+     * (selectStageRequiredById's field list is deliberately minimal), so neither Opportunity__c nor
+     * Property__c is part of what is under test here — same reasoning as insertNdaOnRecordType /
+     * insertLoiOnRecordType parenting to nothing.
+     */
+    private static Transaction__c insertTransaction() {
+        Transaction__c txn = TestDataFactory.createTransaction(null, null, false);
+        txn.Contract_Executed_Date__c = null;
+        insert txn;
+        return txn;
+    }
+
+    /**
      * Advances a record until the service refuses, returning every confirmation message in order
      * followed by the refusal prefixed 'BLOCKED: '. The refusal is the terminator, so a map with a
      * cycle fails loudly rather than looping.
@@ -690,6 +724,79 @@ private class RecordStageAdvanceServiceTest {
             [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :crId]
                 .Negotiation_Status__c,
             'The walk must leave the Contract Review at its terminal status');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 Transaction__c (added 2026-08-12, live UI testing fix set) — the FIRST object here
+    // from the TRANSACTIONS module rather than acquisitions/disposition, and the first whose
+    // gate is MEMBERSHIP-ONLY. It has NO record types (single-sequence StageConfig) and NO
+    // explicit-target allow-list — the sequence is a straight line, so advanceTo() must be
+    // STRUCTURALLY UNREACHABLE here. See class header + TransactionActionPermissionService for
+    // the full argument; this section pins the sequence and the unreachability, not the gate
+    // itself (the gate has its own class + test file, TransactionActionPermissionServiceTest).
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void transactionWalksOpenContractThroughToClosedWon() {
+        // 🔴 THE ORDER IS A USER DECISION, CONFIRMED AT GATE 1 ON 2026-08-12 AGAINST THE ORG'S
+        // LIVE PICKLIST — do not "correct" it from the Path's step text, which argues the other
+        // way (see TRANSACTION_NEXT_STAGE's own header). This walk is where a reversion to the
+        // step-text reading (…Closing Prep -> Closed Won -> Post-Closing) would surface.
+        Id txnId = insertTransaction().Id;
+
+        Test.startTest();
+        List<String> messages = advanceUntilBlocked(txnId);
+        Test.stopTest();
+
+        Assert.areEqual(
+            new List<String>{
+                'Transaction moved to Due Diligence.',
+                'Transaction moved to Closing Prep.',
+                'Transaction moved to Post-Closing.',
+                'Transaction moved to Closed Won.',
+                'BLOCKED: There is no next step available from the Closed Won stage.'
+            },
+            messages,
+            'The Transaction__c map must be exactly Open Contract -> Due Diligence -> Closing Prep '
+            + '-> Post-Closing -> Closed Won, with Closed Won terminal. This object supplies no '
+            + 'NO_NEXT_STEP_HINTS entry, so the generic terminal wording is expected, unlike '
+            + 'Underwriting\'s approval-owned gap');
+        Assert.areEqual('Closed Won', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
+            'The walk must leave the Transaction at its terminal stage');
+    }
+
+    /**
+     * 🔴 advanceTo() MUST BE STRUCTURALLY UNREACHABLE ON Transaction__c. The sequence is a straight
+     * line — no branch, no off-ramp, no loop — so TRANSACTION_NEXT_STAGE's owning StageTypeConfig is
+     * built through the two-argument (linear) constructor, which supplies an EMPTY explicitTargets
+     * set. Every derivable forward hop belongs to advance(); listing any of them here would let a
+     * direct Apex call skip Due Diligence and land a deal on 'Closed Won' in one call. Tries a value
+     * that IS a real, valid stage on this object ('Post-Closing') specifically because that is the
+     * sharper failure mode than a nonsense string — the refusal must be about the ALLOW-LIST being
+     * empty, not about the target being unrecognised.
+     */
+    @isTest
+    static void transactionAdvanceToIsStructurallyUnreachable() {
+        Id txnId = insertTransaction().Id;
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            RecordStageAdvanceService.advanceTo(txnId, 'Post-Closing');
+            Assert.fail('advanceTo must refuse EVERY target on Transaction__c — its explicit-target '
+                + 'allow-list is empty by construction');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            refused = true;
+            Assert.areEqual('That stage is not available from this action.', e.getMessage(),
+                'The allow-list refusal wording, not the unsupported-object or no-stage wording — '
+                + 'proving the object WAS recognised and the record WAS loaded, and the empty '
+                + 'allow-list is what refused the call');
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'advanceTo must refuse a Transaction with no configured explicit targets');
+        Assert.areEqual('Open Contract', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
+            'A refused advanceTo must not write — the stage stays exactly where it started');
     }
 
     @isTest
@@ -1250,17 +1357,30 @@ private class RecordStageAdvanceServiceTest {
         Id conId = constructionReview().Id;
         Id devId = developmentReview().Id;
         Id crId = contractReview().Id;
+        // ⚠ Transaction__c answers to TRANSACTION_STAGE_ACTIONS (membership-only, via
+        // TransactionActionPermissionService -> LeadActionPermissionService), NOT
+        // OpportunityActionPermissionService — its bypass runs through a DIFFERENT cache
+        // (LeadActionPermissionService's), which is why that cache is cleared here too.
+        Id txnId = insertTransaction().Id;
 
         Test.startTest();
         OpportunityActionPermissionService.clearCache();
+        LeadActionPermissionService.clearCache();
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(ndaId), 'NDA gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(loiId), 'LOI gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(underwritingId), 'Underwriting gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(conId), 'Construction gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(devId), 'Development gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(crId), 'Contract Review gate');
+        Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(txnId),
+            'Transaction gate — the admin passes via the Modify All Data bypass INSIDE '
+            + 'LeadActionPermissionService.hasAnyPermissionSet, a different code path from the '
+            + 'other six objects\' OpportunityActionPermissionService / '
+            + 'DispositionActionPermissionService bypass');
         RecordStageAdvanceService.assertStageActionAccess(loiId); // must not throw
+        RecordStageAdvanceService.assertStageActionAccess(txnId); // must not throw
         OpportunityActionPermissionService.clearCache();
+        LeadActionPermissionService.clearCache();
         Test.stopTest();
     }
 
@@ -1480,6 +1600,83 @@ private class RecordStageAdvanceServiceTest {
     }
 
     /**
+     * 🔴 THE TRANSACTION GATE END TO END, THROUGH REAL System.runAs PERSONAS — not a seeded cache.
+     *
+     * Unlike the two `*_DRIVER` gates, TRANSACTION_STAGE_ACTIONS never loads the record to decide
+     * which gate applies (Transaction__c has a single sequence — see
+     * gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject), so a bare user reaching
+     * hasStageActionAccess never touches Transaction__c's OWD/CRUD at all and the honest,
+     * cache-seeding-free proof used for the two-factor gates is unnecessary here. This test
+     * therefore does what theirs structurally cannot: prove the WHOLE chain
+     * (RecordStageAdvanceService -> TransactionActionPermissionService ->
+     * LeadActionPermissionService) with a real permission-set assignment under a real persona.
+     */
+    @isTest
+    static void transactionGateDeniesABareUserAndGrantsAPermissionSetHolder() {
+        Id txnId = insertTransaction().Id;
+        User bareUser = buildStandardUser('rsaBare');
+        User grantedUser = buildStandardUser('rsaGranted');
+        Id transactionPermSetId = [
+            SELECT Id FROM PermissionSet WHERE Name = 'Transaction_Stage_Actions_Access' LIMIT 1
+        ].Id;
+        // 🔴 MIXED_DML_OPERATION FIX (2026-08-12): insertTransaction() above is DML on a non-setup
+        // object (Transaction__c), so the User + PermissionSetAssignment inserts below — both
+        // setup-object DML — must be isolated in their own System.runAs block or the platform
+        // throws "DML operation on setup object is not permitted after you have updated a
+        // non-setup object". This is the SAME isolation technique already used in this repo for
+        // this exact shape — see RecordStageAdvanceControllerTest
+        // .refusesAUserWhoIsNotADealDriverAndWritesNothing and TaskRollupServiceTest's
+        // buildMinimumAccessUser/assignPermissionSets callers. Do not "fix" this by reordering the
+        // inserts ahead of insertTransaction() instead of wrapping them — a future test added above
+        // this one that also performs non-setup DML in @TestSetup-adjacent code would silently
+        // reintroduce the failure; the runAs isolation is robust regardless of ordering.
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert new List<User>{ bareUser, grantedUser };
+            insert new PermissionSetAssignment(
+                AssigneeId = grantedUser.Id, PermissionSetId = transactionPermSetId);
+        }
+
+        Test.startTest();
+        Boolean bareAllowed;
+        Boolean grantedAllowed;
+        Boolean bareRefused = false;
+        String bareRefusalMessage;
+        LeadActionPermissionService.clearCache();
+        System.runAs(bareUser) {
+            bareAllowed = RecordStageAdvanceService.hasStageActionAccess(txnId);
+            try {
+                RecordStageAdvanceService.assertStageActionAccess(txnId);
+                Assert.fail('assertStageActionAccess must REFUSE a user holding neither the '
+                    + 'Transaction permission set nor Modify All Data');
+            } catch (RecordStageAdvanceService.AccessDeniedException e) {
+                bareRefused = true;
+                bareRefusalMessage = e.getMessage();
+            }
+        }
+        LeadActionPermissionService.clearCache();
+        System.runAs(grantedUser) {
+            grantedAllowed = RecordStageAdvanceService.hasStageActionAccess(txnId);
+            RecordStageAdvanceService.assertStageActionAccess(txnId); // must not throw
+        }
+        LeadActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isFalse(bareAllowed, 'A user with neither the permission set nor Modify All Data must be denied');
+        Assert.isTrue(bareRefused, 'The server-side assert must refuse the bare user');
+        Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE, bareRefusalMessage,
+            'The denial must use the SAME shared wording every other gate uses, so a user can never '
+            + 'tell which of the four gates (Lead / Opportunity / Disposition / Transaction) refused '
+            + 'them from the toast alone');
+        Assert.isTrue(grantedAllowed,
+            'A user holding Transaction_Stage_Actions_Access DIRECTLY must be allowed — proving the '
+            + 'full RecordStageAdvanceService -> TransactionActionPermissionService -> '
+            + 'LeadActionPermissionService chain, not just the leaf service in isolation');
+        Assert.areEqual('Open Contract', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
+            'Neither hasStageActionAccess nor assertStageActionAccess ever writes — the stage is '
+            + 'exactly where it started for both personas');
+    }
+
+    /**
      * The `size() == 1` short-circuit in gateFor(), asserted as a COST rather than by inspection.
      *
      * An object with one configured sequence has one gate by construction, so loading the row
@@ -1501,12 +1698,22 @@ private class RecordStageAdvanceServiceTest {
         Id loiId = insertLoiOnRecordType(RT_ACQUISITION_LOI, 'Draft').Id;
         Id ndaId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Sent').Id;
         Id crId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Initial Draft').Id;
+        // ⚠ Transaction__c is the FIFTH single-sequence object and the only one whose gate runs
+        // through a DIFFERENT cache (LeadActionPermissionService's, via
+        // TransactionActionPermissionService), so it is pre-seeded separately below.
+        Id txnId = insertTransaction().Id;
 
         Test.startTest();
         OpportunityActionPermissionService.clearCache();
         DispositionActionPermissionService.clearCache();
+        LeadActionPermissionService.clearCache();
         OpportunityActionPermissionService.cachedHasDealActionAccess = true;
         DispositionActionPermissionService.cachedHasDispositionActionAccess = true;
+        // Pre-seed WITHOUT querying — an empty name set plus Modify All Data true is enough to
+        // answer TransactionActionPermissionService.hasTransactionActionAccess() from cache alone,
+        // isolating what this test actually measures: whether the RECORD gets loaded.
+        LeadActionPermissionService.cachedPermissionSetNames = new Set<String>();
+        LeadActionPermissionService.cachedHasModifyAllData = true;
 
         Integer beforeUnderwriting = Limits.getQueries();
         RecordStageAdvanceService.hasStageActionAccess(underwritingId);
@@ -1524,8 +1731,13 @@ private class RecordStageAdvanceServiceTest {
         RecordStageAdvanceService.hasStageActionAccess(crId);
         Integer crQueries = Limits.getQueries() - beforeCr;
 
+        Integer beforeTxn = Limits.getQueries();
+        RecordStageAdvanceService.hasStageActionAccess(txnId);
+        Integer txnQueries = Limits.getQueries() - beforeTxn;
+
         OpportunityActionPermissionService.clearCache();
         DispositionActionPermissionService.clearCache();
+        LeadActionPermissionService.clearCache();
         Test.stopTest();
 
         Assert.areEqual(0, underwritingQueries,
@@ -1533,6 +1745,10 @@ private class RecordStageAdvanceServiceTest {
             + 'alone and the record must NOT be loaded. A 1 here means the short-circuit in '
             + 'gateFor() was lost and all four single-sequence objects now pay a query on every '
             + 'record view.');
+        Assert.areEqual(0, txnQueries,
+            'Transaction__c has NO record types at all (not merely one configured sequence like '
+            + 'the other four) so gateFor() must short-circuit here too. A 1 here means the '
+            + 'single-sequence optimisation regressed for the newest object.');
         Assert.areEqual(1, loiQueries,
             'LOI__c has TWO record types with DIFFERENT gates since Tranche 3B, so the row must '
             + 'be loaded to know which gate applies. Zero here would mean the gate fell back to '

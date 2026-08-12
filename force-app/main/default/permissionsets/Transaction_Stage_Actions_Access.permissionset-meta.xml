@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        This comment is INSIDE the root element deliberately - a comment above the root
+        breaks `sf` at source conversion with "unable to find matching parent xml file".
+        Approved_LOI_Before_PSA / Disposition_Deal_Driver are the precedents for this
+        pattern.
+
+        WHY THIS SET EXISTS, AND WHY IT IS MEMBERSHIP-ONLY (added 2026-08-12, live UI
+        testing fix set). This is a LAYER-4 CAPABILITY set in the seven-layer permission
+        set model (ARCHITECTURE.md SS2), the Transaction twin of Lead_Stage_Actions_Access
+        - NOT of Acquisition_Deal_Driver / Disposition_Deal_Driver. Those two are
+        LAYER-5 AUTHORIZATION-FLAG sets: a two-factor gate combining set membership with a
+        User.*_Driver__c checkbox read WITH USER_MODE. A design pass (see
+        agent-output/design-requirements-flow-ui-fixes.md SS2.3) recommended building a
+        third such gate, TRANSACTION_DRIVER, for exactly that reason. THE USER EXPLICITLY
+        REJECTED THAT RECOMMENDATION: "why do we need driver when we can assign a
+        permission set to show quick actions to transaction user". This set implements
+        that decision - membership in this set (directly or via a PermissionSetGroup) IS
+        the whole authorization question, mirroring Lead_Stage_Actions_Access +
+        LeadActionPermissionService, which resolves grants through direct assignment AND
+        permission set group membership with no companion User flag. Do NOT add a
+        User.Transaction_Driver__c field or a Transaction_Deal_Driver authorization set on
+        the strength of the design doc above - that recommendation is superseded by this
+        decision.
+
+        WHY IT CARRIES classAccesses ONLY, NO fieldPermissions, NO objectPermissions.
+        DPEG_Transaction_Edit (layer 3) already grants Transaction__c.Stage__c
+        editable=true/readable=true - verified against the deployed permission set file
+        2026-08-12 - so the write itself needs no new FLS. Every DPEG_Transaction_Team
+        member already holds DPEG_Apex_Access, which already grants class access to
+        RecordStageAdvanceController (that class is permanently un-narrowable: Apex class
+        access is per-CLASS, and it holds both the cacheable hasStageActionAccess question
+        and the advance/advanceTo actions, so it stays in the broad catch-all). This set is
+        therefore not closing a reachability gap - it exists so the stage-advance action
+        has a named, self-describing capability set to point at, matching the explicit
+        user decision above. Declaring the class access here too (redundant with
+        DPEG_Apex_Access) keeps the grant self-documenting even though the underlying Apex
+        reachability does not change.
+
+        THE GATE IS TEAM-WIDE BY DESIGN, NOT A PER-USER TOGGLE - CORRECTED 2026-08-12. This
+        set is a MEMBER of the DPEG_Transaction_Team permission set group (11 member sets
+        total, per ARCHITECTURE.md SS2 layer 6), not assigned directly to individual users.
+        Per ARCHITECTURE.md SS2, a PermissionSetGroup deploy REPLACES its whole member
+        list, so membership here is granted/removed by editing that group, not by
+        assigning/unassigning this set to one person. There is no per-user revocation
+        lever on this set alone: removing it from the group denies the action to every
+        DPEG_Transaction_Team member at once, and denying it to a SINGLE user requires
+        removing that user from DPEG_Transaction_Team entirely - which also removes the
+        group's other ten sets (DPEG_Base_Access, DPEG_Apex_Access,
+        DPEG_Transaction_Edit, DPEG_Task_Edit, DPEG_Opportunity_View, DPEG_Property_View,
+        DPEG_Reports_Access, DPEG_App_Transaction, DPEG_Account_View, DPEG_Contact_View).
+        This set's placement inside the group is precedented and correct
+        (Opportunity_Stage_Actions_Access sits inside DPEG_Junior_Analyst_PSG the same
+        way) - only the earlier claim of a legible PER-USER signal was wrong. The signal
+        this set provides is legible at the GROUP level (naming what the group's Apex
+        class access is FOR), not at the individual-assignment level.
+
+        ASSIGNMENT IS AN ORG ACTION, NOT DEPLOYABLE METADATA. Deploying this set grants
+        nobody anything until it is assigned directly or added to a PermissionSetGroup
+        (e.g. DPEG_Transaction_Team). Per ARCHITECTURE.md SS2, a PermissionSetGroup deploy
+        REPLACES its whole member list, so adding this set as a member is reconciled
+        against the org's live membership before deploying that group file, not assumed.
+    -->
+    <label>Transaction Stage Actions Access</label>
+    <description>Layer-4 capability access for the Transaction stage-advance quick action: Apex class access to RecordStageAdvanceController. Membership-only grant, no authorization flag - see the XML comment for rationale.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <classAccesses>
+        <apexClass>RecordStageAdvanceController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+</PermissionSet>

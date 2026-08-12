@@ -193,6 +193,70 @@ private class TransactionSelectorTest {
         Assert.isNotNull(rows[0].Contract_Value__c, 'Contract_Value__c must be selected for the price column');
     }
 
+    /**
+     * 🔴 Added 2026-08-12 (live UI testing fix, item 3/4). Property__r.Name is the fix for the
+     * Property column rendering '—' on every application-created row (Property_Name__c is a plain
+     * Text field nothing in the app populates), and Tasks_Total__c is the fix for the hardcoded
+     * '/75' denominator. Both must be selectable in ONE query alongside the pre-existing fields —
+     * this is a data-plumbing test (the selector selects the right columns); the PRECEDENCE logic
+     * between Property__r.Name and Property_Name__c is TransactionController's job and is tested in
+     * TransactionControllerTest, not here.
+     */
+    @isTest
+    static void selectActiveRows_selectsPropertyLookupNameAndTasksTotal() {
+        Property__c property = TestDataFactory.createProperty(true); // Name = 'Test Property 0'
+        Transaction__c withProperty = TestDataFactory.createTransaction(null, property.Id, false);
+        TestDataFactory.applyOverrides(withProperty, new Map<String, Object>{
+            'Contract_Executed_Date__c' => null,
+            'Status__c' => 'Active',
+            'Property_Name__c' => null,
+            'Tasks_Total__c' => 42
+        });
+        insert withProperty;
+
+        Test.startTest();
+        List<Transaction__c> rows = TransactionSelector.selectActiveRows();
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The one Active Transaction is returned');
+        Transaction__c row = rows[0];
+        Assert.isNotNull(row.Property__r, 'Property__r must be traversable — the query must select '
+            + 'Property__r.Name, not merely Property__c');
+        Assert.areEqual('Test Property 0', row.Property__r.Name,
+            'Property__r.Name must be selected and populated — this is the real fix for the blank '
+            + 'Property column');
+        Assert.areEqual(42, row.Tasks_Total__c,
+            'Tasks_Total__c must be selected — the per-row denominator that replaces the old '
+            + 'hardcoded 75/82 constant');
+    }
+
+    /**
+     * 🔴 Tasks_Total__c is NULL before the Day-0 fan-out runs (Tasks_Fanned_Out__c = false on
+     * insert), and the selector must return that null verbatim rather than coalescing it — the
+     * controller (TransactionController.TxnRow.tasksTotal) is what decides how a null is rendered,
+     * and it can only make that decision if the selector does not pre-empt it.
+     */
+    @isTest
+    static void selectActiveRows_tasksTotalIsNullBeforeFanOut() {
+        Transaction__c notYetFannedOut = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(notYetFannedOut, new Map<String, Object>{
+            'Contract_Executed_Date__c' => null,
+            'Status__c' => 'Active',
+            'Tasks_Fanned_Out__c' => false,
+            'Tasks_Total__c' => null
+        });
+        insert notYetFannedOut;
+
+        Test.startTest();
+        List<Transaction__c> rows = TransactionSelector.selectActiveRows();
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The one Active Transaction is returned');
+        Assert.isNull(rows[0].Tasks_Total__c,
+            'Tasks_Total__c must read back null, not zero — a coalesced 0 here would be '
+            + 'indistinguishable from a fanned-out Transaction that legitimately produced no tasks');
+    }
+
     @isTest
     static void selectByOpportunityIds_returnsOnlyMatchingTransactions() {
         Opportunity opp = TestDataFactory.createOpportunity(null, true);
@@ -240,5 +304,81 @@ private class TransactionSelectorTest {
 
         Assert.areEqual(BULK_N, rows.size(),
             'All 251 Transactions are read by their parent Opportunity in a single bulk Set<Id> query');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectStageRequiredById — backs RecordStageAdvanceService.advance/advanceTo (added 2026-08-12)
+    //
+    // ⚠ NO 251-RECORD BULK TEST HERE, DELIBERATELY. Per .claude/rules/bulk-test-rule.md's
+    // per-transaction-singleton exemption (already established for the five sibling
+    // selectStageRequiredById methods on NdaSelector / LoiSelector / UnderwritingSelector /
+    // ConstructionFeasibilityReviewSelector / DevelopmentFeasibilityReviewSelector): this is a
+    // FETCH-FOR-USE single-record read behind one quick-action click, not a trigger or batch
+    // iterating a collection. A 251-record test would exercise no additional code path — the method
+    // takes one Id and returns one row.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @isTest
+    static void selectStageRequiredById_returnsIdAndStage() {
+        Transaction__c txn = insertSuppressedTransaction(false);
+
+        Test.startTest();
+        Transaction__c result = TransactionSelector.selectStageRequiredById(txn.Id);
+        Test.stopTest();
+
+        Assert.areEqual(txn.Id, result.Id, 'The requested Transaction is returned');
+        Assert.areEqual('Open Contract', result.Stage__c,
+            'Stage__c must be selected — RecordStageAdvanceService.advance reads it to derive the '
+            + 'next stage');
+    }
+
+    /**
+     * FETCH-FOR-USE contract: a miss throws the native System.QueryException, matching
+     * NdaSelector / LoiSelector / UnderwritingSelector / ContractReviewSelector
+     * .selectStageRequiredById. RecordStageAdvanceService deliberately does NOT convert this —
+     * converting it would make a genuine fault (missing/inaccessible record) read as a business
+     * rule refusal.
+     */
+    @isTest
+    static void selectStageRequiredById_missingRecordThrowsQueryException() {
+        Transaction__c txn = insertSuppressedTransaction(false);
+        Id deletedId = txn.Id;
+        delete txn;
+
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            TransactionSelector.selectStageRequiredById(deletedId);
+            Assert.fail('A deleted Transaction must not be returned');
+        } catch (System.QueryException e) {
+            threw = true;
+        }
+        Test.stopTest();
+
+        Assert.isTrue(threw, 'A missing Transaction surfaces the native QueryException, uncaught here');
+    }
+
+    /**
+     * 🔴 PINS THE COMPILE FACT the selector's own header states: Transaction__c has NO record
+     * types, so RecordTypeId is not merely unselected — it is not a compilable field on this object
+     * at all. This is why selectStageRequiredById's SELECT list is Id + Stage__c only, and why
+     * RecordStageAdvanceService.recordTypeIdOf (reading via getPopulatedFieldsAsMap, never a direct
+     * .get('RecordTypeId')) is what lets that omission degrade silently to the single-sequence
+     * branch instead of throwing. If Transaction__c is ever GIVEN record types, this assertion
+     * flips to true and is the signal that selectStageRequiredById must be updated to select
+     * RecordTypeId in the same change — see the class header's own warning.
+     */
+    @isTest
+    static void transactionObjectHasNoRecordTypeIdField_thereforeTheSelectorCannotSelectIt() {
+        Test.startTest();
+        Boolean hasRecordTypeIdField =
+            Schema.SObjectType.Transaction__c.fields.getMap().containsKey('recordtypeid');
+        Test.stopTest();
+
+        Assert.isFalse(hasRecordTypeIdField,
+            'Transaction__c must have NO RecordTypeId field today — selecting it would not '
+            + 'degrade, it would fail to COMPILE. If this ever reads true, Transaction__c has '
+            + 'gained record types and selectStageRequiredById must start selecting RecordTypeId '
+            + 'in the same change (see RecordStageAdvanceService\'s class header).');
     }
 }

@@ -3,16 +3,27 @@ import LightningConfirm from 'lightning/confirm';
 import hasStageActionAccess from '@salesforce/apex/RecordStageAdvanceController.hasStageActionAccess';
 
 /**
- * recordStageGuard — shared pre-flight for the headless stage quick actions on the SIX
- * stage-controlled child objects (NDA__c, LOI__c, Contract_Review__c, Underwriting__c,
- * Construction_Feasibility_Review__c, Development_Feasibility_Review__c).
+ * recordStageGuard — shared pre-flight for the headless stage quick actions on the SEVEN
+ * stage-controlled objects, spanning THREE modules:
  *
- * ⚠ NOT "the five ACQUISITIONS child objects", which is what this header used to say. Since
- * Tranche 3A (2026-08-09) NDA__c also serves the DISPOSITION module through its Disposition_NDA
- * record type, and that record type answers to a DIFFERENT persona (DISPOSITION_DRIVER, backed by
- * User.Disposition_Driver__c). That is not a change to this module at all — and the fact that it
- * needed none is the payoff of the per-record signature described below. The server dispatches;
- * this file never learned a persona's name.
+ *   acquisitions            LOI__c, Underwriting__c, Construction_Feasibility_Review__c,
+ *                           Development_Feasibility_Review__c
+ *   acquisitions +          NDA__c, Contract_Review__c — one object serving BOTH modules, split by
+ *   disposition             record type, each type answering to a different persona
+ *   transactions            Transaction__c (2026-08-12)
+ *
+ * ⚠ THE COUNT HAS BEEN WRONG IN THIS HEADER TWICE, SO READ WHAT CHANGED RATHER THAN THE NUMBER.
+ * It first said "the five ACQUISITIONS child objects"; Tranche 3A (2026-08-09) made NDA__c serve
+ * the DISPOSITION module through its Disposition_NDA record type, answering to a different persona
+ * (DISPOSITION_DRIVER, backed by User.Disposition_Driver__c). It then said "the SIX stage-controlled
+ * child objects"; 2026-08-12 added Transaction__c, which is neither a child object nor an
+ * acquisitions one, and whose gate is MEMBERSHIP-ONLY (TRANSACTION_STAGE_ACTIONS, backed by the
+ * Transaction_Stage_Actions_Access permission set with NO User checkbox of any kind).
+ *
+ * 🔴 NONE of those three changes required an edit to the logic in this file — only to this
+ * sentence. That is the payoff of the per-record signature described below: the server dispatches,
+ * so this module has never learned an object's name, a module's name or a persona's name, and the
+ * arrival of a THIRD gate shape did not reach it either.
  *
  * A JS-only utility module (no template, isExposed=false), deliberately SEPARATE from `c/utils`,
  * which is contractually pure, stateless formatting only.
@@ -27,12 +38,19 @@ import hasStageActionAccess from '@salesforce/apex/RecordStageAdvanceController.
  *                       THROUGH the cache -> must NOT call getRecordNotifyChange.
  *   c/dealActionGuard   Opportunity. Calls OpportunityActionPermissionController at module scope,
  *                       so its permission question takes NO recordId.
- *   c/recordStageGuard  THIS MODULE. The five child objects. Its permission question is
+ *   c/recordStageGuard  THIS MODULE. All SEVEN objects listed above. Its permission question is
  *                       PER-RECORD — the server dispatches to the object's own gate — so it takes
  *                       a recordId that neither of the other two has. That is the concrete reason
- *                       it cannot simply reuse c/dealActionGuard even though all five objects
- *                       currently answer to the same deal-driver gate: the moment one object needs
- *                       a different persona, the dispatch is already in the right place.
+ *                       it cannot simply reuse c/dealActionGuard, whose `hasDealActionAccess()`
+ *                       takes NO argument and therefore cannot express "which object's gate?".
+ *
+ *                       🔴 THAT SIGNATURE HAS NOW PAID FOR ITSELF TWICE, WHICH IS WHY IT IS NOT
+ *                       OVER-ENGINEERING. When it was written, all objects answered to the SAME
+ *                       deal-driver gate and the argument looked speculative. Since then NDA__c and
+ *                       Contract_Review__c gained a per-record-TYPE disposition persona (2026-08-09)
+ *                       and Transaction__c arrived with a gate of an entirely different SHAPE —
+ *                       membership-only, no User flag (2026-08-12). Both landed as server-side
+ *                       config; neither touched a line of client code.
  *
  * Like c/dealActionGuard this module carries NO WRITE HELPER AT ALL. The stage write is imperative
  * Apex owned by the calling bundle, which is what keeps `getRecordNotifyChange` in that bundle's

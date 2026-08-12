@@ -7,19 +7,29 @@ import advance from '@salesforce/apex/RecordStageAdvanceController.advance';
 /**
  * The confirmation wording. Deliberately GENERIC — it cannot name the target stage.
  *
- * This ONE bundle backs FIVE quick actions across FIVE different objects (NDA, LOI, Underwriting,
- * Construction Feasibility Review, Development Feasibility Review) and the target is derived
- * SERVER-SIDE from the record's current stage inside RecordStageAdvanceService. The client
- * genuinely does not know where the record is going, and it must not find out by guessing.
+ * This ONE bundle backs the advance action on all SEVEN stage-controlled objects, across THREE
+ * modules: acquisitions (LOI__c, Underwriting__c, Construction_Feasibility_Review__c,
+ * Development_Feasibility_Review__c), acquisitions/disposition shared (NDA__c,
+ * Contract_Review__c — one object per module via record type) and transactions (Transaction__c,
+ * added 2026-08-12). The target is derived SERVER-SIDE from the record's current stage inside
+ * RecordStageAdvanceService. The client genuinely does not know where the record is going, and it
+ * must not find out by guessing.
  *
  * The alternative — `@wire getRecord` for the stage field and compute the label here — is REFUSED
  * for the same reason ARCHITECTURE.md §5 already refuses it for `advanceDealStage`: it duplicates
- * the Apex stage maps in JS, where they will silently drift the first time a stage is added. Here
- * it would be five maps, not one, and the stage FIELD differs per object (NDA uses `Status__c`),
- * so the wire itself would need a per-object branch before the map even started drifting.
+ * the Apex stage sequences in JS, where they will silently drift the first time a stage is added.
+ * Here it would be NINE sequences (CONFIG_BY_TYPE is keyed per RECORD TYPE, not per object, so
+ * NDA__c and Contract_Review__c contribute two each), and the stage FIELD differs per object
+ * (NDA__c uses `Status__c`, Contract_Review__c uses `Negotiation_Status__c`), so the wire itself
+ * would need a per-object branch before the sequences even started drifting.
  *
- * If one object later needs specific wording, split THAT ONE action into its own bundle rather than
- * duplicating the map.
+ * 🔴 IF ONE OBJECT LATER NEEDS SPECIFIC WORDING, SPLIT THAT ONE ACTION INTO ITS OWN BUNDLE RATHER
+ * THAN DUPLICATING THE MAP — and note that "its own bundle" means a bundle that DIFFERS. A
+ * byte-identical copy carrying only a different header is not a split; it is a second file that
+ * must now receive every fix this one gets. That is precisely what `c/transactionAdvanceStage` was,
+ * and it was DELETED on 2026-08-12 (code review W3, user decision) in favour of this component,
+ * which needed no change at all to serve `Transaction__c` — the server dispatches on
+ * `Id.getSObjectType()`, so this file never learned an object's name.
  */
 const CONFIRM = {
     message: 'Advance this record to the next stage?',
@@ -31,9 +41,14 @@ const CONFIRM = {
 const GENERIC_ERROR = 'The stage could not be advanced.';
 
 /**
- * Headless quick action shared by the "advance stage" buttons on the five stage-controlled
- * acquisitions child objects. The Apex derives the target from the record's current stage, so the
- * action cannot skip a hop and the client never holds a stage map.
+ * Headless quick action shared by the "advance stage" buttons on all SEVEN stage-controlled
+ * objects. The Apex derives the target from the record's current stage, so the action cannot skip a
+ * hop and the client never holds a stage map.
+ *
+ * ⚠ It is OBJECT-AGNOSTIC BY CONSTRUCTION, not by coincidence: it names no object, imports no
+ * object's schema and holds no stage value. Adding an eighth object is a `CONFIG_BY_TYPE` entry and
+ * a quick action pointing here — zero changes to this file. `Transaction__c` (2026-08-12) is the
+ * proof: it was added with no edit to this component at all.
  *
  * Every click runs the shared pre-flight in c/recordStageGuard first — per-record permission check,
  * then a LightningConfirm dialog — and does nothing unless both pass.

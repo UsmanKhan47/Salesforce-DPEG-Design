@@ -94,6 +94,21 @@ public with sharing class TransactionController {
         @AuraEnabled public Decimal price;
         @AuraEnabled public Date targetClose;
         @AuraEnabled public Integer tasksComplete;
+        /**
+         * The checklist denominator FOR THIS ROW — deliberately NOT a constant (added 2026-08-12).
+         *
+         * TaskFanoutService writes Tasks_Total__c = createdForTxn, the count actually created for
+         * that Transaction and gated by that Transaction's own condition fields, so the total
+         * genuinely differs between rows and no shared number can be right. The LWC used to
+         * hardcode 75 while the record page's Tasks_Display__c formula showed 82.
+         *
+         * ⚠ NULLABLE ON PURPOSE, and it must stay nullable. It is null before the Day-0 fan-out
+         * runs (Tasks_Fanned_Out__c = false), and the client renders that as "no denominator yet".
+         * Coalescing it to 0 here would be indistinguishable from a fanned-out Transaction that
+         * legitimately produced no tasks, and coalescing it to any positive constant would
+         * reintroduce the exact defect this field replaced.
+         */
+        @AuraEnabled public Integer tasksTotal;
         @AuraEnabled public String risk;
         @AuraEnabled public String owner;
     }
@@ -169,11 +184,14 @@ public with sharing class TransactionController {
                 TxnRow r = new TxnRow();
                 r.id = t.Id;
                 r.name = t.Name;
-                r.propertyName = t.Property_Name__c;
+                r.propertyName = propertyNameOf(t);
                 r.stage = t.Stage__c;
                 r.price = t.Contract_Value__c;
                 r.targetClose = t.Target_Close_Date__c;
                 r.tasksComplete = t.Tasks_Complete__c != null ? Integer.valueOf(t.Tasks_Complete__c) : 0;
+                // ⚠ NOT coalesced to 0 — null means "not fanned out yet" and the client renders
+                // that as an em-dash. See TxnRow.tasksTotal.
+                r.tasksTotal = t.Tasks_Total__c != null ? Integer.valueOf(t.Tasks_Total__c) : null;
                 r.risk = t.Risk__c;
                 r.owner = t.Owner_Name__c;
                 rows.add(r);
@@ -184,5 +202,46 @@ public with sharing class TransactionController {
                 + e.getMessage() + ' | ' + e.getStackTraceString());
             throw ahe(READ_FAILURE_MESSAGE);
         }
+    }
+
+    /**
+     * The Property column's value for one row — the LOOKUP's name first, the legacy text field
+     * only as a fallback (changed 2026-08-12).
+     *
+     * 🔴 THIS ROW RENDERED AN EM-DASH ON EVERY APPLICATION-CREATED TRANSACTION, AND THE COLUMN WAS
+     * NEVER MISSING. `Property_Name__c` is a plain Text(120) field that nothing in the application
+     * populates: ContractExecutionService creates each Transaction with the `Property__c` LOOKUP
+     * and never the text twin (measured — zero Transactions org-wide carry a non-blank value). The
+     * LWC's `t.propertyName || '—'` was therefore doing exactly what it was told.
+     *
+     * ── WHY BOTH, AND WHY IN THIS ORDER ──────────────────────────────────────
+     * LOOKUP FIRST: it is self-maintaining, it is what every automated row actually has, and it
+     * follows the property if it is ever renamed.
+     * TEXT SECOND, ONLY WHEN THE LOOKUP GIVES NOTHING: scripts/seed-transactions.apex writes five
+     * hardcoded names and sets NO lookup, so a lookup-only read would blank the exact rows that
+     * show data today — the fix would INVERT on the demo data. The fallback also covers any
+     * hand-entered value.
+     * It is never the other way round: a stale hand-typed name must not beat the live lookup.
+     *
+     * ⚠ NULL IS A LEGITIMATE ANSWER and is returned rather than an em-dash. A Transaction with no
+     * Property__c has genuinely no property (only LeadConvertService creates a Property__c, so a
+     * manually-built deal has none) — the same residual PropertyAssetService and DealFolderService
+     * both record. The placeholder is the client's decision, not this controller's.
+     *
+     * ⚠ KNOWN, SEPARATELY-TRACKED GAP: the FIVE Transaction report files
+     * (Open_Transactions, Closing_In_30_Days, Financing_Active, Transactions_By_Stage,
+     * Completion_By_Deal) still read `Property_Name__c` DIRECTLY and therefore still show a blank
+     * column. Reports name fields directly and Apex cannot reach them. That is why
+     * `Property_Name__c` is NOT deleted here: it holds the seeded data and it has five readers.
+     * Closing that gap needs a formula field plus a repoint of those five reports — declarative
+     * work, out of scope for this change by decision, not by oversight.
+     */
+    private static String propertyNameOf(Transaction__c t) {
+        // Property__r is null whenever the lookup is empty — dereferencing it unguarded would NPE.
+        if (t.Property__c != null && t.Property__r != null
+                && String.isNotBlank(t.Property__r.Name)) {
+            return t.Property__r.Name;
+        }
+        return String.isNotBlank(t.Property_Name__c) ? t.Property_Name__c : null;
     }
 }

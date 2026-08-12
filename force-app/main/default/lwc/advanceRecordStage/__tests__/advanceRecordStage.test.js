@@ -158,10 +158,12 @@ describe('c-advance-record-stage', () => {
         await flushPromises();
 
         expect(LightningConfirm.open).toHaveBeenCalledTimes(1);
-        // Pins the deliberately generic wording. This ONE bundle backs FIVE actions on FIVE objects
-        // and the target stage is derived server-side in RecordStageAdvanceService, so the prompt
-        // cannot name it. If someone "improves" this to name a stage, they have duplicated five
-        // Apex maps in JS.
+        // Pins the deliberately generic wording. This ONE bundle backs the advance action on all
+        // SEVEN stage-controlled objects and the target stage is derived server-side in
+        // RecordStageAdvanceService, so the prompt cannot name it. If someone "improves" this to
+        // name a stage, they have copied the Apex sequences into JS — where there is no compile
+        // link to them, so the dialog starts announcing a destination the button does not go to the
+        // first time a stage is inserted.
         expect(LightningConfirm.open).toHaveBeenCalledWith({
             message: 'Advance this record to the next stage?',
             label: 'Advance Stage',
@@ -229,6 +231,7 @@ describe('c-advance-record-stage', () => {
     });
 
     it('PERMISSION CHECK FAILS: fails closed — surfaces the real message and calls no Apex', async () => {
+        // A FAULT must not be disguised as a denial, but it must still refuse.
         hasStageActionAccess.mockRejectedValue({
             body: { message: 'Unable to verify your permissions.' }
         });
@@ -241,6 +244,10 @@ describe('c-advance-record-stage', () => {
         await flushPromises();
 
         expect(advance).not.toHaveBeenCalled();
+        // The record was never written, so LDS must not be told it changed. Pinned on the FAULT
+        // path as well as the refusal paths: a fault that notified would refresh the Path and read
+        // as "the button did nothing" rather than as the error it actually is.
+        expect(getRecordNotifyChange).not.toHaveBeenCalled();
         expect(toastHandler.mock.calls[0][0].detail.message).toBe(
             'Unable to verify your permissions.'
         );

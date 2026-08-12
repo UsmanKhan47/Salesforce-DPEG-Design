@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. A comment is repo-only and
+        is never sent to the Metadata API, so it can be as long as it needs to be. Do not
+        paste this back into <description>. Approved_LOI_Before_PSA (same folder) is the
+        precedent for this pattern.
+
+        WHY THIS IS A SEPARATE RULE FROM Approved_LOI_Before_PSA, NOT AN EXTENSION OF IT.
+        Approved_LOI_Before_PSA tests the OPPORTUNITY's own approval flag
+        (LOI_Approved__c) and the presence of the Primary_LOI__c lookup. It does not read
+        anything on the LOI child record itself, so a deal can reach PSA with its LOI still
+        sitting on Stage__c = 'Draft' - reproduced live 2026-08-12. This rule closes that
+        gap by reading the LOI's OWN lifecycle field, Primary_LOI__r.Stage__c. Two separate,
+        independently-named rules are kept deliberately separate (rather than folding this
+        condition into Approved_LOI_Before_PSA) so each error names exactly one remedy:
+        link+approve an LOI (existing rule) vs. complete the LOI (this rule). Folding them
+        into one OR'd condition would force one message to describe two different fixes.
+        Matches the standing repo precedent of NDA_Signed_Before_Underwriting /
+        All_NDAs_Signed_Before_Progression - separate named rules, distinct messages, each
+        independently deactivatable for diagnosis.
+
+        WHY NOT(ISBLANK(Primary_LOI__c)) IS REQUIRED, NOT DEFENSIVE POLISH. When
+        Primary_LOI__c is blank, TEXT(Primary_LOI__r.Stage__c) evaluates to '' (empty
+        string), and '' <> 'Completed' is TRUE - so without this guard, a blank lookup
+        would ALSO fire this rule, on top of Approved_LOI_Before_PSA, which already owns
+        the blank-lookup case. The user would see two error messages for one underlying
+        problem. This guard keeps the blank case to exactly one message.
+
+        KNOWN, UNRESOLVED OVERLAP CASE - THE GUARD ABOVE ONLY CLOSES THE BLANK-LOOKUP
+        CASE, NOT EVERY OVERLAP. A deal with the LOI LINKED but LOI_Approved__c = false
+        AND the LOI's own Stage__c != 'Completed' satisfies BOTH this rule AND
+        Approved_LOI_Before_PSA at the same time - reproduced live 2026-08-12 (a linked
+        LOI sitting on Draft). Salesforce does not guarantee validation-rule evaluation
+        order, and the only live writer is Apex: StageAdvanceService.setStage() catches
+        DmlException and rethrows getDmlMessage(0) - ONE message only - so a user blocked
+        by both rules at once is told about whichever one happens to fire first, and may
+        not learn the second remedy applies until they fix the first and save again. This
+        is a known, accepted limitation, not something to silently patch here: do NOT
+        change either rule's formula to try to eliminate it (see "WHY THIS IS A SEPARATE
+        RULE" above for why one OR'd rule is worse). If this becomes a real UX problem,
+        the fix belongs in Apex (e.g. collecting and surfacing both violated conditions in
+        one message), not in the validation rule formulas.
+
+        WHY TEXT(...) <> 'Completed' RATHER THAN ISPICKVAL. This repo's standing rule
+        (RecordStageAdvanceService's own class header) is that LOI__c.Stage__c comparisons
+        must use TEXT(...), not ISPICKVAL, because one of its ten values across the two LOI
+        record types carries a literal slash ('Prepare/Review'), which ISPICKVAL handles
+        unreliably in this org's picklist metadata. TEXT() is the repo convention for every
+        cross-object stage compare of this shape (see also StageAdvanceService's
+        'Dead/Pass' note).
+
+        WHICH WRITER THIS RULE ACTUALLY MEETS. StageName = 'PSA' is reached in exactly one
+        live way: StageAdvanceService.advance() via NEXT_STAGE's 'LOI' => 'PSA' mapping,
+        invoked by the Opportunity.Advance_to_PSA quick action. advanceTo()'s
+        ALLOWED_EXPLICIT_TARGETS deliberately excludes PSA, so that path cannot reach this
+        rule at all. advance()'s setStage() catches DmlException and rethrows
+        getDmlMessage(0), so this rule's errorMessage surfaces verbatim in the user's toast
+        with no Apex change required.
+
+        GRANDFATHERING - STATED EXPLICITLY. A validation rule evaluates only on save, and
+        both this rule and Approved_LOI_Before_PSA are ISCHANGED(StageName)-scoped. Any deal
+        ALREADY sitting at PSA with a non-Completed LOI (e.g. the ZZFLOWTEST deal reproduced
+        2026-08-12) is UNAFFECTED PERMANENTLY: it will not be blocked from being saved,
+        edited, or advanced onward (PSA -> Closed Won is a different transition, ungated by
+        this rule), and it will not appear as non-conforming in any report or list view. It
+        is caught only if it is moved off PSA and back onto it. Backfilling/correcting
+        already-PSA deals with a non-Completed LOI is a separate, optional data task and is
+        deliberately NOT part of this rule.
+
+        KNOWN, ACCEPTED BOUNDARY - NOT WIDENED SPECULATIVELY. LOI__c.Stage__c carries ten
+        values across two record types; 'Executed' is the terminal stage of the DISPOSITION
+        LOI record type, not the acquisition one. Primary_LOI__c is stamped only by
+        OpportunityReviewService, which creates acquisition LOIs, so a disposition LOI
+        cannot legitimately reach this lookup - but if one ever did, TEXT(...) <>
+        'Completed' would block it (a disposition LOI never reaches 'Completed', only
+        'Executed'). This is recorded as a known, accepted boundary. Do NOT widen the
+        formula to AND(<> 'Completed', <> 'Executed') speculatively - there is no verified
+        path that reaches this rule with a disposition LOI attached.
+    -->
+    <fullName>Completed_LOI_Before_PSA</fullName>
+    <active>true</active>
+    <description>Blocks stage entry to PSA unless the primary LOI&apos;s own Stage__c is Completed. Exempts a blank Primary_LOI__c (owned by Approved_LOI_Before_PSA). See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(StageName),
+    ISPICKVAL(StageName, &apos;PSA&apos;),
+    NOT(ISBLANK(Primary_LOI__c)),
+    TEXT(Primary_LOI__r.Stage__c) &lt;&gt; &apos;Completed&apos;
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>This deal cannot enter PSA until the primary LOI is Completed. Advance the LOI to Completed on its own record page first.</errorMessage>
+</ValidationRule>

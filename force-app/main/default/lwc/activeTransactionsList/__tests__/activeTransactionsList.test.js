@@ -5,8 +5,19 @@
  *
  * Data source: @wire(getActiveTransactions) -> TransactionController, a list of
  * transaction wrappers { id, name, propertyName, stage, price, targetClose,
- * tasksComplete, risk }. The component maps each into a datatable row and renders
- * them through the shared c-list-datatable subclass.
+ * tasksComplete, tasksTotal, risk }. The component maps each into a datatable row
+ * and renders them through the shared c-list-datatable subclass.
+ *
+ * 🔴 `tasksTotal` IS PER ROW AND IS NULLABLE — the two facts this suite exists to pin
+ * (added 2026-08-12). The component used to divide by a hardcoded 75 while the record
+ * page showed 82; both were wrong, because TaskFanoutService writes
+ * `Tasks_Total__c = createdForTxn`, a count gated by each Transaction's own condition
+ * fields. So the fixtures below carry DIFFERENT totals on purpose — two rows sharing a
+ * denominator cannot falsify a reintroduced constant — and a third row carries `null`,
+ * the state of every Transaction created but not yet fanned out
+ * (`Tasks_Fanned_Out__c = false`). A null denominator must render the em-dash
+ * placeholder and a 0%-width bar: never NaN, never Infinity, and never a substituted
+ * constant.
  *
  * ROW ASSERTIONS go through c-list-datatable's `@api data` (it extends the stubbed
  * lightning/datatable base, which exposes `data`), NOT cell DOM — the custom
@@ -70,6 +81,8 @@ const TXNS = [
         price: 4500000,
         targetClose: '2026-09-15',
         tasksComplete: 30,
+        // A loan-bearing deal: the full checklist.
+        tasksTotal: 82,
         risk: 'Watch'
     },
     {
@@ -79,7 +92,23 @@ const TXNS = [
         stage: 'Closing Prep',
         price: 12000000,
         targetClose: '2026-08-01',
-        tasksComplete: 75,
+        tasksComplete: 64,
+        // ⚠ A DIFFERENT total from row 1, deliberately: an all-cash deal skips the financing task
+        // groups. Two rows sharing a denominator could not falsify a reintroduced constant.
+        tasksTotal: 64,
+        risk: 'Low'
+    },
+    {
+        id: 'a0T5g00000Txn03AAB',
+        name: 'TXN-0003',
+        // No Property lookup and no legacy text value — Apex sends null, not an em-dash.
+        propertyName: null,
+        stage: 'Open Contract',
+        price: 8000000,
+        targetClose: '2026-10-20',
+        tasksComplete: 0,
+        // 🔴 NOT YET FANNED OUT. Tasks_Fanned_Out__c = false, so Tasks_Total__c is null.
+        tasksTotal: null,
         risk: 'Low'
     }
 ];
@@ -123,25 +152,68 @@ describe('c-active-transactions-list', () => {
 
         expect(
             element.shadowRoot.querySelector('span[slot="title"]').textContent
-        ).toBe('Active Transactions (2)');
+        ).toBe('Active Transactions (3)');
 
         const rows = datatable(element).data;
-        expect(rows.length).toBe(2);
+        expect(rows.length).toBe(3);
 
         expect(rows[0].name).toBe('TXN-0001');
         expect(rows[0].propertyName).toBe('Willow Creek Plaza');
         expect(rows[0].stage).toBe('Due Diligence');
         expect(rows[0].priceLabel).toBe('$4.5M');
         expect(rows[0].targetCloseLabel).toBe('Sep 15');
-        expect(rows[0].tasksText).toBe('30 / 75');
+        expect(rows[0].tasksText).toBe('30 / 82');
         expect(rows[0].recordUrl).toBe(
             '/lightning/r/Transaction__c/a0T5g00000Txn01AAB/view'
         );
 
-        // Whole-million price renders without a decimal; 75/75 tasks.
+        // Whole-million price renders without a decimal.
         expect(rows[1].priceLabel).toBe('$12M');
         expect(rows[1].targetCloseLabel).toBe('Aug 01');
-        expect(rows[1].tasksText).toBe('75 / 75');
+        // 🔴 THE DENOMINATOR IS THIS ROW'S OWN, not row 0's and not a constant. A reintroduced
+        // `TASKS_TOTAL` would show '64 / 75' here and this assertion is what would catch it.
+        expect(rows[1].tasksText).toBe('64 / 64');
+    });
+
+    it('PER-ROW DENOMINATOR: a complete checklist uses the completion colour, a partial one does not', async () => {
+        const element = createComponent();
+
+        getActiveTransactions.emit(TXNS);
+        await Promise.resolve();
+
+        const rows = datatable(element).data;
+
+        // 30 of 82 — partial: teal bar, width 37%.
+        expect(rows[0].tasksBar).toContain('width:37%');
+        expect(rows[0].tasksBar).toContain('#2BAFAC');
+
+        // 64 of 64 — complete AGAINST ITS OWN TOTAL: green bar, width 100%. Under the old
+        // hardcoded 75 this row was 85% and never turned green, which is the visible half of
+        // the defect.
+        expect(rows[1].tasksBar).toContain('width:100%');
+        expect(rows[1].tasksBar).toContain('#2e7d32');
+    });
+
+    it('NULL DENOMINATOR: an un-fanned-out checklist renders an em-dash and an empty bar, never NaN', async () => {
+        const element = createComponent();
+
+        getActiveTransactions.emit(TXNS);
+        await Promise.resolve();
+
+        const row = datatable(element).data[2];
+
+        // 🔴 No denominator means no ratio to state. Not '0 / 0', not '0 / 75', not '0 / null'.
+        expect(row.tasksText).toBe('—');
+        // The division must never have happened: NaN/Infinity in the width string would render as
+        // an invisibly broken bar rather than an obviously empty one.
+        expect(row.tasksBar).toContain('width:0%');
+        expect(row.tasksBar).not.toContain('NaN');
+        expect(row.tasksBar).not.toContain('Infinity');
+        // And it is NOT treated as complete — the green "done" colour must not appear.
+        expect(row.tasksBar).toContain('#2BAFAC');
+
+        // A Transaction with no Property lookup still falls back to the placeholder.
+        expect(row.propertyName).toBe('—');
     });
 
     it('navigates to the Transaction__c list page when "View All" is clicked', async () => {
