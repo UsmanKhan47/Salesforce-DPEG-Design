@@ -26,6 +26,15 @@
          had no UI that could invoke it. Same shape closed on NDA_Record_Page (3A fix pass) and
          LOI_Record_Page (3B, D22).
 
+         🔬 PHASE 1 UPDATE (2026-08-12) — the mechanism described above is HISTORICAL, not
+         live. Both entries on this page now read {!$Permission.CustomPermission.
+         Acquisition_Deal_Actions} / {!$Permission.CustomPermission.Disposition_Deal_Actions}
+         instead of a User field, so the FLS-blindness failure mode this page's duplicate-entry
+         shape exists to work around cannot recur here - a custom permission has no FLS to be
+         missing. The DUPLICATE-ENTRY SHAPE ITSELF IS UNCHANGED and still required for the
+         reason stated below (booleanFilter has no OR). See
+         agent-output/design-requirements-custom-permissions.md.
+
          =====================================================================
          THIS IS THE DUPLICATE-ENTRY SHAPE, NOT AN OR. DO NOT MERGE THE TWO.
          =====================================================================
@@ -72,10 +81,15 @@
          record-type-scoped gate. Nothing here can write what the server would refuse -
          RecordStageAdvanceController asserts the gate regardless of what this page renders.
 
-         ⚠ DEPLOY GATE, NOT SATISFIED BY THIS FILE: the rule is only EVALUABLE if the running
-         user has FLS read on User.Disposition_Driver__c. That grant lives in
-         Disposition_Deal_Driver; if a persona reaches this page without that set in their PSG
-         the rule evaluates FALSE and the button is invisible again, silently.
+         ⚠ DEPLOY GATE, HISTORICAL (2026-08-10), SUPERSEDED 2026-08-12: the rule used to be
+         only EVALUABLE if the running user had FLS read on User.Disposition_Driver__c, granted
+         by Disposition_Deal_Driver; a persona reaching this page without that set in their PSG
+         saw the rule evaluate FALSE and the button invisible, silently. 🔬 PHASE 1 UPDATE
+         (2026-08-12): the criterion now reads {!$Permission.CustomPermission.
+         Disposition_Deal_Actions}, which has no FLS to be missing - the deploy gate is now
+         simply "the running user holds the custom permission" (granted the same way, through
+         Disposition_Deal_Driver), with no FLS-read failure mode in between. See
+         agent-output/design-requirements-custom-permissions.md.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -88,7 +102,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -104,7 +118,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>

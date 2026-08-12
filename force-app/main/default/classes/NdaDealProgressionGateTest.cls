@@ -51,7 +51,12 @@ private class NdaDealProgressionGateTest {
     static void ndaGate_blocksPsaEntryWhenNdaUnsigned() {
         Opportunity o = newOpp('LOI');
         insert o;
-        TestDataFactory.placeApprovedLoi(o); // isolate: PSA entry is ALSO gated by Approved_LOI_Before_PSA
+        // isolate: PSA entry is ALSO gated by Approved_LOI_Before_PSA, and (since 2026-08-12) by
+        // Completed_LOI_Before_PSA, which reads the LOI's OWN Stage__c. placeApprovedLoi leaves it
+        // at 'Draft', so drive it to 'Completed' via the real production route so only the NDA gate
+        // under test can fire.
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
 
         Boolean blocked = false;
         try {

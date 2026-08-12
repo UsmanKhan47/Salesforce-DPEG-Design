@@ -16,10 +16,16 @@
  *
  * ── PERMISSION (server-side, first statement in the method) ────────────────────
  * The method opens with OpportunityActionPermissionService.assertDealActionAccess(). Submitting a
- * deal into the principal approval is a deal-driver action — the Deal_Driver__c field description
- * names "Submit for Approval on Underwriting/LOI" explicitly — but until this existed the only gate
- * was the Dynamic Actions visibility rule, which any direct @AuraEnabled call bypasses. The assert
- * asks the same question the visibility rules ask, so no user gains or loses access.
+ * deal into the principal approval is an acquisitions deal-driving action, gated by the
+ * `Acquisition_Deal_Actions` custom permission — but until this existed the only gate was the
+ * Dynamic Actions visibility rule, which any direct @AuraEnabled call bypasses. The assert asks the
+ * same question the visibility rules ask, so no user gains or loses access.
+ *
+ * ⚠ THE GATE WAS `User.Deal_Driver__c` UNTIL 2026-08-12, and that field's DESCRIPTION was the thing
+ * naming "Submit for Approval on Underwriting/LOI" as in scope. The field is retired (deleted in a
+ * later phase) and nothing reads it, so that description is no longer authoritative for anything —
+ * this header and the service's are. See OpportunityActionPermissionService for why the flag model
+ * was retired.
  *
  * The AccessDeniedException clause is ordered ahead of the generic catch on purpose: a denial
  * falling through to the generic clause would be masked as "could not be submitted... contact your

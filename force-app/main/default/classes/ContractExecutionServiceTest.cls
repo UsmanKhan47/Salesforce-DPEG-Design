@@ -47,7 +47,12 @@ private class ContractExecutionServiceTest {
         o.StageName = 'LOI';
         insert o;
         TestDataFactory.signPrimaryNda(o);
-        TestDataFactory.placeApprovedLoi(o);
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        // Completed_LOI_Before_PSA (added 2026-08-12) reads the LOI's OWN Stage__c, which
+        // placeApprovedLoi deliberately leaves at its factory-default 'Draft'. Drive it to
+        // 'Completed' via the real production route (the c/loiMarkCompleted quick action) before
+        // entering PSA — same fix as StageAdvanceServiceTest.advanceMovesLoiToPsaAndPsaToClosedWon.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
         // Entering PSA auto-creates the Contract Review + Primary_Contract__c stamp.
         o.StageName = 'PSA';
         update o;
@@ -269,11 +274,25 @@ private class ContractExecutionServiceTest {
         }
         insert opps;
 
-        // Same two gates dealAtPsa() prepares, in bulk. Each helper is a single DML statement for
+        // Same gates dealAtPsa() prepares, in bulk. Each helper is a single DML statement for
         // the whole collection, so the fixture cost stays O(1) in statements and this test keeps
         // measuring the execution cascade rather than its own setup.
         TestDataFactory.signPrimaryNda(opps);
-        TestDataFactory.placeApprovedLoi(opps);
+        List<LOI__c> primaryLois = TestDataFactory.placeApprovedLoi(opps);
+
+        // Completed_LOI_Before_PSA (added 2026-08-12) reads each LOI's OWN Stage__c, which
+        // placeApprovedLoi deliberately leaves at its factory-default 'Draft'. dealAtPsa() drives
+        // this through the real production route (RecordStageAdvanceService.advanceTo) because it
+        // is a single-record fixture, but that route is one DML statement PER CALL — looping it
+        // 251 times here would blow the 150-DML-statement transaction limit before Test.startTest()
+        // is even reached. LOI__c has no validation rules (confirmed: no
+        // objects/LOI__c/validationRules folder), so a direct bulk write is a safe, ONE-statement
+        // substitute for the same precondition at this volume.
+        List<LOI__c> completedLois = new List<LOI__c>();
+        for (LOI__c primaryLoi : primaryLois) {
+            completedLois.add(new LOI__c(Id = primaryLoi.Id, Stage__c = 'Completed'));
+        }
+        update completedLois;
 
         for (Opportunity o : opps) {
             o.StageName = 'PSA';

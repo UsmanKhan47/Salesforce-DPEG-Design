@@ -18,7 +18,12 @@ private class ContractReviewTriggerHandlerTest {
         o.StageName = 'LOI';
         insert o;
         TestDataFactory.signPrimaryNda(o);
-        TestDataFactory.placeApprovedLoi(o);
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        // Completed_LOI_Before_PSA (added 2026-08-12) reads the LOI's OWN Stage__c, which
+        // placeApprovedLoi deliberately leaves at its factory-default 'Draft'. Drive it to
+        // 'Completed' via the real production route before entering PSA — same fix as
+        // ContractExecutionServiceTest.dealAtPsa (the identical fixture, duplicated in this class).
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
         o.StageName = 'PSA';
         update o;
         return [SELECT Id, Opportunity__c FROM Contract_Review__c WHERE Opportunity__c = :o.Id];
@@ -55,9 +60,24 @@ private class ContractReviewTriggerHandlerTest {
             o.StageName = 'LOI';
         }
         insert opps;
-        // The same two gates dealAtPsa() prepares, in bulk: one DML statement per helper.
+        // The same gates dealAtPsa() prepares, in bulk: one DML statement per helper.
         TestDataFactory.signPrimaryNda(opps);
-        TestDataFactory.placeApprovedLoi(opps);
+        List<LOI__c> primaryLois = TestDataFactory.placeApprovedLoi(opps);
+
+        // Completed_LOI_Before_PSA (added 2026-08-12) reads each LOI's OWN Stage__c, which
+        // placeApprovedLoi deliberately leaves at 'Draft'. dealAtPsa() drives this through the real
+        // production route (RecordStageAdvanceService.advanceTo) because it is a single-record
+        // fixture, but that route is one DML statement PER CALL — looping it 251 times here would
+        // blow the 150-DML-statement transaction limit before Test.startTest() is even reached.
+        // LOI__c has no validation rules (confirmed: no objects/LOI__c/validationRules folder), so
+        // a direct bulk write is a safe, ONE-statement substitute for the same precondition at this
+        // volume — same reasoning as ContractExecutionServiceTest.bulkExecution251ContractsHandsOffToTransactions.
+        List<LOI__c> completedLois = new List<LOI__c>();
+        for (LOI__c primaryLoi : primaryLois) {
+            completedLois.add(new LOI__c(Id = primaryLoi.Id, Stage__c = 'Completed'));
+        }
+        update completedLois;
+
         for (Opportunity o : opps) {
             o.StageName = 'PSA';
         }

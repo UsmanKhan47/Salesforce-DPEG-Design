@@ -30,6 +30,12 @@ private class OpportunityDocStatusControllerTest {
         loi.LOI_Status__c = 'Submitted';
         loi.Offer_Price__c = 18000000;
         loi.Offer_Cap_Rate__c = 7;
+        // Completed_LOI_Before_PSA (added 2026-08-12) gates PSA entry on the LOI's OWN Stage__c,
+        // which placeApprovedLoi leaves at its factory-default 'Draft'. This class already writes
+        // the LOI record directly (see above), so the LOI is driven to 'Completed' the same way
+        // rather than introducing RecordStageAdvanceService here. LOI__c has no validation rules
+        // (confirmed: no objects/LOI__c/validationRules folder), so the direct write is safe.
+        loi.Stage__c = 'Completed';
         update loi;
 
         opp.StageName = 'PSA';

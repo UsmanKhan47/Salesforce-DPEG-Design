@@ -45,6 +45,16 @@
          never be true for them, and there was no linear walk for Received -> Under Review or
          Counter Received from Buyer -> Executed. Same shape as D20/C1 on NDA_Record_Page.
 
+         🔬 PHASE 1 UPDATE (2026-08-12) — the mechanism described above is HISTORICAL, not
+         live. Both criteria on this page now read {!$Permission.CustomPermission.
+         Acquisition_Deal_Actions} / {!$Permission.CustomPermission.Disposition_Deal_Actions}
+         instead of a User field, so the "grants NO FLS on Deal_Driver__c" failure mode this
+         page's duplicate-entry shape exists to work around cannot recur here — a custom
+         permission has no FLS to be missing. The DUPLICATE-ENTRY SHAPE ITSELF IS UNCHANGED
+         and still required for the reason stated below (booleanFilter has no OR): each persona
+         still needs its own entry, now gated by its own custom permission rather than its own
+         flag. See agent-output/design-requirements-custom-permissions.md.
+
          🔴 IT WAS CORRECT NOT TO GUESS IT IN 3B - THE FORMULA REALLY WAS BROKEN.
          The entry's second criterion is {!Record.Is_Advance_Allowed__c}, and 3B flagged that
          formula as ACQUISITION-SHAPED without knowing which way it failed. Analysed term by
@@ -88,7 +98,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -114,7 +124,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -130,7 +140,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -146,7 +156,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -162,7 +172,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -178,7 +188,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -194,7 +204,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>

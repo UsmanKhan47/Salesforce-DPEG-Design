@@ -127,7 +127,12 @@ private class StageBackwardMovementGateTest {
         // value, so it round-trips unchanged - which is exactly the "sticky, unchanged" state this
         // test needs. The flow does not refire here: doesRequireRecordChangedToMeetCriteria is
         // true and the checkbox is not newly becoming true on this save.
-        TestDataFactory.placeApprovedLoi(o);
+        //
+        // PSA entry is also gated by Completed_LOI_Before_PSA (added 2026-08-12), which reads the
+        // LOI's OWN Stage__c. placeApprovedLoi leaves it at 'Draft', so drive it to 'Completed' via
+        // the real production route first, or this precondition save itself would now be blocked.
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
         o.StageName = 'PSA';
         update o;
         System.assertEquals('PSA',

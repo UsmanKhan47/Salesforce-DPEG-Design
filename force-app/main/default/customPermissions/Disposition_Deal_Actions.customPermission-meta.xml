@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, DELIBERATELY.
+        CustomPermission.Description is capped at 255 characters (measured 2026-08-12 via
+        Acquisition_Deal_Actions.customPermission-meta.xml's own first-draft dry-run failure:
+        "Value too long for field: Description maximum length is: 255"). Broker_Protection_Access
+        carries the same workaround for the identical reason. A comment is repo-only and is never
+        sent to the Metadata API, so it can be as long as it needs.
+
+        PHASE 1 (2026-08-12) of retiring the driver-flag concept — see
+        agent-output/design-requirements-custom-permissions.md. This IS the layer-5 AUTHORIZATION
+        token for the Disposition deal-action gate, replacing the FLS-on-a-checkbox mechanism
+        (User.Disposition_Driver__c). It is granted through Disposition_Deal_Driver.permissionset-
+        meta.xml — the same layer-5 set that already carries the fieldPermissions grant on
+        User.Disposition_Driver__c, so the population is preserved by construction (same set, same
+        holders) rather than by a migration script.
+
+        THIS PHASE REPOINTS THE FLEXIPAGE HALF ONLY. The 6 disposition-gated visibility criteria
+        (LOI_Record_Page x3, NDA_Record_Page x2, Contract_Review_Record_Page x1) now read
+        {!$Permission.CustomPermission.Disposition_Deal_Actions} instead of
+        {!$User.Disposition_Driver__c}. DispositionActionPermissionService.cls still reads the OLD
+        flag, unchanged, until the developer agent's parallel pass lands
+        FeatureManagement.checkPermission('Disposition_Deal_Actions') — until then the chrome and
+        the server-side assert are DELIBERATELY out of sync for the disposition module, exactly as
+        they were for acquisitions during the P0 spike window. User.Disposition_Driver__c and its
+        fieldPermissions grant on Disposition_Deal_Driver are UNTOUCHED and remain the rollback
+        lever; they are retired in a separate, later pass (see the design doc section 6).
+
+        🔴 DO NOT ADD THIS PERMISSION TO A LAYER-4 CAPABILITY SET (e.g. a future
+        Disposition_Stage_Actions_Access). ARCHITECTURE.md section 2's seven-layer model states
+        layer 4 answers "can this code be reached at all" and layer 5 answers "is this specific
+        user allowed" — a custom permission changes the TOKEN, not the QUESTION. Merging it into a
+        capability set would grant deal-driving to that set's ENTIRE membership in one deploy,
+        exactly the widening Acquisition_Deal_Driver's own comment already warns against for its
+        sibling gate.
+    -->
+    <label>Disposition Deal Actions</label>
+    <description>Layer-5 authorization token for the Disposition stage quick actions. Replaces User.Disposition_Driver__c. Grant ONLY via Disposition_Deal_Driver; never via a layer-4 capability set.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>

@@ -17,8 +17,11 @@
  *                                                    -> Post-Closing -> Closed Won
  *                                                    ADDED 2026-08-12. The FIRST object here from
  *                                                    the TRANSACTIONS module rather than
- *                                                    acquisitions/disposition, and the first whose
- *                                                    gate is MEMBERSHIP-ONLY — see StageActionGate.
+ *                                                    acquisitions/disposition. ⚠ This line used to
+ *                                                    add "and the first whose gate is
+ *                                                    MEMBERSHIP-ONLY"; that was true for part of one
+ *                                                    day. All three gates are now a single custom
+ *                                                    permission — see StageActionGate.
  *
  * It exists so the Path's "Mark Status as Complete" button can be removed from these record pages
  * and every stage change routed through Apex, where the transition is derived (never supplied),
@@ -62,12 +65,16 @@
  *     states the client document names for the sell-side PSA"). So both types share ONE map
  *     OBJECT, by reference, not two copies. Copying it would invite the two to drift apart while
  *     the requirement is that they cannot.
- *   - THE GATE MUST change. A disposition persona holds `Disposition_Deal_Driver`, which grants
- *     FLS on `User.Disposition_Driver__c` and NOT on `User.Deal_Driver__c` (measured across every
- *     permission set in the repo: exactly one set grants each field, and they are disjoint). Left
- *     at the single-sequence DEAL_DRIVER config, `hasStageActionAccess` and
- *     `assertStageActionAccess` would REFUSE every disposition PSA for the only persona meant to
- *     work it — the sell-side PSA would be unadvanceable from its own record page.
+ *   - THE GATE MUST change. A disposition persona holds `Disposition_Deal_Driver` and NOT
+ *     `Acquisition_Deal_Driver`, and the two sets are disjoint (measured across every permission
+ *     set in the repo: exactly one set carries each module's token). Left at the single-sequence
+ *     DEAL_DRIVER config, `hasStageActionAccess` and `assertStageActionAccess` would REFUSE every
+ *     disposition PSA for the only persona meant to work it — the sell-side PSA would be
+ *     unadvanceable from its own record page.
+ *     ⚠ AMENDED 2026-08-12: this used to say the disjointness was in FLS on
+ *     `User.Disposition_Driver__c` vs `User.Deal_Driver__c`. Those flags are retired — the token is
+ *     now the `Disposition_Deal_Actions` vs `Acquisition_Deal_Actions` CUSTOM PERMISSION. The
+ *     disjointness, and therefore this whole argument, is unchanged; only what the sets carry is.
  * ⇒ SHARING A SEQUENCE IS NOT SHARING A GATE. Anyone who checks only the picklists concludes "no
  *   change needed" and ships a dead feature.
  *
@@ -267,37 +274,54 @@ public with sharing class RecordStageAdvanceService {
      * new object cannot be wired to a gate that does not exist (.claude/rules — "use enums over
      * string constants").
      *
-     * ⚠ THE THREE MEMBERS ARE NOT ALL THE SAME SHAPE, AND THE SENTENCE THIS BLOCK USED TO OPEN
-     * WITH ("Both members are TWO-FACTOR gates of identical shape") IS NO LONGER TRUE. Read each
-     * one; do not generalise from the first two.
+     * ── 🔴 REWRITTEN 2026-08-12: ALL THREE MEMBERS ARE NOW ONE CUSTOM PERMISSION ──
+     * This block previously described three DIFFERENT mechanisms and warned "THE THREE MEMBERS ARE
+     * NOT ALL THE SAME SHAPE ... do not generalise from the first two". That warning is now
+     * OBSOLETE and is rewritten rather than left standing: the `*_Driver__c` flag model was retired
+     * entirely and every gate below is a single `FeatureManagement.checkPermission` call plus the
+     * shared "Modify All Data" bypass.
      *
-     *   DEAL_DRIVER         TWO-FACTOR. `User.Deal_Driver__c` / `Acquisition_Deal_Driver`.
+     *   DEAL_DRIVER         `Acquisition_Deal_Actions`, granted by `Acquisition_Deal_Driver`.
      *                       The acquisitions deal children. The LOI and Underwriting record pages
-     *                       already carry the identical `{!$User.Deal_Driver__c} EQUAL true`
-     *                       Dynamic Actions visibility rule, so this costs no new machinery.
-     *   DISPOSITION_DRIVER  TWO-FACTOR. `User.Disposition_Driver__c` / `Disposition_Deal_Driver`.
-     *                       WIRED 2026-08-09 (Tranche 3A, decision D15/Q1), now that both the
-     *                       field and the permission set exist. Until then the value was
-     *                       deliberately NOT declared: an unwired enum member is indistinguishable
-     *                       from a wired one at a glance, and passesGate's `when else` would have
-     *                       denied it silently for every disposition user.
-     *   TRANSACTION_STAGE_ACTIONS
-     *                       🔴 MEMBERSHIP-ONLY. `Transaction_Stage_Actions_Access`, with a
-     *                       "Modify All Data" bypass and NO `User` checkbox of any kind. WIRED
-     *                       2026-08-12 with the Transaction Advance Stage action, in the same
-     *                       change as its permission set, its service and its passesGate branch —
-     *                       for the reason recorded on DISPOSITION_DRIVER above.
+     *                       carry the matching Dynamic Actions visibility rule
+     *                       `{!$Permission.CustomPermission.Acquisition_Deal_Actions} EQUAL true`,
+     *                       so this costs no new machinery.
      *
-     * 🔴 IT IS NOT NAMED `TRANSACTION_DRIVER`, AND THAT IS THE POINT OF THE NAME. There is no
-     * `User.Transaction_Driver__c` and there must not be one; a `*_DRIVER` name here would assert
-     * a flag a reader would then go looking for. The design document recommended the two-factor
-     * shape and the user REJECTED it (2026-08-12): "why do we need driver? When we can assign a
-     * permission set to show quick actions to transaction user." They are right, and the reason
-     * the two siblings are two-factor is HISTORICAL — `Deal_Driver__c` already existed and already
-     * drove live visibility rules, so a membership check there would have WIDENED access for an
-     * existing population. `Transaction__c` has no such flag and no such population, so that
-     * argument does not transfer. The full argument lives in
-     * TransactionActionPermissionService's class header; read it before "harmonizing" this back.
+     *                       🔴 THAT TOKEN HAS THREE SEGMENTS AND THE PLATFORM REJECTS THE OTHER TWO
+     *                       SPELLINGS — MEASURED AT DEPLOY 2026-08-12, NOT INFERRED. A FlexiPage
+     *                       `<leftValue>` must read `{!$Permission.CustomPermission.<Name>}`. Both
+     *                       `{!$Permission.<Name>}` (the two-segment form this comment itself
+     *                       carried until it was corrected) and `{!$CustomPermission.<Name>}` were
+     *                       REFUSED by the Metadata API, so a rule copied from a shortened comment
+     *                       fails the deploy rather than silently mis-evaluating. Keep every written
+     *                       occurrence in this repo in the three-segment form for that reason.
+     *   DISPOSITION_DRIVER  `Disposition_Deal_Actions`, granted by `Disposition_Deal_Driver`.
+     *                       WIRED 2026-08-09 (Tranche 3A, decision D15/Q1). Until then the value
+     *                       was deliberately NOT declared: an unwired enum member is
+     *                       indistinguishable from a wired one at a glance, and passesGate's
+     *                       `when else` would have denied it silently for every disposition user.
+     *   TRANSACTION_STAGE_ACTIONS
+     *                       `Transaction_Stage_Actions`, granted by
+     *                       `Transaction_Stage_Actions_Access`. WIRED 2026-08-12 with the
+     *                       Transaction Advance Stage action — for the reason recorded on
+     *                       DISPOSITION_DRIVER above.
+     *
+     * ⚠ THE ENUM VALUE NAMES WERE DELIBERATELY NOT RENAMED. `DEAL_DRIVER` and `DISPOSITION_DRIVER`
+     * still read as if a `*_Driver__c` checkbox existed, and it no longer does. They name the GATE
+     * (which persona drives this record type), not the MECHANISM, and renaming them is churn across
+     * a config map with three call sites and zero behavioural benefit. Read them as "the
+     * acquisitions deal-driving persona" / "the disposition deal-driving persona".
+     *
+     * 🔴 THE ONE ASYMMETRY THAT SURVIVES IS WHICH LAYER CARRIES THE PERMISSION, AND IT MATTERS.
+     * `Acquisition_Deal_Actions` and `Disposition_Deal_Actions` sit on LAYER-5 authorization sets
+     * assigned DIRECTLY to a narrow population. `Transaction_Stage_Actions` sits on the LAYER-4
+     * capability set `Transaction_Stage_Actions_Access`, which is a member of the
+     * `DPEG_Transaction_Team` group — so the Transaction gate is TEAM-WIDE and has no per-user
+     * revocation, exactly as it was under the membership check it replaced. That is a preserved
+     * policy, not an artefact of the migration. Moving either of the first two onto a layer-4 set
+     * would be a real WIDENING (`Opportunity_Stage_Actions_Access` is a member of
+     * `DPEG_Junior_Analyst_PSG`); moving the third off one would be a real NARROWING. Read
+     * TransactionActionPermissionService's header before harmonising any of them.
      *
      * 🔴 THE GATE IS A PROPERTY OF THE RECORD TYPE, NOT OF THE OBJECT — that is the point of
      * wiring it here rather than reusing DEAL_DRIVER for `NDA__c` wholesale. One object serves
@@ -306,13 +330,13 @@ public with sharing class RecordStageAdvanceService {
      * single sequence: `Transaction__c` names its gate exactly once because it has exactly one
      * sequence, not because the gate is an object-level property.
      *
-     * ⚠ NEITHER OF THE TWO `*_DRIVER` MEMBERS is a permission-set MEMBERSHIP check, and that is
-     * not an oversight — nor is it contradicted by the third member. Membership and the flag are
-     * DIFFERENT QUESTIONS: on Opportunity and Disposition a user holding the permission set with
-     * the flag `false` is denied today and would be GRANTED by a membership check, i.e. a silent
-     * widening of a LIVE authorization boundary. See OpportunityActionPermissionService's header.
-     * Changing either of those two to membership is a security change; choosing membership for a
-     * gate that never had a flag is not.
+     * ⚠ A NOTE FOR ANYONE READING THE GIT HISTORY. This block used to argue at length that the two
+     * `*_DRIVER` members must NOT become permission-set MEMBERSHIP checks, because a user holding
+     * the set with the flag `false` was denied and would have been GRANTED — a silent widening of a
+     * live boundary. That argument is now MOOT, not overturned: there is no flag left to disagree
+     * with the set, and the custom permission is carried BY those same sets, so the population is
+     * preserved by construction. Do not resurrect it as an objection to a future change; the
+     * argument that still bites is the layer-4/layer-5 one above.
      */
     public enum StageActionGate {
         DEAL_DRIVER,
@@ -894,9 +918,11 @@ public with sharing class RecordStageAdvanceService {
             //
             // 🔴 THE TWO StageTypeConfigs DIFFER IN EXACTLY ONE ARGUMENT — the gate. If a future
             // reader is tempted to collapse them back into the single-sequence constructor,
-            // re-read the class header: a disposition persona has no FLS on User.Deal_Driver__c
-            // (measured), so DEAL_DRIVER refuses every sell-side PSA and the feature is dead for
-            // the only persona that owns it.
+            // re-read the class header: a disposition persona does not hold
+            // Acquisition_Deal_Actions (the two module permissions are carried by disjoint sets,
+            // measured), so DEAL_DRIVER refuses every sell-side PSA and the feature is dead for
+            // the only persona that owns it. ⚠ The mechanism named here was FLS on
+            // User.Deal_Driver__c until 2026-08-12; the flag is retired, the argument is not.
             //
             // defaultTypeKey is Acquisition_PSA, the CONSERVATIVE fallback: a Master / pre-T-B row
             // keeps its existing sequence AND keeps answering to DEAL_DRIVER, so the deploy window
@@ -934,9 +960,17 @@ public with sharing class RecordStageAdvanceService {
             // compile and behave identically today while implying to the next reader that a
             // record type exists to key on.
             //
-            // 🔴 ITS GATE IS THE ONLY MEMBERSHIP-ONLY ONE IN THIS MAP. That is a deliberate,
-            // user-made decision (see StageActionGate) and NOT an unfinished two-factor gate.
-            // TransactionActionPermissionService's header carries the full argument.
+            // ⚠ THIS COMMENT USED TO READ "ITS GATE IS THE ONLY MEMBERSHIP-ONLY ONE IN THIS MAP".
+            // That stopped being true later the same day: all three gates in this map are now a
+            // single FeatureManagement.checkPermission call (see StageActionGate), and this one
+            // resolves `Transaction_Stage_Actions`.
+            //
+            // 🔴 WHAT IS STILL TRUE, AND IS THE REAL DIFFERENCE, IS WHICH LAYER CARRIES THE TOKEN.
+            // The two deal permissions sit on directly-assigned LAYER-5 sets; this one sits on the
+            // LAYER-4 capability set Transaction_Stage_Actions_Access, which is a member of the
+            // DPEG_Transaction_Team group — so this gate is TEAM-WIDE, with no per-user revocation.
+            // That is a deliberate, user-made policy decision preserved across the migration, NOT an
+            // unfinished gate. TransactionActionPermissionService's header carries the full argument.
             //
             // ⚠ The label 'Transaction' is what the success toast reads ("Transaction moved to
             // Due Diligence.") and is also the NO_NEXT_STEP_HINTS key prefix. This object supplies
@@ -1048,14 +1082,25 @@ public with sharing class RecordStageAdvanceService {
      * objects answer wholly to DEAL_DRIVER (`Underwriting__c` and the two Feasibility Reviews);
      * three — `NDA__c`, `LOI__c` and, since Tranche 3C, `Contract_Review__c` — answer to
      * DEAL_DRIVER on their `Acquisition_*` type and DISPOSITION_DRIVER on their `Disposition_*`
-     * type; and `Transaction__c` (2026-08-12) answers wholly to TRANSACTION_STAGE_ACTIONS, the one
-     * MEMBERSHIP-ONLY gate in the enum.
+     * type; and `Transaction__c` (2026-08-12) answers wholly to TRANSACTION_STAGE_ACTIONS.
+     *
+     * ⚠ That last clause used to end "…, the one MEMBERSHIP-ONLY gate in the enum" and no longer
+     * does: since the 2026-08-12 custom-permission migration all three gates are the same shape, and
+     * the surviving asymmetry is which permission-set LAYER carries each token (see StageActionGate).
+     * Dispatch is unaffected either way — this method never knew a gate's mechanism, only its name.
      *
      * ⚠ IT NOW LOADS THE RECORD — but only when it has to. Since 2026-08-09 the gate is a property
      * of the record type, and the record type is a property of the row, so an object with more
      * than one configured sequence costs ONE extra SOQL here (a `cacheable=true` path invoked once
      * per record view — the design accepts that). An object with a single sequence short-circuits
      * and still costs ZERO queries, the same optimisation sequenceKeyFor already makes.
+     *
+     * ⚠ THE GATE ITSELF GOT CHEAPER ON 2026-08-12 AND THE ROW LOAD DID NOT. Retiring the
+     * `*_Driver__c` flags took each gate from 2 queries to 0 (holder) or 1 (non-holder), so this
+     * method now costs, per record view: 1 for a single-sequence object's non-holder and 0 for its
+     * holder; 2 and 1 respectively for a multi-record-type object, where the row load survives
+     * untouched because it answers a different question — WHICH gate applies, not whether the user
+     * passes it. Anyone hoping the migration removed the load should read `gateFor`.
      *
      * ⚠ TWO CONSEQUENCES, BOTH SMALL AND BOTH REAL:
      *   - `advance()` on an NDA now costs 2 SOQL for the pair (this check, then the service's own
@@ -1271,7 +1316,17 @@ public with sharing class RecordStageAdvanceService {
     /**
      * Asks the record type's configured gate. A gate with no branch here DENIES — an unwired gate
      * must never read as a grant, which is exactly why DISPOSITION_DRIVER was not declared until
-     * the day its field, its permission set and this branch all landed together.
+     * the day its permission set and this branch landed together.
+     *
+     * ⚠ SINCE 2026-08-12 ALL THREE BRANCHES ARE THE SAME SHAPE — one custom-permission check plus a
+     * "Modify All Data" bypass, each memoized in its own service. That does NOT make the switch
+     * collapsible into a single call with a permission-name parameter: the three services are three
+     * separate authorization boundaries with three separate caches, and flattening them would let a
+     * future change to one silently apply to all three. The dispatch IS the boundary.
+     *
+     * ⚠ COST: every branch is now 0 SOQL for a holder and 1 for everyone else (it was 2 for the
+     * first two branches before the migration). That is ON TOP of the row load `gateFor` performs
+     * for a multi-record-type object, which is unchanged.
      */
     private static Boolean passesGate(StageActionGate gate) {
         Boolean allowed = false;
@@ -1283,9 +1338,11 @@ public with sharing class RecordStageAdvanceService {
                 allowed = DispositionActionPermissionService.hasDispositionActionAccess();
             }
             when TRANSACTION_STAGE_ACTIONS {
-                // ⚠ MEMBERSHIP, not a flag — and the asymmetry with the two branches above is the
-                // decision, not an omission. See StageActionGate and
-                // TransactionActionPermissionService's class header.
+                // ⚠ Same MECHANISM as the two branches above since 2026-08-12, but a different
+                // POLICY: its permission rides on a layer-4 capability set inside
+                // DPEG_Transaction_Team, so this gate is team-wide and has no per-user revocation.
+                // That is preserved from the membership check it replaced, not a side effect of it.
+                // See StageActionGate and TransactionActionPermissionService's class header.
                 allowed = TransactionActionPermissionService.hasTransactionActionAccess();
             }
             when else {

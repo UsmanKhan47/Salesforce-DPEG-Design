@@ -297,7 +297,13 @@ private class OpportunityReviewServiceTest {
         insert o;
         // Entering PSA crosses the signed-NDA gate (which covers PSA) and the approved-LOI gate.
         TestDataFactory.signPrimaryNda(o);
-        TestDataFactory.placeApprovedLoi(o);
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        // Completed_LOI_Before_PSA (added 2026-08-12) also gates PSA entry, reading the LOI's OWN
+        // Stage__c rather than the Opportunity's Primary_LOI__c/LOI_Approved__c flags.
+        // placeApprovedLoi leaves the LOI at its factory-default Stage__c = 'Draft', so drive it to
+        // 'Completed' via the real production route first — same fix as
+        // StageAdvanceServiceTest.advanceMovesLoiToPsaAndPsaToClosedWon.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
 
         Test.startTest();
         o.StageName = 'PSA';
@@ -347,7 +353,11 @@ private class OpportunityReviewServiceTest {
         Opportunity o = newOpp('Under Review');
         insert o;
         TestDataFactory.signPrimaryNda(o);
-        TestDataFactory.placeApprovedLoi(o);
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        // Completed_LOI_Before_PSA (added 2026-08-12) also gates PSA entry, reading the LOI's OWN
+        // Stage__c. placeApprovedLoi leaves it at 'Draft', so drive it to 'Completed' via the real
+        // production route first — same fix as contractReviewCreatesOnUpdate above.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
 
         Test.startTest();
         o.StageName = 'PSA';

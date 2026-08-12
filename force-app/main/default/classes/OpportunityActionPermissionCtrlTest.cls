@@ -41,11 +41,16 @@ private class OpportunityActionPermissionCtrlTest {
     private static final String NO_PERMISSION_MESSAGE =
         'You don\'t have permission to perform this action.';
 
-    /** The permitted path: a provisioned deal driver gets `true` straight through. */
+    /**
+     * The permitted path: a provisioned deal driver gets `true` straight through.
+     *
+     * ⚠ SIMPLIFIED 2026-08-12 (custom-permission migration): the fixture used to also set
+     * `Deal_Driver__c = true` — that flag no longer governs access at all, so assigning the
+     * permission set is now the whole grant. See OpportunityActionPermissionServiceTest's header.
+     */
     @isTest
     static void hasDealActionAccess_provisionedDealDriver_returnsTrue() {
         User dealDriver = buildStandardUser('oapcA');
-        dealDriver.Deal_Driver__c = true;
         insert dealDriver;
         assignPermissionSet(dealDriver.Id, DEAL_DRIVER_PERM_SET);
 

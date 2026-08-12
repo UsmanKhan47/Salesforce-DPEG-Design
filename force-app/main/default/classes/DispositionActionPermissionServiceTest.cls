@@ -1,25 +1,44 @@
 /**
- * @description Tests DispositionActionPermissionService — the TWO-FACTOR gate behind the
- * disposition stage quick actions (decision D15/Q1). The sell-side twin of
- * OpportunityActionPermissionServiceTest, and deliberately shaped after it.
+ * @description Tests DispositionActionPermissionService — the gate behind the disposition stage
+ * quick actions (decision D15/Q1). The sell-side twin of OpportunityActionPermissionServiceTest,
+ * and deliberately shaped after it.
+ *
+ * ── 🔴 REWRITTEN 2026-08-12 FOR THE CUSTOM-PERMISSION MIGRATION ──────────────
+ * The gate used to be two-factor: FLS read on `User.Disposition_Driver__c` (via `WITH USER_MODE`)
+ * AND the flag itself set to true. It is now one factor: holding the `Disposition_Deal_Actions`
+ * custom permission, granted by the SAME `Disposition_Deal_Driver` permission set that used to
+ * carry the FLS grant. Positive-path fixtures are simpler as a direct consequence — see
+ * agent-output/design-requirements-custom-permissions.md §7.2, and
+ * OpportunityActionPermissionServiceTest's header for the Step 0 measurement (a throwaway probe
+ * confirmed FeatureManagement.checkPermission sees a same-transaction PermissionSetAssignment
+ * using the identical fixture shape this file already used) that applies here unchanged.
  *
  * ── 🔴 THE MOST IMPORTANT TEST IN THIS CLASS ─────────────────────────────────
- * anAcquisitionDealDriverIsDeniedTheDispositionGate. The whole reason D15/Q1 rejected reusing
- * `Deal_Driver__c` is that it would merge two authorization boundaries — a sale driver could then
- * drive acquisitions and vice versa. Every other test here would pass just as happily against an
- * implementation that read `Deal_Driver__c`; that one would not.
+ * anAcquisitionDealDriverIsDeniedTheDispositionGate. The whole reason D15/Q1 rejected reusing a
+ * single shared authorization token is that it would merge two authorization boundaries — a sale
+ * driver could then drive acquisitions and vice versa. That argument survived the token swap
+ * unchanged (see the class header): every other test here would pass just as happily against an
+ * implementation that read `Acquisition_Deal_Actions`; this one would not.
  *
- * ── THE SECOND MOST IMPORTANT ───────────────────────────────────────────────
- * membershipWithoutTheFlagIsStillDenied. A user holding `Disposition_Deal_Driver` with
- * `Disposition_Driver__c = false` must be DENIED. A permission-set MEMBERSHIP check — the tidier
- * implementation, and the Lead gate's actual shape — would GRANT them, silently converting a
- * two-factor gate into a one-factor one for every holder.
+ * ── ⚠ THIS CLASS HAS NO SEPARATE "CAPABILITY VS AUTHORIZATION" TEST, AND THAT IS DELIBERATE ──
+ * OpportunityActionPermissionServiceTest carries
+ * `capabilitySetWithoutTheAuthorizationSet_isStillDenied`, pinning that
+ * `Opportunity_Stage_Actions_Access` (layer 4) does not imply `Acquisition_Deal_Driver` (layer 5).
+ * There is no disposition-specific layer-4 capability set reachable independently of this gate to
+ * build the same fixture against — `RecordStageAdvanceController` (the disposition entry point) sits
+ * in the org-wide `DPEG_Apex_Access` catch-all, not a disposition-scoped capability set, so there is
+ * no analogous "holds the capability set but not the authorization set" state to construct here.
+ * `anAcquisitionDealDriverIsDeniedTheDispositionGate` below is this class's boundary-separation
+ * proof instead: it pins that holding a DIFFERENT layer-5 authorization set (Acquisition_Deal_Driver)
+ * does not grant this gate — the disposition-shaped version of "holding some other set does not
+ * imply THIS one."
  *
  * ── ⚠ WHAT AN ADMIN RUN CANNOT PROVE ────────────────────────────────────────
- * "Modify All Data" bypasses this gate entirely and BEFORE the flag is read, so the test-running
- * user passes unconditionally. Every meaningful assertion here therefore runs inside
- * System.runAs against a purpose-built user. The same caveat applies to UAT: an admin smoke test
- * of the disposition buttons proves nothing at all.
+ * "Modify All Data" bypasses this gate entirely and BEFORE the custom-permission check is even
+ * consulted for cost reasons (see the class header), so the test-running user passes
+ * unconditionally. Every meaningful assertion here therefore runs inside System.runAs against a
+ * purpose-built user. The same caveat applies to UAT: an admin smoke test of the disposition
+ * buttons proves nothing at all.
  *
  * ── ⚠ THE CACHE MUST BE CLEARED AROUND EVERY runAs ──────────────────────────
  * The service memoizes its answer per transaction, which is correct in production (one user per
@@ -34,7 +53,7 @@
  *
  * @see force-app/main/default/classes/DispositionActionPermissionService.cls
  * @see force-app/main/default/classes/OpportunityActionPermissionServiceTest.cls (the twin)
- * @author Salesforce Developer
+ * @author Unit Testing Agent
  */
 @isTest
 private class DispositionActionPermissionServiceTest {
@@ -63,76 +82,49 @@ private class DispositionActionPermissionServiceTest {
         Test.stopTest();
 
         Assert.isFalse(allowed,
-            'A user with neither Modify All Data, nor the permission set, nor the flag must be '
-            + 'denied. Both factors are unmet and the FLS read THROWS — which the service must '
-            + 'convert to a denial, not propagate.');
+            'A user with neither Modify All Data nor Disposition_Deal_Driver must be denied');
     }
 
     /**
-     * 🔴 MEMBERSHIP IS NOT THE FLAG. This user holds Disposition_Deal_Driver (so factor (a), the
-     * FLS, is satisfied) and has Disposition_Driver__c = false. A membership-based gate would
-     * grant them. This one must not.
+     * A grant to a DIFFERENT user must not leak — the disposition mirror of the acquisitions
+     * regression pin. Worth keeping even though FeatureManagement.checkPermission resolves against
+     * the running context (there is no explicit user Id filter in this class to regress): the
+     * admin-bypass path still reads through PermissionSetAssignmentSelector's hard-filtered query,
+     * and this pins that a second user's grant in the same transaction cannot bleed across.
      */
     @isTest
-    static void membershipWithoutTheFlagIsStillDenied() {
-        User holder = buildStandardUser('dap2');
-        holder.Disposition_Driver__c = false;
-        insertFixtureUser(holder);
-        assignPermissionSet(holder.Id, DISPOSITION_DRIVER_PERM_SET);
+    static void anotherUserHoldsTheGrant_stillDeniesTheRunningUser() {
+        User realDispositionDriver = buildStandardUser('dap2');
+        User bareUser = buildStandardUser('dap2b');
+        insert new List<User>{ realDispositionDriver, bareUser };
+        assignPermissionSet(realDispositionDriver.Id, DISPOSITION_DRIVER_PERM_SET);
 
         Test.startTest();
         Boolean allowed;
         DispositionActionPermissionService.clearCache();
-        System.runAs(holder) {
+        System.runAs(bareUser) {
             allowed = DispositionActionPermissionService.hasDispositionActionAccess();
         }
         DispositionActionPermissionService.clearCache();
         Test.stopTest();
 
         Assert.isFalse(allowed,
-            'Holding Disposition_Deal_Driver is NOT the same as being flagged a disposition '
-            + 'driver. If this ever passes, someone replaced the two-factor condition with a '
-            + 'permission-set membership check and silently widened a live authorization '
-            + 'boundary for every holder of that set.');
+            'Another user holding Disposition_Deal_Driver must never grant access to the running user');
     }
 
     /**
-     * The mirror: the FLAG is set but the FLS is absent, so `WITH USER_MODE` makes the read throw
-     * and factor (a) is unmet. Setting the flag true is the point — if USER_MODE ever stopped
-     * enforcing FLS the read would succeed and return `true`, granting the actions to a user
-     * holding no permission set at all.
-     */
-    @isTest
-    static void flagSetWithoutFieldAccessIsDenied() {
-        User flaggedButUnprovisioned = buildStandardUser('dap3');
-        flaggedButUnprovisioned.Disposition_Driver__c = true;
-        insertFixtureUser(flaggedButUnprovisioned);   // deliberately NO permission set
-
-        Test.startTest();
-        Boolean allowed;
-        DispositionActionPermissionService.clearCache();
-        System.runAs(flaggedButUnprovisioned) {
-            allowed = DispositionActionPermissionService.hasDispositionActionAccess();
-        }
-        DispositionActionPermissionService.clearCache();
-        Test.stopTest();
-
-        Assert.isFalse(allowed,
-            'Without FLS read on User.Disposition_Driver__c the gate must deny even though the '
-            + 'flag is TRUE — that is factor (a), enforced by WITH USER_MODE inside UserSelector');
-    }
-
-    /**
-     * 🔴 THE BOUNDARY-SEPARATION TEST — the reason D15/Q1 rejected reusing Deal_Driver__c.
+     * 🔴 THE BOUNDARY-SEPARATION TEST — the reason D15/Q1 rejected a single shared authorization
+     * token, and the reason the two modules still carry SEPARATE custom permissions after the
+     * token swap.
      *
-     * A fully provisioned ACQUISITIONS deal driver (flag + permission set) must be DENIED the
-     * disposition actions. Every other test in this class would pass unchanged against an
-     * implementation that read `Deal_Driver__c`; this one is the falsifier.
+     * A fully provisioned ACQUISITIONS deal driver (Acquisition_Deal_Driver, carrying
+     * Acquisition_Deal_Actions) must be DENIED the disposition actions. Every other test in this
+     * class would pass unchanged against an implementation that read Acquisition_Deal_Actions
+     * instead of Disposition_Deal_Actions; this one is the falsifier.
      */
     @isTest
     static void anAcquisitionDealDriverIsDeniedTheDispositionGate() {
         User acquisitionDriver = buildStandardUser('dap4');
-        acquisitionDriver.Deal_Driver__c = true;
         insert acquisitionDriver;
         assignPermissionSet(acquisitionDriver.Id, DEAL_DRIVER_PERM_SET);
 
@@ -154,9 +146,9 @@ private class DispositionActionPermissionServiceTest {
             + 'fixture is wrong and the real assertion below proves nothing.');
         Assert.isFalse(dispositionAllowed,
             'An acquisitions deal driver must NOT be able to drive a SALE. The two gates read '
-            + 'different fields and different permission sets on purpose — merging them (or '
-            + 'granting Deal_Driver__c to disposition users) would let a sale driver drive '
-            + 'acquisitions and vice versa.');
+            + 'different custom permissions granted by different permission sets on purpose — '
+            + 'merging them (or granting Acquisition_Deal_Actions to disposition users) would let a '
+            + 'sale driver drive acquisitions and vice versa.');
     }
 
     @isTest
@@ -194,8 +186,7 @@ private class DispositionActionPermissionServiceTest {
     @isTest
     static void provisionedDispositionDriverIsAllowed() {
         User dispositionDriver = buildStandardUser('dap6');
-        dispositionDriver.Disposition_Driver__c = true;
-        insertFixtureUser(dispositionDriver);
+        insert dispositionDriver;
         assignPermissionSet(dispositionDriver.Id, DISPOSITION_DRIVER_PERM_SET);
 
         Test.startTest();
@@ -210,56 +201,64 @@ private class DispositionActionPermissionServiceTest {
         Test.stopTest();
 
         Assert.isTrue(allowed,
-            'BOTH factors satisfied — FLS via Disposition_Deal_Driver and the flag true — must '
-            + 'grant. If this fails, the gate has no reachable true branch for anyone and the '
-            + 'feature is dead for every non-administrator.');
+            'Holding Disposition_Deal_Driver — which now carries the Disposition_Deal_Actions '
+            + 'custom permission — must grant. If this fails, the gate has no reachable true branch '
+            + 'for anyone and the feature is dead for every non-administrator.');
     }
 
     /**
-     * 🔴 THE ADMIN BYPASS, AND ITS ORDER. A System Administrator holding NEITHER the flag NOR the
-     * permission set must still pass — because a Metadata-API-deployed custom field arrives with
-     * no field permissions for ANY profile, and Modify All Data is an OBJECT permission that
-     * confers no FLS. Reversing the two statements in computeDispositionActionAccess() would lock
-     * every administrator out of the feature they just deployed. This test is the tripwire for
-     * that ordering.
+     * The admin bypass. A System Administrator holding NEITHER the custom permission NOR the
+     * permission set must still pass, via Modify All Data.
+     *
+     * ⚠ THE OLD FLS-LOCKOUT PRECONDITION IS GONE, AND DELIBERATELY NOT REPLACED. Pre-migration this
+     * test had to prove a bare admin lacks FLS read on User.Disposition_Driver__c — the reason the
+     * bypass had to run BEFORE the field read. There is no field read left in this class, so there
+     * is nothing left to lock an admin out of; the ordering is now a cost choice (see the class
+     * header), not a correctness one.
      */
     @isTest
-    static void administratorPassesWithoutTheFlagOrThePermissionSet() {
+    static void administratorPassesWithoutTheCustomPermissionOrThePermissionSet() {
         User bareAdmin = buildUserOnProfile('System Administrator', 'dap7');
-        insert bareAdmin;   // no flag, no permission set
+        insert bareAdmin;   // no permission set
 
         Test.startTest();
         Boolean allowed;
-        Boolean fieldAccessible;
+        Set<String> heldSetNames = new Set<String>();
         DispositionActionPermissionService.clearCache();
         System.runAs(bareAdmin) {
-            fieldAccessible = Schema.SObjectType.User.fields.Disposition_Driver__c.isAccessible();
+            for (PermissionSetAssignment row : PermissionSetAssignmentSelector.selectForCurrentUser()) {
+                if (row.PermissionSet != null) {
+                    heldSetNames.add(row.PermissionSet.Name);
+                }
+            }
             allowed = DispositionActionPermissionService.hasDispositionActionAccess();
         }
         DispositionActionPermissionService.clearCache();
         Test.stopTest();
 
-        Assert.isFalse(fieldAccessible,
-            'PRECONDITION, and the whole reason the bypass must run FIRST: a System Administrator '
-            + 'holding no permission set must NOT have FLS read on User.Disposition_Driver__c. If '
-            + 'this fails, the field has been granted outside Disposition_Deal_Driver in this org '
-            + '— which by itself weakens the gate to a single factor for those users.');
+        Assert.isFalse(heldSetNames.contains(DISPOSITION_DRIVER_PERM_SET),
+            'PRECONDITION: the admin must hold NO Disposition_Deal_Driver set, otherwise this test '
+            + 'would not isolate the Modify All Data bypass.');
         Assert.isTrue(allowed,
-            'Modify All Data must pass BEFORE the flag is read. An administrator can already '
-            + 'change any stage through inline edit, the Path or the API, so denying them the '
-            + 'button would be theatre — and here it would be a lockout, because the FLS read '
-            + 'throws for them too.');
+            'Modify All Data must grant access even without the custom permission. An administrator '
+            + 'can already change any stage through inline edit, the Path or the API, so denying '
+            + 'them the button would be theatre, not security.');
     }
 
     // ═════════════════════════════════════════════════════════════════════════
     // CACHING AND FAULTS
     // ═════════════════════════════════════════════════════════════════════════
 
+    /**
+     * 🔴 THE ASSERTION TIGHTENS UNDER THE NEW ORDER, mirroring the acquisitions twin. The
+     * custom-permission check now runs FIRST and costs ZERO SOQL, and a disposition driver never
+     * falls through to the Modify All Data bypass — so repeated asks by a driver must cost EXACTLY
+     * ZERO queries.
+     */
     @isTest
-    static void repeatedCallsReadTheUserOnlyOnce() {
+    static void repeatedCallsByADriverCostZeroQueries() {
         User dispositionDriver = buildStandardUser('dap8');
-        dispositionDriver.Disposition_Driver__c = true;
-        insertFixtureUser(dispositionDriver);
+        insert dispositionDriver;
         assignPermissionSet(dispositionDriver.Id, DISPOSITION_DRIVER_PERM_SET);
 
         Test.startTest();
@@ -275,11 +274,32 @@ private class DispositionActionPermissionServiceTest {
         DispositionActionPermissionService.clearCache();
         Test.stopTest();
 
-        Assert.areEqual(2, used,
-            'At most TWO queries per transaction no matter how many quick actions ask — the '
-            + 'PermissionSetAssignment read for the admin bypass and the UserSelector flag read. '
-            + 'Neither the running user\'s FLS nor their flag can change mid-transaction, so the '
-            + 'second and third calls must be served from the cache.');
+        Assert.areEqual(0, used,
+            'A disposition driver must pay ZERO queries: FeatureManagement.checkPermission costs 0 '
+            + 'SOQL and a driver never reaches the Modify All Data bypass read. Actual: ' + used);
+    }
+
+    /** A non-driver still pays at most one query (the bypass read), memoized across repeated asks. */
+    @isTest
+    static void repeatedCallsByANonDriverCostAtMostOneQuery() {
+        User bareUser = buildStandardUser('dap8b');
+        insert bareUser;
+
+        Test.startTest();
+        Integer used;
+        DispositionActionPermissionService.clearCache();
+        System.runAs(bareUser) {
+            Integer before = Limits.getQueries();
+            DispositionActionPermissionService.hasDispositionActionAccess();
+            DispositionActionPermissionService.hasDispositionActionAccess();
+            used = Limits.getQueries() - before;
+        }
+        DispositionActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isTrue(used <= 1,
+            'A non-driver must pay at most ONE query (the Modify All Data bypass read), memoized for '
+            + 'every subsequent ask. Actual: ' + used);
     }
 
     @isTest
@@ -287,8 +307,7 @@ private class DispositionActionPermissionServiceTest {
         User denied = buildStandardUser('dap9');
         insert denied;
         User granted = buildStandardUser('dap10');
-        granted.Disposition_Driver__c = true;
-        insertFixtureUser(granted);
+        insert granted;
         assignPermissionSet(granted.Id, DISPOSITION_DRIVER_PERM_SET);
 
         Test.startTest();
@@ -355,29 +374,6 @@ private class DispositionActionPermissionServiceTest {
     // helpers
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Inserts a fixture User in EXPLICIT system mode.
-     *
-     * 🔴 MEASURED 2026-08-09 in check-only validation 0Afiw000000HEo9CAG, and it is not what a
-     * reader expects: a bare `insert user` that SETS `User.Disposition_Driver__c` fails with
-     * `System.DmlException: Operation failed due to fields being inaccessible on Sobject User`
-     * when the running principal has no FLS on that field — even though ordinary Apex DML is
-     * normally described as system mode. `User` is a setup object and a custom field deployed by
-     * the Metadata API arrives carrying NO field permissions for ANY profile, System Administrator
-     * included, so the deploying admin is exactly that principal on day one.
-     *
-     * The acquisitions twin (UserSelectorTest, Deal_Driver__c) does NOT hit this only because an
-     * org-side grant on that field already exists — an asymmetry that lives in the org and not in
-     * this repo, since profiles are `.forceignore`d.
-     *
-     * Declaring AccessLevel.SYSTEM_MODE states the intent the fixture actually has: these tests
-     * are about the GATE, not about who may edit the flag. Whether an ADMIN can tick the checkbox
-     * on a real User record is a separate, real question and is a deploy gate, not a test concern.
-     */
-    private static void insertFixtureUser(User fixture) {
-        Database.insert(fixture, true, AccessLevel.SYSTEM_MODE);
-    }
-
     /** Assigns a deployed permission set, by API Name, to a user. */
     private static void assignPermissionSet(Id assigneeId, String permissionSetName) {
         Id permSetId = [SELECT Id FROM PermissionSet WHERE Name = :permissionSetName LIMIT 1].Id;
@@ -387,7 +383,7 @@ private class DispositionActionPermissionServiceTest {
     /**
      * Builds (but does not insert) a bare Standard User. User is a setup object whose
      * required-field shape TestDataFactory deliberately does not cover, so this mirrors the helper
-     * in OpportunityActionPermissionServiceTest / UserSelectorTest.
+     * in OpportunityActionPermissionServiceTest.
      *
      * @param tag short per-test token keeping Username unique across methods in one run
      */

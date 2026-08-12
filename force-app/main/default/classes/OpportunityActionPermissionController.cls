@@ -58,8 +58,10 @@ public with sharing class OpportunityActionPermissionController {
      * Development / Construction Review, Initiate Underwriting, Initiate LOI, Advance to PSA, Move
      * to About to Close, Close Deal, Submit for Approval).
      *
-     * @return true when the user has "Modify All Data", or holds FLS read on `User.Deal_Driver__c`
-     *         AND has that flag set to true on their own User record; false otherwise.
+     * @return true when the user holds the `Acquisition_Deal_Actions` custom permission (granted by
+     *         the `Acquisition_Deal_Driver` permission set), or has "Modify All Data"; false
+     *         otherwise. ⚠ Until 2026-08-12 this read FLS on `User.Deal_Driver__c` AND that flag's
+     *         value — both factors are retired; see the service's class header.
      * @throws AuraHandledException with a fixed generic message when the permission lookup itself
      *         fails unexpectedly. The LWC treats a thrown check exactly like `false`, so the gate
      *         fails CLOSED.

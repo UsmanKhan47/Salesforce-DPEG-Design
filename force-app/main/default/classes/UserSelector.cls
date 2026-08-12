@@ -1,129 +1,97 @@
 /**
- * Selector for User. Encapsulates ALL SOQL against User per ARCHITECTURE.md §2 and
- * .claude/rules/apex-layering-rule.md ("All SOQL must live in Selector classes. Nothing else
+ * UserSelector — the selector for User. Encapsulates ALL SOQL against User per ARCHITECTURE.md §2
+ * and .claude/rules/apex-layering-rule.md ("All SOQL must live in Selector classes. Nothing else
  * queries that object.").
  *
- * Consumers, one per gate — TWO gates, TWO fields, TWO methods, never merged (see
- * selectDispositionDriverFlagForCurrentUser for why merging them would break both):
- *   - OpportunityActionPermissionService — the ACQUISITIONS gate behind the Opportunity stage
- *     quick actions (Begin Review, Send to Development / Construction Review, Initiate
- *     Underwriting, Initiate LOI, Advance to PSA, Move to About to Close, Close Deal, Submit for
- *     Approval) and the acquisition record types of the six stage-controlled child objects. It
- *     answers "is the RUNNING user flagged as a deal driver?".
- *   - DispositionActionPermissionService — the DISPOSITION gate (added 2026-08-09, D15/Q1) behind
- *     the stage quick actions on the disposition record types. Same question, different
- *     population, different field.
+ * ── 🔴 THIS CLASS IS NOW EMPTY, AND THAT IS A DELIBERATE, TEMPORARY STATE ─────
+ * It held exactly two methods — `selectDealDriverFlagForCurrentUser()` and
+ * `selectDispositionDriverFlagForCurrentUser()` — and both were removed on 2026-08-12 when the
+ * `User.Deal_Driver__c` / `User.Disposition_Driver__c` authorization-flag model was retired in
+ * favour of Custom Permissions. Nothing in the application called them any more, and a selector
+ * method with no caller is dead SOQL that a future reader will assume is load-bearing.
  *
- * ── SCOPE: THE RUNNING USER ONLY ──────────────────────────────────────────────
- * Every method here is hard-filtered to `Id = UserInfo.getUserId()` and takes no user parameter.
- * That is deliberate and is what makes the class safe to reach (indirectly) from an `@AuraEnabled`
- * boundary: a user can never use it to read ANOTHER user's Deal_Driver__c flag and so map out who
- * in the org can drive deals. Mirrors the same design decision in
- * PermissionSetAssignmentSelector.
+ * ⚠ `UserSelectorTest` WAS DELETED IN THIS PHASE, NOT IN PHASE 2. Every one of its nine call sites
+ * referenced the two removed methods, so once they were gone the test could not COMPILE and would
+ * have blocked every deploy. Deleting it was unavoidable and is already done.
  *
- * ── WHY `WITH USER_MODE` IS LOAD-BEARING HERE, NOT JUST COMPLIANCE ────────────
- * For most selectors USER_MODE is a guardrail. Here it is HALF THE GATE. The Opportunity actions
- * are protected by a TWO-FACTOR condition — the running user must (a) have FLS read on
- * `User.Deal_Driver__c`, granted only by the `Acquisition_Deal_Driver` permission set, AND (b) have
- * that checkbox set to true on their own User record. `WITH USER_MODE` is what enforces factor (a):
- * for a user without that FLS the query THROWS (`System.QueryException`, surfacing as "No such
- * column 'Deal_Driver__c' on entity 'User'") rather than returning the row with a null field.
+ * 🔴 THAT VOIDS THE ARGUMENT THIS HEADER USED TO MAKE FOR KEEPING THE CLASS, AND THE CORRECTION
+ * MATTERS. It previously claimed the fields, their grants, this class AND `UserSelectorTest` would
+ * "all go together" in Phase 2, and that deleting the class now "would have removed the rollback
+ * lever's test coverage a phase early". **There is no coverage left to remove** — it went with the
+ * test — so coverage cannot be a reason to keep this file, and anyone re-reading the old wording
+ * would be weighing a protection that no longer exists.
  *
- * That throw is not a fault — it is the denial signal, and the calling service converts it to
- * `false` (fail closed). Removing `WITH USER_MODE`, or "fixing" the exception by widening FLS,
- * would silently reduce the gate to a single factor and grant the actions to every user whose flag
- * happened to be true. Do not weaken it.
+ * ⇒ SO BE HONEST ABOUT WHAT THIS FILE IS: an empty shell with **no test coverage and no functional
+ * purpose**. Its only remaining value is documentary, and it is worth more than the tidiness of
+ * deleting an empty file:
+ *   1. it is the MARKER for the Phase-2 deletion, so that retirement stays a single reviewable change;
+ *   2. it is the only surviving control against someone re-adding an inline `User` query — see the
+ *      two rules below, which exist nowhere else in the codebase.
  *
- * ⚠ FLS truth lives in the ORG, not in this repo — profiles are `.forceignore`d (ARCHITECTURE.md
- * §1 / the Opportunity design doc). Never validate this behaviour as an administrator: "Modify All
- * Data" bypasses the gate entirely in the service above.
+ * ── PHASE-2 DELETE LIST (what ACTUALLY remains) ───────────────────────────────
+ * Following docs/permission-set-retirement-runbook.md's GRANT → VERIFY → REMOVE → SOAK → DELETE order:
+ *   - `User.Deal_Driver__c` and `User.Disposition_Driver__c` (the rollback lever, still live);
+ *   - their `<fieldPermissions>` grants in the two layer-5 sets, `Acquisition_Deal_Driver` and
+ *     `Disposition_Deal_Driver`;
+ *   - this class.
+ * `UserSelectorTest` is deliberately NOT on that list — it is already gone.
+ *
+ * ⚠ WHEN THIS CLASS IS DELETED, RECORD THE CONSEQUENCE — IT IS LARGER THAN IT LOOKS. This was the
+ * FIRST AND ONLY `User` SOQL in the application. Once the file is gone the next feature that needs to
+ * read a `User` will find no selector and will be tempted to inline the query, which the layering
+ * rule forbids. ARCHITECTURE.md §2 already carries this note (added 2026-08-12); keep it there when
+ * the file goes, because at that point it becomes the ONLY surviving statement of it. A `User` read
+ * must RE-CREATE this selector rather than inline, exactly as `AccountSelector` and
+ * `OpportunityContactRoleSelector` were created as the first reads of their objects.
+ *
+ * ── WHY THE TWO METHODS WERE SEPARATE QUERIES, AND WHY THAT REASONING IS NOW MOOT ──
+ * This is recorded rather than deleted because the reasoning was subtle, correct, and is the kind of
+ * thing a future reader would otherwise "discover" and re-apply somewhere it does not belong.
+ *
+ * The two reads were deliberately NOT merged into a single
+ * `SELECT Deal_Driver__c, Disposition_Driver__c`, even though that is tidier and costs one query
+ * instead of two. `WITH USER_MODE` throws when the running user cannot read ANY selected field, so
+ * an acquisitions deal driver — who holds FLS on `Deal_Driver__c` and not on
+ * `Disposition_Driver__c` — would have made the merged read throw. Both calling services converted a
+ * throw to `false`, so the merge would have silently DENIED a legitimate acquisitions deal driver
+ * the actions they had always had. One field per query is what kept the two gates independent.
+ *
+ * ⇒ THE REASONING EVAPORATES WITH THE FLAGS. It depended entirely on `WITH USER_MODE` FLS enforcement
+ * being HALF THE GATE — the throw WAS the denial signal for factor (a). Custom permissions have no
+ * FLS, so there is no per-field denial signal to keep separable and no gate left to break by
+ * merging. Do not carry this rule forward to a future `User` selector: it was a property of the flag
+ * model, not a general rule about selecting two fields.
+ *
+ * ⚠ THE GENERAL LESSON THAT DOES SURVIVE: a `WITH USER_MODE` query throws on the WHOLE row for ONE
+ * inaccessible field, so widening a selector's field list can break an existing caller that has
+ * nothing to do with the new field. That is a real, transferable trap (see
+ * `InboundEmailStagingSelector.selectById`, where `Routing_Attempt_Count__c` was deliberately kept
+ * OUT of the read every inbound email performs, for exactly this reason).
+ *
+ * ── WHAT REPLACED IT ──────────────────────────────────────────────────────────
+ * `OpportunityActionPermissionService` and `DispositionActionPermissionService` now call
+ * `FeatureManagement.checkPermission('Acquisition_Deal_Actions' | 'Disposition_Deal_Actions')`,
+ * which costs ZERO SOQL and has no FLS surface at all. Read either class's header for the measured
+ * reason the flag model was retired.
  *
  * ── MODE ──────────────────────────────────────────────────────────────────────
- * `with sharing` per ARCHITECTURE.md §2 (mandatory on every selector). Note that the repo standard
- * deliberately differs from the generic sf-apex skill default of `inherited sharing`; every
- * existing selector in this codebase uses `with sharing` and ARCHITECTURE.md wins.
+ * `with sharing` per ARCHITECTURE.md §2 (mandatory on every selector), retained so that re-adding a
+ * method here starts from the correct default. Note the repo standard deliberately differs from the
+ * generic sf-apex skill default of `inherited sharing`.
  *
- * ── BULKIFICATION ─────────────────────────────────────────────────────────────
- * The 251-record mandate in .claude/rules/bulk-test-rule.md does not apply: this selector performs
- * ONE query for ONE user (the running user) per transaction, with no loop and no per-record work.
- * It is the same per-transaction-singleton shape the rule already exempts, and there is no
- * collection-shaped behaviour at this layer to bulk-test. No `Set<Id>` overload is offered — see
- * SCOPE above; adding one would be a security regression, not a bulkification improvement.
+ * ── ⚠ IF YOU ADD A METHOD HERE, RESTORE THE SCOPE RULE WITH IT ───────────────
+ * Every method this class ever held was hard-filtered to `Id = UserInfo.getUserId()` and took no
+ * user parameter. That was deliberate and is what made the class safe to reach (indirectly) from an
+ * `@AuraEnabled` boundary: a user could never use it to read ANOTHER user's record and map out who
+ * in the org can drive deals. `PermissionSetAssignmentSelector` makes the same design decision. A
+ * new method that accepts a `Set<Id>` of users is not a bulkification improvement here — it is a
+ * security decision that needs its own argument.
  *
- * @see force-app/main/default/classes/OpportunityActionPermissionService.cls (sole consumer)
- * @see force-app/main/default/objects/User/fields/Deal_Driver__c.field-meta.xml
- * @see force-app/main/default/permissionsets/Acquisition_Deal_Driver.permissionset-meta.xml
+ * @see force-app/main/default/classes/OpportunityActionPermissionService.cls (former consumer)
+ * @see force-app/main/default/classes/DispositionActionPermissionService.cls (former consumer)
+ * @see force-app/main/default/objects/User/fields/Deal_Driver__c.field-meta.xml (delete candidate)
+ * @see force-app/main/default/objects/User/fields/Disposition_Driver__c.field-meta.xml (delete candidate)
  * @see .claude/skills/sf-apex/references/AccountSelector.cls
  */
 public with sharing class UserSelector {
-
-    /**
-     * The running user's deal-driver flag.
-     *
-     * NOT-FOUND CONTRACT — returns `null` rather than throwing when no row comes back. In practice
-     * that cannot happen (a running user always has a User record), but the caller treats `null` as
-     * DENIED, so the contract keeps the gate failing closed even in an impossible state instead of
-     * NPE-ing on an unchecked single-row assignment.
-     *
-     * @return the running user with Id and Deal_Driver__c populated; `null` if no row matched.
-     * @throws System.QueryException when the running user lacks FLS read on `User.Deal_Driver__c`.
-     *         This is EXPECTED for an unprivileged user and is the gate's first factor — see the
-     *         class header. Callers must treat it as a denial, never as a system fault to retry.
-     * @example
-     * User runningUser = UserSelector.selectDealDriverFlagForCurrentUser();
-     * Boolean isDealDriver = runningUser != null && runningUser.Deal_Driver__c == true;
-     */
-    public static User selectDealDriverFlagForCurrentUser() {
-        Id runningUserId = UserInfo.getUserId();
-        List<User> rows = [
-            SELECT Id,
-                   Deal_Driver__c
-            FROM User
-            WHERE Id = :runningUserId
-            WITH USER_MODE
-            LIMIT 1
-        ];
-        return rows.isEmpty() ? null : rows[0];
-    }
-
-    /**
-     * The running user's DISPOSITION-driver flag — factor (a) + (b) of the disposition stage
-     * action gate (decision D15/Q1). The sell-side twin of the method above, in every respect
-     * including the `WITH USER_MODE` contract.
-     *
-     * 🔴 IT IS A SEPARATE QUERY ON A SEPARATE FIELD, AND MERGING THE TWO WOULD BREAK BOTH GATES.
-     * A single `SELECT Deal_Driver__c, Disposition_Driver__c` looks tidier and costs one query
-     * instead of two — and it is WRONG, because `WITH USER_MODE` throws when the running user
-     * cannot read ANY selected field. An acquisitions deal driver holding only
-     * `Acquisition_Deal_Driver` would make the merged read throw on `Disposition_Driver__c`, and
-     * the calling service converts a throw to `false` — silently DENYING a legitimate deal driver
-     * the acquisition actions they have always had. The throw is the denial signal for the field
-     * being read, so one field per query is what keeps the two gates independent.
-     *
-     * NOT-FOUND CONTRACT — returns `null` rather than throwing when no row comes back, matching
-     * its twin. The caller treats `null` as DENIED, so the gate fails closed even in a state that
-     * cannot occur.
-     *
-     * @return the running user with Id and Disposition_Driver__c populated; `null` if no row
-     *         matched.
-     * @throws System.QueryException when the running user lacks FLS read on
-     *         `User.Disposition_Driver__c`. EXPECTED for anyone outside the
-     *         `Disposition_Deal_Driver` permission set — it IS factor (a). Callers must treat it
-     *         as a denial, never as a system fault to retry.
-     * @example
-     * User runningUser = UserSelector.selectDispositionDriverFlagForCurrentUser();
-     * Boolean isDispositionDriver = runningUser != null && runningUser.Disposition_Driver__c == true;
-     */
-    public static User selectDispositionDriverFlagForCurrentUser() {
-        Id runningUserId = UserInfo.getUserId();
-        List<User> rows = [
-            SELECT Id,
-                   Disposition_Driver__c
-            FROM User
-            WHERE Id = :runningUserId
-            WITH USER_MODE
-            LIMIT 1
-        ];
-        return rows.isEmpty() ? null : rows[0];
-    }
 }

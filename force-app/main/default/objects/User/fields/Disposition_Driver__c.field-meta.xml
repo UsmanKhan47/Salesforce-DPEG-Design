@@ -22,8 +22,8 @@
         the Lead-style membership check - the same reasoning applies here.
     -->
     <defaultValue>false</defaultValue>
-    <description>When checked, the user sees the disposition-driving quick actions (stage advances on Disposition). The analyst who runs sale processes - not approvers.</description>
-    <inlineHelpText>Check this for the analyst who drives disposition stage advances. Access also needs the Disposition Driver permission set; both factors are required.</inlineHelpText>
+    <description>RETIRED 2026-08-12: this field governs nothing. Authorization now comes from the Disposition_Deal_Actions custom permission granted via permission set. Field kept only as the rollback lever, pending deletion in a later phase.</description>
+    <inlineHelpText>RETIRED 2026-08-12: unticking this does NOT revoke disposition-action access. Access is now controlled by the Disposition_Deal_Actions custom permission on the user&apos;s permission set, not this checkbox.</inlineHelpText>
     <label>Disposition Driver</label>
     <trackFeedHistory>false</trackFeedHistory>
     <trackHistory>false</trackHistory>

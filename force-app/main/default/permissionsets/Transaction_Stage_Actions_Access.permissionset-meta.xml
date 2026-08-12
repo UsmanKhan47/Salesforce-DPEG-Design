@@ -61,12 +61,35 @@
         (e.g. DPEG_Transaction_Team). Per ARCHITECTURE.md SS2, a PermissionSetGroup deploy
         REPLACES its whole member list, so adding this set as a member is reconciled
         against the org's live membership before deploying that group file, not assumed.
+
+        🔬 PHASE 1 (2026-08-12) of retiring the driver-flag concept — see
+        agent-output/design-requirements-custom-permissions.md section 3.1. 🔴 USER DECISION
+        OVERRIDING THE DESIGN DOC: that doc recommended DEFERRING a Transaction custom
+        permission ("Transaction's gate has no FLS in it at all ... it has none of the problem
+        being fixed"). The user chose to build it now anyway. The customPermissions grant
+        below does NOT change this set's shape or the decision recorded above: it is STILL
+        membership-only, STILL carries no User.*_Driver__c flag, and STILL answers the gate
+        through PermissionSetGroup resolution alone.
+        UPDATED — a later developer pass consumed this grant: TransactionActionPermissionService
+        now calls FeatureManagement.checkPermission('Transaction_Stage_Actions'), so it is no
+        longer unused Apex-side; it is the live server-side authorization check for this
+        module. No flexipage criterion reads it yet. It rides this set's EXISTING population
+        (DPEG_Transaction_Team) by construction, exactly as the classAccesses grant above
+        already does against DPEG_Apex_Access.
+        🔴 DO NOT read this grant as introducing a second (layer-5) factor. There is still
+        exactly one question here: is the user a member of this set (directly or via
+        DPEG_Transaction_Team)? See the CustomPermission file's own header for the full
+        rationale.
     -->
     <label>Transaction Stage Actions Access</label>
-    <description>Layer-4 capability access for the Transaction stage-advance quick action: Apex class access to RecordStageAdvanceController. Membership-only grant, no authorization flag - see the XML comment for rationale.</description>
+    <description>Layer-4 capability access for the Transaction stage-advance quick action: Apex class access, and the Transaction_Stage_Actions custom permission read by FeatureManagement.checkPermission. Membership-only, no authorization flag.</description>
     <hasActivationRequired>false</hasActivationRequired>
     <classAccesses>
         <apexClass>RecordStageAdvanceController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Transaction_Stage_Actions</name>
+    </customPermissions>
 </PermissionSet>

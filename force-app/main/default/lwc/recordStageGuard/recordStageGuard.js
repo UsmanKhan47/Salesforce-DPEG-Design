@@ -15,15 +15,39 @@ import hasStageActionAccess from '@salesforce/apex/RecordStageAdvanceController.
  * ⚠ THE COUNT HAS BEEN WRONG IN THIS HEADER TWICE, SO READ WHAT CHANGED RATHER THAN THE NUMBER.
  * It first said "the five ACQUISITIONS child objects"; Tranche 3A (2026-08-09) made NDA__c serve
  * the DISPOSITION module through its Disposition_NDA record type, answering to a different persona
- * (DISPOSITION_DRIVER, backed by User.Disposition_Driver__c). It then said "the SIX stage-controlled
- * child objects"; 2026-08-12 added Transaction__c, which is neither a child object nor an
- * acquisitions one, and whose gate is MEMBERSHIP-ONLY (TRANSACTION_STAGE_ACTIONS, backed by the
- * Transaction_Stage_Actions_Access permission set with NO User checkbox of any kind).
+ * (DISPOSITION_DRIVER). It then said "the SIX stage-controlled child objects"; 2026-08-12 added
+ * Transaction__c, which is neither a child object nor an acquisitions one
+ * (TRANSACTION_STAGE_ACTIONS).
  *
- * 🔴 NONE of those three changes required an edit to the logic in this file — only to this
- * sentence. That is the payoff of the per-record signature described below: the server dispatches,
- * so this module has never learned an object's name, a module's name or a persona's name, and the
- * arrival of a THIRD gate shape did not reach it either.
+ * ── ALL THREE GATES ARE NOW ONE SHAPE: A CUSTOM PERMISSION (2026-08-12) ──────
+ * Each of the three enum members resolves to a single `FeatureManagement.checkPermission` call plus
+ * the shared "Modify All Data" bypass:
+ *
+ *   DEAL_DRIVER                `Acquisition_Deal_Actions`
+ *   DISPOSITION_DRIVER         `Disposition_Deal_Actions`
+ *   TRANSACTION_STAGE_ACTIONS  `Transaction_Stage_Actions`
+ *
+ * ⚠ THIS PARAGRAPH PREVIOUSLY DESCRIBED TWO DIFFERENT MECHANISMS AND BOTH DESCRIPTIONS ARE NOW
+ * FALSE. It said DISPOSITION_DRIVER was "backed by User.Disposition_Driver__c" (a two-factor gate
+ * over a User checkbox) and that TRANSACTION_STAGE_ACTIONS was "MEMBERSHIP-ONLY ... backed by the
+ * Transaction_Stage_Actions_Access permission set". The `*_Driver__c` flag model was retired
+ * outright, and the Transaction gate no longer tests set membership — that same set now CARRIES the
+ * custom permission instead of being the token. The reason the flags went is worth knowing from the
+ * client side: a flexipage visibility rule referencing a FIELD evaluates FALSE for anyone lacking
+ * FLS READ on it, silently, so the button vanished for users who were genuinely authorized. A custom
+ * permission has no FLS surface.
+ *
+ * ⚠ WHAT DID NOT CHANGE IS WHICH PERMISSION-SET LAYER CARRIES EACH TOKEN, AND THAT IS STILL THE
+ * REAL DISTINCTION BETWEEN THEM. The two deal permissions sit on directly-assigned layer-5
+ * authorization sets (narrow, per-user revocable); `Transaction_Stage_Actions` sits on the layer-4
+ * capability set inside `DPEG_Transaction_Team`, so the Transaction gate remains TEAM-WIDE with no
+ * per-user revocation — a preserved policy, not a migration artefact. Read
+ * TransactionActionPermissionService's header before assuming the three are interchangeable.
+ *
+ * 🔴 NONE of those changes required an edit to the LOGIC in this file — only to this comment. That
+ * is the payoff of the per-record signature described below: the server dispatches, so this module
+ * has never learned an object's name, a module's name, a persona's name or a permission's name, and
+ * neither the arrival of a third gate nor the rewrite of all three reached it.
  *
  * A JS-only utility module (no template, isExposed=false), deliberately SEPARATE from `c/utils`,
  * which is contractually pure, stateless formatting only.
@@ -44,13 +68,15 @@ import hasStageActionAccess from '@salesforce/apex/RecordStageAdvanceController.
  *                       it cannot simply reuse c/dealActionGuard, whose `hasDealActionAccess()`
  *                       takes NO argument and therefore cannot express "which object's gate?".
  *
- *                       🔴 THAT SIGNATURE HAS NOW PAID FOR ITSELF TWICE, WHICH IS WHY IT IS NOT
- *                       OVER-ENGINEERING. When it was written, all objects answered to the SAME
+ *                       🔴 THAT SIGNATURE HAS NOW PAID FOR ITSELF THREE TIMES, WHICH IS WHY IT IS
+ *                       NOT OVER-ENGINEERING. When it was written, all objects answered to the SAME
  *                       deal-driver gate and the argument looked speculative. Since then NDA__c and
- *                       Contract_Review__c gained a per-record-TYPE disposition persona (2026-08-09)
- *                       and Transaction__c arrived with a gate of an entirely different SHAPE —
- *                       membership-only, no User flag (2026-08-12). Both landed as server-side
- *                       config; neither touched a line of client code.
+ *                       Contract_Review__c gained a per-record-TYPE disposition persona (2026-08-09);
+ *                       Transaction__c arrived with a THIRD gate and a third persona (2026-08-12);
+ *                       and later that same day every one of the three gates had its underlying
+ *                       MECHANISM replaced — two-factor User flag and permission-set membership both
+ *                       giving way to a custom permission. All three landed as server-side config;
+ *                       none touched a line of client code.
  *
  * Like c/dealActionGuard this module carries NO WRITE HELPER AT ALL. The stage write is imperative
  * Apex owned by the calling bundle, which is what keeps `getRecordNotifyChange` in that bundle's

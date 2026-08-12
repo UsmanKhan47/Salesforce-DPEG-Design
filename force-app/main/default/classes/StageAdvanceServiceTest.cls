@@ -62,8 +62,18 @@ private class StageAdvanceServiceTest {
         // applies to BOTH deals; the approved-LOI gate applies only to the deal entering PSA, and
         // the signed-contract gate only to the deal entering Closed Won. (psaDeal is INSERTED at
         // PSA, so it never crosses the approved-LOI gate — ISCHANGED is false on insert.)
+        //
+        // loiDeal ALSO crosses Completed_LOI_Before_PSA (added 2026-08-12), a third gate that reads
+        // the primary LOI's OWN Stage__c rather than the Opportunity's Primary_LOI__c/LOI_Approved__c
+        // flags. placeApprovedLoi leaves the newly-created LOI at its factory-default Stage__c =
+        // 'Draft', so the primary LOI is separately driven to 'Completed' via
+        // RecordStageAdvanceService.advanceTo — the real production route behind the
+        // c/loiMarkCompleted quick action ('Completed' is an allowed explicit target on
+        // Acquisition_LOI) — mirroring the identical fix in StageAdvanceControllerTest.
+        // advanceToPsaMovesLoiToPsa.
         TestDataFactory.signPrimaryNda(new List<Opportunity>{ loiDeal, psaDeal });
-        TestDataFactory.placeApprovedLoi(loiDeal);
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(loiDeal);
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
         TestDataFactory.signContract(psaDeal);
 
         Test.startTest();

@@ -16,7 +16,7 @@
                                     <rightValue>New</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -37,7 +37,7 @@
                                     <rightValue>Land</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -58,7 +58,7 @@
                                     <rightValue>Commercial</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -84,7 +84,7 @@
                                     <rightValue>Development Review</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -100,7 +100,7 @@
                                     <rightValue>Underwriting</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -116,7 +116,7 @@
                                     <rightValue>LOI</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -132,7 +132,7 @@
                                     <rightValue>PSA</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -153,7 +153,7 @@
                                     <rightValue>About to Close</rightValue>
                                 </criteria>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>

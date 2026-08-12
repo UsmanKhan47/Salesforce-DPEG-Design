@@ -16,10 +16,23 @@
  * that needs NO cache-seeding trick: TRANSACTION_STAGE_ACTIONS is Transaction__c's gate and it never
  * loads the record (single sequence — see gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject
  * below), so a bare user's OWD/CRUD on Transaction__c is never even reached and a real
- * System.runAs proof is possible end to end. The gate's OWN membership-vs-flag argument, group
- * expansion and admin-bypass proofs live in TransactionActionPermissionServiceTest — this class
- * only proves the DISPATCH (gateFor -> TRANSACTION_STAGE_ACTIONS -> TransactionActionPermissionService)
- * is wired, not the gate's internals.
+ * System.runAs proof is possible end to end. The gate's OWN membership-vs-authorization argument,
+ * group expansion and admin-bypass proofs live in TransactionActionPermissionServiceTest — this
+ * class only proves the DISPATCH (gateFor -> TRANSACTION_STAGE_ACTIONS ->
+ * TransactionActionPermissionService) is wired, not the gate's internals.
+ *
+ * ── ⚠ REWRITTEN 2026-08-12 FOR THE CUSTOM-PERMISSION MIGRATION ───────────────
+ * TransactionActionPermissionService no longer delegates to LeadActionPermissionService — it now
+ * owns its own transaction-scoped cache, exactly like OpportunityActionPermissionService and
+ * DispositionActionPermissionService. Every place in this class that used to clear or seed
+ * LeadActionPermissionService's cache for the Transaction gate (adminPassesTheGateOnEveryObject,
+ * transactionGateDeniesABareUserAndGrantsAPermissionSetHolder,
+ * gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject) now targets
+ * TransactionActionPermissionService directly. The NDA__c / LOI__c / Contract_Review__c gate-dispatch
+ * tests (theGateIsResolvedPerRecordTypeNotPerObject and its siblings) were UNCHANGED by this
+ * migration — they seed OpportunityActionPermissionService.cachedHasDealActionAccess /
+ * DispositionActionPermissionService.cachedHasDispositionActionAccess directly and always did, never
+ * through the retired User field.
  *
  * ── HOW THE STAGE MAPS ARE PINNED ────────────────────────────────────────────
  * Each object gets a WALK test that calls advance() repeatedly until it is refused and asserts the
@@ -728,8 +741,11 @@ private class RecordStageAdvanceServiceTest {
 
     // ═════════════════════════════════════════════════════════════════════════
     // 🔴 Transaction__c (added 2026-08-12, live UI testing fix set) — the FIRST object here
-    // from the TRANSACTIONS module rather than acquisitions/disposition, and the first whose
-    // gate is MEMBERSHIP-ONLY. It has NO record types (single-sequence StageConfig) and NO
+    // from the TRANSACTIONS module rather than acquisitions/disposition. ⚠ This comment used to
+    // add "and the first whose gate is MEMBERSHIP-ONLY"; that held for part of one day, until the
+    // custom-permission migration made all three gates one shape (see StageActionGate). Nothing
+    // below depends on it — this section pins the SEQUENCE, never the gate.
+    // It has NO record types (single-sequence StageConfig) and NO
     // explicit-target allow-list — the sequence is a straight line, so advanceTo() must be
     // STRUCTURALLY UNREACHABLE here. See class header + TransactionActionPermissionService for
     // the full argument; this section pins the sequence and the unreachability, not the gate
@@ -1357,15 +1373,17 @@ private class RecordStageAdvanceServiceTest {
         Id conId = constructionReview().Id;
         Id devId = developmentReview().Id;
         Id crId = contractReview().Id;
-        // ⚠ Transaction__c answers to TRANSACTION_STAGE_ACTIONS (membership-only, via
-        // TransactionActionPermissionService -> LeadActionPermissionService), NOT
-        // OpportunityActionPermissionService — its bypass runs through a DIFFERENT cache
-        // (LeadActionPermissionService's), which is why that cache is cleared here too.
+        // ⚠ REWRITTEN 2026-08-12 (custom-permission migration): Transaction__c answers to
+        // TRANSACTION_STAGE_ACTIONS via TransactionActionPermissionService, which now owns its OWN
+        // transaction-scoped cache — it no longer delegates to LeadActionPermissionService at all —
+        // so its bypass is cleared through TransactionActionPermissionService.clearCache(), a
+        // DIFFERENT cache from the other six objects' OpportunityActionPermissionService /
+        // DispositionActionPermissionService bypass.
         Id txnId = insertTransaction().Id;
 
         Test.startTest();
         OpportunityActionPermissionService.clearCache();
-        LeadActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(ndaId), 'NDA gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(loiId), 'LOI gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(underwritingId), 'Underwriting gate');
@@ -1374,13 +1392,13 @@ private class RecordStageAdvanceServiceTest {
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(crId), 'Contract Review gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(txnId),
             'Transaction gate — the admin passes via the Modify All Data bypass INSIDE '
-            + 'LeadActionPermissionService.hasAnyPermissionSet, a different code path from the '
-            + 'other six objects\' OpportunityActionPermissionService / '
+            + 'TransactionActionPermissionService itself, a different code path (and a different '
+            + 'cache) from the other six objects\' OpportunityActionPermissionService / '
             + 'DispositionActionPermissionService bypass');
         RecordStageAdvanceService.assertStageActionAccess(loiId); // must not throw
         RecordStageAdvanceService.assertStageActionAccess(txnId); // must not throw
         OpportunityActionPermissionService.clearCache();
-        LeadActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         Test.stopTest();
     }
 
@@ -1418,7 +1436,8 @@ private class RecordStageAdvanceServiceTest {
         OpportunityActionPermissionService.clearCache();
         System.runAs(bareUser) {
             Assert.isFalse(RecordStageAdvanceService.hasStageActionAccess(underwritingId),
-                'A user with neither Modify All Data nor Deal_Driver__c must be denied');
+                'A user with neither Modify All Data nor the Acquisition_Deal_Actions custom '
+                + 'permission must be denied');
             try {
                 RecordStageAdvanceService.assertStageActionAccess(underwritingId);
                 Assert.fail('assertStageActionAccess must REFUSE a non-deal-driver. Returning '
@@ -1608,8 +1627,12 @@ private class RecordStageAdvanceServiceTest {
      * hasStageActionAccess never touches Transaction__c's OWD/CRUD at all and the honest,
      * cache-seeding-free proof used for the two-factor gates is unnecessary here. This test
      * therefore does what theirs structurally cannot: prove the WHOLE chain
-     * (RecordStageAdvanceService -> TransactionActionPermissionService ->
-     * LeadActionPermissionService) with a real permission-set assignment under a real persona.
+     * (RecordStageAdvanceService -> TransactionActionPermissionService -> FeatureManagement) with a
+     * real permission-set assignment under a real persona.
+     *
+     * ⚠ REWRITTEN 2026-08-12 (custom-permission migration): TransactionActionPermissionService no
+     * longer delegates to LeadActionPermissionService — it owns its own cache — so every clearCache()
+     * call below targets TransactionActionPermissionService directly, not the Lead gate's cache.
      */
     @isTest
     static void transactionGateDeniesABareUserAndGrantsAPermissionSetHolder() {
@@ -1641,7 +1664,7 @@ private class RecordStageAdvanceServiceTest {
         Boolean grantedAllowed;
         Boolean bareRefused = false;
         String bareRefusalMessage;
-        LeadActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         System.runAs(bareUser) {
             bareAllowed = RecordStageAdvanceService.hasStageActionAccess(txnId);
             try {
@@ -1653,12 +1676,12 @@ private class RecordStageAdvanceServiceTest {
                 bareRefusalMessage = e.getMessage();
             }
         }
-        LeadActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         System.runAs(grantedUser) {
             grantedAllowed = RecordStageAdvanceService.hasStageActionAccess(txnId);
             RecordStageAdvanceService.assertStageActionAccess(txnId); // must not throw
         }
-        LeadActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         Test.stopTest();
 
         Assert.isFalse(bareAllowed, 'A user with neither the permission set nor Modify All Data must be denied');
@@ -1670,7 +1693,7 @@ private class RecordStageAdvanceServiceTest {
         Assert.isTrue(grantedAllowed,
             'A user holding Transaction_Stage_Actions_Access DIRECTLY must be allowed — proving the '
             + 'full RecordStageAdvanceService -> TransactionActionPermissionService -> '
-            + 'LeadActionPermissionService chain, not just the leaf service in isolation');
+            + 'FeatureManagement chain, not just the leaf service in isolation');
         Assert.areEqual('Open Contract', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
             'Neither hasStageActionAccess nor assertStageActionAccess ever writes — the stage is '
             + 'exactly where it started for both personas');
@@ -1686,6 +1709,11 @@ private class RecordStageAdvanceServiceTest {
      *
      * Both permission caches are pre-seeded so the gate itself issues no queries and the only
      * thing being measured is the record load.
+     *
+     * ⚠ REWRITTEN 2026-08-12 (custom-permission migration): TransactionActionPermissionService now
+     * owns its own cache (cachedHasTransactionActionAccess) instead of delegating to
+     * LeadActionPermissionService's cachedPermissionSetNames / cachedHasModifyAllData, so the
+     * Transaction leg is pre-seeded directly rather than through the Lead gate's cache.
      */
     @isTest
     static void gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject() {
@@ -1699,21 +1727,19 @@ private class RecordStageAdvanceServiceTest {
         Id ndaId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Sent').Id;
         Id crId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Initial Draft').Id;
         // ⚠ Transaction__c is the FIFTH single-sequence object and the only one whose gate runs
-        // through a DIFFERENT cache (LeadActionPermissionService's, via
-        // TransactionActionPermissionService), so it is pre-seeded separately below.
+        // through its OWN cache (TransactionActionPermissionService's), so it is pre-seeded
+        // separately below.
         Id txnId = insertTransaction().Id;
 
         Test.startTest();
         OpportunityActionPermissionService.clearCache();
         DispositionActionPermissionService.clearCache();
-        LeadActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         OpportunityActionPermissionService.cachedHasDealActionAccess = true;
         DispositionActionPermissionService.cachedHasDispositionActionAccess = true;
-        // Pre-seed WITHOUT querying — an empty name set plus Modify All Data true is enough to
-        // answer TransactionActionPermissionService.hasTransactionActionAccess() from cache alone,
-        // isolating what this test actually measures: whether the RECORD gets loaded.
-        LeadActionPermissionService.cachedPermissionSetNames = new Set<String>();
-        LeadActionPermissionService.cachedHasModifyAllData = true;
+        // Pre-seed WITHOUT querying, isolating what this test actually measures: whether the RECORD
+        // gets loaded, not whether the permission gate itself issues a query.
+        TransactionActionPermissionService.cachedHasTransactionActionAccess = true;
 
         Integer beforeUnderwriting = Limits.getQueries();
         RecordStageAdvanceService.hasStageActionAccess(underwritingId);
@@ -1737,7 +1763,7 @@ private class RecordStageAdvanceServiceTest {
 
         OpportunityActionPermissionService.clearCache();
         DispositionActionPermissionService.clearCache();
-        LeadActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         Test.stopTest();
 
         Assert.areEqual(0, underwritingQueries,
