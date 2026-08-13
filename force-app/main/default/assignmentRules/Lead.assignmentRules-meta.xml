@@ -16,6 +16,7 @@
                 <operation>equals</operation>
                 <value>New</value>
             </criteriaItems>
+            <template>IR_Email_Templates/DPEG_IR_Lead_Queue_Assignment_Notification</template>
         </ruleEntry>
     </assignmentRule>
 </AssignmentRules>

@@ -1,26 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Queue xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!-- ⚠ POST-DEPLOY STEP - MEMBERS ARE NOT IN THIS FILE AND CANNOT BE.
-         The Queue metadata type has no members element at all: its complex type is only
-         description / doesIncludeBosses / doesSendEmailToMembers / email / name /
-         queueSobject. Membership lives in GroupMember DATA rows against the Group this
-         queue auto-creates (Group.Type = 'Queue'), and data is not deployable metadata.
-         The same is true of the two other queues in this folder - Acquisition and
-         Broker_Portal_Leads both have live members in the org and neither file declares
-         them - so this is the platform's behaviour, not an omission here.
-
-         After deploying to ANY org, add the members by hand:
-           Setup > Queues > Investor Onboarding Queue > Queue Members
-             - Fiaz Hirani   (User Id 005ak00000ejtkTAAQ in DPEG-IR-Implementation)
-             - Danish Darbar (User Id 005ak00000ek27pAAA in DPEG-IR-Implementation)
-         Those Ids are org-specific; match on the person, not the Id, in a new org.
-
-         Until at least one member exists, the DPEG Lead Assignment Rule still routes
-         Investor Onboarding Leads here, but nobody can see them in the queue list view
-         to take ownership - the routing looks broken when it is actually working. -->
-    <!-- doesIncludeBosses=true matches the two existing queues in this folder. -->
     <description>Receives Investor Onboarding Leads at Status New, routed here by the DPEG Lead Assignment Rule. Queue members take ownership of these Leads from the queue list view.</description>
-    <doesIncludeBosses>true</doesIncludeBosses>
     <doesSendEmailToMembers>true</doesSendEmailToMembers>
     <name>Investor Onboarding Queue</name>
     <queueSobject>

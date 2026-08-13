@@ -1,35 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!--
-        Investor Onboarding Lead Record Page
-
-        1. actionNames lists exactly two quick actions on the highlights panel below, each
-           gated by a visibilityRule keyed on {!Record.Status} so it appears only at the one
-           lifecycle step where it applies: Lead.Under_Review at New, and Lead.Create_Profile
-           at Under Review. Create Profile performs the whole conversion, so the Lead moves
-           straight from Under Review to Converted and a converted Lead shows no actions at
-           all. enableActionsConfiguration is true and no other action is listed, so the panel
-           shows no platform default quick actions either, mirroring how
-           Lead_Record_Page.flexipage-meta.xml gates its four Acquisition Broker actions.
-
-           A third action, Lead.Investor_Converted, and its IR_Lead_Converted_Flow were
-           retired on 2026-08-12 when Create Profile absorbed the conversion. Creating a
-           standalone Contact before conversion tripped the org duplicate rule, which matches
-           a new Contact against open Leads and therefore always matched the Lead being
-           worked. Letting Database.convertLead create the Contact avoids that entirely.
-
-        2. hideUpdateButton on the pathAssistant component is what hides "Mark Status as
-           Complete" on the Path. It does not disable or hide the Path itself, only that one
-           button.
-
-        3. The main region deliberately uses force:detailPanel (identifier recordDetail, no
-           componentInstanceProperties) rather than inlined flexipage:fieldSection blocks, so
-           the field list stays owned by the assigned page layout, Lead-Investor Onboarding
-           Layout, and is not duplicated here.
-
-        4. This page is intentionally separate from Lead_Record_Page.flexipage-meta.xml, which
-           serves Acquisition Broker leads and must not be modified by this change.
-    -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -55,6 +25,9 @@
                                     <rightValue>Under Review</rightValue>
                                 </criteria>
                             </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>ChangeOwnerOne</value>
                         </valueListItems>
                     </valueList>
                 </componentInstanceProperties>

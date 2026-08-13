@@ -1,0 +1,14 @@
+A new lead has been assigned to the Investor Relations Queue and requires your attention.
+
+Lead Details:
+
+Lead Name: {!Lead.Name}
+Lead ID: {!Lead.Id}
+Email: {!Lead.Email}
+Phone: {!Lead.Phone}
+Status: {!Lead.Status}
+
+Please review the lead and take the necessary action.
+
+Thank you,
+Investor Relations Team
