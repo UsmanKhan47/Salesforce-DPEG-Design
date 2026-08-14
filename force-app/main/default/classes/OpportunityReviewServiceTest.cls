@@ -301,20 +301,30 @@ private class OpportunityReviewServiceTest {
         // Completed_LOI_Before_PSA (added 2026-08-12) also gates PSA entry, reading the LOI's OWN
         // Stage__c rather than the Opportunity's Primary_LOI__c/LOI_Approved__c flags.
         // placeApprovedLoi leaves the LOI at its factory-default Stage__c = 'Draft', so drive it to
-        // 'Completed' via the real production route first — same fix as
+        // 'Signed' via the real production route first — same fix as
         // StageAdvanceServiceTest.advanceMovesLoiToPsaAndPsaToClosedWon.
-        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
+        // ⚠ 'Signed' since observation 5 (2026-08-14); it was 'Completed' until the acquisition LOI
+        // sequence was renamed. It must stay in step with Completed_LOI_Before_PSA, the rule this
+        // line exists to satisfy.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
 
         Test.startTest();
-        o.StageName = 'PSA';
+        o.StageName = 'Under Contract (PSA)';
         update o;
         Test.stopTest();
 
         List<Contract_Review__c> crs = [
-            SELECT Stage__c FROM Contract_Review__c WHERE Opportunity__c = :o.Id
+            SELECT Stage__c, Negotiation_Status__c
+            FROM Contract_Review__c WHERE Opportunity__c = :o.Id
         ];
         System.assertEquals(1, crs.size(), 'One Contract review should be created on PSA');
         System.assertEquals('PSA Drafting', crs[0].Stage__c, 'Should start at PSA Drafting');
+        // 🔴 THE C3 FALSIFIER — see contractReviewBlock_seedsTheAcquisitionNegotiationStatus below
+        // for the full argument. Asserted here too, in the ordinary happy-path test, because that
+        // is where a future "simplification" back to the field default would be made.
+        System.assertEquals('Draft', crs[0].Negotiation_Status__c,
+            'The auto-created acquisition Contract Review must be SEEDED with Draft, not left to '
+            + 'the field-level default (Initial Draft), which is a Disposition_PSA value');
 
         // The new Contract Review is stamped back onto the Opportunity so the
         // Contract tab can render its fields via Primary_Contract__r.*
@@ -332,7 +342,7 @@ private class OpportunityReviewServiceTest {
      * block rather than inherited from either sibling (D20/W2). It is neither ensureNda's
      * (every Opportunity insert, lead conversion included) nor the LOI block's (runs as a
      * read-only approver inside an approval): this block runs as a DEAL DRIVER WHO HAS EDIT. What
-     * still rules out an unguarded stamp is (a) 'PSA' has exactly ONE route in
+     * still rules out an unguarded stamp is (a) 'Under Contract (PSA)' has exactly ONE route in
      * (StageAdvanceService.advance from 'LOI'), so blocking it parks every deal in the org at LOI
      * and the whole contract module becomes unreachable; and (b) this insert shares ONE all-or-none
      * transaction with four sibling children and runs FIRST, so its failure aborts their creation
@@ -342,11 +352,22 @@ private class OpportunityReviewServiceTest {
      * in-memory copy carries whatever was assigned, guard or no guard, and D13 residual 1 measured
      * an inserted row reading back null while the describe resolved a real Id.
      *
-     * ⚠ THIS OBJECT'S FAILURE MODE IS QUIETER THAN ITS TWO SIBLINGS', WHICH IS WHY THE TEST MATTERS
-     * MORE HERE. A Master-type NDA or LOI is visibly broken — the stage map does not fit it. A
-     * Master-type Contract Review advances PERFECTLY (both PSA record types share one
-     * Negotiation_Status__c sequence); it is wrong only about its Path, its Ball_In_Court__c value
-     * set and which persona may drive it. Nothing in the UI would lead anyone to gate T-A1.
+     * ⚠ 🔴 THIS PARAGRAPH WAS REWRITTEN 2026-08-14 BECAUSE OBSERVATION 7 CHANGED ITS ANSWER. It
+     * used to read: "THIS OBJECT'S FAILURE MODE IS QUIETER THAN ITS TWO SIBLINGS' ... A Master-type
+     * Contract Review advances PERFECTLY (both PSA record types share one Negotiation_Status__c
+     * sequence); it is wrong only about its Path, its Ball_In_Court__c value set and which persona
+     * may drive it. Nothing in the UI would lead anyone to gate T-A1."
+     *
+     * The premise is dead: RecordStageAdvanceService's shared PSA map was SPLIT (design collision
+     * C9), so the two record types no longer share a sequence. A Master-type Contract Review now
+     * falls back to the ACQUISITION map — which, because this block also seeds
+     * Negotiation_Status__c = 'Draft' explicitly (C3), still fits a row THIS class created. So the
+     * quietness survives for the population this test covers, but for a NEW reason and only in
+     * combination with the C3 seed. A LEGACY Master-type row (created before this pack, still on
+     * 'Initial Draft') is now loudly broken — it refuses on its first Advance Stage click.
+     * ⇒ Do not read either half as making the other unnecessary. This test pins the record type;
+     *   contractReviewBlock_seedsTheAcquisitionNegotiationStatus pins the status. Remove the seed
+     *   and this test still passes while every auto-created PSA is unusable.
      */
     @isTest
     static void contractReviewBlock_stampsTheAcquisitionRecordType() {
@@ -356,11 +377,12 @@ private class OpportunityReviewServiceTest {
         LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
         // Completed_LOI_Before_PSA (added 2026-08-12) also gates PSA entry, reading the LOI's OWN
         // Stage__c. placeApprovedLoi leaves it at 'Draft', so drive it to 'Completed' via the real
-        // production route first — same fix as contractReviewCreatesOnUpdate above.
-        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
+        // production route first — same fix as contractReviewCreatesOnUpdate above. ⚠ 'Signed'
+        // since observation 5 (2026-08-14).
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
 
         Test.startTest();
-        o.StageName = 'PSA';
+        o.StageName = 'Under Contract (PSA)';
         update o;
         Test.stopTest();
 
@@ -388,6 +410,73 @@ private class OpportunityReviewServiceTest {
             + 'the UNION of both types\' Ball_In_Court__c values (so a purchase offers "Buyer", '
             + 'which names DPEG itself). Do not soften this assertion to obtain a green suite; run '
             + 'T-A1.');
+    }
+
+    /**
+     * 🔴 THE C3 FALSIFIER. Design collision C3, Acquisition Observations observation 7, 2026-08-14.
+     *
+     * ── WHAT THIS EXISTS TO CATCH ────────────────────────────────────────────
+     * Until this change, the Contract Review insert set ONLY `Opportunity__c` and `Stage__c` and
+     * took `Negotiation_Status__c` from the FIELD-LEVEL DEFAULT, which is 'Initial Draft'.
+     * Observation 7 removes 'Initial Draft' from `Acquisition_PSA`, so the default became a value
+     * this record type does not carry.
+     *
+     * 🔴 AND THAT IS INVISIBLE WITHOUT THIS ASSERTION. Apex DML does NOT enforce record-type
+     * picklist restriction, so the insert commits happily on the off-set value: no exception, no
+     * error, a green deploy, and — critically — `contractReviewCreatesOnUpdate` and
+     * `contractReviewBlock_stampsTheAcquisitionRecordType` both stay GREEN, because neither looks at
+     * the status. The damage only surfaces in the UI: the Path renders blank, and
+     * `RecordStageAdvanceService.CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE` has no entry for 'Initial
+     * Draft', so Advance Stage refuses on the very first click. Every deal entering
+     * 'Under Contract (PSA)' would produce one such record.
+     *
+     * ── WHY IT IS NOT SOLVED BY MOVING THE FIELD DEFAULT ─────────────────────
+     * `Disposition_PSA` still runs on 'Initial Draft' — `DispositionStageEntryService` seeds it
+     * deliberately, and O3 of the requirements doc makes keeping that value ACTIVE a hard stop. The
+     * default serves the sell side; the buy side names its own seed. Anyone who "fixes" this by
+     * editing the field default breaks the disposition PSA instead, and
+     * `DispositionStageEntryServiceTest` is where that would show up.
+     *
+     * ── THE SECOND ASSERTION IS THE ONE THAT EARNS ITS KEEP ──────────────────
+     * Asserting the stored value alone would still pass if someone deleted the explicit stamp AND
+     * the field default happened to be right. Walking the record through `advance()` proves the
+     * seed is on the ACQUISITION SEQUENCE — which is the property that actually matters and the one
+     * the platform will not check.
+     */
+    @isTest
+    static void contractReviewBlock_seedsTheAcquisitionNegotiationStatus() {
+        Opportunity o = newOpp('Under Review');
+        insert o;
+        TestDataFactory.signPrimaryNda(o);
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
+
+        Test.startTest();
+        o.StageName = 'Under Contract (PSA)';
+        update o;
+        Test.stopTest();
+
+        Contract_Review__c created = [
+            SELECT Id, Negotiation_Status__c
+            FROM Contract_Review__c WHERE Opportunity__c = :o.Id LIMIT 1
+        ];
+
+        Assert.areEqual('Draft', created.Negotiation_Status__c,
+            'The auto-created ACQUISITION Contract Review must be seeded with Negotiation_Status__c '
+            + '= Draft EXPLICITLY. "Initial Draft" here means the explicit stamp was removed and the '
+            + 'FIELD-LEVEL DEFAULT took over — a Disposition_PSA value. Apex DML does not enforce '
+            + 'record-type picklist restriction, so that commits silently and every deal entering '
+            + '"Under Contract (PSA)" gets a record whose Path is blank and whose Advance Stage '
+            + 'button refuses on the first click. Do NOT fix this by changing the field default: '
+            + 'Disposition_PSA still runs on Initial Draft (requirements O3, a hard stop).');
+
+        // 🔴 THE SEED MUST BE ON THE SEQUENCE, NOT MERELY THE RIGHT STRING. This is what a
+        // stored-value assertion alone cannot prove.
+        String firstHop = RecordStageAdvanceService.advance(created.Id);
+        Assert.areEqual('Contract Review moved to Negotiation.', firstHop,
+            'The seeded status must be the ENTRY POINT of CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE. A '
+            + '"no next step available" refusal here means the seed and the stage map disagree — '
+            + 'the record is born unusable even though its status looks plausible.');
     }
 
     @isTest

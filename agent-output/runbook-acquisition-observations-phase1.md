@@ -615,6 +615,28 @@ org for this field**. ⚠ Do not conflate this with the *record-type* picklist r
 ARCHITECTURE.md §2 records as UI-only and **not** enforced by Apex DML. These are different
 mechanisms; only the field-level one bites here.
 
+> 🔴 **THE MECHANISM ABOVE IS AN OPEN QUESTION, AND THE EVIDENCE AGAINST IT WAS MEASURED ON
+> THIS EXACT FIELD.** Phase 2's check-only run inserted a Lead at `Deal_Type__c = 'Retail'` and
+> it **PASSED**, with **zero** `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` across all 20 failures
+> — while the field is `restrictedPicklist: true`. There is now one measurement each way on one
+> field, and the two runs differ in more than one variable at once, so **neither side is
+> settled**.
+>
+> **Read it before acting on the failure-scope arithmetic above:**
+> `agent-output/runbook-acquisition-observations-phase2.md` §3 P2-D1, subsection
+> *"On the genuinely RESTRICTED field, the question is OPEN — do not pick a winner"*.
+>
+> ⚠ **This pointer exists because the finding is recorded in PHASE 2's runbook while the field is
+> PHASE 1's, and the two phases are separately executed and separately committed** — an operator
+> running P1-D1 has no reason to open Phase 2's document (re-review S-3b). It is deliberately a
+> **pointer, not a copy**: duplicating the finding would let the two drift, and the phase-2
+> section carries caveats this summary does not.
+>
+> ⚠ **It does not change anything Phase 1 does.** Deploy P1-D1 first regardless — that is correct
+> under *both* readings. What it changes is what a **surviving** failure means: if the hundreds
+> of failures predicted above do **not** materialise, that is the open question resurfacing, not
+> evidence that P1-D1 deployed.
+
 **The clean signal:** after P1-D1 lands, this failure class disappears in one deploy with no code
 change. If a failure survives P1-D1, it is real. **Do not "fix" `TestDataFactory` back to
 `Commercial`** — that reintroduces the value D4 deletes and moves the same cliff to D4b, where it
@@ -631,9 +653,44 @@ are under `profiles/` (force-ignored, not references) and 5 are verified false p
 (`openCommercial`).
 
 Declarative half owned by this runbook — **2 criteria in one file. ✅ APPLIED IN THE TREE
-2026-08-14 (amendment 6). Nothing to edit; this step DEPLOYS the file.**
+2026-08-14 (amendment 6). Nothing to edit;** ⚠ **[CORRECTED 2026-08-14 — the clause that stood
+here, "this step DEPLOYS the file", is FALSE and must not be acted on. P1-D3 deploys a GENERATED
+copy of this file. Deploying the TREE copy at P1-D3 fails the deploy on Phase 4's unresolvable
+component — or, if Phase 4's LWC happens to be live already, silently ships Phase 4's UI at a time
+Phase 4 did not choose. See the box below.]**
 
 `force-app/main/default/flexipages/Opportunity_Record_Page.flexipage-meta.xml`
+
+> ### 🔴 P1-D3 DEPLOYS A GENERATED COPY OF THIS FILE, NEVER THE TREE COPY (added 2026-08-14)
+>
+> **THREE phases now edit this one file, and a FlexiPage deploys WHOLE:** Phase 1 (the two
+> `Deal_Type__c` criteria below plus the four new field items), Phase 2 (two `{!Record.StageName}`
+> criteria repointed `PSA` → `Under Contract (PSA)`), and Phase 4 (the `c/callForOffersPanel`
+> component in the `sidebar` region). **P4-D owns the tree copy.** P1-D3 and P2-D2 each deploy a
+> generated copy. The full ownership table is in the Phase 2 runbook §2.
+>
+> Generate the P1-D3 copy **immediately before the deploy**, not in advance:
+>
+> ```bash
+> node agent-output/p2-flexipage-p1d3-safe/make-p1d3-copy.js <scratch-dir> --phase 1 --phase4 strip
+> ```
+>
+> Then deploy `<scratch-dir>/flexipages/`, not `force-app/main/default/flexipages/`.
+>
+> 🔴 **`--phase4` HAS NO DEFAULT AND MUST NOT BE GIVEN ONE: the two wrong answers are not equally
+> visible.** `keep` before P4-D has deployed merely fails the deploy loudly (the org has no such
+> LWC); `strip` after P4-D has deployed **silently removes a live component from the Opportunity
+> record page** — no error, no log, nobody told. Only a human knows which world they are in, so the
+> script refuses to guess and exits 1 if the flag is absent. Use `--phase4 keep` **only** if P4-D has
+> already landed in the target org; check with
+> `sf project retrieve start --metadata "FlexiPage:Opportunity_Record_Page"` and grep the retrieved
+> file for `callForOffersPanel`.
+>
+> ⚠ **The bare form `node …/make-p1d3-copy.js <scratch-dir>` is REFUSED (exit 1).** It is the form
+> the Phase 2 runbook documented for this step until 2026-08-14 (this runbook named no command at
+> all), and against the Phase 4 tree it exited 0 while emitting a copy labelled "P1-D3-safe" that
+> carried the panel. Both commands above were run and their output verified on 2026-08-14.
+> ⚠ **Do not commit the output.** It is a transient deploy artifact, not a second source of truth.
 
 | Line | Context | Change |
 |---|---|---|

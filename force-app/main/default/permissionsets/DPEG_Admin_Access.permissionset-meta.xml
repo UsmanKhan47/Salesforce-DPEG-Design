@@ -229,6 +229,21 @@
         <field>NDA__c.Party_Role__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ADDED 2026-08-14, Acquisition Observations Phase 4 (declarative-only field add).
+         Call_For_Offers_Received_Date__c is stamped by CallForOffersStampService. This set is
+         load-bearing for the DEPLOY, not just for a screen: RunLocalTests runs as the deploying
+         administrator, who holds this set and nothing else, and this org has already been
+         measured refusing a plain system-mode insert that merely assigns a brand-new field (see
+         the Offer_Alert_* comment below - identical shape, same root cause). Without this grant,
+         any test fixture that sets this field fails at insert with "fields being inaccessible on
+         Sobject Opportunity", pointing at the new test rather than at this file.
+         EDITABLE, matching DPEG_Acquisition_Edit - see that set's grant for Offer_Due_Date__c /
+         Sale_Process__c, whose neighbours this field follows. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Call_For_Offers_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <!-- Opportunity half of the eight acquisition-observations grants - see the comment above
          the Lead.* block. LeadConvertService carries all four onto the Opportunity at
          conversion, so the same FLS-enforced-write argument applies on this object too. -->
@@ -250,6 +265,31 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Listing_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Phase 4 (call-for-offers alerts, 2026-08-14). The two alert MARKER fields.
+
+         🔴 THIS SET IS THE ONE THAT MATTERS FOR THE DEPLOY ITSELF, NOT JUST FOR AN ADMINISTRATOR'S
+         SCREEN. `RunLocalTests` executes as the DEPLOYING ADMINISTRATOR, who is in no permission set
+         group and holds this set and nothing else. Metadata-API-deployed custom fields arrive with
+         NO field permissions for ANY profile, System Administrator included, and this org has
+         already been measured REFUSING a plain system-mode `insert` that merely ASSIGNS a
+         brand-new field ("Operation failed due to fields being inaccessible on Sobject Lead" —
+         33 of 36 EmailToLeadServiceTest methods, 2026-08-14, including ones written months earlier
+         that touched none of the new fields). CallForOffersAlertBatchTest's fixtures set both marker
+         fields directly, so without these two entries the deploy that ships the fields fails its own
+         test run, and the symptom points at the new code while the cause is a file nobody touched.
+
+         EDITABLE, matching DPEG_Acquisition_Edit: blanking Offer_Alert_Last_Interval__c is the
+         supported way to re-arm a deal's alerts. See that set for the full reasoning. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Last_Interval__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>

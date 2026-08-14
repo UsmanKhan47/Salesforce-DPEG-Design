@@ -1,7 +1,128 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE FULL RATIONALE LIVES HERE, NOT IN <description>. A comment is repo-only and is never
+        sent to the Metadata API. It must sit INSIDE the root element - a comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with the misleading error
+        "unable to find matching parent xml file".
+
+        =====================================================================
+        🔴 AMENDED 2026-08-14 (Phase 3, observation 7). THIS FIELD IS NOW PER RECORD TYPE.
+        THE TWO PSA RECORD TYPES NO LONGER SHARE ONE VOCABULARY, AND FOUR FILES SAID THEY
+        ALWAYS WOULD.
+        =====================================================================
+
+        Acquisition_PSA runs Draft -> Negotiation -> Signed -> Executed.
+        Disposition_PSA runs Initial Draft -> Revised -> Ready for Execution -> Executed,
+        COMPLETELY UNCHANGED.
+
+        🔴 NOTHING IS DEACTIVATED ON THIS FIELD, AND THAT IS A HARD STOP, NOT A PREFERENCE
+        (decision O3). 'Initial Draft', 'Revised' and 'Ready for Execution' are being retired
+        from the ACQUISITION RECORD TYPE ONLY. They remain ACTIVE on the field because
+        Disposition_PSA still runs on all three. Deactivating any of them deletes the sell-side
+        sequence. Contrast LOI__c.Stage__c in this same phase, where the four retired values ARE
+        deactivated at D3 because no record type still uses them. The two fields look like the
+        same change and are not.
+
+        🔴 THE THREE NEW VALUES ARE INSERTED BEFORE 'Executed', NOT APPENDED, AND THIS IS THE
+        ONE THING IN THIS FILE THAT IS EASY TO GET WRONG. Runtime Path order comes from THIS
+        file's value order (sorted=false) filtered by the record type; a record type can only
+        include or exclude, never re-order. 'Executed' is SHARED and already sits at position 4.
+        Appending would have produced, for Acquisition_PSA:
+            Executed(4), Draft(5), Negotiation(6), Signed(7)
+        i.e. THE TERMINAL STEP RENDERED FIRST, on a Path that would still have deployed green
+        and passed every test. Inserting gives:
+            Initial Draft(1), Revised(2), Ready for Execution(3),
+            Draft(4), Negotiation(5), Signed(6), Executed(7)
+          Acquisition_PSA -> Draft, Negotiation, Signed, Executed          [correct]
+          Disposition_PSA -> Initial Draft, Revised, Ready for Execution,
+                             Executed                                      [UNCHANGED]
+        ⚠ CONTRAST LOI__c.Stage__c IN THIS SAME PHASE, where an APPEND was sufficient. The
+        difference is where the SHARED value sits: on LOI__c the shared value ('Under Review')
+        happens to occupy a position correct for both sequences; here the shared value is the
+        TERMINAL. Redo this arithmetic for every future value; the answer does not transfer even
+        between two fields changed on the same day. This is the same interleave-vs-append
+        question NDA__c answered a third way ('Not Sent' had to move AHEAD of 'Sent').
+
+        THE FIELD-LEVEL DEFAULT STAYS 'Initial Draft' AND IS DELIBERATELY NOT MOVED.
+        Disposition_PSA needs it, and Acquisition_PSA supplies its own record-type default
+        ('Draft'). Same shape as LOI__c.Stage__c, whose field default is 'Draft' while
+        Disposition_LOI defaults to 'Received'.
+        🔴 A RECORD-TYPE DEFAULT DOES NOT APPLY TO APEX DML. OpportunityReviewService's
+        Contract Review insert stamps NO Negotiation_Status__c and takes the FIELD default, so
+        from the moment Acquisition_PSA stops exposing 'Initial Draft' every auto-created
+        acquisition PSA is born on a value that is not on its own record type - which commits
+        SILENTLY, because record-type picklist restriction is UI-ONLY and is not enforced by
+        Apex DML. That is requirements C3 and it is DEVELOPER work, not fixable in this file.
+        Do NOT try to fix it by moving the field default - that breaks Disposition_PSA.
+
+        DOWNSTREAM READERS THAT WERE CHECKED, NOT ASSUMED:
+          - flows/Contract_Review_Stage_Sync - a BEFORE-SAVE flow with a DEFAULT branch and no
+            record-type criterion. 'Draft' would have fallen to that default and shown coarse
+            Stage__c = 'Review' on a brand-new acquisition PSA instead of 'PSA Drafting'.
+            FIXED in this change: it learned 'Draft' while KEEPING 'Initial Draft'.
+            'Negotiation' and 'Signed' are deliberately left to the default - they are the exact
+            analogues of 'Revised' and 'Ready for Execution', which also fall to it.
+          - flows/PSA_Ready_Notify - entry criterion Negotiation_Status__c = 'Ready for
+            Execution', no record-type criterion. Left alone, the "PSA ready for execution"
+            notification would have stopped firing for EVERY acquisition deal, permanently and
+            silently. FIXED in this change: it now fires on 'Ready for Execution' OR 'Signed'.
+          - flexipages/Contract_Review_Record_Page - both Advance Stage entries gate on
+            Negotiation_Status__c NE 'Executed'. UNCHANGED AND CORRECT: unlike LOI__c, the PSA
+            TERMINAL DID NOT MOVE, so the test still names the right value on both record types.
+          - ContractExecutionService keys on 'Executed', which is untouched.
+          - objectTranslations/Contract_Review__c-en_US/Negotiation_Status__c still lists the two
+            long-removed 'Seller Counter' / 'Buyer Counter' values and has never been maintained
+            against this field; it is NOT part of any Phase 3 deploy and gains no new values.
+
+        ================================================================================
+        🔴 READ THIS BEFORE REASONING FROM "THE LOI CASE" - PHASE 3 SWAPPED THE TWO OBJECTS'
+        PROPERTIES, SO THE ANALOGY NOW POINTS AT THE INVERSE OF THE FACTS.
+        ================================================================================
+
+        LOI__c.Stage__c and Contract_Review__c.Negotiation_Status__c are the acquisition /
+        disposition sibling pair, and repo prose has long reasoned from one to the other. On
+        2026-08-14 they EXCHANGED the property every one of those arguments rests on:
+
+            BEFORE 2026-08-14                      AFTER
+            LOI__c.Stage__c        DISJOINT   ->   OVERLAPS at 'Under Review'
+                                                       [FROM P3-D1]
+            Negotiation_Status__c  IDENTICAL  ->   DISJOINT except the terminal 'Executed'
+                                                       [ONLY FROM P3-D3]
+
+        🔴 THE TWO HALVES DO NOT LAND TOGETHER, AND THE WINDOW BETWEEN THEM IS THE NEAR-TERM
+        STATE - NOTHING IN THIS PACK IS DEPLOYED YET. The LOI overlap arrives at P3-D1, with the
+        three new values. THIS field's disjointness arrives only at P3-D3: the additive step
+        leaves Acquisition_PSA carrying SEVEN values, including 'Initial Draft', 'Revised' and
+        'Ready for Execution', every one of which Disposition_PSA also carries and keeps. FOR
+        THE WHOLE D1 -> D3 WINDOW THE TWO PSA SETS ARE NOT DISJOINT AND A STATUS-KEYED RULE ON
+        THIS OBJECT IS NOT SELF-LIMITING. The "AFTER" row is the post-migration end state, not
+        the state at the moment this pack deploys - and this block exists to stop someone
+        reasoning from an inverted premise, so reading it without that qualifier makes it do the
+        opposite of its job for the period it will actually be read in.
+        ⚠ Same qualifier, same wording, in flexipages/Contract_Review_Record_Page: "from P3-D3 a
+        rule keyed on any NON-terminal status value here WOULD be self-limiting". The transitional
+        seven-value state is recorded in recordTypes/Acquisition_PSA and in
+        pathAssistants/Contract_Review_Path_Acquisition.
+
+        WHY IT MATTERS RATHER THAN BEING TRIVIA. "The sets are disjoint, so a rule keyed on a
+        stage value is SELF-LIMITING to its record type" was TRUE of LOI and FALSE here; it is
+        FALSE of LOI from P3-D1 and TRUE here only from P3-D3. Anyone carrying that sentence in
+        either direction after
+        this date carries the exact opposite of the facts, and it fails SILENTLY - a visibility
+        rule that stops being self-limiting renders a button on the wrong record type, and one
+        that becomes self-limiting hides it. Neither errors and no test sees it.
+
+        WHAT IT COST ALREADY: LOI_Record_Page's Submit_for_Approval entry keys on a value that is
+        now shared and carries an OPEN, UNDECIDED residual (runbook 1.6, gate G7).
+        Contract_Review_Record_Page went the other way - a stage-keyed rule WOULD now work there,
+        and the option was assessed and DECLINED in favour of the custom-permission check.
+
+        ⇒ RULE: never inherit a disjointness claim across this object pair. Re-derive it from the
+        two record type files at the moment you need it. It has already inverted once.
+    -->
     <fullName>Negotiation_Status__c</fullName>
-    <description>Junior&apos;s Section 15 PSA lifecycle: Initial Draft -&gt; Revised -&gt; Ready for Execution -&gt; Executed. Moved ONLY by the deal driver via the Advance Stage quick action; logging a PSA version no longer touches it. Synced to the coarse Stage__c by the Contract_Review_Stage_Sync flow, and it drives the Contract Review Path directly; Executed triggers the transaction handoff. Seller Counter / Buyer Counter were removed 2026-08-05 - redlines are recorded as PSA Version rows and by Ball In Court, not as a status.</description>
+    <description>PSA lifecycle, and it is PER RECORD TYPE from 2026-08-14. Acquisition_PSA runs Draft -&gt; Negotiation -&gt; Signed -&gt; Executed; Disposition_PSA runs Initial Draft -&gt; Revised -&gt; Ready for Execution -&gt; Executed, unchanged. Executed is the ONLY shared value and is the terminal on both. NOTHING on this field is deactivated - the three sell-side values stay ACTIVE because Disposition_PSA still runs on them. Moved ONLY by the deal driver via Advance Stage. Synced to the coarse Stage__c by Contract_Review_Stage_Sync, drives the Contract Review Paths, and Executed triggers the transaction handoff. See the XML comment in this file.</description>
     <label>Negotiation Status</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
@@ -25,6 +146,21 @@
                 <fullName>Ready for Execution</fullName>
                 <default>false</default>
                 <label>Ready for Execution</label>
+            </value>
+            <value>
+                <fullName>Draft</fullName>
+                <default>false</default>
+                <label>Draft</label>
+            </value>
+            <value>
+                <fullName>Negotiation</fullName>
+                <default>false</default>
+                <label>Negotiation</label>
+            </value>
+            <value>
+                <fullName>Signed</fullName>
+                <default>false</default>
+                <label>Signed</label>
             </value>
             <value>
                 <fullName>Executed</fullName>

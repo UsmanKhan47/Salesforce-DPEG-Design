@@ -63,13 +63,15 @@ public with sharing class OpportunityReviewTriggerHandler extends TriggerHandler
         // Property_Asset__c is not a REVIEW child and is not part of the deal tree — it is the
         // PROPERTY MANAGEMENT HANDOFF, the same argument ContractExecutionService won above.
         // 🔴 And it lives on THIS trigger rather than in the Transaction_Complete_Close flow
-        // because StageAdvanceService.NEXT_STAGE maps BOTH 'PSA' and 'About to Close' to
+        // because StageAdvanceService.NEXT_STAGE maps BOTH 'Under Contract (PSA)' and
+        // 'About to Close' to
         // 'Closed Won', so a deal driver can close a deal with no Transaction__c at all;
         // building it in that flow would have missed half the closes, invisibly.
         PropertyAssetService.ensureOnClosedWon(opps, priorById);
         // Entering 'Closed Won' also claims the deal's SharePoint folder tree.
         // It lives HERE for the same reason PropertyAssetService does — StageAdvanceService
-        // .NEXT_STAGE maps BOTH 'PSA' and 'About to Close' to 'Closed Won', so a deal driver can
+        // .NEXT_STAGE maps BOTH 'Under Contract (PSA)' and 'About to Close' to 'Closed Won', so a
+        // deal driver can
         // close a deal with no Transaction__c at all and the Transaction_Complete_Close flow would
         // have missed half the closes.
         // 🔴 THE SYNCHRONOUS SIDE MAKES ZERO CALLOUTS. It stamps Pending and enqueues exactly ONE

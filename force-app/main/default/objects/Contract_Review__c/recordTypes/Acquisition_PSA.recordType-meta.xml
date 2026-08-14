@@ -21,6 +21,74 @@
         disposition-only status here should re-read that: it would turn a one-map object into a
         two-map object and drag the Apex change back into scope.
 
+        =====================================================================
+        🔴 RETRACTED 2026-08-14 (Phase 3, observation 7). THE PARAGRAPH DIRECTLY ABOVE IS NOW
+        FALSE IN EVERY CLAUSE, AND ITS CLOSING WARNING IS AN EXACT DESCRIPTION OF WHAT HAPPENED.
+        =====================================================================
+
+        RETRACTED, verbatim: "BOTH RECORD TYPES EXPOSE THE SAME FOUR Negotiation_Status__c
+        VALUES... Contract_Review__c therefore needs NO record-type-aware stage map in
+        RecordStageAdvanceService - it keeps ONE map serving both types."
+
+        🔴 IT CLOSES WITH: "Anyone adding a disposition-only status here should re-read that: it
+        would turn a one-map object into a two-map object and drag the Apex change back into
+        scope." THAT IS EXACTLY WHAT THIS CHANGE DOES - from the other direction. No
+        disposition-only status was added; an ACQUISITION-only set was. The consequence is
+        identical and the Apex change was in scope as requirements C9.
+
+        🔴 THE NEXT SENTENCE IS FALSE AS OF 2026-08-14. IT IS KEPT ONLY AS THE RETRACTED TEXT.
+        DO NOT ACT ON IT; THE CORRECTION IS DIRECTLY BELOW. ⚠ THIS IS THE SENTENCE THAT
+        GENERATED A PHANTOM OPEN ITEM AT REVIEW - this file is where a reader lands asking "what
+        does observation 7 still owe?", and the answer they found was a description of work that
+        had already shipped.
+        [FALSE] "requirements C9 requires CONTRACT_REVIEW_NEXT_STAGE to be SPLIT, and that
+        class's header still asserts the two types point at ONE map shared BY REFERENCE,
+        'deliberately', and that 'copying it would invite the two to drift apart'. That prose is
+        now wrong and is DEVELOPER work to correct - it is not fixable from this file." [END FALSE]
+
+        ⇒ THE SPLIT IS DELIVERED. There is no shared map in RecordStageAdvanceService:
+          - the doc block preceding the acquisition map now OPENS with "🔴 THE SHARED MAP IS
+            GONE. THIS IS THE SPLIT ITS OWN COMMENT PREDICTED." (~line 645), and the sentence
+            below it names the old CONTRACT_REVIEW_NEXT_STAGE object as HISTORY (~line 646);
+          - CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE is declared at ~line 723 and
+            CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE at ~line 749 - two separate map objects, not
+            one referenced twice;
+          - the StageConfig at ~lines 1157 and 1159 points Acquisition_PSA at the first and
+            Disposition_PSA at the second, each with its own gate;
+          - the class header's object list marks the old "the two types share ONE SEQUENCE and
+            differ ONLY in the GATE" line FALSE since 2026-08-14.
+        The falsifier is RecordStageAdvanceServiceTest.psaSequencesAreSplitPerRecordType, which
+        goes red if anyone re-merges the maps.
+        ⚠ VERIFY BY IDENTIFIER, NOT BY LINE NUMBER - line numbers in a .cls drift with every
+        edit and the four names above do not.
+
+        THE TWO SEQUENCES FROM 2026-08-14:
+          Acquisition_PSA  Draft -> Negotiation -> Signed -> Executed
+          Disposition_PSA  Initial Draft -> Revised -> Ready for Execution -> Executed  [UNCHANGED]
+        'Executed' is the ONLY shared value and it is the terminal on BOTH. That single fact is
+        what keeps flexipages/Contract_Review_Record_Page correct with no edit at all - both its
+        Advance Stage entries gate on Negotiation_Status__c NE 'Executed', and unlike LOI__c the
+        PSA terminal did NOT move. Checked, not assumed.
+
+        🔴 NOTHING IS DEACTIVATED ON THE FIELD (decision O3, a hard stop). 'Initial Draft',
+        'Revised' and 'Ready for Execution' are removed from THIS RECORD TYPE at P3-D3 and stay
+        ACTIVE on Negotiation_Status__c, because Disposition_PSA still runs on all three.
+
+        ⚠ SEVEN VALUES, NOT FOUR, AND THAT IS THE P3-D1 STATE. The three retiring values are
+        kept here until P3-D3 so live acquisition Contract Reviews still have a valid, selectable
+        stage while the row migration runs. The default also stays 'Initial Draft' until then and
+        flips to 'Draft' in the same P3-D3 change - flipping it earlier would open new rows on a
+        value RecordStageAdvanceService's map does not yet know. Staged in
+        agent-output/p3-d3-retire-loi-psa/.
+
+        🔴 A RECORD-TYPE DEFAULT DOES NOT APPLY TO APEX DML, so flipping it does NOT fix
+        requirements C3: OpportunityReviewService's Contract Review insert stamps no
+        Negotiation_Status__c and takes the FIELD default ('Initial Draft'), which after P3-D3 is
+        not on this record type. It commits SILENTLY - record-type picklist restriction is
+        UI-ONLY. That is developer work and it is the D16.3 handoff below's sibling, not the same
+        item. Do not attempt to fix it by moving the field-level default; Disposition_PSA needs
+        it.
+
         WHAT THE TWO TYPES ACTUALLY DIFFER ON is exactly two things: the counterparty token in
         Ball_In_Court__c (Seller here, Buyer on Disposition_PSA) and which parent lookup is
         populated. That is the whole delta.
@@ -74,7 +142,7 @@
     -->
     <fullName>Acquisition_PSA</fullName>
     <active>true</active>
-    <description>The buy-side PSA. DPEG is the buyer, so the counterparty is the Seller and Ball In Court reads Us / Seller. Parented by Opportunity; the Disposition lookup stays blank. Same four Negotiation Status values as the disposition type.</description>
+    <description>The buy-side PSA. DPEG is the buyer, so the counterparty is the Seller and Ball In Court reads Us / Seller. Parented by Opportunity. Its OWN four Negotiation Status values from 2026-08-14: Draft, Negotiation, Signed, Executed.</description>
     <label>Acquisition PSA</label>
     <picklistValues>
         <picklist>Ball_In_Court__c</picklist>
@@ -90,6 +158,22 @@
     <picklistValues>
         <picklist>Negotiation_Status__c</picklist>
         <values>
+            <fullName>Draft</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Negotiation</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Signed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Executed</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>Initial Draft</fullName>
             <default>true</default>
         </values>
@@ -99,10 +183,6 @@
         </values>
         <values>
             <fullName>Ready for Execution</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Executed</fullName>
             <default>false</default>
         </values>
     </picklistValues>

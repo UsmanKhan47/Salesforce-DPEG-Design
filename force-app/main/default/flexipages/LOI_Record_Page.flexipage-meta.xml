@@ -86,6 +86,91 @@
          RecordStageAdvanceService's record-type-scoped gate. Nothing here can write what the
          server would refuse - RecordStageAdvanceController asserts the gate regardless of what
          this page renders.
+
+         =====================================================================
+         🔴 AMENDED 2026-08-14 (Phase 3, observation 5). THE PARAGRAPH BEGINNING "🔴 THERE IS NO
+         RECORD-TYPE CRITERION ON EITHER NEW ENTRY, AND THAT IS CORRECT" RESTS ON A PREMISE THAT
+         IS NOW FALSE. ITS OWN CLOSING SENTENCE IS THE INSTRUCTION THAT NOW APPLIES.
+         =====================================================================
+
+         RETRACTED, verbatim: "objects/LOI__c/recordTypes/*.recordType-meta.xml both record the
+         load-bearing property that THE TWO STAGE VALUE SETS ARE FULLY DISJOINT - no Stage__c
+         value appears on both record types - so a rule keyed on a stage value is SELF-LIMITING
+         to its own record type... This is the same mechanism that lets the four acquisition
+         entries (Prepare/Review, Sent) stay record-type-agnostic."
+
+         🔴 ITS CLOSING SENTENCE HAS FIRED: "If a future change makes any LOI stage value shared
+         across the two record types, EVERY rule on this page must be revisited." It did, and
+         they were. Result of that review, entry by entry:
+
+           THE THREE ACQUISITION STAGE VALUES ON THIS PAGE MOVED:
+             LOI__c.Submit_for_Approval   Prepare/Review -> Under Review   🔴 NOW SHARED
+             LOI__c.Mark_Countered        Sent           -> Submitted      still acquisition-only
+             LOI__c.Mark_Completed        Sent           -> Submitted      still acquisition-only
+
+           'Submitted', 'Negotiation' and 'Signed' are on Acquisition_LOI ONLY, so the two Mark_*
+           entries remain self-limiting by exactly the retracted mechanism - it still holds for
+           them, it just no longer holds UNIVERSALLY. The four disposition-only values
+           ('Received', 'Countered by DPEG', 'Counter Received from Buyer', 'Executed') are
+           likewise untouched, so BOTH disposition Mark_* entries are unaffected.
+
+           THE TWO Advance_Stage ENTRIES ARE UNCHANGED HERE, but the field behind them is not:
+           Is_Advance_Allowed__c now carries a RecordType.DeveloperName test inside its approval
+           clause, because 'Under Review' being shared would otherwise have hidden the
+           DISPOSITION Advance Stage button at step 2 of 5. That is a real sell-side outage
+           averted in the formula, not on this page; see that field's header.
+
+         🔴 OPEN RESIDUAL - Submit for Approval IS NO LONGER SELF-LIMITING, AND IT IS NOT CLOSED
+         HERE. 'Under Review' is carried by BOTH record types, so an acquisition driver opening a
+         DISPOSITION LOI at 'Under Review' will now see Submit for Approval. Clicking it targets
+         Opportunity.LOI_Approval, and a disposition LOI has no Opportunity__c, so it fails
+         LOUDLY rather than doing something wrong.
+
+         WHY IT WAS NOT CLOSED, STATED SO THE NEXT READER DOES NOT ASSUME IT WAS MISSED:
+           - A FLEXIPAGE VISIBILITY RULE CANNOT EXPRESS A RECORD-TYPE TEST DIRECTLY. That is
+             asserted in NDA__c.Is_Decline_Allowed__c's header ("so the discriminator has to be a
+             field on the record") and no flexipage in this repo carries a {!Record.RecordType.*}
+             criterion - a sweep of every flexipage found zero. ⚠ REPO-ASSERTED AND UNMEASURED:
+             nobody has tried it in this org and been refused. Falsifying it is the cheapest of
+             the three remedies below.
+           - The in-repo remedy is a formula-checkbox discriminator (the Is_Decline_Allowed__c
+             shape). A NEW field arrives with NO field permissions for ANY profile, and a
+             visibility rule referencing a field the running user cannot read evaluates FALSE -
+             so adding one here would make THREE currently-working acquisition buttons newly
+             dependent on a brand-new field's FLS across every acquisition permission set plus
+             any profile-provisioned persona this repo cannot see. That is precisely the trade
+             Is_Decline_Allowed__c's own header refuses to make for the acquisition Advance Stage
+             rule.
+           - The residual is the SAME CLASS this page already names and accepts one paragraph
+             above, for Advance Stage, and it fails loudly.
+
+         THREE REMEDIES, IF THE RESIDUAL IS JUDGED UNACCEPTABLE. Take the decision explicitly;
+         do not let it arrive as a side effect of some other change:
+           (a) TRY {!Record.RecordType.DeveloperName} EQUAL Acquisition_LOI as a third criterion
+               and see whether the deploy accepts it AND the renderer honours it. Cheapest, and
+               it falsifies the repo assertion above either way. A deploy that succeeds is NOT
+               sufficient evidence - this page has MEASURED a construct that deploys, survives a
+               retrieve and is then ignored by the renderer. Probe in BOTH directions.
+           (b) ADD Is_Acquisition_LOI__c, a formula checkbox = RecordType.DeveloperName
+               = "Acquisition_LOI", and grant it read FLS in the SAME change to every set that
+               grants Is_Advance_Allowed__c. Proven shape, known cost.
+           (c) ADD {!Record.Is_Advance_Allowed__c} EQUAL false as a third criterion. It happens to
+               discriminate correctly here - on a disposition LOI at 'Under Review' that formula
+               is TRUE, on an unapproved acquisition LOI at 'Under Review' it is FALSE - and it
+               costs no new field and no new FLS. ⚠ NOT RECOMMENDED: it couples Submit for
+               Approval's visibility to a formula written for Advance Stage, so a future edit to
+               that formula would break this button silently. Recorded because it is genuinely
+               the cheapest and someone will find it.
+
+         ⚠ TIMING - THIS FILE MUST DEPLOY AT P3-D2 WITH THE APEX, NOT EARLIER, AND THE REASON IS
+         NOT SYMMETRY. The three repointed criteria are correct only AFTER the row migration; a
+         transitional duplicate-entry shape (one entry per value, old and new, the shape the two
+         Advance_Stage entries already prove works in this org) was considered and REJECTED,
+         because it would make Counter and Completed visible at 'Submitted' while
+         c/loiMarkCountered still passes the hardcoded constant 'Counter'. A driver clicking it
+         would then write a RETIRED value onto a migrated LOI - moving the record backwards into
+         a stage the new sequence has no entry for. A hidden button for the length of one
+         maintenance window is strictly better than a visible button wired to the wrong constant.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -115,7 +200,7 @@
                                 <criteria>
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
-                                    <rightValue>Prepare/Review</rightValue>
+                                    <rightValue>Under Review</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
@@ -163,7 +248,7 @@
                                 <criteria>
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
-                                    <rightValue>Sent</rightValue>
+                                    <rightValue>Submitted</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
@@ -179,7 +264,7 @@
                                 <criteria>
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
-                                    <rightValue>Sent</rightValue>
+                                    <rightValue>Submitted</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

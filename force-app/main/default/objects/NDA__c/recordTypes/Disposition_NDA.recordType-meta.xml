@@ -38,6 +38,30 @@
         filter, a future Mark Declined action) has to test Disposition__c or RecordTypeId, never
         Status__c on its own.
 
+        =====================================================================
+        ⚠ AMENDED 2026-08-14 (Phase 3, observation 5). THE CONTRAST ABOVE IS NOW FALSE. THE RULE
+        IT ILLUSTRATES IS UNCHANGED, CORRECT, AND NOW APPLIES MORE WIDELY THAN WHEN IT WAS
+        WRITTEN.
+        =====================================================================
+
+        RETRACTED, verbatim: "Unlike LOI__c.Stage__c, whose two sets are fully disjoint".
+        Phase 3 repointed the acquisition LOI approval hop onto 'Under Review', a value
+        Disposition_LOI has carried since 3B. LOI__c.Stage__c's two sets now OVERLAP at
+        'Under Review'. ⚠ Their TERMINALS remain distinct ('Signed' vs 'Executed'), which is why
+        LOI terminal-state tests still work by naming values; the overlap is in the MIDDLE of the
+        sequence, which is the harder case to notice.
+
+        🔴 NOTHING ABOUT THIS RECORD TYPE OR ITS RULE CHANGES - AND THE RULE IS STRENGTHENED, NOT
+        WEAKENED. NDA__c was the cautionary exception ("unlike LOI"); LOI__c has now joined it, so
+        this file's discipline - discriminate on Disposition__c or RecordTypeId, never on the
+        status value alone - is now the DEFAULT for the acquisition/disposition object pairs
+        rather than a special case. LOI_Record_Page paid for that in this same phase: its
+        Submit_for_Approval entry keys on a stage value that is now shared, and it carries an
+        open, undecided residual as a result (runbook 1.6 / gate G7).
+        ⚠ DO NOT USE "the LOI sets are disjoint" AS PRIOR ART ANYWHERE AFTER THIS DATE. That
+        sentence appears in several files; the ones found by sweep on 2026-08-14 are corrected,
+        but this comment is the durable statement of the fact.
+
         WARNING - RECORD-TYPE PICKLIST RESTRICTION IS UI-ONLY. It is NOT enforced by Apex DML,
         so restricting Pending/Received out here does not stop a direct write. The Apex-side
         allow-list in RecordStageAdvanceService must become record-type-aware in the same

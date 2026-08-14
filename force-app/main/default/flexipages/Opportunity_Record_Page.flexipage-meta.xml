@@ -129,7 +129,7 @@
                                 <criteria>
                                     <leftValue>{!Record.StageName}</leftValue>
                                     <operator>EQUAL</operator>
-                                    <rightValue>PSA</rightValue>
+                                    <rightValue>Under Contract (PSA)</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
@@ -145,7 +145,7 @@
                                 <criteria>
                                     <leftValue>{!Record.StageName}</leftValue>
                                     <operator>EQUAL</operator>
-                                    <rightValue>PSA</rightValue>
+                                    <rightValue>Under Contract (PSA)</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.StageName}</leftValue>
@@ -1573,6 +1573,12 @@
             <componentInstance>
                 <componentName>dealDocStatus</componentName>
                 <identifier>dealDocStatus</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>callForOffersPanel</componentName>
+                <identifier>callForOffersPanelComponent</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

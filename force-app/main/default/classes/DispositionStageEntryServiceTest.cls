@@ -555,7 +555,11 @@ private class DispositionStageEntryServiceTest {
             + 'starting value and is restricted off this record type — but record-type picklist '
             + 'restriction is UI-only, so Apex DML would accept it silently and produce an LOI '
             + 'whose stage is off its own value set, which RecordStageAdvanceService could never '
-            + 'advance (the two LOI value sets are fully disjoint).');
+            + 'advance (Draft is acquisition-only, so the disposition sequence has no entry for '
+            + 'it. ⚠ This used to say the two LOI value sets are fully disjoint; observation 5 '
+            + 'ended that on 2026-08-14 by giving them a shared Under Review, but Draft '
+            + 'specifically is still acquisition-only, which is the only part this assertion '
+            + 'ever depended on).');
         Assert.areEqual(disposition.Id, created[0].Disposition__c,
             'The LOI must be parented to the disposition that opened it');
         Assert.isNull(created[0].Opportunity__c,

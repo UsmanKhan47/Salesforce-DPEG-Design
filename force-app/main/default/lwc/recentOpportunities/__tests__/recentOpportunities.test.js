@@ -54,7 +54,7 @@ jest.mock(
 const OPPS = [
     { id: '0060000000000001', name: 'Gateway Plaza', stage: 'Underwriting', dealType: 'Retail', price: 4200000, noi: 310000, days: 3 },
     { id: '0060000000000002', name: 'Harbor Point', stage: 'LOI', dealType: 'Land', price: 850000, noi: null, days: 7 },
-    { id: '0060000000000003', name: 'Cedar Commons', stage: 'PSA', dealType: 'Retail', price: 12500000, noi: 900000, days: 15 },
+    { id: '0060000000000003', name: 'Cedar Commons', stage: 'Under Contract (PSA)', dealType: 'Retail', price: 12500000, noi: 900000, days: 15 },
     { id: '0060000000000004', name: 'Oak Ridge', stage: 'New', dealType: null, price: null, noi: null, days: 1 },
     { id: '0060000000000005', name: 'Pine Tower', stage: 'Closed Won', dealType: 'Retail', price: 6000000, noi: 450000, days: 40 },
     { id: '0060000000000006', name: 'Maple Court', stage: 'Under Review', dealType: 'Land', price: 300000, noi: null, days: 2 }

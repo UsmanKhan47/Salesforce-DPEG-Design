@@ -18,9 +18,21 @@
  * while the deal driver was mid-negotiation. Asserting "unchanged" is what makes either
  * detectable; asserting nothing about the field would let both through.
  *
- * The expected value on every branch is 'Initial Draft' because TestDataFactory does not set
- * Negotiation_Status__c and that is the picklist's default — i.e. the assertion is literally
- * "still whatever it was before saveVersion ran".
+ * ⚠ THE EXPECTED VALUE IS PER RECORD TYPE SINCE 2026-08-14, AND THE TWO MUST NOT BE HARMONISED.
+ * 'Draft' on the ACQUISITION fixtures, 'Initial Draft' on the DISPOSITION one. In both cases the
+ * assertion means the same thing — "still whatever the factory seeded before saveVersion ran" — and
+ * in both cases the value is now TestDataFactory.createContractReviews' explicit per-record-type
+ * seed rather than the field-level picklist default.
+ *
+ * This paragraph used to read: "The expected value on every branch is 'Initial Draft' because
+ * TestDataFactory does not set Negotiation_Status__c and that is the picklist's default." Both
+ * halves are now false. Acquisition Observations phase 3 (observation 7) split the two record
+ * types' Negotiation_Status__c sequences, so the field default 'Initial Draft' — which
+ * Disposition_PSA still runs on (decision O3, a hard stop) — is no longer a value Acquisition_PSA
+ * carries; the factory therefore seeds each type explicitly. Reverting either expectation to the
+ * field default would put an acquisition fixture back on an off-record-type value, which Apex DML
+ * accepts SILENTLY (record-type picklist restriction is UI-only) and which
+ * RecordStageAdvanceService then refuses to advance.
  *
  * ── 🔴 WHAT THE 3C FIX PASS ADDED, AND WHY IT IS THE MOST IMPORTANT PART OF THIS CLASS ──
  * `Ball_In_Court__c = 'Seller'` names the COUNTERPARTY on a purchase and names DPEG on a SALE. The
@@ -135,8 +147,8 @@ private class PsaVersionServiceTest {
 
         cr = refresh(cr.Id);
         Assert.areEqual('Us', cr.Ball_In_Court__c, 'Seller draft puts the ball in OUR court');
-        Assert.areEqual('Initial Draft', cr.Negotiation_Status__c,
-            'Logging a version must NOT touch the status — this is the untouched picklist default');
+        Assert.areEqual('Draft', cr.Negotiation_Status__c,
+            'Logging a version must NOT touch the status — this is the untouched factory seed');
         Assert.areEqual(1, cr.Latest_Version__c, 'Version counter maintained');
     }
 
@@ -151,7 +163,7 @@ private class PsaVersionServiceTest {
 
         cr = refresh(cr.Id);
         Assert.areEqual('Seller', cr.Ball_In_Court__c, 'Our redline puts the ball in the seller court');
-        Assert.areEqual('Initial Draft', cr.Negotiation_Status__c,
+        Assert.areEqual('Draft', cr.Negotiation_Status__c,
             'Our redline must NOT move the status — this branch used to write Buyer Counter');
         Assert.areEqual(2, cr.Latest_Version__c, 'Two versions tracked');
         Assert.areEqual(2, PsaVersionSelector.selectByContractReviewId(cr.Id).size(), 'Full history preserved');
@@ -169,7 +181,7 @@ private class PsaVersionServiceTest {
 
         cr = refresh(cr.Id);
         Assert.areEqual('Us', cr.Ball_In_Court__c, 'A seller version puts the ball in OUR court');
-        Assert.areEqual('Initial Draft', cr.Negotiation_Status__c,
+        Assert.areEqual('Draft', cr.Negotiation_Status__c,
             'A later seller version must NOT move the status — it used to write Seller Counter');
         Assert.areEqual(2, cr.Latest_Version__c, 'Version counter bumped');
     }
@@ -227,7 +239,12 @@ private class PsaVersionServiceTest {
             'On a SALE our redline puts the ball in the BUYER\'s court. "Seller" here is the '
             + 'pre-fix defect and names DPEG.');
         Assert.areEqual('Initial Draft', refreshed.Negotiation_Status__c,
-            'The disposition branch must not move the status either');
+            'The disposition branch must not move the status either. 🔴 THE EXPECTED VALUE HERE IS '
+            + 'DELIBERATELY NOT "Draft" LIKE ITS ACQUISITION SIBLINGS ABOVE — this fixture is a '
+            + 'DISPOSITION Contract Review, and since phase 3 the two record types no longer share '
+            + 'a sequence: Disposition_PSA still starts at Initial Draft (requirements O3, a hard '
+            + 'stop). Harmonising the two expectations would put a sell-side fixture on a value its '
+            + 'own record type does not carry.');
         Assert.areEqual('Ours',
             PsaVersionSelector.selectByContractReviewId(saleCr.Id)[0].Direction__c,
             'The DPEG token is "Ours" on both sides and must not become "Seller" on a sale');
@@ -353,10 +370,15 @@ private class PsaVersionServiceTest {
             + 'FALLBACK for the migration window, not a second requirement');
         Assert.isTrue(masterWithASaleLookup,
             'THE MIGRATION-WINDOW CASE, and the one production will actually be in on day one: no '
-            + 'record type, so the Disposition__c lookup decides. It matters MORE on this object '
-            + 'than on LOI__c — both PSA record types expose the same four statuses, so a '
-            + 'Master-type disposition PSA walks its path perfectly and is wrong only about '
-            + 'vocabulary, i.e. invisibly.');
+            + 'record type, so the Disposition__c lookup decides. ⚠ THE REASON CHANGED ON '
+            + '2026-08-14 AND THE DIRECTION IS NOW THE OPPOSITE. This used to read: it matters '
+            + 'MORE on this object than on LOI__c, because both PSA record types expose the same '
+            + 'four statuses, so a Master-type disposition PSA walks its path perfectly and is '
+            + 'wrong only about vocabulary, i.e. invisibly. Observation 7 split the two sequences, '
+            + 'so such a row is now REFUSED loudly by RecordStageAdvanceService on its first '
+            + 'Advance Stage click. The lookup still decides here anyway: that refusal is a '
+            + 'DIFFERENT class on a DIFFERENT action, and logging a version refuses nothing, so '
+            + 'without clause 2 this row takes buy-side vocabulary into Ball_In_Court__c silently.');
         Assert.isFalse(masterWithNoLookup,
             'Neither signal present defaults to ACQUISITION, matching CounterOfferService and '
             + 'RecordStageAdvanceService\'s defaultTypeKey — every Contract Review in the org '

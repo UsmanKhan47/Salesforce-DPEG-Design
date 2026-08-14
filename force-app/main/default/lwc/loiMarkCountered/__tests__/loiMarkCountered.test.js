@@ -5,6 +5,12 @@
  * that computed its own target would defeat the allow-list. The first test therefore pins the exact
  * argument pair, not just that Apex was called.
  *
+ * 🔴 THE PINNED LITERAL IS 'Negotiation' SINCE 2026-08-14 (observation 5); it was 'Counter'. This
+ * assertion is the ONLY automated thing in the repo that would catch the bundle and
+ * RecordStageAdvanceService.LOI_ACQUISITION_EXPLICIT_TARGETS drifting apart during a value rename
+ * — Jest cannot see Apex and the Apex suite cannot see this module, so the two halves are pinned to
+ * the same string in two places on purpose. Update BOTH or neither.
+ *
  * Uses the REAL c/recordStageGuard, so the guard's two dependencies are mocked here: lightning/confirm
  * (whose real stub throws on .open() by design) and the permission Apex (an un-mocked apex import
  * resolves undefined, which the guard's `=== true` check reads as DENIED and would redden every
@@ -62,7 +68,7 @@ describe('c-loi-mark-countered', () => {
     const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 
     it('SUCCESS BRANCH: sends the hardcoded target, toasts success, notifies the record', async () => {
-        advanceTo.mockResolvedValue('LOI moved to Counter.');
+        advanceTo.mockResolvedValue('LOI moved to Negotiation.');
 
         const element = createComponent();
         const toastHandler = jest.fn();
@@ -76,12 +82,12 @@ describe('c-loi-mark-countered', () => {
         expect(advanceTo).toHaveBeenCalledTimes(1);
         expect(advanceTo).toHaveBeenCalledWith({
             recordId: RECORD_ID,
-            target: 'Counter'
+            target: 'Negotiation'
         });
 
         expect(toastHandler).toHaveBeenCalledTimes(1);
         expect(toastHandler.mock.calls[0][0].detail.variant).toBe('success');
-        expect(toastHandler.mock.calls[0][0].detail.message).toBe('LOI moved to Counter.');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe('LOI moved to Negotiation.');
 
         // MANDATORY: Apex DML bypasses the LDS cache, so without this the Path shows a stale stage.
         expect(getRecordNotifyChange).toHaveBeenCalledTimes(1);

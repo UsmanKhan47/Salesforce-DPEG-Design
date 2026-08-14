@@ -57,7 +57,10 @@ const GENERIC_ERROR = 'The LOI could not be moved to Counter Received from Buyer
  * concrete reason c/recordStageGuard exists separately from c/dealActionGuard (ARCHITECTURE.md §5).
  *
  * ⚠ NAME COLLISION WARNING. c/loiMarkCountered is the ACQUISITION action (it writes
- * Stage__c = 'Counter'). This bundle and c/loiMarkCounteredByDpeg are the DISPOSITION pair. Three
+ * Stage__c = 'Negotiation' — the bundle name still says "Countered" because observation 5 renamed
+ * the VALUE 'Counter' -> 'Negotiation' on 2026-08-14 without renaming the bundle, which makes this
+ * warning sharper rather than obsolete). This bundle and c/loiMarkCounteredByDpeg are the
+ * DISPOSITION pair. Three
  * similar names, three different targets, two different record types and two different personas —
  * check TARGET_STAGE before assuming which one you are editing.
  */

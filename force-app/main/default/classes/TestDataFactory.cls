@@ -72,18 +72,28 @@
  *   isAvailable(), so they degrade to the platform default in an org where the record types
  *   have not deployed rather than turning every affected test red.
  *
- *   ⚠ THREE OF THE FOUR CUSTOM OBJECTS ALSO SEED A PER-RECORD-TYPE STARTING PICKLIST VALUE, and
- *   that is not cosmetic: record-type picklist restriction is enforced by the UI ONLY, so Apex DML
+ *   ⚠ ALL FOUR CUSTOM OBJECTS SEED A PER-RECORD-TYPE STARTING PICKLIST VALUE, and that is not
+ *   cosmetic: record-type picklist restriction is enforced by the UI ONLY, so Apex DML
  *   would happily insert an off-set value and produce a fixture RecordStageAdvanceService
- *   cannot advance. NDA__c: 'Pending' vs 'Not Sent'. LOI__c: 'Draft' vs 'Received' (fully
- *   disjoint sets — there is no shared value to fall back on). Disposition__c seeds
- *   'Disposition Readiness', which is valid on both of its types.
+ *   cannot advance. NDA__c: 'Pending' vs 'Not Sent'. LOI__c: 'Draft' vs 'Received' (no shared
+ *   STARTING value to fall back on — ⚠ this said "fully disjoint sets" until 2026-08-14, which
+ *   observation 5 ended by renaming 'Prepare/Review' to 'Under Review', a value the disposition
+ *   sequence already carried; the sets now OVERLAP there, and only the seeds are still
+ *   per-type). Contract_Review__c: 'Draft' vs
+ *   'Initial Draft'. Disposition__c seeds 'Disposition Readiness', which is valid on both of its
+ *   types.
  *
- *   🔴 Contract_Review__c IS THE EXPLICIT EXCEPTION AND IT IS NOT AN OVERSIGHT. Its two record
- *   types expose the IDENTICAL Negotiation_Status__c and Stage__c value sets (stated deliberately
- *   in Disposition_PSA's own record type file), so there is no per-type seed to choose and a
- *   branch would invent a difference that does not exist. What differs between its types is the
- *   PERMISSION GATE, which is not a field on the row and therefore not the factory's business.
+ *   🔴 Contract_Review__c WAS THE ONE EXCEPTION UNTIL 2026-08-14 AND IS NO LONGER. This block used
+ *   to read: "Its two record types expose the IDENTICAL Negotiation_Status__c and Stage__c value
+ *   sets (stated deliberately in Disposition_PSA's own record type file), so there is no per-type
+ *   seed to choose and a branch would invent a difference that does not exist." That was true when
+ *   written; Acquisition Observations phase 3 (observation 7) SPLIT the Negotiation_Status__c
+ *   sequences — acquisition `Draft -> Negotiation -> Signed -> Executed`, disposition
+ *   `Initial Draft -> Revised -> Ready for Execution -> Executed` — leaving 'Executed' as the only
+ *   shared value and no shared STARTING value at all. Do not restore the retracted sentence; see
+ *   createContractReviews' own header for the full argument and for why the field-level default
+ *   must NOT be moved instead. What ALSO differs between its types, and is still not the factory's
+ *   business, is the PERMISSION GATE — that is not a field on the row.
  *
  * ── CONVENTIONS ──────────────────────────────────────────────────────────────
  *  - Every object exposes createXs(count, [parents], doInsert) returning a List,
@@ -117,7 +127,7 @@
  * ── CASCADES CALLERS MUST KNOW ABOUT ─────────────────────────────────────────
  *  Inserting an Opportunity fires OpportunityReviewTrigger:
  *    - ensureNda() always creates one NDA__c and re-updates the Opportunity.
- *    - StageName 'PSA' also creates a Contract_Review__c (+ Opp update).
+ *    - StageName 'Under Contract (PSA)' also creates a Contract_Review__c (+ Opp update).
  *    - StageName 'Underwriting' also creates an Underwriting__c (+ Opp update).
  *    - 'Development Review' / 'Construction Review' create feasibility reviews.
  *  Default stage is therefore 'New' (valid in both business processes) to keep
@@ -1438,10 +1448,13 @@ public with sharing class TestDataFactory {
      * createNdas / createDispositions — see createDispositions' header for why the record type is
      * stamped at all rather than inherited from the test-running user's profile default.
      *
-     * 🔴 THE SEED STAGE IS CHOSEN BY RECORD TYPE, AND IT HAS TO BE. Unlike NDA__c the two LOI
-     * value sets are FULLY DISJOINT — 'Draft' exists only on Acquisition_LOI and 'Received' only on
-     * Disposition_LOI, with no overlap at all — so there is no shared value that would work for
-     * both. Record-type picklist restriction is UI-only (Apex DML does NOT enforce it), so a
+     * 🔴 THE SEED STAGE IS CHOSEN BY RECORD TYPE, AND IT HAS TO BE. The two LOI STARTING values are
+     * disjoint — 'Draft' exists only on Acquisition_LOI and 'Received' only on Disposition_LOI — so
+     * there is no shared value that would work as a seed for both. ⚠ This used to claim the two
+     * value SETS were "FULLY DISJOINT ... with no overlap at all". That ended on 2026-08-14, when
+     * observation 5 renamed 'Prepare/Review' to 'Under Review' — a value the disposition sequence
+     * already carried — so the sets now overlap there. The seeds do not, which is all this method
+     * needs. Record-type picklist restriction is UI-only (Apex DML does NOT enforce it), so a
      * hardcoded 'Draft' would insert happily onto a disposition LOI and produce a fixture whose
      * stage is off its own record type's value set, which RecordStageAdvanceService would then
      * refuse to advance for reasons no test message would explain.
@@ -1668,12 +1681,48 @@ public with sharing class TestDataFactory {
      * for why the record type is stamped at all rather than inherited from the test-running user's
      * profile default.
      *
-     * 🔴 UNLIKE createNdas AND createLois, NOTHING ELSE IN THE ROW VARIES BY RECORD TYPE, AND THAT
-     * IS THE INTERESTING PART RATHER THAN AN OMISSION. Those two branch their seed STAGE because
-     * their value sets differ ('Pending' vs 'Not Sent'; 'Draft' vs 'Received'). Both PSA record
-     * types expose the IDENTICAL four Negotiation_Status__c values and the identical three Stage__c
-     * values — Disposition_PSA's own record type file states this is deliberate — so one seed is
-     * correct for both and a branch here would be inventing a difference that does not exist.
+     * ═════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 REWRITTEN 2026-08-14 (Acquisition Observations phase 3, observation 7 / requirement C3).
+     * THE SEED IS NOW CHOSEN BY RECORD TYPE, LIKE createNdas AND createLois. THE PARAGRAPH THIS
+     * REPLACES SAID THE OPPOSITE AND WAS CORRECT WHEN WRITTEN — DO NOT RESTORE IT.
+     * ═════════════════════════════════════════════════════════════════════════════════════
+     *
+     * RETRACTED, verbatim: "UNLIKE createNdas AND createLois, NOTHING ELSE IN THE ROW VARIES BY
+     * RECORD TYPE... Both PSA record types expose the IDENTICAL four Negotiation_Status__c values
+     * and the identical three Stage__c values — Disposition_PSA's own record type file states this
+     * is deliberate — so one seed is correct for both and a branch here would be inventing a
+     * difference that does not exist."
+     *
+     * Phase 3 made that difference REAL. Acquisition_PSA's sequence is now
+     * `Draft -> Negotiation -> Signed -> Executed`; Disposition_PSA keeps
+     * `Initial Draft -> Revised -> Ready for Execution -> Executed` (decision O3, a hard stop).
+     * 'Executed' is the only shared value, and it is the terminal on both — so, exactly as on
+     * LOI__c, there is no shared STARTING value and one seed cannot serve both.
+     *
+     * 🔴 THIS FIXES THE TEST-SIDE TWIN OF THE DEFECT `OpportunityReviewService`'s C3 FIX JUST
+     * CLOSED IN PRODUCTION. This method seeded NO Negotiation_Status__c at all, so every fixture
+     * fell to the FIELD-LEVEL default — 'Initial Draft' — while the method stamped Acquisition_PSA,
+     * which after phase 3 does not carry that value. Record-type picklist restriction is UI-ONLY
+     * and Apex DML does not enforce it, so the row COMMITTED SILENTLY and produced a fixture whose
+     * status is off its own record type's value set: `RecordStageAdvanceService` finds no entry for
+     * it in the acquisition map and refuses the first Advance Stage click, for a reason no test
+     * message would explain.
+     *
+     * 🔴 DO NOT "FIX" THIS BY MOVING THE FIELD-LEVEL DEFAULT. It is 'Initial Draft' because
+     * Disposition_PSA still runs on it (O3). Changing the default would relocate the identical
+     * defect onto the sell-side path — the same trap `Contract_Review_Stage_Sync` records for its
+     * own literal, where the rule was ADD a branch, never SWAP one.
+     *
+     * ⚠ THE ACQUISITION SEED MATCHES WHAT `OpportunityReviewService` NOW STAMPS ON THE ROWS IT
+     * AUTO-CREATES (`ACQUISITION_PSA_STATUS = 'Draft'`), which is the point: a fixture that starts
+     * somewhere production never starts is a fixture that tests a state that cannot occur.
+     *
+     * ⚠ AND THE SEED IS CORRECT EVEN WHEN THE RECORD-TYPE STAMP NO-OPS. The stamp is guarded on
+     * isAvailable(), so before post-deploy gate T-A1 the row lands on Master — and the acquisition
+     * FALLBACK map in RecordStageAdvanceService (`defaultTypeKey`) is the acquisition one, which has
+     * an entry for 'Draft' and none for 'Initial Draft'. So the guarded-stamp degradation stays
+     * WALKABLE rather than dead. Same argument OpportunityReviewService's header makes for the rows
+     * it creates; the two are load-bearing together.
      *
      * ⚠ Ball_In_Court__c IS DELIBERATELY LEFT UNSET on both types, even though it is the ONE field
      * whose value set genuinely differs ('Seller' on Acquisition_PSA, 'Buyer' on Disposition_PSA —
@@ -1692,7 +1741,8 @@ public with sharing class TestDataFactory {
      * @param opportunityId           Parent Opportunity (nullable).
      * @param recordTypeDeveloperName CONTRACT_REVIEW_RT_ACQUISITION or CONTRACT_REVIEW_RT_DISPOSITION.
      * @param doInsert                Insert when true.
-     * @return Contract Reviews at stage 'PSA Drafting'.
+     * @return Contract Reviews seeded at their record type's STARTING Negotiation_Status__c,
+     *         Stage__c 'PSA Drafting'.
      */
     public static List<Contract_Review__c> createContractReviews(
         Integer count,
@@ -1702,14 +1752,24 @@ public with sharing class TestDataFactory {
     ) {
         requirePositive(count);
         Id recordTypeId = contractReviewRecordTypeId(recordTypeDeveloperName);
+        // Constant-first String.equals, not `==`: Apex `==` on String is case-INSENSITIVE while the
+        // describe map this name is also fed to is case-SENSITIVE. Same note as loiRecordTypeId's.
+        Boolean isDisposition = CONTRACT_REVIEW_RT_DISPOSITION.equals(recordTypeDeveloperName);
         List<Contract_Review__c> reviews = new List<Contract_Review__c>();
         for (Integer i = 0; i < count; i++) {
             Contract_Review__c cr = new Contract_Review__c(
                 Opportunity__c = opportunityId,
+                // 🔴 SEEDED EXPLICITLY, PER RECORD TYPE — see this method's header. Leaving it to the
+                // field-level default ('Initial Draft') put every ACQUISITION fixture on a value
+                // that record type no longer carries, silently, because Apex DML does not enforce
+                // record-type picklist restriction.
+                Negotiation_Status__c = isDisposition ? 'Initial Draft' : 'Draft',
                 // ⚠ Stage__c is a DERIVED PROJECTION — Contract_Review_Stage_Sync recomputes it from
                 // Negotiation_Status__c on every save, so this seed is replaced on insert by the
-                // flow's mapping of the status default (which produces this same value). It is kept
-                // because removing it changes nothing and would read like a fix.
+                // flow's mapping of the status above. It is kept because removing it changes nothing
+                // and would read like a fix. Both seeds project to 'PSA Drafting' (the flow's
+                // Is_Draft and Is_Initial_Draft rules both connect to Set_Stage_Drafting), so this
+                // value stays correct on both sides of the branch.
                 Stage__c = 'PSA Drafting',
                 Contract_Value__c = 1000000 + (i * 1000),
                 PSA_Date__c = Date.today()
@@ -1770,11 +1830,19 @@ public with sharing class TestDataFactory {
      * the same question. Constant-first keeps a null argument on the throw path rather than
      * NPE-ing.
      *
-     * ⚠ THE SILENT DEGRADATION WOULD BE HARDER TO SPOT ON THIS OBJECT THAN ON ITS TWO SIBLINGS,
-     * which is why the guard matters more here rather than less. A mis-typed NDA or LOI record type
-     * produces a fixture whose stage is off its own value set and whose walk test fails; a mis-typed
-     * PSA record type produces a fixture that walks PERFECTLY (both types share one sequence) and
-     * is wrong only about which PERSONA may drive it.
+     * ⚠ THE GUARD MATTERS MORE HERE THAN ON THE TWO SIBLINGS, BUT THE REASON CHANGED ON 2026-08-14
+     * AND IS NOW STRONGER, NOT WEAKER. RETRACTED, verbatim: "THE SILENT DEGRADATION WOULD BE HARDER
+     * TO SPOT ON THIS OBJECT THAN ON ITS TWO SIBLINGS ... a mis-typed PSA record type produces a
+     * fixture that walks PERFECTLY (both types share one sequence) and is wrong only about which
+     * PERSONA may drive it." Observation 7 split the sequences, so both types no longer share one,
+     * and createContractReviews now seeds per type. A name that slipped past this guard would
+     * therefore degrade to the platform default record type WHILE TAKING THE ACQUISITION SEED — a
+     * row whose status and record type disagree, inserted silently because Apex DML does not enforce
+     * record-type picklist restriction, and refused by RecordStageAdvanceService on its first
+     * advance for a reason no test message would explain. A mis-typed NDA or LOI record type still
+     * produces a fixture whose stage is off its own value set and whose walk test fails.
+     * TestDataFactoryTest.createContractReviews_caseTypoRecordTypeName_throwsAndNamesTheOffendingValue
+     * carries this same argument.
      */
     private static Id contractReviewRecordTypeId(String recordTypeDeveloperName) {
         if (!CONTRACT_REVIEW_RT_ACQUISITION.equals(recordTypeDeveloperName)

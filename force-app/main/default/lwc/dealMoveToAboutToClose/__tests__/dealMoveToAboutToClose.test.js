@@ -99,7 +99,7 @@ describe('c-deal-move-to-about-to-close', () => {
 
         // Record refresh requested on success. REQUIRED here (unlike the Lead status actions):
         // imperative Apex DML happens behind the LDS cache's back, so without this the Path and
-        // highlights keep showing PSA.
+        // highlights keep showing 'Under Contract (PSA)'.
         expect(getRecordNotifyChange).toHaveBeenCalledWith([
             { recordId: RECORD_ID }
         ]);

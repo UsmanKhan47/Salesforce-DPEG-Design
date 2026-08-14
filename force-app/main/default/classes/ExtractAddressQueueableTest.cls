@@ -4311,6 +4311,100 @@ private class ExtractAddressQueueableTest {
             + 'closes');
     }
 
+    // ── Call_For_Offers_Received_Date__c (2026-08-14): the email's own arrival ──
+
+    @isTest
+    static void callForOffers_matched_stampsTheEmailsOwnSendDateAsTheReceivedDate() {
+        // 🔴 THE WIRING TEST FOR THE FIELD THAT REPLACED A PROXY, AND THE FIXTURE IS BUILT SO THAT
+        // A PROXY CANNOT PASS IT. The stated send time is over three months before this test runs,
+        // so `Date.today()`, the Opportunity's CreatedDate (created seconds ago by
+        // registerConvertedWinner) and Broker_First_Seen__c (null) are ALL different from the
+        // expected value. Only reading extraction.sent_datetime produces it.
+        //
+        // ⚠ 12:00:00 GMT ON PURPOSE. `parseSentDatetime` parses GMT and the stamp takes `.date()`
+        // in the running user's zone; midday keeps the calendar date identical for any offset from
+        // -11 to +11, so this assertion is not quietly measuring the CI box's time zone.
+        Id dealId = registerConvertedWinner('4300 received date ave');
+        Date due = Date.today().addDays(8);
+        Datetime sentOn = Datetime.valueOfGmt('2026-05-04 12:00:00');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4300 Received Date Ave',
+            'Offers are due on 4300 Received Date Ave.',
+            'msg-cfo-received@example.invalid', null, null);
+
+        List<Map<String, Object>> properties = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'property_address' => '4300 Received Date Ave',
+                'offer_due_date' => String.valueOf(due)
+            }
+        };
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'call_for_offers',
+                'category_confidence' => 0.95,
+                'is_acquisition_related' => true,
+                'confidence' => 0.96,
+                'broker_name' => 'Blast Broker',
+                'broker_email' => 'listings@buildout.example.invalid',
+                'sent_datetime' => '2026-05-04 12:00:00'
+            }, properties)));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Opportunity stamped = [
+            SELECT Offer_Due_Date__c, Call_For_Offers_Received_Date__c, Broker_First_Seen__c,
+                   CreatedDate
+            FROM Opportunity WHERE Id = :dealId
+        ];
+        Assert.areEqual(due, stamped.Offer_Due_Date__c, 'Precondition: the deadline still lands');
+        Assert.areEqual(sentOn.date(), stamped.Call_For_Offers_Received_Date__c,
+            'THE RECEIVED DATE COMES FROM THE EMAIL. It is the SAME parsed instant the claim path '
+            + 'stamps on Competing_Broker_Submission__c.Submitted_DateTime__c, so what a human '
+            + 'reads as "received" and what this module ARBITRATES with cannot disagree');
+        Assert.areNotEqual(Date.today(), stamped.Call_For_Offers_Received_Date__c,
+            'and it is emphatically NOT "today" — a stamp that quietly used the clock would pass a '
+            + 'weaker version of this test every day of the year');
+        Assert.areNotEqual(stamped.CreatedDate.date(), stamped.Call_For_Offers_Received_Date__c,
+            'nor the deal\'s own creation date, which is what the retired proxy actually resolved '
+            + 'to in production (nothing in this repo writes Broker_First_Seen__c)');
+    }
+
+    @isTest
+    static void callForOffers_matchedWithNoSentDatetime_fallsBackToTheDayItReachedThePipeline() {
+        // The other leg, and it is a DECISION rather than a default. The prompt is deliberately
+        // explicit-or-EMPTY on sent_datetime, so a blank is expected traffic — and DPEG's own
+        // receipt is still a real timestamp OF THIS EMAIL, which is the whole difference from the
+        // proxy this field replaced (a real timestamp of a DIFFERENT object). The alternative,
+        // leaving it null, would blank the column for the majority of matched deals in exchange
+        // for nothing: there is no third, better source.
+        Id dealId = registerConvertedWinner('4400 no send time ave');
+        Date due = Date.today().addDays(6);
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4400 No Send Time Ave',
+            'Offers are due on 4400 No Send Time Ave.',
+            'msg-cfo-nosendtime@example.invalid', null, null);
+        // setCallForOffersPropertiesMock sends sent_datetime = '' — the blank case, which is also
+        // why every OTHER call-for-offers test in this class stamps today rather than a fixed date.
+        setCallForOffersPropertiesMock('listings@buildout.example.invalid',
+            new List<String>{ '4400 No Send Time Ave' }, due, 'Dana Lister');
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(Date.today(),
+            [SELECT Call_For_Offers_Received_Date__c FROM Opportunity WHERE Id = :dealId]
+                .Call_For_Offers_Received_Date__c,
+            'With no stated send time the pipeline\'s own receipt date is used — never null, and '
+            + 'never the deal\'s age');
+    }
+
     // ── 🔴 W1: no listing broker in the body -> the deal keeps the one it knows ──
 
     @isTest

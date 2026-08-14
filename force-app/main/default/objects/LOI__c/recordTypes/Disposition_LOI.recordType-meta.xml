@@ -29,6 +29,53 @@
         Contrast NDA__c, whose Sent and Signed ARE shared. If a future change makes any LOI
         stage shared, every such rule must be revisited.
 
+        =====================================================================
+        🔴 RETRACTED 2026-08-14 (Phase 3, observation 5). THE PARAGRAPH DIRECTLY ABOVE IS FALSE.
+        THIS FILE'S VALUE SET IS UNCHANGED - THE OVERLAP ARRIVED FROM THE OTHER SIDE.
+        =====================================================================
+
+        RETRACTED, verbatim: "No stage value appears on both record types, so every flexipage
+        visibility rule keyed on a stage value is SELF-LIMITING to its own record type with no
+        record-type criterion added."
+
+        🔴 READ THE MECHANISM, BECAUSE IT IS THE PART THAT MAKES THIS INVISIBLE IN A DIFF OF THIS
+        FILE. The acquisition sequence became Draft -> Under Review -> Submitted -> Negotiation ->
+        Signed, and it did so by REUSING 'Under Review' - a value that has been step 2 of THIS
+        record type's sequence since 3B. Not one line of this file's <picklistValues> changed, and
+        `git diff` on it shows nothing, yet the disjointness property it asserts is gone. Anyone
+        auditing "which files changed" will miss this; the property is a relationship between two
+        files and can only be checked by reading both.
+
+        WHAT STAYS TRUE, AND IT IS MORE THAN HALF: 'Received', 'Countered by DPEG', 'Counter
+        Received from Buyer' and 'Executed' are still disposition-ONLY, so the two Mark_* buttons
+        on LOI_Record_Page and every terminal-state test remain self-limiting exactly as before.
+        'Under Review' is the single point of overlap, and it is NON-TERMINAL - which is why
+        Is_Advance_Allowed__c's terminal clauses needed no change.
+
+        🔴 THE ONE LIVE CONSEQUENCE FOR THIS RECORD TYPE, AND IT WOULD HAVE BEEN A SILENT OUTAGE.
+        Is_Advance_Allowed__c contained `OR(TEXT(Stage__c) <> "Prepare/Review",
+        TEXT(LOI_Status__c) = "Approved")` - an ACQUISITION approval gate that was inert here only
+        because 'Prepare/Review' is not on this value set. Repointing that clause to
+        'Under Review' WITHOUT a record-type test would have made it live on THIS record type:
+        a disposition LOI at 'Under Review' - step 2 of 5, the ordinary working state - would have
+        had its Advance Stage button hidden unless LOI_Status__c read 'Approved', a value nothing
+        on the sell-side path ever writes. The button would simply have vanished, with no error
+        and nothing logged. That clause now carries
+        `RecordType.DeveloperName <> "Acquisition_LOI"` as its first disjunct; see that field's
+        own header, where the instruction NOT to add a record-type test is retracted.
+
+        ⚠ THIS FILE'S Stage__c BLOCK MUST CONTINUE TO ENUMERATE EXACTLY ITS OWN FIVE VALUES.
+        'Submitted', 'Negotiation' and 'Signed' were added to the master value set and are
+        DELIBERATELY ABSENT here. Do not add them "for symmetry": 'Signed' in particular would put
+        the ACQUISITION terminal on the sell-side path, which already terminates at 'Executed', and
+        Is_Advance_Allowed__c would then hide the button two steps early.
+        ⚠ The reason an omission is dangerous rather than merely untidy - that a record type file
+        omitting a picklist ENTIRELY drops all of that picklist's values from the type - is stated
+        further down this comment and elsewhere in this repo as established fact. It is
+        REPO-ASSERTED AND UNMEASURED; no describe in this org has confirmed it. It is not the
+        reason for this paragraph. This paragraph is about which VALUES are listed inside a block
+        that is already present, which is ordinary, observable record-type behaviour.
+
         STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THE PATH FILE. Runtime display
         order comes from Stage__c's picklist value order (sorted=false), filtered by this
         record type - a record type can only include or exclude, never re-order. The five
@@ -51,11 +98,56 @@
 
         ACQUISITION-DIRECTIONAL FIELDS ARE LAYOUT-EXCLUDED, NOT DELETED. Submitted_Date__c,
         Approved_By__c, Approved_Date__c, Approval_Comments__c and LOI_Status__c stay on the
-        object and keep their acquisition data; a separate disposition layout omits them. The
-        Submit_for_Approval quick action needs no record-type criterion - it is gated on
-        {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record type does not carry - and
+        object and keep their acquisition data; a separate disposition layout omits them.
+
+        🔴 THE NEXT SENTENCE IS FALSE AS OF 2026-08-14. IT IS KEPT ONLY AS THE RETRACTED TEXT.
+        DO NOT ACT ON IT; THE CORRECTION IS ABOUT TEN LINES BELOW.
+        [FALSE] "The Submit_for_Approval quick action needs no record-type criterion - it is
+        gated on {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record type does not
+        carry." [END FALSE]
+        ⇒ IT IS NOW GATED ON 'Under Review', WHICH THIS RECORD TYPE DOES CARRY (step 2 of 5).
+
+        THE OTHER HALF OF THAT ORIGINAL SENTENCE STILL STANDS, unchanged and unaffected:
         Opportunity.LOI_Approval is an approval on the OPPORTUNITY object (entryCriteria
         StageName equals LOI) with no relationship to an LOI__c record, so it cannot fire here.
+
+        =====================================================================
+        🔴 RETRACTED 2026-08-14 (Phase 3, observation 5) - SECOND RETRACTION IN THIS FILE, AND IT
+        IS A DIFFERENT PARAGRAPH FROM THE ONE AT THE TOP. THE Submit_for_Approval SENTENCE
+        DIRECTLY ABOVE IS NOW FALSE.
+        =====================================================================
+
+        RETRACTED, verbatim: "The Submit_for_Approval quick action needs no record-type criterion
+        - it is gated on {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record type does
+        not carry".
+
+        ⚠ READ THIS BEFORE TRUSTING ANY OTHER PARAGRAPH HERE. This file already carried a Phase 3
+        retraction at the top, which is exactly why this one is needed: a reader who saw that the
+        file HAD been reviewed for Phase 3 would reasonably assume the rest of it was checked too.
+        It was not, until now. The two retractions are independent.
+
+        WHAT IS ACTUALLY DEPLOYED. LOI_Record_Page's Submit_for_Approval entry now reads
+        `1 AND 2 AND 3 AND 4` over: the Acquisition_Deal_Actions custom permission;
+        LOI_Status__c NE 'Pending Approval'; LOI_Status__c NE 'Approved'; and
+        {!Record.Stage__c} EQUAL **'Under Review'** - which IS step 2 of this record type's
+        sequence. It is no longer self-limiting, and NO record-type criterion was added
+        (runbook 1.6 argues why; gate G7 asks for the decision).
+
+        🔴 THE RESIDUAL, SCOPED HONESTLY. The population is NOT "any disposition user". A pure
+        sell-side driver holds Disposition_Deal_Actions and NOT Acquisition_Deal_Actions, so
+        criterion 1 fails and they see nothing. The exposed population is a user holding the
+        ACQUISITION custom permission who opens a DISPOSITION LOI sitting at 'Under Review' with
+        LOI_Status__c neither 'Pending Approval' nor 'Approved' - which is the sell-side default
+        state, so criteria 2 and 3 do not save it. They see Submit for Approval; clicking it
+        targets Opportunity.LOI_Approval, and a disposition LOI has no Opportunity__c, so it
+        FAILS LOUDLY. A UX defect, not a hole - which is why it is recorded for a decision rather
+        than patched silently.
+
+        ⚠ WHAT DID NOT CHANGE, so this retraction is not read wider than it is: the SECOND half of
+        the retracted sentence still stands in full - Opportunity.LOI_Approval is an approval on
+        the OPPORTUNITY object and has no relationship to an LOI__c record, so it still cannot
+        fire here. And the layout exclusion of the five acquisition-directional fields is
+        untouched.
 
         LOI_Status__c IS STILL ENUMERATED IN FULL, AND THAT IS DELIBERATE RATHER THAN AN
         OVERSIGHT. It is acquisition vocabulary and is excluded from the disposition LAYOUT, but

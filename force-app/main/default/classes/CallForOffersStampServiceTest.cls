@@ -52,6 +52,20 @@
  * made to fire in a test, because every value reaching `buildChange` through the real pipeline
  * has already been validated against `Lead.Sale_Process__c`, which is byte-identical to
  * `Opportunity.Sale_Process__c` today.
+ *
+ * ⚠ 2026-08-14 — `Call_For_Offers_Received_Date__c` JOINED THE STAMP SET. Its own section mirrors
+ * the same three shared guards again (overwrite / null-preserves / no-change-skip) and adds ONE
+ * test no other field here needs: `stamp_receivedDate_isPerEmailSoTheMergeHasNothingToChooseBetween`
+ * pins that this value is PER EMAIL while its neighbours are per property. It needs no seam and
+ * no describe guard — it is a Date, so there is no value set for it to be off.
+ *
+ * 🔴 ONE PRE-EXISTING CLAIM IN THIS CLASS IS NOW NARROWER BY EXACTLY ONE DAY, AND IT IS DELIBERATE.
+ * `stamp_replayedWithIdenticalValues_isAZeroDmlNoOp` is UNMODIFIED and still passes, because a
+ * replayed request carries a replayed date. What changed is the production shape behind it: the
+ * caller falls back to the pipeline's own receipt date when an email states no send time, so the
+ * SAME campaign email arriving again on a LATER DAY now costs one DML rather than zero. That is a
+ * second arrival being recorded, not churn — see `CallForOffersStampService`'s header, which
+ * amends the claim in place rather than leaving it standing.
  */
 @isTest
 private class CallForOffersStampServiceTest {
@@ -72,7 +86,7 @@ private class CallForOffersStampServiceTest {
     private static Opportunity reload(Id recordId) {
         return [
             SELECT Id, Offer_Due_Date__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
-                   Sale_Process__c
+                   Sale_Process__c, Call_For_Offers_Received_Date__c
             FROM Opportunity WHERE Id = :recordId
         ];
     }
@@ -80,21 +94,22 @@ private class CallForOffersStampServiceTest {
     // ── The happy path ───────────────────────────────────────────────────────
 
     @isTest
-    static void stamp_blankDeal_writesAllFourFields() {
-        // ⚠ RENAMED 2026-08-12 (code review S1): the method used to be named
-        // "...writesAllThreeFields" from before Sale_Process__c joined the stamp set. The
-        // service now writes FOUR fields on a blank deal — Offer_Due_Date__c,
-        // Listing_Broker_Name__c, Listing_Broker_Email__c AND Sale_Process__c — and the name
-        // and the request/assertions below are updated to match, rather than leaving the
-        // "happy path" test as the one place in this class that still exercises only three of
-        // the four last-wins fields.
+    static void stamp_blankDeal_writesAllFiveFields() {
+        // ⚠ RENAMED TWICE, AND THE RULE BEHIND BOTH RENAMES IS THE POINT: the happy-path test
+        // must exercise EVERY field the service writes, or it becomes the one place in this class
+        // that quietly lags the stamp set. It was "...writesAllThreeFields" until Sale_Process__c
+        // joined on 2026-08-12 (code review S1), and "...writesAllFourFields" until
+        // Call_For_Offers_Received_Date__c joined on 2026-08-14. The service now writes FIVE
+        // fields on a blank deal.
         Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        Date received = Date.today().addDays(-1);
 
         CallForOffersStampService.StampRequest req =
             request(deal.Id, DUE, 'Pat Lister', 'pat.lister@example.invalid');
         req.saleProcess = 'Call for Offers'; // an ACTIVE Opportunity.Sale_Process__c value —
         // see stamp_saleProcessOnListValue_isWrittenAgainstTheRealLiveDescribe below, which
         // proves this exact value against the real live describe, not a simulated set.
+        req.callForOffersReceivedDate = received;
 
         Test.startTest();
         CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
@@ -114,6 +129,9 @@ private class CallForOffersStampServiceTest {
             'THE FOURTH FIELD: Sale_Process__c joined the stamp set 2026-08-12 and belongs in the '
             + 'happy-path test alongside the other three, not only in the dedicated Sale_Process__c '
             + 'section further down this class');
+        Assert.areEqual(received, stamped.Call_For_Offers_Received_Date__c,
+            'THE FIFTH FIELD: Call_For_Offers_Received_Date__c joined 2026-08-14, on the same '
+            + 'terms — it belongs here as well as in its own section below');
     }
 
     // ── The overwrite rule ───────────────────────────────────────────────────
@@ -517,6 +535,147 @@ private class CallForOffersStampServiceTest {
         Assert.areEqual(0, result.refusals.size(), '');
         Assert.areEqual('Auction', reload(deal.Id).Sale_Process__c,
             'Against the REAL live picklist (no seam active), a genuine value is written normally');
+    }
+
+    // ── Call_For_Offers_Received_Date__c (2026-08-14) ────────────────────────
+    //
+    // The field replaces a DERIVED PROXY on the read side (`CallForOffersService` header §4), so
+    // the tests below pin the three shared guards for it exactly as the Sale_Process__c section
+    // above does — plus the one thing this field alone needs, which is the direction of its
+    // overwrite. It carries no describe guard and needs none: it is a Date, so there is no value
+    // set for it to be off.
+
+    @isTest
+    static void stamp_receivedDate_isWrittenOntoABlankDeal() {
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        Date received = Date.today().addDays(-1);
+
+        CallForOffersStampService.StampRequest req =
+            request(deal.Id, DUE, 'Pat Lister', 'pat.lister@example.invalid');
+        req.callForOffersReceivedDate = received;
+
+        Test.startTest();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(), 'The deal must be stamped');
+        Assert.areEqual(received, reload(deal.Id).Call_For_Offers_Received_Date__c,
+            'THE REAL VALUE, STORED. Before this field existed the surface derived a "received '
+            + 'date" from Broker_First_Seen__c/CreatedDate — a fact about the DEAL, not the email');
+    }
+
+    @isTest
+    static void stamp_receivedDate_isOVERWRITTENByTheNewerEmail() {
+        // 🔴 THE DIRECTION, PINNED, AND IT IS NOT INHERITED FROM THE DEADLINE'S ARGUMENT.
+        // The deadline is last-wins because it CHANGES ("extended to Friday"). A received date
+        // does not change — a NEW EMAIL simply has a new one. What forces last-wins here is that
+        // the two are read AS A PAIR: under fill-if-blank this deal would report the September
+        // deadline it is about to receive as having arrived back in June, and the column that
+        // exists to answer "how fresh is this?" would answer it wrongly. If this test is ever
+        // rewritten to assert fill-if-blank, that is the property being given up.
+        Opportunity deal = TestDataFactory.createOpportunity(null, false);
+        deal.Call_For_Offers_Received_Date__c = Date.today().addDays(-60);
+        deal.Offer_Due_Date__c = Date.today().addDays(3);
+        insert deal;
+
+        Date newer = Date.today();
+        CallForOffersStampService.StampRequest req = request(deal.Id, DUE, null, null);
+        req.callForOffersReceivedDate = newer;
+
+        Test.startTest();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(), 'The row is written, not skipped');
+        Opportunity stamped = reload(deal.Id);
+        Assert.areEqual(newer, stamped.Call_For_Offers_Received_Date__c,
+            'LAST EMAIL WINS — the received date must move with the deadline it arrived beside');
+        Assert.areEqual(DUE, stamped.Offer_Due_Date__c,
+            'and the pair moves TOGETHER, which is the whole reason this field is last-wins');
+    }
+
+    @isTest
+    static void stamp_receivedDateNullIncoming_neverErasesWhatTheDealAlreadyKnows() {
+        // The second shared guard. A caller that could derive no arrival date for this email must
+        // not blank one an earlier email established.
+        Opportunity deal = TestDataFactory.createOpportunity(null, false);
+        Date known = Date.today().addDays(-9);
+        deal.Call_For_Offers_Received_Date__c = known;
+        insert deal;
+
+        Test.startTest();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{
+                request(deal.Id, DUE, null, null)   // callForOffersReceivedDate left null
+            });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(), 'The date alone is a change, so the row is written');
+        Assert.areEqual(known, reload(deal.Id).Call_For_Offers_Received_Date__c,
+            'A null incoming value means "this email carried no arrival date", NEVER "clear it"');
+    }
+
+    @isTest
+    static void stamp_receivedDateUnchanged_isDroppedByTheNoChangeSkip() {
+        // The third shared guard, and the one that keeps replay free. Asserted on DML COUNT as
+        // well as on stored state, because "wrote the same date again" and "skipped" leave
+        // identical rows behind — the whole reason the other idempotency tests in this class
+        // measure the counter.
+        Opportunity deal = TestDataFactory.createOpportunity(null, false);
+        Date received = Date.today().addDays(-3);
+        deal.Call_For_Offers_Received_Date__c = received;
+        deal.Offer_Due_Date__c = DUE;
+        insert deal;
+
+        CallForOffersStampService.StampRequest req = request(deal.Id, DUE, null, null);
+        req.callForOffersReceivedDate = received;
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ req });
+        Integer dmlAfter = Limits.getDmlStatements();
+        Test.stopTest();
+
+        Assert.areEqual(0, result.stamped.size(), 'Nothing about this email is new to this deal');
+        Assert.areEqual(1, result.unchanged.size(), 'so it is reported as unchanged, not refused');
+        Assert.areEqual(dmlBefore, dmlAfter,
+            'and it costs ZERO DML. An email that states its own send time replays to the byte, '
+            + 'so this is the shape a RoutingRetrySweepBatch replay takes');
+    }
+
+    @isTest
+    static void stamp_receivedDate_isPerEmailSoTheMergeHasNothingToChooseBetween() {
+        // ⚠ THE ONE ASYMMETRY IN THIS CLASS, PINNED. offerDueDate and saleProcess are PER
+        // PROPERTY — a portfolio blast can quote a different deadline per asset — but an email
+        // has exactly ONE arrival time, so the caller sets the identical value on every request.
+        // Two properties fuzzy-matching the SAME deal is the case that would otherwise force a
+        // choice; here there is nothing to choose, and the merge must still collapse them to ONE
+        // row (a duplicate Id in one Database.update throws DUPLICATE_VALUE for the whole
+        // statement, which allOrNone = false does not rescue).
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        Date received = Date.today().addDays(-4);
+
+        CallForOffersStampService.StampRequest first = request(deal.Id, DUE, null, null);
+        first.callForOffersReceivedDate = received;
+        CallForOffersStampService.StampRequest second =
+            request(deal.Id, null, 'Pat Lister', null);
+        second.callForOffersReceivedDate = received;
+
+        Test.startTest();
+        CallForOffersStampService.StampResult result = CallForOffersStampService.stamp(
+            new List<CallForOffersStampService.StampRequest>{ first, second });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.stamped.size(),
+            'ONE row, not two — a duplicate Id would have failed the whole statement');
+        Assert.areEqual(0, result.refusals.size(), 'and nothing was refused');
+        Opportunity stamped = reload(deal.Id);
+        Assert.areEqual(received, stamped.Call_For_Offers_Received_Date__c, '');
+        Assert.areEqual(DUE, stamped.Offer_Due_Date__c, 'the per-property deadline still merged in');
+        Assert.areEqual('Pat Lister', stamped.Listing_Broker_Name__c, 'and so did the broker name');
     }
 
     // ── Partial success ──────────────────────────────────────────────────────

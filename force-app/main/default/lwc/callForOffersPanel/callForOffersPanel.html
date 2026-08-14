@@ -1,0 +1,65 @@
+<template>
+    <lightning-card icon-name="standard:event" title="Call for Offers">
+        <span slot="title">Call for Offers</span>
+
+        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+            <template if:true={isLoading}>
+                <lightning-spinner
+                    alternative-text="Loading the offer deadline"
+                    size="small"
+                    variant="brand">
+                </lightning-spinner>
+            </template>
+
+            <template if:true={hasError}>
+                <div class="cfo-error slds-text-color_error" role="alert">{errorMessage}</div>
+            </template>
+
+            <template if:true={hasNoDeadline}>
+                <p class="cfo-empty slds-text-color_weak">{detail}</p>
+            </template>
+
+            <template if:true={hasDeadline}>
+                <!--
+                  The badge is a colour-coded URGENCY indicator, so its meaning must not depend on
+                  colour alone: the label itself ("Due in 3 days" / "Overdue by 2 days") carries the
+                  state in words, which is what makes it readable to a screen reader and to anyone
+                  who cannot distinguish the amber and red variants.
+                -->
+                <div class={badgeClass}>{badgeLabel}</div>
+
+                <p class="cfo-detail slds-text-color_weak slds-m-top_x-small">{detail}</p>
+
+                <dl class="slds-list_horizontal slds-wrap slds-m-top_small">
+                    <template for:each={rows} for:item="row">
+                        <dt
+                            key={row.key}
+                            class="cfo-term slds-item_label slds-text-color_weak slds-truncate"
+                            title={row.term}>
+                            {row.term}
+                        </dt>
+                        <dd
+                            key={row.key}
+                            class="cfo-value slds-item_detail slds-truncate"
+                            title={row.value}>
+                            {row.value}
+                        </dd>
+                    </template>
+                </dl>
+
+                <div class="slds-m-top_small">
+                    <template if:true={hasBrokerEmail}>
+                        <a href={brokerMailto} class="cfo-link slds-m-right_medium">
+                            Email listing broker
+                        </a>
+                    </template>
+                    <template if:true={hasDealRoomLink}>
+                        <a href={dealRoomLink} target="_blank" rel="noopener noreferrer" class="cfo-link">
+                            Open deal room
+                        </a>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

@@ -1,5 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT. A comment placed ABOVE <Flow> breaks `sf`
+        deploy at source conversion with the misleading error "unable to find matching parent
+        xml file". Precedent: flows/Counter_Offer_Notify.
+
+        =====================================================================
+        🔴 AMENDED 2026-08-14 (Phase 3, observation 7). THIS FILE WAS NOT IN THE SPEC, NOT IN
+        THE REQUIREMENTS DOC AND NOT IN THE BUILD BRIEF. IT WAS FOUND BY SWEEPING flows/ FOR
+        Negotiation_Status__c, AND LEFT ALONE IT WOULD HAVE FAILED SILENTLY AND PERMANENTLY.
+        =====================================================================
+
+        WHAT IT DOES. After-save on Contract_Review__c: notifies the Acquisitions_Team group that
+        a PSA is ready for signature. doesRequireRecordChangedToMeetCriteria = true, so it fires
+        on the TRANSITION INTO the value, not on every subsequent save.
+
+        THE DEFECT. Its only entry criterion was Negotiation_Status__c = 'Ready for Execution',
+        with NO record-type criterion, so it has always served BOTH PSA record types. Phase 3
+        gives Acquisition_PSA its own sequence - Draft -> Negotiation -> Signed -> Executed - and
+        removes 'Ready for Execution' from that record type. Every acquisition PSA would then
+        pass from Negotiation straight to Signed to Executed WITHOUT EVER MATCHING THIS FLOW, so
+        the "PSA ready for execution" notification would stop reaching the Acquisitions team for
+        every acquisition deal, for ever, with nothing erroring and no test failing. A
+        notification that stops arriving is indistinguishable from a quiet week.
+
+        THE FIX AND WHY IT IS AN OR RATHER THAN A SWAP. 'Signed' is the acquisition analogue of
+        'Ready for Execution' - the document is final and signatures are being collected, the
+        step immediately before 'Executed' in both sequences. But Disposition_PSA STILL RUNS ON
+        'Ready for Execution' and is untouched by Phase 3 (decision O3), so swapping the literal
+        would simply move the outage onto the sell-side path. filterLogic is therefore 'or' over
+        both values. This is additive and correct on BOTH sides of the Phase 3 row migration, so
+        it ships at P3-D1 rather than in the migration window.
+
+        ⚠ THE TWO VALUES ARE MUTUALLY EXCLUSIVE IN PRACTICE - no record type exposes both - so
+        the OR cannot double-notify. Disposition_PSA's behaviour is byte-for-byte unchanged: it
+        can never reach 'Signed'.
+
+        ⚠ THE NOTIFICATION TITLE IS DELIBERATELY NOT REWORDED. "PSA ready for execution" reads
+        correctly for 'Signed' as well as for 'Ready for Execution', and it is shared by both
+        record types; rewording it to name one sequence's vocabulary would make it wrong for the
+        other. Same reasoning as the Stage__c labels (PSA Drafting / Review / Contract Execution)
+        being left buy-side-shaped in Disposition_PSA's own header.
+
+        ⚠ 'Executed' IS DELIBERATELY NOT ADDED HERE. It is the handoff, owned by
+        ContractExecutionService, and it already has its own downstream notifications.
+    -->
     <actionCalls>
         <name>Notify_Ready</name>
         <label>Notify Ready</label>
@@ -46,12 +91,19 @@
             <targetReference>Notify_Ready</targetReference>
         </connector>
         <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
-        <filterLogic>and</filterLogic>
+        <filterLogic>or</filterLogic>
         <filters>
             <field>Negotiation_Status__c</field>
             <operator>EqualTo</operator>
             <value>
                 <stringValue>Ready for Execution</stringValue>
+            </value>
+        </filters>
+        <filters>
+            <field>Negotiation_Status__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <stringValue>Signed</stringValue>
             </value>
         </filters>
         <object>Contract_Review__c</object>

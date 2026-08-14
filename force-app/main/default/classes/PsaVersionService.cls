@@ -228,12 +228,31 @@ public with sharing class PsaVersionService {
      *     Disposition__c by construction, so the lookup identifies the side with no record type
      *     at all.
      *
-     * 🔴 THE FALLBACK MATTERS MORE ON THIS OBJECT THAN IT DID ON LOI__c, and the reason is worth
-     * stating rather than inheriting. A mis-typed or Master-type disposition LOI is at least
-     * visible — the two LOI stage value sets are disjoint, so the row's own stage looks wrong. Both
-     * PSA record types expose the IDENTICAL four Negotiation_Status__c values, so a Master-type
-     * disposition PSA walks its path PERFECTLY and is wrong only about vocabulary. Without clause 2
-     * that would be silent.
+     * 🔴 CLAUSE 2 IS LOAD-BEARING, BUT NOT FOR THE REASON THIS BLOCK USED TO GIVE. ⚠ RETRACTED
+     * 2026-08-14 (observation 7 / review C9), verbatim: "THE FALLBACK MATTERS MORE ON THIS OBJECT
+     * THAN IT DID ON LOI__c ... A mis-typed or Master-type disposition LOI is at least visible — the
+     * two LOI stage value sets are disjoint, so the row's own stage looks wrong. Both PSA record
+     * types expose the IDENTICAL four Negotiation_Status__c values, so a Master-type disposition PSA
+     * walks its path PERFECTLY and is wrong only about vocabulary. Without clause 2 that would be
+     * silent." The CONCLUSION survives — clause 2 stays — but the symptom is now the OPPOSITE of
+     * what that read, so it is corrected rather than softened.
+     *
+     * Observation 7 split the two PSA sequences (acquisition `Draft -> Negotiation -> Signed ->
+     * Executed`; disposition `Initial Draft -> Revised -> Ready for Execution -> Executed`, sharing
+     * only the terminal 'Executed'). A Master-type disposition PSA therefore does NOT walk its path
+     * perfectly any more: it falls to RecordStageAdvanceService's acquisition default, finds no
+     * entry for 'Initial Draft', and is REFUSED LOUDLY on its first Advance Stage click. The
+     * comparison with LOI__c collapses too — observation 5 gave the two LOI sets a shared value
+     * ('Under Review'), while their STARTING values still differ, so a Master-type disposition LOI
+     * parked on 'Received' is refused by the acquisition map in exactly the same way. Neither object
+     * is the quiet one now.
+     *
+     * ⚠ WHAT IS STILL SILENT IS THIS CLASS'S OWN PATH, WHICH IS WHY CLAUSE 2 DOES NOT MOVE. That
+     * refusal happens in a DIFFERENT class on a DIFFERENT action; logging a version refuses nothing.
+     * Without clause 2 a Master-type disposition PSA would take buy-side vocabulary into
+     * Ball_In_Court__c with no error anywhere — the original defect, unchanged. The split only
+     * shortens the window in which it goes unnoticed, because the row now announces itself the first
+     * time anyone clicks Advance Stage on it.
      *
      * The default is ACQUISITION (neither signal present), matching CounterOfferService.isSaleSide
      * and RecordStageAdvanceService's defaultTypeKey, and correct for the same reason: every

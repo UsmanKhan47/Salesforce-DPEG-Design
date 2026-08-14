@@ -919,6 +919,16 @@
         <field>Opportunity.Bundle_LOI__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ADDED 2026-08-14, Acquisition Observations Phase 4 (declarative-only field add).
+         Call_For_Offers_Received_Date__c is stamped by CallForOffersStampService; grant follows
+         its neighbours Offer_Due_Date__c / Sale_Process__c on this same set - editable=true so an
+         analyst can hand-correct a mis-stamped date, matching how those two are already granted
+         here. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Call_For_Offers_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Cash_On_Cash_Return__c</field>
@@ -1097,6 +1107,30 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.My_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Phase 4 (call-for-offers alerts, 2026-08-14). The two alert MARKER fields.
+         They are alert bookkeeping, not deal data: CallForOffersAlertBatch reads them WITH
+         SYSTEM_MODE and writes them with AccessLevel.SYSTEM_MODE, so the job works with or without
+         this grant. They are granted anyway for two reasons, and EDITABLE for the second:
+           (1) diagnosis — "why did I not get an alert for this deal?" is answerable only by looking
+               at Offer_Alert_Last_Interval__c and Offer_Alert_Due_Date__c;
+           (2) RECOVERY — blanking Offer_Alert_Last_Interval__c is the supported way to re-arm the
+               alerts for a deal, exactly as SETTING Property__c.SharePoint_Folder_Status__c back to
+               'Pending' is that feature's recovery action (see the comment on those fields).
+         🔴 They are deliberately NOT selected by either USER_MODE call-for-offers read
+         (OpportunitySelector, see the block comment there): WITH USER_MODE throws on the WHOLE ROW
+         for ONE inaccessible field, so putting a brand-new field in a user-facing read makes the
+         table and the panel depend on FLS that nobody needs. This grant is a convenience; nothing
+         breaks without it. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Last_Interval__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <StandardValueSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN a <description>, and it is INSIDE the root
+        element on purpose - a comment ABOVE <StandardValueSet> breaks `sf` deploy at
+        conversion with a misleading "unable to find matching parent xml file".
+
+        PHASE 2 (2026-08-14) - 'PSA' IS BEING REPLACED BY 'Under Contract (PSA)'.
+        This file is at the ADDITIVE step (P2-D1): BOTH values are present and active.
+        'Under Contract (PSA)' is placed immediately after 'PSA' so that removing 'PSA'
+        at P2-D3 leaves the pipeline order intact (LOI -> Under Contract (PSA) ->
+        About to Close). <sorted> is false, so position here is the displayed order.
+
+        <forecastCategory>Forecast</forecastCategory> and <probability>85</probability>
+        are COPIED FROM THE OUTGOING 'PSA' ENTRY VERBATIM, not chosen. They are the whole
+        reason this is a value migration rather than a new stage: forecastCategory drives
+        every forecast roll-up and probability drives Expected Revenue, so a deal that
+        moves from 'PSA' to 'Under Contract (PSA)' must not move in any forecast. If the
+        outgoing entry is ever edited before P2-D3, re-copy - do not re-derive.
+
+        NO %2F ENCODING APPLIES TO THIS VALUE. 'Under Contract (PSA)' contains spaces and
+        parentheses but no slash. The 'Dead/Pass' entry below is LITERAL here and is
+        encoded 'Dead%2FPass' only inside BusinessProcess/RecordType metadata; that
+        precedent invites exactly the wrong instinct. Do not encode the parentheses.
+
+        P2-D3 (staged, NOT applied here) sets <isActive>false</isActive> on the 'PSA'
+        entry. See agent-output/p2-d3-retire-psa/.
+    -->
     <sorted>false</sorted>
     <standardValue>
         <fullName>New</fullName>
@@ -59,6 +85,15 @@
         <fullName>PSA</fullName>
         <default>false</default>
         <label>PSA</label>
+        <closed>false</closed>
+        <forecastCategory>Forecast</forecastCategory>
+        <probability>85</probability>
+        <won>false</won>
+    </standardValue>
+    <standardValue>
+        <fullName>Under Contract (PSA)</fullName>
+        <default>false</default>
+        <label>Under Contract (PSA)</label>
         <closed>false</closed>
         <forecastCategory>Forecast</forecastCategory>
         <probability>85</probability>

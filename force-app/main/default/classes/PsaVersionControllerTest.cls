@@ -8,6 +8,16 @@
  * 2026-08-05 and the status is now moved ONLY by the deal driver via Advance Stage, so this
  * asserts the version log stays out of it end-to-end, not just in the service.
  *
+ * ⚠ THE EXPECTED "UNCHANGED" VALUE IS 'Draft' SINCE 2026-08-14, NOT 'Initial Draft'. Both fixtures
+ * here are ACQUISITION Contract Reviews, and Acquisition Observations phase 3 (observation 7) split
+ * the two PSA record types' sequences — acquisition now starts at 'Draft', disposition still starts
+ * at 'Initial Draft' (decision O3, a hard stop) — so TestDataFactory.createContractReviews seeds
+ * each type explicitly instead of falling to the field-level default. The assertions still mean
+ * "still whatever the fixture started at"; only the seed moved. ⚠ Stage__c is UNAFFECTED and is
+ * still 'PSA Drafting': Contract_Review_Stage_Sync gained an Is_Draft rule connected to the same
+ * Set_Stage_Drafting node the Is_Initial_Draft rule already used, so both seeds project identically.
+ * A 'Review' reading there means that flow change is missing from the org, not that this is stale.
+ *
  * P6 controller thinning: saveVersion's DML + rules now live in PsaVersionService, and every
  * @AuraEnabled method wraps its work in a try/catch that maps failures to an
  * AuraHandledException at the LWC boundary (ARCHITECTURE.md §5). The negative tests below
@@ -46,8 +56,13 @@ private class PsaVersionControllerTest {
         return u;
     }
 
+    // ⚠ RENAMED 2026-08-14 from sellerFirstVersionIsInitialDraft. That name was already a fossil of
+    // behaviour REMOVED on 2026-08-05 (the service used to derive 'Initial Draft' on a first seller
+    // version — see the class header); after phase 3 it also named a value this ACQUISITION fixture
+    // no longer carries, so a reader would have gone looking for a rule that does not exist. The
+    // assertion's meaning is unchanged: the status must not move at all.
     @isTest
-    static void sellerFirstVersionIsInitialDraft() {
+    static void sellerFirstVersionLeavesStatusAlone() {
         Contract_Review__c cr = newContract();
 
         Test.startTest();
@@ -62,8 +77,8 @@ private class PsaVersionControllerTest {
         cr = [SELECT Ball_In_Court__c, Negotiation_Status__c, Latest_Version__c, Stage__c
               FROM Contract_Review__c WHERE Id = :cr.Id];
         System.assertEquals('Us', cr.Ball_In_Court__c, 'Seller draft puts the ball in OUR court');
-        System.assertEquals('Initial Draft', cr.Negotiation_Status__c,
-            'Logging a version must NOT touch the status — untouched picklist default');
+        System.assertEquals('Draft', cr.Negotiation_Status__c,
+            'Logging a version must NOT touch the status — untouched acquisition factory seed');
         System.assertEquals(1, cr.Latest_Version__c, 'Version counter maintained');
         System.assertEquals('PSA Drafting', cr.Stage__c, 'Stage synced from negotiation status');
     }
@@ -80,7 +95,7 @@ private class PsaVersionControllerTest {
         cr = [SELECT Ball_In_Court__c, Negotiation_Status__c, Latest_Version__c, Stage__c
               FROM Contract_Review__c WHERE Id = :cr.Id];
         System.assertEquals('Seller', cr.Ball_In_Court__c, 'Our redline puts the ball in the seller court');
-        System.assertEquals('Initial Draft', cr.Negotiation_Status__c,
+        System.assertEquals('Draft', cr.Negotiation_Status__c,
             'Our redline must NOT move the status — this branch used to write Buyer Counter');
         System.assertEquals(2, cr.Latest_Version__c, 'Two versions tracked');
         System.assertEquals('PSA Drafting', cr.Stage__c,

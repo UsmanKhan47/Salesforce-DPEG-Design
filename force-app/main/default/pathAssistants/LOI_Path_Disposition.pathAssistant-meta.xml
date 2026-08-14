@@ -39,8 +39,53 @@
 
         Draft, Prepare/Review, Sent, Counter and Completed do not appear because the
         Disposition_LOI record type restricts them out; they belong to LOI_Path_Acquisition.
-        The Submit for Approval action does not surface on this path either - it is gated on
-        {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record type does not carry.
+        🔴 THE NEXT SENTENCE IS FALSE AS OF 2026-08-14. IT IS KEPT ONLY AS THE RETRACTED TEXT.
+        DO NOT ACT ON IT; THE CORRECTION IS ABOUT TEN LINES BELOW.
+        [FALSE] "The Submit for Approval action does not surface on this path either - it is
+        gated on {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record type does not
+        carry." [END FALSE]
+        ⇒ IT IS NOW GATED ON 'Under Review', WHICH THIS RECORD TYPE DOES CARRY (step 2 of 5).
+        What actually keeps a SELL-SIDE driver from seeing it is the rule's FIRST criterion, the
+        Acquisition_Deal_Actions custom permission - NOT any stage value.
+
+        =====================================================================
+        🔴 RETRACTED 2026-08-14 (Phase 3, observation 5). THIS FILE'S STEPS AND VALUES ARE
+        UNCHANGED - `git diff` shows nothing here - BUT TWO CLAIMS ABOVE ARE NOW FALSE, BECAUSE
+        THE OVERLAP ARRIVED FROM THE ACQUISITION SIDE.
+        =====================================================================
+
+        Phase 3 repointed the ACQUISITION sequence to
+        Draft -> Under Review -> Submitted -> Negotiation -> Signed. It did that by REUSING
+        'Under Review', which has been step 2 of THIS path since 3B. Nothing in this file moved;
+        the property it asserts did.
+
+        RETRACTED (1), verbatim: "The Submit for Approval action does not surface on this path
+        either - it is gated on {!Record.Stage__c} EQUAL 'Prepare/Review', a value this record
+        type does not carry."
+        LOI_Record_Page's Submit_for_Approval entry is now gated on 'Under Review', which this
+        record type DOES carry, and no record-type criterion was added (runbook 1.6; gate G7).
+        ⚠ SCOPE IT CORRECTLY: the rule ALSO requires the Acquisition_Deal_Actions custom
+        permission, so a pure sell-side driver still sees nothing. The exposed population is a
+        user holding the ACQUISITION permission who opens a disposition LOI at 'Under Review'.
+        Clicking it targets Opportunity.LOI_Approval and a disposition LOI has no Opportunity__c,
+        so it fails LOUDLY. ⚠ A PATH DOES NOT GATE ACTIONS - the action bar comes from
+        LOI_Record_Page, so "does not surface on this path" was never something this file
+        controlled; read LOI_Record_Page and Disposition_LOI's own comment for the live state.
+
+        RETRACTED (2), verbatim: "the two stage sets are FULLY DISJOINT, so there is no shared
+        step whose text could be reused" (and the same premise where it is restated further up as
+        "Appending was sufficient only because the sets are disjoint").
+        'Under Review' is now on BOTH record types, so BOTH LOI paths render a step for it, with
+        DIFFERENT prose - correct, because a Path is per record type, but no longer an instance of
+        "no shared step exists".
+
+        ⚠ WHAT DID NOT CHANGE, AND WHY THIS FILE STILL NEEDED NO EDIT. The three new acquisition
+        values were APPENDED to Stage__c, and 'Under Review' already sat at position 7, so this
+        path still renders Received(6) -> Under Review(7) -> Countered by DPEG(8) ->
+        Counter Received from Buyer(9) -> Executed(10), byte-identical to before. The ordering was
+        re-checked against the master value set rather than assumed; the arithmetic is in
+        LOI__c/fields/Stage__c's comment. The terminal values remain disjoint ('Signed' vs
+        'Executed'), which is why no terminal-state test needed a record-type guard.
 
         COUNTERS ARE RECORDED ON Counter_Offer__c, WHICH IS INHERITED FROM THE ACQUISITION SIDE
         (decision D6) - that reuse is what makes "every round is recorded" achievable at all.

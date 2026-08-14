@@ -1,5 +1,59 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT. A comment placed ABOVE <Flow> breaks `sf`
+        deploy at source conversion with the misleading error "unable to find matching parent
+        xml file". Precedent in this repo: flows/Counter_Offer_Notify.
+
+        WHAT THIS FLOW IS. A BEFORE-SAVE record-triggered flow that projects the fine-grained
+        Negotiation_Status__c onto the coarse Stage__c, which is a DERIVED field: a direct write
+        to Stage__c COMMITS AND IS SILENTLY DISCARDED (measured org behaviour, recorded in both
+        Contract_Review__c record type files). This flow is therefore the ONLY place the coarse
+        stage can be changed.
+
+        =====================================================================
+        🔴 AMENDED 2026-08-14 (Phase 3, observation 7, requirements C4). IT NOW KNOWS 'Draft'.
+        THIS IS A DEFECT FIX, NOT AN ENHANCEMENT - WITHOUT IT PHASE 3 SHIPS BROKEN AND GREEN.
+        =====================================================================
+
+        THE DECISION Map_Status HAS A DEFAULT CONNECTOR AND NO RECORD-TYPE CRITERION, so it
+        serves BOTH PSA record types and anything it does not recognise falls through to
+        Stage__c = 'Review'. Acquisition_PSA's sequence becomes
+        Draft -> Negotiation -> Signed -> Executed. Left alone, 'Draft' would have hit that
+        default and a BRAND-NEW acquisition PSA would have opened showing coarse
+        Stage__c = 'Review' instead of 'PSA Drafting' - on its first save, on every deal, with a
+        green deploy and no error anywhere.
+
+        🔴 'Initial Draft' IS KEPT, NOT REPLACED, AND THAT IS THE HARD CONSTRAINT. Disposition_PSA
+        still runs Initial Draft -> Revised -> Ready for Execution -> Executed and is untouched by
+        Phase 3 (decision O3). Swapping the literal instead of adding one would move the identical
+        defect onto the sell-side path. The two rules are therefore SEPARATE and both connect to
+        Set_Stage_Drafting - the duplicate-entry shape this repo prefers over an OR, for the same
+        reason LOI_Record_Page and NDA_Record_Page use it: a single rule with two conditions and
+        conditionLogic '1 OR 2' would work here, but two named rules read as two vocabularies and
+        can be deleted independently when Disposition_PSA is eventually migrated.
+
+        ⚠ 'Negotiation' AND 'Signed' ARE DELIBERATELY LEFT TO THE DEFAULT CONNECTOR. They are the
+        exact analogues of 'Revised' and 'Ready for Execution', which also fall to it and project
+        to 'Review'. That is CORRECT, not an omission: the coarse stage has only three values
+        (PSA Drafting / Review / Contract Execution) and the middle of either sequence is
+        'Review'. 🔴 DO NOT "improve" this by projecting 'Signed' to 'Contract Execution' - that
+        would move the Transactions handoff a step early. ONLY 'Executed' reaches
+        Contract Execution, and ContractExecutionService keys on 'Executed' too.
+
+        ⚠ RULE ORDER MATTERS - the first matching rule wins. Is_Draft is placed immediately after
+        Is_Initial_Draft and before the two Executed rules; the values are mutually exclusive, so
+        the placement is for readability rather than correctness, but keep the two Executed rules
+        LAST in that relative order (the date-stamping one before the date-kept one) because
+        THOSE two overlap and their order IS load-bearing.
+
+        ⚠ THIS FIX MUST BE DEPLOYED BEFORE THE PHASE 3 ROW MIGRATION, not with the Apex. The
+        migration writes Initial Draft -> Draft on every acquisition Contract Review, and this is
+        a before-save flow, so it fires on every one of those rows. If it does not yet know
+        'Draft', the migration itself stamps coarse Stage__c = 'Review' across the whole live
+        acquisition population - a data defect, not just a rendering one. The edit is purely
+        additive and is correct on both sides of the migration, so it ships at P3-D1.
+    -->
     <apiVersion>67.0</apiVersion>
     <assignments>
         <name>Set_Stage_Drafting</name>
@@ -83,6 +137,21 @@
                 <targetReference>Set_Stage_Drafting</targetReference>
             </connector>
             <label>Initial Draft</label>
+        </rules>
+        <rules>
+            <name>Is_Draft</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Negotiation_Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Draft</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Set_Stage_Drafting</targetReference>
+            </connector>
+            <label>Draft (Acquisition_PSA)</label>
         </rules>
         <rules>
             <name>Is_Executed_Needs_Date</name>

@@ -355,8 +355,17 @@ defect — invisibly.
 
 - **`RecordStageAdvanceService`** — `LOI_ACQUISITION_NEXT_STAGE` (whole map),
   `LOI_ACQUISITION_EXPLICIT_TARGETS` (`Counter`→`Negotiation`, `Completed`→`Signed`),
-  **`CONTRACT_REVIEW_NEXT_STAGE` must be SPLIT into two maps** (§9 C9 — it is currently ONE map shared
-  by reference, deliberately, and the header says so), and `UNDERWRITING_NEXT_STAGE` (§9 C5).
+  **`CONTRACT_REVIEW_NEXT_STAGE` must be SPLIT into two maps** (§9 C9), and `UNDERWRITING_NEXT_STAGE`
+  (§9 C5).
+  > ✅ **C9 DELIVERED 2026-08-14 — do not read this line as outstanding work.** The parenthetical here
+  > used to read *"it is currently ONE map shared by reference, deliberately, and the header says
+  > so"*; that is **false now**. `RecordStageAdvanceService` declares
+  > `CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE` and `CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE` as two
+  > separate maps, wired to `Acquisition_PSA` / `Disposition_PSA` in the `StageConfig`, and the doc
+  > block above them opens *"🔴 THE SHARED MAP IS GONE."* Falsifier:
+  > `RecordStageAdvanceServiceTest.psaSequencesAreSplitPerRecordType`. This is a **requirements**
+  > document, so the requirement text is left standing rather than deleted; only its stale
+  > status claim is retracted.
 - **`c/loiMarkCountered` / `c/loiMarkCompleted`** — hardcoded target constants become `Negotiation`
   and `Signed`. **Changed in the bundle, never computed** — the server validates them against a
   record-type-scoped allow-list and that is the security-relevant half.
@@ -404,6 +413,10 @@ Verified: `Parse_Confidence__c`, `Property_Address__c`, `Deal_Type__c`, `Sale_Pr
 | `Broker_Protection_Access` | the inbound-pipeline principal's grants |
 | `DPEG_Disposition_Edit` / `_View` | disposition-side (Sale_Process/Offer_Due_Date only) |
 
+⚠ **[SCOPE MARKER 2026-08-14 — the table above is the list of FLS HOMES for the new fields. It is
+NOT the list of permission sets this pack edits, and it is NOT the reconcile list. Do not use it as
+either: the reconcile list is enumerated in the box below and it is LONGER.]**
+
 ⚠ **`Broker_Protection_Access` is not optional for the Lead score fields.** The pipeline writes them.
 The 2026-08-05/06 incidents are on record: a permission-set deploy **REPLACES** its
 `<fieldPermissions>` set, an org-side-only grant was wiped by an unrelated redeploy, and every inbound
@@ -411,14 +424,58 @@ email routing to a Lead or Contact then threw `Operation failed due to fields be
 Note this write is on the Lead-**insert** path in **system mode**, so a missing grant does not block
 the write — it makes the value **invisible to the persona**, which is the harder failure to spot.
 
-🔴 **RECONCILE ORG → REPO BEFORE EDITING ANY OF THESE FILES.** Not "check once" — the 2026-08-10
-cleanup found `DPEG_Admin_Access` carrying six `recordTypeVisibilities` live in `usman-dpeg` and
-absent from the repo file **one day after** a clean 2026-08-09 reconciliation had recorded zero
-org-only grants in it. A past clean reconciliation is a snapshot, not a guarantee. The same
-REPLACE-not-merge hazard applies one layer up to **`PermissionSetGroup` membership**.
+🔴 **RECONCILE ORG → REPO BEFORE EDITING ANY PERMISSION SET IN THIS PACK.** ⚠ **[CORRECTED
+2026-08-14 — this instruction read "BEFORE EDITING ANY OF THESE FILES", scoping itself to the FLS
+table immediately above. That scope was too narrow and it omitted a set the pack actually edits:
+`DPEG_Apex_Access`, which Phase 4's P4-B modifies to grant class access to `CallForOffersController`.
+Requirements §8 G4 already names it; this section did not, and this section is the one someone reads
+BEFORE editing a permission set. The list is SIX sets, not five — enumerated below.]**
+
+**The reconcile list — every permission set this pack edits, consolidated here so nobody has to
+assemble it from three places:**
+
+| # | Set | Why it is on this list | Named where, before today |
+|---|---|---|---|
+| 1 | `DPEG_Acquisition_Edit` | new `fieldPermissions` | §5 table above, §8 G4 |
+| 2 | `DPEG_Acquisition_View` | new `fieldPermissions` | §5 table above, §8 G4 |
+| 3 | `DPEG_Opportunity_View` | new `fieldPermissions` | §5 table above, §8 G4 |
+| 4 | `Broker_Protection_Access` | new `fieldPermissions` | §5 table above, §8 G4 |
+| 5 | `DPEG_Disposition_Edit` / `_View` | new `fieldPermissions` (Sale_Process/Offer_Due_Date only) | §5 table above **only** — absent from §8 G4 |
+| 6 | 🔴 `DPEG_Apex_Access` | **`classAccesses` only — NO field permissions at all**, and it is on this list for exactly that reason (see the rule below) | §8 G4 **only** — the omission this correction closes |
+| 7 | 🔴 `DPEG_Admin_Access` | `recordTypeVisibilities` — it carries `Opportunity.Commercial` and is edited in Phase 1 | §8 G4, and §5's own paragraph **below this box** |
+
+> 🔴 **THE COUNT: "SIX, NOT FIVE" IS THE DELTA §8 G4 RECORDS, AND IT IS NOT THE SIZE OF THIS LIST.
+> Read this before quoting a number.** §8 G4 counts **six** because its own five were
+> `Acquisition_Edit`, `Acquisition_View`, `Opportunity_View`, `Broker_Protection_Access` and
+> **`DPEG_Admin_Access`**, plus `DPEG_Apex_Access`. §5's five were the same first four plus
+> **`DPEG_Disposition_Edit` / `_View`**, and named `DPEG_Admin_Access` separately in the paragraph
+> below rather than in the table. 🔴 **So the two "fives" were different fives and NEITHER list was a
+> superset of the other** — §8 omitted the disposition sets, §5's table omitted the admin set, and
+> both omitted `DPEG_Apex_Access`. Consolidated, the reconcile list is **SEVEN rows**. Do not
+> "correct" this table back down to six to match §8 G4's sentence; that sentence is counting a delta
+> against its own former list and is accurate about the delta.
+
+🔴 **WHY A `classAccesses`-ONLY SET BELONGS ON AN FLS-FLAVOURED LIST — this is the part that is easy
+to get wrong, and it is why row 6 was missing.** REPLACE-not-merge is a property of the
+**`PermissionSet` METADATA TYPE**, not of what a given set happens to contain. A deploy of
+`DPEG_Apex_Access` replaces that set's ENTIRE grant state in the org with exactly what the file
+declares — so a `classAccesses`-only edit wipes an org-side-only grant of ANY kind (a field
+permission, an object permission, a record-type visibility, a custom permission) precisely as an FLS
+edit does. "This edit does not touch FLS, so the FLS hazard does not apply" is the reasoning that
+loses the grant. `DPEG_Admin_Access` is the recorded casualty of the same mistake one axis over: it
+carried six `recordTypeVisibilities` live in `usman-dpeg` and absent from the repo file, and a deploy
+made for an unrelated reason would have revoked them.
+
+Not "check once" — the 2026-08-10 cleanup found that `DPEG_Admin_Access` drift **one day after** a
+clean 2026-08-09 reconciliation had recorded zero org-only grants in it. A past clean reconciliation
+is a snapshot, not a guarantee. The same REPLACE-not-merge hazard applies one layer up to
+**`PermissionSetGroup` membership**.
 
 Both permission sets carrying `<recordType>Opportunity.Commercial</recordType>` —
 `DPEG_Acquisition_Edit` and `DPEG_Admin_Access` — are edited in Phase 1. **Reconcile both first.**
+⚠ **[SCOPE MARKER 2026-08-14 — this sentence used to be the ONLY place in §5 that named
+`DPEG_Admin_Access`, which is how it stayed out of the section's reconcile table. It is now row 7 of
+that table. Kept here because it also carries the Phase 1 timing, which the table does not.]**
 
 ---
 
@@ -590,13 +647,40 @@ that file **after** Phase 2's, or one overwrites the other.
 
 ### Phase 4 — parallel with 1–3, once the CFO field set is settled
 
+⚠ **"Parallel" survives, but it is no longer free — as built, Phase 4 shares one file with Phases 1
+and 2.** All three edit `Opportunity_Record_Page`, and a FlexiPage deploys WHOLE. Independence is
+bought by a generator, not by the phases being disjoint: P1-D3 and P2-D2 each deploy a phase-scoped
+copy produced with `--phase4 strip|keep`, and **that flag's correct value depends on whether P4-D has
+already landed** — `strip` after P4-D silently removes a live component from the record page. So the
+phases can run in any order, but **whoever runs P1-D3 or P2-D2 must know Phase 4's deploy state.**
+Ownership table, both failure directions and the measured generator output: Phase 4 runbook §2.
+
 | Step | Contents | Verified by |
 |---|---|---|
-| **P4-A** | 2 alert marker fields + `fieldPermissions` | Deploy green **+ [ORG-Q]** FLS |
-| **P4-B** | `CallForOffersService`, `OpportunitySelector` method, controllers, batch + schedulable | Deploy green + `RunLocalTests` |
+| **P4-A** | ⚠ **[CORRECTED 2026-08-14 — this cell read "2 alert marker fields + `fieldPermissions`". As built it is THREE fields: `Call_For_Offers_Received_Date__c` **plus** the two alert markers.]** 3 fields + `fieldPermissions` in the four reconciled permission sets | Deploy green **+ [ORG-Q]** FLS. 🔴 **P4-A MUST PRECEDE P4-B, and the mechanism is one specific field — see the note below this table.** |
+| **P4-B** | ⚠ **[CORRECTED 2026-08-14 — this cell read "`CallForOffersService`, `OpportunitySelector` method, controllers, batch + schedulable". Three errors, all in the direction of under-stating the step: there is **ONE** controller, not "controllers"; `OpportunitySelector` gains **THREE** methods, not one; and it omitted **two modified files that are not optional** — `GroupNotifier` and `DPEG_Apex_Access`.]** `CallForOffersService`, `CallForOffersController`, `CallForOffersAlertBatch`, `CallForOffersAlertSchedule` **+ their four test classes** (8 classes total); `OpportunitySelector` **+3 methods** (`selectCallForOffersOpen`, `selectCallForOffersById`, `queryCallForOffersAlerts` — `selectCallForOffersTargetsByIds` is pre-existing, from the 2026-08-10 stamp service, and is NOT part of this phase); **`GroupNotifier` + `GroupNotifierTest`** (the new `notifyWithOutcome`, which is what lets the batch stamp only the deals that were actually notified); **`DPEG_Apex_Access`** (class access for `CallForOffersController` **only** — the service, batch and schedulable deliberately need none). | Deploy green + `RunLocalTests`, **+ [ORG-Q] confirm the `Acquisitions_Deal_Update` notification type exists** — it is resolved by developer name at RUNTIME, so nothing fails to deploy and no test fails when it is absent (Phase 4 runbook §4 **P4-G4**). Operator-facing file list: Phase 4 runbook §3 P4-B. |
+
+> 🔴 **THE P4-A → P4-B ORDERING BITES THROUGH `Call_For_Offers_Received_Date__c` AND NOTHING ELSE.
+> State it that precisely; a looser "the new fields need FLS first" invites someone to simplify the
+> gate away.** Verified against `force-app/main/default/classes/OpportunitySelector.cls`,
+> 2026-08-14: the two reads backing both LWCs — `selectCallForOffersOpen` and
+> `selectCallForOffersById` — are **`WITH USER_MODE`** and **both SELECT
+> `Call_For_Offers_Received_Date__c`**. A Metadata-API-deployed custom field arrives with no field
+> permissions for **any** profile, System Administrator included, and `profiles/**` is
+> `.forceignore`d, so there is no profile fallback. `USER_MODE` **throws; it does not degrade** —
+> `System.QueryException: No such column 'Call_For_Offers_Received_Date__c' on entity 'Opportunity'`,
+> which is the platform's **FLS-denial signature, not a schema error**. Ship P4-B ahead of the
+> grants and **both components fail for the very administrator deploying them.**
+>
+> ⚠ **The two alert markers do NOT carry this exposure.** `Offer_Alert_Last_Interval__c` and
+> `Offer_Alert_Due_Date__c` are selected **only** by `queryCallForOffersAlerts`, which is
+> **`WITH SYSTEM_MODE`** — both UI reads deliberately omit them. **FLS cannot break the batch.**
+> Their grants exist so the persona can SEE the marker, not so the code runs. Keep the two cases
+> apart: collapsing them either over-states the batch's fragility or, worse, under-states the one
+> field that genuinely blocks. Operator-facing version: Phase 4 runbook §3 P4-A.
 | **P4-C** | 2 LWC bundles + Jest | Local Jest green (Jest never deploys) + SLDS linter |
-| **P4-D** | `Opportunity_Record_Page` edit | Deploy green **+ retrieve the page back and diff** — a FlexiPage deploy can roll back with a design-time error that reports as success |
-| **P4-E** | Home page surface — **decision required first (§9 C11)** | — |
+| **P4-D** | ⚠ **[CORRECTED 2026-08-14 — this cell read "`Opportunity_Record_Page` edit", naming ONE FlexiPage. As built it is TWO, and the missing one is where the call-for-offers TABLE lives: an operator following this cell deploys the record-page panel and ships no table at all.]** **TWO** FlexiPages: `Opportunity_Record_Page` (+ `c/callForOffersPanel` in the `sidebar` region) **and `Lead_Funnel`** (+ `c/callForOffersList` in `region1`). `Lead_Funnel` is the C11 decision's landing surface — see the P4-E cell. | Deploy green **+ retrieve BOTH pages back and diff** — a FlexiPage deploy can roll back with a design-time error that reports as success. 🔴 **`Opportunity_Record_Page` is edited by THREE phases and P4-D is the only step that deploys the TREE copy** (P1-D3 and P2-D2 each deploy a generated, phase-scoped copy). Ownership table and the generator's `--phase4 strip\|keep` rule: Phase 4 runbook §2. |
+| **P4-E** | ⚠ **[CORRECTED 2026-08-14 — this cell read "Home page surface — **decision required first (§9 C11)**" with no verification. THE DECISION HAS BEEN TAKEN and this cell is the last place in the pack still presenting it as open.]** **USER DECISION: there is NO home-page surface.** The Acquisition app has no home page, and creating one would change every acquisitions user's landing surface, so the call-for-offers table goes on the **`Lead_Funnel` tab** — which is why `Lead_Funnel` is now a P4-D deploy target. ⚠ **`Acquisition.app-meta.xml` is NOT edited, at any step** — touching it pays the exact cost C11 was avoiding. P4-E is therefore **not a deploy at all**: it is the post-deploy gate block. | Nothing to deploy. Phase 4 runbook §4, gates **P4-G1…P4-G7** — ⚠ **that is the runbook's own label space, NOT §8's; the two agree only through G3.** |
 
 ---
 
@@ -608,13 +692,136 @@ them looks exactly like a working feature when missed.
 | # | Gate | If missed |
 |---|---|---|
 | **G1** | **Schedule `CallForOffersAlertSchedule`.** Record the cron expression **and the owning user**. | Zero alerts, no error, a feature that looks shipped. |
-| **G2** | **Verify the `Acquisition` queue's MEMBERSHIP** is the right alerting population. Queue membership is not deployable. | Alerts fire into an empty or wrong population. ⚠ **Second, separate fact (§9 C10):** the queue's `queueSobject` list is **`Lead` and `Property__c` — not `Opportunity`.** It can still receive a notification, but it cannot own the deals it is being alerted about. Confirm this is intended. |
-| **G3** | **Assign the permission sets** carrying the new `fieldPermissions`. `PermissionSetAssignment` is not deployable. | System-mode writes land; the persona sees blanks. No test can fail — a `System.runAs` FLS test on a system-mode write cannot fail. |
-| **G4** | **Reconcile `DPEG_Acquisition_Edit`, `DPEG_Acquisition_View`, `DPEG_Opportunity_View`, `Broker_Protection_Access`, `DPEG_Admin_Access` ORG → REPO before editing.** Also reconcile any `PermissionSetGroup` whose membership changes. | A deploy silently revokes an org-side-only grant (2026-08-05 and 2026-08-06 incidents) or a group member. |
+| **G2** | 🔴 **DO NOT SKIP — see the expanded gate immediately below the table.** Verify the `Acquisition` queue's MEMBERSHIP before scheduling any alert against it. | Alerts fire into an empty or wrong population, and the failure is **invisible** — see below. |
+| **G3** | **Assign the permission sets** carrying the new `fieldPermissions`. `PermissionSetAssignment` is not deployable. | ⚠ **[TIGHTENED 2026-08-14 — "the persona sees blanks" is TRUE for the two Phase-4 alert markers and FALSE for `Call_For_Offers_Received_Date__c`; do not quote it as the consequence for all three fields.]** For `Offer_Alert_Last_Interval__c` / `Offer_Alert_Due_Date__c` the reads are `WITH SYSTEM_MODE`, so the writes land and the persona merely sees blanks — no test can fail, because a `System.runAs` FLS test on a system-mode write cannot fail. 🔴 For **`Call_For_Offers_Received_Date__c`** the two LWC reads are `WITH USER_MODE` and both select it, so an unassigned persona does not see a blank — **the query THROWS and both components fail for them**, with an error that reads like the field does not exist. Same distinction, stated per field, in the P4-A note in §7. (Phase 1's runbook already tightened its own copy of this gate for `Lead.Listing_Status__c`, which BLOCKS the analyst rather than blanking a display.) |
+
+> ### 🔴 G2, EXPANDED — THE QUEUE STAYS THE RECIPIENT. THIS IS THE GATE THAT MAKES THAT SAFE, AND IT IS NOT OPTIONAL.
+>
+> **Decision (2026-08-14): keep the existing `Acquisition` queue as the alert recipient and fix its
+> membership post-deploy, rather than build a new recipient.** That decision is only safe if this
+> gate is actually run — it is not a reminder, it is a precondition of the decision.
+>
+> **Measured against `usman-dpeg`, 2026-08-14:**
+>
+> | Fact | Value |
+> |---|---|
+> | Queue membership today | **exactly ONE member** |
+> | `queueSobject` (repo, `queues/Acquisition.queue-meta.xml`, confirmed against a live describe) | **`Lead` and `Property__c` — not `Opportunity`** (§9 C10). The queue can still RECEIVE a custom notification even though it cannot OWN an Opportunity. |
+>
+> **Why this is a real gate and not a formality:**
+>
+> 1. **Queue membership is NOT deployable metadata.** No deploy — not `CallForOffersAlertSchedule`,
+>    not the permission sets, not the FlexiPage — touches it. Fixing it is a manual, in-org, post-deploy
+>    step, and if it is skipped nothing downstream will catch the omission.
+> 2. **If missed, every offer-deadline alert goes to a single person.** Today that is whichever one
+>    user already sits in the queue — not the Acquisitions team, not a distribution list, one person.
+> 3. **The failure is structurally invisible.** "No alert arrived" and "no deadline was near" produce
+>    the **identical** observation from outside the system: silence. There is no error, no failed job,
+>    no report, nothing in Setup Audit Trail that distinguishes "the alert fired correctly to the wrong
+>    population" from "there was correctly nothing to alert on." A person watching for a red flag will
+>    not see one — the flag that should be red is the same colour as the flag that means everything is
+>    fine.
+>
+> **Verify with this exact query before G1 is scheduled, and re-run it — do not trust this snapshot —
+> immediately before go-live:**
+> ```sql
+> SELECT UserOrGroupId FROM GroupMember
+> WHERE GroupId = (SELECT Id FROM Group WHERE DeveloperName = 'Acquisition' AND Type = 'Queue')
+> ```
+> One row today. If the intended alerting population is the whole Acquisitions team, add the missing
+> members to the queue **in Setup** before `CallForOffersAlertSchedule` is scheduled (G1) — scheduling
+> the job first and fixing membership later means every alert in that window silently reaches only the
+> one existing member.
+
+**UAT note, not a blocker:** as of 2026-08-14 there are **zero open Opportunities carrying an offer due
+date** in this org (`SELECT COUNT() FROM Opportunity WHERE Offer_Due_Date__c != null AND IsClosed =
+false` returns 0). Neither the home-page table nor the record-page panel has anything to render against
+live data. UAT of this feature therefore needs **seeded** data — at minimum one open Opportunity with
+`Offer_Due_Date__c` populated (and, once Phase 4's Apex ships, `Call_For_Offers_Received_Date__c`) —
+or a tester will see an empty component and reasonably, but wrongly, conclude it is broken.
+| **G4** | **Reconcile `DPEG_Acquisition_Edit`, `DPEG_Acquisition_View`, `DPEG_Opportunity_View`, `Broker_Protection_Access`, `DPEG_Admin_Access` ORG → REPO before editing.** Also reconcile any `PermissionSetGroup` whose membership changes. ⚠ **[CORRECTED 2026-08-14 — this list of five is INCOMPLETE against as-built Phase 4, and the omission is a set the pack actually edits. Add `DPEG_Apex_Access`: P4-B modifies it to grant class access to `CallForOffersController`.]** The REPLACE-not-merge hazard is a property of the `PermissionSet` metadata type, not of what a set happens to contain — a `classAccesses`-only edit wipes an org-side-only grant exactly as an FLS edit does. **Six sets, not five.** | A deploy silently revokes an org-side-only grant (2026-08-05 and 2026-08-06 incidents) or a group member. |
 | **G5** | **Record-type visibility + the profile DEFAULT for `Retail`.** `PermissionSet.recordTypeVisibilities` has no `default` element — only a Profile can name a default, and `profiles/**` is force-ignored. | New Opportunities keep defaulting to the retired type, or users get a record-type chooser they did not have. |
 | **G6** | **Render probe, both directions, as a real non-admin persona** for every changed FlexiPage visibility rule — holder sees it, **non-holder does NOT**. The non-holder half is the one that falsifies. | A rule can deploy, survive a retrieve, and be **ignored by the renderer** — measured on `NDA__c.Is_Decline_Allowed__c`. §9 C8 makes this acute for `Underwriting_Record_Page`. |
 | **G7** | **Verify `settings/LeadConfig` → `shouldLeadConvertRequireValidation` in Setup**, not in the repo file. `settings/**` is force-ignored, so the repo copy never deploys and has twice been measured to contradict the org. | The new Lead validation rule's behaviour at conversion is the opposite of what was designed. It fails **open**. |
 | **G8** | **Re-point any report or dashboard filtering `Deal_Type__c = 'Commercial'` or `StageName = 'PSA'`.** Org-side; not fully represented in the repo. | Reports and dashboards break **silently** — they reference by name and do not block the change. |
+
+> ### 🔴 ADDING A GATE TO THIS TABLE? **`G9` IS ALREADY TAKEN. THIS TABLE ENDS AT G8 AND ITS NEXT FREE NUMBER IS NOT G9.**
+>
+> **The Phase 2 runbook extends THIS space upward** — it adds **`G8-a`, `G8-b` and `G9…G13`** and
+> those are its gates, deliberately numbered inside this table's space rather than prefixed, because
+> at the time they did not collide with anything. A new `G9` minted here therefore does **not** get a
+> fresh number; it silently becomes a **second, different** `G9` in one shared space, which is the
+> exact defect the label box below this table exists to prevent — and it would be worse than the
+> Phase 3 and Phase 4 collisions, because those two are at least separated by a document boundary a
+> reader can see. Phase 2's numbers are in the *same* space as this table's.
+>
+> **So, to add a gate:** use **`G14`** or higher (re-read the Phase 2 runbook's own gate list first
+> and confirm its top number — do **not** trust `G13` from this sentence, the list grows), or give
+> the new gate a suffixed number in the manner of `G8-a`. **Do not renumber Phase 2 to free up
+> `G9`** — Phase 1 and Phase 2 are unprefixed precisely because they currently agree with this table,
+> and renumbering either destroys that agreement to buy nothing.
+
+> ### 🔴 THIS TABLE IS NOT THE ONLY GATE LIST IN THE PACK, AND THE LABELS ARE NOT INTERCHANGEABLE (added 2026-08-14)
+>
+> **The Phase 4 runbook §4 carries its own gate list, and it agrees with this table only through G3.**
+> It has therefore been prefixed **`P4-G1…P4-G7`** so the two spaces cannot collide. Before this,
+> a bare "G6" meant *read the FlexiPage back* in one document and *render probe* in the other — an
+> operator cross-referencing it landed on the wrong gate, in a pack whose entire safety story is
+> "follow the gates". **Always cite a gate as `§8 Gn` or `Phase 4 runbook P4-Gn`, never as a bare
+> number.**
+>
+> | This table | Phase 4 runbook §4 |
+> |---|---|
+> | G1 schedule the alert job | P4-G1 — same |
+> | G2 queue membership | P4-G2 — same |
+> | G3 assign permission sets | P4-G3 — same |
+> | G4 reconcile permission sets | P4-G4 — **confirm the notification type exists** |
+> | G5 `Retail` record-type default | P4-G5 — **seed UAT data** |
+> | G6 render probe, both directions | P4-G6 — **read `Opportunity_Record_Page` back** |
+> | G7 `LeadConfig` in Setup | P4-G7 — **render probe as a persona** |
+> | G8 re-point reports and dashboards | — |
+>
+> 🔴 **TWO PHASE-4 GATES HAVE NO ENTRY IN THIS TABLE AT ALL, AND BOTH FAIL SILENTLY.** They live only
+> in the runbook: **P4-G4** (confirm `Acquisitions_Deal_Update` — absent, `GroupNotifier` returns null,
+> every alert in every pass is suppressed, nothing is stamped, `AsyncApexJob` still reports
+> `Completed` with zero errors ⇒ **recoverable, because nothing stamped means the alerts retry for
+> ever — but blind while it lasts**) and **P4-G5** (seed UAT data — zero open Opportunities carry an
+> offer due date in this org today, so a tester sees an empty table and concludes the component is
+> broken). ⚠ **They are deliberately NOT being minted as new `Gn` rows here**, because this space is
+> already extended elsewhere: the **Phase 2 runbook adds G8-a, G8-b and G9…G13** to it, so a fresh
+> "G9" in this table would collide with Phase 2's forecast gate. Cite them as `P4-G4` / `P4-G5`.
+>
+> ⚠ **Where the other runbooks sit, measured 2026-08-14 — do not assume they are uniform. The
+> asymmetry below is a DECISION, taken deliberately per runbook; it is not drift.**
+>
+> | Runbook | Gate space | Why |
+> |---|---|---|
+> | **Phase 1** | **shares this table's space, NOT prefixed** | strict SUBSET of these numbers (G3, G4, G5, G7, G8) with **identical meanings** — no collision exists, and prefixing would break an agreement that currently holds |
+> | **Phase 2** | **shares this table's space, NOT prefixed** | stays inside this space and extends it UPWARD (G8-a, G8-b, G9–G13) — no collision; prefixing would break the same agreement |
+> | **Phase 3** | 🔴 **`P3-G1…P3-G8`** | fully divergent — it agreed with this table at **no number at all** |
+> | **Phase 4** | 🔴 **`P4-G1…P4-G7`** | agreed with this table through G3 and diverged from G4 |
+>
+> 🔴 **[UPDATED 2026-08-14 — this paragraph read "Phase 3 … has **deliberately NOT been renumbered**
+> — that is a known, recorded inconsistency awaiting a churn-vs-clarity decision" and instructed
+> readers to cite `Phase 3 runbook Gn`. THAT DECISION HAS NOW BEEN TAKEN AND THE OPTION IT LEFT OPEN
+> IS CLOSED: Phase 3 IS renumbered to `P3-G1…P3-G8`. Both instructions above are superseded — cite
+> `Phase 3 runbook P3-Gn`, and do not re-raise the inconsistency as open.]** Phase 3 was the worse of
+> the two cases and is why it was taken: Phase 4's space at least agreed with this table through G3,
+> whereas **all eight** of Phase 3's numbers meant something different here — its G1 was a row
+> migration where this table's G1 is the schedule, its G3 a render probe where this table's G3 is
+> permission-set assignment (the render probe here is **G6**), and its G6 reports and dashboards
+> where the reports gate here is **G8**.
+>
+> ⚠ **The rule that produced the asymmetry, so it can be applied to the next runbook rather than
+> guessed at:** prefix a local gate space when it COLLIDES (the same bare number means two different
+> gates); leave it unprefixed when it is a subset or a clean upward extension of this table. Phases 1
+> and 2 are unprefixed because renumbering them would DESTROY working agreement, which is a real
+> cost paid for cosmetic uniformity. Both remain untouched by the Phase 3 renumbering.
+>
+> ⚠ **G6 does not cover Phase 4's FlexiPage edits, and that is correct rather than a gap.** Neither
+> `c/callForOffersList` nor `c/callForOffersPanel` carries a `<visibilityRule>` (verified in both
+> files), so there is no rule for a render probe to falsify. Phase 4's own probe (**P4-G7**) checks
+> *placement and persona FLS*, which is a different question.
 
 ---
 

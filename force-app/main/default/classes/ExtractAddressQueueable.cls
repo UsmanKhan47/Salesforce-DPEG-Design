@@ -1271,7 +1271,10 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      *   4. ONE `CallForOffersStampService.stamp(...)` call for the whole email — 1 SOQL and at
      *      most 1 DML regardless of how many deals matched. ⚠ Since 2026-08-12 the request also
      *      carries `sale_process`, PER PROPERTY like the deadline; the service describe-guards it
-     *      against the live restricted picklist. No extra query, no extra statement.
+     *      against the live restricted picklist. ⚠ And since 2026-08-14 it carries the
+     *      call-for-offers RECEIVED DATE — the one value here that is PER EMAIL, resolved once
+     *      above the loop from the same `parseSentDatetime` the claim path uses. Neither adds a
+     *      query, a statement or a callout: the budget below is unchanged.
      *   5. One `RoutingOutcome` PER PROPERTY: the matched label carrying the deal Id at
      *      `PRIORITY_REPEAT` (which already means "filed onto an existing record, no claim
      *      taken" — exactly this branch, so no fifth PRIORITY_* constant is invented), or
@@ -1364,6 +1367,45 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         String listingBrokerName = extraction.listingBrokerName;
         String listingBrokerEmail = extraction.listingBrokerEmail;
 
+        // ⚠ RESOLVED ONCE, ABOVE THE LOOP, AND THAT IS THE POINT — an email has exactly ONE
+        // arrival time. `offer_due_date` and `sale_process` are per-property because a portfolio
+        // blast can quote a different deadline and a different process per asset; there is no
+        // such thing as a per-property "when did this arrive".
+        //
+        // 🔴 IT IS THE SAME DERIVATION `routeProperties` USES FOR ITS `submittedOn`, not a second
+        // independently-sourced guess: the same `parseSentDatetime`, on the same
+        // `extraction.sentDatetime`. That is what keeps the date a human reads in the "Received"
+        // column and the timestamp this module ARBITRATES with (`Competing_Broker_Submission__c
+        // .Submitted_DateTime__c`, and the 90-day recency window behind repeat detection)
+        // CONSISTENT BY DERIVATION — one function, one input, so neither can be re-sourced without
+        // the other moving with it. Deriving this one separately — from the staging row, from
+        // `Date.today()` inline, from anything — would break that, which is the
+        // EmailThreadAnchorService lesson applied to a timestamp rather than to an identifier.
+        //
+        // ⚠ AMENDED 2026-08-14. The previous wording said this was "THE IDENTICAL `submittedOn`
+        // VALUE" and that the two are "the same instant BY CONSTRUCTION". Both overstate it, and a
+        // reader who went looking for the shared value would not find one:
+        //   1. This is a SECOND CALL, not a shared variable, and on a blank `sent_datetime`
+        //      `parseSentDatetime` returns `Datetime.now()` — so two calls are two instants, and
+        //      across midnight two DATES.
+        //   2. More decisively, the two never coexist. `routeCallForOffers` and `routeProperties`
+        //      are mutually exclusive: `execute` calls this branch and RETURNS, and this branch
+        //      writes no submission row at all (D3). There is no pair to compare.
+        // The behaviour is unchanged and correct; only the claim was too strong.
+        //
+        // ⚠ `.date()` RESOLVES IN THE RUNNING USER'S TIME ZONE, deliberately. `parseSentDatetime`
+        // parses a GMT wall-clock string, and `.dateGmt()` would report a US evening email as
+        // having arrived the following day — an off-by-one on the one number the column is about,
+        // on the majority of this org's traffic. The field is a Date, so SOME zone has to be
+        // chosen; this is the org's own, and it is the same one every other date in this pipeline
+        // is rendered in.
+        //
+        // ⚠ The now() fallback inside `parseSentDatetime` is inherited on purpose: the prompt is
+        // explicit-or-EMPTY on `sent_datetime`, so a blank is expected traffic, and DPEG's own
+        // receipt is still a real timestamp OF THIS EMAIL. That is the whole difference from the
+        // proxy this field replaces, which was a real timestamp of a DIFFERENT object.
+        Date callForOffersReceivedDate = parseSentDatetime(extraction.sentDatetime).date();
+
         List<PropertyExtraction> workList = new List<PropertyExtraction>();
         Map<String, Id> dealByAddress = new Map<String, Id>();
         List<CallForOffersStampService.StampRequest> requests =
@@ -1395,6 +1437,9 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             // been validated by LLMExtractionParser against Lead.Sale_Process__c, which is a
             // DIFFERENT picklist that merely happens to match today.
             request.saleProcess = property.saleProcess;
+            // PER EMAIL — the same value on every request built from this message. See where it
+            // is resolved above.
+            request.callForOffersReceivedDate = callForOffersReceivedDate;
             requests.add(request);
         }
 

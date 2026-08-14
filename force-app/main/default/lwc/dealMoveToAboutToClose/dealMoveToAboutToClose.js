@@ -12,26 +12,32 @@ const CONFIRM = {
 };
 
 /**
- * Headless quick action: move a deal from PSA to About to Close.
+ * Headless quick action: move a deal from `Under Contract (PSA)` to About to Close.
+ *
+ * ⚠ The stage was renamed `PSA` -> `Under Contract (PSA)` in Acquisition Observations phase 2.
+ * This bundle passes only the CONSTANT `About to Close`, so nothing functional here moved — the
+ * prose below is repointed so the NEXT_STAGE argument it records stays checkable.
  *
  * ── WHY THIS BUNDLE EXISTS (design doc D3) ────────────────────────────────────
  * `About to Close` is a real stage in BOTH business processes (Land and Retail) and appears on
  * the deal Path, but no button entered or left it: StageAdvanceService.NEXT_STAGE maps
- * `PSA -> Closed Won`, so the Close Deal button skips straight past it. The stage was reachable only
- * by inline edit, the Path, or the API.
+ * `Under Contract (PSA) -> Closed Won`, so the Close Deal button skips straight past it. The stage
+ * was reachable only by inline edit, the Path, or the API.
  *
  * ── WHY IT CANNOT USE advanceDealStage ────────────────────────────────────────
- * `NEXT_STAGE` holds ONE primary next stage per current stage, and PSA's is already `Closed Won`. A
- * PSA deal now has two legitimate forward moves, which a single-target map cannot express — so this
- * is an EXPLICIT-TARGET bundle (the same pattern as the two Send-to-Review branch actions) rather
- * than a fifth caller of the derive-from-current-stage route.
+ * `NEXT_STAGE` holds ONE primary next stage per current stage, and `Under Contract (PSA)`'s is
+ * already `Closed Won`. A deal at that stage now has two legitimate forward moves, which a
+ * single-target map cannot express — so this is an EXPLICIT-TARGET bundle (the same pattern as the
+ * two Send-to-Review branch actions) rather than a fifth caller of the derive-from-current-stage
+ * route.
  *
  * ── NEXT_STAGE WAS DELIBERATELY LEFT ALONE ────────────────────────────────────
- * `PSA -> Closed Won` remains the PRIMARY route: Close Deal still closes a PSA deal as Won in one
- * click, and About to Close stays an OPTIONAL explicit stop. Rerouting PSA's primary target to
- * `About to Close` would have silently added a mandatory extra click to every deal that closes,
- * changing the behaviour of a live button (Close Deal) that nobody asked to change. Both actions are
- * visible on PSA; the user picks. Revisit only if About to Close becomes a required step.
+ * `Under Contract (PSA) -> Closed Won` remains the PRIMARY route: Close Deal still closes such a
+ * deal as Won in one click, and About to Close stays an OPTIONAL explicit stop. Rerouting that
+ * stage's primary target to `About to Close` would have silently added a mandatory extra click to
+ * every deal that closes, changing the behaviour of a live button (Close Deal) that nobody asked to
+ * change. Both actions are visible on `Under Contract (PSA)`; the user picks. Revisit only if About
+ * to Close becomes a required step.
  *
  * Every click runs the shared pre-flight in c/dealActionGuard first — permission check, then a
  * LightningConfirm dialog — and does nothing unless both pass. The write goes through imperative

@@ -1,0 +1,82 @@
+/*
+ * SLDS 2 design tokens throughout (--slds-g-*), each with a literal fallback so the panel still
+ * renders correctly where a token is not resolved. No hardcoded colour appears without one.
+ */
+
+/*
+ * The urgency badge. Colour is a REINFORCEMENT, never the only carrier of meaning — the label text
+ * inside it always names the state in words ("Due in 3 days", "Overdue by 2 days"), which is what
+ * keeps the panel readable without colour vision and to a screen reader.
+ */
+.cfo-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--slds-g-spacing-2, 0.25rem) var(--slds-g-spacing-4, 0.75rem);
+    border-radius: var(--slds-g-radius-border-2, 0.25rem);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    font-weight: var(--slds-g-font-weight-6, 600);
+}
+
+.cfo-badge--muted {
+    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    color: var(--slds-g-color-neutral-base-30, #444444);
+}
+
+.cfo-badge--green {
+    background: var(--slds-g-color-success-container-1, #e8f5e9);
+    color: var(--slds-g-color-success-base-30, #2e7d32);
+}
+
+.cfo-badge--amber {
+    background: var(--slds-g-color-warning-container-1, #fff1e0);
+    color: var(--slds-g-color-warning-base-30, #8c4b00);
+}
+
+.cfo-badge--red {
+    background: var(--slds-g-color-error-container-1, #fdeaea);
+    color: var(--slds-g-color-error-base-30, #b71c1c);
+}
+
+.cfo-detail,
+.cfo-empty,
+.cfo-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    margin: 0;
+}
+
+.cfo-link {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    text-decoration: none;
+}
+
+.cfo-link:hover {
+    text-decoration: underline;
+}
+
+/*
+ * The definition list is rendered two-up. `slds-list_horizontal` handles the layout; these only
+ * give the label column a stable width so the values line up between rows.
+ *
+ * ⚠ NAMESPACED CLASSES (`cfo-*`), NOT `dt.slds-item_label`. Overriding an SLDS class from a
+ * component stylesheet is unsupported and the SLDS 2 linter flags it (`slds/no-slds-class-overrides`)
+ * — SLDS owns those selectors and can change them under us. The element carries BOTH classes: the
+ * SLDS one for layout, ours for the two properties we actually set.
+ */
+/*
+ * ⚠ The `9rem` below is the ONE remaining SLDS-linter warning in this bundle
+ * (slds/no-hardcoded-values-slds2), and it is knowingly kept: the linter's own message is "There's
+ * no replacement styling hook for the 9rem static value", i.e. SLDS 2 offers no sizing token for a
+ * definition-list label column. Removing it as the linter suggests would let the label column
+ * collapse to its content width, so the four values no longer line up. Replace it the moment a
+ * sizing hook exists. The linter reports 0 errors for this bundle and 0 violations of any kind for
+ * callForOffersList.
+ */
+.cfo-term {
+    width: 9rem;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}
+
+.cfo-value {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}

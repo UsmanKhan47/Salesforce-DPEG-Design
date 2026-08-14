@@ -18,7 +18,7 @@
  *
  * ── 🔴 WHY HERE AND NOT IN THE `Transaction_Complete_Close` FLOW ──
  * That flow is the obvious home and it is the WRONG one: it would miss half the closes.
- * `StageAdvanceService.NEXT_STAGE` maps **both** `PSA ⇒ Closed Won` and
+ * `StageAdvanceService.NEXT_STAGE` maps **both** `Under Contract (PSA) ⇒ Closed Won` and
  * `About to Close ⇒ Closed Won`, so a deal driver clicking Advance Stage reaches Closed Won
  * with **no `Transaction__c` in the picture at all**, and the gap would be invisible.
  * Keying on the OPPORTUNITY STAGE catches every route by construction. The trigger handler

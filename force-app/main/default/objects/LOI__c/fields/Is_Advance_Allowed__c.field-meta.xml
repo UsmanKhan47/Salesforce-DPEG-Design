@@ -49,16 +49,126 @@
 
          ⚠ The `Sent` clause remains ACQUISITION-SHAPED and is deliberately left alone.
          `Sent` is not on the disposition value set either, so it is inert there for the
-         same reason `Executed` is inert on acquisition. -->
+         same reason `Executed` is inert on acquisition.
+
+         ================================================================================
+         🔴 RETRACTED 2026-08-14 (Phase 3, observation 5, requirements C1). THE "DO NOT ADD A
+         RecordType.DeveloperName TEST" INSTRUCTION DIRECTLY ABOVE IS WITHDRAWN, AND THE
+         FORMULA NOW CARRIES ONE. THIS IS THE THIRD OCCURRENCE OF ONE DEFECT.
+         ================================================================================
+
+         RETRACTED, verbatim: "DO NOT ADD A `RecordType.DeveloperName` TEST TO THIS FORMULA.
+         It is not needed — the value sets are disjoint at the terminal stage."
+
+         ITS PREMISE DIED, IT WAS NOT OVERRULED. The instruction rested on the LOI value sets
+         being disjoint. Observation 5 makes the acquisition sequence
+         Draft -> Under Review -> Submitted -> Negotiation -> Signed, and 'Under Review' has
+         been step 2 of the DISPOSITION sequence since 3B. It is now SHARED. Note the retracted
+         sentence's own qualifier — "disjoint AT THE TERMINAL STAGE" — is STILL TRUE ('Signed'
+         vs 'Executed'), which is exactly why the terminal clauses below needed no record-type
+         guard and the approval clause did. The overlap is in the MIDDLE of the sequence.
+
+         🔴 THREE BREAKS, AND ONLY THE SECOND ONE NEEDED THE RECORD TYPE.
+         1. THE ACQUISITION TERMINAL MOVED 'Completed' -> 'Signed'. Without a `<> "Signed"`
+            clause the formula returns TRUE at the new terminal, so Advance Stage renders on a
+            FINISHED acquisition LOI and then refuses the click. That is the SAME DEFECT as
+            D20/C1 (`NE 'Signed'` not excluding `Declined`) and D22 (`<> "Completed"` not
+            excluding `Executed`), both recorded above in this same comment — a terminal-state
+            test written against one value set and inherited by another. THIS IS THE THIRD
+            OCCURRENCE. When a fourth value set or a fourth terminal appears, add it HERE, in
+            the same change.
+         2. 'Under Review' BECAME SHARED, AND THIS ONE INVERTS RATHER THAN LEAKS. The approval
+            gate `OR(TEXT(Stage__c) <> "Prepare/Review", TEXT(LOI_Status__c) = "Approved")` was
+            inert on disposition only because 'Prepare/Review' is not on that value set.
+            Repointing it to 'Under Review' with no record-type test makes it LIVE there: a
+            disposition LOI at 'Under Review' — step 2 of 5, the ordinary working state — would
+            have Advance Stage hidden unless LOI_Status__c reads 'Approved', which nothing on
+            the sell-side path ever writes. The sell-side path would dead-end at step 2 with no
+            error and nothing logged. THIS is the clause that needed the discriminator, and it
+            is the ONLY one that got it.
+         3. 'Sent' -> 'Submitted' MOVED THE BRANCH POINT. The exclusion exists because the
+            acquisition path BRANCHES there (two named buttons, Counter and Completed, rather
+            than one generic Advance) — see RecordStageAdvanceService's header. The branch moves
+            with the value: it is now at 'Submitted', whose two exits are 'Negotiation' and
+            'Signed'. Both 'Sent' and 'Submitted' are acquisition-only, so this clause stays
+            inert on disposition exactly as before and needs no guard.
+
+         WHY THE GUARD IS SCOPED TO ONE DISJUNCTION AND NOT PUT AT THE TOP LEVEL. This field
+         backs BOTH record types' Advance Stage entries on LOI_Record_Page (that is what D22
+         established). A top-level `RecordType.DeveloperName = "Acquisition_LOI"` would return
+         FALSE on every disposition LOI and delete the disposition Advance Stage button
+         outright — reintroducing the exact 3B gap D22 closed. The guard belongs inside the one
+         clause that is genuinely acquisition-semantic.
+
+         WHY `RecordType.DeveloperName` AND NOT THE LOOKUP. It is the authoritative
+         discriminator and it has in-repo precedent that has passed this org's check-only
+         validation: NDA__c.Is_Decline_Allowed__c uses the same merge field, as does
+         All_NDAs_Signed_Before_Progression. 🔴 IF THE DEPLOY REJECTS THE MERGE FIELD, the
+         substitute is `NOT(ISBLANK(Disposition__c))` — i.e. the first disjunct becomes
+         `NOT(ISBLANK(Disposition__c))` — and nothing else in this file changes. It is a NAME
+         comparison, not an Id, so it survives an org rebuild but breaks if the Acquisition_LOI
+         record type is ever renamed.
+         ⚠ A MASTER-RECORD-TYPE ROW READS BLANK on this merge field, so the guard evaluates
+         TRUE and the clause goes inert — the button shows. That is FAIL-OPEN and it is
+         deliberate: RecordStageAdvanceService's defaultTypeKey routes a Master LOI to the
+         ACQUISITION sequence, so showing the button is the correct answer for the population
+         3B's post-deploy migration is supposed to have emptied anyway, and the server gate
+         still refuses anything illegitimate.
+
+         ⚠ THE OBJECTION IN THE RETRACTED PARAGRAPH IS ANSWERED, NOT IGNORED. It warned that a
+         record-type test makes a live acquisition button "newly dependent on a merge field it
+         does not use today". True, and the cost is bounded in a way the FLS objection behind
+         NDA_Record_Page's version was not: `RecordType.DeveloperName` is not a custom field
+         that ships with no permissions, and this file's FLS is unchanged by this edit. The
+         alternative — leaving the clause unguarded — is a measured sell-side outage (break 2),
+         not a hypothetical one.
+
+         ⚠ THREE CLAUSES ARE TRANSITIONAL AND ARE REMOVED AT PHASE 3 D3, NOT NOW:
+         `<> "Completed"`, `<> "Sent"` and the whole `Prepare/Review` disjunction. They name
+         values that live acquisition LOIs still hold until the D1->D2 row migration completes,
+         so naming BOTH the old and the new values makes this formula correct on BOTH sides of
+         that migration and leaves NO window in either direction. This is the same
+         list-both-then-drop shape Phase 2 used on Deal_Pipeline_by_Stage. Dropping them early
+         re-opens break 1 for every un-migrated row.
+         ⚠ THE COUNT IS THREE, AND IT IS LOAD-BEARING RATHER THAN EDITORIAL. This paragraph read
+         "FOUR" until 2026-08-14 while enumerating three, and apply-d3.js makes exactly three
+         cuts to this formula (`Completed`, `Sent`, the `Prepare/Review` disjunction). An
+         operator cross-checking the script against this comment on the one file the script must
+         NOT over-cut would have found a count mismatch and had to guess which was wrong. If a
+         fourth clause ever becomes transitional, change this number and add the matching edit to
+         apply-d3.js in the SAME change.
+
+         ⚠ inlineHelpText IS AT 241 OF 255 AND WAS OVER-CAP ON THE FIRST PASS, AT 258. That one
+         element would have failed the whole atomic P3-D1 payload, including the Stage__c and
+         Negotiation_Status__c values that [MIG], P3-D2 and P3-D3 all depend on. Two things were
+         cut: the leading "System field. ", which is why this text now opens with the substance,
+         matching Stage__c.inlineHelpText on this same object; and "(Signed or Executed)" became
+         "(Signed/Executed)". Do NOT restore either without re-measuring with a parser: the cap on
+         inlineHelpText is 255, NOT the 1000 that applies to <description> directly above it, and
+         those two caps are easy to conflate on adjacent lines of the same file.
+
+         ⚠ AND NOTE HOW THIS PARAGRAPH WAS FIRST WRITTEN, because it is the trap one layer up: the
+         sentence explaining the over-cap fix contained a literal double hyphen, which an XML
+         comment CANNOT contain, so the prose about a deploy defect introduced a deploy defect.
+         Use a single hyphen, a semicolon or a reword. Never write two hyphens in a row anywhere
+         inside a comment body in this repo, including inside a quoted CLI flag. -->
+
     <fullName>Is_Advance_Allowed__c</fullName>
     <label>Is Advance Allowed</label>
-    <description>Backs the Advance Stage button's visibility on the LOI record page, on BOTH record types. True when the generic one-hop advance is legitimate: not at a terminal stage (Completed on acquisition, Executed on disposition), not at Sent, not at Prepare/Review unless the LOI is Approved, and not while an approval is pending. Kept as a formula so the visibility rule stays a pure chain of ANDs and so one expression can also back a server-side validation rule.</description>
-    <inlineHelpText>System field. True when the Advance Stage button should be available on this LOI, on either record type. It turns off at the terminal stage (Completed or Executed), at Sent, and at Prepare/Review until the LOI has been approved.</inlineHelpText>
+    <description>Backs the Advance Stage button&apos;s visibility on the LOI record page, on BOTH record types. True when the generic one-hop advance is legitimate: not at a terminal stage (Signed on acquisition, Executed on disposition), not at the acquisition branch point (Submitted), not at the acquisition approval hop (Under Review) unless the LOI is Approved, and not while an approval is pending. The Under Review clause is guarded by RecordType because that value is SHARED with Disposition_LOI from 2026-08-14 - unguarded it would hide the sell-side button at step 2 of 5. Completed, Sent and Prepare/Review are named alongside their replacements so the formula is correct on both sides of the Phase 3 row migration; they come out at D3.</description>
+    <inlineHelpText>True when the Advance Stage button should be available on this LOI, on either record type. It turns off at the terminal stage (Signed/Executed), at the branch point (Submitted), and at Under Review on an acquisition LOI until it is approved.</inlineHelpText>
     <type>Checkbox</type>
     <formula><![CDATA[AND(
-  TEXT(Stage__c) <> "Completed",
+  TEXT(Stage__c) <> "Signed",
   TEXT(Stage__c) <> "Executed",
+  TEXT(Stage__c) <> "Completed",
+  TEXT(Stage__c) <> "Submitted",
   TEXT(Stage__c) <> "Sent",
+  OR(
+    RecordType.DeveloperName <> "Acquisition_LOI",
+    TEXT(Stage__c) <> "Under Review",
+    TEXT(LOI_Status__c) = "Approved"
+  ),
   OR(
     TEXT(Stage__c) <> "Prepare/Review",
     TEXT(LOI_Status__c) = "Approved"

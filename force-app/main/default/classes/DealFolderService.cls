@@ -17,7 +17,8 @@
  *
  * ── 🔴 WHY IT HANGS OFF THE OPPORTUNITY TRIGGER ──
  * Same argument `PropertyAssetService` won, and it is not reused loosely: `StageAdvanceService
- * .NEXT_STAGE` maps **both** `PSA ⇒ Closed Won` and `About to Close ⇒ Closed Won`, so a deal driver
+ * .NEXT_STAGE` maps **both** `Under Contract (PSA) ⇒ Closed Won` and `About to Close ⇒ Closed Won`,
+ * so a deal driver
  * reaches Closed Won with no `Transaction__c` in the picture at all. Building this into the
  * `Transaction_Complete_Close` flow would have missed half the closes, invisibly. Keying on the
  * OPPORTUNITY STAGE catches every route by construction. ⚠ Note this argument does NOT rule Flow

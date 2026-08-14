@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Offer_Alert_Last_Interval__c</fullName>
+    <label>Offer Alert Last Interval</label>
+    <description>Half of the call-for-offers alert idempotency marker (O2). Holds the SMALLEST alert interval CallForOffersAlertBatch has already notified for this deal, from the ladder 7 / 3 / 1 / 0 days before Offer Due Date. The batch fires only when the interval it would fire is STRICTLY SMALLER than this value, which makes the marker monotone: a missed run catches up on the next pass, and a double-run in one day is a no-op. Blank means no alert has been sent for the current Offer Due Date. Read with its partner Offer Alert Due Date - this field alone is meaningless, because a deadline that moves re-arms the whole ladder. Written by CallForOffersAlertBatch in system mode; blanking it by hand is the supported way to re-arm the alerts for a deal.</description>
+    <inlineHelpText>Set by the daily call-for-offers alert job. Clear this field to make the job send the alerts for this deal again.</inlineHelpText>
+    <externalId>false</externalId>
+    <precision>2</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

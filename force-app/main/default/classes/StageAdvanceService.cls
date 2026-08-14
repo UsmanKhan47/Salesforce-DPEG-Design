@@ -66,7 +66,8 @@ public with sharing class StageAdvanceService {
      * derivable predecessor, which is the entire reason `advanceTo` exists alongside `advance`:
      *   - 'Development Review'  — the Land branch off Under Review (dealSendToDevelopmentReview)
      *   - 'Construction Review' — the Retail branch off Under Review (dealSendToConstructionReview)
-     *   - 'About to Close'      — the optional PSA off-ramp (dealMoveToAboutToClose)
+     *   - 'About to Close'      — the optional 'Under Contract (PSA)' off-ramp
+     *                             (dealMoveToAboutToClose)
      *   - 'Dead/Pass'           — pre-authorized for the deal off-ramp action (design doc D4). It is
      *                             a real stage in BOTH business processes and is reachable from any
      *                             active stage, so it can never be derived by NEXT_STAGE. Listed
@@ -95,13 +96,27 @@ public with sharing class StageAdvanceService {
 
     // Current stage -> the single primary next stage. Underwriting is absent because
     // that step is an approval submission, not a stage write.
+    //
+    // ⚠ 'Under Contract (PSA)' is the DECODED runtime StageName (renamed from 'PSA',
+    // Acquisition Observations phase 2). It contains spaces and parentheses but no '/',
+    // so — unlike 'Dead/Pass' -> 'Dead%2FPass' — NO %2F encoding applies anywhere. An
+    // Apex literal, a picklist value and a visibility rule's rightValue all use this
+    // exact form.
+    //
+    // 🔴 BOTH 'Under Contract (PSA)' AND 'About to Close' MAP TO 'Closed Won', AND THAT
+    // PAIR IS LOAD-BEARING OUTSIDE THIS CLASS. PropertyAssetService.ensureOnClosedWon and
+    // DealFolderService.ensureOnClosedWon live on OpportunityReviewTrigger — rather than
+    // in the Transaction_Complete_Close flow — precisely because of it: a deal driver can
+    // reach 'Closed Won' from EITHER key, so half the closes carry no Transaction__c at
+    // all. Renaming one key without the other silently re-opens that route-vs-state
+    // defect. Both moved together here.
     private static final Map<String, String> NEXT_STAGE = new Map<String, String>{
         'New' => 'Under Review',
         'Under Review' => 'Underwriting',
         'Development Review' => 'Underwriting',
         'Construction Review' => 'Underwriting',
-        'LOI' => 'PSA',
-        'PSA' => 'Closed Won',
+        'LOI' => 'Under Contract (PSA)',
+        'Under Contract (PSA)' => 'Closed Won',
         'About to Close' => 'Closed Won'
     };
 
@@ -140,8 +155,8 @@ public with sharing class StageAdvanceService {
 
     /**
      * Moves the deal to an explicit target stage — the branch actions off Under Review (Send to
-     * Development / Construction Review), the PSA off-ramp (Move to About to Close), and the
-     * pre-authorized Dead/Pass off-ramp.
+     * Development / Construction Review), the 'Under Contract (PSA)' off-ramp (Move to About to
+     * Close), and the pre-authorized Dead/Pass off-ramp.
      *
      * The target is validated against ALLOWED_EXPLICIT_TARGETS BEFORE the record is loaded, so a
      * rejected target costs no query and reveals nothing about whether the record exists.

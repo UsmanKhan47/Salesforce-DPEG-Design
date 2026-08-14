@@ -319,9 +319,12 @@ private class TestDataFactoryTest {
             + 'while the describe resolves a real Id is post-deploy gate T-A1, not a factory bug.');
         Assert.areEqual('Received', created.Stage__c,
             'The disposition seed stage must be Received — Disposition_LOI\'s default. The two LOI '
-            + 'value sets are FULLY DISJOINT, so unlike NDA__c there is no shared value that could '
-            + 'have served both and a hardcoded Draft would produce a fixture off its own record '
-            + 'type\'s value set.');
+            + 'STARTING values still differ, so there is no shared value that could have served '
+            + 'both and a hardcoded Draft would produce a fixture off its own record type\'s '
+            + 'value set. ⚠ This used to say the two value SETS are FULLY DISJOINT, unlike '
+            + 'NDA__c; observation 5 ended that on 2026-08-14 by renaming Prepare/Review to '
+            + 'Under Review, which the disposition sequence already carried. Only the seeds are '
+            + 'still per type, which is all this assertion needs.');
         Assert.areEqual(parent.Id, created.Disposition__c, 'Parented to the Disposition');
         Assert.isNull(created.Opportunity__c,
             'A disposition LOI must carry NO Opportunity — that is what keeps the two clauses of '
@@ -372,14 +375,20 @@ private class TestDataFactoryTest {
     // ═════════════════════════════════════════════════════════════════════════
     // Contract_Review__c record types (Tranche 3C, D16.3)
     //
-    // 🔴 THIS BLOCK IS SHAPED DIFFERENTLY FROM THE NDA AND LOI BLOCKS ABOVE, AND THE DIFFERENCE IS
-    // THE POINT. Those two assert a per-record-type SEED VALUE alongside the stamp, because their
-    // value sets differ. Contract_Review__c's two record types expose the IDENTICAL four
-    // Negotiation_Status__c values and the identical three Stage__c values — Disposition_PSA's own
-    // record type file says so deliberately — so there is no seed to discriminate on and asserting
-    // one would be asserting a coincidence. What these tests pin instead is the RecordTypeId itself
-    // and the PARENT LOOKUP, which is the discriminator ContractExecutionService actually branches
-    // on.
+    // ⚠ THIS BLOCK IS NOW SHAPED LIKE THE NDA AND LOI BLOCKS ABOVE (changed 2026-08-14). It used to
+    // read: "🔴 THIS BLOCK IS SHAPED DIFFERENTLY ... Contract_Review__c's two record types expose
+    // the IDENTICAL four Negotiation_Status__c values ... so there is no seed to discriminate on and
+    // asserting one would be asserting a coincidence." That was true when written. Acquisition
+    // Observations phase 3 (observation 7) SPLIT the sequences — Acquisition_PSA now starts at
+    // 'Draft', Disposition_PSA still starts at 'Initial Draft' (decision O3, a hard stop) — so the
+    // per-type seed is a real discriminator and asserting it is no longer asserting a coincidence.
+    // These tests pin the RecordTypeId, the PARENT LOOKUP (the discriminator
+    // ContractExecutionService actually branches on) AND the seed.
+    //
+    // 🔴 THE SEED ASSERTIONS ARE THE ONLY FALSIFIER THE FACTORY'S NEW BRANCH HAS. Apex DML does not
+    // enforce record-type picklist restriction, so a factory that seeded the WRONG type's value —
+    // or reverted to the field-level default — would insert SILENTLY, and every downstream test
+    // would keep passing until someone tried to advance the fixture's stage.
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
@@ -412,6 +421,14 @@ private class TestDataFactoryTest {
             'An acquisition Contract Review must carry NO Disposition — that lookup is the '
             + 'discriminator ContractExecutionService.handleExecution branches on, so a fixture '
             + 'carrying both parents would run BOTH arms.');
+        Assert.areEqual('Draft', created.Negotiation_Status__c,
+            'The ACQUISITION seed must be Draft — the value Acquisition_PSA carries after phase 3 '
+            + 'and the one OpportunityReviewService stamps on the rows it auto-creates. "Initial '
+            + 'Draft" here means the explicit seed was removed and the row fell back to the '
+            + 'FIELD-LEVEL default, which belongs to Disposition_PSA only: Apex DML does not '
+            + 'enforce record-type picklist restriction, so that row commits SILENTLY and then '
+            + 'cannot be advanced. Do NOT fix that by moving the field default — Disposition_PSA '
+            + 'still needs it (requirements O3, a hard stop).');
     }
 
     /**
@@ -429,7 +446,7 @@ private class TestDataFactoryTest {
         Test.stopTest();
 
         Contract_Review__c created = [
-            SELECT Id, RecordTypeId, Disposition__c, Opportunity__c
+            SELECT Id, RecordTypeId, Disposition__c, Opportunity__c, Negotiation_Status__c
             FROM Contract_Review__c WHERE Id = :unsaved.Id
         ];
 
@@ -445,6 +462,13 @@ private class TestDataFactoryTest {
             + 'than tidy: ContractExecutionService.handleExecution runs its acquisition and '
             + 'disposition arms off the two parent LOOKUPS (never the record type), so a fixture '
             + 'with both would run both arms and make the two behaviours indistinguishable.');
+        Assert.areEqual('Initial Draft', created.Negotiation_Status__c,
+            'The DISPOSITION seed must stay Initial Draft. 🔴 This is the half that goes red if '
+            + 'someone "harmonises" the factory back to one seed after phase 3 split the two '
+            + 'sequences: Disposition_PSA is untouched by phase 3 (requirements O3) and never '
+            + 'carried Draft. Paired with the acquisition assertion in the test above, the two '
+            + 'together are what make the branch falsifiable — either one alone passes in a build '
+            + 'that hardcodes the value it expects.');
     }
 
     /** The PSA-side permanent falsifier for the constant-first `.equals()` guard (S2's shape). */
@@ -466,11 +490,15 @@ private class TestDataFactoryTest {
         Test.stopTest();
 
         Assert.isTrue(threw,
-            'An unrecognised Contract Review record type name must throw. ⚠ The guard matters MORE '
-            + 'on this object than on NDA__c or LOI__c, not less: a mis-typed PSA record type '
-            + 'produces a fixture that walks its stage sequence PERFECTLY (both types share one '
-            + 'map) and is wrong only about which PERSONA may drive it — so no walk test would '
-            + 'catch it.');
+            'An unrecognised Contract Review record type name must throw. ⚠ THE REASON THE GUARD '
+            + 'MATTERS CHANGED ON 2026-08-14 AND IS NOW STRONGER, NOT WEAKER. It used to be that a '
+            + 'mis-typed PSA record type produced a fixture that walked its sequence PERFECTLY '
+            + '(both types shared one map) and was wrong only about which PERSONA may drive it, so '
+            + 'no walk test would catch it. Phase 3 split the sequences AND this factory now seeds '
+            + 'per type, so a name that slips past the guard would degrade to the platform default '
+            + 'record type while taking the ACQUISITION seed — a row whose status and record type '
+            + 'disagree, inserted silently, because Apex DML does not enforce record-type picklist '
+            + 'restriction.');
     }
 
     /** Both PSA constants are non-null literals, so a null argument is not equal to either. */

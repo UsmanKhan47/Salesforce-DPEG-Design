@@ -5,9 +5,11 @@
  *
  *   NDA__c                              (Status__c)  PER RECORD TYPE — see below
  *   LOI__c                              (Stage__c)   PER RECORD TYPE — see below
- *   Contract_Review__c        (Negotiation_Status__c) PER RECORD TYPE — see below, and read the
- *                                                    note there: the two types share ONE SEQUENCE
- *                                                    and differ ONLY in the GATE
+ *   Contract_Review__c        (Negotiation_Status__c) PER RECORD TYPE — see below. ⚠ This line
+ *                                                    used to read "the two types share ONE SEQUENCE
+ *                                                    and differ ONLY in the GATE". FALSE since
+ *                                                    2026-08-14 (observation 7): they now differ in
+ *                                                    BOTH, and the shared map object is gone
  *   Underwriting__c                     (Stage__c)   Requested -> In Progress -> [approval] -> Approved -> Completed
  *   Construction_Feasibility_Review__c  (Stage__c)   Requested -> Site Visit -> Condition Assessment
  *                                                    -> Cost Estimate -> Share Opinion -> Completed
@@ -29,8 +31,8 @@
  * the user instead of being swallowed.
  *
  * ── 🔴 THE MAPS ARE PER RECORD TYPE, NOT PER OBJECT (Tranche 3A, 2026-08-09) ──
- * THREE of the seven objects now carry record types. TWO of them have DIFFERENT stage sequences
- * (D7 / D14.1 / D6); the third has ONE sequence and TWO GATES (D16.3, Tranche 3C):
+ * THREE of the seven objects carry record types, and since 2026-08-14 ALL THREE have DIFFERENT
+ * stage sequences per type (D7 / D14.1 / D6, plus observation 7):
  *
  *   NDA__c
  *   Acquisition_NDA   Pending  -> Sent -> Received -> Signed        explicit targets: none
@@ -40,34 +42,36 @@
  *
  *   LOI__c            (Tranche 3B, 2026-08-09 — this was the config addition the note at
  *                      CONFIG_BY_TYPE predicted, and it changed nothing below the config)
- *   Acquisition_LOI   Draft -> Prepare/Review -> Sent -> Counter -> Completed
- *                     explicit targets: {Counter, Completed}       gate: DEAL_DRIVER
+ *   Acquisition_LOI   Draft -> Under Review -> Submitted -> Negotiation -> Signed
+ *                     explicit targets: {Negotiation, Signed}      gate: DEAL_DRIVER
+ *                     ⚠ RENAMED THROUGHOUT 2026-08-14 (observation 5) from
+ *                       Draft -> Prepare/Review -> Sent -> Counter -> Completed. Same SHAPE, new
+ *                       labels; 'Draft' is the only surviving literal.
  *   Disposition_LOI   Received -> Under Review -> Countered by DPEG
  *                       -> Counter Received from Buyer -> Executed
  *                     explicit targets: {Countered by DPEG,       gate: DISPOSITION_DRIVER
  *                       Counter Received from Buyer} — the negotiation LOOP, added at the
  *                       Tranche 3B close-out (2026-08-09)
  *
- *   Contract_Review__c (Tranche 3C, 2026-08-09 — the case that proves the gate and the sequence
- *                      are INDEPENDENT axes)
- *   Acquisition_PSA   Initial Draft -> Revised -> Ready for Execution -> Executed
+ *   Contract_Review__c (Tranche 3C, 2026-08-09 for the GATE; observation 7, 2026-08-14 for the
+ *                      SEQUENCE)
+ *   Acquisition_PSA   Draft -> Negotiation -> Signed -> Executed
  *                     explicit targets: none                       gate: DEAL_DRIVER
- *   Disposition_PSA   Initial Draft -> Revised -> Ready for Execution -> Executed  (THE SAME MAP
- *                     OBJECT, shared by reference — see CONTRACT_REVIEW_NEXT_STAGE)
+ *   Disposition_PSA   Initial Draft -> Revised -> Ready for Execution -> Executed
  *                     explicit targets: none                       gate: DISPOSITION_DRIVER
  *
- * ── 🔴 WHY Contract_Review__c IS SPLIT AT ALL WHEN ITS VALUES ARE IDENTICAL ──
- * This is the question a reader arrives with, and "it needed no change" is the wrong answer.
- * ESTABLISHED 2026-08-09, not assumed:
- *   - THE SEQUENCE genuinely needs NO change. Both record type files expose the SAME four
- *     Negotiation_Status__c values, and Disposition_PSA's own header states that is deliberate
- *     ("Initial Draft -> Revised -> Ready for Execution -> Executed are ALREADY exactly the four
- *     states the client document names for the sell-side PSA"). So both types share ONE map
- *     OBJECT, by reference, not two copies. Copying it would invite the two to drift apart while
- *     the requirement is that they cannot.
- *   - THE GATE MUST change. A disposition persona holds `Disposition_Deal_Driver` and NOT
+ * ── 🔴 Contract_Review__c IS SPLIT ON BOTH AXES — AND IT WAS SPLIT ON ONE AXIS FIRST ──
+ * ⚠ THIS BLOCK USED TO BE TITLED "WHY Contract_Review__c IS SPLIT AT ALL WHEN ITS VALUES ARE
+ * IDENTICAL" AND ARGUED THAT THE TWO TYPES SHARE ONE MAP OBJECT BY REFERENCE, BECAUSE "COPYING IT
+ * WOULD INVITE THE TWO TO DRIFT APART WHILE THE REQUIREMENT IS THAT THEY CANNOT". That argument was
+ * correct on 2026-08-09 and is OBSOLETE, not overturned — its premise (identical value sets) was
+ * ended by observation 7. It is recorded here because the git history reads oddly without it and
+ * because a future reader must not "restore" the shared reference as a tidy-up.
+ *
+ * The two axes, and why each is split, in the order they were split:
+ *   - THE GATE (3C, 2026-08-09). A disposition persona holds `Disposition_Deal_Driver` and NOT
  *     `Acquisition_Deal_Driver`, and the two sets are disjoint (measured across every permission
- *     set in the repo: exactly one set carries each module's token). Left at the single-sequence
+ *     set in the repo: exactly one set carries each module's token). Left at a single
  *     DEAL_DRIVER config, `hasStageActionAccess` and `assertStageActionAccess` would REFUSE every
  *     disposition PSA for the only persona meant to work it — the sell-side PSA would be
  *     unadvanceable from its own record page.
@@ -75,8 +79,17 @@
  *     `User.Disposition_Driver__c` vs `User.Deal_Driver__c`. Those flags are retired — the token is
  *     now the `Disposition_Deal_Actions` vs `Acquisition_Deal_Actions` CUSTOM PERMISSION. The
  *     disjointness, and therefore this whole argument, is unchanged; only what the sets carry is.
- * ⇒ SHARING A SEQUENCE IS NOT SHARING A GATE. Anyone who checks only the picklists concludes "no
- *   change needed" and ships a dead feature.
+ *   - THE SEQUENCE (observation 7, 2026-08-14). The acquisition PSA moves to
+ *     `Draft -> Negotiation -> Signed -> Executed`; the disposition PSA keeps its four values
+ *     verbatim, and O3 of the requirements doc makes that a HARD STOP — those three values stay
+ *     ACTIVE on the field precisely because Disposition_PSA still runs on them. A shared map would
+ *     have to hold BOTH sides' values, and Apex DML does not enforce record-type picklist
+ *     restriction, so `advance()` itself would then write an acquisition-only status onto a sale.
+ *     Two maps is the only shape in which that is unexpressible.
+ * ⇒ THE 3C LESSON STILL STANDS AND IS NOW JOINED BY ITS CONVERSE. Sharing a sequence is not
+ *   sharing a gate (3C: someone who checks only the picklists ships a dead feature). And sharing
+ *   an OBJECT is not sharing a sequence (observation 7: someone who edits one map and assumes the
+ *   other followed ships a cross-module write). The two axes are independent in BOTH directions.
  *
  * ⚠ AND THE SPLIT COSTS ONE QUERY, WHICH IS NOT FREE AND IS WORTH KNOWING. `gateFor()`
  * short-circuits only for an object with ONE configured sequence, so Contract_Review__c now LOADS
@@ -103,10 +116,23 @@
  * NDA advances to 'Signed'. That single fact is why an object-keyed map cannot express this feature
  * and why the record type has to be read off the record.
  *
- * ⚠ ON LOI__c THE TWO STAGE SETS ARE FULLY DISJOINT, AND THAT DOES **NOT** MAKE THE RECORD TYPE
- * REDUNDANT HERE. Disjoint sets mean the stage alone identifies the path for a flexipage
- * VISIBILITY rule, which is why the LOI record-type files say so. It does not follow for this
- * service, for three separate reasons, any one of which is sufficient:
+ * 🔴 ON LOI__c THE TWO STAGE SETS ARE NO LONGER DISJOINT — 'Under Review' IS SHARED BY BOTH SINCE
+ * 2026-08-14 (observation 5). It is the acquisition sequence's second stage and the disposition
+ * sequence's second stage. ⚠ THIS BLOCK USED TO OPEN "THE TWO STAGE SETS ARE FULLY DISJOINT, AND
+ * THAT DOES NOT MAKE THE RECORD TYPE REDUNDANT HERE" and then gave three reasons the service needs
+ * the record type ANYWAY. Every one of those three reasons still holds and is retained verbatim
+ * below — but they have been promoted from "belt and braces" to "the only thing holding this
+ * together", because the premise they were arguing against is now simply false.
+ *
+ * ⇒ NOTHING IN THIS CLASS REGRESSED, and that is a property of the 3A/3B design rather than luck:
+ *   this service has always resolved the sequence from the RECORD TYPE and never from the stage
+ *   value, so a shared stage cannot mis-route it. What DID break is everything OUTSIDE this class
+ *   that keyed on the stage value alone — the LOI record-type files' own comments, the
+ *   LOI_Record_Page visibility rules, and LOI__c.Is_Advance_Allowed__c, a formula whose header
+ *   records that it omits a record-type test PRECISELY because the sets were disjoint (design
+ *   collision C1). Those are the declarative half of this pack and are not fixed from here.
+ *
+ * The three reasons, unchanged, any one of which is sufficient:
  *   1. the PERMISSION GATE is not a function of the current stage at all — hasStageActionAccess is
  *      asked before any stage is known to the client, and answering it needs the record type;
  *   2. the EXPLICIT-TARGET allow-list is checked against a caller-supplied string, so deriving the
@@ -114,8 +140,10 @@
  *      inherit the wrong list;
  *   3. Apex DML does not enforce record-type picklist restriction, so a row CAN carry an off-set
  *      stage — at which point "the sets are disjoint" is an assumption about data, not a fact.
- * Deriving the sequence from the stage value would also silently break the day any LOI stage is
- * shared, with no compile error and no failing walk test.
+ * ✅ AND THE SENTENCE THAT USED TO CLOSE THIS BLOCK WAS A PREDICTION THAT CAME TRUE: "Deriving the
+ * sequence from the stage value would also silently break the day any LOI stage is shared, with no
+ * compile error and no failing walk test." That day was 2026-08-14. Because the sequence is derived
+ * from the record type, nothing broke.
  *
  * 🔴 THE EXPLICIT-TARGET ALLOW-LIST IS PER RECORD TYPE TOO, AND THAT IS THE SECURITY HALF OF THIS
  * CHANGE — NOT A TIDY-UP. Record-type picklist restrictions are enforced by the UI ONLY; Apex DML
@@ -126,10 +154,13 @@
  * Pinned by RecordStageAdvanceServiceTest.acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget.
  *
  * ⚠ THE SAME HOLE EXISTS IN BOTH DIRECTIONS ON LOI__c, WHICH IS WHY THE 3B CONFIG SPLITS
- * LOI_EXPLICIT_TARGETS RATHER THAN SHARING IT. Held at object level, {Counter, Completed} would be
+ * LOI_EXPLICIT_TARGETS RATHER THAN SHARING IT. Held at object level, {Negotiation, Signed} would be
  * writable onto a DISPOSITION LOI — a value set that record type does not carry at all — and the
  * disposition type's own {Countered by DPEG, Counter Received from Buyer} would be writable onto an
- * ACQUISITION LOI, which carries neither. Pinned in both directions by
+ * ACQUISITION LOI, which carries neither. ⚠ The acquisition pair was {Counter, Completed} until
+ * observation 5 renamed it; the two ALLOW-LISTS remain fully disjoint even though the two SEQUENCES
+ * no longer are (they share 'Under Review', which is on neither list, deliberately). Pinned in both
+ * directions by
  * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget /
  * dispositionLoiRefusesTheAcquisitionExplicitTargets.
  *
@@ -161,12 +192,23 @@
  * record types (FOUR of the seven, since Transaction__c joined 2026-08-12) keeps a single map and
  * never pays a describe: record-type awareness degrades to exactly today's behaviour.
  *
- * ⚠ ON Contract_Review__c THE FALLBACK IS QUIETER THAN ON THE OTHER TWO, AND THAT CUTS BOTH WAYS.
- * Because both PSA types share one sequence, a Master-type row advances CORRECTLY through the
- * fallback — the walk works, the toasts are right, nothing looks wrong. The only thing the fallback
- * gets wrong is the GATE (DEAL_DRIVER), so an unmigrated sell-side PSA is simply un-advanceable by
- * the disposition persona and perfectly advanceable by an acquisitions one. There is no loud
- * symptom to lead anyone to gate T-B here.
+ * ✅ ON Contract_Review__c THE FALLBACK USED TO BE THE QUIETEST OF THE THREE, AND OBSERVATION 7
+ * MADE IT THE LOUDEST. ⚠ This block used to read: "Because both PSA types share one sequence, a
+ * Master-type row advances CORRECTLY through the fallback — the walk works, the toasts are right,
+ * nothing looks wrong ... There is no loud symptom to lead anyone to gate T-B here." That is FALSE
+ * as of 2026-08-14 and is rewritten rather than left standing.
+ *
+ * The two sequences now differ, and the P3 row migration is scoped BY RECORD TYPE, so a Master-type
+ * row is NOT migrated and keeps whatever value it had:
+ *   - a legacy / Master ACQUISITION row still on 'Initial Draft' finds no entry in the acquisition
+ *     fallback map and is REFUSED on its first click, naming its own stale status. That refusal is
+ *     the loud symptom this block used to complain was missing — it points straight at gate T-B.
+ *   - a Master-type DISPOSITION row is worse off than before, not better: it takes the ACQUISITION
+ *     sequence, which no longer describes it at all, so it is refused as well as being on the wrong
+ *     gate. Before observation 7 it at least walked. Gate T-A1/T-B closes both cases; nothing in
+ *     Apex can.
+ * See CONFIG_BY_TYPE for why the default nevertheless STAYS Acquisition_PSA (a refusal beats the
+ * wrong write the disposition default would produce).
  *
  * ⚠ The fallback is safe on LOI__c for the same reason it is safe on NDA__c and for no other:
  * every LOI in the org today is buy-side by construction, because the Disposition__c lookup and the
@@ -191,7 +233,7 @@
  *                                LOI 2, Contract Review 2, plus one each for the FOUR
  *                                record-type-free objects). THREE
  *                                of the ten are not straight lines, and each is a
- *                                DIFFERENT shape: the ACQUISITION LOI BRANCHES at 'Sent', the
+ *                                DIFFERENT shape: the ACQUISITION LOI BRANCHES at 'Submitted', the
  *                                DISPOSITION NDA has the 'Declined' OFF-RAMP, and the DISPOSITION
  *                                LOI is a LOOP (Countered by DPEG <-> Counter Received from Buyer).
  *                                All three reach their extra stages through a per-record-type
@@ -406,9 +448,15 @@ public with sharing class RecordStageAdvanceService {
     // ─────────────────────────────────────────────────────────────────────────
     // STAGE MAPS — current stage -> the single next stage.
     // Each map is one PATH, minus its terminal stage (which has no entry and therefore yields the
-    // "no next step available" message). Values are the DECODED runtime picklist strings;
-    // 'Prepare/Review' carries a literal slash, which is why the future validation rules must use
-    // TEXT(...) compares rather than ISPICKVAL.
+    // "no next step available" message). Values are the DECODED runtime picklist strings.
+    //
+    // ⚠ NO VALUE IN ANY OF THESE TEN MAPS CONTAINS A '/' ANY MORE. This note used to say
+    // "'Prepare/Review' carries a literal slash, which is why the future validation rules must use
+    // TEXT(...) compares rather than ISPICKVAL" — observation 5 renamed that value to
+    // 'Under Review' and it was the last one. The TEXT(...) discipline is still correct for
+    // validation rules on these fields (it is what makes a value rename a one-line edit rather
+    // than a re-encoded one), but there is no longer a %2F hazard to point at. Opportunity's
+    // 'Dead/Pass' still carries it; that is StageAdvanceService's field, not this one.
     //
     // ⚠ An object with record types has ONE MAP PER RECORD TYPE. Do not merge two record types'
     // maps into one even when they share values — see the 'Sent' divergence in the class header.
@@ -466,15 +514,43 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
-     * LOI__c.Stage__c / Acquisition_LOI — Draft -> Prepare/Review -> Sent -> Counter -> Completed.
-     * 'Completed' is terminal. UNCHANGED by Tranche 3B: this is the live, deployed buy-side
-     * sequence and the only edit it received was its name.
+     * LOI__c.Stage__c / Acquisition_LOI — Draft -> Under Review -> Submitted -> Negotiation ->
+     * Signed. 'Signed' is terminal.
+     *
+     * 🔴 EVERY VALUE BUT 'Draft' CHANGED (Acquisition Observations, observation 5, 2026-08-14).
+     * The old map read Draft -> Prepare/Review -> Sent -> Counter -> Completed. The rename is
+     * one-for-one and preserves the SHAPE exactly — same five stages, same branch point, same
+     * terminal — so nothing below this map moved:
+     *
+     *   Prepare/Review -> Under Review     ('Under Review' ALREADY EXISTED on this picklist)
+     *   Sent           -> Submitted
+     *   Counter        -> Negotiation
+     *   Completed      -> Signed
+     *
+     * ⚠ 'Draft' IS THE ONLY SURVIVING LITERAL, and that is what keeps OpportunityReviewService's
+     * LOI seed stage (`Stage__c = 'Draft'`) and TestDataFactory's LOI fixture correct with no edit.
+     * Do not read that as "the LOI half was small".
+     *
+     * 🔴 THE SLASH IS GONE, AND WITH IT THE %2F HAZARD ON THIS MAP. 'Prepare/Review' carried a
+     * literal slash, which is why every validation rule keyed on this field was required to use
+     * TEXT(...) rather than ISPICKVAL and why the value appears as `Prepare%2FReview` in some
+     * metadata contexts. NOT ONE value in the new sequence contains a '/', so no encoding applies
+     * to any of them. Do not "helpfully" encode 'Under Review' — it is two words and a space.
+     * (`Dead/Pass` on Opportunity.StageName is a different field and still carries the trap.)
+     *
+     * 🔴 'Under Review' IS NOW SHARED WITH Disposition_LOI, WHICH BREAKS THE DISJOINTNESS THE
+     * WHOLE LOI FEATURE USED TO ASSUME. See the class header's rewritten LOI block: the two stage
+     * sets are no longer disjoint, so a rule, formula or hint keyed on the STAGE VALUE ALONE can no
+     * longer identify which side of the business a row belongs to. Nothing in THIS class regressed
+     * — it has always resolved the sequence from the RECORD TYPE and never from the stage — but the
+     * three arguments in the header for why that was the right choice have gone from "belt and
+     * braces" to "the only thing holding this together".
      */
     private static final Map<String, String> LOI_ACQUISITION_NEXT_STAGE = new Map<String, String>{
-        'Draft' => 'Prepare/Review',
-        'Prepare/Review' => 'Sent',
-        'Sent' => 'Counter',
-        'Counter' => 'Completed'
+        'Draft' => 'Under Review',
+        'Under Review' => 'Submitted',
+        'Submitted' => 'Negotiation',
+        'Negotiation' => 'Signed'
     };
 
     /**
@@ -484,7 +560,16 @@ public with sharing class RecordStageAdvanceService {
      * 🔴 THE DIRECTION IS REVERSED, WHICH IS WHY THIS IS A SECOND MAP RATHER THAN A LONGER ONE.
      * On a purchase DPEG DRAFTS the LOI and SENDS it, so the path starts at 'Draft'. On a sale the
      * LOI ARRIVES from the buyer through the appointed broker, so it starts at 'Received' — there
-     * is no Draft, no Prepare/Review and no Sent. Not one value is shared with the acquisition map.
+     * is no Draft and no Submitted.
+     *
+     * 🔴 THE SENTENCE THAT USED TO END THAT PARAGRAPH — "Not one value is shared with the
+     * acquisition map" — IS FALSE SINCE 2026-08-14 and is the single most quotable casualty of
+     * observation 5. 'Under Review' is now on BOTH maps: it is the acquisition sequence's second
+     * stage (renamed from 'Prepare/Review') and this map's second stage. This map itself is
+     * UNCHANGED — the sell side was not touched by observation 5 — but anything that inferred
+     * "which side is this?" from an LOI stage value alone is now wrong, and the LOI record-type
+     * files, the LOI record page's visibility rules and LOI__c.Is_Advance_Allowed__c all did
+     * exactly that (design collision C1). This service does not, and never did.
      *
      * ✅ THE "OPEN" NOTE THAT USED TO SIT HERE IS CLOSED — see LOI_DISPOSITION_EXPLICIT_TARGETS
      * immediately below. This map stays exactly as it was: it is the LINE through the loop, and the
@@ -534,9 +619,10 @@ public with sharing class RecordStageAdvanceService {
      * ⚠ NEITHER VALUE IS A DERIVABLE FORWARD HOP OUT OF ITS OWN SOURCE STAGE IN THE SENSE THAT
      * MATTERS: adding an explicit target never lets a caller SKIP a hop here, because both stages
      * sit adjacent in the sequence. Contrast LOI_ACQUISITION_EXPLICIT_TARGETS, which deliberately
-     * excludes 'Prepare/Review' and 'Sent' precisely because listing them WOULD skip the approval
-     * gate. There is no equivalent gate on the sell side — the disposition LOI has no approval
-     * process — so no transition is bypassed by these two entries.
+     * excludes 'Under Review' and 'Submitted' precisely because listing them WOULD skip the
+     * approval gate (those two were 'Prepare/Review' and 'Sent' until observation 5 renamed them;
+     * the exclusion is unchanged). There is no equivalent gate on the sell side — the disposition
+     * LOI has no approval process — so no transition is bypassed by these two entries.
      *
      * The actions are `quickActions/LOI__c.Mark_Countered_By_DPEG` -> `c/loiMarkCounteredByDpeg`
      * and `quickActions/LOI__c.Mark_Counter_Received` -> `c/loiMarkCounterReceived`; each passes
@@ -553,21 +639,34 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
-     * Contract_Review__c.Negotiation_Status__c — Initial Draft -> Revised -> Ready for Execution
+     * Contract_Review__c.Negotiation_Status__c / Acquisition_PSA — Draft -> Negotiation -> Signed
      * -> Executed. 'Executed' is terminal.
      *
-     * 🔴 ONE MAP, SHARED BY BOTH RECORD TYPES BY REFERENCE (Tranche 3C, 2026-08-09). Acquisition_PSA
-     * and Disposition_PSA both point at THIS object in CONFIG_BY_TYPE. That is deliberate and is the
-     * opposite of the NDA__c / LOI__c treatment: there the two value sets genuinely differ, so two
-     * maps are the requirement. Here Disposition_PSA's own record type file records that the four
-     * values are ALREADY exactly the sell-side states, so DUPLICATING this map would create two
-     * things that must stay equal and give a future editor a way to make them unequal. Sharing the
-     * reference makes divergence unexpressible.
+     * ── 🔴 THE SHARED MAP IS GONE. THIS IS THE SPLIT ITS OWN COMMENT PREDICTED. ──
+     * Until 2026-08-14 there was ONE map object, `CONTRACT_REVIEW_NEXT_STAGE`, that BOTH record
+     * types pointed at BY REFERENCE, and the class header argued at length that copying it "would
+     * invite the two to drift apart while the requirement is that they cannot". That argument was
+     * correct for as long as its premise held — Disposition_PSA's record type file recorded that
+     * `Initial Draft -> Revised -> Ready for Execution -> Executed` were ALREADY exactly the
+     * sell-side states, so the two sides had nothing to disagree about.
      *
-     * ⚠ IF THE TWO SIDES EVER DO DIVERGE, SPLIT INTO TWO NAMED MAPS — do not add a value here and
-     * restrict it in the record type file. Record-type picklist restriction is UI-ONLY and is not
-     * enforced by Apex DML, so a sell-side-only status added to this shared map would be writable
-     * onto an acquisition PSA by advance() itself.
+     * Observation 7 (Acquisition Observations, 2026-08-14) ends that premise. The ACQUISITION PSA
+     * moves to `Draft -> Negotiation -> Signed -> Executed`; the DISPOSITION PSA keeps its four
+     * values verbatim. The two sequences now genuinely differ, so the old block's own escape clause
+     * applies literally: *"IF THE TWO SIDES EVER DO DIVERGE, SPLIT INTO TWO NAMED MAPS — do not add
+     * a value here and restrict it in the record type file."* That is exactly what happened, and it
+     * is why the split is CORRECT here and would have been a defect a week ago.
+     *
+     * 🔴 THE ALTERNATIVE THE OLD COMMENT FORBIDS IS THE ONE THAT LOOKS CHEAPEST, SO NAME IT: adding
+     * `Draft`/`Negotiation`/`Signed` to a single shared map and relying on the record type files to
+     * keep them off the sell side. Record-type picklist restriction is UI-ONLY and is not enforced
+     * by Apex DML, so `advance()` ITSELF would then write an acquisition-only status onto a
+     * disposition PSA — not a hand-crafted call, the ordinary Advance Stage button. Two maps is the
+     * only shape in which that is unexpressible.
+     *
+     * ⚠ 'Executed' IS THE ONE VALUE STILL SHARED BY BOTH SEQUENCES, and it is deliberately the
+     * TERMINAL of both — so it has no entry in either map and can never derive a hop on the wrong
+     * side. That is what keeps the `Executed` handoff (see below) identical for both modules.
      *
      * 🔴 THIS OBJECT'S STAGE FIELD IS Negotiation_Status__c, NOT Stage__c — THE ONLY EXCEPTION
      * BESIDES THE NDA, AND FOR A COMPLETELY DIFFERENT REASON.
@@ -576,24 +675,39 @@ public with sharing class RecordStageAdvanceService {
      * Negotiation_Status__c on every create and update. A first attempt at this object mapped
      * Stage__c directly and produced a button that reported SUCCESS and changed nothing — the DML
      * committed, LastModifiedDate moved, and the flow had already replaced the value (measured
-     * 2026-08-05 on CTR-0000). Driving the status is what makes the Path move, as a consequence:
+     * 2026-08-05 on CTR-0000). Driving the status is what makes the Path move, as a consequence —
+     * and this projection is now PER RECORD TYPE too, because the flow maps status values and the
+     * status values differ:
      *
-     *   Initial Draft        -> Path shows 'PSA Drafting'
-     *   Revised              -> Path shows 'Review'
-     *   Ready for Execution  -> Path shows 'Review'   (same stage; the Path does not move here)
-     *   Executed             -> Path shows 'Contract Execution'
-     *   Seller/Buyer Counter -> Path shows 'Counter'  (set by inline edit, not by this action)
+     *   ACQUISITION (this map)          DISPOSITION (CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE)
+     *   Draft       -> 'PSA Drafting'   Initial Draft       -> 'PSA Drafting'
+     *   Negotiation -> 'Review'         Revised             -> 'Review'
+     *   Signed      -> 'Review'         Ready for Execution -> 'Review'
+     *   Executed    -> 'Contract        Executed            -> 'Contract Execution'
+     *                   Execution'
      *
-     * ⚠ TWO CONSEQUENCES WORTH KNOWING BEFORE EDITING THIS MAP.
-     * 1. Revised -> Ready for Execution leaves the PATH UNCHANGED (both project to 'Review'), so the
-     *    user sees a success toast and a stationary Path. That is correct, not a repeat of the
-     *    defect above — the status genuinely advanced.
-     * 2. The final hop, Ready for Execution -> Executed, is NOT just a status write. It fires
+     * 🔴 THE 'Draft' ROW IS A DEPENDENCY ON A FLOW THIS CLASS DOES NOT OWN, AND IT FAILS QUIETLY.
+     * `Contract_Review_Stage_Sync` is a before-save flow with an explicit rule for 'Initial Draft'
+     * and a DEFAULT connector sending everything else to `Stage__c = 'Review'`. Until that flow
+     * learns 'Draft' (design collision C4, owned by the declarative half of this pack), a brand-new
+     * acquisition PSA shows the coarse 'Review' instead of 'PSA Drafting' — it deploys green,
+     * nothing errors, and no Apex test can see it, because `Stage__c` is derived and writing it
+     * from here commits and is silently discarded. The flow must learn 'Draft' while KEEPING
+     * 'Initial Draft', which the disposition side still runs on.
+     *
+     * ⚠ TWO CONSEQUENCES WORTH KNOWING BEFORE EDITING EITHER MAP.
+     * 1. The MIDDLE hop leaves the PATH UNCHANGED on both sides (Negotiation -> Signed on the
+     *    acquisition map, Revised -> Ready for Execution on the disposition one; all four project
+     *    to 'Review'), so the user sees a success toast and a stationary Path. That is correct, not
+     *    a repeat of the defect above — the status genuinely advanced.
+     * 2. The final hop into 'Executed' is NOT just a status write, on EITHER map. It fires
      *    ContractReviewTrigger -> ContractExecutionService, and since Tranche 3C that service has
      *    TWO ARMS keyed on which parent lookup is populated:
      *      Opportunity__c set -> stamps the Opportunity (Contract Signed, Day 0) + 3 notifications
      *      Disposition__c set -> moves Disposition__c.Disposition_Stage__c to 'Closing'
-     *    Adding or reordering entries around 'Executed' changes when BOTH handoffs fire.
+     *    Adding or reordering entries around 'Executed' changes when BOTH handoffs fire. ⚠ Note the
+     *    PREDECESSOR of that hop now differs by side ('Signed' vs 'Ready for Execution'), which is
+     *    the one place the split changes the shape of the handoff rather than just its labels.
      *    ⚠ The sentence here used to say this hop "CREATES THE Transaction__c". That has been
      *    FALSE since 2026-08-05 — creation moved to ContractExecutionService
      *    .openTransactionsOnAboutToClose, keyed on Opportunity.StageName = 'About to Close'. The
@@ -602,32 +716,81 @@ public with sharing class RecordStageAdvanceService {
      *
      * Seller Counter and Buyer Counter are deliberately absent: they are branch states, and the
      * user chose (2026-08-05) to record them by editing the field rather than with named buttons.
-     * Adding them later means an explicit-target allow-list, exactly as the LOI has.
+     * Adding them later means an explicit-target allow-list, exactly as the LOI has. Neither PSA
+     * record type supplies an explicit target today, so advanceTo() is structurally unreachable on
+     * this object — the split did not change that.
      */
-    private static final Map<String, String> CONTRACT_REVIEW_NEXT_STAGE = new Map<String, String>{
-        'Initial Draft' => 'Revised',
-        'Revised' => 'Ready for Execution',
-        'Ready for Execution' => 'Executed'
-    };
+    private static final Map<String, String> CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE =
+        new Map<String, String>{
+            'Draft' => 'Negotiation',
+            'Negotiation' => 'Signed',
+            'Signed' => 'Executed'
+        };
 
     /**
-     * 🔴 THE ACQUISITION LOI PATH IS NOT LINEAR (2026-08-05) — it branches at 'Sent'.
+     * Contract_Review__c.Negotiation_Status__c / Disposition_PSA — Initial Draft -> Revised ->
+     * Ready for Execution -> Executed. 'Executed' is terminal.
      *
-     * At 'Sent' a broker either counters or accepts, so the deal driver gets two named buttons
-     * instead of one generic Advance Stage: Counter and Completed. 'Completed' cannot be reached by
-     * advance() from 'Sent' — LOI_ACQUISITION_NEXT_STAGE derives 'Counter' — so it needs an
-     * explicit target.
+     * 🔴 THIS MAP IS THE OLD SHARED ONE, VERBATIM AND UNCHANGED. Observation 7 is an ACQUISITION-
+     * ONLY change: `Disposition_PSA`'s own record type file records that these four values are
+     * already exactly the states the client document names for the sell-side PSA, and O3 of the
+     * requirements doc states as a HARD STOP that `Initial Draft` / `Revised` /
+     * `Ready for Execution` remain ACTIVE on the field precisely because this record type still
+     * runs on them. Nothing is deactivated on `Negotiation_Status__c` by this pack.
+     *
+     * ⚠ SO THE COST OF THE SPLIT LANDS ENTIRELY HERE, AND IT IS THE COST THE OLD SHARED-REFERENCE
+     * COMMENT WARNED ABOUT: there are now two things that must be maintained separately, and a
+     * change made to the acquisition sequence will NOT reach this one. That is the requirement now
+     * rather than the hazard — but a future editor adding a stage to one map must consciously
+     * decide about the other rather than getting it for free. `DispositionStageEntryService`'s
+     * `DISPOSITION_PSA_INITIAL_STATUS = 'Initial Draft'` is this map's entry point and is the thing
+     * to check first; `DispositionStageEntryServiceTest` pins it.
+     */
+    private static final Map<String, String> CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE =
+        new Map<String, String>{
+            'Initial Draft' => 'Revised',
+            'Revised' => 'Ready for Execution',
+            'Ready for Execution' => 'Executed'
+        };
+
+    /**
+     * 🔴 THE ACQUISITION LOI PATH IS NOT LINEAR (2026-08-05) — it branches at 'Submitted'.
+     *
+     * At 'Submitted' a broker either counters or accepts, so the deal driver gets two named buttons
+     * instead of one generic Advance Stage: Negotiation and Signed. 'Signed' cannot be reached by
+     * advance() from 'Submitted' — LOI_ACQUISITION_NEXT_STAGE derives 'Negotiation' — so it needs
+     * an explicit target.
+     *
+     * ⚠ BOTH VALUES WERE RENAMED IN PLACE (observation 5, 2026-08-14): 'Counter' -> 'Negotiation'
+     * and 'Completed' -> 'Signed'. The MEMBERSHIP is unchanged — same two stages, same branch, same
+     * reasoning — so this is a rename and not a widening. The two bundles that send these literals,
+     * c/loiMarkCountered and c/loiMarkCompleted, were repointed in the same change and still pass
+     * them as hardcoded module constants, which is the property that makes this list meaningful.
      *
      * Membership is limited to the two stages that legitimately have no single derivable
-     * predecessor from 'Sent'. 'Prepare/Review' and 'Sent' are deliberately EXCLUDED — they are
-     * derivable forward hops belonging to advance(), and listing them would let a direct Apex call
-     * skip the approval gate the LOI page enforces at Prepare/Review.
+     * predecessor from 'Submitted'. 'Under Review' and 'Submitted' are deliberately EXCLUDED — they
+     * are derivable forward hops belonging to advance(), and listing them would let a direct Apex
+     * call skip the approval gate the LOI page enforces at the review stage.
+     *
+     * 🔴 EXCLUDING 'Under Review' IS NOW LOAD-BEARING FOR A SECOND, NEWER REASON. That value is
+     * SHARED with Disposition_LOI since observation 5 (it is the sell-side's second stage). Listing
+     * it here would therefore not merely skip a hop — it would put a value BOTH record types carry
+     * onto an acquisition-scoped allow-list, which is precisely the shape of leak the per-record-
+     * type split exists to prevent. The two allow-lists remain fully disjoint even though the two
+     * SEQUENCES no longer are, and that disjointness is what
+     * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget /
+     * dispositionLoiRefusesTheAcquisitionExplicitTargets still measure.
      *
      * 🔴 THIS SET WAS OBJECT-LEVEL UNTIL TRANCHE 3B AND IS NOW PER RECORD TYPE. Neither value
      * exists on Disposition_LOI's value set, and Apex DML does not enforce record-type picklist
-     * restriction — so an object-level list would let advanceTo(dispositionLoiId, 'Completed')
+     * restriction — so an object-level list would let advanceTo(dispositionLoiId, 'Signed')
      * write an acquisition-only stage onto a sale, exactly the hole the NDA's 'Declined' target
      * opened one tranche earlier.
+     *
+     * ⚠ 'Signed' IS A PARTICULARLY BAD VALUE TO LEAK ONTO A SALE, which the pre-observation-5
+     * 'Completed' was not: a sell-side reader seeing 'Signed' on a disposition LOI has no reason to
+     * doubt it — the word is plausible on either side of a deal — whereas 'Completed' at least read
+     * as vocabulary from the other module. The refusal is the only thing that catches it.
      *
      * ⚠ THE SENTENCE THAT USED TO END THIS BLOCK — "the disposition type supplies NO explicit
      * targets at all, which makes advanceTo() structurally unreachable for it" — WAS TRUE ONLY
@@ -636,8 +799,8 @@ public with sharing class RecordStageAdvanceService {
      * directions and both are tested.
      */
     private static final Set<String> LOI_ACQUISITION_EXPLICIT_TARGETS = new Set<String>{
-        'Counter',
-        'Completed'
+        'Negotiation',
+        'Signed'
     };
 
     /**
@@ -743,12 +906,24 @@ public with sharing class RecordStageAdvanceService {
      * this, the Underwriting refusal reads exactly like a terminal stage and looks like a defect;
      * with it, the message names the action that actually performs the transition.
      *
-     * ⚠ DELIBERATELY NOT record-type-aware, and the two multi-type objects are safe for two
-     * DIFFERENT reasons. NDA__c: the only shared stage values ('Sent', 'Signed') have a hop or are
-     * terminal on BOTH record types, so neither reaches this map. LOI__c: the two value sets are
-     * fully DISJOINT, so a key can only ever match one record type's stage in the first place. If
-     * either ever stops being true, widen the key to `<label>|<recordTypeKey>|<currentStage>`
-     * rather than adding a second map.
+     * ⚠ DELIBERATELY NOT record-type-aware. THIS MAP HAS EXACTLY ONE ENTRY AND IT IS ON
+     * Underwriting__c, an object with NO record types at all — so today the question cannot arise.
+     * That is what makes the omission safe; the per-object reasoning below is about what a FUTURE
+     * entry would have to check.
+     *
+     * 🔴 THE SAFETY ARGUMENT FOR LOI__c CHANGED ON 2026-08-14 AND IS NOW WEAKER. This block used to
+     * read: "NDA__c: the only shared stage values ('Sent', 'Signed') have a hop or are terminal on
+     * BOTH record types, so neither reaches this map. LOI__c: the two value sets are fully
+     * DISJOINT, so a key can only ever match one record type's stage in the first place." The NDA
+     * half still holds. The LOI half is FALSE — observation 5 made 'Under Review' a stage on BOTH
+     * LOI record types, so a hint keyed `LOI|Under Review` would now fire on a purchase AND a sale
+     * with one wording. There is no such key today, which is the only reason this is a note rather
+     * than a defect.
+     *
+     * ⇒ BEFORE ADDING ANY LOI ENTRY HERE, widen the key to
+     * `<label>|<recordTypeKey>|<currentStage>` rather than adding a second map. Contract_Review__c
+     * needs no such care: observation 7 left its two sequences sharing only 'Executed', which is
+     * terminal on both and therefore takes the default wording correctly on either side.
      */
     private static final Map<String, String> NO_NEXT_STEP_HINTS = new Map<String, String>{
         'Underwriting|In Progress' =>
@@ -862,11 +1037,18 @@ public with sharing class RecordStageAdvanceService {
      * four edits (the five-argument constructor, two sequences, defaultTypeKey, RecordTypeId on
      * LoiSelector). 3C cost THREE: the five-argument constructor, the two record-type constants,
      * and RecordTypeId on ContractReviewSelector.selectStageRequiredById. It needed NO new sequence
-     * at all — both its types point at CONTRACT_REVIEW_NEXT_STAGE by reference — which is the case
-     * this seam was never explicitly designed for and absorbed anyway.
+     * at all — both its types pointed at ONE map by reference — which is the case this seam was
+     * never explicitly designed for and absorbed anyway.
+     *
+     * ✅ AND A THIRD TIME, THE HARDEST ONE, IN THE OPPOSITE DIRECTION. Observation 7 (2026-08-14)
+     * UNDID 3C's shared map: Acquisition_PSA and Disposition_PSA now hold two DIFFERENT sequences.
+     * That cost exactly TWO edits below — renaming one map and adding a second — plus the
+     * defaultTypeKey re-argument in the Contract_Review__c entry. So the seam absorbed a
+     * convergence AND a divergence at the same cost.
+     *
      * NOT ONE LINE BELOW THIS MAP HAS CHANGED SINCE 3A — advance(), advanceTo(), sequenceFor(),
-     * gateFor(), load() and setStage() are byte-identical. That is the property the 3A seam was
-     * built for, now demonstrated twice.
+     * gateFor(), load() and setStage() are byte-identical, through three record-type changes and
+     * one full value-set rename. That is the property the 3A seam was built for.
      */
     private static final Map<Schema.SObjectType, StageConfig> CONFIG_BY_TYPE =
         new Map<Schema.SObjectType, StageConfig>{
@@ -901,45 +1083,80 @@ public with sharing class RecordStageAdvanceService {
                     // ⚠ The sell-side path is a LOOP, not a line: its two explicit targets are the
                     // two edges of the Countered by DPEG <-> Counter Received from Buyer cycle,
                     // which a Map<String,String> cannot hold. This set is ALSO what refuses
-                    // 'Counter' and 'Completed' here — see LOI_ACQUISITION_EXPLICIT_TARGETS — and
+                    // 'Negotiation' and 'Signed' here — see LOI_ACQUISITION_EXPLICIT_TARGETS — and
                     // is what stops its own two values being written onto an acquisition LOI.
                     RT_DISPOSITION_LOI => new StageTypeConfig(
                         StageActionGate.DISPOSITION_DRIVER,
                         LOI_DISPOSITION_NEXT_STAGE, LOI_DISPOSITION_EXPLICIT_TARGETS)
                 }),
             // ⚠ 'Negotiation_Status__c', NOT 'Stage__c' — Stage__c is derived and unwritable here.
-            // See CONTRACT_REVIEW_NEXT_STAGE above before changing this.
+            // See CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE above before changing this (renamed from
+            // CONTRACT_REVIEW_NEXT_STAGE when the shared map was split on 2026-08-14).
             //
             // ✅ TRANCHE 3C, 2026-08-09 — SPLIT EXACTLY AS THE NOTE THAT USED TO SIT HERE
-            // PREDICTED. That note read: "Tranche 3C gives this object two record types that SHARE
-            // these four values — but it will still need SPLITTING here, because sharing a SEQUENCE
-            // is not sharing a GATE." It was right, and the split is the ONLY change this object
-            // needed: the sequence is untouched and BOTH types point at the SAME map object.
+            // PREDICTED, on the GATE axis only. 🔴 SPLIT AGAIN 2026-08-14 (observation 7) on the
+            // SEQUENCE axis, which is the axis 3C explicitly did NOT need: the two types now point
+            // at TWO DIFFERENT MAPS, not one shared object. The comment that used to end this block
+            // — "Same map OBJECT, not a copy — divergence is unexpressible by construction" — is
+            // GONE, not merely reworded. Divergence is now the requirement.
             //
-            // 🔴 THE TWO StageTypeConfigs DIFFER IN EXACTLY ONE ARGUMENT — the gate. If a future
-            // reader is tempted to collapse them back into the single-sequence constructor,
-            // re-read the class header: a disposition persona does not hold
-            // Acquisition_Deal_Actions (the two module permissions are carried by disjoint sets,
-            // measured), so DEAL_DRIVER refuses every sell-side PSA and the feature is dead for
-            // the only persona that owns it. ⚠ The mechanism named here was FLS on
-            // User.Deal_Driver__c until 2026-08-12; the flag is retired, the argument is not.
+            // 🔴 THE TWO StageTypeConfigs NOW DIFFER IN BOTH ARGUMENTS. Neither may be collapsed:
+            //   - the GATE, because a disposition persona does not hold Acquisition_Deal_Actions
+            //     (the two module permissions are carried by disjoint sets, measured), so
+            //     DEAL_DRIVER refuses every sell-side PSA and the feature is dead for the only
+            //     persona that owns it. ⚠ The mechanism named here was FLS on User.Deal_Driver__c
+            //     until 2026-08-12; the flag is retired, the argument is not.
+            //   - the SEQUENCE, because sharing one map after observation 7 would require the
+            //     acquisition-only values to sit on a map the disposition type also walks, and
+            //     Apex DML does not enforce record-type picklist restriction — advance() itself
+            //     would then park a sale on an acquisition-only status.
             //
-            // defaultTypeKey is Acquisition_PSA, the CONSERVATIVE fallback: a Master / pre-T-B row
-            // keeps its existing sequence AND keeps answering to DEAL_DRIVER, so the deploy window
-            // grants the new buttons to nobody new rather than to everybody. Safe here for the same
-            // reason as on NDA__c and LOI__c and for no other — every Contract Review in the org
-            // today is buy-side by construction, because Contract_Review__c.Disposition__c arrives
-            // in this same tranche and OpportunityReviewService (the only automated creator) sets
-            // Opportunity__c alone.
+            // ── 🔴 defaultTypeKey WAS RE-CHOSEN DELIBERATELY, NOT LEFT ALONE (design C9) ──
+            // It STAYS Acquisition_PSA — but the ARGUMENT for it is completely different and the
+            // old one is dead. Until observation 7, both types shared one sequence, so a Master /
+            // pre-T-B row advanced CORRECTLY through the fallback and the only thing the fallback
+            // got wrong was the gate. That is why OpportunityReviewService's header could say a
+            // Master-type Contract Review "is NOT functionally dead". It is dead now, and that
+            // header has been rewritten to say so.
+            //
+            // The two candidate defaults, and why this one wins — the criterion is WHICH FAILURE,
+            // because after the split the fallback is wrong for SOME population either way:
+            //
+            //   Acquisition_PSA (chosen)  A legacy / Master row still carrying 'Initial Draft' —
+            //                             the P3 row migration is scoped BY RECORD TYPE, so a
+            //                             Master row is NOT migrated — finds no entry in the
+            //                             acquisition map and is REFUSED, loudly, with "There is
+            //                             no next step available from the Initial Draft stage."
+            //                             Nothing is written. A Master-type row created AFTER this
+            //                             pack carries 'Draft' (OpportunityReviewService stamps it
+            //                             explicitly) and advances correctly. The gate stays
+            //                             DEAL_DRIVER, which grants the disposition buttons to
+            //                             nobody new during the deploy window.
+            //   Disposition_PSA (rejected) The same legacy Master row WOULD advance — to 'Revised',
+            //                             a value no longer on Acquisition_PSA. A WRONG WRITE, not
+            //                             a refusal. And the gate would flip to
+            //                             DISPOSITION_DRIVER, denying the acquisitions deal driver
+            //                             on rows they own while granting disposition drivers
+            //                             access to acquisition rows — a real boundary move
+            //                             disguised as a default.
+            //
+            // ⇒ A refusal beats a wrong write, and a conservative gate beats a widened one. Both
+            // criteria point at Acquisition_PSA.
+            //
+            // ✅ AND THE SPLIT FIXES A COMPLAINT THIS FILE HAS CARRIED SINCE 3C. The class header
+            // used to record that the Contract Review fallback was QUIETER than NDA__c's or
+            // LOI__c's — "the walk works, the toasts are right, nothing looks wrong ... There is no
+            // loud symptom to lead anyone to gate T-B here." There is one now: an unmigrated
+            // Master-type row refuses on its very first click, naming its own stale status. That is
+            // a diagnostic, not a regression.
             Contract_Review__c.SObjectType => new StageConfig(
                 'Contract Review', 'Negotiation_Status__c',
                 RT_ACQUISITION_PSA,
                 new Map<String, StageTypeConfig>{
                     RT_ACQUISITION_PSA => new StageTypeConfig(
-                        StageActionGate.DEAL_DRIVER, CONTRACT_REVIEW_NEXT_STAGE),
-                    // Same map OBJECT, not a copy — divergence is unexpressible by construction.
+                        StageActionGate.DEAL_DRIVER, CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE),
                     RT_DISPOSITION_PSA => new StageTypeConfig(
-                        StageActionGate.DISPOSITION_DRIVER, CONTRACT_REVIEW_NEXT_STAGE)
+                        StageActionGate.DISPOSITION_DRIVER, CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE)
                 }),
             Underwriting__c.SObjectType => new StageConfig(
                 'Underwriting', 'Stage__c',
@@ -992,7 +1209,7 @@ public with sharing class RecordStageAdvanceService {
      *
      * @param recordId the NDA / LOI / Contract Review / Underwriting / Construction or Development
      *                 Feasibility Review record to advance (required)
-     * @return a user-facing confirmation message, e.g. 'LOI moved to Sent.'
+     * @return a user-facing confirmation message, e.g. 'LOI moved to Submitted.'
      * @throws RecordStageAdvanceException when recordId is null, the object is not stage-controlled,
      *         the record has no stage set, the record sits on a record type with no configured
      *         sequence, there is no next step from the current stage, or the write is blocked (the
@@ -1052,14 +1269,14 @@ public with sharing class RecordStageAdvanceService {
      *
      * @param recordId the stage-controlled record to move (required)
      * @param target   the destination stage; must be on this RECORD TYPE's allow-list
-     * @return a user-facing confirmation message, e.g. 'LOI moved to Completed.'
+     * @return a user-facing confirmation message, e.g. 'LOI moved to Signed.'
      * @throws RecordStageAdvanceException when recordId is null, target is blank, target is not an
      *         allowed explicit target for this record's record type, the object is not
      *         stage-controlled, the record sits on a record type with no configured sequence, or
      *         the write is blocked (the block's message is surfaced verbatim)
      * @throws System.QueryException when recordId matches no record
      * @example
-     * String msg = RecordStageAdvanceService.advanceTo(loiId, 'Completed');
+     * String msg = RecordStageAdvanceService.advanceTo(loiId, 'Signed');
      */
     public static String advanceTo(Id recordId, String target) {
         if (String.isBlank(target)) {

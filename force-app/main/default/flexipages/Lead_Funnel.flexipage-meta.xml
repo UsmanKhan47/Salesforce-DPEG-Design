@@ -7,6 +7,12 @@
                 <identifier>pipelineStageBoardComponent</identifier>
             </componentInstance>
         </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentName>callForOffersList</componentName>
+                <identifier>callForOffersListComponent</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>region1</name>
         <type>Region</type>
     </flexiPageRegions>

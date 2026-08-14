@@ -27,8 +27,8 @@ private class OpportunityFunnelControllerTest {
         // CloseDate. One of each pair keeps the factory's default (today + 90,
         // i.e. OUTSIDE the last-90-days window) and must NOT be counted; the other
         // is backdated to today so it falls inside the window and IS counted.
-        Opportunity psaOld = newOpp('PSA');
-        Opportunity psaRecent = newOpp('PSA');
+        Opportunity psaOld = newOpp('Under Contract (PSA)');
+        Opportunity psaRecent = newOpp('Under Contract (PSA)');
         psaRecent.CloseDate = Date.today();
         opps.add(psaOld);
         opps.add(psaRecent);
@@ -66,7 +66,7 @@ private class OpportunityFunnelControllerTest {
         System.assertEquals(1, countByLabel.get('Underwriting'), 'One Underwriting opportunity was inserted');
         System.assertEquals(1, countByLabel.get('LOI'), 'One LOI opportunity was inserted');
         System.assertEquals(1, countByLabel.get('About to Close'), 'About to Close is not recency-scoped, so the raw count is used');
-        System.assertEquals(1, countByLabel.get('PSA'), 'Only the recently-closed PSA opportunity falls in the 90-day window');
+        System.assertEquals(1, countByLabel.get('Under Contract (PSA)'), 'Only the recently-closed PSA opportunity falls in the 90-day window');
         System.assertEquals(1, countByLabel.get('Closed Won'), 'Only the recently-closed Closed Won opportunity falls in the 90-day window');
         System.assertEquals(1, countByLabel.get('Dead/Pass'), 'Only the recently-closed Dead/Pass opportunity falls in the 90-day window');
         System.assertEquals(0, countByLabel.get('Portfolio Deal'),

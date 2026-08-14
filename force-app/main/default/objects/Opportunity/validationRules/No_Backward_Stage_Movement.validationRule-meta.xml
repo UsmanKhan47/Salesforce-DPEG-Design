@@ -15,25 +15,50 @@
         PERMISSIONS but NOT against PROCEDURE: because entering Dead/Pass (new rank 0) and
         leaving Dead/Pass (prior rank 0) are both always allowed (see the rank map below),
         any user with ordinary edit access on StageName can reach any earlier stage in two
-        saves via Dead/Pass, for example PSA to Dead/Pass to Under Review, with no special
+        saves via Dead/Pass, for example Under Contract (PSA) to Dead/Pass to Under Review, with
+        no special
         permission required. That two-save round trip through Dead/Pass IS the actual
         recovery procedure for a mistakenly advanced deal, and it is far less drastic than
         deactivating this validation rule org-wide; deactivating the rule is NOT the remedy
         and should not be used. The Dead/Pass route defeats stage ORDERING only, not the
         substantive checks: every forward CONTENT gate this rule coexists with (NDA signed,
         Underwriting approved, LOI approved, contract signed) still fires on the way back up,
-        so a deal walked back to Under Review this way still cannot reach PSA again without a
+        so a deal walked back to Under Review this way still cannot reach Under Contract (PSA)
+        again without a
         signed NDA and an approved LOI. This is an unavoidable consequence of the
         user-required invariant that Dead/Pass stay reachable from every stage, not a defect
         to be fixed: a validation rule sees only PRIORVALUE versus the new value on a single
         save, so it cannot distinguish "legitimately moved to Dead/Pass to kill a deal" from
         "using Dead/Pass as a stepping stone back down the pipeline."
 
+        PHASE 2 (2026-08-14) - THE RANK-6 STAGE WAS RENAMED 'PSA' -> 'Under Contract (PSA)'.
+        The rank is unchanged, so no ordering moved; only the string moved, in FOUR places
+        (every CASE block below) plus this comment. Count them: a repoint that catches three
+        of the four leaves the rule silently half-blind, because the two "is it backward?"
+        CASE blocks are separate expressions from the two rank-guard blocks.
+
+        MIGRATION SAFETY - MEASURED FROM THIS FORMULA, NOT ASSUMED. The P2 backfill runs
+        BETWEEN P2-D1 and P2-D2, i.e. while the org copy of this rule still maps 'PSA'=6 and
+        does not know 'Under Contract (PSA)' at all. The backfill writes the NEW value, whose
+        rank is therefore 0, so clause 3 (new rank > 0) is FALSE and this rule cannot fire on
+        it - the same deliberate fail-open default documented below for Dead/Pass. That is
+        why the backfill needs no rule deactivation. Repointing this file BEFORE the backfill
+        would map both sides to rank 6 and make the backfill a backward move on no deal, but
+        would also start blocking on the OLD value, so do not reorder the steps.
+
+        ⚠ TRANSIENT WINDOW, STATED RATHER THAN HIDDEN. Between the backfill and the P2-D2
+        Apex deploy, StageAdvanceService.NEXT_STAGE still maps 'LOI' => 'PSA', so the
+        Advance quick action can still MINT NEW rows on the old value after the backfill's
+        zero-count query passed. Those rows rank 0 here and are fail-open for a backward
+        move until P2-D3. The remedy is operational, not formulaic: re-run the backfill as a
+        confirming sweep immediately before P2-D3 and gate P2-D3 on a FRESH zero count.
+
         RANK MAP (edit here AND in NDA_Signed_Before_Deal_Progression's stage list if a new
         stage is ever added): New=1, Under Review=2, Development Review=3 (Land only),
-        Construction Review=3 (Commercial only, deliberately the SAME rank as Development
+        Construction Review=3 (Retail only, deliberately the SAME rank as Development
         Review; they are parallel record-type branches, not a sequence, and neither is
-        reachable on the other record type), Underwriting=4, LOI=5, PSA=6, About to Close=7,
+        reachable on the other record type), Underwriting=4, LOI=5, Under Contract (PSA)=6,
+        About to Close=7,
         Closed Won=8. Dead/Pass and any unmapped/future stage rank 0 = UNRANKED = the rule
         does not compare it. This is a deliberate fail-open default: entering Dead/Pass (new
         rank 0) makes the "new rank > 0" clause (clause 3) false so the rule never fires
@@ -72,8 +97,9 @@
         PRIORVALUE(StageName) = 'LOI' AND StageName = 'Underwriting', i.e. a StageName
         TRANSITION, not a sticky field state. PRIORVALUE(StageName) is re-derived from the
         immediately prior stored value on every save, so it cannot go stale the way a
-        never-cleared checkbox can; a later backward move from, say, PSA to Underwriting
-        evaluates PRIORVALUE(StageName) = 'PSA', which does not match 'LOI', so CARVE-OUT 1
+        never-cleared checkbox can; a later backward move from, say, Under Contract (PSA) to
+        Underwriting evaluates PRIORVALUE(StageName) = 'Under Contract (PSA)', which does not
+        match 'LOI', so CARVE-OUT 1
         does not apply and the rule blocks it normally. No ISCHANGED addition was needed
         here; the transition-keyed shape is self-limiting by construction.
 
@@ -87,7 +113,8 @@
         never on a later save where it is merely already true, whose one decision
         (Not_Yet_Underwriting: StageName not equal to 'Underwriting') assigns StageName =
         'Underwriting' whenever the record is not already there, reachable at the Flow level
-        from ANY later stage (LOI, PSA, About to Close, Closed Won) unconditionally.
+        from ANY later stage (LOI, Under Contract (PSA), About to Close, Closed Won)
+        unconditionally.
         Before-save Flow assignments run BEFORE validation rules evaluate, so without SOME
         carve-out this rule would see ISCHANGED(StageName) true and the new stage already
         rewritten to Underwriting by the flow, and would throw on every legitimate use of the
@@ -110,7 +137,8 @@
         either way.
 
         USER DECISION, CLOSED WON EXCLUSION (2026-08-04): the rewind stays allowed from LOI,
-        PSA and About to Close, but is now BLOCKED from Closed Won. Rationale recorded
+        Under Contract (PSA) and About to Close, but is now BLOCKED from Closed Won. Rationale
+        recorded
         verbatim: "this deal needs more underwriting" is a real scenario mid-pipeline, so
         breaking the checkbox entirely would be a regression in working behaviour. But a WON
         deal being silently reversed by any deal driver ticking a checkbox is a wider bypass
@@ -140,21 +168,21 @@
     /* prior rank */
     CASE(TEXT(PRIORVALUE(StageName)),
         &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
-        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0) &gt; 0,
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;Under Contract (PSA)&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0) &gt; 0,
 
     /* new rank */
     CASE(TEXT(StageName),
         &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
-        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0) &gt; 0,
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;Under Contract (PSA)&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0) &gt; 0,
 
     /* is it backward? */
     CASE(TEXT(StageName),
         &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
-        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0)
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;Under Contract (PSA)&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0)
     &lt;
     CASE(TEXT(PRIORVALUE(StageName)),
         &apos;New&apos;,1, &apos;Under Review&apos;,2, &apos;Development Review&apos;,3, &apos;Construction Review&apos;,3,
-        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;PSA&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0),
+        &apos;Underwriting&apos;,4, &apos;LOI&apos;,5, &apos;Under Contract (PSA)&apos;,6, &apos;About to Close&apos;,7, &apos;Closed Won&apos;,8, 0),
 
     /* CARVE-OUT 1: the LOI-rejection transition (see comment above) */
     NOT( AND(

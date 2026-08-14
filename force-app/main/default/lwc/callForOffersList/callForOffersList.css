@@ -1,0 +1,31 @@
+/*
+ * The shared .lv-* list-view chrome (icon + title + count, blue record links, centred View All
+ * footer) that every other list component in this repo uses. Deliberately minimal: SLDS carries the
+ * card, the table and the spacing, and only the footer link and the two non-table states are styled
+ * here. Colours come from SLDS 2 global design tokens with a literal fallback, so the component
+ * still renders correctly if a token is not present.
+ */
+
+.view-all-footer {
+    text-align: center;
+}
+
+.view-all-footer a {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    text-decoration: none;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}
+
+.view-all-footer a:hover {
+    text-decoration: underline;
+}
+
+/*
+ * The empty and error states replace the table rather than sitting above it, so the two can never
+ * be shown at once. Sized to match a short table so the card does not jump height between states.
+ */
+.lv-empty,
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    text-align: center;
+}

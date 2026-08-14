@@ -29,7 +29,7 @@ const STAGE_COUNTS = [
     { label: 'Construction Review', count: 2 },
     { label: 'Underwriting', count: 5 },
     { label: 'LOI', count: 4 },
-    { label: 'PSA', count: 7 },
+    { label: 'Under Contract (PSA)', count: 7 },
     { label: 'Closed Won', count: 9 },
     { label: 'Dead/Pass', count: 1 }
 ];
@@ -74,8 +74,14 @@ describe('c-total-opportunities', () => {
         expect(values).toEqual(['8', '6', '3', '2', '5', '4', '7', '9', '1']);
 
         // Fixed labels from STAGE_META (with the "Last 90 Days" suffixes).
+        //
+        // ⚠ Both assertions pin a key/label DIVERGENCE, which is the point of them. The wire
+        // payload above carries the stage API values 'Under Contract (PSA)' and 'Dead/Pass'; the
+        // rendered labels drop '(PSA)' and '/Pass' respectively so the card does not read
+        // 'Under Contract (PSA) (Last 90 Days)'. A future edit that "tidies" the label back to the
+        // stage value reds here.
         const labels = [...cards(element)].map((c) => c.label);
-        expect(labels[6]).toBe('PSA (Last 90 Days)');
+        expect(labels[6]).toBe('Under Contract (Last 90 Days)');
         expect(labels[8]).toBe('Dead (Last 90 Days)');
     });
 

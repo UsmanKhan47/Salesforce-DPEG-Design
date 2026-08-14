@@ -14,7 +14,10 @@
  * ALLOW-LIST (design doc D7): the final block covers the explicit-target allow-list added to
  * advanceTo. It is a behaviour change to a shared service — strictly a tightening — so both halves
  * are pinned: every legitimate branch/off-ramp target still writes, and a VALID-but-not-allowed
- * stage ('Closed Won', 'Underwriting') is refused with the record left untouched. Note that
+ * stage ('Closed Won', 'Underwriting', 'Under Contract (PSA)') is refused with the record left
+ * untouched. The third was added 2026-08-14 (review W3): it is the stage whose omission from the
+ * allow-list is the most load-bearing — it gates three validation rules at once — and it was the
+ * one with no falsifier, so adding it to ALLOWED_EXPLICIT_TARGETS turned nothing red. Note that
  * nullRecordThrowsOnBothMethods was also updated: its old 'Under Review' target is now rejected by
  * the allow-list before the record is loaded, so it would have kept passing while no longer testing
  * the null-record branch it is named for.
@@ -55,7 +58,7 @@ private class StageAdvanceServiceTest {
     @isTest
     static void advanceMovesLoiToPsaAndPsaToClosedWon() {
         Opportunity loiDeal = newOpp('LOI');
-        Opportunity psaDeal = newOpp('PSA');
+        Opportunity psaDeal = newOpp('Under Contract (PSA)');
 
         // Both hops now cross stage gates, so both fixtures are brought up to the state the real
         // pipeline would have left them in. The signed-NDA gate covers PSA and Closed Won, so it
@@ -66,14 +69,26 @@ private class StageAdvanceServiceTest {
         // loiDeal ALSO crosses Completed_LOI_Before_PSA (added 2026-08-12), a third gate that reads
         // the primary LOI's OWN Stage__c rather than the Opportunity's Primary_LOI__c/LOI_Approved__c
         // flags. placeApprovedLoi leaves the newly-created LOI at its factory-default Stage__c =
-        // 'Draft', so the primary LOI is separately driven to 'Completed' via
+        // 'Draft', so the primary LOI is separately driven to its TERMINAL stage via
         // RecordStageAdvanceService.advanceTo — the real production route behind the
-        // c/loiMarkCompleted quick action ('Completed' is an allowed explicit target on
-        // Acquisition_LOI) — mirroring the identical fix in StageAdvanceControllerTest.
-        // advanceToPsaMovesLoiToPsa.
+        // c/loiMarkCompleted quick action — mirroring the identical fix in
+        // StageAdvanceControllerTest.advanceToPsaMovesLoiToPsa.
+        //
+        // ⚠ 'Signed' since observation 5 (2026-08-14), NOT 'Completed'. The acquisition LOI sequence
+        // was renamed (Counter -> Negotiation, Completed -> Signed) and LOI_ACQUISITION_EXPLICIT_
+        // TARGETS is now {Negotiation, Signed}, so the old literal is refused by the allow-list
+        // BEFORE the record is loaded — this line would throw, not merely write a stale value.
+        //
+        // 🔴 WHAT THIS LINE MEANS, so the constant is not swapped mechanically again: it exists ONLY
+        // to satisfy Completed_LOI_Before_PSA, which demands the primary LOI be at its TERMINAL
+        // stage. 'Signed' is that terminal; 'Negotiation' — the other allowed explicit target — is
+        // the mid-sequence BRANCH target and would leave this deal blocked by that very rule. The
+        // choice is therefore forced by the gate, not by which literal happens to be allowed. Must
+        // stay in step with Completed_LOI_Before_PSA, whose formula names BOTH terminals only until
+        // the P3-D3 migration retires 'Completed'.
         TestDataFactory.signPrimaryNda(new List<Opportunity>{ loiDeal, psaDeal });
         LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(loiDeal);
-        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
         TestDataFactory.signContract(psaDeal);
 
         Test.startTest();
@@ -81,7 +96,7 @@ private class StageAdvanceServiceTest {
         StageAdvanceService.advance(psaDeal.Id);
         Test.stopTest();
 
-        Assert.areEqual('PSA',
+        Assert.areEqual('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :loiDeal.Id].StageName, 'LOI -> PSA');
         Assert.areEqual('Closed Won',
             [SELECT StageName FROM Opportunity WHERE Id = :psaDeal.Id].StageName, 'PSA -> Closed Won');
@@ -235,7 +250,7 @@ private class StageAdvanceServiceTest {
             TestDataFactory.createOpportunitiesByRecordType(1, 'Retail', null, false)[0];
         constructionDeal.StageName = 'Under Review';
         insert new List<Opportunity>{ landDeal, constructionDeal };
-        Opportunity psaDeal = newOpp('PSA');
+        Opportunity psaDeal = newOpp('Under Contract (PSA)');
         Opportunity deadDeal = newOpp('Under Review');
 
         // Only psaDeal needs preparing: 'About to Close' is inside the signed-NDA gate's stage
@@ -310,6 +325,70 @@ private class StageAdvanceServiceTest {
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'Routing a gated forward hop through advanceTo must not work — that is how the signed-NDA '
             + 'gate would be skipped');
+    }
+
+    /**
+     * The stage this class had no falsifier for until 2026-08-14.
+     *
+     * 'Under Contract (PSA)' is deliberately ABSENT from ALLOWED_EXPLICIT_TARGETS, and that absence
+     * is what forces every deal to reach it through advance() -> NEXT_STAGE, i.e. from 'LOI' and
+     * from nowhere else. Three gates hang off that single hop and ALL of them are ISCHANGED- or
+     * stage-keyed, so an explicit write straight to this stage skips all three at once:
+     * Approved_LOI_Before_PSA, Completed_LOI_Before_PSA and NDA_Signed_Before_Deal_Progression.
+     * That is a strictly worse bypass than the 'Closed Won' case above, because a deal parked at
+     * 'Under Contract (PSA)' looks legitimate on the Path and in every report.
+     *
+     * 🔴 WHY THIS TEST EXISTS AT ALL. The two rejection tests above pin 'Closed Won' and
+     * 'Underwriting', so ADDING this stage to ALLOWED_EXPLICIT_TARGETS turned nothing red — the
+     * allow-list's most dangerous omission was the one with no test on it. The risk is not
+     * hypothetical: Acquisition Observations phase 2 rewrote this literal from 'PSA' to
+     * 'Under Contract (PSA)' across 45 files, and a rename sweep touching NEXT_STAGE and
+     * ALLOWED_EXPLICIT_TARGETS in the same file is exactly when a line lands in the wrong
+     * collection. The gap pre-dates that rename; the rename is why it was worth closing now.
+     *
+     * The fixture is at 'LOI' on purpose — the ONE stage from which this target is legitimately
+     * reachable. Refusing it here is the strong claim: not even the record whose derived next stage
+     * IS the target may take the explicit route to it.
+     *
+     * 🔴 THE QUERY-COUNT ASSERTION IS THE FALSIFIER; THE CAUGHT EXCEPTION IS NOT. This is the one
+     * thing to preserve if this test is ever edited. `setStage` converts a DmlException into the
+     * SAME StageAdvanceException type the allow-list throws, and this fixture has no approved LOI,
+     * no completed LOI and no signed NDA — so if 'Under Contract (PSA)' WERE added to the
+     * allow-list, the write would be refused by those three validation rules and re-thrown as a
+     * StageAdvanceException anyway. A `catch` + `Assert.isNotNull(message)` therefore passes under
+     * BOTH readings and pins nothing, and the "stage untouched" assertion is vacuous for the same
+     * reason. What discriminates is WHERE the refusal came from: the allow-list check runs BEFORE
+     * `load()`, so a rejection costs ZERO queries, whereas any refusal downstream of the allow-list
+     * has already spent one loading the record. Same idiom as
+     * advanceToRejectsAnUnknownStageWithoutQueryingTheRecord below.
+     */
+    @isTest
+    static void advanceToRejectsUnderContractPsaEvenFromTheStageThatDerivesIt() {
+        Opportunity o = newOpp('LOI');
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        try {
+            StageAdvanceService.advanceTo(o.Id, 'Under Contract (PSA)');
+            Assert.fail('advanceTo must refuse Under Contract (PSA) — it is reachable only through '
+                + 'advance(), which routes via NEXT_STAGE and so cannot skip the LOI-approved, '
+                + 'LOI-completed and signed-NDA gates');
+        } catch (StageAdvanceService.StageAdvanceException e) {
+            Assert.isNotNull(e.getMessage(), 'The allow-list rejection carries a user-safe message');
+        }
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, queriesUsed,
+            'The refusal must come from the ALLOW-LIST, not from a validation rule downstream of it. '
+            + 'The allow-list check runs before load(), so a rejected target costs no query; a '
+            + 'non-zero count here means Under Contract (PSA) was accepted as an explicit target and '
+            + 'only the gates stopped it — which is the bypass this set exists to close, and which '
+            + 'would still be open for any deal that happens to satisfy them');
+
+        Assert.areEqual('LOI',
+            [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
+            'The rejected call must leave the deal at LOI — no partial write');
     }
 
     @isTest

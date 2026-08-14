@@ -32,13 +32,14 @@ private class OpportunityDocStatusControllerTest {
         loi.Offer_Cap_Rate__c = 7;
         // Completed_LOI_Before_PSA (added 2026-08-12) gates PSA entry on the LOI's OWN Stage__c,
         // which placeApprovedLoi leaves at its factory-default 'Draft'. This class already writes
-        // the LOI record directly (see above), so the LOI is driven to 'Completed' the same way
+        // the LOI record directly (see above), so the LOI is driven to 'Signed' the same way
         // rather than introducing RecordStageAdvanceService here. LOI__c has no validation rules
         // (confirmed: no objects/LOI__c/validationRules folder), so the direct write is safe.
-        loi.Stage__c = 'Completed';
+        // ⚠ 'Signed' since observation 5 (2026-08-14); it was 'Completed'.
+        loi.Stage__c = 'Signed';
         update loi;
 
-        opp.StageName = 'PSA';
+        opp.StageName = 'Under Contract (PSA)';
         update opp;
 
         Underwriting__c uw = TestDataFactory.createUnderwriting(opp.Id, false);

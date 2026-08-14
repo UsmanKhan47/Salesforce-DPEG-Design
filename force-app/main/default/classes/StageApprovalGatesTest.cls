@@ -5,7 +5,11 @@
  *   - Approved_LOI_Before_PSA          (blocks PSA entry until an approved LOI is in place)
  *   - Contract_Signed_Before_Closed_Won (blocks Closed Won entry until Contract_Signed__c)
  *   - Completed_LOI_Before_PSA         (blocks PSA entry until the primary LOI's OWN Stage__c is
- *                                       'Completed' — added 2026-08-12; see below)
+ *                                       'Signed' — added 2026-08-12; the value was 'Completed'
+ *                                       until observation 5 renamed the acquisition LOI sequence
+ *                                       on 2026-08-14. The RULE keeps its name, which is why the
+ *                                       test methods below still read completedLoiGate_*; see the
+ *                                       migration-window note on the rule itself)
  *
  * Each test leaves ONE flag false and satisfies every OTHER gate the transition crosses (via
  * TestDataFactory's stage-gate helpers and a signed primary NDA where needed), so the only
@@ -88,12 +92,12 @@ private class StageApprovalGatesTest {
 
         Boolean blocked = false;
         try {
-            o.StageName = 'PSA';
+            o.StageName = 'Under Contract (PSA)';
             update o;
         } catch (DmlException e) {
             blocked = true;
             System.assert(
-                e.getMessage().contains('cannot enter PSA until an approved LOI is in place'),
+                e.getMessage().contains('cannot enter Under Contract (PSA) until an approved LOI is in place'),
                 'Entering PSA without an approved LOI should surface the LOI message, got: ' + e.getMessage());
         }
         System.assert(blocked, 'Entering PSA without an approved LOI (Primary_LOI__c + LOI_Approved__c) '
@@ -123,16 +127,16 @@ private class StageApprovalGatesTest {
 
         Boolean blocked = false;
         try {
-            o.StageName = 'PSA';
+            o.StageName = 'Under Contract (PSA)';
             update o;
         } catch (DmlException e) {
             blocked = true;
             System.assert(
-                e.getMessage().contains('until the primary LOI is Completed'),
+                e.getMessage().contains('until the primary LOI is Signed'),
                 'Entering PSA with the primary LOI still on Draft should surface the Completed_LOI_'
                 + 'Before_PSA message, got: ' + e.getMessage());
         }
-        System.assert(blocked, 'Entering PSA with an approved-but-not-Completed primary LOI '
+        System.assert(blocked, 'Entering PSA with an approved-but-not-Signed primary LOI '
             + '(Approved_LOI_Before_PSA satisfied, LOI Stage__c = Draft) must be blocked');
 
         System.assertEquals('LOI',
@@ -141,25 +145,35 @@ private class StageApprovalGatesTest {
     }
 
     /**
-     * The positive complement: once the primary LOI's OWN Stage__c reaches 'Completed', the SAME
+     * The positive complement: once the primary LOI's OWN Stage__c reaches 'Signed', the SAME
      * transition that was just blocked above must succeed.
+     *
+     * ⚠ 'Signed' since observation 5 (2026-08-14); it was 'Completed'. The rule accepts BOTH during
+     * the migration window (its formula excludes each in turn), so this test passing does NOT prove
+     * the rule was repointed — the negative test above, which asserts the MESSAGE, is what does.
      */
     @isTest
-    static void completedLoiGate_allowsPsaEntryOnceLoiStageIsCompleted() {
+    static void completedLoiGate_allowsPsaEntryOnceLoiStageIsSigned() {
         Opportunity o = newOpp('LOI');
         insert o;
         TestDataFactory.signPrimaryNda(o);
         LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
-        update new LOI__c(Id = primaryLoi.Id, Stage__c = 'Completed');
+        // ⚠ 'Signed' since observation 5 (2026-08-14); this was 'Completed' until the acquisition
+        // LOI sequence was renamed. It must stay in step with Completed_LOI_Before_PSA, the
+        // validation rule this line exists to satisfy — that rule reads the LOI child's OWN
+        // Stage__c by string (design collision C2) and is repointed in the same P3-D2 wave. If this
+        // line and that rule ever disagree, EVERY deal in the org is blocked from entering
+        // 'Under Contract (PSA)' and this fixture is where it shows up first.
+        update new LOI__c(Id = primaryLoi.Id, Stage__c = 'Signed');
 
         Test.startTest();
-        o.StageName = 'PSA';
+        o.StageName = 'Under Contract (PSA)';
         update o; // must NOT throw
         Test.stopTest();
 
-        System.assertEquals('PSA',
+        System.assertEquals('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
-            'Once the primary LOI itself reaches Completed, PSA entry must succeed');
+            'Once the primary LOI itself reaches Signed, PSA entry must succeed');
     }
 
     /**
@@ -178,14 +192,14 @@ private class StageApprovalGatesTest {
 
         Boolean blocked = false;
         try {
-            o.StageName = 'PSA';
+            o.StageName = 'Under Contract (PSA)';
             update o;
         } catch (DmlException e) {
             blocked = true;
             String message = e.getMessage();
-            System.assert(message.contains('cannot enter PSA until an approved LOI is in place'),
+            System.assert(message.contains('cannot enter Under Contract (PSA) until an approved LOI is in place'),
                 'Approved_LOI_Before_PSA must still fire on a blank lookup — got: ' + message);
-            System.assert(!message.contains('until the primary LOI is Completed'),
+            System.assert(!message.contains('until the primary LOI is Signed'),
                 'Completed_LOI_Before_PSA must NOT also fire on a blank lookup — its '
                 + 'NOT(ISBLANK(Primary_LOI__c)) guard exists exactly to exempt this case and keep '
                 + 'it to ONE error message. Two messages here means the guard is missing or '

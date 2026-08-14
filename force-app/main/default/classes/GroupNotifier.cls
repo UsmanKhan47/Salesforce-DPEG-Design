@@ -62,13 +62,55 @@ public without sharing class GroupNotifier {
         description='Sends an Acquisitions Deal Update custom notification to all members of a public group or queue.'
     )
     public static void notify(List<Request> requests) {
+        notifyWithOutcome(requests);
+    }
+
+    /**
+     * `notify`, but it TELLS THE CALLER WHAT HAPPENED — one Boolean per request, index-aligned to
+     * the input list.
+     *
+     * ═══ 🔴 WHY THIS EXISTS AT ALL (added 2026-08-14 for CallForOffersAlertBatch) ═══
+     * `notify` swallows every failure by design, which is right for its original callers: a failed
+     * deal-update notification must never roll back the transaction that triggered it, and there is
+     * nothing for them to do about it. It is WRONG for a caller that writes an IDEMPOTENCY MARKER
+     * after sending, because a swallowed failure leaves exactly two options and both are defects:
+     *
+     *   stamp anyway  -> the alert is lost FOREVER, silently. The marker says it was sent.
+     *   never stamp   -> the same alert fires every single day, which is the failure the whole
+     *                    marker design exists to prevent ("the team stops reading them").
+     *
+     * With an outcome the caller stamps only what actually went out, so a failed send is retried on
+     * the next pass and a successful one is never repeated.
+     *
+     * ⚠ THE `@InvocableMethod` SIGNATURE IS UNTOUCHED. `notify` keeps its `void` return and remains
+     * the Flow entry point; it now delegates here and discards the answer, so every existing caller
+     * and every Flow is byte-for-byte unaffected. Do not add `@InvocableMethod` to this method —
+     * an object with two invocable methods is a Flow-picker ambiguity for no gain.
+     *
+     * ⚠ WHAT `false` DOES AND DOES NOT MEAN. It means "this request produced no notification":
+     * a null/blank request, a missing notification type, a group that resolved to no recipients, or
+     * a `send()` that threw. It does NOT mean the notification failed to be READ. There is no
+     * delivery receipt available to Apex and none is claimed here.
+     *
+     * @param requests The notifications to send; null/empty safe.
+     * @return One Boolean per input request, in input order — true only when `send()` returned
+     *         without throwing. Empty when the input is null or empty. Never null.
+     */
+    public static List<Boolean> notifyWithOutcome(List<Request> requests) {
+        List<Boolean> outcomes = new List<Boolean>();
         if (requests == null || requests.isEmpty()) {
-            return;
+            return outcomes;
         }
+        // Pre-fill with false so an early return below still returns an index-aligned list. A
+        // caller that trusted a SHORT list would silently stamp the wrong records.
+        for (Integer i = 0; i < requests.size(); i++) {
+            outcomes.add(false);
+        }
+
         Id notificationTypeId = resolveNotificationTypeId();
         if (notificationTypeId == null) {
             System.debug(LoggingLevel.WARN, 'GroupNotifier: notification type missing: ' + NOTIF_TYPE_DEV_NAME);
-            return;
+            return outcomes;
         }
 
         Set<String> groupNames = new Set<String>();
@@ -79,7 +121,8 @@ public without sharing class GroupNotifier {
         }
         Map<String, Set<String>> recipientsByGroup = resolveRecipients(groupNames);
 
-        for (Request r : requests) {
+        for (Integer i = 0; i < requests.size(); i++) {
+            Request r = requests[i];
             if (r == null || String.isBlank(r.recipientGroup) || r.targetRecordId == null) {
                 continue;
             }
@@ -93,13 +136,37 @@ public without sharing class GroupNotifier {
             n.setTargetId(r.targetRecordId);
             n.setTitle(r.title);
             n.setBody(r.body);
+            // 🔴 ONE CALL, THE WHOLE MEMBER SET — SO THE COST OF THIS LINE IS A FUNCTION OF GROUP
+            // SIZE, NOT A CONSTANT. Measured on `usman-dpeg` 2026-08-14, call count held fixed
+            // while |recipients| varied inside one transaction:
+            //
+            //     one send()  ≈  6.0 ms CPU  +  0.22 ms x |recipients|
+            //
+            // (1 recipient = 6.24 ms, 6 = 7.34 ms, over three paired rounds of 30 calls; a
+            // 1-recipient drift control repeated to 5.900 ms exactly.) Zero SOQL and zero DML
+            // either way. So a looping caller pays mostly PER CALL, which is why the caches above
+            // are the guardrail that matters — but a caller sizing a batch chunk against CPU must
+            // carry the recipient count as a multiplier rather than quoting a flat per-send figure.
+            // `CallForOffersAlertBatch`'s header §1 does that arithmetic; it is the only caller
+            // whose chunk size depends on it.
+            //
+            // ⚠ AND THE PER-RECIPIENT TERM IS SYNCHRONOUS VALIDATION, NOT ASYNC DELIVERY — which
+            // is why ONE BAD ID KILLS THE WHOLE CALL. A recipient Id that resolves to nothing
+            // raises `System.HandledException: Invalid parameter value for: recipientIds` and NO
+            // recipient in the set is notified (measured: sentOk = 0 across every attempt).
+            // `resolveRecipients` only ever emits live `GroupMember.UserOrGroupId` values or a real
+            // group Id, so this is not reachable today; it is recorded because the failure is
+            // all-or-nothing per group rather than per member, and the `catch` below reports it as
+            // a single `false` for the request.
             try {
                 n.send(recipients);
                 sentCount++;
+                outcomes[i] = true;
             } catch (Exception e) {
                 System.debug(LoggingLevel.WARN, 'GroupNotifier: send failed for ' + r.recipientGroup + ': ' + e.getMessage());
             }
         }
+        return outcomes;
     }
 
     /**

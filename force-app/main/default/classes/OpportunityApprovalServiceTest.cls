@@ -141,7 +141,7 @@ private class OpportunityApprovalServiceTest {
 
     @isTest
     static void resolvesDealFromContractReviewRecord() {
-        Opportunity o = makeOpp('PSA'); // stage entry auto-creates a Contract_Review__c
+        Opportunity o = makeOpp('Under Contract (PSA)'); // stage entry auto-creates a Contract_Review__c
         Contract_Review__c cr =
             [SELECT Id FROM Contract_Review__c WHERE Opportunity__c = :o.Id LIMIT 1];
 

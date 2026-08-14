@@ -50,11 +50,19 @@ private class ContractExecutionServiceTest {
         LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
         // Completed_LOI_Before_PSA (added 2026-08-12) reads the LOI's OWN Stage__c, which
         // placeApprovedLoi deliberately leaves at its factory-default 'Draft'. Drive it to
-        // 'Completed' via the real production route (the c/loiMarkCompleted quick action) before
-        // entering PSA — same fix as StageAdvanceServiceTest.advanceMovesLoiToPsaAndPsaToClosedWon.
-        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
-        // Entering PSA auto-creates the Contract Review + Primary_Contract__c stamp.
-        o.StageName = 'PSA';
+        // 'Signed' via the real production route (the c/loiMarkCompleted quick action) before
+        // entering 'Under Contract (PSA)' — same fix as
+        // StageAdvanceServiceTest.advanceMovesLoiToPsaAndPsaToClosedWon.
+        // ⚠ 'Signed' since observation 5 (2026-08-14); this was 'Completed' until the acquisition
+        // LOI sequence was renamed. It must stay in step with Completed_LOI_Before_PSA, the
+        // validation rule this line exists to satisfy — that rule reads the LOI child's OWN
+        // Stage__c by string (design collision C2) and is repointed in the same P3-D2 wave. If this
+        // line and that rule ever disagree, EVERY deal in the org is blocked from entering
+        // 'Under Contract (PSA)' and this fixture is where it shows up first.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
+        // Entering 'Under Contract (PSA)' auto-creates the Contract Review + Primary_Contract__c
+        // stamp.
+        o.StageName = 'Under Contract (PSA)';
         update o;
         return [SELECT Id, Opportunity__c FROM Contract_Review__c WHERE Opportunity__c = :o.Id];
     }
@@ -131,12 +139,22 @@ private class ContractExecutionServiceTest {
             SELECT StageName, Contract_Signed__c, Contract_Executed_Date__c, Deal_Status__c, Deal_Bucket__c
             FROM Opportunity WHERE Id = :cr.Opportunity__c
         ];
-        // The deal stays at the coarse PSA stage; Deal_Status marks it executed.
-        System.assertEquals('PSA', o.StageName, 'Deal stays at PSA on execution');
+        // The deal stays at the coarse 'Under Contract (PSA)' stage; Deal_Status marks it executed.
+        System.assertEquals('Under Contract (PSA)', o.StageName,
+            'Deal stays at Under Contract (PSA) on execution');
         System.assert(o.Contract_Signed__c, 'Contract Signed stamped');
         System.assertNotEquals(null, o.Contract_Executed_Date__c, 'Day 0 stamped');
-        System.assertEquals('Contract Signed', o.Deal_Status__c, 'Deal status stamped');
-        System.assertEquals('PSA', o.Deal_Bucket__c, 'Tracker bucket follows');
+        // 🔴 THIS IS THE DEAL-TRACKER BUCKET, NOT THE STAGE, AND IT MOVED FOR A SEPARATE REASON —
+        // do not read it as one repoint. Deal_Bucket__c is a reporting-only formula with its OWN
+        // vocabulary, which does NOT track StageName in general ('Closed Won' yields
+        // 'Bought/Closed'). Phase 2 moved TWO strings on its one formula line: the ISPICKVAL INPUT
+        // (the stage value — mandatory, or every migrated deal falls through to 'Interested
+        // Deals' SILENTLY) and the OUTPUT LABEL (a deliberate choice, so the tracker does not show
+        // a bucket called 'PSA' full of deals whose stage reads Under Contract (PSA)). This
+        // assertion follows the OUTPUT, and it is the loud half of that second decision — the
+        // Deal_Tracker_PSA list view's filter value is the silent half, and org-side reports
+        // grouping on 'PSA' are not represented in this repo at all (post-deploy gate G8).
+        System.assertEquals('Under Contract (PSA)', o.Deal_Bucket__c, 'Tracker bucket follows');
 
         // 🔴 EXECUTION NO LONGER OPENS THE TRANSACTION (moved 2026-08-05). The trigger point is now
         // the Opportunity entering 'About to Close'. Asserting ZERO here is what stops the creation
@@ -290,12 +308,12 @@ private class ContractExecutionServiceTest {
         // substitute for the same precondition at this volume.
         List<LOI__c> completedLois = new List<LOI__c>();
         for (LOI__c primaryLoi : primaryLois) {
-            completedLois.add(new LOI__c(Id = primaryLoi.Id, Stage__c = 'Completed'));
+            completedLois.add(new LOI__c(Id = primaryLoi.Id, Stage__c = 'Signed'));
         }
         update completedLois;
 
         for (Opportunity o : opps) {
-            o.StageName = 'PSA';
+            o.StageName = 'Under Contract (PSA)';
         }
         update opps; // auto-creates 251 Contract Reviews (+ Primary_Contract__c stamp)
 

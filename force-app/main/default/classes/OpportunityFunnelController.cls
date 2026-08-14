@@ -13,9 +13,14 @@
  */
 public with sharing class OpportunityFunnelController {
 
+    // ⚠ These are Opportunity.StageName API VALUES, not labels — getStageCounts keys its map on
+    // them and the LWC boards (pipelineStageBoard / totalOpportunities / recentOpportunities) join
+    // on the value this list emits. 'Under Contract (PSA)' was renamed from 'PSA' (Acquisition
+    // Observations phase 2); a stale key here does not error, it renders a permanent zero.
     private static final List<String> STAGE_ORDER = new List<String>{
         'New', 'Under Review', 'Development Review', 'Construction Review', 'Underwriting',
-        'LOI', 'PSA', 'About to Close', 'Closed Won', 'Dead/Pass', 'Portfolio Deal'
+        'LOI', 'Under Contract (PSA)', 'About to Close', 'Closed Won', 'Dead/Pass',
+        'Portfolio Deal'
     };
 
     // Fixed, generic user-safe message for a failed read.
@@ -43,7 +48,8 @@ public with sharing class OpportunityFunnelController {
             }
             // Outcome stages are scoped to the last 90 days by close date so the cards
             // reflect recent activity rather than an ever-growing all-time total.
-            counts.put('PSA', OpportunitySelector.countByStageInLastNDays('PSA', 90));
+            counts.put('Under Contract (PSA)',
+                OpportunitySelector.countByStageInLastNDays('Under Contract (PSA)', 90));
             counts.put('Closed Won', OpportunitySelector.countByStageInLastNDays('Closed Won', 90));
             counts.put('Dead/Pass', OpportunitySelector.countByStageInLastNDays('Dead/Pass', 90));
             List<StageCount> result = new List<StageCount>();

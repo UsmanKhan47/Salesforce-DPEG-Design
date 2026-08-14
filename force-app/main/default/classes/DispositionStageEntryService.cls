@@ -162,10 +162,13 @@ public with sharing class DispositionStageEntryService {
      * Stage__c in objects/LOI__c/recordTypes/Disposition_LOI.recordType-meta.xml.
      *
      * 🔴 'Draft' — the FIELD-level default and the acquisition starting stage — WOULD INSERT
-     * HAPPILY HERE and produce an LOI whose stage is off its own record type's value set. The two
-     * LOI value sets are fully DISJOINT (D6), so RecordStageAdvanceService's disposition sequence
-     * has no 'Draft' entry at all and the row could never be advanced. Nothing but this constant
-     * prevents that.
+     * HAPPILY HERE and produce an LOI whose stage is off its own record type's value set. 'Draft'
+     * is acquisition-only (D6), so RecordStageAdvanceService's disposition sequence has no 'Draft'
+     * entry at all and the row could never be advanced. Nothing but this constant prevents that.
+     * ⚠ This used to reach that conclusion via "the two LOI value sets are fully DISJOINT", which
+     * observation 5 ended on 2026-08-14 by renaming 'Prepare/Review' to 'Under Review' — a value the
+     * disposition sequence already carried. The sets overlap there now; 'Draft' specifically does
+     * not, which is the only part this constant ever depended on.
      */
     @TestVisible
     private static final String DISPOSITION_LOI_INITIAL_STAGE = 'Received';
@@ -589,11 +592,27 @@ public with sharing class DispositionStageEntryService {
      * Disposition_PSA record type file records the same blank as load-bearing for the same reason.
      *
      * ── IDEMPOTENCY: SIMPLE PRESENCE, NOT SCOPED TO THE RECORD TYPE ──────────
-     * 🔴 THE UNSCOPED CHECK MATTERS MORE ON THIS OBJECT THAN ON THE OTHER TWO. Both PSA record
-     * types expose the IDENTICAL four `Negotiation_Status__c` values, so a Master-type disposition
-     * PSA walks its whole path correctly and looks completely normal — it is wrong only about which
-     * PERSONA may drive it. A record-type-scoped idempotency check would therefore mint a SECOND,
-     * duplicate PSA against a first one that nothing else in the system reports as anomalous.
+     * 🔴 THE UNSCOPED CHECK MATTERS MORE ON THIS OBJECT THAN ON THE OTHER TWO. ⚠ THE PREMISE THAT
+     * USED TO CARRY THAT SENTENCE DIED ON 2026-08-14 (observation 7 / review C9); the CONCLUSION
+     * did not, so the check is unchanged and must stay unchanged. RETRACTED, verbatim: "Both PSA
+     * record types expose the IDENTICAL four `Negotiation_Status__c` values, so a Master-type
+     * disposition PSA walks its whole path correctly and looks completely normal — it is wrong only
+     * about which PERSONA may drive it."
+     *
+     * Observation 7 split the sequences — acquisition `Draft -> Negotiation -> Signed -> Executed`,
+     * disposition `Initial Draft -> Revised -> Ready for Execution -> Executed`, sharing only the
+     * terminal 'Executed'. So a Master-type disposition PSA no longer looks normal at all: it falls
+     * to RecordStageAdvanceService's defaultTypeKey, which is the ACQUISITION map, finds no entry
+     * for its own 'Initial Draft', and is REFUSED on its first Advance Stage click naming that
+     * status. See that class's header ("the fallback used to be the quietest of the three, and
+     * observation 7 made it the loudest").
+     *
+     * 🔴 THE CHECK STAYS UNSCOPED, AND THE SPLIT MAKES THAT MORE RIGHT RATHER THAN LESS. A
+     * record-type-scoped check would still mint a SECOND, duplicate PSA against the Master-type
+     * first one — and the duplicate would carry Disposition_PSA, so it would advance perfectly
+     * while the original stayed stuck. That is strictly worse than before: the refusal is now the
+     * loud symptom pointing at gate T-B, and a working duplicate beside it reads as "the old row is
+     * odd" rather than "this row was never migrated", masking the one signal the migration has.
      *
      * ── ⚠ THE RECORD-TYPE STAMP IS GUARDED (isAvailable()) ───────────────────
      * Same guard, same measured reason as the other two blocks. 🔴 BUT BE HONEST THAT THE GUARD'S

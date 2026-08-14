@@ -75,7 +75,7 @@ public with sharing class PropertySelector {
      *
      * The exposure is measured, not hypothetical. The Opportunity update that fires this is
      * reachable two ways, and BOTH run as a principal who may hold nothing on `Property__c`:
-     *   - `StageAdvanceService.NEXT_STAGE` maps `PSA ⇒ Closed Won` and
+     *   - `StageAdvanceService.NEXT_STAGE` maps `Under Contract (PSA) ⇒ Closed Won` and
      *     `About to Close ⇒ Closed Won`, so any deal driver can drive it; and
      *   - the `Transaction_Complete_Close` flow writes `StageName = 'Closed Won'` with **no
      *     `<runInMode>` element**, i.e. DefaultMode, i.e. as the TRANSACTIONS persona who

@@ -90,8 +90,8 @@ public with sharing class StageAdvanceController {
     }
 
     /**
-     * Moves the deal to an explicit target stage — the branch actions off Under Review, the PSA
-     * off-ramp, and the pre-authorized Dead/Pass off-ramp.
+     * Moves the deal to an explicit target stage — the branch actions off Under Review, the
+     * 'Under Contract (PSA)' off-ramp, and the pre-authorized Dead/Pass off-ramp.
      *
      * @param recordId the Opportunity to advance
      * @param target   the explicit target StageName; must be one of

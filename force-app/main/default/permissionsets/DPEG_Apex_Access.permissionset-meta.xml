@@ -24,6 +24,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>CallForOffersController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>CounterOfferController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -40,6 +44,24 @@
         <enabled>true</enabled>
     </classAccesses>
     <!--
+      Phase 4, Acquisition Observations (2026-08-14) — the two call-for-offers surfaces:
+      lwc/callForOffersList (the Lead Funnel table) and lwc/callForOffersPanel (the Opportunity
+      record page). ONE controller serves both, so one grant covers both.
+
+      ⚠ ONLY THE CONTROLLER IS GRANTED. CallForOffersService, CallForOffersAlertBatch and
+      CallForOffersAlertSchedule need no classAccesses: a Schedulable started by System.schedule and
+      a Batchable started by Database.executeBatch are not invoked from a client, and the service is
+      reached only through the controller. Granting them would widen the surface for nothing.
+
+      ⚠ It sits in this broad catch-all, not in a capability set, because both of its methods are
+      cacheable READS with no gate in front of them — there is no permission question to ask, so
+      there is no narrower population to protect. (Contrast RecordStageAdvanceController, which must
+      stay here AND in its capability set because it holds a permission-QUESTION method that a
+      non-driver has to be able to call in order to be told "no".)
+
+      RECONCILED ORG -> REPO 2026-08-14 before this edit: 26 classes both sides, ZERO org-only and
+      ZERO repo-only grants, so nothing here is at risk of being wiped by the next deploy.
+
       Tranche 5B (2026-08-10) — the Active Listing traction monitor behind lwc/listingAlerts.
       ⚠ A PermissionSet deploy REPLACES this file's whole grant list, so an org-side-only class
       access absent from here is destroyed by the next deploy of this file. Reconcile against the

@@ -38,6 +38,76 @@
         HERE, because no value was added: both record types expose the SAME four values, so the
         two PSA paths render the same sequence and differ only in wording.
 
+        =====================================================================
+        🔴 AMENDED 2026-08-14 (Phase 3, observation 7). THE FOUR-STEP SEQUENCE AND THE
+        "NO ORDERING PROBLEM" PARAGRAPH ARE BOTH SUPERSEDED. THERE WAS AN ORDERING PROBLEM AND
+        IT WAS THE SHARPEST ONE IN THE PHASE.
+        =====================================================================
+
+        RETRACTED (1), verbatim: "Four steps: Initial Draft -> Revised -> Ready for Execution ->
+        Executed" and "EVERY <info> TEXT BELOW IS COPIED BYTE-IDENTICAL FROM
+        Contract_Review_Negotiation_Path... Nothing on the acquisition side is reworded,
+        re-ordered, added or dropped by this tranche."
+        The target buy-side sequence is now Draft -> Negotiation -> Signed -> Executed. Three
+        values were added to Negotiation_Status__c for this record type alone. The
+        byte-identical rule described Tranche 3C and was never a standing property; the three new
+        <info> texts below are NEW PROSE.
+
+        RETRACTED (2), verbatim: "UNLIKE LOI__c AND NDA__c THERE WAS NO ORDERING PROBLEM TO SOLVE
+        HERE, because no value was added: both record types expose the SAME four values."
+        🔴 THERE IS ONE NOW, AND IT IS WORSE THAN LOI__c's. The shared value is 'Executed' - the
+        TERMINAL - and it already sat at position 4. Appending the three new values would have
+        rendered THIS PATH as Executed, Draft, Negotiation, Signed: the finish line FIRST, on a
+        Path that deploys green and passes every test. The three values were therefore INSERTED
+        BEFORE 'Executed' in the master value set. See Negotiation_Status__c's own comment for
+        the full arithmetic. ⚠ LOI__c.Stage__c in this same phase needed an APPEND and NDA__c
+        needed an INTERLEAVE - three fields, three different answers. Redo the arithmetic every
+        time; it does not transfer.
+
+        ⚠ SEVEN STEPS, NOT FOUR, AND THAT IS THE P3-D1 STATE. 'Initial Draft', 'Revised' and
+        'Ready for Execution' are kept here until P3-D3 because live acquisition Contract Reviews
+        sit on them until the row migration completes, and a step is needed for each or an
+        in-flight record renders on a Path that does not know its stage. They are removed from
+        THIS FILE and from the Acquisition_PSA record type at P3-D3 - and they are NOT
+        deactivated on the field, because Disposition_PSA still runs on all three (decision O3).
+        Staged in agent-output/p3-d3-retire-loi-psa/.
+
+        ⚠ FILE ORDER BELOW IS THE ACTUAL TRANSITIONAL RENDERING ORDER: Initial Draft(1),
+        Revised(2), Ready for Execution(3), Draft(4), Negotiation(5), Signed(6), Executed(7).
+        After P3-D3 it collapses to Draft -> Negotiation -> Signed -> Executed.
+
+        ⚠ 'Signed' IS NOT 'Executed', AND THE PATH SAYS SO ON PURPOSE. 'Signed' is the analogue
+        of the retired 'Ready for Execution' - the document is final and signatures are in hand -
+        while 'Executed' remains the value that fires ContractExecutionService's handoff and
+        stamps the Opportunity Contract Signed (Day 0). Contract_Review_Stage_Sync
+        projects 'Signed' to the coarse Stage__c = 'Review', exactly as 'Ready for Execution'
+        did, and ONLY 'Executed' projects to 'Contract Execution'. Do not "tidy" that by making
+        'Signed' project to Contract Execution - it would move the handoff a step early.
+
+        🔴 THE 'Executed' HOP DOES NOT CREATE THE Transaction__c, AND THIS FILE SAID IT DID.
+        The sentence above ended "...and creates the Transaction" when first written in this
+        pack. That phrasing has been FALSE SINCE 2026-08-05 and is marked FALSE in
+        RecordStageAdvanceService's own map comment (search "used to say this hop"): creation
+        moved to ContractExecutionService.openTransactionsOnAboutToClose, which keys on
+        Opportunity.StageName = 'About to Close' - verified in that class, not carried from
+        prose. The 'Executed' hop stamps the Day-0 DATE that the later creation READS BACK, so
+        the two stay coupled; they simply no longer run in the same transaction.
+        ⚠ THE CONCLUSION ABOVE IS UNAFFECTED - 'Signed' must still not project to
+        'Contract Execution'. What changes is only WHAT the 'Executed' hop does, not whether it
+        is the hop that matters.
+
+        ⚠ THE SAME CLAIM WAS ALSO ON SCREEN, IN THE 'Executed' STEP'S <info>, AND IT IS FIXED
+        HERE - BUT IT WAS INHERITED, NOT INTRODUCED BY THIS PACK. That text arrived byte-identical
+        from pathAssistants/Contract_Review_Negotiation_Path (the pre-record-type master path)
+        when this file was split off, and it read "...the Transaction record is created
+        automatically". It now reads "...the Transaction record itself is created later, when the
+        deal reaches About to Close". This pack is simply the first thing to touch the file since
+        the behaviour moved on 2026-08-05, which is why the correction lands here.
+        🔴 THE MASTER PATH STILL CARRIES THE ORIGINAL WORDING - measured 2026-08-14, not assumed.
+        It is PRE-EXISTING and deliberately OUT OF SCOPE for this pack; fix it as its own change
+        so the diff stays reviewable. Contract_Review_Path_Disposition is unaffected: its
+        'Executed' step describes the sale moving into Closing and never mentions a Transaction.
+
         POST-DEPLOY: this path renders nothing until every existing Contract Review row has been
         migrated off Master onto Acquisition_PSA and the record type is assigned in the profiles
         in use - the same gate Tranche 2's A2 established, for the same reason.
@@ -59,7 +129,19 @@
         <picklistValueName>Ready for Execution</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>PSA fully executed — this hands the deal off to the Transactions team: the Opportunity is stamped Contract Signed (Day 0) and the Transaction record is created automatically. The execution date is stamped for you.</info>
+        <info>Draft the purchase and sale agreement from the agreed LOI terms. Circulate the first draft and capture the PSA date.</info>
+        <picklistValueName>Draft</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Negotiate the PSA. Validate terms, contingencies and timelines. Redlines happen here: log every exchange with Log Version — each one records who sent it and flips Ball In Court — and stay on this step for as long as the negotiation runs. Advance only once the document is final.</info>
+        <picklistValueName>Negotiation</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>Signed by both sides. The document is final and signatures are in hand, but the deal has not yet been handed to Transactions — advancing from here executes the contract, so confirm every contingency and date is agreed first.</info>
+        <picklistValueName>Signed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>PSA fully executed — this hands the deal off to the Transactions team: the Opportunity is stamped Contract Signed (Day 0) and the execution date is stamped for you. The Transaction record itself is created later, when the deal reaches About to Close.</info>
         <picklistValueName>Executed</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>Acquisition_PSA</recordTypeName>

@@ -53,14 +53,20 @@ private class NdaDealProgressionGateTest {
         insert o;
         // isolate: PSA entry is ALSO gated by Approved_LOI_Before_PSA, and (since 2026-08-12) by
         // Completed_LOI_Before_PSA, which reads the LOI's OWN Stage__c. placeApprovedLoi leaves it
-        // at 'Draft', so drive it to 'Completed' via the real production route so only the NDA gate
+        // at 'Draft', so drive it to 'Signed' via the real production route so only the NDA gate
         // under test can fire.
         LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
-        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Completed');
+        // ⚠ 'Signed' since observation 5 (2026-08-14); this was 'Completed' until the acquisition
+        // LOI sequence was renamed. It must stay in step with Completed_LOI_Before_PSA, the
+        // validation rule this line exists to satisfy — that rule reads the LOI child's OWN
+        // Stage__c by string (design collision C2) and is repointed in the same P3-D2 wave. If this
+        // line and that rule ever disagree, EVERY deal in the org is blocked from entering
+        // 'Under Contract (PSA)' and this fixture is where it shows up first.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
 
         Boolean blocked = false;
         try {
-            o.StageName = 'PSA';
+            o.StageName = 'Under Contract (PSA)';
             update o;
         } catch (DmlException e) {
             blocked = true;
@@ -72,7 +78,7 @@ private class NdaDealProgressionGateTest {
 
     @isTest
     static void ndaGate_blocksAboutToCloseEntryWhenNdaUnsigned() {
-        Opportunity o = newOpp('PSA');
+        Opportunity o = newOpp('Under Contract (PSA)');
         insert o; // default CloseDate = today + 90, so Close_Date_Before_About_To_Close cannot fire here
 
         Boolean blocked = false;

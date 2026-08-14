@@ -332,6 +332,7 @@ private class OpportunitySelectorTest {
         deal.Listing_Broker_Name__c = 'Pat Lister';
         deal.Listing_Broker_Email__c = 'pat.lister@example.invalid';
         deal.Sale_Process__c = 'On-Market Listing';
+        deal.Call_For_Offers_Received_Date__c = Date.today().addDays(-5);
         insert deal;
 
         Test.startTest();
@@ -353,6 +354,10 @@ private class OpportunitySelectorTest {
             + 'for the identical reason as the other three: an unselected field reads null, so '
             + 'buildChange would treat every deal as if it had no sale process on file and write '
             + 'the same value again on every redelivery of the same campaign email');
+        Assert.areEqual(Date.today().addDays(-5), result[0].Call_For_Offers_Received_Date__c,
+            '🔴 Call_For_Offers_Received_Date__c JOINED THIS FIELD SET 2026-08-14 on identical '
+            + 'terms. Unselected it reads null, so the no-change skip could never fire for it and '
+            + 'a re-sent campaign email would rewrite the same date onto a live deal');
     }
 
     @isTest
@@ -400,6 +405,206 @@ private class OpportunitySelectorTest {
         Id ghostId = ghost.Id;
         delete ghost;
         return ghostId;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // CALL-FOR-OFFERS READS (Phase 4, 2026-08-14)
+    //
+    // ⚠ The @TestSetup above builds 251 Opportunities with NO Offer_Due_Date__c, which is exactly
+    // the population these three methods must ignore. That makes it a free control: every count
+    // below is "the deals I gave a deadline to", and a method that forgot its
+    // `Offer_Due_Date__c != NULL` filter fails by 251.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectCallForOffersOpen_returnsOnlyDealsWithADeadlineSoonestFirst() {
+        List<Opportunity> deals = TestDataFactory.createOpportunities(2, true);
+        deals[0].Offer_Due_Date__c = Date.today().addDays(12);
+        deals[1].Offer_Due_Date__c = Date.today().addDays(4);
+        update deals;
+
+        List<Opportunity> rows = OpportunitySelector.selectCallForOffersOpen();
+
+        Assert.areEqual(2, rows.size(),
+            'Only deals with a deadline are returned — the 251 @TestSetup deals have none');
+        Assert.areEqual(deals[1].Id, rows[0].Id, 'Soonest deadline first');
+        Assert.areEqual(deals[0].Id, rows[1].Id, 'then the later one');
+    }
+
+    @isTest
+    static void selectCallForOffersOpen_excludesClosedDeals() {
+        Opportunity open = TestDataFactory.createOpportunity(null, true);
+        open.Offer_Due_Date__c = Date.today().addDays(3);
+        update open;
+
+        // Closed at INSERT so no ISCHANGED(StageName) rule is involved in the fixture.
+        Opportunity closed = TestDataFactory.createOpportunity(null, false);
+        closed.StageName = 'Dead/Pass';
+        insert closed;
+        update new Opportunity(Id = closed.Id, Offer_Due_Date__c = Date.today().addDays(3));
+
+        List<Opportunity> rows = OpportunitySelector.selectCallForOffersOpen();
+
+        Assert.areEqual(1, rows.size(), 'A won or dead deal has no live deadline to chase');
+        Assert.areEqual(open.Id, rows[0].Id, 'and the open one is the survivor');
+    }
+
+    @isTest
+    static void selectCallForOffersOpen_selectsEveryFieldTheServiceReads() {
+        // 🔴 THE FIELD LISTS OF THE TWO USER_MODE METHODS MUST MATCH, because
+        // CallForOffersService.evaluateAll reads all ten off BOTH. A field present in one and
+        // absent from the other is a runtime SObjectException on exactly one of the two surfaces
+        // and nothing at compile time. Touching every field is what makes that fail here instead.
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        deal.Offer_Due_Date__c = Date.today().addDays(3);
+        update deal;
+
+        for (Opportunity row : new List<Opportunity>{
+                OpportunitySelector.selectCallForOffersOpen()[0],
+                OpportunitySelector.selectCallForOffersById(deal.Id) }) {
+            // A field the query did not select throws SObjectException on access, so simply reading
+            // each one is the assertion.
+            Assert.isNotNull(row.Id, 'Id');
+            Assert.isNotNull(row.Name, 'Name');
+            Assert.isNotNull(row.CreatedDate, 'CreatedDate');
+            Assert.isNotNull(row.Offer_Due_Date__c, 'Offer_Due_Date__c');
+            // Added 2026-08-14. It is the field the "Received" column actually renders now, so a
+            // read that dropped it would blank that column on BOTH surfaces at once.
+            row.Call_For_Offers_Received_Date__c?.day();
+            row.Broker_First_Seen__c?.day();
+            String unusedProcess = row.Sale_Process__c;
+            String unusedBroker = row.Listing_Broker_Name__c;
+            String unusedEmail = row.Listing_Broker_Email__c;
+            String unusedLink = row.Deal_Room_Link__c;
+        }
+    }
+
+    @isTest
+    static void selectCallForOffersById_isNullSafeAndReturnsNullForAMiss() {
+        // NOT-FOUND CONTRACT: this one returns null rather than throwing, unlike its
+        // fetch-for-use siblings, because its caller renders a "no deadline" state for a miss.
+        Assert.isNull(OpportunitySelector.selectCallForOffersById(null), 'A null Id returns null');
+        Assert.isNull(OpportunitySelector.selectCallForOffersById(ghostOpportunityId()),
+            'An unresolvable Id returns null rather than throwing QueryException');
+    }
+
+    @isTest
+    static void selectCallForOffersById_doesNotFilterOnClosed() {
+        // ⚠ DELIBERATELY UNLIKE THE LIST METHOD. A user standing on a closed deal's record page is
+        // entitled to see what its deadline was; the list excludes closed deals because a closed
+        // deal is not something to chase. Do not "harmonise" the two.
+        Opportunity closed = TestDataFactory.createOpportunity(null, false);
+        closed.StageName = 'Dead/Pass';
+        insert closed;
+        update new Opportunity(Id = closed.Id, Offer_Due_Date__c = Date.today().addDays(3));
+
+        Assert.isNotNull(OpportunitySelector.selectCallForOffersById(closed.Id),
+            'The record-page read must still resolve a closed deal');
+    }
+
+    /**
+     * Walk the alert locator and collect its rows.
+     *
+     * 🔴 IT MUST BE THE ITERATOR, NOT `Database.query(locator.getQuery())`. `getQuery()` returns the
+     * SOQL with every bind variable already replaced by an opaque `:tmpVar1` placeholder that
+     * nothing in scope can satisfy, so re-running the string throws
+     * `System.QueryException: Variable does not exist: tmpVar1` — measured, not theorised. The
+     * locator binds a `ceiling` date, so this trap applies to it permanently.
+     */
+    private static List<Opportunity> drainLocator() {
+        List<Opportunity> rows = new List<Opportunity>();
+        Database.QueryLocatorIterator it = OpportunitySelector.queryCallForOffersAlerts().iterator();
+        while (it.hasNext()) {
+            rows.add((Opportunity) it.next());
+        }
+        return rows;
+    }
+
+    @isTest
+    static void queryCallForOffersAlerts_appliesTheLadderCeilingAndTheClosedFilter() {
+        Opportunity inLadder = TestDataFactory.createOpportunity(null, true);
+        inLadder.Offer_Due_Date__c = Date.today().addDays(7);
+        Opportunity onCeiling = TestDataFactory.createOpportunity(null, true);
+        onCeiling.Offer_Due_Date__c = Date.today().addDays(8);
+        Opportunity overdue = TestDataFactory.createOpportunity(null, true);
+        overdue.Offer_Due_Date__c = Date.today().addDays(-90);
+        update new List<Opportunity>{ inLadder, onCeiling, overdue };
+
+        Set<Id> selected = new Map<Id, Opportunity>(drainLocator()).keySet();
+
+        Assert.isTrue(selected.contains(inLadder.Id), 'Exactly 7 days out is INSIDE the ladder');
+        Assert.isFalse(selected.contains(onCeiling.Id),
+            '8 days out is past the TODAY+7 ceiling and must not be read');
+        Assert.isTrue(selected.contains(overdue.Id),
+            'There is deliberately NO lower bound — a deal created after its deadline passed is '
+            + 'still owed its one alert, and adding a floor would silence it');
+    }
+
+    @isTest
+    static void queryCallForOffersAlerts_selectsBothMarkerFields() {
+        // The batch cannot make its idempotency decision without them, and a locator that dropped
+        // one would throw SObjectException deep inside a chunk rather than failing here.
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        deal.Offer_Due_Date__c = Date.today().addDays(3);
+        update deal;
+
+        List<Opportunity> rows = drainLocator();
+
+        Assert.areEqual(1, rows.size(), 'The deal is in the work queue');
+        rows[0].Offer_Alert_Last_Interval__c?.intValue();
+        rows[0].Offer_Alert_Due_Date__c?.day();
+        Assert.isNotNull(rows[0].Name, 'and Name, which the notification body uses');
+        String unusedBroker = rows[0].Listing_Broker_Name__c;
+    }
+
+    @isTest
+    static void queryCallForOffersAlerts_doesNotSelectTheReceivedDate() {
+        // ⚠ AN ABSENCE, ASSERTED ON PURPOSE — the confirmation that the 2026-08-14 received-date
+        // field changed NOTHING about the alert ladder. The marker keys on the DUE date at every
+        // point (the rung, the re-arm comparison and the snapshot it stamps), and the notification
+        // body is derived from the deadline, so an email that moves only the received date must
+        // change no alert decision. Selecting the field here would imply otherwise to the next
+        // reader; this is what makes adding it a deliberate act rather than a tidy-up.
+        //
+        // The mechanism is that reading a field a query did not select throws SObjectException.
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        deal.Offer_Due_Date__c = Date.today().addDays(3);
+        deal.Call_For_Offers_Received_Date__c = Date.today().addDays(-1);
+        update deal;
+
+        List<Opportunity> rows = drainLocator();
+        Assert.areEqual(1, rows.size(), 'Precondition: the deal is in the work queue');
+
+        try {
+            Date unused = rows[0].Call_For_Offers_Received_Date__c;
+            Assert.fail('The alert locator must NOT select Call_For_Offers_Received_Date__c — the '
+                + 'alert ladder has no use for it. Got: ' + unused);
+        } catch (System.SObjectException e) {
+            Assert.isTrue(e.getMessage().contains('Call_For_Offers_Received_Date__c'),
+                'and the platform names the unselected field: ' + e.getMessage());
+        }
+    }
+
+    @isTest
+    static void selectCallForOffersOpen_at251DealsIsOneQueryAndReturnsThemAll() {
+        // Re-use the @TestSetup population rather than creating a second 251, and give every one of
+        // them a deadline so the row count is the real thing being measured.
+        List<Opportunity> deals = [SELECT Id FROM Opportunity LIMIT 251];
+        for (Integer i = 0; i < deals.size(); i++) {
+            deals[i].Offer_Due_Date__c = Date.today().addDays(Math.mod(i, 40));
+        }
+        update deals;
+
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Opportunity> rows = OpportunitySelector.selectCallForOffersOpen();
+        Integer used = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.areEqual(251, rows.size(), 'Every deal with a deadline comes back');
+        Assert.areEqual(1, used,
+            'ONE query regardless of row count. Measured inside the transaction — Limits.* after '
+            + 'Test.stopTest() is restored to pre-test values and would be silently vacuous');
     }
 
     private static User buildStandardUser() {
