@@ -184,7 +184,7 @@
  * ── ⚠ THERE ARE TWO STAGE SERVICES. KNOW WHICH ONE YOU ARE EDITING ────────────
  *   StageAdvanceService        — OPPORTUNITY only. Its advance() BRANCHES into an approval
  *                                submission, and its advanceTo() exists because Opportunity has
- *                                parallel record-type branches (Land / Commercial) and an off-ramp;
+ *                                parallel record-type branches (Land / Retail) and an off-ramp;
  *                                that is why it carries ALLOWED_EXPLICIT_TARGETS.
  *   RecordStageAdvanceService  — THIS CLASS. The seven child objects above, carrying TEN
  *                                StageTypeConfigs since Transaction__c joined 2026-08-12 (NDA 2,

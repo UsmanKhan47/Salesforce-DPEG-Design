@@ -56,6 +56,35 @@
         Disqualification_Reason__c, Parse_Confidence__c, Sale_Process__c) were each dry-run-
         validated (via the sibling Acquisition_Broker.recordType-meta.xml, identical value set)
         and remain enumerated identically on both Lead record types.
+        [SUPERSEDED 2026-08-14: the count is now ELEVEN - see FIX ROUND 4 below. Everything
+        else in this paragraph still stands.]
+
+        FIX ROUND 4 (2026-08-14, Phase 1 re-review finding C4, CRITICAL) - Listing_Status__c
+        ADDED, identically to the sibling Acquisition_Broker. It is the eleventh picklist and
+        was the ONLY custom picklist on Lead missing from either Lead record type file. The
+        field is created by P1-A of the acquisition-observations pack, and the brief that
+        created it did not carry the FIX 2026-08-10 rule forward.
+
+        WHY THIS TYPE TOO, WHEN NO IR LEAD IS EVER GATED. The blocking consequence described in
+        the sibling file is an ACQUISITIONS one - Deal_Facts_Required_For_Under_Review and the
+        inbound pipeline both belong to Acquisition_Broker, and no Apex path creates an IR lead
+        at all. The reason this file gets the value anyway is the standing rule stated in the
+        FIX 2026-08-10 paragraph above: both Lead record types carry the IDENTICAL, COMPLETE
+        value set, and narrowing either one is a separate, deliberate change. Omitting it here
+        would be exactly such a narrowing, taken by accident, and it would make the two files
+        disagree for the first time. Do not "optimise" it back out.
+
+        THE DROP-ON-OMISSION RULE IS REPO-ASSERTED, NOT MEASURED IN THIS ORG - see the sibling
+        file's FIX ROUND 4, and agent-output/runbook-acquisition-observations-phase1.md section 1,
+        heading "C4 (re-review, 2026-08-14)", for the cheap falsification. This edit is free if
+        the assertion is wrong and load-bearing on the sibling if it is right.
+
+        SHAPE. Both values, no default, matching the field's own valueSetDefinition order
+        (On Market, Off Market; sorted=false). Listing_Status__c is a plain custom picklist with
+        no compoundFieldName, so FIX ROUND 3's prohibition does not apply.
+
+        DEPLOY ORDER. Must not be deployed before P1-A, which creates Lead.Listing_Status__c.
+        P1-A already precedes P1-D1, where this file ships.
     -->
     <fullName>IR_Investor</fullName>
     <active>true</active>
@@ -116,6 +145,10 @@
         </values>
         <values>
             <fullName>Commercial</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Retail</fullName>
             <default>false</default>
         </values>
     </picklistValues>
@@ -301,6 +334,17 @@
         </values>
         <values>
             <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Listing_Status__c</picklist>
+        <values>
+            <fullName>On Market</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Off Market</fullName>
             <default>false</default>
         </values>
     </picklistValues>

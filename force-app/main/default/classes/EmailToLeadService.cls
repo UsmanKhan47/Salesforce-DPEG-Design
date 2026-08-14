@@ -81,6 +81,18 @@
  * broker Lead would match no sharing rule and become invisible to the Acquisitions team. The
  * helper is public and is also called directly by BrokerPortalService.submitDeal — see the
  * helper's own doc comment for why the guard is load-bearing and must not be removed.
+ *
+ * EXTENDED 2026-08-14 (Acquisition Observations, phase 1) with two additions, both landing in
+ * the SAME insert — no extra DML, no extra SOQL, no extra describe:
+ *   • `Listing_Status__c` — the ninth extraction key, stamped by applyPropertyBlock alongside
+ *     the other restricted picklists and, like them, written raw because LLMExtractionParser
+ *     has already validated it against this field's live active values.
+ *   • THE EXTRACTION-COMPLETENESS SCORE — `Extraction_Score_Pct__c` /
+ *     `Fields_Captured_Count__c` / `Fields_Missing_Count__c`, computed by ExtractionScoreUtil
+ *     from the SAME property block this Lead is being stamped with (never from the email) and
+ *     wrapped by applyExtractionScore, which is where the mandatory fail-soft guarantee lives.
+ *     🔴 A FAILURE THERE COSTS THE SCORE AND NOTHING ELSE — read applyExtractionScore's own
+ *     comment before narrowing its catch or moving the try/catch into ExtractionScoreUtil.
  */
 public with sharing class EmailToLeadService {
 
@@ -103,6 +115,15 @@ public with sharing class EmailToLeadService {
     /** Header the parser's rejection notes are filed under on Deal_Notes__c, so a reader can
      *  tell "the model said nothing" from "the model said something we refused to store". */
     private static final String NOTES_HEADER = '-- Extraction notes --';
+
+    /** Leading text of the Deal_Notes__c line written when extraction scoring FAILED, so a blank
+     *  Extraction_Score_Pct__c is never an unexplained blank. `@TestVisible` so the fail-soft
+     *  test binds to the constant rather than retyping the wording. */
+    @TestVisible
+    private static final String SCORE_FAILED_NOTE =
+        '-- Extraction score --\nThe extraction-completeness score could not be computed for '
+        + 'this lead, so it is blank rather than zero. Nothing else on the record is affected. '
+        + 'Reason:';
 
     /** The Acquisition_Broker record type developer name (IR/Acquisitions segregation). */
     @TestVisible
@@ -312,7 +333,8 @@ public with sharing class EmailToLeadService {
         applyPropertyBlock(lead, request.property);
 
         lead.Parse_Confidence__c = request.parseConfidence;
-        String dealNotes = buildDealNotes(request);
+        String scoreNote = applyExtractionScore(lead, request);
+        String dealNotes = buildDealNotes(request, scoreNote);
         if (String.isNotBlank(dealNotes)) {
             lead.Deal_Notes__c = InboundEmailFieldUtil.clip(dealNotes, LEN_DEAL_NOTES);
         }
@@ -375,6 +397,11 @@ public with sharing class EmailToLeadService {
         lead.Asset_Type__c = property.assetType;
         lead.Deal_Type__c = property.dealType;
         lead.Sale_Process__c = property.saleProcess;
+        // RESTRICTED picklist, and written raw for the same reason Sale_Process__c is: the value
+        // arrives PRE-VALIDATED from LLMExtractionParser against this very field's live active
+        // values, so a second, divergent rule set here is how the two would drift apart. Null is
+        // the designed default — the email said nothing, and a guess is worse than a blank.
+        lead.Listing_Status__c = property.listingStatus;
 
         lead.Guidance_Price__c = property.guidancePrice;
         lead.Guidance_Price_Low__c = property.guidancePriceLow;
@@ -398,19 +425,84 @@ public with sharing class EmailToLeadService {
     }
 
     /**
-     * Compose Deal_Notes__c from up to three parts, in reading order: the model's narrative,
-     * the properties this email carried that were NOT routed, and the parser's rejection
-     * notes.
+     * Stamp the extraction-completeness score (observation 1, 2026-08-14) — and ABSORB any
+     * failure in doing so.
      *
-     * The last two are the whole reason the parser accumulates notes instead of silently
+     * 🔴 THIS METHOD IS THE MANDATORY FAIL-SOFT WRAPPER, AND IT IS HERE RATHER THAN INSIDE
+     * ExtractionScoreUtil ON PURPOSE. Spec §1 constraint 7: "the inbound email pipeline must
+     * never be made to throw." THIS transaction is the one that owns something irreplaceable —
+     * the broker's Lead and, moments later, their registry claim — so the guarantee has to be
+     * expressed at the boundary that would pay for a breach, not inside the pure function that
+     * cannot currently breach it. A score is a convenience; a lost claim is not recoverable
+     * without a human editing the ledger. Same reasoning shape as
+     * ARCHITECTURE.md §2's rule that a ContentVersion insert must never sit inside a
+     * transaction whose rollback would lose something irreplaceable.
+     *
+     * ⚠ `catch (Exception e)`, DELIBERATELY WIDE. A narrower catch would be a claim about which
+     * failures are possible, and this repo has twice been wrong about exactly that: a
+     * `TypeException` is not a `DmlException` (ApprovalAuditService, 2026-08-05) and a
+     * `QueryException` is not either (InboundEmailStagingService.appendDroppedNote). There is
+     * nothing this method could usefully do differently per exception type.
+     *
+     * ⚠ IT CANNOT CATCH AN UNCATCHABLE PLATFORM LIMIT, and nothing here can. SP-R1 measured a
+     * heap/CPU `LimitException` escaping a `catch (Exception)` positioned directly around the
+     * failing statement. That is not a gap this method can close — it is closed structurally,
+     * by the scorer being pure arithmetic over ~9 nullable members with no allocation.
+     *
+     * ON FAILURE: the three fields are set to NULL — never left half-written, never zeroed —
+     * and a note is returned for Deal_Notes__c so the omission is something a human SEES on the
+     * record they are already working, rather than an unexplained blank. That is the same
+     * "convert silent data loss into a visible line" contract the parser's rejection notes have.
+     *
+     * 🔴 THE THREE RESOLVED VALUES PASSED ALONGSIDE THE BLOCK ARE THE ONES THIS METHOD WROTE, OR
+     * WOULD HAVE. `request.propertyAddress` — NOT `request.property.propertyAddress` — is what
+     * createLeadFromExtracted stamps onto `Lead.Property_Address__c` above, and
+     * ExtractAddressQueueable.claimableAddress has already nulled it when the raw address does not
+     * normalize. Passing the block's raw value instead counts the address as captured on exactly
+     * the leads whose address field is blank (code review C2, fixed 2026-08-14). Same rule for the
+     * two listing-broker values, which applyBrokerBlock writes from the same request members. If a
+     * tenth key is ever added, ask which member the Lead is stamped from before wiring the score.
+     *
+     * @param lead    The unsaved Lead to stamp.
+     * @param request The source values; `property`, `propertyAddress` and the two listing-broker
+     *                values are read.
+     * @return null on success, or a Deal_Notes__c line explaining why the score is missing.
+     */
+    private static String applyExtractionScore(Lead lead, LeadRequest request) {
+        try {
+            ExtractionScoreUtil.Score score = ExtractionScoreUtil.score(
+                request.property,
+                request.propertyAddress,
+                request.listingBrokerName,
+                request.listingBrokerEmail);
+            lead.Fields_Captured_Count__c = score.capturedCount;
+            lead.Fields_Missing_Count__c = score.missingCount;
+            lead.Extraction_Score_Pct__c = score.scorePct;
+            return null;
+        } catch (Exception e) {
+            ExtractionScoreUtil.Score blank = ExtractionScoreUtil.notScored();
+            lead.Fields_Captured_Count__c = blank.capturedCount;
+            lead.Fields_Missing_Count__c = blank.missingCount;
+            lead.Extraction_Score_Pct__c = blank.scorePct;
+            return SCORE_FAILED_NOTE + ' ' + e.getMessage();
+        }
+    }
+
+    /**
+     * Compose Deal_Notes__c from up to four parts, in reading order: the model's narrative,
+     * the properties this email carried that were NOT routed, the parser's rejection notes,
+     * and — only ever on a failure — the extraction-score note.
+     *
+     * The middle two are the whole reason the parser accumulates notes instead of silently
      * nulling values, and the reason C-1 keeps unaddressable properties rather than minting
      * junk Leads for them: both turn an invisible data loss into a line a human reads on the
-     * record they are already working.
+     * record they are already working. The score note is the same idea applied to the score.
      *
-     * @param request The source values.
+     * @param request   The source values.
+     * @param scoreNote The extraction-score failure note, or null when scoring succeeded.
      * @return The composed notes, or null when there is nothing to say.
      */
-    private static String buildDealNotes(LeadRequest request) {
+    private static String buildDealNotes(LeadRequest request, String scoreNote) {
         List<String> sections = new List<String>();
         if (String.isNotBlank(request.dealSummary)) {
             sections.add(request.dealSummary.trim());
@@ -426,6 +518,10 @@ public with sharing class EmailToLeadService {
         }
         if (request.extractionNotes != null && !request.extractionNotes.isEmpty()) {
             sections.add(NOTES_HEADER + '\n' + String.join(request.extractionNotes, '\n'));
+        }
+        // LAST, so it can never displace a deal fact if Deal_Notes__c is clipped at 32k.
+        if (String.isNotBlank(scoreNote)) {
+            sections.add(scoreNote.trim());
         }
         return sections.isEmpty() ? null : String.join(sections, '\n\n');
     }

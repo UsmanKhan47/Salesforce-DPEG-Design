@@ -58,11 +58,37 @@ public class PropertyExtraction implements Comparable {
     /** `asset_type` — an ACTIVE value of Lead.Asset_Type__c, or null. */
     public String assetType;
 
-    /** `deal_type` — an ACTIVE value of Lead.Deal_Type__c ('Land' / 'Commercial'), or null. */
+    /** `deal_type` — an ACTIVE value of Lead.Deal_Type__c ('Land' / 'Retail'), or null. */
     public String dealType;
 
     /** `sale_process` — an ACTIVE value of Lead.Sale_Process__c, or null. */
     public String saleProcess;
+
+    /**
+     * `listing_status` — an ACTIVE value of Lead.Listing_Status__c ('On Market' / 'Off
+     * Market'), or null. Added 2026-08-14 (observation 1).
+     *
+     * ⚠ IT DEFAULTS TO NULL AND THE PARSER NEVER GUESSES ONE. A wrong On/Off Market is worse
+     * than an empty one, because the analyst has no signal that it needs correcting — the
+     * field's own metadata comment records that as the reason it carries no `<default>`. A
+     * LEGACY-SHAPE response (the one-line prompt rollback) carries no such key at all and
+     * therefore parses to null here, so reverting the prompt degrades this to manual entry
+     * rather than stranding the feature.
+     *
+     * ⚠ NOT `sale_process`, and not derivable from it. `sale_process` says HOW the seller is
+     * running the process (Off-Market / On-Market Listing / Call for Offers / Auction); this
+     * says whether the property is publicly marketed at all. They correlate and they are not
+     * the same fact — an Auction can be either — so neither may be inferred from the other.
+     *
+     * ⚠ NOT `Broker_Listing__c.Listing_Status__c`, which is the DISPOSITION side's
+     * On Track / … performance picklist. Nothing may ever map between the two; the Lead
+     * field's own metadata comment carries the full note.
+     *
+     * PER-PROPERTY, deliberately, and it sits here rather than on LLMExtractionResult for the
+     * same reason `sale_process` does: a portfolio blast can pitch one off-market asset
+     * alongside one that is openly listed, and the routing tree mints one Lead per property.
+     */
+    public String listingStatus;
 
     // ── economics ────────────────────────────────────────────────────────────
 
@@ -177,6 +203,7 @@ public class PropertyExtraction implements Comparable {
             && String.isBlank(assetType)
             && String.isBlank(dealType)
             && String.isBlank(saleProcess)
+            && String.isBlank(listingStatus)
             && String.isBlank(zoning)
             && String.isBlank(sellerEntity)
             && String.isBlank(dealRoomLink)

@@ -2,7 +2,7 @@
  * Creates review child records for an Opportunity. Two triggers for a review:
  *
  *   1. Stage entry - "Development Review" (Land path) / "Construction Review"
- *      (Commercial path) / "PSA" (opens the Contract Review).
+ *      (Retail path) / "PSA" (opens the Contract Review).
  *   2. Input-needed checkboxes - Development_Input_Needed__c /
  *      Construction_Input_Needed__c flipping true opens the matching review at
  *      ANY stage, which is how Development/Construction engage BEFORE

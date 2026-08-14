@@ -13,10 +13,10 @@ private class LeadConvertTriggerHandlerTest {
 
     @isTest
     static void afterUpdate_StampsConvertedOpportunity() {
-        // Given: a Commercial Lead.
+        // Given: a Retail Lead.
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Commercial Partners Inc';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         insert l;
 
         // When: the Lead is converted (fires the Lead after-update trigger).
@@ -35,8 +35,8 @@ private class LeadConvertTriggerHandlerTest {
             FROM Opportunity
             WHERE Id = :res.getOpportunityId()
         ];
-        Assert.areEqual('Commercial', o.Deal_Type__c, 'Deal type carried to the Opportunity');
-        Assert.areEqual('Commercial', o.RecordType.DeveloperName, 'Commercial record type applied');
+        Assert.areEqual('Retail', o.Deal_Type__c, 'Deal type carried to the Opportunity');
+        Assert.areEqual('Retail', o.RecordType.DeveloperName, 'Retail record type applied');
     }
 
     /**
@@ -49,7 +49,7 @@ private class LeadConvertTriggerHandlerTest {
     static void bulk251ConversionsStampEveryOpportunity() {
         List<Lead> leads = TestDataFactory.createLeads(251, false);
         for (Integer i = 0; i < leads.size(); i++) {
-            leads[i].Deal_Type__c = Math.mod(i, 2) == 0 ? 'Land' : 'Commercial';
+            leads[i].Deal_Type__c = Math.mod(i, 2) == 0 ? 'Land' : 'Retail';
         }
         insert leads;
 

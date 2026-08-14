@@ -306,6 +306,36 @@
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Extraction_Score_Pct__c</fieldItem>
+                <identifier>RecordExtraction_Score_Pct_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Fields_Captured_Count__c</fieldItem>
+                <identifier>RecordFields_Captured_Count_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Fields_Missing_Count__c</fieldItem>
+                <identifier>RecordFields_Missing_Count_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.First_Seen_Date__c</fieldItem>
@@ -512,6 +542,16 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Sale_Process__c</fieldItem>
                 <identifier>RecordSale_Process_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Listing_Status__c</fieldItem>
+                <identifier>RecordListing_Status_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>

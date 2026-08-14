@@ -391,6 +391,39 @@
  * `PropertyMatchingService.normalizeAddress(property_address)` — the same normalized key, not a
  * similar one — is the only real regression check available.
  *
+ * ═══ ACQUISITION OBSERVATIONS PACK, PHASE 1 — 2026-08-14. TWO ENRICHED-BLOCK EDITS ═══
+ * LEGACY_EXTRACTION_RULES and LEGACY_RESPONSE_FORMAT are untouched AGAIN, so no fixture pin
+ * moves and the one-line rollback lever still composes back verbatim
+ * (ExtractionRegressionFixtureTest). Neither edit touches broker_name, broker_email,
+ * property_address or sent_datetime, so NO claim is re-keyed and NO attribution moves.
+ *
+ *   EDIT 1 — NEW KEY `listing_status` (spec §2.3). A per-property closed-set value,
+ *   On Market / Off Market, landing on Lead.Listing_Status__c and carried to the Opportunity
+ *   at conversion. Three things about it are deliberate and are stated in the prompt itself:
+ *   it DEFAULTS TO null and the model is told in terms not to guess; it must NOT be inferred
+ *   from `sale_process`, from an offer deadline or from a deal-room link (those correlate and
+ *   are not the same fact); and LLMExtractionParser describe-validates it against the live
+ *   RESTRICTED picklist, so an off-list answer becomes null plus a Deal_Notes__c note rather
+ *   than an INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST that would roll back a committed claim.
+ *   A legacy-shape response carries no such key and therefore parses to blank — the prompt
+ *   rollback degrades this feature to manual entry rather than stranding it.
+ *
+ *   EDIT 2 — `deal_type must be one of: Land, Retail.` (was `Land, Commercial`). 🔴 THIS IS
+ *   THE PROMPT'S ONLY LIVE-BEHAVIOUR REPOINT IN THE Commercial -> Retail MIGRATION and it is
+ *   requirements §9 C13: the line instructs the model WHICH VALUE TO EMIT, so it is behaviour,
+ *   not documentation, and it belongs in the D3 repoint wave. It is SAFE to land at D3 while
+ *   `Commercial` is still active because the parser validates against the live picklist and
+ *   both values validate between D1 and D4; what is NOT safe is leaving it, because after D4
+ *   the model would be instructed to emit a deleted value and the guard drops it SILENTLY.
+ *
+ * ⚠ THE `listing_status` KEY IS NOT UNIT-TESTABLE END TO END — the model is mocked in every
+ * Apex test, so a green suite says nothing about whether it is populated correctly. Add it to
+ * the recurring UAT D / D′ list: an OM that says "off-market opportunity" must come back
+ * `Off Market`; a marketplace listing page must come back `On Market`; and — the case that
+ * actually discriminates — an ordinary OM that says NEITHER, but does carry a bid deadline and
+ * a deal-room link, must come back null. The third alone is worth more than the first two,
+ * because inferring from those two signals is exactly the failure the rule forbids.
+ *
  * ⚠ THE REQUEST BODY IS NO LONGER CONSTANT ACROSS CALLOUTS. buildRequestBody now injects a
  * dynamic REFERENCE DATE line (yyyy-MM-dd, GMT, evaluated per callout) between the
  * instruction and the email text — see referenceDateLine() for the hazard it carries and
@@ -615,8 +648,20 @@ public with sharing class LLMExtractionCalloutService {
         'Give such a date the year of A; give it the year AFTER A only if it would ' +
         'otherwise fall more than 30 days before A. Never roll a year backward, and never ' +
         'use knowledge of when a real-world campaign or listing happened.\n' +
-        '- asset_type, deal_type and sale_process MUST be one of the listed values or ' +
-        'null. Never invent a value.\n' +
+        '- asset_type, deal_type, sale_process and listing_status MUST be one of the ' +
+        'listed values or null. Never invent a value.\n' +
+        '- listing_status is On Market when the email shows the property is being marketed ' +
+        'publicly — a listing platform or marketplace page, a public listing link, an ' +
+        'advertised campaign, or wording such as "now listed", "just listed", "on the ' +
+        'market" or "publicly marketed". It is Off Market when the email shows the seller ' +
+        'is shopping it privately — wording such as "off market", "off-market ' +
+        'opportunity", "quiet listing", "pocket listing", "not publicly marketed", "before ' +
+        'it goes to market", or an exclusive introduction to a named recipient. IF THE ' +
+        'EMAIL DOES NOT SAY, RETURN null. Do not infer it from sale_process, from the ' +
+        'presence of an offer deadline, from a deal room link, from how polished the ' +
+        'marketing material is, or from anything you know about the property outside this ' +
+        'email — a wrong answer here is worse than an empty one, because nothing tells the ' +
+        'reader it needs correcting.\n' +
         '- deal_summary is at most 800 characters.\n\n' +
         'CLASSIFICATION: email_category is one of acquisition_deal, call_for_offers, ' +
         'reply, system_notification, newsletter, out_of_office, other. ' +
@@ -708,7 +753,8 @@ public with sharing class LLMExtractionCalloutService {
         '"broker_mobile": "", "broker_title": "", "listing_broker_name": "", ' +
         '"listing_broker_email": "", "sent_datetime": "", "deal_summary": "", ' +
         '"properties": [{"property_name": "", "property_address": "", "asset_type": null, ' +
-        '"deal_type": null, "sale_process": null, "guidance_price": null, ' +
+        '"deal_type": null, "sale_process": null, "listing_status": null, ' +
+        '"guidance_price": null, ' +
         '"guidance_price_low": null, "guidance_price_high": null, "cap_rate": null, ' +
         '"noi": null, "occupancy_pct": null, "building_sf": null, "lot_size_acres": null, ' +
         '"lot_size_sf": null, "unit_count": null, "year_built": null, ' +
@@ -716,9 +762,17 @@ public with sharing class LLMExtractionCalloutService {
         '"seller_entity": "", "deal_room_link": "", "offer_due_date": null}]}\n\n' +
         'asset_type must be one of: Retail, C-Store, Land, Industrial, Office, ' +
         'Multifamily, Storage, Mixed-Use, Hospitality, Medical Office.\n' +
-        'deal_type must be one of: Land, Commercial.\n' +
+        // 🔴 THIS LINE IS BEHAVIOUR, NOT DOCUMENTATION (requirements §9 C13). It tells the
+        // model which Deal_Type__c values it may emit, so the Commercial -> Retail migration
+        // MUST repoint it at D3. LLMExtractionParser describe-validates `deal_type` against
+        // the live picklist, so between D1 and D4 (when both values are active) either answer
+        // validates and nothing breaks — but after D4 an un-repointed prompt would instruct the
+        // model to emit a DELETED value, which the guard then drops SILENTLY: no exception, no
+        // log, and every email-born deal arrives with no deal type and therefore no record type.
+        'deal_type must be one of: Land, Retail.\n' +
         'sale_process must be one of: Off-Market, On-Market Listing, Call for Offers, ' +
-        'Auction.';
+        'Auction.\n' +
+        'listing_status must be one of: On Market, Off Market.';
 
     /**
      * THE prompt — ONE constant, which is what makes the rollback described in the class

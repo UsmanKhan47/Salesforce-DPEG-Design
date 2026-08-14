@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description> (255-char cap), and it is INSIDE
+        the root element on purpose - a comment ABOVE <CustomField> breaks `sf` deploy.
+
+        THE CANONICAL RATIONALE IS ON THE LEAD TWIN,
+        objects/Lead/fields/Extraction_Score_Pct__c. That file enumerates the nine
+        signed-off deal-process keys, records why the six physical-property keys are
+        excluded, and states the fail-soft contract. It is recorded ONCE, there, so the two
+        cannot drift into two different denominators.
+
+        THE SCORE IS A SNAPSHOT OF THE INTAKE, AND IT IS NEVER RECOMPUTED HERE. It records
+        how complete the ORIGINAL broker email was. An analyst who later types the missing
+        guidance price by hand does NOT move this number, and that is correct: it measures
+        the automation, not the record. Reading it as "how complete is this deal record?"
+        will be wrong the moment anyone edits the Opportunity. Do not add a recompute.
+
+        NOT Parse_Confidence__c, which is also carried to Opportunity and answers a
+        different question (the model's certainty about is_acquisition_related). A HIGH
+        confidence does not imply a high score and a low score does not impeach the
+        classification. Both are retained side by side; conflating them is a defect.
+
+        NULL is meaningful: it reads "not scored" - the fail-soft path - which is not zero.
+    -->
+    <fullName>Extraction_Score_Pct__c</fullName>
+    <description>Percent of the nine signed-off deal-process extraction keys captured from the original broker email, carried from the Lead at conversion. A snapshot of the intake; never recomputed. Null means not scored, which is not zero.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>How complete the automated extraction of the original broker email was, 0-100. It does not change when someone edits this deal by hand.</inlineHelpText>
+    <label>Extraction Score %</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

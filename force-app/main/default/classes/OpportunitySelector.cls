@@ -122,7 +122,7 @@ public with sharing class OpportunitySelector {
     }
 
     /**
-     * Count of Opportunities of a given deal type — backs the Land / Commercial
+     * Count of Opportunities of a given deal type — backs the Land / Retail
      * tiles on the pipeline snapshot.
      *
      * @param dealType Deal_Type__c value to match.

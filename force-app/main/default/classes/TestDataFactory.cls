@@ -56,7 +56,7 @@
  *   (This note said TWO until 2026-08-09; NDA__c arrived in Tranche 3A, LOI__c in 3B and
  *   Contract_Review__c in 3C.)
  *
- *   - Opportunity -> createOpportunitiesByRecordType (Land / Commercial)
+ *   - Opportunity -> createOpportunitiesByRecordType (Land / Retail)
  *   - Disposition__c -> createDispositions (On_Market by default; Off_Market via the
  *     4-argument overload or createDisposition(assetId, rtName, doInsert))
  *   - NDA__c -> createNdas (Acquisition_NDA by default; Disposition_NDA via the
@@ -601,7 +601,7 @@ public with sharing class TestDataFactory {
                 Company = 'Test Company ' + i + '-' + u,
                 Email = 'test.lead' + u + '@example.invalid',
                 Status = 'New',
-                Deal_Type__c = 'Commercial',
+                Deal_Type__c = 'Retail',
                 Asset_Type__c = 'Retail',
                 Property_Address__c = i + ' Test Street, Houston, TX',
                 Guidance_Price__c = 1000000 + (i * 1000),
@@ -624,7 +624,7 @@ public with sharing class TestDataFactory {
     }
 
     /**
-     * Opportunities at StageName 'New' — valid in BOTH the Land and Commercial
+     * Opportunities at StageName 'New' — valid in BOTH the Land and Retail
      * business processes, and the only stage that does not cascade a feasibility
      * review / Contract Review / Underwriting child on insert.
      *
@@ -646,7 +646,7 @@ public with sharing class TestDataFactory {
                 StageName = 'New',
                 CloseDate = Date.today().addDays(90),
                 Amount = 1000000 + (i * 1000),
-                Deal_Type__c = 'Commercial',
+                Deal_Type__c = 'Retail',
                 // Opportunity.Asset_Type__c uses 'Retail Strip'; Lead/Property use 'Retail'.
                 Asset_Type__c = 'Retail Strip',
                 Asking_Price__c = 1000000 + (i * 1000),
@@ -669,10 +669,10 @@ public with sharing class TestDataFactory {
 
     /**
      * Opportunities on a specific record type. StageName stays 'New' because it is
-     * the only stage present in both the Land and Commercial business processes;
+     * the only stage present in both the Land and Retail business processes;
      * a stage outside the record type's process fails on insert.
      * @param count                  Number of Opportunities.
-     * @param recordTypeDeveloperName 'Land' or 'Commercial'.
+     * @param recordTypeDeveloperName 'Land' or 'Retail'.
      * @param accountId              Parent Account (nullable).
      * @param doInsert               Insert when true.
      * @return Opportunities.
@@ -688,7 +688,7 @@ public with sharing class TestDataFactory {
             .get(recordTypeDeveloperName);
         if (info == null) {
             throw new TestDataFactoryException(
-                'Unknown Opportunity record type: ' + recordTypeDeveloperName + '. Expected Land or Commercial.'
+                'Unknown Opportunity record type: ' + recordTypeDeveloperName + '. Expected Land or Retail.'
             );
         }
         List<Opportunity> opps = createOpportunities(count, accountId, false);

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. CustomField.description is
+        capped at 255 characters. The comment is INSIDE the root element on purpose - a
+        comment ABOVE <CustomField> breaks `sf` deploy at conversion.
+
+        THE _Count__c SUFFIX IS REQUIRED, NOT STYLISTIC. ARCHITECTURE.md sec 1 rule 4
+        states the permitted Boolean forms: "Prefix Is_ or Has_, OR
+        <Subject>_<PastParticiple>. No other form is permitted." Its own examples are
+        LOI_Signed__c, PSA_Executed__c, SLA_Breached__c. `Fields_Captured__c` is not NEAR
+        that shape - it IS that shape, so it would positively violate rule 9 prohibition 2
+        ("a field name must not assert a type the field does not have").
+
+        The repo has already paid for this exact defect twice: the sec 1 repair of
+        2026-07-17/18 converted Is_Ready__c (a Number wearing rule 4's Boolean marker) to
+        Readiness_Score__c, and Occupied_Flag__c to Occupied_Pct__c. Both cost a
+        DELETE-AND-RECREATE, because an in-place name change on a live field is a
+        Metadata-API no-op and Apex/FlexiPage references block deletion by field id. Here
+        it costs four characters, because the field does not exist yet.
+
+        DENOMINATOR IS NINE. The signed-off deal-process key list is enumerated in
+        Extraction_Score_Pct__c's own comment; it is recorded once, there, deliberately.
+        This field is that score's NUMERATOR, and Fields_Missing_Count__c is its
+        complement: captured + missing = 9, always.
+
+        WHY BOTH COUNTS EXIST ALONGSIDE THE PERCENT. The percent is what a human reads;
+        the counts are what a report groups and filters on. A percent alone cannot answer
+        "how many leads are missing three or more facts" without arithmetic in every
+        report. Storing all three costs nothing - they are computed in the same pass, in
+        the same insert, with no additional SOQL and no additional DML (spec sec 2.2).
+
+        NULL means not scored (the fail-soft path), which is NOT the same as zero
+        captured. Zero is a real, scored answer.
+    -->
+    <fullName>Fields_Captured_Count__c</fullName>
+    <description>How many of the nine signed-off deal-process extraction keys were captured from the broker email. Numerator of Extraction_Score_Pct__c. Null means not scored; zero is a real scored answer.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Count of deal facts the automated extraction found, out of nine. Pairs with Fields Missing Count, which is always nine minus this.</inlineHelpText>
+    <label>Fields Captured Count</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

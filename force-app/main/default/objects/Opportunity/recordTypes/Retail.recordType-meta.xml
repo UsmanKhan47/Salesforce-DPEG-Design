@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description> (255-char cap), and it is
+        INSIDE the root element on purpose - a comment ABOVE <RecordType> breaks `sf`
+        deploy at conversion.
+
+        THIS FILE REPLACES Opportunity/recordTypes/Commercial.recordType-meta.xml.
+        It is a byte-for-byte clone of that file with three substitutions - the root
+        <fullName>, <businessProcess> and <label> - plus this comment and the
+        <description>. Nothing else was changed, deliberately: every picklistValues block
+        (Asset_Type__c, Deal_Category__c, Deal_Status__c, ForecastCategoryName, LeadSource,
+        Rejection_Reason__c, Type, Underwriting_Status__c) is identical, so the rename
+        cannot quietly alter which values a commercial deal may take. Diff the two files
+        before D4; the only expected difference beyond the three substitutions is the
+        transitional Deal_Type__c value noted below.
+
+        DEVELOPERNAME CHANGES, NOT ONLY THE LABEL. Apex resolves record types by
+        DeveloperName (RecordTypeSelector, LeadConvertService), so a label-only change
+        would leave every resolution site saying 'Commercial' forever. The spec approved a
+        FULL rename; D3 is where that is paid for.
+
+        TRANSITIONAL: THE Deal_Type__c BLOCK STILL ENUMERATES 'Commercial'. That is
+        deliberate for the D1->D4 window. The migration between D1 and D2 moves a record's
+        RECORD TYPE and its Deal_Type__c VALUE in the same pass; a record that lands on
+        this record type while still holding 'Commercial' must render correctly. Apex DML
+        does NOT enforce record-type picklist restriction (ARCHITECTURE.md sec 2), so
+        omitting it would not have blocked anything - it would only have made the UI
+        disagree with the stored value. Remove that one <values> block at D4, together
+        with the Commercial record type and business process.
+    -->
+    <fullName>Retail</fullName>
+    <active>true</active>
+    <businessProcess>Retail</businessProcess>
+    <description>Commercial acquisition deals. Replaces the Commercial record type, which is retired at Phase 1 D4. Deal_Type__c still enumerates the outgoing Commercial value for the migration window only.</description>
+    <label>Retail</label>
+    <picklistValues>
+        <picklist>Asset_Type__c</picklist>
+        <values>
+            <fullName>Industrial</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Land</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mixed-Use</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Multifamily</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Office</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Retail Strip</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Deal_Category__c</picklist>
+        <values>
+            <fullName>Closed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Dead</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Live</fullName>
+            <default>true</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Deal_Status__c</picklist>
+        <values>
+            <fullName>Asset Under Management</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contract Signed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Countered</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Evaluating</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Killed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>LOI Signed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>On Hold</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Working</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Deal_Type__c</picklist>
+        <values>
+            <fullName>Commercial</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Land</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Retail</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>ForecastCategoryName</picklist>
+        <values>
+            <fullName>Best Case</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Closed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Commit</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Omitted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pipeline</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LeadSource</picklist>
+        <values>
+            <fullName>Broker Portal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Email-to-Lead</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Manual Entry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Phone Inquiry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Web</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Rejection_Reason__c</picklist>
+        <values>
+            <fullName>Bad Anchor Tenant</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Failed DD</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Lost to Competitor</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Price Too High</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Seller Withdrew</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Wrong Market</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Type</picklist>
+        <values>
+            <fullName>Existing Customer - Downgrade</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Existing Customer - Replacement</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Existing Customer - Upgrade</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>New Customer</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Underwriting_Status__c</picklist>
+        <values>
+            <fullName>Approved by Principals</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Complete</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>In Progress</fullName>
+            <default>true</default>
+        </values>
+    </picklistValues>
+</RecordType>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        <version> added 2026-08-14 (re-review, optional item). It matches
+        sfdx-project.json sourceApiVersion (67.0) and the companion package.xml.
+
+        WHY BOTHER, given the CLI takes the API version from the companion manifest:
+        this is the repo's FIRST destructive package and the README says to expect to
+        iterate on it. An explicit version removes one variable from that iteration and
+        stops the two manifests in this directory differing for no reason. It is not a
+        fix for a known failure - no deploy has been attempted.
+    -->
+    <types>
+        <members>Opportunity.Commercial</members>
+        <name>RecordType</name>
+    </types>
+    <types>
+        <members>Opportunity.Commercial</members>
+        <name>BusinessProcess</name>
+    </types>
+    <version>67.0</version>
+</Package>

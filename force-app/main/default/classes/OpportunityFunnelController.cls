@@ -95,7 +95,13 @@ public with sharing class OpportunityFunnelController {
                 s.pipelineValue = (v == null) ? 0 : v;
             }
             s.landDeals = OpportunitySelector.countByDealType('Land');
-            s.commercialDeals = OpportunitySelector.countByDealType('Commercial');
+            // 'Retail' (was 'Commercial') — the Deal Type migration, phase 1 D3. This is the
+            // QUERY FILTER, so it must move with the picklist value or the tile silently reads 0.
+            // ⚠ The DTO member is still `commercialDeals` and is DELIBERATELY NOT RENAMED: it is
+            // the wire contract `lwc/opportunityPipeline` reads (`s.commercialDeals`), so renaming
+            // it is an LWC + Jest change with no behavioural gain, and the migration's verified
+            // reference inventory scopes this file to the value on this line alone.
+            s.commercialDeals = OpportunitySelector.countByDealType('Retail');
             return s;
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'OpportunityFunnelController.getPipelineSnapshot: '

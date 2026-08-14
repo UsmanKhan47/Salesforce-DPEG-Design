@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description> (255-char cap), and it is INSIDE
+        the root element on purpose - a comment ABOVE <CustomField> breaks `sf` deploy at
+        conversion with the misleading "unable to find matching parent xml file".
+
+        THE CANONICAL RATIONALE IS ON THE LEAD TWIN, objects/Lead/fields/Listing_Status__c.
+        Read it there: why the picklist is restricted, why blank is permitted, why there is
+        no <default>, and the Broker_Listing__c.Listing_Status__c name collision (a
+        completely different value set on the disposition side - nothing may ever map
+        between them). It is recorded once, deliberately, so the two cannot drift.
+
+        WHY THIS FIELD IS ON OPPORTUNITY AND NOT ON Property__c. LeadConvertService splits
+        the extracted field set BY MEANING (ARCHITECTURE.md sec 2, Conversion Enrichment
+        S1/S2): deal-process facts go to the Opportunity, physical property facts go to
+        Property__c. Whether a seller is marketing publicly or shopping privately is a fact
+        about the SALE PROCESS, not about the building - it changes when the seller changes
+        strategy while the building does not. It therefore sits beside Sale_Process__c,
+        Offer_Due_Date__c and the listing-broker fields, all of which took the same route.
+
+        THE WRITE IS DESCRIBE-GUARDED AT CONVERSION AND MUST STAY THAT WAY. This is a
+        RESTRICTED picklist, and LeadConvertService's update is all-or-none - so one
+        off-list value would roll back the whole update and take the structural
+        RecordTypeId / Property__c link with it. That guard is an existing rule in that
+        class, not a new requirement of this field.
+    -->
+    <fullName>Listing_Status__c</fullName>
+    <description>Whether the seller is marketing this property publicly (On Market) or shopping it privately (Off Market). Carried from Lead.Listing_Status__c at conversion. Unrelated to Broker_Listing__c.Listing_Status__c - never map between them.</description>
+    <inlineHelpText>On Market = publicly marketed. Off Market = privately shopped. Carried from the Lead at conversion; blank when the email did not say.</inlineHelpText>
+    <label>Listing Status</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>On Market</fullName>
+                <default>false</default>
+                <label>On Market</label>
+            </value>
+            <value>
+                <fullName>Off Market</fullName>
+                <default>false</default>
+                <label>Off Market</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

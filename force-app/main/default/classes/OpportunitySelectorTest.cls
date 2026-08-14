@@ -7,7 +7,7 @@
  * restricted persona the P4 design §5 measured.
  *
  * @TestSetup builds 251 'New' Opportunities (factory default CloseDate = today+90,
- * Deal_Type__c = 'Commercial'); test methods QUERY that data — they never call
+ * Deal_Type__c = 'Retail'); test methods QUERY that data — they never call
  * default*() (TestDataFactory ⚠1 cache trap).
  */
 @isTest
@@ -83,13 +83,13 @@ private class OpportunitySelectorTest {
     }
 
     @isTest
-    static void countByDealType_matchesCommercialAndLand() {
+    static void countByDealType_matchesRetailAndLand() {
         Test.startTest();
-        Integer commercial = OpportunitySelector.countByDealType('Commercial');
+        Integer retail = OpportunitySelector.countByDealType('Retail');
         Integer land = OpportunitySelector.countByDealType('Land');
         Test.stopTest();
 
-        Assert.areEqual(BULK_N, commercial, 'All 251 factory Opportunities are Commercial');
+        Assert.areEqual(BULK_N, retail, 'All 251 factory Opportunities are Retail');
         Assert.areEqual(0, land, 'No Land Opportunities were created');
     }
 

@@ -15,7 +15,7 @@ const CONFIRM = {
  * Headless quick action: move a deal from PSA to About to Close.
  *
  * ── WHY THIS BUNDLE EXISTS (design doc D3) ────────────────────────────────────
- * `About to Close` is a real stage in BOTH business processes (Land and Commercial) and appears on
+ * `About to Close` is a real stage in BOTH business processes (Land and Retail) and appears on
  * the deal Path, but no button entered or left it: StageAdvanceService.NEXT_STAGE maps
  * `PSA -> Closed Won`, so the Close Deal button skips straight past it. The stage was reachable only
  * by inline edit, the Path, or the API.

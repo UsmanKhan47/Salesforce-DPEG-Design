@@ -65,7 +65,7 @@ public with sharing class StageAdvanceService {
      * Membership is limited to the BRANCH-and-OFF-RAMP targets that legitimately have no single
      * derivable predecessor, which is the entire reason `advanceTo` exists alongside `advance`:
      *   - 'Development Review'  — the Land branch off Under Review (dealSendToDevelopmentReview)
-     *   - 'Construction Review' — the Commercial branch off Under Review (dealSendToConstructionReview)
+     *   - 'Construction Review' — the Retail branch off Under Review (dealSendToConstructionReview)
      *   - 'About to Close'      — the optional PSA off-ramp (dealMoveToAboutToClose)
      *   - 'Dead/Pass'           — pre-authorized for the deal off-ramp action (design doc D4). It is
      *                             a real stage in BOTH business processes and is reachable from any

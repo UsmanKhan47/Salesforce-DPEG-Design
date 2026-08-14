@@ -99,7 +99,7 @@ private class LeadConvertActionServiceTest {
     @isTest
     static void convert_singleLead_returnsOpportunityIdAndRunsFullConversionPipeline() {
         // Arrange
-        Lead l = buildConvertibleLead('Commercial', 'Single Convert LLC');
+        Lead l = buildConvertibleLead('Retail', 'Single Convert LLC');
         insert l;
 
         // Act
@@ -123,8 +123,8 @@ private class LeadConvertActionServiceTest {
             FROM Opportunity WHERE Id = :opportunityIds[0]
         ];
         Assert.isNotNull(opp.Property__c, 'The conversion cascade should create and link a Property');
-        Assert.areEqual('Commercial', opp.Deal_Type__c, 'Deal Type should carry from the Lead to the Opportunity');
-        Assert.areEqual('Commercial', opp.RecordType.DeveloperName, 'The matching Commercial record type should apply');
+        Assert.areEqual('Retail', opp.Deal_Type__c, 'Deal Type should carry from the Lead to the Opportunity');
+        Assert.areEqual('Retail', opp.RecordType.DeveloperName, 'The matching Retail record type should apply');
         Assert.areEqual(UserInfo.getUserId(), opp.Lead_Approved_By__c,
             'The converting user should be stamped as Lead Approved By');
     }
@@ -133,7 +133,7 @@ private class LeadConvertActionServiceTest {
     static void convert_smallList_returnsIndexAlignedOpportunityIds() {
         // Arrange — 3 Leads (comfortably under any per-call ceiling), mixed deal types.
         Lead land = buildConvertibleLead('Land', 'Land Small List LLC');
-        Lead commercial = buildConvertibleLead('Commercial', 'Commercial Small List LLC');
+        Lead commercial = buildConvertibleLead('Retail', 'Commercial Small List LLC');
         Lead land2 = buildConvertibleLead('Land', 'Land Small List Two LLC');
         insert new List<Lead>{ land, commercial, land2 };
         List<Id> leadIds = new List<Id>{ land.Id, commercial.Id, land2.Id };
@@ -239,7 +239,7 @@ private class LeadConvertActionServiceTest {
         );
         insert broker;
 
-        Lead l = buildConvertibleLead('Commercial', 'Some Company The LLM Extracted');
+        Lead l = buildConvertibleLead('Retail', 'Some Company The LLM Extracted');
         l.Email = 'repeat.broker@firm.invalid';
         insert l;
 
@@ -277,8 +277,8 @@ private class LeadConvertActionServiceTest {
         ];
         Assert.areEqual(firm.Id, opp.AccountId, 'The new Opportunity should sit under the existing firm Account');
         Assert.isNotNull(opp.Property__c, 'The conversion cascade must still create and link a Property');
-        Assert.areEqual('Commercial', opp.Deal_Type__c, 'Deal Type must still carry from the Lead');
-        Assert.areEqual('Commercial', opp.RecordType.DeveloperName, 'The Commercial record type must still apply');
+        Assert.areEqual('Retail', opp.Deal_Type__c, 'Deal Type must still carry from the Lead');
+        Assert.areEqual('Retail', opp.RecordType.DeveloperName, 'The Retail record type must still apply');
         Assert.areEqual(UserInfo.getUserId(), opp.Lead_Approved_By__c,
             'Lead Approved By must still be stamped by the cascade');
 
@@ -338,7 +338,7 @@ private class LeadConvertActionServiceTest {
         insert existing;
 
         // Same person by every fuzzy criterion, different email => our exact match misses.
-        Lead l = buildConvertibleLead('Commercial', 'Near Duplicate Co');
+        Lead l = buildConvertibleLead('Retail', 'Near Duplicate Co');
         l.FirstName = 'Nearly';
         l.LastName = 'Duplicate';
         l.Email = 'nearly.duplicate.different@firm.invalid';
@@ -390,7 +390,7 @@ private class LeadConvertActionServiceTest {
         );
         insert broker;
 
-        Lead l = buildConvertibleLead('Commercial', 'Anchor Test Co');
+        Lead l = buildConvertibleLead('Retail', 'Anchor Test Co');
         l.Email = 'anchor.broker@firm.invalid';
         insert l;
 
@@ -445,7 +445,7 @@ private class LeadConvertActionServiceTest {
         );
         insert broker;
 
-        Lead l = buildConvertibleLead('Commercial', 'Wrong Company Name From LLM');
+        Lead l = buildConvertibleLead('Retail', 'Wrong Company Name From LLM');
         l.FirstName = 'Mis';                       // differs
         l.LastName = 'Extracted';                  // differs
         l.Email = 'pristine.broker@firm.invalid';  // the only thing that matches

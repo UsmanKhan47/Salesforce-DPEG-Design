@@ -91,6 +91,10 @@
             <fullName>Land</fullName>
             <default>false</default>
         </values>
+        <values>
+            <fullName>Retail</fullName>
+            <default>false</default>
+        </values>
     </picklistValues>
     <picklistValues>
         <picklist>ForecastCategoryName</picklist>

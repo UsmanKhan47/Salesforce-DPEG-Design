@@ -15,9 +15,12 @@ const STAGE = {
     'Dead/Pass':          ['#fdeaea', '#E53935'],
     'Portfolio Deal':     ['#efe9e6', '#8D6E63']
 };
+// Keys are Deal_Type__c VALUES, not labels — a miss falls through to FALLBACK, so a stale key
+// here degrades to a grey pill rather than an error. 'Retail' (was 'Commercial') moved with the
+// Deal Type migration, phase 1 D3.
 const DEAL_TYPE = {
-    Land:       ['#eaf6ec', '#43A047'],
-    Commercial: ['#e8f1fc', '#1565c0']
+    Land:   ['#eaf6ec', '#43A047'],
+    Retail: ['#e8f1fc', '#1565c0']
 };
 const FALLBACK = ['#eef1f4', '#94a3b8'];
 const pillWrap = (bg) => `display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:4px;font-weight:600;color:#3e3e3e;background:${bg}`;

@@ -21,9 +21,22 @@
         VERIFY AFTER EVERY DEPLOY of this permission set:
             SELECT SobjectType, COUNT(Id) FROM FieldPermissions
             WHERE Parent.Name = 'Broker_Protection_Access' GROUP BY SobjectType
-        must return Lead 28, Task 6, Contact 1, Inbound_Email_Staging__c 24,
+        must return Lead 32, Task 6, Contact 1, Inbound_Email_Staging__c 24,
         Competing_Broker_Submission__c 10, Property_Registry__c 3 (plus platform-managed Event
         mirrors of the Task/Activity rows).
+        ⚠ Lead moved 28 -> 32 on 2026-08-14 with the Acquisition Observations Phase 1 intake
+        fields: Listing_Status__c, Extraction_Score_Pct__c, Fields_Captured_Count__c and
+        Fields_Missing_Count__c. A count of 28 after that change means the four new fields' FLS
+        did not land. The pipeline still WRITES them correctly either way — the Lead insert is
+        system-mode, so a missing grant does not block the write, it makes the values INVISIBLE
+        to every human on this permission set. That is the harder failure to spot: the extraction
+        score exists to tell an analyst which leads need chasing, and a blank score reads as
+        "nothing to chase" rather than as "you cannot see this".
+        ⚠ Note an asymmetry that is deliberate and should not be "corrected": Parse_Confidence__c
+        is NOT granted on this set, while the three new score fields ARE. They are different
+        things (see the fields' own descriptions) and the score fields were named for this set
+        explicitly by the design. Do not add Parse_Confidence__c here to make them match, and do
+        not remove the score fields to make them match either.
         ⚠ Competing_Broker_Submission__c moved 9 -> 10 on 2026-08-03 with Winning_Opportunity__c,
         the post-conversion winner anchor. A count of 9 after this change means the new field's
         FLS did not land, and the inbound pipeline will read a null anchor on every
@@ -357,6 +370,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Lead.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.Forwarded_By_Email__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -403,6 +431,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Listing_Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Listing_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        CustomField.description is capped at 255 characters. The rationale below is
+        operationally important, so it lives here rather than being trimmed; a comment is
+        repo-only and is never sent to the Metadata API. The comment is INSIDE the root
+        element on purpose - a comment placed ABOVE <CustomField> breaks `sf` deploy at
+        conversion with the misleading error "unable to find matching parent xml file".
+
+        WHY RESTRICTED. Rule 7 of ARCHITECTURE.md sec 1 makes this a state field
+        (Status__c suffix). It is restricted so the LLM extraction path cannot invent a
+        third value; PropertyExtraction is describe-validated against the live picklist,
+        and an unrestricted field would let an off-list answer store SILENTLY - the exact
+        defect measured on Property_Asset__c.Property_Type__c (ARCHITECTURE.md sec 2,
+        PropertyAssetService).
+
+        WHY BLANK IS PERMITTED AND WHY THERE IS NO DEFAULT. Spec sec 2.3: the extraction
+        key defaults to blank, never a guess, because a wrong On/Off Market is worse than
+        an empty one - the analyst has no signal that it needs correcting. A <default> on
+        one of the two values would manufacture exactly that wrong signal on every lead
+        the email was silent about. Legacy-shape LLM responses carrying no listing_status
+        key therefore parse to blank, so a prompt rollback degrades to manual entry rather
+        than stranding the feature.
+
+        NAME COLLISION - DELIBERATE, AND NOTHING MAY EVER MAP BETWEEN THEM.
+        Broker_Listing__c.Listing_Status__c already exists in this repo with a completely
+        different value set (On Track / ...). It answers "how is this broker's listing
+        performing?" on the DISPOSITION side. This field answers "is the seller marketing
+        this property publicly?" on the ACQUISITION side. Rule 7 permits both names. Any
+        code, formula, flow or report that treats one as a source for the other is a
+        defect, not a shortcut.
+
+        DEAL-PROCESS FACT, NOT A PHYSICAL PROPERTY FACT. It therefore carries to the
+        OPPORTUNITY at conversion, never to Property__c - see LeadConvertService's split
+        (ARCHITECTURE.md sec 2, Conversion Enrichment S1/S2).
+    -->
+    <fullName>Listing_Status__c</fullName>
+    <description>Whether the seller is marketing this property publicly (On Market) or shopping it privately (Off Market). Deal-process fact; carried to the Opportunity at conversion. Unrelated to Broker_Listing__c.Listing_Status__c - never map between them.</description>
+    <inlineHelpText>On Market = publicly marketed. Off Market = privately shopped. Left blank when the email did not say - a wrong value is worse than none. Required before the lead can move to Under Review.</inlineHelpText>
+    <label>Listing Status</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>On Market</fullName>
+                <default>false</default>
+                <label>On Market</label>
+            </value>
+            <value>
+                <fullName>Off Market</fullName>
+                <default>false</default>
+                <label>Off Market</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

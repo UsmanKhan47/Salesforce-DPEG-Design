@@ -1,5 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      RECONCILED ORG -> REPO ON 2026-08-14 BEFORE EDITING. A retrieve from usman-dpeg was
+      diffed against this file: 290 fieldPermissions on both sides, identical sets, and the six
+      recordTypeVisibilities identical. Zero org-only grants, so nothing was at risk of being
+      wiped by this deploy. (The org retrieve also emits <viewAllFields>false</viewAllFields> on
+      every objectPermissions block where this file omits it - that is a default-valued element
+      the API adds on retrieve, NOT drift, and it was deliberately not "fixed" into this file.)
+      Reconcile again next time; a past clean reconciliation is a snapshot, not a guarantee.
+
+      ADDED 2026-08-14, Acquisition Observations Phase 1 (deploy step P1-A): EIGHT grants -
+      Listing_Status__c, Extraction_Score_Pct__c, Fields_Captured_Count__c and
+      Fields_Missing_Count__c, on BOTH Lead and Opportunity. All editable, matching how this set
+      already carries their siblings (Parse_Confidence__c, Property_Address__c, Deal_Type__c,
+      Sale_Process__c, Offer_Due_Date__c are all editable=true here).
+
+      🔴 THESE GRANTS ARE THE WHOLE POINT OF STEP P1-A AND A GREEN FIELD DEPLOY DOES NOT IMPLY
+      THEM. A Metadata-API-deployed custom field arrives with NO field permissions for ANY
+      profile, System Administrator included, and profiles/** is .forceignore'd so there is no
+      profile-level fallback. Verify in the ORG, not in the deploy log:
+          SELECT Field FROM FieldPermissions
+          WHERE Parent.Name = 'DPEG_Acquisition_Edit'
+            AND Field IN ('Lead.Listing_Status__c','Lead.Extraction_Score_Pct__c',
+                          'Lead.Fields_Captured_Count__c','Lead.Fields_Missing_Count__c',
+                          'Opportunity.Listing_Status__c','Opportunity.Extraction_Score_Pct__c',
+                          'Opportunity.Fields_Captured_Count__c',
+                          'Opportunity.Fields_Missing_Count__c')
+      must return 8 rows. Total fieldPermissions on this set moves 290 -> 298.
+
+      Opportunity.Retail record-type visibility is added to this set at step P1-D1 and
+      Opportunity.Commercial is removed at P1-D4 - see
+      agent-output/runbook-acquisition-observations-phase1.md.
+    -->
     <description>Least-privilege Acquisitions module access for the Acquisitions Analyst persona: Create/Read/Edit (no Delete) on the 13 ACQ objects, View All for read, full FLS. Edit on rows not owned comes from sharing rules (queue + team), never Modify All.</description>
     <fieldPermissions>
         <editable>true</editable>
@@ -464,6 +496,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Lead.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.First_Seen_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -540,6 +587,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Listing_Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Listing_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -934,6 +986,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.GRM__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -985,6 +1052,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Listing_Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Listing_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1604,12 +1676,29 @@
         <recordType>NDA__c.Acquisition_NDA</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
+    <!--
+      Opportunity.Commercial and Opportunity.Retail COEXIST DELIBERATELY from P1-D1 until P1-D4.
+      Retail is added here in the SAME deploy that creates the record type (P1-D1), BEFORE the
+      migration moves deals onto it. If it were added later, every user on this set would lose
+      the ability to create a commercial deal for the whole window between the migration and the
+      grant - visibility is what lets a user SELECT a record type, so the gap is silent on
+      existing rows and blocking on new ones. Commercial is removed at P1-D4 and not before.
+      ⚠ PermissionSet.recordTypeVisibilities has NO <default> element - only a Profile can name
+      the default record type, and profiles/** is .forceignore'd. Setting Retail as the default
+      is an IN-ORG post-deploy step (gate G5); if it is missed, new Opportunities keep defaulting
+      to the retired Commercial type and nothing errors.
+      Sequence: agent-output/runbook-acquisition-observations-phase1.md
+    -->
     <recordTypeVisibilities>
         <recordType>Opportunity.Commercial</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>Opportunity.Land</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <recordTypeVisibilities>
+        <recordType>Opportunity.Retail</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
 </PermissionSet>

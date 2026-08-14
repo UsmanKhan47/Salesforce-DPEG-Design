@@ -455,8 +455,64 @@ private class LLMExtractionParserTest {
 
     @isTest
     static void parse_dealTypeInSet_isKept() {
-        PropertyExtraction property = parseProperty('deal_type', 'Commercial');
-        Assert.areEqual('Commercial', property.dealType, 'Deal_Type__c should validate against its own picklist');
+        PropertyExtraction property = parseProperty('deal_type', 'Retail');
+        Assert.areEqual('Retail', property.dealType, 'Deal_Type__c should validate against its own picklist');
+    }
+
+    // ── listing_status (observation 1, 2026-08-14) ────────────────────────────
+    //
+    // Three tests, and the THIRD is the one that matters. `listing_status` is the ninth
+    // extraction key and the ninth term of the extraction score's denominator, so the whole
+    // design rests on "absent means blank, never a guess" — the Lead field carries no
+    // <default> for exactly that reason. The first two only prove the picklist guard works;
+    // the third pins the behaviour a prompt rollback depends on.
+
+    @isTest
+    static void parse_listingStatusInSet_isKept() {
+        PropertyExtraction property = parseProperty('listing_status', 'Off Market');
+        Assert.areEqual('Off Market', property.listingStatus,
+            'An active Listing_Status__c value must pass validation and be carried through');
+    }
+
+    @isTest
+    static void parse_listingStatusNotInSet_isNulledAndNoted() {
+        // 🔴 THE DML-SAFETY LEG. Lead.Listing_Status__c is a RESTRICTED picklist, so pushing an
+        // off-list answer would throw INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST at the Lead insert
+        // — inside the routing transaction, rolling back a claim the broker had already won.
+        // 'Pending' is deliberately a value that EXISTS on other picklists in this org but not
+        // on this one, which is the realistic shape of a model mistake.
+        LLMExtractionResult result = LLMExtractionParser.parse(propertyJson('listing_status', 'Pending'));
+
+        Assert.isNull(result.properties[0].listingStatus,
+            'An off-list listing_status must be DROPPED, never pushed at a restricted picklist');
+        Assert.isFalse(result.notes.isEmpty(),
+            'The rejection must be noted so it reaches a human on Deal_Notes__c rather than '
+            + 'vanishing — that is what distinguishes "the model said nothing" from "the model '
+            + 'said something we refused to store"');
+    }
+
+    @isTest
+    static void parse_legacyShapeCarriesNoListingStatusKey_parsesToBlankWithNoNote() {
+        // 🔴 THE ROLLBACK-LEVER LEG. LLMExtractionCalloutService's prompt can be reverted to the
+        // pre-enrichment four-key form in ONE line; such a response carries no `listing_status`
+        // key at all. That must degrade to MANUAL ENTRY (a blank field an analyst fills in), not
+        // to a stranded feature and not to a spurious rejection note — an ABSENT key is not a
+        // REJECTED value and the two must stay distinguishable on Deal_Notes__c.
+        LLMExtractionResult result = LLMExtractionParser.parse(JSON.serialize(new Map<String, Object>{
+            'broker_name' => 'Jane Broker',
+            'broker_email' => 'jane@brokerfirm.example.invalid',
+            'property_address' => '100 Main St',
+            'sent_datetime' => '2026-08-14 09:00:00'
+        }));
+
+        Assert.isTrue(result.usedLegacyShape, 'Precondition: this fixture is the legacy four-key shape');
+        Assert.areEqual(1, result.properties.size(), 'The legacy shape synthesizes one property');
+        Assert.isNull(result.properties[0].listingStatus,
+            'A response that never mentions listing_status must parse to BLANK — the field '
+            + 'carries no default precisely so a rollback degrades to manual entry');
+        Assert.isTrue(result.notes.isEmpty(),
+            'An ABSENT key is not a REJECTED value: noting it would fill Deal_Notes__c with '
+            + 'noise on every rolled-back response and hide the notes that mean something');
     }
 
     // ── URL + text (§3.4) ─────────────────────────────────────────────────────

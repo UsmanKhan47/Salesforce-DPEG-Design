@@ -20,7 +20,7 @@ private class BrokerPortalServiceTest {
         d.phone = '555-1234';
         d.propertyAddress = '123 Main St, Dallas TX';
         d.assetType = 'Retail';
-        d.dealType = 'Commercial';
+        d.dealType = 'Retail';
         return d;
     }
 

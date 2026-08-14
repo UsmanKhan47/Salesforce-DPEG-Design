@@ -225,14 +225,14 @@ private class StageAdvanceServiceTest {
     static void advanceToAcceptsEveryAllowedExplicitTarget() {
         // One deal per target so each write is independent. The two BRANCH targets are pinned to an
         // explicit record type because they are mutually exclusive by business process — Development
-        // Review exists only on Land, Construction Review only on Commercial — so relying on the
+        // Review exists only on Land, Construction Review only on Retail — so relying on the
         // running user's DEFAULT record type would make this test pass or fail on org configuration
         // rather than on the allow-list. 'About to Close' and 'Dead/Pass' are in BOTH processes, so
         // the default-record-type helper is safe for those.
         Opportunity landDeal = TestDataFactory.createOpportunitiesByRecordType(1, 'Land', null, false)[0];
         landDeal.StageName = 'Under Review';
         Opportunity constructionDeal =
-            TestDataFactory.createOpportunitiesByRecordType(1, 'Commercial', null, false)[0];
+            TestDataFactory.createOpportunitiesByRecordType(1, 'Retail', null, false)[0];
         constructionDeal.StageName = 'Under Review';
         insert new List<Opportunity>{ landDeal, constructionDeal };
         Opportunity psaDeal = newOpp('PSA');
@@ -259,7 +259,7 @@ private class StageAdvanceServiceTest {
         Assert.areEqual('Development Review', saved.get(landDeal.Id).StageName,
             'Development Review is the Land branch target and must remain allowed');
         Assert.areEqual('Construction Review', saved.get(constructionDeal.Id).StageName,
-            'Construction Review is the Commercial branch target and must remain allowed');
+            'Construction Review is the Retail branch target and must remain allowed');
         Assert.areEqual('About to Close', saved.get(psaDeal.Id).StageName,
             'About to Close is the PSA off-ramp behind the Move to About to Close action');
         Assert.areEqual('Dead/Pass', saved.get(deadDeal.Id).StageName,

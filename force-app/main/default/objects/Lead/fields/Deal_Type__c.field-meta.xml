@@ -19,6 +19,11 @@
                 <default>false</default>
                 <label>Commercial</label>
             </value>
+            <value>
+                <fullName>Retail</fullName>
+                <default>false</default>
+                <label>Retail</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

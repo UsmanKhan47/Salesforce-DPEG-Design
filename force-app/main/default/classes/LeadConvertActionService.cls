@@ -9,7 +9,7 @@
  * It deliberately does NOT re-implement any post-conversion stamping. Flipping a Lead to
  * IsConverted fires LeadConvertTrigger (after update) -> LeadConvertService in the SAME
  * transaction, which creates the Property__c and stamps the new Opportunity (Deal Type, the
- * Land/Commercial record type, and Lead_Approved_By__c). By the time Database.convertLead
+ * Land/Retail record type, and Lead_Approved_By__c). By the time Database.convertLead
  * returns, that work has already run synchronously, so the returned Opportunity Id is safe to
  * navigate to immediately.
  *

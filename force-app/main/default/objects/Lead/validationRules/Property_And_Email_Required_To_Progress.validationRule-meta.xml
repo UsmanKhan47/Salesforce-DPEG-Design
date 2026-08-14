@@ -32,6 +32,36 @@
         label 'New Lead (property, no address)'). That population becomes unable to
         progress under this rule until a human types the address, the label exists
         precisely so a human can find and fix them.
+
+        ============================================================================
+        THIS MESSAGE CARRIES THE BRANCH (c) EXPLANATION ON BEHALF OF THE SIBLING RULE
+        Deal_Facts_Required_For_Under_Review. AMENDED 2026-08-14, USER DECISION.
+        ============================================================================
+        ONLY THE <errorMessage> CHANGED. The formula, the name and every other element are
+        untouched - this rule still gates BOTH 'Under Review' AND 'Qualified', which makes
+        it the STRICTER of the two on Property_Address__c. That asymmetry is deliberate and
+        stays.
+
+        WHY THE MESSAGE GREW. The acquisition-observations pack added the sibling rule
+
+            Deal_Facts_Required_For_Under_Review
+
+        which gates entry to 'Under Review' on Deal_Type__c and Listing_Status__c. It was
+        specified as a THREE-fact gate including Property_Address__c, and was built that
+        way - but Salesforce evaluates every active rule on a save and surfaces every
+        failure, so a Lead missing only the address tripped BOTH rules and Lightning showed
+        TWO messages for ONE missing field. The address leg was therefore dropped from the
+        sibling, leaving THIS rule as the sole enforcer of Property_Address__c.
+
+        The sibling's spec (sec 2.4) required the blocking message to NAME the addressless
+        population, so an analyst reads a blocked save as the intended chase rather than a
+        pipeline defect. The sibling can no longer carry that clause - it does not test the
+        address, and a message describing a condition the rule does not evaluate is worse
+        than none - so the clause moved HERE, to the rule that actually fires.
+
+        Do not shorten the message past the addressless clause, and do not re-add an address
+        leg to the sibling: that is what re-creates the double message. The split is
+        recorded in both files; the sibling's comment points back at this one.
     -->
     <fullName>Property_And_Email_Required_To_Progress</fullName>
     <active>true</active>
@@ -49,5 +79,5 @@
     )
 )</errorConditionFormula>
     <errorDisplayField>Status</errorDisplayField>
-    <errorMessage>Property Address and Email are both required before this lead can move forward. Fill them in on the lead first.</errorMessage>
+    <errorMessage>Property Address and Email are both required before this lead can move forward. Some leads arrive with no address on purpose - the email named a property but no addressable location - so supplying one here is the intended next step, not a workaround.</errorMessage>
 </ValidationRule>

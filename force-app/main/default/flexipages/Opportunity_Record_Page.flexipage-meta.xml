@@ -55,7 +55,7 @@
                                 <criteria>
                                     <leftValue>{!Record.Deal_Type__c}</leftValue>
                                     <operator>EQUAL</operator>
-                                    <rightValue>Commercial</rightValue>
+                                    <rightValue>Retail</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
@@ -1175,6 +1175,46 @@
         </itemInstances>
         <itemInstances>
             <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Listing_Status__c</fieldItem>
+                <identifier>RecordListing_Status_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Extraction_Score_Pct__c</fieldItem>
+                <identifier>RecordExtraction_Score_Pct_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Fields_Captured_Count__c</fieldItem>
+                <identifier>RecordFields_Captured_Count_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Fields_Missing_Count__c</fieldItem>
+                <identifier>RecordFields_Missing_Count_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
                 <fieldItem>Record.Property__r.Annual_NOI__c</fieldItem>
                 <identifier>RecordProperty_rAnnual_NOI_cField</identifier>
             </fieldInstance>
@@ -1378,7 +1418,7 @@
                     <criteria>
                         <leftValue>{!Record.Deal_Type__c}</leftValue>
                         <operator>EQUAL</operator>
-                        <rightValue>Commercial</rightValue>
+                        <rightValue>Retail</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>

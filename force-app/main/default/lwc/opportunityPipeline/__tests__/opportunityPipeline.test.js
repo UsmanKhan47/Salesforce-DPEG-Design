@@ -74,7 +74,7 @@ describe('c-opportunity-pipeline', () => {
         expect(cards[0].value).toBe('14'); // Open Deals
         expect(cards[1].value).toBe('$2.5M'); // Pipeline Value ($2,500,000)
         expect(cards[2].value).toBe('5'); // Land Deals
-        expect(cards[3].value).toBe('9'); // Commercial Deals
+        expect(cards[3].value).toBe('9'); // Retail Deals
     });
 
     it('DATA BRANCH: formats a zero pipeline value as $0', async () => {

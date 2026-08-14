@@ -87,8 +87,9 @@ private class PropertyExtractionTest {
         full.propertyName = 'Full House';
         full.propertyAddress = '100 Main St';
         full.assetType = 'Multifamily';
-        full.dealType = 'Commercial';
+        full.dealType = 'Retail';
         full.saleProcess = 'Call for Offers';
+        full.listingStatus = 'Off Market';
         full.zoning = 'MU-2';
         full.sellerEntity = 'Full House LLC';
         full.dealRoomLink = 'https://example.invalid/deal-room';
@@ -108,6 +109,25 @@ private class PropertyExtractionTest {
         full.offerDueDate = Date.today().addDays(30);
 
         Assert.isFalse(full.hasNoExtractedValues(), 'A fully populated property obviously says something');
+    }
+
+    @isTest
+    static void hasNoExtractedValues_onlyListingStatusSet_returnsFalse() {
+        // 🔴 THE FALSIFIER FOR THE 2026-08-14 ADDITION, and the reason it is a separate test
+        // rather than one more line in the everyMemberSet case: that test would still pass,
+        // VACUOUSLY, for a predicate that never looks at listingStatus at all — because 22
+        // other members are also set. Only a listingStatus-ONLY instance can tell the two
+        // apart. If the predicate loses its listingStatus line, THIS test goes red.
+        //
+        // The production shape it stands for is real, not hypothetical: an email whose only
+        // extractable statement about a property is that it is an off-market opportunity.
+        // Treating that as "the email said nothing" would drop the one fact it did state.
+        PropertyExtraction listingStatusOnly = new PropertyExtraction();
+        listingStatusOnly.listingStatus = 'Off Market';
+
+        Assert.isFalse(listingStatusOnly.hasNoExtractedValues(),
+            'listingStatus is an EXTRACTED member, so a property stating only that it is off '
+            + 'market says something and must never be treated as structurally empty');
     }
 
     // ── The routing-key exclusion ─────────────────────────────────────────────
@@ -133,7 +153,7 @@ private class PropertyExtractionTest {
     // ── Member-count rot guard (code review S2) ───────────────────────────────
 
     @isTest
-    static void hasNoExtractedValues_javadocRotGuard_publicMemberCountIs24() {
+    static void hasNoExtractedValues_javadocRotGuard_publicMemberCountIs25() {
         // 🔴 PINS THE PREDICATE'S OWN JAVADOC WARNING: "a new member added above without a line
         // here silently narrows the predicate". This test does not exercise
         // hasNoExtractedValues() at all — it independently counts every PUBLIC member
@@ -144,22 +164,27 @@ private class PropertyExtractionTest {
         // hasNoExtractedValues_everyMemberSet_returnsFalse (which would still pass, vacuously,
         // for a predicate that simply never looks at the new field).
         //
-        // VERIFIED against the class directly (not assumed): 24 top-level `public` members are
+        // VERIFIED against the class directly (not assumed): 25 top-level `public` members are
         // declared on PropertyExtraction — propertyName, propertyAddress, assetType, dealType,
-        // saleProcess, guidancePrice, guidancePriceLow, guidancePriceHigh, capRate, noi,
-        // occupancyPct, adr, buildingSf, lotSizeAcres, unitCount, yearBuilt, yearRenovated,
-        // waltYears, zoning, sellerEntity, dealRoomLink, offerDueDate (22 EXTRACTED members —
-        // exactly the set hasNoExtractedValues() tests, by design, see the routing-key exclusion
-        // test above) plus normalizedAddress and clusterKey (the 2 ROUTING keys
-        // hasNoExtractedValues() deliberately excludes). 22 + 2 = 24. `hasNoExtractedValues()`
-        // and `compareTo()` are the only other `public` members on the class; both are methods,
-        // not fields, and JSON.serialize does not emit them.
+        // saleProcess, listingStatus, guidancePrice, guidancePriceLow, guidancePriceHigh,
+        // capRate, noi, occupancyPct, adr, buildingSf, lotSizeAcres, unitCount, yearBuilt,
+        // yearRenovated, waltYears, zoning, sellerEntity, dealRoomLink, offerDueDate (23
+        // EXTRACTED members — exactly the set hasNoExtractedValues() tests, by design, see the
+        // routing-key exclusion test above) plus normalizedAddress and clusterKey (the 2
+        // ROUTING keys hasNoExtractedValues() deliberately excludes). 23 + 2 = 25.
+        // `hasNoExtractedValues()` and `compareTo()` are the only other `public` members on the
+        // class; both are methods, not fields, and JSON.serialize does not emit them.
+        //
+        // WAS 24 UNTIL 2026-08-14, when `listingStatus` was added (observation 1). This test is
+        // the reason that addition could not silently narrow hasNoExtractedValues(): it failed
+        // here with an explicit count mismatch until the predicate learned the new member.
         PropertyExtraction full = new PropertyExtraction();
         full.propertyName = 'Full House';
         full.propertyAddress = '100 Main St';
         full.assetType = 'Multifamily';
-        full.dealType = 'Commercial';
+        full.dealType = 'Retail';
         full.saleProcess = 'Call for Offers';
+        full.listingStatus = 'Off Market';
         full.zoning = 'MU-2';
         full.sellerEntity = 'Full House LLC';
         full.dealRoomLink = 'https://example.invalid/deal-room';
@@ -183,8 +208,8 @@ private class PropertyExtractionTest {
         Map<String, Object> serialized =
             (Map<String, Object>) JSON.deserializeUntyped(JSON.serialize(full));
 
-        Assert.areEqual(24, serialized.keySet().size(),
-            'PropertyExtraction must declare exactly 24 public members (22 extracted + '
+        Assert.areEqual(25, serialized.keySet().size(),
+            'PropertyExtraction must declare exactly 25 public members (23 extracted + '
             + 'normalizedAddress + clusterKey). If this count changed, a member was added or '
             + 'removed — go verify hasNoExtractedValues() still tests every EXTRACTED member '
             + '(never the two routing keys) before updating this count. Actual keys: '

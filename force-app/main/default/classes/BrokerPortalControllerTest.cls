@@ -10,7 +10,7 @@ private class BrokerPortalControllerTest {
         d.phone = '555-1234';
         d.propertyAddress = '123 Main St, Dallas TX';
         d.assetType = 'Retail';
-        d.dealType = 'Commercial';
+        d.dealType = 'Retail';
         return d;
     }
 
@@ -33,7 +33,7 @@ private class BrokerPortalControllerTest {
         for (BrokerPortalController.PicklistOption o : meta.dealTypes) {
             dealValues.add(o.value);
         }
-        System.Assert.isTrue(dealValues.contains('Commercial'), 'Expected Commercial deal type');
+        System.Assert.isTrue(dealValues.contains('Retail'), 'Expected Retail deal type');
     }
 
     // ---- Task 4: happy path ----
