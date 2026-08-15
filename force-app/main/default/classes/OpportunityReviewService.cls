@@ -167,8 +167,54 @@
  * ⚠ A creation that SUCCEEDED is not evidence the type landed. Any verification of this must
  * re-query RecordTypeId; the in-memory copy carries whatever was assigned, guard or no guard.
  *
+ * ── 🔴 LOI OWNERSHIP IS THE ACQUISITION QUEUE (2026-08-15) ──────────────────────────────
+ * The LOI block pins OwnerId to the `Acquisition` QUEUE on every auto-created acquisition LOI.
+ *
+ * WHY A QUEUE AT ALL: ownership of an auto-created LOI must be a property of THE PROCESS, not
+ * of whichever principal's transaction happened to run the trigger. The LOI stage is entered by
+ * the LOI approval process's own field update, so with no OwnerId at all the record is owned by
+ * the APPROVER — and with OWD Private on LOI__c that made it uneditable by the deal team (the
+ * observed symptom was "insufficient access rights on object id" when a deal driver clicked
+ * Advance Stage). A queue is the only owner that is neither the approver nor any one person: it
+ * survives reassignment, holiday and departure, and the Acquisitions team reaches it through one
+ * sharing rule instead of through the role hierarchy, which grants access UPWARD and so never
+ * reached a principal-owned row.
+ *
+ * ⚠ THIS SUPERSEDES, RATHER THAN INTRODUCES, AN OWNER ASSIGNMENT. Until this change the block
+ * set `OwnerId = <the deal's owner>`, which was itself the fix for the approver-owns-it defect
+ * described above. That earlier value is NOT deleted — it is now the DEGRADED path (see below),
+ * because it is the best owner available when the queue cannot be resolved.
+ *
+ * 🔴 THE RESOLUTION FAILS SOFT, AND THE REASON IS THE SAME MEASURED ONE AS THE RECORD-TYPE
+ * GUARD BESIDE IT. This block runs as a READ-ONLY APPROVER inside the approval transaction, so
+ * an exception here does not cost an LOI — it rolls back the APPROVAL, and the approver is told
+ * something unintelligible on an Approve click. That is the ApprovalAuditService/D10 shape
+ * ("Nikhil could not approve at all"), and an unresolvable queue must never reproduce it. Two
+ * failure modes are therefore both handled without throwing:
+ *
+ *   (a) THE QUEUE IS MISSING OR RENAMED — the selector returns null.
+ *   (b) 🔴 THE QUEUE EXISTS BUT IS NOT ENABLED FOR LOI__c. This one is easy to miss and is the
+ *       more likely of the two: a queue's `queueSobject` set is separate metadata, and
+ *       queues/Acquisition.queue-meta.xml listed only Lead and Property__c when this code was
+ *       written. Assigning a queue that cannot own the object is refused BY THE DML, i.e. it
+ *       fails exactly where it is least affordable. It is therefore PRE-CHECKED, not caught:
+ *       QueueGroupSelector.selectQueueIdByDeveloperNameForSObject asks QueueSobject, so "exists"
+ *       and "may own an LOI" are one question with one answer and one query. Apex and metadata
+ *       deploy independently and either may land first; both orders are safe.
+ *
+ * A residual try/catch sits behind those two, for anything neither anticipates. It is the
+ * deliberately WIDE catch ApprovalAuditService was forced into (a TypeException is not a
+ * DmlException), not a stylistic one — but note it cannot catch a LimitException, so the pre-check
+ * remains the real mechanism and the catch is only the floor.
+ *
+ * ⚠ THE DEGRADED PATH IS DELIBERATELY *NOT* "LEAVE OwnerId UNSET". Unset means the running user,
+ * and on this path the running user is the approver — the original defect. Falling back to the
+ * deal's owner is strictly the lesser of the two, and is the behaviour this block already had.
+ *
  * Each describe is resolved ONCE per invocation, before its build loop — it costs zero SOQL,
- * but a per-record describe in a 251-deal insert would be 251 of them.
+ * but a per-record describe in a 251-deal insert would be 251 of them. The queue lookup is a
+ * QUERY, so the same rule binds harder: it is resolved once per invocation, inside the
+ * `!loiOpps.isEmpty()` guard, so a chunk entering no LOI stage still costs zero SOQL for it.
  */
 public with sharing class OpportunityReviewService {
 
@@ -222,6 +268,43 @@ public with sharing class OpportunityReviewService {
      */
     @TestVisible
     private static final String ACQUISITION_PSA_STATUS = 'Draft';
+
+    /**
+     * DeveloperName of the queue that OWNS every auto-created acquisition LOI (2026-08-15).
+     * Must match queues/Acquisition.queue-meta.xml, whose file name IS its DeveloperName.
+     *
+     * ⚠ It is the DeveloperName, never an Id. A hardcoded Id is org-specific and would make this
+     * class undeployable to any org but the one it was written against — and would fail as a
+     * malformed-Id DML error inside an approval transaction, which is the one failure this block
+     * is built to avoid.
+     */
+    @TestVisible
+    private static final String ACQUISITION_QUEUE_DEVELOPER_NAME = 'Acquisition';
+
+    /**
+     * TEST SEAM — when non-null, the queue DeveloperName the LOI block resolves instead of
+     * ACQUISITION_QUEUE_DEVELOPER_NAME. Exists so a test can drive the REAL selector against a
+     * name that does not exist and prove the degraded path, rather than faking the answer.
+     * Production never sets it.
+     */
+    @TestVisible
+    private static String queueDeveloperNameOverride;
+
+    /**
+     * TEST SEAM — when true, the queue resolution throws before it queries. Exists solely to
+     * exercise the residual catch in acquisitionQueueId(), which no ordinary input can reach
+     * (a missing queue returns null; it does not throw). Production never sets it.
+     */
+    @TestVisible
+    private static Boolean simulateQueueLookupFailure = false;
+
+    /**
+     * The message from the last swallowed queue-resolution failure, or null. In-transaction
+     * only — it exists for tests and debugging, exactly like
+     * EmailThreadAdopterService.lastRunFailureCodes, and is NOT a monitoring surface.
+     */
+    @TestVisible
+    private static String lastQueueLookupError;
 
     /**
      * Called from the Opportunity after-insert / after-update trigger.
@@ -420,21 +503,35 @@ public with sharing class OpportunityReviewService {
             // would be one per deal on a bulk stage move, for an answer that cannot vary within a
             // transaction. Same shape as ensureNda's.
             Id acquisitionLoiRecordTypeId = acquisitionLoiRecordTypeId();
+            // 🔴 ONE QUERY FOR THE WHOLE CHUNK, and the rule binds harder here than on the
+            // describe above because this one IS SOQL: per record it would be 251 queries on a
+            // bulk stage move, i.e. past the 100-query governor limit and therefore an
+            // UNCATCHABLE LimitException inside the approval transaction. It sits inside the
+            // `!loiOpps.isEmpty()` guard, so a chunk entering no LOI stage still costs zero.
+            Id acquisitionQueueId = acquisitionQueueId();
             List<LOI__c> loiToInsert = new List<LOI__c>();
             for (Id oppId : loiOpps) {
+                // 🔴 THE ACQUISITION QUEUE OWNS THE LOI, EVERY TIME — ownership must be a
+                // property of the PROCESS, not of whichever principal happened to trigger the
+                // stage entry. The LOI stage is entered by the LOI approval's own field update,
+                // so the running user here is the APPROVER; a queue is the only owner that is
+                // neither the approver nor any single person, and the Acquisitions team reaches
+                // it through one sharing rule rather than through a role hierarchy that grants
+                // access upward and so never reached a principal-owned row.
+                //
+                // ⚠ THE FALLBACK IS THE DEAL'S OWNER, WHICH IS WHAT THIS LINE USED TO BE
+                // UNCONDITIONALLY. It is kept, not deleted: when the queue cannot be resolved
+                // the alternative is to leave OwnerId unset, and unset means the RUNNING USER —
+                // the approver — which is the very defect the deal-owner assignment was added to
+                // fix. Degrading to the previous correct-enough answer beats degrading to the
+                // original bug. See the class header for why the resolution never throws.
+                Id loiOwnerId = (acquisitionQueueId != null)
+                    ? acquisitionQueueId
+                    : ownerByOpp.get(oppId);
                 LOI__c loi = new LOI__c(
                     Opportunity__c = oppId,
                     Property__c = propertyByOpp.get(oppId),
-                    // 🔴 OWNER MUST BE THE DEAL'S OWNER, NOT THE RUNNING USER. Without this the
-                    // LOI is owned by whoever's transaction created it — and that is the APPROVER,
-                    // because the LOI stage is entered by the approval's own field update. With
-                    // OWD Private on LOI__c that made the record UNEDITABLE by the deal team: the
-                    // deal driver holds ViewAllRecords (so it is visible) but not ModifyAllRecords,
-                    // and the role hierarchy grants access upward, not down from a principal. The
-                    // observed symptom was "insufficient access rights on object id" when the deal
-                    // driver clicked Advance Stage on the LOI. The five sibling children never hit
-                    // this because a deal driver creates them and therefore already owns them.
-                    OwnerId = ownerByOpp.get(oppId),
+                    OwnerId = loiOwnerId,
                     // ⚠ 'Draft' is Acquisition_LOI's starting stage and is NOT on Disposition_LOI's
                     // value set (which starts at 'Received'). Record-type picklist restriction is
                     // UI-only and Apex DML does not enforce it, so pairing the record type with the
@@ -587,6 +684,55 @@ public with sharing class OpportunityReviewService {
             .getRecordTypeInfosByDeveloperName()
             .get(ACQUISITION_LOI_RECORD_TYPE);
         return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+    }
+
+    /**
+     * The Id of the `Acquisition` queue when it exists AND is enabled to own LOI__c, or null.
+     *
+     * Null is a legitimate answer, not an error — the caller then keeps the deal's owner, which
+     * is exactly the behaviour this block had before the queue was introduced. See the class
+     * header for the full argument; the short version is that this code runs as a READ-ONLY
+     * APPROVER inside the approval transaction, so anything that throws here does not cost an
+     * LOI, it rolls back the APPROVAL (the ApprovalAuditService/D10 shape).
+     *
+     * 🔴 IT ASKS QueueSobject, NOT Group, AND THAT IS THE WHOLE POINT OF THE SELECTOR METHOD.
+     * A queue that exists but does not list LOI__c in its `queueSobject` set cannot own one, and
+     * the platform reports that AT DML TIME — i.e. in the transaction that must not fail. The
+     * queue's object list is separate metadata from the queue itself and from this class, and
+     * queues/Acquisition.queue-meta.xml carried only Lead and Property__c when this was written,
+     * so "queue exists" was never a sufficient licence to write the Id. One query answers both.
+     *
+     * ⚠ Unlike acquisitionLoiRecordTypeId() this is NOT a describe — it costs ONE SOQL query per
+     * invocation. It is called once, inside the `!loiOpps.isEmpty()` guard, never per record.
+     *
+     * ⚠ The catch is deliberately WIDE (Exception, not QueryException), for the reason
+     * ApprovalAuditService was forced to widen its own: a TypeException is not a DmlException and
+     * a narrow catch is how D10 escaped and rolled back an approval. It is a floor, not the
+     * mechanism — a LimitException is not catchable at all, which is why the query is hoisted out
+     * of the loop rather than merely wrapped.
+     */
+    private static Id acquisitionQueueId() {
+        try {
+            if (simulateQueueLookupFailure) {
+                throw new QueryException('Simulated queue lookup failure (test seam).');
+            }
+            String developerName = (queueDeveloperNameOverride == null)
+                ? ACQUISITION_QUEUE_DEVELOPER_NAME
+                : queueDeveloperNameOverride;
+            // The object name comes from the describe, not from a string literal, so a future
+            // rename of LOI__c is a COMPILE error here rather than a queue lookup that silently
+            // stops matching. Same `Schema.SObjectType.LOI__c` form the record-type resolver
+            // above uses; it costs no SOQL.
+            return QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(
+                developerName,
+                Schema.SObjectType.LOI__c.getName());
+        } catch (Exception e) {
+            // Swallowed ON PURPOSE, and recorded rather than ignored so the catch is observable
+            // to a test and to a debug session. Rethrowing — or letting this escape — would turn
+            // a misconfigured queue into an approval nobody can complete.
+            lastQueueLookupError = e.getMessage();
+            return null;
+        }
     }
 
     /**

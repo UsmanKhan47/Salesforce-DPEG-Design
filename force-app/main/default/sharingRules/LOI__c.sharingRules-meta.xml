@@ -115,4 +115,32 @@
             <group>Principals</group>
         </sharedTo>
     </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>LOI_Acquisition_Team_RW</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>Restores the visibility that ownership + role hierarchy provided before the Acquisition queue became the OwnerId of acquisition LOIs on stage entry. A queue has no place in the role hierarchy, so without this rule the acquisition working team would silently lose access to queue-owned LOIs.</description>
+        <label>LOI Acquisition Team RW</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Acquisition LOI</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>LOI_Acquisition_Principals_R</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>Restores the visibility that ownership + role hierarchy provided before the Acquisition queue became the OwnerId of acquisition LOIs on stage entry. The principal is the LOI approver and must retain read access even though a queue (not a subordinate role) now owns the record.</description>
+        <label>LOI Acquisition Principals R</label>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Acquisition LOI</value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Principals</group>
+        </sharedTo>
+    </sharingCriteriaRules>
 </SharingRules>

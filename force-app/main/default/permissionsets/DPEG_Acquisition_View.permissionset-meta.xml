@@ -1665,4 +1665,19 @@
         <recordType>Lead.Acquisition_Broker</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
+    <!--
+      ADDED 2026-08-15, live-defect fix (LOI-0009 stranded on Master, no Path). The LOI approval
+      process's field update runs OpportunityReviewService's LOI block AS THE APPROVER, and its
+      acquisitionLoiRecordTypeId() is isAvailable()-guarded — it silently no-ops (RecordTypeId
+      left null) unless the RUNNING USER has this record type available. Nikhil's only acquisition
+      grant was DPEG_Acquisition_View with no LOI__c recordTypeVisibility, so isAvailable() could
+      never be true for him, and the resulting Master-type LOI matches no per-record-type Path
+      (LOI_Path was retired 2026-08-09 in favor of LOI_Path_Acquisition / LOI_Path_Disposition).
+      This grant is the fix: a read-only principal never creates an LOI by hand, but the approval
+      automation running as that principal must be able to see this record type to stamp it.
+    -->
+    <recordTypeVisibilities>
+        <recordType>LOI__c.Acquisition_LOI</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
 </PermissionSet>

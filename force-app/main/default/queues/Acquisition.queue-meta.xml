@@ -9,4 +9,10 @@
     <queueSobject>
         <sobjectType>Property__c</sobjectType>
     </queueSobject>
+    <!-- LOI__c is enabled on this queue because OpportunityReviewService assigns newly
+         created acquisition LOIs to the Acquisition queue. Removing this entry would make
+         that assignment fail at DML time inside an approval transaction. Do not remove. -->
+    <queueSobject>
+        <sobjectType>LOI__c</sobjectType>
+    </queueSobject>
 </Queue>

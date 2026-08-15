@@ -55,17 +55,16 @@ private class OpportunityReviewServiceTest {
         System.assertEquals(1, lois.size(), 'One LOI opens on entering the LOI stage');
         System.assertEquals('Draft', lois[0].Stage__c, 'LOI path starts at Draft');
         System.assertEquals('Draft', lois[0].LOI_Status__c, 'LOI status starts at Draft');
+        System.assertNotEquals(null, lois[0].OwnerId, 'An LOI always has an owner');
 
-        // The LOI must be owned by the DEAL's owner, not by whoever's transaction created it. In
-        // production that creator is the APPROVER (the LOI stage is entered by the approval's own
-        // field update), and with OWD Private that left the record uneditable by the deal team.
-        // ⚠ HONEST LIMIT: this assertion cannot FAIL in test context - the running user owns the
-        // Opportunity, so a regression that dropped the OwnerId assignment would still produce a
-        // matching owner by default. It pins intent, not the defect. Only a real approval by a
-        // principal distinguishes the two, which is exactly why this reached production.
-        Opportunity dealOwner = [SELECT OwnerId FROM Opportunity WHERE Id = :o.Id];
-        System.assertEquals(dealOwner.OwnerId, lois[0].OwnerId,
-            'LOI is owned by the deal owner, not the running user');
+        // ⚠ THE OWNER ASSERTION THAT USED TO SIT HERE HAS MOVED, IT WAS NOT DROPPED.
+        // It read `assertEquals(dealOwner.OwnerId, lois[0].OwnerId)` and carried an honest-limit
+        // note that it could not FAIL in test context, because the running user owns the
+        // Opportunity and would therefore match by default. That is still true of the DEGRADED
+        // path and is now pinned by loiBlock_unresolvableQueue_fallsBackToTheDealOwner; the
+        // PRIMARY rule - the Acquisition queue owns every auto-created LOI (2026-08-15) - is
+        // pinned by loiBlock_ownerIsTheAcquisitionQueue, which CAN fail here and is meant to.
+        // Keeping a deal-owner assertion in this test as well would simply contradict it.
 
         // The stamp is the load-bearing half: ApprovalAuditService's LOI gate resolves its target
         // through Primary_LOI__c, and swallows its own failures - so a null here would make the
@@ -101,10 +100,13 @@ private class OpportunityReviewServiceTest {
      * in-memory copy carries whatever was assigned, guard or no guard, and D13 residual 1 measured
      * an inserted row reading back null while the describe resolved a real Id.
      *
-     * ⚠ HONEST LIMIT, the same one the OwnerId assertion above carries: this runs as an ADMIN, and
-     * the block runs in production as the APPROVER — a principal on a profile T-A1 is most likely
-     * to have missed. Green here does not prove the approver can stamp. Gate T-A1 must be verified
-     * for the approving principals' profile specifically.
+     * ⚠ HONEST LIMIT: this runs as an ADMIN, and the block runs in production as the APPROVER — a
+     * principal on a profile T-A1 is most likely to have missed. Green here does not prove the
+     * approver can stamp. Gate T-A1 must be verified for the approving principals' profile
+     * specifically. (This note used to say "the same one the OwnerId assertion above carries";
+     * that assertion was superseded on 2026-08-15 by loiBlock_ownerIsTheAcquisitionQueue, which
+     * carries the SAME admin-vs-approver limit — a queue Id is org state, not principal state, so
+     * green there does not prove the approver's own transaction resolves it either.)
      */
     @isTest
     static void loiBlock_stampsTheAcquisitionRecordType() {
@@ -135,6 +137,215 @@ private class OpportunityReviewServiceTest {
             + 'does every acquisition LOI lands on Master, which matches NEITHER LOI Path and '
             + 'exposes all TEN Stage__c values. Do not soften this assertion to obtain a green '
             + 'suite; run T-A1.');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LOI OWNERSHIP — the Acquisition queue owns every auto-created LOI (2026-08-15)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** DeveloperName of the queue the LOI block pins ownership to. */
+    private static final String ACQUISITION_QUEUE = 'Acquisition';
+
+    /**
+     * 🔴 UNCONDITIONAL BY DESIGN, and the SAME shape as the three record-type stamp tests above:
+     * the service degrades quietly in production because it runs inside an approval transaction,
+     * so this is where the loudness lives.
+     *
+     * WHAT IT PINS: ownership of an auto-created LOI is a property of THE PROCESS, not of
+     * whichever principal's transaction happened to run the trigger. In production that
+     * principal is the APPROVER — the LOI stage is entered by the LOI approval's own field
+     * update — and with OWD Private on LOI__c an approver-owned row is uneditable by the deal
+     * team ("insufficient access rights on object id" on Advance Stage).
+     *
+     * ⚠ UNLIKE THE OWNER ASSERTION THIS REPLACES, THIS ONE CAN ACTUALLY FAIL. The old one
+     * compared the LOI's owner to the deal's owner, which in test context are the same user
+     * either way, so it pinned intent and nothing else. A queue Id is never the running user, so
+     * a regression that dropped the queue assignment turns this red immediately.
+     *
+     * ⚠ EXPECT THIS RED UNTIL BOTH HALVES OF THE METADATA LAND, AND THE TWO PRECONDITIONS BELOW
+     * TELL YOU WHICH HALF IS MISSING:
+     *   1. the queue itself (queues/Acquisition.queue-meta.xml) — Group precondition;
+     *   2. 🔴 LOI__c listed in that queue's `queueSobject` set — QueueSobject precondition. This
+     *      is the one that is easy to miss: the queue shipped listing only Lead and Property__c.
+     *      A queue that is not enabled for LOI__c CANNOT own one, so the service deliberately
+     *      declines to assign it and keeps the deal owner. Do not soften this assertion to obtain
+     *      a green suite; add LOI__c to the queue.
+     *
+     * The expected Id is read from Group DIRECTLY rather than through QueueGroupSelector, so the
+     * assertion falsifies the selector as well as the service.
+     */
+    @isTest
+    static void loiBlock_ownerIsTheAcquisitionQueue() {
+        Test.startTest();
+        Opportunity o = newOpp('LOI');
+        insert o;
+        Test.stopTest();
+
+        List<Group> queues = [
+            SELECT Id FROM Group WHERE Type = 'Queue' AND DeveloperName = :ACQUISITION_QUEUE LIMIT 1
+        ];
+        Assert.isFalse(queues.isEmpty(),
+            'PRECONDITION: no queue with DeveloperName "Acquisition" exists in this org. '
+            + 'queues/Acquisition.queue-meta.xml must deploy BEFORE this class (metadata before '
+            + 'Apex).');
+
+        List<QueueSobject> enabledForLoi = [
+            SELECT QueueId FROM QueueSobject
+            WHERE SobjectType = 'LOI__c' AND Queue.DeveloperName = :ACQUISITION_QUEUE
+            LIMIT 1
+        ];
+        Assert.isFalse(enabledForLoi.isEmpty(),
+            'PRECONDITION: the "Acquisition" queue exists but is NOT enabled to own LOI__c. Add '
+            + 'a <queueSobject><sobjectType>LOI__c</sobjectType></queueSobject> entry to '
+            + 'queues/Acquisition.queue-meta.xml and deploy it. Until then '
+            + 'OpportunityReviewService deliberately declines to assign the queue (assigning a '
+            + 'queue that cannot own the object is refused BY THE DML, inside the approval '
+            + 'transaction) and falls back to the deal owner.');
+
+        LOI__c created = [SELECT Id, OwnerId FROM LOI__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        Assert.areEqual(queues[0].Id, created.OwnerId,
+            'The LOI auto-created on entry to the LOI stage must be owned by the Acquisition '
+            + 'QUEUE. A USER Id here means the queue could not be resolved and the service fell '
+            + 'back to the deal owner — check the two preconditions above. In production the '
+            + 'running user on this path is the APPROVER, so an owner that tracks the running '
+            + 'user is exactly the defect this rule removes.');
+    }
+
+    /**
+     * 🔴 THE MOST IMPORTANT TEST IN THIS GROUP — THE REGRESSION GUARD FOR "AN UNRESOLVABLE QUEUE
+     * MUST NEVER TAKE DOWN AN APPROVAL".
+     *
+     * This block runs as a READ-ONLY APPROVER inside the LOI approval transaction. An exception
+     * raised here does not cost an LOI — it rolls back the APPROVAL, and the approver is told
+     * something unintelligible on an Approve click. That has already happened once on this
+     * project (ApprovalAuditService / D10: a TypeException escaped a DmlException-only catch and
+     * "Nikhil could not approve at all"). A queue that is missing, renamed, or not enabled for
+     * LOI__c must therefore degrade, never throw.
+     *
+     * ⚠ THE DEGRADED OWNER IS THE DEAL'S OWNER, NOT NULL, AND THAT IS DELIBERATE. Leaving
+     * OwnerId unset means the RUNNING USER, i.e. the approver — the original defect. The
+     * deal-owner assignment is what this block did before the queue was introduced, so the
+     * fallback is "the previous correct-enough answer", not "no answer".
+     *
+     * It drives the REAL selector against a name that does not exist rather than faking the
+     * result, so the not-found path through QueueGroupSelector is genuinely exercised.
+     */
+    @isTest
+    static void loiBlock_unresolvableQueue_fallsBackToTheDealOwner() {
+        OpportunityReviewService.queueDeveloperNameOverride = 'ZZ_Nonexistent_Queue_9x7';
+
+        Opportunity o = newOpp('LOI');
+        Test.startTest();
+        try {
+            insert o;
+        } catch (Exception e) {
+            Assert.fail('An unresolvable Acquisition queue must NEVER throw — on the live path '
+                + 'this exception rolls back the LOI APPROVAL, not just the LOI. Got: '
+                + e.getTypeName() + ': ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        LOI__c created = [SELECT Id, OwnerId FROM LOI__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        Opportunity deal = [SELECT OwnerId FROM Opportunity WHERE Id = :o.Id LIMIT 1];
+
+        Assert.areEqual(deal.OwnerId, created.OwnerId,
+            'With no resolvable queue the LOI falls back to the DEAL OWNER. Null/running-user '
+            + 'here means the fallback was removed in favour of leaving OwnerId unset, which on '
+            + 'the live path hands the record to the APPROVER — the defect the deal-owner '
+            + 'assignment was added to fix in the first place.');
+        Assert.isNull(OpportunityReviewService.lastQueueLookupError,
+            'A queue that simply does not exist must take the NOT-FOUND path (selector returns '
+            + 'null), not the residual catch. A message here means the lookup threw, which is a '
+            + 'different failure with a different cause.');
+    }
+
+    /**
+     * The residual catch in acquisitionQueueId(). No ordinary input reaches it — a missing queue
+     * returns null rather than throwing — so it is exercised through the simulate seam, exactly
+     * as TransactionActionPermissionService.simulateLookupFailure is.
+     *
+     * The catch is deliberately WIDE (Exception, not QueryException) for the reason
+     * ApprovalAuditService was forced to widen its own: a TypeException is not a DmlException,
+     * and a narrow catch is how D10 escaped and rolled back an approval.
+     */
+    @isTest
+    static void loiBlock_queueLookupThrows_isSwallowedAndFallsBack() {
+        OpportunityReviewService.simulateQueueLookupFailure = true;
+
+        Opportunity o = newOpp('LOI');
+        Test.startTest();
+        try {
+            insert o;
+        } catch (Exception e) {
+            Assert.fail('A throwing queue lookup must be swallowed — on the live path it would '
+                + 'otherwise roll back the LOI APPROVAL. Got: '
+                + e.getTypeName() + ': ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        LOI__c created = [SELECT Id, OwnerId FROM LOI__c WHERE Opportunity__c = :o.Id LIMIT 1];
+        Opportunity deal = [SELECT OwnerId FROM Opportunity WHERE Id = :o.Id LIMIT 1];
+
+        Assert.areEqual(deal.OwnerId, created.OwnerId,
+            'A swallowed lookup failure degrades to the deal owner, same as the not-found path');
+        Assert.isNotNull(OpportunityReviewService.lastQueueLookupError,
+            'The swallowed failure is RECORDED, not ignored — an empty value here means the '
+            + 'catch body was emptied and a future failure would leave no trace at all');
+    }
+
+    /**
+     * Bulk-safety for the LOI block per .claude/rules/bulk-test-rule.md — 251 records forces a
+     * SECOND 200-record trigger batch, so the block runs twice in one transaction. bulkCreate
+     * below covers the Development/Construction path; nothing covered this one.
+     *
+     * 🔴 IT IS ALSO THE "RESOLVED ONCE PER INVOCATION" PROOF, WHICH IS WHY IT IS A QUERY-BUDGET
+     * TEST AND NOT MERELY A COUNT TEST. The queue lookup is SOQL, unlike the record-type
+     * describe beside it. Per record it would be 251 queries against a 100-query limit, i.e. an
+     * UNCATCHABLE LimitException — inside the approval transaction. Note what that means for
+     * this assertion: a per-record regression most likely fails this test by THROWING before the
+     * assertion is ever reached. The bound is asserted anyway so the intent is written down and
+     * so a partial regression (say, per-chunk-per-record) is still caught.
+     *
+     * The bound is expressed structurally ("does not scale with record count") rather than as a
+     * hand-tuned number, so it cannot go red because some unrelated bulkified automation was
+     * added: any bulk-safe implementation passes, any per-record one fails.
+     *
+     * ⚠ OWNER IDENTITY IS DELIBERATELY NOT ASSERTED HERE — loiBlock_ownerIsTheAcquisitionQueue
+     * owns that fact and is the only test that should go red on the queue metadata gate. What
+     * IS asserted is that all 251 share ONE owner, which is gate-independent and still catches
+     * the cross-chunk drift this test exists for (a value resolved for the first 200 and lost
+     * for the remaining 51 would produce two distinct owners).
+     */
+    @isTest
+    static void bulkLoiCreate_resolvesTheQueueOncePerChunk() {
+        List<Opportunity> opps = TestDataFactory.createOpportunities(251, false);
+        for (Opportunity o : opps) {
+            o.StageName = 'LOI'; // insert = stage entry; the LOI entry gates check ISCHANGED
+        }
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        insert opps;
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        List<LOI__c> lois = [SELECT Id, OwnerId FROM LOI__c WHERE Opportunity__c IN :opps];
+        Assert.areEqual(251, lois.size(), 'One LOI per deal across the full 251-record batch');
+
+        Set<Id> owners = new Set<Id>();
+        for (LOI__c loi : lois) {
+            owners.add(loi.OwnerId);
+        }
+        Assert.areEqual(1, owners.size(),
+            'All 251 LOIs share ONE owner. Two distinct owners means the owner was resolved for '
+            + 'one 200-record trigger chunk and not the other — the cross-chunk drift a '
+            + '200-record test cannot see.');
+        Assert.isTrue(queriesUsed < 251,
+            'The queue lookup must be resolved ONCE per trigger invocation, never per record. '
+            + 'A query count that scales with the 251 records means the lookup moved inside the '
+            + 'build loop, which on the live path is 251 queries against a 100-query limit — an '
+            + 'UNCATCHABLE LimitException inside the LOI approval transaction. Queries used: '
+            + queriesUsed);
     }
 
     @isTest
