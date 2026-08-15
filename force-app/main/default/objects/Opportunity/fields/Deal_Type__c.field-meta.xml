@@ -16,11 +16,6 @@
                 <label>Land</label>
             </value>
             <value>
-                <fullName>Commercial</fullName>
-                <default>false</default>
-                <label>Commercial</label>
-            </value>
-            <value>
                 <fullName>Retail</fullName>
                 <default>false</default>
                 <label>Retail</label>

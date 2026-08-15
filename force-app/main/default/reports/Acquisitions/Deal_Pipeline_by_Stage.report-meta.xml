@@ -10,7 +10,7 @@
             <columnToColumn>false</columnToColumn>
             <isUnlocked>false</isUnlocked>
             <operator>equals</operator>
-            <value>New,Under Review,Development Review,Construction Review,Underwriting,LOI,PSA,Under Contract (PSA)</value>
+            <value>New,Under Review,Development Review,Construction Review,Underwriting,LOI,Under Contract (PSA)</value>
         </criteriaItems>
     </filter>
     <format>Summary</format>

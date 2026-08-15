@@ -1711,22 +1711,18 @@
         <visible>true</visible>
     </recordTypeVisibilities>
     <!--
-      Opportunity.Commercial and Opportunity.Retail COEXIST DELIBERATELY from P1-D1 until P1-D4.
-      Retail is added here in the SAME deploy that creates the record type (P1-D1), BEFORE the
-      migration moves deals onto it. If it were added later, every user on this set would lose
-      the ability to create a commercial deal for the whole window between the migration and the
-      grant - visibility is what lets a user SELECT a record type, so the gap is silent on
-      existing rows and blocking on new ones. Commercial is removed at P1-D4 and not before.
+      P1-D4 IS DONE: Opportunity.Commercial has been removed from this set and the record type
+      itself is retired. Opportunity.Retail replaced it. The two coexisted from P1-D1 until P1-D4
+      on purpose - visibility is what lets a user SELECT a record type, so granting Retail only
+      after the migration would have left every user on this set unable to create a commercial
+      deal for the whole window. Do not re-add Commercial; the record type no longer exists and
+      the deploy would fail.
       ⚠ PermissionSet.recordTypeVisibilities has NO <default> element - only a Profile can name
       the default record type, and profiles/** is .forceignore'd. Setting Retail as the default
       is an IN-ORG post-deploy step (gate G5); if it is missed, new Opportunities keep defaulting
       to the retired Commercial type and nothing errors.
       Sequence: agent-output/runbook-acquisition-observations-phase1.md
     -->
-    <recordTypeVisibilities>
-        <recordType>Opportunity.Commercial</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>Opportunity.Land</recordType>
         <visible>true</visible>

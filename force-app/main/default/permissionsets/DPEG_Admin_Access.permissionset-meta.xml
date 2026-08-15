@@ -322,10 +322,10 @@
       but have no recordType metadata in this repo. That is why they cannot be verified by a
       file-based check, and it is unrelated to the duplication.
 
-      Opportunity.Commercial below is RETIRED AT PHASE 1 D4 - see the deploy runbook,
-      agent-output/runbook-acquisition-observations-phase1.md. It is deliberately left in place
-      until then; Opportunity.Retail is added alongside it at D1 so the two coexist through the
-      migration window.
+      Opportunity.Commercial WAS RETIRED AT PHASE 1 D4 and has been removed from this set;
+      Opportunity.Retail replaced it. The two coexisted from D1 through the migration window on
+      purpose. Do not re-add Commercial - the record type no longer exists and the deploy would
+      fail. Sequence: agent-output/runbook-acquisition-observations-phase1.md.
     -->
     <recordTypeVisibilities>
         <recordType>Account.Broker_Firm</recordType>
@@ -381,10 +381,6 @@
     </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>NDA__c.Disposition_NDA</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Opportunity.Commercial</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>

@@ -27,10 +27,6 @@
         <default>false</default>
     </values>
     <values>
-        <fullName>PSA</fullName>
-        <default>false</default>
-    </values>
-    <values>
         <fullName>Under Contract (PSA)</fullName>
         <default>false</default>
     </values>
