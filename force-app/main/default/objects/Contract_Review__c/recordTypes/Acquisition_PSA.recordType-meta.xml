@@ -74,11 +74,10 @@
         'Revised' and 'Ready for Execution' are removed from THIS RECORD TYPE at P3-D3 and stay
         ACTIVE on Negotiation_Status__c, because Disposition_PSA still runs on all three.
 
-        ⚠ SEVEN VALUES, NOT FOUR, AND THAT IS THE P3-D1 STATE. The three retiring values are
-        kept here until P3-D3 so live acquisition Contract Reviews still have a valid, selectable
-        stage while the row migration runs. The default also stays 'Initial Draft' until then and
-        flips to 'Draft' in the same P3-D3 change - flipping it earlier would open new rows on a
-        value RecordStageAdvanceService's map does not yet know. Staged in
+        ⚠ P3-D3 DONE. The seven-value transitional state described above is retired. 'Initial
+        Draft', 'Revised' and 'Ready for Execution' are removed from THIS RECORD TYPE (kept
+        ACTIVE on the field - decision O3, Disposition_PSA still runs on all three), and the
+        default has flipped from 'Initial Draft' to 'Draft'. Applied via
         agent-output/p3-d3-retire-loi-psa/.
 
         🔴 A RECORD-TYPE DEFAULT DOES NOT APPLY TO APEX DML, so flipping it does NOT fix
@@ -159,7 +158,7 @@
         <picklist>Negotiation_Status__c</picklist>
         <values>
             <fullName>Draft</fullName>
-            <default>false</default>
+            <default>true</default>
         </values>
         <values>
             <fullName>Negotiation</fullName>
@@ -171,18 +170,6 @@
         </values>
         <values>
             <fullName>Executed</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Initial Draft</fullName>
-            <default>true</default>
-        </values>
-        <values>
-            <fullName>Revised</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Ready for Execution</fullName>
             <default>false</default>
         </values>
     </picklistValues>

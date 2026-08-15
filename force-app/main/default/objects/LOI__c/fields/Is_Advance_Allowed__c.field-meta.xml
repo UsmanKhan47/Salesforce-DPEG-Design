@@ -155,22 +155,16 @@
 
     <fullName>Is_Advance_Allowed__c</fullName>
     <label>Is Advance Allowed</label>
-    <description>Backs the Advance Stage button&apos;s visibility on the LOI record page, on BOTH record types. True when the generic one-hop advance is legitimate: not at a terminal stage (Signed on acquisition, Executed on disposition), not at the acquisition branch point (Submitted), not at the acquisition approval hop (Under Review) unless the LOI is Approved, and not while an approval is pending. The Under Review clause is guarded by RecordType because that value is SHARED with Disposition_LOI from 2026-08-14 - unguarded it would hide the sell-side button at step 2 of 5. Completed, Sent and Prepare/Review are named alongside their replacements so the formula is correct on both sides of the Phase 3 row migration; they come out at D3.</description>
+    <description>Backs the Advance Stage button&apos;s visibility on the LOI record page, on BOTH record types. True when the generic one-hop advance is legitimate: not at a terminal stage (Signed on acquisition, Executed on disposition), not at the acquisition branch point (Submitted), not at the acquisition approval hop (Under Review) unless the LOI is Approved, and not while an approval is pending. The Under Review clause is guarded by RecordType because that value is SHARED with Disposition_LOI from 2026-08-14 - unguarded it would hide the sell-side button at step 2 of 5.</description>
     <inlineHelpText>True when the Advance Stage button should be available on this LOI, on either record type. It turns off at the terminal stage (Signed/Executed), at the branch point (Submitted), and at Under Review on an acquisition LOI until it is approved.</inlineHelpText>
     <type>Checkbox</type>
     <formula><![CDATA[AND(
   TEXT(Stage__c) <> "Signed",
   TEXT(Stage__c) <> "Executed",
-  TEXT(Stage__c) <> "Completed",
   TEXT(Stage__c) <> "Submitted",
-  TEXT(Stage__c) <> "Sent",
   OR(
     RecordType.DeveloperName <> "Acquisition_LOI",
     TEXT(Stage__c) <> "Under Review",
-    TEXT(LOI_Status__c) = "Approved"
-  ),
-  OR(
-    TEXT(Stage__c) <> "Prepare/Review",
     TEXT(LOI_Status__c) = "Approved"
   ),
   TEXT(LOI_Status__c) <> "Pending Approval"

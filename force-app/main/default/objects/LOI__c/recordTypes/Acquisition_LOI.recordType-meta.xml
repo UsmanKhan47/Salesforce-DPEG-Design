@@ -274,21 +274,5 @@
             <fullName>Signed</fullName>
             <default>false</default>
         </values>
-        <values>
-            <fullName>Prepare%2FReview</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Sent</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Counter</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Completed</fullName>
-            <default>false</default>
-        </values>
     </picklistValues>
 </RecordType>

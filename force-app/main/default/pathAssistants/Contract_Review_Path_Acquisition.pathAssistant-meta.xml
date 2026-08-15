@@ -64,17 +64,12 @@
         needed an INTERLEAVE - three fields, three different answers. Redo the arithmetic every
         time; it does not transfer.
 
-        ⚠ SEVEN STEPS, NOT FOUR, AND THAT IS THE P3-D1 STATE. 'Initial Draft', 'Revised' and
-        'Ready for Execution' are kept here until P3-D3 because live acquisition Contract Reviews
-        sit on them until the row migration completes, and a step is needed for each or an
-        in-flight record renders on a Path that does not know its stage. They are removed from
-        THIS FILE and from the Acquisition_PSA record type at P3-D3 - and they are NOT
-        deactivated on the field, because Disposition_PSA still runs on all three (decision O3).
-        Staged in agent-output/p3-d3-retire-loi-psa/.
-
-        ⚠ FILE ORDER BELOW IS THE ACTUAL TRANSITIONAL RENDERING ORDER: Initial Draft(1),
-        Revised(2), Ready for Execution(3), Draft(4), Negotiation(5), Signed(6), Executed(7).
-        After P3-D3 it collapses to Draft -> Negotiation -> Signed -> Executed.
+        ✅ P3-D3 DONE. The seven-step transitional state described above is retired. 'Initial
+        Draft', 'Revised' and 'Ready for Execution' are removed from THIS FILE and from the
+        Acquisition_PSA record type - and, per decision O3, they are NOT deactivated on the
+        field, because Disposition_PSA still runs on all three. The four steps below are now the
+        whole file: Draft -> Negotiation -> Signed -> Executed. Applied via
+        agent-output/p3-d3-retire-loi-psa/.
 
         ⚠ 'Signed' IS NOT 'Executed', AND THE PATH SAYS SO ON PURPOSE. 'Signed' is the analogue
         of the retired 'Ready for Execution' - the document is final and signatures are in hand -
@@ -116,18 +111,6 @@
     <entityName>Contract_Review__c</entityName>
     <fieldName>Negotiation_Status__c</fieldName>
     <masterLabel>Contract Review Path Acquisition</masterLabel>
-    <pathAssistantSteps>
-        <info>Draft the purchase &amp;amp; sale agreement from the agreed LOI terms. Circulate the first draft and capture the PSA date.</info>
-        <picklistValueName>Initial Draft</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Review the PSA internally. Validate terms, contingencies and timelines. Redlines happen here: log every exchange with Log Version — each one records who sent it and flips Ball In Court — and stay on this step for as long as the negotiation runs. Advance only once the document is final.</info>
-        <picklistValueName>Revised</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Terms are locked and the document is final. Route for signature. Advancing from here executes the contract, so confirm every contingency and date is agreed first.</info>
-        <picklistValueName>Ready for Execution</picklistValueName>
-    </pathAssistantSteps>
     <pathAssistantSteps>
         <info>Draft the purchase and sale agreement from the agreed LOI terms. Circulate the first draft and capture the PSA date.</info>
         <picklistValueName>Draft</picklistValueName>

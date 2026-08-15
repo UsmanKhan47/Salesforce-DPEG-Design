@@ -60,22 +60,12 @@
         'Under Review' is now exposed by BOTH record types. See LOI__c/fields/Stage__c's own
         comment for the retraction and the ordering arithmetic.
 
-        ⚠ NINE STEPS, NOT FIVE, AND THAT IS THE P3-D1 STATE - NOT AN OVERSIGHT. The four retired
-        values (Prepare/Review, Sent, Counter, Completed) are still ACTIVE and still exposed by
-        the Acquisition_LOI record type until P3-D3, and live LOIs sit on them until the row
-        migration completes. A step is kept for each so no in-flight LOI renders on a Path that
-        does not know its stage. All four are REMOVED at P3-D3, in the same change that
-        deactivates the values and drops them from the record type. The staged package is
+        ✅ P3-D3 DONE. The nine-step transitional state described above is retired. The four
+        legacy steps (Prepare/Review, Sent, Counter, Completed) are removed from this file and
+        from the Acquisition_LOI record type, and the underlying values are deactivated on
+        Stage__c (never deleted - decision O3). The five steps below are now the whole file:
+        Draft -> Under Review -> Submitted -> Negotiation -> Signed. Applied via
         agent-output/p3-d3-retire-loi-psa/.
-
-        ⚠ THE FILE ORDER BELOW IS THE ACTUAL TRANSITIONAL RENDERING ORDER, which is why it reads
-        oddly. Runtime order comes from Stage__c's value order (sorted=false) filtered by the
-        record type, so during the window it is
-        Draft(1), Prepare/Review(2), Sent(3), Counter(4), Completed(5), Under Review(7),
-        Submitted(11), Negotiation(12), Signed(13) - the retired steps sit BETWEEN Draft and the
-        new sequence. After P3-D3 it collapses to the intended
-        Draft -> Under Review -> Submitted -> Negotiation -> Signed. The ordering was CHECKED
-        against the master value set, not assumed; the arithmetic is in Stage__c's comment.
 
         ⚠ THE 'Submitted' STEP NAMES TWO BUTTONS BY LABEL, SO IT IS COUPLED TO quickActions/.
         Its <info> says "use Negotiation ... or Signed", which are the CURRENT <label> values of
@@ -100,22 +90,6 @@
     <pathAssistantSteps>
         <info>Draft the letter of intent - capture the offer price, cap rate and key terms. Keep it here until the draft is ready for internal review.</info>
         <picklistValueName>Draft</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Prepare and review the LOI internally. Validate the terms, route it for any required approval, and refine based on feedback before finalizing.</info>
-        <picklistValueName>Prepare/Review</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>LOI sent to the seller/broker. Awaiting their response - a counter moves it to the Counter stage.</info>
-        <picklistValueName>Sent</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Counter-offer stage. Track the back-and-forth with the seller - log each counter in the Counter History and update the offer terms until both sides align.</info>
-        <picklistValueName>Counter</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>LOI finalized and complete. Record is closed out for this stage of the deal.</info>
-        <picklistValueName>Completed</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <info>Review the LOI internally and route it for approval. Validate the terms and refine based on feedback. Advance Stage stays locked here until the LOI reads Approved, so use Submit for Approval first.</info>

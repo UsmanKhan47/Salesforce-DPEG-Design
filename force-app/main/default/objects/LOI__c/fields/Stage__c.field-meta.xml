@@ -165,21 +165,25 @@
             <value>
                 <fullName>Prepare/Review</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Prepare/Review</label>
             </value>
             <value>
                 <fullName>Sent</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Sent</label>
             </value>
             <value>
                 <fullName>Counter</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Counter</label>
             </value>
             <value>
                 <fullName>Completed</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Completed</label>
             </value>
             <value>

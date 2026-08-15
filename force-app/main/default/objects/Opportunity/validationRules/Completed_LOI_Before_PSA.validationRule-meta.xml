@@ -139,13 +139,12 @@
     -->
     <fullName>Completed_LOI_Before_PSA</fullName>
     <active>true</active>
-    <description>Blocks stage entry to Under Contract (PSA) unless the primary LOI&apos;s Stage__c is Signed, or the retired Completed (kept until the Phase 3 migration ends). Exempts a blank Primary_LOI__c. See the XML comment in this file.</description>
+    <description>Blocks stage entry to Under Contract (PSA) unless the primary LOI&apos;s Stage__c is Signed. Exempts a blank Primary_LOI__c. See the XML comment in this file.</description>
     <errorConditionFormula>AND(
     ISCHANGED(StageName),
     ISPICKVAL(StageName, &apos;Under Contract (PSA)&apos;),
     NOT(ISBLANK(Primary_LOI__c)),
-    TEXT(Primary_LOI__r.Stage__c) &lt;&gt; &apos;Signed&apos;,
-    TEXT(Primary_LOI__r.Stage__c) &lt;&gt; &apos;Completed&apos;
+    TEXT(Primary_LOI__r.Stage__c) &lt;&gt; &apos;Signed&apos;
 )</errorConditionFormula>
     <errorDisplayField>StageName</errorDisplayField>
     <errorMessage>This deal cannot enter Under Contract (PSA) until the primary LOI is Signed. Advance the LOI to Signed on its own record page first.</errorMessage>
