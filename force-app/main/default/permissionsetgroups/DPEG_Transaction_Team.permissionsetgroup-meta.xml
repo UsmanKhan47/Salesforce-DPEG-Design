@@ -12,4 +12,5 @@
     <permissionSets>DPEG_App_Transaction</permissionSets>
     <permissionSets>DPEG_Account_View</permissionSets>
     <permissionSets>DPEG_Contact_View</permissionSets>
+    <permissionSets>Transaction_Stage_Actions_Access</permissionSets>
 </PermissionSetGroup>

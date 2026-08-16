@@ -225,9 +225,46 @@
         Approved_Date__c, Approval_Comments__c, ARC__c, Opportunity__c and Property__c are
         omitted on purpose - they belong to the approval path this persona has no part in.
         Is_Advance_Allowed__c is granted READ ONLY (it is a formula and cannot be editable).
-        ⚠ That formula is ACQUISITION-SHAPED TODAY - it tests Prepare/Review and an Approved
-        LOI_Status__c - so 3B must re-check what it evaluates to on a disposition LOI before
-        binding any button to it.
+        🔴 THE NEXT SENTENCE IS FALSE AS OF 2026-08-14. IT IS KEPT ONLY AS THE RETRACTED TEXT.
+        DO NOT ACT ON IT; THE CORRECTION IS IMMEDIATELY BELOW.
+        [FALSE] "That formula is ACQUISITION-SHAPED TODAY - it tests Prepare/Review and an
+        Approved LOI_Status__c - so 3B must re-check what it evaluates to on a disposition LOI
+        before binding any button to it." [END FALSE]
+        ⇒ THE RE-CHECK IT ASKS FOR HAS BEEN DONE, AND THE FORMULA IS NO LONGER ACQUISITION-SHAPED.
+
+        =====================================================================
+        🔴 AMENDED 2026-08-14 (Phase 3, observation 5). THE PARAGRAPH DIRECTLY ABOVE DESCRIBES A
+        FORMULA THAT NO LONGER EXISTS, AND THE RE-CHECK IT ASKS FOR HAS NOW BEEN DONE.
+        =====================================================================
+
+        SUPERSEDED, verbatim: "That formula is ACQUISITION-SHAPED TODAY - it tests Prepare/Review
+        and an Approved LOI_Status__c - so 3B must re-check what it evaluates to on a disposition
+        LOI before binding any button to it."
+
+        WHAT Is_Advance_Allowed__c TESTS NOW. It is no longer acquisition-shaped: it excludes BOTH
+        terminals ('Signed' on acquisition, 'Executed' on disposition), excludes the acquisition
+        branch point ('Submitted'), and its approval gate moved from 'Prepare/Review' to
+        'Under Review' - a value THIS record type carries as step 2 of 5. That gate therefore
+        carries `RecordType.DeveloperName &lt;&gt; "Acquisition_LOI"` as its first disjunct,
+        specifically so it stays inert here. WITHOUT that guard a disposition LOI at 'Under Review'
+        would have lost its Advance Stage button unless LOI_Status__c read 'Approved', which
+        nothing on the sell-side path ever writes.
+
+        🔴 SO THIS SET'S READ GRANT ON Is_Advance_Allowed__c IS NOW LOAD-BEARING FOR THE SELL SIDE,
+        WHERE IT USED TO BE MERELY HARMLESS. LOI_Record_Page's disposition Advance Stage entry
+        reads this field, and a flexipage visibility rule evaluates FALSE for a user without FLS
+        read - the same mechanism recorded further down this file for
+        NDA__c.Is_Decline_Allowed__c. Removing this grant to "tidy up an acquisition formula"
+        would silently delete the disposition Advance Stage button for this persona.
+
+        ⚠ THE Submit_for_Approval SELF-LIMITATION CLAIMED ELSEWHERE IS GONE, AND IT IS NOT THIS
+        SET THAT SAVES YOU FROM IT. Disposition_LOI's own comment and LOI_Path_Disposition both
+        asserted that Submit for Approval cannot surface here because it is gated on
+        'Prepare/Review'; it is now gated on 'Under Review'. Both files are corrected. The reason
+        a holder of THIS set still sees nothing is the rule's FIRST criterion - the
+        Acquisition_Deal_Actions custom permission, which this persona does not hold - and NOT any
+        stage value. A user holding BOTH sets does see it; runbook 1.6 and gate G7 own that
+        residual.
 
         ================================================================================
         DEPLOY GATES FOR BOTH CHANGES
@@ -242,6 +279,45 @@
         neither set. The likely explanation is that 3A is not deployed and these sets do not yet
         exist in that org (D14), in which case there is nothing to drift from - but that is an
         inference, NOT a measurement, and it must be confirmed before deploy.
+
+        =====================================================================
+        ✅ RECONCILED 2026-08-14 (Phase 3). THE INFERENCE ABOVE IS NOW A MEASUREMENT, AND IT CAME
+        OUT THE OPPOSITE WAY ON THE PREMISE WHILE LANDING ON THE SAME CONCLUSION.
+        =====================================================================
+
+        MEASURED: a `sf project retrieve start` of PermissionSet:DPEG_Disposition_Edit
+        against usman-dpeg returned the set. It EXISTS in that org (created 2026-07-22, last
+        modified 2026-08-10), so the paragraph above is wrong that there was nothing to retrieve;
+        why the 2026-08-09 attempt came back empty is NOT established and is not guessed at here.
+        🔴 AN EMPTY RETRIEVE PROVES NOTHING EITHER WAY - it is indistinguishable from a wrong
+        metadata name, a wrong org or a permissions gap, which is exactly why it was recorded as
+        an inference and why it had to be re-run rather than trusted.
+
+        RESULT: a NORMALIZED comparison of the org copy against this file - grant SETS, not bytes,
+        because the org strips XML comments, re-orders elements and omits defaulted flags, so a
+        textual diff fakes drift in BOTH directions - reports:
+            objectPermissions        10  identical
+            fieldPermissions        113  identical
+            recordTypeVisibilities    5  identical
+            org-only = 0   repo-only = 0   changed = 0
+        ⇒ NO org-side-only grant exists on this set today, so a deploy of this file revokes
+        nothing. That is the ONLY question the REPLACE-not-merge hazard asks.
+
+        ⚠ THIS IS A SNAPSHOT, NOT A STANDING GUARANTEE, and this repo has already paid for reading
+        one as the other: DPEG_Admin_Access was found carrying six org-only recordTypeVisibilities
+        on 2026-08-10, ONE DAY after a clean 2026-08-09 reconciliation. Re-run the retrieve before
+        the next deploy of this file. ⚠ The 2026-08-14 edit was COMMENT-ONLY - not one grant
+        element was added, removed or altered - so this reconciliation clears that edit; it does
+        not pre-clear a future one.
+        ⚠ NOT COVERED: DPEG_Disposition_View was named in the paragraph above and was NOT
+        retrieved here, because this phase does not touch it. Reconcile it separately before
+        deploying it.
+
+        ⚠ WHY THE RETRIEVE COMMAND IS DESCRIBED RATHER THAN QUOTED. Its scoping flag begins with
+        two hyphens, and an XML comment CANNOT contain two consecutive hyphens - the file stops
+        parsing and the deploy fails at source conversion. This bit twice on 2026-08-14 alone: a
+        manifest comment quoting a destructive-changes flag, and this very paragraph. NEVER paste
+        a CLI flag verbatim into a comment in this repo; name the command and describe the flag.
 
         🔴 NDA__c.Is_Decline_Allowed__c FLS IS LOAD-BEARING, NOT COSMETIC. It is read by two
         visibility rules on NDA_Record_Page, and a flexipage visibility rule evaluates FALSE for

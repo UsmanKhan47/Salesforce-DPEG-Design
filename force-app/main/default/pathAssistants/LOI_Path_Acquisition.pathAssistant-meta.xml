@@ -39,6 +39,49 @@
 
         POST-DEPLOY: this path renders nothing until every existing LOI row has been migrated
         off Master onto Acquisition_LOI and the record type is assigned in the profiles in use.
+
+        =====================================================================
+        🔴 AMENDED 2026-08-14 (Phase 3, observation 5). THE FIVE-STEP SEQUENCE AND THE
+        "FULLY DISJOINT" PARAGRAPH ABOVE ARE BOTH SUPERSEDED. THIS FILE IS CURRENTLY IN A
+        TRANSITIONAL NINE-STEP STATE ON PURPOSE.
+        =====================================================================
+
+        RETRACTED (1), verbatim: "Five steps: Draft -> Prepare/Review -> Sent -> Counter ->
+        Completed" and "EVERY <info> TEXT BELOW IS COPIED BYTE-IDENTICAL FROM LOI_Path... Nothing
+        on the acquisition side is reworded, re-ordered, added or dropped by this tranche."
+        The target buy-side sequence is now
+        Draft -> Under Review -> Submitted -> Negotiation -> Signed. The byte-identical rule was a
+        statement about Tranche 3B, not a standing property; the four <info> texts for the new
+        steps below are NEW PROSE and are the first original wording in this file.
+
+        RETRACTED (2), verbatim: "Appending was sufficient only because the two sets are FULLY
+        DISJOINT - a value a record type does not expose cannot occupy a position in that record
+        type's rendering."
+        'Under Review' is now exposed by BOTH record types. See LOI__c/fields/Stage__c's own
+        comment for the retraction and the ordering arithmetic.
+
+        ✅ P3-D3 DONE. The nine-step transitional state described above is retired. The four
+        legacy steps (Prepare/Review, Sent, Counter, Completed) are removed from this file and
+        from the Acquisition_LOI record type, and the underlying values are deactivated on
+        Stage__c (never deleted - decision O3). The five steps below are now the whole file:
+        Draft -> Under Review -> Submitted -> Negotiation -> Signed. Applied via
+        agent-output/p3-d3-retire-loi-psa/.
+
+        ⚠ THE 'Submitted' STEP NAMES TWO BUTTONS BY LABEL, SO IT IS COUPLED TO quickActions/.
+        Its <info> says "use Negotiation ... or Signed", which are the CURRENT <label> values of
+        LOI__c.Mark_Countered and LOI__c.Mark_Completed, both relabelled in this same phase
+        (runbook 1.8: Counter -> Negotiation, Completed -> Signed) because the convention on this
+        object is label == target stage. The first draft of this step said "use Counter", naming a
+        button that no longer exists under that name; it is corrected here. This prose RENDERS ON
+        THE PATH in front of a user, so a label change in quickActions/ and this text must move
+        together. Nothing automated checks the pair; a wrong button name deploys green.
+
+        ⚠ THE APPROVAL HOP MOVED FROM 'Prepare/Review' TO 'Under Review', AND 'Under Review' IS
+        SHARED WITH Disposition_LOI. The retracted paragraph's claim that the approval hop is
+        "acquisition-only BY CONSTRUCTION" because the gating value is one Disposition_LOI does
+        not carry is therefore no longer true of the gating value. It remains true of this PATH -
+        a Path is per record type - but LOI_Record_Page's Submit_for_Approval entry is now
+        genuinely shared and carries an open residual; see that file's comment.
     -->
     <active>true</active>
     <entityName>LOI__c</entityName>
@@ -49,20 +92,20 @@
         <picklistValueName>Draft</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Prepare and review the LOI internally. Validate the terms, route it for any required approval, and refine based on feedback before finalizing.</info>
-        <picklistValueName>Prepare/Review</picklistValueName>
+        <info>Review the LOI internally and route it for approval. Validate the terms and refine based on feedback. Advance Stage stays locked here until the LOI reads Approved, so use Submit for Approval first.</info>
+        <picklistValueName>Under Review</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>LOI sent to the seller/broker. Awaiting their response - a counter moves it to the Counter stage.</info>
-        <picklistValueName>Sent</picklistValueName>
+        <info>LOI submitted to the seller/broker. Awaiting their response - this is the branch point: use Negotiation if they come back with terms, or Signed if they accept as submitted.</info>
+        <picklistValueName>Submitted</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Counter-offer stage. Track the back-and-forth with the seller - log each counter in the Counter History and update the offer terms until both sides align.</info>
-        <picklistValueName>Counter</picklistValueName>
+        <info>Negotiation stage. Track the back-and-forth with the seller - log each round in the Counter History and update the offer terms until both sides align.</info>
+        <picklistValueName>Negotiation</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>LOI finalized and complete. Record is closed out for this stage of the deal.</info>
-        <picklistValueName>Completed</picklistValueName>
+        <info>LOI signed by both sides. This is the terminal stage for the buy-side LOI and it is what releases the deal into Under Contract (PSA).</info>
+        <picklistValueName>Signed</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>Acquisition_LOI</recordTypeName>
 </PathAssistant>

@@ -27,8 +27,8 @@ private class OpportunityFunnelControllerTest {
         // CloseDate. One of each pair keeps the factory's default (today + 90,
         // i.e. OUTSIDE the last-90-days window) and must NOT be counted; the other
         // is backdated to today so it falls inside the window and IS counted.
-        Opportunity psaOld = newOpp('PSA');
-        Opportunity psaRecent = newOpp('PSA');
+        Opportunity psaOld = newOpp('Under Contract (PSA)');
+        Opportunity psaRecent = newOpp('Under Contract (PSA)');
         psaRecent.CloseDate = Date.today();
         opps.add(psaOld);
         opps.add(psaRecent);
@@ -66,11 +66,11 @@ private class OpportunityFunnelControllerTest {
         System.assertEquals(1, countByLabel.get('Underwriting'), 'One Underwriting opportunity was inserted');
         System.assertEquals(1, countByLabel.get('LOI'), 'One LOI opportunity was inserted');
         System.assertEquals(1, countByLabel.get('About to Close'), 'About to Close is not recency-scoped, so the raw count is used');
-        System.assertEquals(1, countByLabel.get('PSA'), 'Only the recently-closed PSA opportunity falls in the 90-day window');
+        System.assertEquals(1, countByLabel.get('Under Contract (PSA)'), 'Only the recently-closed PSA opportunity falls in the 90-day window');
         System.assertEquals(1, countByLabel.get('Closed Won'), 'Only the recently-closed Closed Won opportunity falls in the 90-day window');
         System.assertEquals(1, countByLabel.get('Dead/Pass'), 'Only the recently-closed Dead/Pass opportunity falls in the 90-day window');
         System.assertEquals(0, countByLabel.get('Portfolio Deal'),
-            'Portfolio Deal is not reachable via either the Land or Commercial business process and stays 0');
+            'Portfolio Deal is not reachable via either the Land or Retail business process and stays 0');
     }
 
     @isTest
@@ -98,7 +98,7 @@ private class OpportunityFunnelControllerTest {
         System.assertNotEquals(null, top.id, 'id is populated');
         System.assertNotEquals(null, top.name, 'name is populated');
         System.assertEquals('New', top.stage, 'stage mirrors StageName');
-        System.assertEquals('Commercial', top.dealType, 'dealType mirrors Deal_Type__c');
+        System.assertEquals('Retail', top.dealType, 'dealType mirrors Deal_Type__c');
         System.assertEquals('Retail Strip', top.assetType, 'assetType mirrors Asset_Type__c');
         System.assertEquals(0, top.days, 'Created moments ago, so days-since-creation is 0');
     }
@@ -138,7 +138,7 @@ private class OpportunityFunnelControllerTest {
         System.assertEquals(expectedPipelineValue, snap.pipelineValue, 'Pipeline value sums only the open deals asking price');
         System.assertEquals(2, snap.landDeals, 'Two Land-type opportunities exist regardless of stage');
         System.assertEquals(4, snap.commercialDeals,
-            'The 2 open + 2 closed (default Commercial) opportunities are counted regardless of stage');
+            'The 2 open + 2 closed (default Retail) opportunities are counted regardless of stage');
     }
 
     @isTest
@@ -157,7 +157,7 @@ private class OpportunityFunnelControllerTest {
         System.assertEquals(0, snap.openDeals, 'No open deals when there is zero data');
         System.assertEquals(0, snap.pipelineValue, 'Pipeline value is 0 (not null) when SUM() has no rows to sum');
         System.assertEquals(0, snap.landDeals, 'No Land deals when there is zero data');
-        System.assertEquals(0, snap.commercialDeals, 'No Commercial deals when there is zero data');
+        System.assertEquals(0, snap.commercialDeals, 'No Retail deals when there is zero data');
     }
 
     // A user on the "Minimum Access - Salesforce" profile has NO Opportunity object

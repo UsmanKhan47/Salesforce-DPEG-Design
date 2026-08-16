@@ -44,6 +44,39 @@
         'Sent' because the two sets overlap and appending rendered the disposition starting
         state third.
 
+        =====================================================================
+        🔴 AMENDED 2026-08-14 (Phase 3, observation 7). TWO CLAIMS IN THIS FILE ARE NOW FALSE.
+        THIS PATH ITSELF IS UNCHANGED AND STILL RENDERS CORRECTLY - BUT NOT FOR THE REASON
+        EITHER CLAIM GIVES.
+        =====================================================================
+
+        RETRACTED (1), verbatim: "THE VALUES ARE IDENTICAL TO THE ACQUISITION PATH; ONLY THE
+        WORDING DIFFERS."
+        Observation 7 gives Acquisition_PSA its own sequence - Draft, Negotiation, Signed,
+        Executed - and removes Initial Draft, Revised and Ready for Execution from it at P3-D3.
+        MEASURED off the two record type files: the sets now share EXACTLY ONE value, 'Executed'.
+        The paths differ in VALUES now, not merely in wording. ⚠ The clause the retraction does
+        NOT touch is still true and is still this file's reason to exist: WHO ACTS inverts.
+
+        RETRACTED (2), verbatim: "both record types expose the same four values in the master
+        ordering, so nothing had to be appended or re-sequenced."
+        🔴 SOMETHING DID HAVE TO BE SEQUENCED, AND IT WAS DONE SPECIFICALLY TO PROTECT THIS FILE.
+        The three new acquisition values were INSERTED BEFORE 'Executed' on
+        Negotiation_Status__c, deliberately NOT appended. Had they been appended, the shared
+        value 'Executed' - which is the TERMINAL here and already sat at position 4 - would have
+        left Acquisition_PSA rendering Executed(4), Draft(5), Negotiation(6), Signed(7): THE
+        FINISH LINE FIRST. The insert keeps this disposition path rendering
+        Initial Draft(1) -> Revised(2) -> Ready for Execution(3) -> Executed(7), byte-identical
+        to before.
+        ⇒ So "this file needed no adjustment" is the correct CONCLUSION and "nothing had to be
+        re-sequenced" is the wrong REASON. It survived because the ordering arithmetic was redone
+        on the field; it would not have survived an append.
+        ⚠ The NDA__c contrast in the retracted sentence still stands, and this object is now a
+        SECOND instance of the same lesson rather than a counter-example to it: LOI__c needed an
+        APPEND, this field needed an INSERT, NDA__c needed an INTERLEAVE. Three fields, three
+        different answers. Redo the arithmetic for every value ever added; it does not transfer,
+        even between two fields changed on the same day.
+
         POST-DEPLOY: this path renders nothing until the Disposition_PSA record type is assigned
         in the profiles in use and a disposition Contract Review actually carries it.
     -->

@@ -28,7 +28,7 @@ private class StageBackwardMovementGateTest {
 
     @isTest
     static void plainBackwardMove_psaToUnderReview_isBlocked() {
-        Opportunity o = newOpp('PSA');
+        Opportunity o = newOpp('Under Contract (PSA)');
         insert o; // ISCHANGED(StageName) is false on insert, so every gate is bypassed here.
 
         Boolean blocked = false;
@@ -42,7 +42,7 @@ private class StageBackwardMovementGateTest {
         }
         System.assert(blocked, 'PSA -> Under Review is a plain backward move and must be blocked');
 
-        System.assertEquals('PSA',
+        System.assertEquals('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'A rejected save must leave the stage untouched');
     }
@@ -82,7 +82,7 @@ private class StageBackwardMovementGateTest {
      */
     @isTest
     static void carveOut2_initiateUnderwritingOnPsa_succeeds() {
-        Opportunity o = newOpp('PSA');
+        Opportunity o = newOpp('Under Contract (PSA)');
         insert o;
         TestDataFactory.signPrimaryNda(o); // isolate: Underwriting entry is ALSO NDA-gated
 
@@ -127,10 +127,17 @@ private class StageBackwardMovementGateTest {
         // value, so it round-trips unchanged - which is exactly the "sticky, unchanged" state this
         // test needs. The flow does not refire here: doesRequireRecordChangedToMeetCriteria is
         // true and the checkbox is not newly becoming true on this save.
-        TestDataFactory.placeApprovedLoi(o);
-        o.StageName = 'PSA';
+        //
+        // PSA entry is also gated by Completed_LOI_Before_PSA (added 2026-08-12), which reads the
+        // LOI's OWN Stage__c. placeApprovedLoi leaves it at 'Draft', so drive it to 'Signed' via
+        // the real production route first, or this precondition save itself would now be blocked.
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        // ⚠ 'Signed' since observation 5 (2026-08-14); it was 'Completed' until the acquisition LOI
+        // sequence was renamed. Must stay in step with Completed_LOI_Before_PSA.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
+        o.StageName = 'Under Contract (PSA)';
         update o;
-        System.assertEquals('PSA',
+        System.assertEquals('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'Precondition: the deal is now at PSA with Initiate_Underwriting__c already true, unchanged');
 
@@ -154,7 +161,7 @@ private class StageBackwardMovementGateTest {
             'A sticky (already-true, unchanged-this-save) Initiate_Underwriting__c must NOT grant a '
             + 'permanent backward-move exemption - dropping ISCHANGED(Initiate_Underwriting__c) from '
             + 'carve-out 2 would make this assertion fail');
-        System.assertEquals('PSA',
+        System.assertEquals('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'A rejected save must leave the stage at PSA');
     }

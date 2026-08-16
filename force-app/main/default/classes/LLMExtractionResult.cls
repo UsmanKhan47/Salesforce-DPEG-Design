@@ -108,10 +108,13 @@ public class LLMExtractionResult {
      * `confidence` answers "how certain are you of is_acquisition_related"; this answers "how
      * certain are you of email_category". A call-for-offers blast IS acquisition-related, so its
      * `confidence` is HIGH and so is a genuine exclusive's — `confidence` carries no
-     * discrimination here at all, and gating on it would produce a guardrail that looks
-     * two-factor and behaves one-factor. That is the exact failure shape ARCHITECTURE.md §2
-     * records for the Opportunity deal-action gate ("membership and the flag are different
-     * questions").
+     * discrimination here at all, and gating on it would produce a guardrail that looks like two
+     * independent conditions and behaves as one. ⚠ This paragraph used to cite ARCHITECTURE.md §2's
+     * Opportunity deal-action gate and quote it as "membership and the flag are different
+     * questions"; **that wording no longer exists** — the 2026-08-12 custom-permission migration
+     * retired the `User.*_Driver__c` flag model and §2 now records that argument as MOOT. The
+     * ANALOGY is untouched and is the only thing that was ever being borrowed: two conditions that
+     * cannot disagree are one condition wearing a second name.
      *
      * ⚠ NO BAND IS DERIVED FROM IT, deliberately. `confidenceBand` exists because
      * Parse_Confidence__c is a RESTRICTED picklist that must never receive an out-of-set value;

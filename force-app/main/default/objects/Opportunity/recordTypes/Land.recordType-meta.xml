@@ -84,11 +84,11 @@
     <picklistValues>
         <picklist>Deal_Type__c</picklist>
         <values>
-            <fullName>Commercial</fullName>
+            <fullName>Land</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Land</fullName>
+            <fullName>Retail</fullName>
             <default>false</default>
         </values>
     </picklistValues>

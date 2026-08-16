@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description> (255-char cap), and it is INSIDE
+        the root element on purpose - a comment ABOVE <CustomField> breaks `sf` deploy.
+
+        THE _Count__c SUFFIX IS REQUIRED HERE FOR A WEAKER REASON THAN ON ITS SIBLING, AND
+        THAT IS PRECISELY WHY IT MUST NOT BE DROPPED. `Fields_Missing__c` is not literally
+        rule 4's Boolean shape the way Fields_Captured__c is - "Missing" reads as a STATE -
+        but it sits directly beside a field that IS that shape, so a reader who resolves
+        one as a Boolean resolves the other the same way. Naming the pair inconsistently is
+        worse than naming either one wrongly. Full argument on the Lead twin.
+
+        DERIVED BUT STORED: missing = 9 - captured, always. It carries no information its
+        sibling does not; it exists so a report can filter "deals whose intake was missing
+        three or more facts" without arithmetic in the report. It costs nothing - all three
+        values are computed in one pass on the Lead and carried in the same conversion
+        update.
+
+        CARRIED, NOT RECOMPUTED. It describes the ORIGINAL broker email, not the current
+        state of this deal record. Someone filling in the guidance price by hand does not
+        move it, and that is correct.
+
+        NULL means not scored (fail-soft); zero missing means a COMPLETE extraction - the
+        best possible answer, not the absence of one.
+    -->
+    <fullName>Fields_Missing_Count__c</fullName>
+    <description>How many of the nine signed-off deal-process extraction keys were NOT captured from the original broker email, carried from the Lead at conversion. Always nine minus Fields Captured Count. Zero means a complete extraction.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Count of deal facts the automated extraction did not find in the original broker email, out of nine. Zero means nothing was missing.</inlineHelpText>
+    <label>Fields Missing Count</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

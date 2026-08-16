@@ -4,14 +4,14 @@
  * Standard-User USER_MODE proof.
  *
  * RecordType is a system object with no TestDataFactory equivalent; the Opportunity
- * Land / Commercial record types are deployed org metadata, so the "match" test grounds
+ * Land / Retail record types are deployed org metadata, so the "match" test grounds
  * its expectation on Schema describe (getRecordTypeInfosByDeveloperName) rather than a
  * hardcoded count — robust to either type being absent while still asserting exact
  * equality against what actually exists.
  *
  * NO 251-BULK SCENARIO — documented, not omitted: record types are org metadata, not
  * insertable test data; an org has a fixed, small number of Opportunity record types
- * (this org: Land + Commercial). "251 record types" is not a producible state. The
+ * (this org: Land + Retail). "251 record types" is not a producible state. The
  * IN-bind is exercised with the real requested set instead.
  */
 @isTest
@@ -31,12 +31,12 @@ private class RecordTypeSelectorTest {
 
     @isTest
     static void selectByObjectAndDeveloperNames_returnsMatchingOpportunityTypes() {
-        Set<String> requested = new Set<String>{ 'Land', 'Commercial' };
+        Set<String> requested = new Set<String>{ 'Land', 'Retail' };
         Set<String> expected = existingOpportunityTypes(requested);
         // Precondition assertion: the DPEG org deploys both Opportunity record types.
         // Stated explicitly so the test cannot silently pass on an empty expectation.
         Assert.areEqual(2, expected.size(),
-            'Precondition: the org must have Opportunity Land + Commercial record types');
+            'Precondition: the org must have Opportunity Land + Retail record types');
 
         Test.startTest();
         List<RecordType> rows =
@@ -96,7 +96,7 @@ private class RecordTypeSelectorTest {
     static void selectByObjectAndDeveloperNames_standardUser_userModeReturnsTypes() {
         User standardUser = buildStandardUser();
         insert standardUser;
-        Set<String> requested = new Set<String>{ 'Land', 'Commercial' };
+        Set<String> requested = new Set<String>{ 'Land', 'Retail' };
 
         Test.startTest();
         System.runAs(standardUser) {

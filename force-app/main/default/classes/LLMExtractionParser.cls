@@ -270,6 +270,15 @@ public with sharing class LLMExtractionParser {
             activeValues('Deal_Type__c', Lead.Deal_Type__c), result);
         property.saleProcess = picklistValue(raw.get('sale_process'), 'sale_process',
             activeValues('Sale_Process__c', Lead.Sale_Process__c), result);
+        // `listing_status` (observation 1, 2026-08-14) reuses picklistValue UNCHANGED, and that
+        // is the whole point: Lead.Listing_Status__c is a RESTRICTED picklist, so an off-list
+        // answer would throw INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST at the Lead insert and roll
+        // back a committed claim. An ABSENT key and a REJECTED value both resolve to null here —
+        // which is the field's designed default, so a legacy-shape response (the one-line prompt
+        // rollback) simply produces blank rather than stranding the feature. A rejected value
+        // additionally leaves a note on Deal_Notes__c, which is how the two are told apart.
+        property.listingStatus = picklistValue(raw.get('listing_status'), 'listing_status',
+            activeValues('Listing_Status__c', Lead.Listing_Status__c), result);
 
         property.guidancePrice = money(raw.get('guidance_price'), 'guidance_price', MAX_CURRENCY, result);
         property.guidancePriceLow = money(raw.get('guidance_price_low'), 'guidance_price_low', MAX_CURRENCY, result);

@@ -1,5 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      RECONCILED ORG -> REPO ON 2026-08-14 BEFORE EDITING. A retrieve from usman-dpeg was diffed
+      against this file: 63 fieldPermissions on both sides, identical sets; no
+      recordTypeVisibilities on either side. Zero org-only grants. (The <viewAllFields> element
+      in the org retrieve is an API-added default, not drift.)
+
+      ADDED 2026-08-14, Acquisition Observations Phase 1 (deploy step P1-A): FOUR grants -
+      Opportunity.Listing_Status__c, .Extraction_Score_Pct__c, .Fields_Captured_Count__c and
+      .Fields_Missing_Count__c. All editable=false, readable=true.
+
+      ⚠ OPPORTUNITY ONLY, AND THE ABSENCE OF THE LEAD TWINS IS DELIBERATE. This is the layer-3b
+      Opportunity SUBSET set - it exists so the Transactions team can read deals without
+      inheriting the rest of Acquisitions (ARCHITECTURE.md, seven-layer permission model:
+      "Subset != duplicate"). Adding the Lead-side grants here would quietly widen it into the
+      Lead module and defeat the reason the set exists.
+
+      🔴 A green field deploy does NOT imply FLS. Verify in the ORG:
+          SELECT Field FROM FieldPermissions WHERE Parent.Name = 'DPEG_Opportunity_View'
+      must move 63 -> 67, with the four fields above present.
+
+      Full sequence: agent-output/runbook-acquisition-observations-phase1.md
+    -->
     <description>Read-only access to Opportunity, View All, full FLS. Shared building block for teams that reference deals but don't own them (e.g. the Transaction team).</description>
     <fieldPermissions>
         <editable>false</editable>
@@ -29,6 +51,14 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Bundle_LOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- ADDED 2026-08-14, Acquisition Observations Phase 4. Layer-3b Opportunity subset grant -
+         follows Offer_Due_Date__c / Sale_Process__c on this same set (both already carried here
+         for the Transactions team's read of the deal). -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Call_For_Offers_Received_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -191,6 +221,21 @@
         <field>Opportunity.My_Price__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Phase 4 (call-for-offers alerts, 2026-08-14). The two alert MARKER fields, read-only.
+         ⚠ This set is the TRANSACTIONS team's Opportunity subset and grants NOTHING on Property__c,
+         which is exactly why CallForOffersService reads the deal Name rather than traversing
+         Property__r.Name — under USER_MODE that traversal would not blank a column, it would take
+         the whole table down for this persona. Full reasoning on DPEG_Acquisition_Edit's copy. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Offer_Alert_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Offer_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Offer_Due_Date__c</field>
@@ -199,6 +244,26 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.OneDrive_Folder_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Listing_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

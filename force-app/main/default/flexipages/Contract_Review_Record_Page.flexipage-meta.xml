@@ -26,6 +26,15 @@
          had no UI that could invoke it. Same shape closed on NDA_Record_Page (3A fix pass) and
          LOI_Record_Page (3B, D22).
 
+         🔬 PHASE 1 UPDATE (2026-08-12) — the mechanism described above is HISTORICAL, not
+         live. Both entries on this page now read {!$Permission.CustomPermission.
+         Acquisition_Deal_Actions} / {!$Permission.CustomPermission.Disposition_Deal_Actions}
+         instead of a User field, so the FLS-blindness failure mode this page's duplicate-entry
+         shape exists to work around cannot recur here - a custom permission has no FLS to be
+         missing. The DUPLICATE-ENTRY SHAPE ITSELF IS UNCHANGED and still required for the
+         reason stated below (booleanFilter has no OR). See
+         agent-output/design-requirements-custom-permissions.md.
+
          =====================================================================
          THIS IS THE DUPLICATE-ENTRY SHAPE, NOT AN OR. DO NOT MERGE THE TWO.
          =====================================================================
@@ -48,34 +57,116 @@
          THAT DEFECT SHAPE DOES NOT EXIST HERE, and it was checked rather than assumed:
            - Contract_Review__c has NO Is_Advance_Allowed__c formula field at all. The gate is
              the inline criterion Negotiation_Status__c NE 'Executed'.
-           - BOTH record types expose the SAME four Negotiation_Status__c values (Initial Draft,
-             Revised, Ready for Execution, Executed) - Acquisition_PSA and Disposition_PSA both
-             state that this identity is deliberate.
-           - CONTRACT_REVIEW_NEXT_STAGE maps Initial Draft => Revised => Ready for Execution =>
-             Executed and stops. `Executed` is the ONLY terminal, and it is the same terminal on
-             both types, so a single NE test names every terminal there is.
+           - [FALSE SINCE 2026-08-14 - see the amendment below] "BOTH record types expose the
+             SAME four Negotiation_Status__c values (Initial Draft, Revised, Ready for Execution,
+             Executed) - Acquisition_PSA and Disposition_PSA both state that this identity is
+             deliberate." [END FALSE] They now share ONLY 'Executed'.
+           - [PARTLY FALSE SINCE 2026-08-14 - the map NAME is dead; the terminal claim is not]
+             "CONTRACT_REVIEW_NEXT_STAGE maps Initial Draft => Revised => Ready for Execution =>
+             Executed and stops." [END FALSE] That map was SPLIT into
+             CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE and CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE.
+             ⚠ THIS IS THE SENTENCE THAT PRODUCED A PHANTOM OPEN ITEM - do not read it as current.
+             ✅ STILL TRUE, and it is what the criterion actually rests on: `Executed` is the ONLY
+             terminal, and it is the same terminal on both types, so a single NE test names every
+             terminal there is.
          There is therefore no second terminal for this criterion to miss. If a future change
          gives either type a status the other lacks, this criterion and CONTRACT_REVIEW_NEXT_STAGE
          must be revisited together.
 
          =====================================================================
+         🔴 AMENDED 2026-08-14 (Phase 3, observation 7). THAT FUTURE CHANGE HAS ARRIVED - THIS
+         FILE'S OWN TRIGGER CONDITION HAS FIRED. THE CRITERION SURVIVES; ITS STATED PREMISE
+         DOES NOT.
+         =====================================================================
+
+         RETRACTED, verbatim: "BOTH record types expose the SAME four Negotiation_Status__c
+         values (Initial Draft, Revised, Ready for Execution, Executed) - Acquisition_PSA and
+         Disposition_PSA both state that this identity is deliberate."
+
+         Phase 3 gives Acquisition_PSA its own sequence and removes the other three values from
+         it at P3-D3. MEASURED off the two record type files 2026-08-14:
+             Acquisition_PSA : Draft, Negotiation, Signed, Executed
+             Disposition_PSA : Initial Draft, Revised, Ready for Execution, Executed
+         The sets now share EXACTLY ONE value, and it is 'Executed'.
+
+         ✅ THE `Negotiation_Status__c NE 'Executed'` CRITERION IS STILL CORRECT, AND NO EDIT TO
+         ANY RULE ON THIS PAGE IS NEEDED - but it is now correct for a NARROWER reason than the
+         retracted paragraph gives. It never depended on the four values being identical; it
+         depended only on 'Executed' being the SOLE TERMINAL ON BOTH TYPES, which is still true
+         and is the one value the two sets still share. Do not "simplify" this criterion on the
+         strength of the old premise, and do not widen it: a second terminal on either type
+         would break it, exactly as the sentence above warns.
+
+         ✅ CONTRACT_REVIEW_NEXT_STAGE NO LONGER EXISTS - IT WAS SPLIT, AND THE SPLIT IS DONE.
+         The paragraph above cites it as ONE map running Initial Draft => Revised =>
+         Ready for Execution => Executed. That map was renamed and split per record type on
+         2026-08-14 (requirements C9). VERIFIED in classes/RecordStageAdvanceService.cls:
+             line  723  CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE
+             line  749  CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE
+             lines 1157/1159  each wired to its OWN gate (DEAL_DRIVER / DISPOSITION_DRIVER)
+             line  646  the rename documented in-file
+         Its falsifier is RecordStageAdvanceServiceTest.psaSequencesAreSplitPerRecordType, which
+         asserts BOTH directions in one test precisely so a reverted single-map build cannot
+         satisfy it. Do not re-merge the maps.
+
+         ⚠ 🔴 A WARNING ABOUT THIS VERY COMMENT, BECAUSE IT ALREADY MISLED SOMEONE. On
+         2026-08-14 a reviewer read the PRE-SPLIT paragraph above, took "CONTRACT_REVIEW_NEXT_STAGE
+         maps ... and stops" as current, and reported the split as OUTSTANDING WORK - a phantom
+         open item on a page whose server side was already correct. The stale premise did not
+         merely sit there; it propagated into a fresh, confident, wrong conclusion. THAT is the
+         cost of leaving a superseded sentence unmarked, and it is the reason every dead claim in
+         this file is now wrapped rather than merely followed by a correction. Verify any Apex
+         name this comment mentions against the class before repeating it.
+
+         =====================================================================
          NO RECORD-TYPE CRITERION ON EITHER ENTRY, AND HERE THAT IS A DIFFERENT ARGUMENT
          FROM LOI_Record_Page'S.
          =====================================================================
-         On LOI__c the two Stage__c value sets are DISJOINT, so a stage-keyed rule is
+         🔴 BOTH SENTENCES OF THE NEXT PARAGRAPH ARE FALSE AS OF 2026-08-14, AND THEY BECAME
+         FALSE IN OPPOSITE DIRECTIONS. THE CORRECTION IS IMMEDIATELY BELOW IT.
+         [FALSE] "On LOI__c the two Stage__c value sets are DISJOINT, so a stage-keyed rule is
          self-limiting to its own record type. That mechanism is NOT available on this object -
-         the two PSA value sets are IDENTICAL, so no status value discriminates. The
-         discriminator here is the DRIVER FLAG alone, which is sufficient because the two flags
-         are granted by disjoint permission sets. The residual is the same cosmetic one
+         the two PSA value sets are IDENTICAL, so no status value discriminates." [END FALSE]
+
+         🔴 PHASE 3 SWAPPED THE TWO OBJECTS' PROPERTIES. This is the single most surprising thing
+         in this amendment and it is why the paragraph could not simply be reworded:
+           - LOI__c LOST disjointness. Observation 5 repointed the acquisition approval hop onto
+             'Under Review', which Disposition_LOI has carried since 3B. A stage-keyed rule on
+             LOI__c is NO LONGER self-limiting - that is the live residual in runbook 1.6 and
+             gate G7, and it is why LOI_Record_Page's Submit_for_Approval entry now needs a
+             decision.
+           - Contract_Review__c GAINED it. Observation 7 leaves the two PSA sets sharing only
+             'Executed', so from P3-D3 a rule keyed on any NON-terminal status value here WOULD
+             be self-limiting - the mechanism this paragraph says is unavailable.
+         The two objects have exchanged the property this page's whole argument rests on. Anyone
+         reasoning from "the LOI case" to "the PSA case" in either direction after this date is
+         reasoning from the inverse of the facts.
+
+         ⚠ NOTHING ON THIS PAGE IS CHANGED BY THAT, AND THE CONCLUSION STILL HOLDS. The
+         discriminator here remains the custom permission, which is sufficient on its own; the
+         newly available status-value mechanism is NOT adopted, because a permission check is the
+         stronger discriminator and swapping to a stage-keyed one would rebuild the very
+         coupling Phase 3 just demonstrated can silently invert. Recorded so the option is a
+         known, declined one rather than an undiscovered one.
+         ⚠ "the DRIVER FLAG alone" is also stale wording - the flags were retired 2026-08-12 and
+         the criterion reads a custom permission, as the paragraph further down already records.
+
+         The discriminator here is that custom permission, which is sufficient because it is
+         granted by disjoint permission sets. The residual is the same cosmetic one
          NDA_Record_Page and LOI_Record_Page accept: an acquisition driver opening a disposition
          PSA still sees Advance Stage and gets a refusal from RecordStageAdvanceService's
          record-type-scoped gate. Nothing here can write what the server would refuse -
          RecordStageAdvanceController asserts the gate regardless of what this page renders.
 
-         ⚠ DEPLOY GATE, NOT SATISFIED BY THIS FILE: the rule is only EVALUABLE if the running
-         user has FLS read on User.Disposition_Driver__c. That grant lives in
-         Disposition_Deal_Driver; if a persona reaches this page without that set in their PSG
-         the rule evaluates FALSE and the button is invisible again, silently.
+         ⚠ DEPLOY GATE, HISTORICAL (2026-08-10), SUPERSEDED 2026-08-12: the rule used to be
+         only EVALUABLE if the running user had FLS read on User.Disposition_Driver__c, granted
+         by Disposition_Deal_Driver; a persona reaching this page without that set in their PSG
+         saw the rule evaluate FALSE and the button invisible, silently. 🔬 PHASE 1 UPDATE
+         (2026-08-12): the criterion now reads {!$Permission.CustomPermission.
+         Disposition_Deal_Actions}, which has no FLS to be missing - the deploy gate is now
+         simply "the running user holds the custom permission" (granted the same way, through
+         Disposition_Deal_Driver), with no FLS-read failure mode in between. See
+         agent-output/design-requirements-custom-permissions.md.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -88,7 +179,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -104,7 +195,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>

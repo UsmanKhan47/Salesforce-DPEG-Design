@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <BusinessProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, and it is INSIDE the root
+        element on purpose - a comment ABOVE <BusinessProcess> breaks `sf` deploy at
+        conversion.
+
+        PHASE 2 (2026-08-14), STEP P2-D1 - ADDITIVE ONLY. Both 'PSA' and
+        'Under Contract (PSA)' are listed, deliberately. A record type's business process
+        must contain every stage its live rows occupy, and until the P2 migration runs
+        every existing deal at PSA still holds 'PSA'. Removing it here before the
+        migration makes those rows unsavable.
+
+        'Under Contract (PSA)' carries NO %2F ENCODING. It has spaces and parentheses but
+        no slash. 'Dead%2FPass' three entries below IS encoded and must stay that way -
+        the encoding applies inside BusinessProcess/RecordType metadata only, to slashes
+        only. Do not generalise it to the parentheses.
+
+        P2-D3 (staged, NOT applied here) removes the 'PSA' <values> block from this file.
+        See agent-output/p2-d3-retire-psa/.
+    -->
     <fullName>Land</fullName>
     <isActive>true</isActive>
     <values>
@@ -27,7 +46,7 @@
         <default>false</default>
     </values>
     <values>
-        <fullName>PSA</fullName>
+        <fullName>Under Contract (PSA)</fullName>
         <default>false</default>
     </values>
     <values>

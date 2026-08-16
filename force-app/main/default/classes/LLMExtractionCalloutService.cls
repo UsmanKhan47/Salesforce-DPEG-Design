@@ -252,6 +252,178 @@
  * (footer-only firm on a free-mail domain) and F′ (a stated "JLL Capital Markets" must yield
  * "JLL"), which are the only way (c) can be verified at all.
  *
+ * ═══ LIVE-RUN DEFECT FIXES, 2026-08-12 — THREE EDITS, ALL ENRICHED-BLOCK ONLY ═══
+ * Six real emails were run through the live pipeline on `usman-dpeg` with real extraction (no
+ * mocks). Three of the four defects found were PROMPT defects. LEGACY_EXTRACTION_RULES and
+ * LEGACY_RESPONSE_FORMAT are untouched AGAIN, so protections 1 and 3 both stand, no fixture pin
+ * in ExtractionRegressionFixtureTest is re-pinned, and MODEL / temperature / MAX_TOKENS /
+ * MAX_INPUT_CHARS / the `extract(String,String,String)` signature are all unchanged — the §3.3
+ * ASB re-homing promise is preserved. See agent-output/design-requirements-pipeline-defects.md.
+ *
+ *   EDIT 1 (CRITICAL) — call_for_offers NARROWED, in the CLASSIFICATION paragraph.
+ *   🔴 THE MEASURED FAILURE IS A LOST CLAIM, NOT A MISLABELLED EMAIL. An ordinary offering
+ *   memorandum from ONE named broker — property name, address, square feet, occupancy, guidance
+ *   price, cap rate, plus the sentence "Offers due 30 September 2026" — was classified
+ *   `call_for_offers` at `category_confidence` 1.0. `ExtractAddressQueueable.isCallForOffersGated`
+ *   then suppressed it: no Lead and, the damage, NO REGISTRY CLAIM. A DIFFERENT broker sent the
+ *   SAME property without a deadline line and won `8800 kirby oaks drive houston tx 77054`
+ *   outright. Most brokered OMs state a bid deadline, so this is ORDINARY traffic, not a tail
+ *   case — the population the old wording gated was far larger than "marketed campaigns DPEG does
+ *   not work". The edit makes the category require a MASS-DISTRIBUTION SHAPE (no individual
+ *   recipient, broadcast register, unsubscribe/mailing-list language, a platform notification),
+ *   states outright that a stated offers-due date is neither sufficient nor evidence, gives
+ *   positive AND negative exemplars with the measured email as the canonical NEGATIVE, and tells
+ *   the model the asymmetric cost so borderline cases fall to acquisition_deal.
+ *
+ *   ⚠ THE OFFER DEADLINE AND THE CATEGORY ARE DELIBERATELY NOT COUPLED. A deadline sentence must
+ *   still populate `offer_due_date` on the property block exactly as before — only what the
+ *   CATEGORY MEANS changed. Nothing in the edit touches the `offer_due_date` rules, and a future
+ *   edit that makes the deadline conditional on the category would break the call-for-offers
+ *   stamp (`CallForOffersStampService`), which reads that field on a matched live deal.
+ *
+ *   🔴 RESIDUAL, ACCEPTED BY EXPLICIT USER DECISION AT GATE 1 — READ THIS BEFORE TRUSTING THE
+ *   FIX. The design recommended pairing this narrowing with a DETERMINISTIC, transport-layer
+ *   corroboration factor in Apex (recipient count, `Precedence: bulk`, `List-Unsubscribe:`, a
+ *   platform sender domain) so that suppression required a second signal OF A DIFFERENT KIND
+ *   from the model's own opinion. The user chose the prompt-only option. THE CONSEQUENCE IS
+ *   THAT THIS FIX RESTS ENTIRELY ON MODEL JUDGEMENT WITH NO DETERMINISTIC BACKSTOP: the
+ *   suppression is still one model opinion, so the SAME FAILURE CLASS CAN RECUR with different
+ *   wording — an exclusive OM phrased like a campaign, a broker who writes "Dear Investor" out
+ *   of habit — and when it does, the loss is again a permanently unclaimed property recoverable
+ *   only by manual registry surgery. This is a known accepted residual, not an oversight. Two
+ *   things follow: `Gated_Call_For_Offers` is an ACTIVE WATCH, not an archive; and the levers
+ *   available if it recurs are (a) sharpening THIS wording again or (b) revisiting the
+ *   deterministic factor — never `category_confidence`, which was 1.0 on the measured email and
+ *   is therefore MEASURED-DEAD for this failure, whatever threshold were applied to it.
+ *
+ *   EDIT 2 — `confidence` CALIBRATED, in the same paragraph. MEASURED: an internal email ("Team
+ *   lunch Friday + Q3 expense reports") returned `is_acquisition_related = false` — CORRECT — at
+ *   `confidence` 0.0, so `LLMExtractionParser` banded it LOW and D2's hard gate, a CONJUNCTION of
+ *   `false` AND HIGH band, did not fire. The model had to be both RIGHT and CONFIDENT to suppress
+ *   anything, and it was only right. 🔴 THE FIX IS AT THE CAUSE, AND THE APEX FLOOR IS
+ *   DELIBERATELY UNCHANGED: 0.0 is the value this very block SHOWS in its response template, so
+ *   the most likely reading of the measurement is a model echoing the template default rather
+ *   than a model that was genuinely unsure. The edit says the template value is a shape and never
+ *   an answer, names the contradiction (0.0 beside a definite verdict), and requires 0.9+ for the
+ *   plainly-not-real-estate classes. `ExtractAddressQueueable.isHardGated` is NOT touched: its
+ *   asymmetry is deliberate and documented (generosity is the right bias for a first-come ledger,
+ *   because claiming a junk address costs one deletable registry row while failing to claim a
+ *   real one costs a broker their commission), and lowering the floor globally would start
+ *   suppressing low-confidence REAL broker emails — re-creating EDIT 1's failure in a new place.
+ *
+ *   EDIT 3 — the PLATFORM-SENDER case added to BROKER vs LISTING BROKER. MEASURED: an email
+ *   reading "Listing broker: Dana Whitfield, dana.whitfield@zzbrokergamma.com" returned Dana in
+ *   `broker_name`/`broker_email` and left `listing_broker_*` EMPTY, so `CallForOffersStampService`
+ *   correctly wrote nothing (its W1 rule: passing null preserves what the deal knows).
+ *   🔴 THE PROHIBITION ALREADY EXISTED AND WAS DISOBEYED, SO RESTATING IT HARDER IS NOT THE FIX —
+ *   and could not be, because the LEGACY block is declared AUTHORITATIVE for exactly those two
+ *   keys and takes them from the outermost "From:" line. On that email the envelope sender was a
+ *   PLATFORM (`listings@zzmarketplace.com`) and U1 stood down (`From_Address__c ==
+ *   Forwarded_By__c`, the paste-forward guard), so nothing demoted Dana either. The edit answers
+ *   the case the legacy rule is SILENT on — what to do when the outermost "From:" is a platform
+ *   or role mailbox rather than a person — which is why it narrows nothing the legacy block
+ *   claims and keeps the byte-pin honest.
+ *
+ *   ⚠ EDIT 3 IS AN ARBITRATION CHANGE. `broker_email` drives repeat detection and
+ *   `Competing_Broker_Submission__c.Broker_Email__c`, so it changes WHO WINS a property.
+ *   `property_address` is untouched by all three edits, so NO `Property_Key__c` moves and no
+ *   existing registry row is re-keyed — the change is bounded to ATTRIBUTION, never to claim
+ *   identity. Keep it that way.
+ *
+ * ═══ CODE-REVIEW FIXES TO THE ABOVE, 2026-08-12 — TWO MORE ENRICHED-BLOCK EDITS ═══
+ * Review of the three edits found that EDIT 1's narrowing had over-shot and could reproduce the
+ * inversion U2 exists to prevent. LEGACY_EXTRACTION_RULES and LEGACY_RESPONSE_FORMAT are untouched
+ * yet again, so no fixture pin moves.
+ *
+ *   FIX A (BLOCKING) — EDIT 1's EXEMPLAR LISTS COLLIDED, AND EVERY COLLISION RESOLVED THE WRONG
+ *   WAY. Two facts made the negative exemplar "a forwarded broker email whose original sender is a
+ *   named person at a brokerage" useless as a discriminator: EVERY email reaching this pipeline is
+ *   a forwarded broker email (broker -> DPEG's coordinator -> the email service, ARCHITECTURE
+ *   INTAKE RULES V2 rule 1), and genuine marketed blasts are overwhelmingly sent BY a named person
+ *   at a brokerage. A real JLL/CBRE blast with "Dear Investor" and an unsubscribe footer therefore
+ *   satisfied the NEGATIVE list and the POSITIVE list at once, and both tie-breaks ("WHEN IN DOUBT
+ *   IT IS NOT call_for_offers", "Bias every borderline judgement toward acquisition_deal") sent it
+ *   to acquisition_deal. 🔴 THAT IS NOT A MISLABEL — it routes to branch (e) WINNER and TAKES A
+ *   `Property_Registry__c` CLAIM ON A BLAST, which is the precise inversion `isCallForOffersGated`
+ *   documents: the first blast becomes the winner and a later broker holding a genuine exclusive
+ *   routes to branch (d) with no Lead. The fix adds an explicit PRECEDENCE paragraph — the
+ *   mass-send signals DECIDE, and being sent by a named person at a brokerage NEVER overrides them
+ *   — and carves the same UNLESS into the exemplar itself. Doubt about whether the SIGNALS are
+ *   present still resolves to acquisition_deal, so EDIT 1's measured fix is preserved: the
+ *   precedence bites only where the signals are affirmatively on the email's face.
+ *
+ *   FIX B — THE COST MODEL EDIT 1 TAUGHT WAS FACTUALLY WRONG. It ended "a wrong acquisition_deal
+ *   costs nothing but a record a human can review". It costs a REGISTRY CLAIM ON A BLAST. That
+ *   sentence is the model's fallback for every borderline case, so a false statement there outranks
+ *   the rules above it. 🔴 THE BIAS TOWARD acquisition_deal IS KEPT — it is still correct, but for
+ *   the honest reason rather than the false one: a wrong call_for_offers is a CERTAIN loss the
+ *   instant it is made, while a wrong acquisition_deal is a CONTINGENT one that only becomes a loss
+ *   if a second broker submits the same property, and it leaves a record a human can find. The
+ *   CLAIM was corrected, not the DIRECTION.
+ *
+ *   FIX C — `broker_company` POOLING, closing a defect EDIT 3 opened. EDIT 3 sends a platform or
+ *   role-mailbox sender into `broker_name`/`broker_email`, but `broker_company` was defined as "the
+ *   firm of the person identified by broker_email" and its "several firms" clause then made the
+ *   SENDING PLATFORM'S firm win. That reaches `Lead.Company` -> `AccountSelector.selectByNames` and
+ *   pools every platform-sourced deal under one Account; and it arrives a SECOND time by another
+ *   route, because `broker_email` -> `Lead.Email` -> `LeadConvertMatchService` matches Contacts on
+ *   EMAIL ALONE and the matched Contact then dictates the Account. The fix mirrors the existing
+ *   free-mail rule's exact shape: when `broker_email` is a listing platform, marketplace, CRM or
+ *   marketing system, or a role mailbox, `broker_company` is EMPTY and the firms named go to
+ *   `deal_summary`. Empty yields COMPANY_PLACEHOLDER, which D1b deliberately excludes from Account
+ *   matching — the safe direction.
+ *
+ * ⚠ UAT D AND D′ ARE MANDATORY RE-RUNS FOR THIS CHANGE SET TOO (they are declared recurring after
+ * ANY edit to this block). Add: an OM with a bid deadline from a named broker must come back
+ * `acquisition_deal`; a genuine marketplace blast must still come back `call_for_offers`; the
+ * platform-sender email must return the platform in `broker_*` and Dana in `listing_broker_*`;
+ * and an internal non-property email must return `false` at 0.9+. FIX A ADDS THE CASE THAT
+ * DISCRIMINATES IT AT ALL — a blast SENT BY A NAMED BROKER AT A REAL FIRM ("Dear Investor", an
+ * unsubscribe footer, polished flyer attached) must come back `call_for_offers`, while the SAME
+ * broker's one-recipient OM with a bid deadline must still come back `acquisition_deal`; run both
+ * or neither, because either alone can be satisfied by a model that ignores the distinction. FIX C
+ * adds: the platform-sender email must return `broker_company` EMPTY (not "ZZ Marketplace"), with
+ * the platform and any listing brokerage named in `deal_summary`. NONE OF THESE IS UNIT-TESTABLE
+ * — the model is mocked in Apex tests, so a green suite says nothing about any of them. The free
+ * corpus is the org itself: `Inbound_Email_Staging__c` retains `Raw_Body__c` and
+ * `Extracted_JSON__c` for every email ever processed and rows are never deleted, so re-running
+ * the new prompt over a sample and asserting the SAME `broker_email` and the SAME
+ * `PropertyMatchingService.normalizeAddress(property_address)` — the same normalized key, not a
+ * similar one — is the only real regression check available.
+ *
+ * ═══ ACQUISITION OBSERVATIONS PACK, PHASE 1 — 2026-08-14. TWO ENRICHED-BLOCK EDITS ═══
+ * LEGACY_EXTRACTION_RULES and LEGACY_RESPONSE_FORMAT are untouched AGAIN, so no fixture pin
+ * moves and the one-line rollback lever still composes back verbatim
+ * (ExtractionRegressionFixtureTest). Neither edit touches broker_name, broker_email,
+ * property_address or sent_datetime, so NO claim is re-keyed and NO attribution moves.
+ *
+ *   EDIT 1 — NEW KEY `listing_status` (spec §2.3). A per-property closed-set value,
+ *   On Market / Off Market, landing on Lead.Listing_Status__c and carried to the Opportunity
+ *   at conversion. Three things about it are deliberate and are stated in the prompt itself:
+ *   it DEFAULTS TO null and the model is told in terms not to guess; it must NOT be inferred
+ *   from `sale_process`, from an offer deadline or from a deal-room link (those correlate and
+ *   are not the same fact); and LLMExtractionParser describe-validates it against the live
+ *   RESTRICTED picklist, so an off-list answer becomes null plus a Deal_Notes__c note rather
+ *   than an INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST that would roll back a committed claim.
+ *   A legacy-shape response carries no such key and therefore parses to blank — the prompt
+ *   rollback degrades this feature to manual entry rather than stranding it.
+ *
+ *   EDIT 2 — `deal_type must be one of: Land, Retail.` (was `Land, Commercial`). 🔴 THIS IS
+ *   THE PROMPT'S ONLY LIVE-BEHAVIOUR REPOINT IN THE Commercial -> Retail MIGRATION and it is
+ *   requirements §9 C13: the line instructs the model WHICH VALUE TO EMIT, so it is behaviour,
+ *   not documentation, and it belongs in the D3 repoint wave. It is SAFE to land at D3 while
+ *   `Commercial` is still active because the parser validates against the live picklist and
+ *   both values validate between D1 and D4; what is NOT safe is leaving it, because after D4
+ *   the model would be instructed to emit a deleted value and the guard drops it SILENTLY.
+ *
+ * ⚠ THE `listing_status` KEY IS NOT UNIT-TESTABLE END TO END — the model is mocked in every
+ * Apex test, so a green suite says nothing about whether it is populated correctly. Add it to
+ * the recurring UAT D / D′ list: an OM that says "off-market opportunity" must come back
+ * `Off Market`; a marketplace listing page must come back `On Market`; and — the case that
+ * actually discriminates — an ordinary OM that says NEITHER, but does carry a bid deadline and
+ * a deal-room link, must come back null. The third alone is worth more than the first two,
+ * because inferring from those two signals is exactly the failure the rule forbids.
+ *
  * ⚠ THE REQUEST BODY IS NO LONGER CONSTANT ACROSS CALLOUTS. buildRequestBody now injects a
  * dynamic REFERENCE DATE line (yyyy-MM-dd, GMT, evaluated per callout) between the
  * instruction and the email text — see referenceDateLine() for the hazard it carries and
@@ -378,7 +550,22 @@ public with sharing class LLMExtractionCalloutService {
         'original email, per the rules above. Some emails are blast or marketing sends ' +
         'where the sender is NOT the listing broker; put that person in ' +
         'listing_broker_name / listing_broker_email. NEVER put the listing broker into ' +
-        'broker_name or broker_email.\n\n' +
+        'broker_name or broker_email.\n' +
+        'WHEN THE SENDER IS A PLATFORM OR AN AUTOMATED MAILBOX RATHER THAN A PERSON: the ' +
+        'rules above still decide WHICH LINE broker_name and broker_email come from, and the ' +
+        'outermost / earliest "From:" line is still that line even when it names a listing ' +
+        'platform, a marketplace, a CRM or marketing system, or a role mailbox such as ' +
+        'listings@, deals@, info@, marketing@, notifications@, no-reply@ or do-not-reply@ ' +
+        'rather than an individual. In that case broker_name is that sender as written — the ' +
+        'platform or mailbox name — and broker_email is its address. A person named in the ' +
+        'BODY under a "Listing broker:", "Listing agent:", "Exclusively listed by", ' +
+        '"Marketed by", "Advisor:" or "For more information contact" style label is ' +
+        'listing_broker_name / listing_broker_email, and is NOT promoted into broker_name or ' +
+        'broker_email merely because the sender happens not to be a person. If the input ' +
+        'carries no usable outermost "From:" line at all, leave broker_name and broker_email ' +
+        'EMPTY rather than substituting somebody named in the body: an empty value is always ' +
+        'safe, whereas the wrong person there silently attributes the submission to someone ' +
+        'who did not send it.\n\n' +
         'broker_company — STATED ALWAYS BEATS INFERRED: broker_company is the firm of the ' +
         'person identified by broker_email. If that firm is named ANYWHERE in the email, use ' +
         'the stated name; look in the body, the subject, the sender\'s SIGNATURE BLOCK, and ' +
@@ -390,7 +577,18 @@ public with sharing class LLMExtractionCalloutService {
         'Millichap IPA" gives "Marcus & Millichap". When the email names several firms — for ' +
         'example a sending platform in the header and a listing brokerage in the footer — ' +
         'broker_company is the firm of broker_email\'s owner, and any other firm belongs in ' +
-        'deal_summary. ONLY if no firm is stated anywhere may you infer broker_company from ' +
+        'deal_summary. WHEN broker_email IS NOT AN INDIVIDUAL\'S ADDRESS, LEAVE broker_company ' +
+        'EMPTY: if broker_email belongs to a listing platform, a marketplace, a CRM or ' +
+        'marketing system, or a role mailbox such as listings@, deals@, info@, marketing@, ' +
+        'notifications@, no-reply@ or do-not-reply@, then it identifies a SENDING SYSTEM rather ' +
+        'than a person at a firm, so there is no "firm of broker_email\'s owner" either to ' +
+        'state or to infer — return broker_company EMPTY and put the platform\'s own name, ' +
+        'together with any listing brokerage the email names, in deal_summary. This holds even ' +
+        'when the platform\'s name is written plainly in the header, the footer, the letterhead ' +
+        'or the copyright line: a stated name is still not this sender\'s brokerage. An empty ' +
+        'value is always safe, whereas the platform\'s name there silently groups every deal ' +
+        'that ever arrived through it under one company. ONLY if no firm is stated anywhere ' +
+        'may you infer broker_company from ' +
         'the DOMAIN of broker_email — kevin.girard@jll.com gives "JLL". When the domain belongs to a ' +
         'brokerage whose conventional capitalization you recognise, use that conventional ' +
         'form (for example JLL, CBRE, Cushman & Wakefield, Marcus & Millichap, Newmark, ' +
@@ -450,8 +648,20 @@ public with sharing class LLMExtractionCalloutService {
         'Give such a date the year of A; give it the year AFTER A only if it would ' +
         'otherwise fall more than 30 days before A. Never roll a year backward, and never ' +
         'use knowledge of when a real-world campaign or listing happened.\n' +
-        '- asset_type, deal_type and sale_process MUST be one of the listed values or ' +
-        'null. Never invent a value.\n' +
+        '- asset_type, deal_type, sale_process and listing_status MUST be one of the ' +
+        'listed values or null. Never invent a value.\n' +
+        '- listing_status is On Market when the email shows the property is being marketed ' +
+        'publicly — a listing platform or marketplace page, a public listing link, an ' +
+        'advertised campaign, or wording such as "now listed", "just listed", "on the ' +
+        'market" or "publicly marketed". It is Off Market when the email shows the seller ' +
+        'is shopping it privately — wording such as "off market", "off-market ' +
+        'opportunity", "quiet listing", "pocket listing", "not publicly marketed", "before ' +
+        'it goes to market", or an exclusive introduction to a named recipient. IF THE ' +
+        'EMAIL DOES NOT SAY, RETURN null. Do not infer it from sale_process, from the ' +
+        'presence of an offer deadline, from a deal room link, from how polished the ' +
+        'marketing material is, or from anything you know about the property outside this ' +
+        'email — a wrong answer here is worse than an empty one, because nothing tells the ' +
+        'reader it needs correcting.\n' +
         '- deal_summary is at most 800 characters.\n\n' +
         'CLASSIFICATION: email_category is one of acquisition_deal, call_for_offers, ' +
         'reply, system_notification, newsletter, out_of_office, other. ' +
@@ -459,15 +669,82 @@ public with sharing class LLMExtractionCalloutService {
         'commercial real-estate property for potential acquisition, and false for ' +
         'automated notifications, forwarding confirmations, out-of-office replies and ' +
         'newsletters. confidence is a number from 0 to 1 expressing how certain you are ' +
-        'of is_acquisition_related. ' +
+        'of is_acquisition_related. IT IS A REAL JUDGEMENT AND MUST NOT BE LEFT AT THE 0.0 ' +
+        'SHOWN IN THE RESPONSE TEMPLATE BELOW — that 0.0 illustrates the SHAPE of the reply ' +
+        'and is never an answer. 0.0 means "I cannot tell at all whether this email concerns ' +
+        'a property", so returning 0.0 next to a definite is_acquisition_related contradicts ' +
+        'itself. When the email plainly has nothing to do with commercial real estate — ' +
+        'internal staff, HR or team mail, calendar and meeting logistics, expense, payroll or ' +
+        'invoice administration, IT and system notices, personal correspondence, marketing ' +
+        'unrelated to property, out-of-office and delivery receipts — return ' +
+        'is_acquisition_related false with confidence 0.9 or above: there is nothing uncertain ' +
+        'about such an email, and reporting low confidence about it is itself an error. ' +
+        'Reserve confidence below 0.85 for emails that genuinely could go either way. ' +
         'category_confidence is a number from 0 to 1 expressing how certain you are of ' +
         'email_category SPECIFICALLY — it is a SEPARATE judgement from confidence, which ' +
         'concerns is_acquisition_related only. Return category_confidence above 0.85 only ' +
-        'when the email is unambiguously of that category on its face. A property offering ' +
-        'sent to one recipient, an off-market or exclusive introduction, or any email that ' +
-        'invites a direct conversation is NOT call_for_offers; call_for_offers means a ' +
-        'marketed campaign inviting offers from the market at large, typically with a stated ' +
-        'offer deadline and a mass or list send.\n\n' +
+        'when the email is unambiguously of that category on its face.\n' +
+        'call_for_offers MEANS A MASS-DISTRIBUTION MARKETED CAMPAIGN BLAST AND NOTHING ELSE. ' +
+        'A STATED OFFER DEADLINE IS NOT SUFFICIENT AND IS NOT EVEN EVIDENCE: most ordinary ' +
+        'offering memoranda quote a bid date, and a deadline sentence on its own says nothing ' +
+        'about how the email was distributed. Classify call_for_offers ONLY when the email ' +
+        'itself shows a mass or list send to the market at large — it addresses no one in ' +
+        'particular ("Dear Investor", "All", or no salutation), it reads as a broadcast ' +
+        'announcement rather than as a message written to this recipient, it carries ' +
+        'unsubscribe, mailing-preference or "you are receiving this because" language, or it ' +
+        'is a marketplace or listing-platform notification rather than a broker writing to ' +
+        'someone. WHEN IN DOUBT IT IS NOT call_for_offers.\n' +
+        'PRECEDENCE — THE MASS-SEND SIGNALS DECIDE, AND NOTHING BELOW OVERRIDES THEM. The ' +
+        'exemplars that follow are read UNDER the test above, never against it. When an email ' +
+        'carries the mass-send signals ON ITS FACE — no individual addressee, a broadcast ' +
+        'register, unsubscribe or mailing-preference or "you are receiving this because" ' +
+        'language, or a marketplace or listing-platform notification — it is call_for_offers ' +
+        'EVEN IF IT ALSO MATCHES ONE OF THE acquisition_deal EXEMPLARS BELOW. In particular, ' +
+        'BEING SENT BY A NAMED PERSON AT A BROKERAGE NEVER OVERRIDES THOSE SIGNALS: marketed ' +
+        'campaign blasts are normally sent by a named broker at a real firm, and every email you ' +
+        'are shown has been forwarded to us by an internal person, so neither fact tells the two ' +
+        'categories apart at all. The same holds for polished marketing material, an attached ' +
+        'flyer, quoted property facts, and an invitation to call, tour or ask a question — a ' +
+        'blast carries all of those too. Only where the mass-send signals are ABSENT do the ' +
+        'exemplars below apply, and there they are decisive. Where you cannot tell whether those ' +
+        'signals are present, they are not present: doubt about the SIGNALS resolves to ' +
+        'acquisition_deal exactly as the sentence above says.\n' +
+        'These are acquisition_deal, NOT call_for_offers:\n' +
+        '- an offering memorandum or property flyer from a named individual broker that ' +
+        'quotes property facts (name, address, square feet, occupancy, guidance price, cap ' +
+        'rate) AND states "Offers due 30 September 2026". The deadline changes NOTHING. This ' +
+        'is the canonical case and it is acquisition_deal;\n' +
+        '- an off-market or exclusive introduction;\n' +
+        '- a property offering sent to one recipient;\n' +
+        '- any email that invites a direct conversation, a call, a tour or a question;\n' +
+        '- a forwarded broker email whose original sender is a named person at a brokerage, ' +
+        'however polished the marketing material attached to it — UNLESS the email itself ' +
+        'carries the mass-send signals above (no individual addressee, an unsubscribe or ' +
+        'mailing-list footer, a broadcast register), in which case the mass-send signals win ' +
+        'and it is call_for_offers. EVERY email you are shown is a forwarded broker email, so ' +
+        'this exemplar on its own distinguishes nothing; what it rules out is treating a ' +
+        'forward, or a named human sender, as EVIDENCE OF A BLAST.\n' +
+        'These are call_for_offers:\n' +
+        '- a marketplace or listing-platform blast announcing a call for offers to its whole ' +
+        'subscriber list;\n' +
+        '- a campaign announcement addressed to "Investors" or "All" with no individual ' +
+        'recipient and an unsubscribe or mailing-list footer;\n' +
+        '- a "best and final" or "call for offers" round announcement circulated to every ' +
+        'bidder in a marketed process.\n' +
+        'WHY THIS ONE JUDGEMENT MATTERS MORE THAN THE OTHERS: an email you classify ' +
+        'call_for_offers is suppressed entirely — no record is created for it and the broker ' +
+        'who sent it receives no first-contact protection. NEITHER ERROR IS FREE, so do not ' +
+        'treat either direction as costless. A wrong call_for_offers costs a real broker their ' +
+        'claim on a real property; nothing in the system reports it, and only a person editing ' +
+        'the ledger by hand can give the claim back. A wrong acquisition_deal REGISTERS A ' +
+        'FIRST-COME CLAIM ON THAT PROPERTY FOR WHOEVER SENT THE BLAST, which can later stand in ' +
+        'the way of the broker who genuinely holds the listing — it is not merely a record ' +
+        'somebody reviews. Bias every borderline judgement toward acquisition_deal ANYWAY, for ' +
+        'a reason that survives that correction: the first error is a CERTAIN loss the instant ' +
+        'it is made, while the second is a CONTINGENT one that becomes a loss only if a second ' +
+        'broker later submits the same property, and it leaves a visible record a human can ' +
+        'find and correct. Bias is not licence: where the mass-send signals above are plainly ' +
+        'present, classify call_for_offers.\n\n' +
         'Respond ONLY with a single JSON object in exactly this shape, with no other ' +
         'text:\n' +
         '{"email_category": "other", "is_acquisition_related": true, "confidence": 0.0, ' +
@@ -476,7 +753,8 @@ public with sharing class LLMExtractionCalloutService {
         '"broker_mobile": "", "broker_title": "", "listing_broker_name": "", ' +
         '"listing_broker_email": "", "sent_datetime": "", "deal_summary": "", ' +
         '"properties": [{"property_name": "", "property_address": "", "asset_type": null, ' +
-        '"deal_type": null, "sale_process": null, "guidance_price": null, ' +
+        '"deal_type": null, "sale_process": null, "listing_status": null, ' +
+        '"guidance_price": null, ' +
         '"guidance_price_low": null, "guidance_price_high": null, "cap_rate": null, ' +
         '"noi": null, "occupancy_pct": null, "building_sf": null, "lot_size_acres": null, ' +
         '"lot_size_sf": null, "unit_count": null, "year_built": null, ' +
@@ -484,9 +762,17 @@ public with sharing class LLMExtractionCalloutService {
         '"seller_entity": "", "deal_room_link": "", "offer_due_date": null}]}\n\n' +
         'asset_type must be one of: Retail, C-Store, Land, Industrial, Office, ' +
         'Multifamily, Storage, Mixed-Use, Hospitality, Medical Office.\n' +
-        'deal_type must be one of: Land, Commercial.\n' +
+        // 🔴 THIS LINE IS BEHAVIOUR, NOT DOCUMENTATION (requirements §9 C13). It tells the
+        // model which Deal_Type__c values it may emit, so the Commercial -> Retail migration
+        // MUST repoint it at D3. LLMExtractionParser describe-validates `deal_type` against
+        // the live picklist, so between D1 and D4 (when both values are active) either answer
+        // validates and nothing breaks — but after D4 an un-repointed prompt would instruct the
+        // model to emit a DELETED value, which the guard then drops SILENTLY: no exception, no
+        // log, and every email-born deal arrives with no deal type and therefore no record type.
+        'deal_type must be one of: Land, Retail.\n' +
         'sale_process must be one of: Off-Market, On-Market Listing, Call for Offers, ' +
-        'Auction.';
+        'Auction.\n' +
+        'listing_status must be one of: On Market, Off Market.';
 
     /**
      * THE prompt — ONE constant, which is what makes the rollback described in the class

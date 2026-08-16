@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description> (255-char cap), and it is INSIDE
+        the root element on purpose - a comment ABOVE <CustomField> breaks `sf` deploy.
+
+        THE _Count__c SUFFIX IS REQUIRED, NOT STYLISTIC. ARCHITECTURE.md sec 1 rule 4
+        reserves the <Subject>_<PastParticiple> shape for BOOLEANS (LOI_Signed__c,
+        PSA_Executed__c, SLA_Breached__c). `Fields_Captured__c` IS that shape, so it would
+        assert a type this field does not have - rule 9 prohibition 2. The full argument,
+        and the two delete-and-recreate repairs this repo has already paid for the same
+        mistake (Is_Ready__c, Occupied_Flag__c), are on the Lead twin.
+
+        Numerator of Extraction_Score_Pct__c against the signed-off denominator of NINE
+        deal-process keys, which are enumerated once on
+        objects/Lead/fields/Extraction_Score_Pct__c. captured + missing = 9, always, on any
+        scored row - assert that invariant rather than trusting it.
+
+        CARRIED, NOT RECOMPUTED. Like the percent, it describes the ORIGINAL broker email,
+        not the current state of this deal record.
+
+        NULL means not scored (fail-soft); zero captured is a real, scored answer.
+    -->
+    <fullName>Fields_Captured_Count__c</fullName>
+    <description>How many of the nine signed-off deal-process extraction keys were captured from the original broker email, carried from the Lead at conversion. Numerator of Extraction Score %. Null means not scored; zero is a real answer.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Count of deal facts the automated extraction found in the original broker email, out of nine. Pairs with Fields Missing Count.</inlineHelpText>
+    <label>Fields Captured Count</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

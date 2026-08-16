@@ -125,7 +125,7 @@
         <application>Transaction</application>
         <visible>true</visible>
     </applicationVisibilities>
-    <description>Restores what the Admin profile grants but never deploys (profiles are .forceignored): every custom tab, ten field grants, the four Lightning apps, and the Opportunity/Disposition/NDA/LOI/Account/Contact/Lead record types. See the in-file comment.</description>
+    <description>Restores what the Admin profile grants but never deploys (profiles are .forceignored): every custom tab, eighteen field grants, the four Lightning apps, and the Opportunity/Disposition/NDA/LOI/Account/Contact/Lead record types. See the in-file comment.</description>
     <fieldPermissions>
         <editable>true</editable>
         <field>Contract_Review__c.Disposition__c</field>
@@ -156,6 +156,59 @@
         <field>LOI__c.Disposition__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+      THE EIGHT ACQUISITION-OBSERVATIONS FIELDS BELOW (four Lead + four Opportunity, added
+      2026-08-14) ARE NOT REDUNDANT WITH THE PERSONA SETS. DO NOT REMOVE THEM AS DUPLICATES OF
+      DPEG_Acquisition_Edit / _View / DPEG_Opportunity_View / Broker_Protection_Access.
+
+      WHY THEY ARE HERE - MEASURED, NOT ANTICIPATED. Without them the P1-A DEPLOY ITSELF FAILS,
+      not merely a persona's visibility. ExtractionScoreUtil.applyExtractionScore assigns the
+      three score fields on EVERY path, including the degraded one where all three are null -
+      an assignment marks a field DIRTY whether or not the value is null - and a plain Apex
+      `insert` on Lead is FLS-ENFORCED in this org. So every Lead insert in the suite now
+      touches these fields. Measured by the Apex build in a scratchpad copy: 33 of 36
+      EmailToLeadServiceTest methods failed with
+          System.DmlException | Operation failed due to fields being inaccessible on Sobject Lead
+      INCLUDING tests written months ago that reference none of the new fields. Declaring the
+      eight grants cleared all 33. This is the identical symptom ARCHITECTURE.md sec 2 records
+      for the 2026-08-05/06 Task.WhoId incident.
+
+      WHY IT IS *THIS* SET. A Metadata-API-deployed custom field arrives with NO field
+      permissions for ANY profile, System Administrator included, and profiles/** is
+      .forceignore'd - so there is no profile fallback. Test methods run as the DEPLOYING USER
+      unless a System.runAs wraps them, and that user is an administrator, not the acquisitions
+      persona. The persona sets grant the persona; only this set - which exists precisely to
+      restore what the Admin profile grants but never deploys - grants the administrator.
+      Granting the persona sets instead does NOT fix the test run.
+
+      EDITABLE, NOT READ-ONLY: the failing operation is a WRITE (an insert that marks the fields
+      dirty). readable-only would leave all 33 failing.
+
+      Sequence and verification queries: agent-output/runbook-acquisition-observations-phase1.md
+      (step P1-A). These eight must be in the SAME deploy as, or a later one than, the eight
+      field definitions - a fieldPermissions entry for a field that does not exist yet fails the
+      deploy.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Listing_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Lease_Inquiry__c.OneDrive_URL__c</field>
@@ -176,39 +229,104 @@
         <field>NDA__c.Party_Role__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ADDED 2026-08-14, Acquisition Observations Phase 4 (declarative-only field add).
+         Call_For_Offers_Received_Date__c is stamped by CallForOffersStampService. This set is
+         load-bearing for the DEPLOY, not just for a screen: RunLocalTests runs as the deploying
+         administrator, who holds this set and nothing else, and this org has already been
+         measured refusing a plain system-mode insert that merely assigns a brand-new field (see
+         the Offer_Alert_* comment below - identical shape, same root cause). Without this grant,
+         any test fixture that sets this field fails at insert with "fields being inaccessible on
+         Sobject Opportunity", pointing at the new test rather than at this file.
+         EDITABLE, matching DPEG_Acquisition_Edit - see that set's grant for Offer_Due_Date__c /
+         Sale_Process__c, whose neighbours this field follows. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Call_For_Offers_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Opportunity half of the eight acquisition-observations grants - see the comment above
+         the Lead.* block. LeadConvertService carries all four onto the Opportunity at
+         conversion, so the same FLS-enforced-write argument applies on this object too. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Listing_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Phase 4 (call-for-offers alerts, 2026-08-14). The two alert MARKER fields.
+
+         🔴 THIS SET IS THE ONE THAT MATTERS FOR THE DEPLOY ITSELF, NOT JUST FOR AN ADMINISTRATOR'S
+         SCREEN. `RunLocalTests` executes as the DEPLOYING ADMINISTRATOR, who is in no permission set
+         group and holds this set and nothing else. Metadata-API-deployed custom fields arrive with
+         NO field permissions for ANY profile, System Administrator included, and this org has
+         already been measured REFUSING a plain system-mode `insert` that merely ASSIGNS a
+         brand-new field ("Operation failed due to fields being inaccessible on Sobject Lead" —
+         33 of 36 EmailToLeadServiceTest methods, 2026-08-14, including ones written months earlier
+         that touched none of the new fields). CallForOffersAlertBatchTest's fixtures set both marker
+         fields directly, so without these two entries the deploy that ships the fields fails its own
+         test run, and the symptom points at the new code while the cause is a file nobody touched.
+
+         EDITABLE, matching DPEG_Acquisition_Edit: blanking Offer_Alert_Last_Interval__c is the
+         supported way to re-arm a deal's alerts. See that set for the full reasoning. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
     <!--
-      The six Account / Contact / Lead entries below were RECONCILED IN FROM THE ORG on
-      2026-08-10 - they were live on this set in usman-dpeg and missing from this file, so the
-      next deploy of it would have destroyed them. See section (B) of the header comment. Do not
-      remove them without first confirming, against the org, that nothing depends on them; and
-      note that they reference record types which exist in the ORG but not in this repo.
+      DE-DUPLICATED 2026-08-14. The block that stood here declared SIX recordTypeVisibilities
+      a second time - Account.Broker_Firm, Account.Investor_Entity, Contact.Broker,
+      Contact.Investor, Lead.Acquisition_Broker, Lead.IR_Investor - all of which were already
+      present in the sorted list below (and still are). It has been removed; each entry now
+      appears exactly once, which is what the org holds.
+
+      HOW IT GOT HERE, because the mistake is repeatable. The removed block carried a comment
+      stating the six were "live on this set in usman-dpeg and missing from this file, so the
+      next deploy of it would have destroyed them". The first half was true; the second was
+      not. They were not missing - they were in the alphabetically sorted list further down,
+      which is easy to miss because the appended copies sorted ABOVE it and so read as a
+      separate, additional group. The 2026-08-10 reconciliation compared the ORG's entries
+      against a scan of this file and appended what it believed was absent.
+
+      THE GENERAL LESSON: when reconciling org -> repo, diff the SETS, not the presence of a
+      block. A grep for a record type in a 400-line file that is sorted in one region and
+      appended in another will answer "not found" for something that is present.
+
+      MEASURED, not inferred: a retrieve of this set from usman-dpeg on 2026-08-14 returns
+      16 recordTypeVisibilities, each exactly once; this file held 22, the six extras being
+      precisely those duplicates.
+
+      PRESERVED from the removed comment because it is a genuine, separate observation and is
+      still true: the Account.* and Contact.* record types referenced below exist in the ORG
+      but have no recordType metadata in this repo. That is why they cannot be verified by a
+      file-based check, and it is unrelated to the duplication.
+
+      Opportunity.Commercial WAS RETIRED AT PHASE 1 D4 and has been removed from this set;
+      Opportunity.Retail replaced it. The two coexisted from D1 through the migration window on
+      purpose. Do not re-add Commercial - the record type no longer exists and the deploy would
+      fail. Sequence: agent-output/runbook-acquisition-observations-phase1.md.
     -->
-    <recordTypeVisibilities>
-        <recordType>Account.Broker_Firm</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Account.Investor_Entity</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Contact.Broker</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Contact.Investor</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Lead.Acquisition_Broker</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
-    <recordTypeVisibilities>
-        <recordType>Lead.IR_Investor</recordType>
-        <visible>true</visible>
-    </recordTypeVisibilities>
     <recordTypeVisibilities>
         <recordType>Account.Broker_Firm</recordType>
         <visible>true</visible>
@@ -266,11 +384,11 @@
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
-        <recordType>Opportunity.Commercial</recordType>
+        <recordType>Opportunity.Land</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
-        <recordType>Opportunity.Land</recordType>
+        <recordType>Opportunity.Retail</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <tabSettings>

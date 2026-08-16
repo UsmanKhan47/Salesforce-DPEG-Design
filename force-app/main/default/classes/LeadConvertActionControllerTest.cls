@@ -49,7 +49,7 @@ private class LeadConvertActionControllerTest {
     @isTest
     static void convertLead_validLead_returnsOpportunityId() {
         // Arrange
-        Lead l = buildConvertibleLead('Commercial', 'Controller Convert LLC');
+        Lead l = buildConvertibleLead('Retail', 'Controller Convert LLC');
         insert l;
 
         // Act
@@ -67,7 +67,7 @@ private class LeadConvertActionControllerTest {
         // Assert — the downstream cascade ran through the controller path too
         Opportunity opp = [SELECT Property__c, Deal_Type__c FROM Opportunity WHERE Id = :opportunityId];
         Assert.isNotNull(opp.Property__c, 'The conversion cascade should create and link a Property');
-        Assert.areEqual('Commercial', opp.Deal_Type__c, 'Deal Type should carry to the Opportunity');
+        Assert.areEqual('Retail', opp.Deal_Type__c, 'Deal Type should carry to the Opportunity');
     }
 
     // Covers the `catch (DmlException e)` tier: a second convert of an already-converted Lead makes
@@ -109,7 +109,7 @@ private class LeadConvertActionControllerTest {
     @isTest
     static void convertLead_userWithoutPermission_throwsAuraHandledExceptionWithDenial() {
         // Arrange — a convertible Lead, and a Standard User holding neither Lead permission set.
-        Lead l = buildConvertibleLead('Commercial', 'Denied Convert LLC');
+        Lead l = buildConvertibleLead('Retail', 'Denied Convert LLC');
         insert l;
 
         Profile standardProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];

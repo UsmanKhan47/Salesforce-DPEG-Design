@@ -4,7 +4,7 @@
  * in Selector classes. Nothing else queries that object.").
  *
  * P4 cleanup wave G. Sole consumer: LeadConvertService.stampConvertedOpportunities
- * — resolves the Opportunity 'Land' / 'Commercial' record types by DeveloperName so
+ * — resolves the Opportunity 'Land' / 'Retail' record types by DeveloperName so
  * a converted lead's Deal Type lands the deal on the correct sales path.
  *
  * MODE — `WITH USER_MODE` (API 67). RecordType is a system object: it has no
@@ -28,7 +28,7 @@ public with sharing class RecordTypeSelector {
 
     /**
      * Record types for one SObject whose DeveloperName is in the requested set —
-     * backs LeadConvertService's Land / Commercial record-type resolution.
+     * backs LeadConvertService's Land / Retail record-type resolution.
      *
      * @param sobjectType    The SObject API name (e.g. 'Opportunity'); blank-safe.
      * @param developerNames The RecordType DeveloperNames to match (bound with IN);
@@ -38,7 +38,7 @@ public with sharing class RecordTypeSelector {
      *         (never null).
      * @example
      * List<RecordType> types = RecordTypeSelector.selectByObjectAndDeveloperNames(
-     *     'Opportunity', new Set<String>{ 'Land', 'Commercial' });
+     *     'Opportunity', new Set<String>{ 'Land', 'Retail' });
      */
     public static List<RecordType> selectByObjectAndDeveloperNames(
         String sobjectType,

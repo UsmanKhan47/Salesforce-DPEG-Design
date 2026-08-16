@@ -19,6 +19,12 @@
         </itemInstances>
         <itemInstances>
             <componentInstance>
+                <componentName>callForOffersList</componentName>
+                <identifier>callForOffersListComponent</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
                 <componentName>recentLeads</componentName>
                 <identifier>recentLeadsComponent</identifier>
             </componentInstance>

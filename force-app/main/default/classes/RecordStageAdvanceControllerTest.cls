@@ -70,9 +70,9 @@ private class RecordStageAdvanceControllerTest {
         String message = RecordStageAdvanceController.advance(loiId);
         Test.stopTest();
 
-        Assert.areEqual('LOI moved to Prepare/Review.', message,
+        Assert.areEqual('LOI moved to Under Review.', message,
             'The confirmation naming the new stage is what the LWC toasts');
-        Assert.areEqual('Prepare/Review', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
+        Assert.areEqual('Under Review', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
             'advance must actually write the derived stage');
     }
 
@@ -86,7 +86,7 @@ private class RecordStageAdvanceControllerTest {
         // and the stage must follow as a consequence rather than being written directly.
         Contract_Review__c cr = new Contract_Review__c(
             Opportunity__c = dealId(),
-            Negotiation_Status__c = 'Initial Draft'
+            Negotiation_Status__c = 'Draft'
         );
         insert cr;
 
@@ -97,31 +97,34 @@ private class RecordStageAdvanceControllerTest {
         Contract_Review__c after = [
             SELECT Negotiation_Status__c, Stage__c FROM Contract_Review__c WHERE Id = :cr.Id
         ];
-        Assert.areEqual('Revised', after.Negotiation_Status__c,
+        Assert.areEqual('Negotiation', after.Negotiation_Status__c,
             'The action must advance Negotiation_Status__c — the only writable driver on this object');
         Assert.areEqual('Review', after.Stage__c,
             'and the before-save flow must derive Stage__c from it, moving the Path as a consequence');
-        Assert.isTrue(message.contains('Revised'),
+        Assert.isTrue(message.contains('Negotiation'),
             'The confirmation names the status the action actually set');
     }
 
     @isTest
     static void advanceToWritesAnAllowedExplicitTarget() {
-        // The LOI 'Sent' branch: a broker either counters or accepts. 'Completed' is NOT reachable
-        // by advance() from 'Sent' (LOI_NEXT_STAGE derives 'Counter'), which is the whole reason
-        // advanceTo exists.
+        // The LOI 'Submitted' branch: a broker either counters or accepts. 'Signed' is NOT
+        // reachable by advance() from 'Submitted' (LOI_ACQUISITION_NEXT_STAGE derives
+        // 'Negotiation'), which is the whole reason advanceTo exists.
+        //
+        // ⚠ All three stage names were renamed by observation 5 (2026-08-14) — 'Sent' -> 'Submitted',
+        // 'Counter' -> 'Negotiation', 'Completed' -> 'Signed'. The scenario is unchanged.
         LOI__c record = loi();
-        record.Stage__c = 'Sent';
+        record.Stage__c = 'Submitted';
         update record;
 
         Test.startTest();
-        String message = RecordStageAdvanceController.advanceTo(record.Id, 'Completed');
+        String message = RecordStageAdvanceController.advanceTo(record.Id, 'Signed');
         Test.stopTest();
 
-        Assert.isTrue(message.contains('Completed'),
+        Assert.isTrue(message.contains('Signed'),
             'The confirmation naming the new stage is what the LWC toasts');
-        Assert.areEqual('Completed', [SELECT Stage__c FROM LOI__c WHERE Id = :record.Id].Stage__c,
-            'advanceTo must write the explicit target, skipping the derived Counter hop');
+        Assert.areEqual('Signed', [SELECT Stage__c FROM LOI__c WHERE Id = :record.Id].Stage__c,
+            'advanceTo must write the explicit target, skipping the derived Negotiation hop');
     }
 
     @isTest
@@ -130,11 +133,18 @@ private class RecordStageAdvanceControllerTest {
         // could write ANY stage on ANY of five objects, skipping every hop and every gate. This
         // proves a derivable forward hop is refused even though it is a perfectly valid picklist
         // value on the object — membership, not validity, is the test.
+        //
+        // 🔴 THE PROBED VALUE MOVED FROM 'Sent' TO 'Under Review' (observation 5) AND THE TEST GOT
+        // STRONGER, NOT MERELY RENAMED. 'Under Review' is the derivable second hop of the
+        // ACQUISITION sequence AND the second stage of the DISPOSITION sequence — the one value the
+        // two LOI record types now share. So this refusal simultaneously proves (a) a derivable hop
+        // is not writable through advanceTo, and (b) a value's presence on the OTHER record type's
+        // sequence does not admit it to this one's allow-list.
         LOI__c record = loi();
 
         Test.startTest();
         try {
-            RecordStageAdvanceController.advanceTo(record.Id, 'Sent');
+            RecordStageAdvanceController.advanceTo(record.Id, 'Under Review');
             Assert.fail('A stage that is not an allowed explicit target must be refused');
         } catch (AuraHandledException e) {
             Assert.isTrue(e.getMessage().contains('not available'),

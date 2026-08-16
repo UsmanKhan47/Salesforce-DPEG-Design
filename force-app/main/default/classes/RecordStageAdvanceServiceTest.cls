@@ -1,7 +1,38 @@
 /**
  * @description Tests RecordStageAdvanceService — the generic stage-advance service behind the
  * "advance stage" quick action on NDA__c, LOI__c, Contract_Review__c, Underwriting__c,
- * Construction_Feasibility_Review__c and Development_Feasibility_Review__c.
+ * Construction_Feasibility_Review__c, Development_Feasibility_Review__c and, since 2026-08-12,
+ * Transaction__c.
+ *
+ * ── ✅ Transaction__c COVERAGE ADDED (2026-08-12, live UI testing fix set) ────
+ * transactionWalksOpenContractThroughToClosedWon pins the user-confirmed sequence (picklist order,
+ * NOT the Path step-text's implied order — see TRANSACTION_NEXT_STAGE's own header for why those
+ * two readings disagree). transactionAdvanceToIsStructurallyUnreachable is the falsifier for the
+ * EMPTY explicit-target allow-list: Transaction__c's path is a straight line with no branch, off-
+ * ramp or loop, so advanceTo() must refuse every target, including a real, valid stage value
+ * ('Post-Closing') — the sharper failure mode than a nonsense string, because it proves the refusal
+ * comes from the allow-list being empty rather than the target being unrecognised.
+ * transactionGateDeniesABareUserAndGrantsAPermissionSetHolder is the one gate test in this class
+ * that needs NO cache-seeding trick: TRANSACTION_STAGE_ACTIONS is Transaction__c's gate and it never
+ * loads the record (single sequence — see gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject
+ * below), so a bare user's OWD/CRUD on Transaction__c is never even reached and a real
+ * System.runAs proof is possible end to end. The gate's OWN membership-vs-authorization argument,
+ * group expansion and admin-bypass proofs live in TransactionActionPermissionServiceTest — this
+ * class only proves the DISPATCH (gateFor -> TRANSACTION_STAGE_ACTIONS ->
+ * TransactionActionPermissionService) is wired, not the gate's internals.
+ *
+ * ── ⚠ REWRITTEN 2026-08-12 FOR THE CUSTOM-PERMISSION MIGRATION ───────────────
+ * TransactionActionPermissionService no longer delegates to LeadActionPermissionService — it now
+ * owns its own transaction-scoped cache, exactly like OpportunityActionPermissionService and
+ * DispositionActionPermissionService. Every place in this class that used to clear or seed
+ * LeadActionPermissionService's cache for the Transaction gate (adminPassesTheGateOnEveryObject,
+ * transactionGateDeniesABareUserAndGrantsAPermissionSetHolder,
+ * gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject) now targets
+ * TransactionActionPermissionService directly. The NDA__c / LOI__c / Contract_Review__c gate-dispatch
+ * tests (theGateIsResolvedPerRecordTypeNotPerObject and its siblings) were UNCHANGED by this
+ * migration — they seed OpportunityActionPermissionService.cachedHasDealActionAccess /
+ * DispositionActionPermissionService.cachedHasDispositionActionAccess directly and always did, never
+ * through the retired User field.
  *
  * ── HOW THE STAGE MAPS ARE PINNED ────────────────────────────────────────────
  * Each object gets a WALK test that calls advance() repeatedly until it is refused and asserts the
@@ -16,15 +47,29 @@
  * ── ⚠ THE TWO MULTI-RECORD-TYPE OBJECTS ARE NOT THE SAME SHAPE, AND THE TESTS DIFFER ──
  * NDA__c's two value sets OVERLAP ('Sent', 'Signed'), so the current stage alone cannot identify
  * the sequence — sharedSentStatusAdvancesDifferentlyPerRecordType is the proof.
- * LOI__c's are FULLY DISJOINT, so no equivalent test is possible or needed; what LOI__c has
- * instead is the ALLOW-LIST leak in BOTH directions
+ *
+ * 🔴 LOI__c's TWO VALUE SETS OVERLAP TOO, SINCE 2026-08-14. This paragraph used to read "LOI__c's
+ * are FULLY DISJOINT, so no equivalent test is possible or needed"; observation 5 renamed
+ * 'Prepare/Review' to 'Under Review', which the DISPOSITION sequence already carried. The
+ * equivalent test is therefore both possible and needed, and it now exists:
+ * underReviewIsSharedByBothLoiRecordTypesAndStillRoutesByRecordType, the LOI twin of the NDA one.
+ * What LOI__c ALSO has, and NDA__c does not, is the ALLOW-LIST leak in BOTH directions
  * (dispositionLoiRefusesTheAcquisitionExplicitTargets /
  * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget), because its acquisition record type
  * is the one object in the repo that shipped with an object-level explicit-target set.
+ * ⚠ THE TWO ALLOW-LISTS REMAIN DISJOINT even though the two SEQUENCES no longer are — the shared
+ * 'Under Review' is on neither list, deliberately (listing it would skip the approval gate). Those
+ * refusal tests therefore still measure what they always did; do not read the disjointness break as
+ * having weakened them.
+ *
+ * ⚠ AND Contract_Review__c JOINED THE OVERLAP LIST FROM THE OTHER DIRECTION. Its two sequences used
+ * to be IDENTICAL (one shared map object); observation 7 split them so they now share only
+ * 'Executed', which is terminal on both. psaSequencesAreSplitPerRecordType is that object's
+ * equivalent proof.
  *
  * ── 🔴 AND THE THIRD SHAPE: A LOOP (Tranche 3B close-out) ────────────────────
  * dispositionLoiAcceptsTheNegotiationLoopTargets. The disposition LOI is neither a line (like the
- * acquisition NDA), nor a branch (like the acquisition LOI at 'Sent'), nor an off-ramp (like the
+ * acquisition NDA), nor a branch (like the acquisition LOI at 'Submitted'), nor an off-ramp (like
  * disposition NDA's 'Declined') — it is a CYCLE: 'Countered by DPEG' <-> 'Counter Received from
  * Buyer', because the document says the negotiation "goes round until both sides are agreed". A
  * Map<String, String> holds one value per key, so the BACK-edge is provably inexpressible in
@@ -72,14 +117,26 @@
  * ── ✅ Contract_Review__c GATE COVERAGE CLOSED (Tranche 3C, gap fill) ─────────
  * This class had ZERO Contract_Review__c coverage before this pass — handed back explicitly by the
  * 3C developer as a known, deliberate gap: "compile-verified only." Closed with
- * acquisitionPsaWalksInitialDraftToExecuted / dispositionPsaWalksInitialDraftToExecuted (the walk,
- * on both record types), contractReviewGateIsResolvedPerRecordTypeNotPerObject (the falsifier for
- * the gate split — see its own header for why the walk tests alone cannot catch a reverted gate),
- * and Contract_Review__c's addition to adminPassesTheGateOnEveryObject and
- * gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject. Unlike NDA__c and LOI__c,
- * Contract_Review__c's two record types share ONE sequence by reference (CONTRACT_REVIEW_NEXT_STAGE)
- * and differ ONLY in the gate — so its walk tests are expected to be byte-identical, and only the
- * gate test can tell a correct build apart from a regression to the old single-gate config.
+ * acquisitionPsaWalksDraftToExecuted / dispositionPsaWalksInitialDraftToExecuted (the walk, on both
+ * record types), contractReviewGateIsResolvedPerRecordTypeNotPerObject (the falsifier for the gate
+ * split — see its own header for why the walk tests alone cannot catch a reverted GATE), and
+ * Contract_Review__c's addition to adminPassesTheGateOnEveryObject and
+ * gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject.
+ *
+ * ⚠ THIS BLOCK USED TO END: "Unlike NDA__c and LOI__c, Contract_Review__c's two record types share
+ * ONE sequence by reference (CONTRACT_REVIEW_NEXT_STAGE) and differ ONLY in the gate — so its walk
+ * tests are expected to be byte-identical, and only the gate test can tell a correct build apart
+ * from a regression to the old single-gate config." That was TRUE of Tranche 3C and is FALSE since
+ * observation 7 (2026-08-14), which split the shared map into
+ * CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE (Draft -> Negotiation -> Signed -> Executed) and
+ * CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE (Initial Draft -> Revised -> Ready for Execution ->
+ * Executed). It is corrected rather than deleted so nobody restores the shared map on the strength
+ * of the old sentence. Contract_Review__c now differs per record type on BOTH axes — sequence AND
+ * gate — so the two walks are NOT byte-identical and DO falsify a reverted map split
+ * (psaSequencesAreSplitPerRecordType states that as one direct claim). What survives verbatim is
+ * the GATE half: a build that reverted only the gate to a single DEAL_DRIVER config would still
+ * pass both walks, so contractReviewGateIsResolvedPerRecordTypeNotPerObject remains the only test
+ * that can catch it.
  *
  * ── ⚠ FIXTURES: WHY THE RECORD TYPE IS STAMPED EXPLICITLY AND ASSERTED FIRST ──
  * Every record-type test stamps RecordTypeId itself and then READS IT BACK before doing anything
@@ -371,9 +428,33 @@ private class RecordStageAdvanceServiceTest {
      * into a test about stage SEQUENCES and the GATE.
      *
      * ⚠ Uses TestDataFactory's record-type-aware overload directly (unlike insertNdaOnRecordType,
-     * which deliberately calls the plain 3-arg one) because — unlike the NDA seed — nothing else
-     * in the row varies by record type here; both PSA types share one Negotiation_Status__c value
-     * set by design (D16.3), so passing recordTypeDeveloperName straight through costs nothing.
+     * which deliberately calls the plain 3-arg one), so the guarded record-type stamp AND the
+     * per-record-type Negotiation_Status__c seed both come from the factory instead of being
+     * reinvented here.
+     *
+     * ── ⚠ SUPERSEDED 2026-08-14 — THE REASON ABOVE USED TO BE THE OPPOSITE ONE ──
+     * This paragraph read, verbatim: "because — unlike the NDA seed — nothing else in the row varies
+     * by record type here; both PSA types share one Negotiation_Status__c value set by design
+     * (D16.3), so passing recordTypeDeveloperName straight through costs nothing." It is CORRECTED
+     * rather than deleted, because the claim is exactly the one a future reader would use to argue
+     * the two maps should be merged back.
+     *
+     * It was true of Tranche 3C. D16.3 is still the decision that gave Contract_Review__c its
+     * Acquisition_PSA / Disposition_PSA record-type PAIR — keep that reference as HISTORY — but it
+     * never governed the value sets, and the "one shared value set" half of it is dead: observation
+     * 7 (Acquisition Observations phase 3) split the single CONTRACT_REVIEW_NEXT_STAGE map into
+     * CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE (Draft -> Negotiation -> Signed -> Executed) and
+     * CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE (Initial Draft -> Revised -> Ready for Execution ->
+     * Executed, kept by decision O3 as a hard stop). 'Executed' is now the ONLY shared value and it
+     * is terminal on both, so there is no shared STARTING value at all — which is precisely why
+     * TestDataFactory.createContractReviews now branches its seed on the record type, exactly as
+     * createNdas and createLois always did. 🔴 Do not restore the retracted sentence and do not
+     * re-merge the maps; psaSequencesAreSplitPerRecordType is the falsifier if anyone tries.
+     *
+     * ⚠ WHY NO TEST WENT RED WHEN THE PREMISE DID: this helper takes negotiationStatus from its
+     * caller and assigns it explicitly after the factory call, so whichever seed the factory chose
+     * is overwritten before insert. The old sentence therefore went stale silently — documentation
+     * drift, not a live defect — which is the only reason it survived the split.
      */
     private static Contract_Review__c insertContractReviewOnRecordType(
         String recordTypeDeveloperName,
@@ -428,6 +509,22 @@ private class RecordStageAdvanceServiceTest {
 
     private static Development_Feasibility_Review__c developmentReview() {
         return [SELECT Id, Stage__c FROM Development_Feasibility_Review__c LIMIT 1];
+    }
+
+    /**
+     * Inserts a standalone Transaction__c at 'Open Contract' with the Day-0 fan-out SUPPRESSED
+     * (Contract_Executed_Date__c = null — same technique TransactionSelectorTest uses), so this
+     * class's stage-map and gate tests are not coupled to TaskFanoutService's async side effects.
+     * Parented to nothing: RecordStageAdvanceService reads only Id and Stage__c for this object
+     * (selectStageRequiredById's field list is deliberately minimal), so neither Opportunity__c nor
+     * Property__c is part of what is under test here — same reasoning as insertNdaOnRecordType /
+     * insertLoiOnRecordType parenting to nothing.
+     */
+    private static Transaction__c insertTransaction() {
+        Transaction__c txn = TestDataFactory.createTransaction(null, null, false);
+        txn.Contract_Executed_Date__c = null;
+        insert txn;
+        return txn;
     }
 
     /**
@@ -564,7 +661,13 @@ private class RecordStageAdvanceServiceTest {
     }
 
     @isTest
-    static void loiWalksDraftToCompleted() {
+    static void loiWalksDraftToSigned() {
+        // ⚠ RENAMED from loiWalksDraftToCompleted on 2026-08-14 (observation 5). The whole
+        // acquisition LOI sequence was renamed: Draft -> Prepare/Review -> Sent -> Counter ->
+        // Completed became Draft -> Under Review -> Submitted -> Negotiation -> Signed. Same
+        // SHAPE, five stages, same branch point, same terminal; 'Draft' is the only surviving
+        // literal, which is why the fixture below needed no change.
+        //
         // The @TestSetup LOI, which TestDataFactory now stamps Acquisition_LOI. This is therefore
         // ALSO the migration-window guarantee for LOI__c: pre-T1 (no RecordTypeId field), or on
         // Master, or once T-A2 sets the profile default, the acquisition sequence must answer —
@@ -577,18 +680,55 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual(
             new List<String>{
-                'LOI moved to Prepare/Review.',
-                'LOI moved to Sent.',
-                'LOI moved to Counter.',
-                'LOI moved to Completed.',
-                'BLOCKED: There is no next step available from the Completed stage.'
+                'LOI moved to Under Review.',
+                'LOI moved to Submitted.',
+                'LOI moved to Negotiation.',
+                'LOI moved to Signed.',
+                'BLOCKED: There is no next step available from the Signed stage.'
             },
             messages,
-            'The Acquisition_LOI map must be exactly Draft -> Prepare/Review -> Sent -> Counter -> '
-            + 'Completed, UNCHANGED by Tranche 3B. Note Prepare/Review carries a literal slash — a '
-            + 'value that must never be URL-encoded in Apex');
-        Assert.areEqual('Completed', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
+            'The Acquisition_LOI map must be exactly Draft -> Under Review -> Submitted -> '
+            + 'Negotiation -> Signed (observation 5, 2026-08-14). 🔴 The SECOND hop is the one to '
+            + 'read twice: "Under Review" is now SHARED with Disposition_LOI, so the two LOI value '
+            + 'sets are no longer disjoint. This walk staying correct is what proves the service '
+            + 'resolves its sequence from the RECORD TYPE and not from the stage value — a build '
+            + 'that derived the map from the current stage would route this row into the sell-side '
+            + 'sequence at hop two and go to "Countered by DPEG" instead of "Submitted"');
+        Assert.areEqual('Signed', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
             'The walk must leave the LOI at its terminal stage');
+    }
+
+    @isTest
+    static void underReviewIsSharedByBothLoiRecordTypesAndStillRoutesByRecordType() {
+        // 🔴 THE FALSIFIER FOR THE DISJOINTNESS BREAK, and it did not exist before 2026-08-14
+        // because it COULD not: until observation 5 the two LOI stage sets shared no value, so
+        // there was nothing to be ambiguous about. RecordStageAdvanceService's class header, the
+        // LOI record-type files, LOI_Record_Page's visibility rules and
+        // LOI__c.Is_Advance_Allowed__c ALL relied on that disjointness; the formula's own header
+        // records that it omits a record-type test precisely because of it (design collision C1).
+        //
+        // The declarative half of that break is not fixable from Apex. What IS provable here is
+        // the narrow claim this service makes: given the SAME stage value on two record types,
+        // advance() must derive TWO DIFFERENT next stages. A build that took the sequence from the
+        // stage — the "obvious optimisation" the class header has warned against since 3B — passes
+        // every other test in this class and fails this one.
+        Id acquisitionLoiId = insertLoiOnRecordType(RT_ACQUISITION_LOI, 'Under Review').Id;
+        Id dispositionLoiId = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Under Review').Id;
+
+        Test.startTest();
+        String acquisitionMessage = RecordStageAdvanceService.advance(acquisitionLoiId);
+        String dispositionMessage = RecordStageAdvanceService.advance(dispositionLoiId);
+        Test.stopTest();
+
+        Assert.areEqual('LOI moved to Submitted.', acquisitionMessage,
+            'From the SHARED stage "Under Review", an ACQUISITION LOI must advance to Submitted');
+        Assert.areEqual('LOI moved to Countered by DPEG.', dispositionMessage,
+            'From the SAME shared stage, a DISPOSITION LOI must advance to Countered by DPEG. Two '
+            + 'record types, one stage value, two different answers — that is the whole claim');
+        Assert.areNotEqual(acquisitionMessage, dispositionMessage,
+            'Stated as an inequality as well as two equalities on purpose: a future build that '
+            + 'collapsed the two LOI maps into one would satisfy neither assertion above, but a '
+            + 'build that made them accidentally equal is the specific regression this names');
     }
 
     @isTest
@@ -622,25 +762,37 @@ private class RecordStageAdvanceServiceTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 🔴 Contract_Review__c (Tranche 3C) — ONE MAP SHARED BY REFERENCE, TWO GATES
+    // 🔴 Contract_Review__c — TWO MAPS AND TWO GATES SINCE 2026-08-14
     //
     // Handed back from the 3C developer as a known, deliberate gap: this class had ZERO
-    // Contract_Review__c coverage before this pass — not in a walk test, not in
+    // Contract_Review__c coverage before that pass — not in a walk test, not in
     // adminPassesTheGateOnEveryObject, not in the per-record-type query-count test. The dispatch
     // that made this object's GATE record-type-aware (RT_ACQUISITION_PSA -> DEAL_DRIVER,
-    // RT_DISPOSITION_PSA -> DISPOSITION_DRIVER, both StageTypeConfigs pointing at the SAME
-    // CONTRACT_REVIEW_NEXT_STAGE map object) was therefore compile-verified only. Closed here.
+    // RT_DISPOSITION_PSA -> DISPOSITION_DRIVER) was therefore compile-verified only. Closed then.
     //
-    // Unlike NDA__c and LOI__c, the two walks below are expected to be BYTE-IDENTICAL: both
-    // record types share one sequence by reference, and differ ONLY in the gate. That is why the
-    // gate test immediately below is "the falsifier for the whole 3C gate change" — the walks
-    // cannot distinguish a correct build from one that reverted the gate split, since the sequence
-    // never changed either way.
+    // ⚠ THIS BANNER USED TO READ "ONE MAP SHARED BY REFERENCE, TWO GATES" AND TO SAY THE TWO WALKS
+    // BELOW WERE "EXPECTED TO BE BYTE-IDENTICAL". Both statements are FALSE since observation 7
+    // (2026-08-14) and are rewritten rather than left standing. The acquisition sequence became
+    // Draft -> Negotiation -> Signed -> Executed; the disposition sequence keeps its four original
+    // values, which O3 of the requirements doc makes a hard stop (those values stay ACTIVE on the
+    // field because Disposition_PSA still runs on them). The shared map object is gone.
+    //
+    // ✅ AND THAT CHANGES WHAT THESE WALKS ARE WORTH. The old banner correctly warned that they
+    // "cannot distinguish a correct build from one that reverted the gate split, since the sequence
+    // never changed either way", so the gate test alone carried the 3C change. The two walks now
+    // differ in every value, so they DO falsify a reverted MAP split — and
+    // psaSequencesAreSplitPerRecordType below states that as a single, direct claim rather than
+    // leaving it to be inferred from two separate expectations.
     // ═════════════════════════════════════════════════════════════════════════
 
     @isTest
-    static void acquisitionPsaWalksInitialDraftToExecuted() {
-        Id crId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Initial Draft').Id;
+    static void acquisitionPsaWalksDraftToExecuted() {
+        // ⚠ RENAMED from acquisitionPsaWalksInitialDraftToExecuted (observation 7). 'Initial Draft'
+        // is no longer an Acquisition_PSA value; the seed is now 'Draft', which is also what
+        // OpportunityReviewService stamps explicitly on every auto-created acquisition PSA (design
+        // collision C3). If those two ever disagree, every deal entering 'Under Contract (PSA)'
+        // produces a record this walk describes and production cannot reproduce.
+        Id crId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Draft').Id;
 
         Test.startTest();
         List<String> messages = advanceUntilBlocked(crId);
@@ -648,14 +800,14 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual(
             new List<String>{
-                'Contract Review moved to Revised.',
-                'Contract Review moved to Ready for Execution.',
+                'Contract Review moved to Negotiation.',
+                'Contract Review moved to Signed.',
                 'Contract Review moved to Executed.',
                 'BLOCKED: There is no next step available from the Executed stage.'
             },
             messages,
-            'The Acquisition_PSA map must be exactly Initial Draft -> Revised -> Ready for '
-            + 'Execution -> Executed, with Executed terminal');
+            'The Acquisition_PSA map must be exactly Draft -> Negotiation -> Signed -> Executed, '
+            + 'with Executed terminal (observation 7, 2026-08-14)');
         Assert.areEqual('Executed',
             [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :crId]
                 .Negotiation_Status__c,
@@ -664,12 +816,18 @@ private class RecordStageAdvanceServiceTest {
 
     @isTest
     static void dispositionPsaWalksInitialDraftToExecuted() {
-        // 🔴 THE CASE THAT PROVES THE GATE AND THE SEQUENCE ARE INDEPENDENT AXES. This walk must
-        // be BYTE-IDENTICAL to acquisitionPsaWalksInitialDraftToExecuted above — both
-        // StageTypeConfigs point at the SAME map object (CONTRACT_REVIEW_NEXT_STAGE) by reference,
-        // not by copy. A divergent message list here would mean the map was duplicated rather than
-        // shared, which is exactly the drift the class header says sharing-by-reference exists to
-        // make unexpressible.
+        // 🔴 THE SELL SIDE IS UNTOUCHED BY OBSERVATION 7, AND THIS TEST IS WHERE THAT IS PROVED.
+        // Its four values are byte-identical to what they were before the split — that is the
+        // point, not an oversight. The acquisition-only rename must not leak across, and the three
+        // values it retires from Acquisition_PSA (Initial Draft / Revised / Ready for Execution)
+        // must stay ACTIVE on the field because this record type still runs on them (O3, a hard
+        // stop).
+        //
+        // ⚠ THIS TEST'S JOB INVERTED WITHOUT ITS BODY CHANGING. It used to prove the two maps were
+        // THE SAME OBJECT ("A divergent message list here would mean the map was duplicated rather
+        // than shared"). It now proves they are DIFFERENT objects and that only one of them moved.
+        // A build that renamed this sequence along with the acquisition one — the natural mistake
+        // when a value-rename sweep is string-scoped rather than record-type-scoped — reds here.
         Id crId = insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Initial Draft').Id;
 
         Test.startTest();
@@ -684,12 +842,139 @@ private class RecordStageAdvanceServiceTest {
                 'BLOCKED: There is no next step available from the Executed stage.'
             },
             messages,
-            'The Disposition_PSA map must be BYTE-IDENTICAL to the Acquisition_PSA one — both '
-            + 'point at CONTRACT_REVIEW_NEXT_STAGE by reference, not by copy');
+            'The Disposition_PSA map must remain exactly Initial Draft -> Revised -> Ready for '
+            + 'Execution -> Executed. Observation 7 is an ACQUISITION-ONLY change');
         Assert.areEqual('Executed',
             [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :crId]
                 .Negotiation_Status__c,
             'The walk must leave the Contract Review at its terminal status');
+    }
+
+    @isTest
+    static void psaSequencesAreSplitPerRecordType() {
+        // 🔴 THE DIRECT FALSIFIER FOR THE C9 MAP SPLIT. The two walks above assert what each
+        // sequence IS; this asserts the property that makes the split necessary — that the SAME
+        // status value produces DIFFERENT behaviour on the two record types, in both directions.
+        //
+        // Stating it as one test matters because the failure mode being guarded is a REVERSION to
+        // one shared map, and a shared map would still satisfy one of the two walks above (whichever
+        // sequence survived the merge). Only the pair, asserted together, is unsatisfiable by any
+        // single-map build.
+        //
+        // 🔴 DIRECTION 2 IS THE SECURITY HALF AND IS THE REASON THE SPLIT EXISTS RATHER THAN A
+        // WIDENED SHARED MAP. Apex DML does not enforce record-type picklist restriction, so a
+        // shared map holding both sides' values would let advance() ITSELF — the ordinary Advance
+        // Stage button, not a hand-crafted call — walk a DISPOSITION PSA onto 'Negotiation' or
+        // 'Signed', acquisition-only values it does not carry. Refusing is the whole guarantee.
+        Id acquisitionId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Draft').Id;
+        Id dispositionId =
+            insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Initial Draft').Id;
+
+        Test.startTest();
+        // DIRECTION 1: the acquisition seed is not a stage the disposition sequence knows.
+        String acquisitionFirstHop = RecordStageAdvanceService.advance(acquisitionId);
+        // DIRECTION 2: the disposition seed must NOT be advanceable by the acquisition map, and
+        // vice versa. Driving each from the OTHER side's seed is what makes that observable.
+        String dispositionRefusal;
+        Contract_Review__c crossFed = insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Draft');
+        try {
+            RecordStageAdvanceService.advance(crossFed.Id);
+            Assert.fail('A DISPOSITION PSA sitting on the acquisition-only status "Draft" must be '
+                + 'REFUSED — its sequence has no entry for it. Returning normally means the two '
+                + 'maps were merged back into one, at which point advance() can write '
+                + 'acquisition-only values onto a sale.');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            dispositionRefusal = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.areEqual('Contract Review moved to Negotiation.', acquisitionFirstHop,
+            'The acquisition map must derive Negotiation from Draft');
+        Assert.areEqual('There is no next step available from the Draft stage.', dispositionRefusal,
+            'The disposition map must have NO entry for the acquisition-only status "Draft". The '
+            + 'refusal wording is the generic terminal-stage message, which is correct: from the '
+            + 'sell-side sequence\'s point of view this row is simply on an unknown status');
+        Assert.areEqual('Draft',
+            [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :crossFed.Id]
+                .Negotiation_Status__c,
+            'A refused advance must not write. Asserting the read-back rather than trusting the '
+            + 'exception is what distinguishes "refused" from "threw after writing"');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 🔴 Transaction__c (added 2026-08-12, live UI testing fix set) — the FIRST object here
+    // from the TRANSACTIONS module rather than acquisitions/disposition. ⚠ This comment used to
+    // add "and the first whose gate is MEMBERSHIP-ONLY"; that held for part of one day, until the
+    // custom-permission migration made all three gates one shape (see StageActionGate). Nothing
+    // below depends on it — this section pins the SEQUENCE, never the gate.
+    // It has NO record types (single-sequence StageConfig) and NO
+    // explicit-target allow-list — the sequence is a straight line, so advanceTo() must be
+    // STRUCTURALLY UNREACHABLE here. See class header + TransactionActionPermissionService for
+    // the full argument; this section pins the sequence and the unreachability, not the gate
+    // itself (the gate has its own class + test file, TransactionActionPermissionServiceTest).
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void transactionWalksOpenContractThroughToClosedWon() {
+        // 🔴 THE ORDER IS A USER DECISION, CONFIRMED AT GATE 1 ON 2026-08-12 AGAINST THE ORG'S
+        // LIVE PICKLIST — do not "correct" it from the Path's step text, which argues the other
+        // way (see TRANSACTION_NEXT_STAGE's own header). This walk is where a reversion to the
+        // step-text reading (…Closing Prep -> Closed Won -> Post-Closing) would surface.
+        Id txnId = insertTransaction().Id;
+
+        Test.startTest();
+        List<String> messages = advanceUntilBlocked(txnId);
+        Test.stopTest();
+
+        Assert.areEqual(
+            new List<String>{
+                'Transaction moved to Due Diligence.',
+                'Transaction moved to Closing Prep.',
+                'Transaction moved to Post-Closing.',
+                'Transaction moved to Closed Won.',
+                'BLOCKED: There is no next step available from the Closed Won stage.'
+            },
+            messages,
+            'The Transaction__c map must be exactly Open Contract -> Due Diligence -> Closing Prep '
+            + '-> Post-Closing -> Closed Won, with Closed Won terminal. This object supplies no '
+            + 'NO_NEXT_STEP_HINTS entry, so the generic terminal wording is expected, unlike '
+            + 'Underwriting\'s approval-owned gap');
+        Assert.areEqual('Closed Won', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
+            'The walk must leave the Transaction at its terminal stage');
+    }
+
+    /**
+     * 🔴 advanceTo() MUST BE STRUCTURALLY UNREACHABLE ON Transaction__c. The sequence is a straight
+     * line — no branch, no off-ramp, no loop — so TRANSACTION_NEXT_STAGE's owning StageTypeConfig is
+     * built through the two-argument (linear) constructor, which supplies an EMPTY explicitTargets
+     * set. Every derivable forward hop belongs to advance(); listing any of them here would let a
+     * direct Apex call skip Due Diligence and land a deal on 'Closed Won' in one call. Tries a value
+     * that IS a real, valid stage on this object ('Post-Closing') specifically because that is the
+     * sharper failure mode than a nonsense string — the refusal must be about the ALLOW-LIST being
+     * empty, not about the target being unrecognised.
+     */
+    @isTest
+    static void transactionAdvanceToIsStructurallyUnreachable() {
+        Id txnId = insertTransaction().Id;
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            RecordStageAdvanceService.advanceTo(txnId, 'Post-Closing');
+            Assert.fail('advanceTo must refuse EVERY target on Transaction__c — its explicit-target '
+                + 'allow-list is empty by construction');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            refused = true;
+            Assert.areEqual('That stage is not available from this action.', e.getMessage(),
+                'The allow-list refusal wording, not the unsupported-object or no-stage wording — '
+                + 'proving the object WAS recognised and the record WAS loaded, and the empty '
+                + 'allow-list is what refused the call');
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'advanceTo must refuse a Transaction with no configured explicit targets');
+        Assert.areEqual('Open Contract', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
+            'A refused advanceTo must not write — the stage stays exactly where it started');
     }
 
     @isTest
@@ -912,14 +1197,15 @@ private class RecordStageAdvanceServiceTest {
     // ═════════════════════════════════════════════════════════════════════════
     // 🔴 THE SAME ALLOW-LIST HOLE ON LOI__c, TESTED IN BOTH DIRECTIONS (Tranche 3B)
     //
-    // LOI__c inherited an OBJECT-level LOI_EXPLICIT_TARGETS = {Counter, Completed} from the
+    // LOI__c inherited an OBJECT-level LOI_EXPLICIT_TARGETS = {Counter, Completed} (renamed to
+    // {Negotiation, Signed} by observation 5, 2026-08-14) from the
     // 2026-08-05 branch work. Tranche 3B splits it per record type. Both leaks are real and
     // neither is caught by any stage-map walk, because Apex DML does not enforce record-type
     // picklist restriction — a walk only proves what advance() DERIVES, never what advanceTo()
     // will WRITE.
     //
     // ⚠ The complement that stops the acquisition refusal passing vacuously already exists:
-    // RecordStageAdvanceControllerTest.advanceToWritesAnAllowedExplicitTarget writes 'Completed'
+    // RecordStageAdvanceControllerTest.advanceToWritesAnAllowedExplicitTarget writes 'Signed'
     // on an acquisition LOI and asserts it lands. Do not delete it.
     //
     // 🔴 AT THE 3B CLOSE-OUT THE SECOND DIRECTION BECAME REAL. Until the negotiation-loop actions
@@ -934,34 +1220,34 @@ private class RecordStageAdvanceServiceTest {
     @isTest
     static void dispositionLoiRefusesTheAcquisitionExplicitTargets() {
         // DIRECTION 1: acquisition-only stages must not be writable onto a sale.
-        // 'Completed' is on the ACQUISITION allow-list and is not a Disposition_LOI value at all.
+        // 'Signed' is on the ACQUISITION allow-list and is not a Disposition_LOI value at all.
         // Held at object level this call SUCCEEDS and silently parks a sale on a buy-side stage
         // that matches neither the disposition Path nor any flexipage rule keyed on it.
         LOI__c dispositionLoi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Under Review');
 
         Test.startTest();
-        Boolean refusedCompleted = false;
-        Boolean refusedCounter = false;
+        Boolean refusedSigned = false;
+        Boolean refusedNegotiation = false;
         try {
-            RecordStageAdvanceService.advanceTo(dispositionLoi.Id, 'Completed');
-            Assert.fail('advanceTo MUST refuse the acquisition-only stage "Completed" on a '
+            RecordStageAdvanceService.advanceTo(dispositionLoi.Id, 'Signed');
+            Assert.fail('advanceTo MUST refuse the acquisition-only stage "Signed" on a '
                 + 'disposition LOI. Returning normally means LOI__c\'s allow-list is still keyed '
                 + 'by OBJECT rather than by RECORD TYPE.');
         } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
-            refusedCompleted = true;
+            refusedSigned = true;
             Assert.areEqual('That stage is not available from this action.', e.getMessage(),
                 'The refusal uses the shared allow-list wording and does not echo the value back');
         }
         try {
-            RecordStageAdvanceService.advanceTo(dispositionLoi.Id, 'Counter');
-            Assert.fail('advanceTo MUST refuse "Counter" too — BOTH acquisition explicit targets '
+            RecordStageAdvanceService.advanceTo(dispositionLoi.Id, 'Negotiation');
+            Assert.fail('advanceTo MUST refuse "Negotiation" too — BOTH acquisition explicit targets '
                 + 'leak, not just the terminal one');
         } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
-            refusedCounter = true;
+            refusedNegotiation = true;
         }
         Test.stopTest();
 
-        Assert.isTrue(refusedCompleted && refusedCounter,
+        Assert.isTrue(refusedSigned && refusedNegotiation,
             'Both acquisition explicit targets must be refused on a disposition LOI');
         Assert.areEqual('Under Review',
             [SELECT Stage__c FROM LOI__c WHERE Id = :dispositionLoi.Id].Stage__c,
@@ -982,7 +1268,12 @@ private class RecordStageAdvanceServiceTest {
         // payload at an acquisition LOI's Id would SUCCEED and park a purchase on a sell-side
         // stage, because Apex DML does not enforce record-type picklist restriction. This test is
         // the only thing in the system that refuses it — the picklist itself will not.
-        LOI__c acquisitionLoi = insertLoiOnRecordType(RT_ACQUISITION_LOI, 'Sent');
+        //
+        // ⚠ THE FIXTURE STAGE MOVED FROM 'Sent' TO 'Submitted' (observation 5) — a rename of the
+        // acquisition branch point, not a change of scenario. The three targets probed below are
+        // sell-side values and were NOT renamed: observation 5 touched only the acquisition
+        // sequence, which is precisely why this cross-type refusal is still expressible.
+        LOI__c acquisitionLoi = insertLoiOnRecordType(RT_ACQUISITION_LOI, 'Submitted');
 
         Test.startTest();
         Map<String, Boolean> refusedByTarget = new Map<String, Boolean>();
@@ -995,7 +1286,10 @@ private class RecordStageAdvanceServiceTest {
                 Assert.fail('advanceTo MUST refuse the disposition-only stage "' + target
                     + '" on an acquisition LOI. Returning normally means LOI__c\'s allow-list has '
                     + 'been moved back to OBJECT level, or the disposition loop targets were added '
-                    + 'to LOI_ACQUISITION_EXPLICIT_TARGETS.');
+                    + 'to LOI_ACQUISITION_EXPLICIT_TARGETS. Note this is NOT protected by the two '
+                    + 'value sets being disjoint — since observation 5 they share "Under Review". '
+                    + 'It is protected by the ALLOW-LISTS being disjoint, which is a separate '
+                    + 'property and the only one still holding.');
             } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
                 refusedByTarget.put(target, true);
                 Assert.areEqual('That stage is not available from this action.', e.getMessage(),
@@ -1012,7 +1306,7 @@ private class RecordStageAdvanceServiceTest {
         }, refusedByTarget,
             'Every disposition-only stage must be refused on an acquisition LOI — the two loop '
             + 'targets especially, since those are the ones a real deployed bundle can send');
-        Assert.areEqual('Sent',
+        Assert.areEqual('Submitted',
             [SELECT Stage__c FROM LOI__c WHERE Id = :acquisitionLoi.Id].Stage__c,
             'A refused advanceTo must not write. Note the allow-list check runs AFTER load(), so '
             + '"refused instead of written" is a property worth asserting rather than assuming');
@@ -1250,17 +1544,32 @@ private class RecordStageAdvanceServiceTest {
         Id conId = constructionReview().Id;
         Id devId = developmentReview().Id;
         Id crId = contractReview().Id;
+        // ⚠ REWRITTEN 2026-08-12 (custom-permission migration): Transaction__c answers to
+        // TRANSACTION_STAGE_ACTIONS via TransactionActionPermissionService, which now owns its OWN
+        // transaction-scoped cache — it no longer delegates to LeadActionPermissionService at all —
+        // so its bypass is cleared through TransactionActionPermissionService.clearCache(), a
+        // DIFFERENT cache from the other six objects' OpportunityActionPermissionService /
+        // DispositionActionPermissionService bypass.
+        Id txnId = insertTransaction().Id;
 
         Test.startTest();
         OpportunityActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(ndaId), 'NDA gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(loiId), 'LOI gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(underwritingId), 'Underwriting gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(conId), 'Construction gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(devId), 'Development gate');
         Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(crId), 'Contract Review gate');
+        Assert.isTrue(RecordStageAdvanceService.hasStageActionAccess(txnId),
+            'Transaction gate — the admin passes via the Modify All Data bypass INSIDE '
+            + 'TransactionActionPermissionService itself, a different code path (and a different '
+            + 'cache) from the other six objects\' OpportunityActionPermissionService / '
+            + 'DispositionActionPermissionService bypass');
         RecordStageAdvanceService.assertStageActionAccess(loiId); // must not throw
+        RecordStageAdvanceService.assertStageActionAccess(txnId); // must not throw
         OpportunityActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         Test.stopTest();
     }
 
@@ -1298,7 +1607,8 @@ private class RecordStageAdvanceServiceTest {
         OpportunityActionPermissionService.clearCache();
         System.runAs(bareUser) {
             Assert.isFalse(RecordStageAdvanceService.hasStageActionAccess(underwritingId),
-                'A user with neither Modify All Data nor Deal_Driver__c must be denied');
+                'A user with neither Modify All Data nor the Acquisition_Deal_Actions custom '
+                + 'permission must be denied');
             try {
                 RecordStageAdvanceService.assertStageActionAccess(underwritingId);
                 Assert.fail('assertStageActionAccess must REFUSE a non-deal-driver. Returning '
@@ -1385,12 +1695,21 @@ private class RecordStageAdvanceServiceTest {
      * handed back: this dispatch was compile-verified only.
      *
      * The two Contract_Review__c record types answer to DIFFERENT personas: Acquisition_PSA to
-     * DEAL_DRIVER and Disposition_PSA to DISPOSITION_DRIVER — despite sharing ONE
-     * CONTRACT_REVIEW_NEXT_STAGE map object by reference. Left on the old single-sequence
+     * DEAL_DRIVER and Disposition_PSA to DISPOSITION_DRIVER. Left on the old single-gate
      * DEAL_DRIVER config, hasStageActionAccess / assertStageActionAccess would refuse EVERY
-     * disposition PSA for the only persona meant to work it — a dead feature passing every walk
-     * test above, since the sequence is identical either way. Only this test can tell the two
-     * builds apart.
+     * disposition PSA for the only persona meant to work it — a dead feature that still passes
+     * every walk test above, because a reverted GATE leaves both SEQUENCES untouched. Only this
+     * test can tell the two builds apart.
+     *
+     * ⚠ CORRECTED 2026-08-14. This paragraph used to justify that last claim with "despite sharing
+     * ONE CONTRACT_REVIEW_NEXT_STAGE map object by reference … since the sequence is identical
+     * either way." That premise died with observation 7, which split the shared map into
+     * CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE and CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE — the two
+     * sequences now share only the terminal 'Executed'. 🔴 THE CONCLUSION IS UNCHANGED AND THE
+     * TEST IS STILL LOAD-BEARING: the walks pin the SEQUENCE axis and this test pins the GATE
+     * axis, and the two axes are independent, so a build that keeps both maps and reverts only the
+     * gate is green everywhere except here. Do not retire this test on the strength of the walks
+     * now differing.
      *
      * Same technique as theGateIsResolvedPerRecordTypeNotPerObject (NDA) and
      * loiGateIsResolvedPerRecordTypeNotPerObject (LOI): both permission caches are pre-seeded with
@@ -1400,7 +1719,7 @@ private class RecordStageAdvanceServiceTest {
      */
     @isTest
     static void contractReviewGateIsResolvedPerRecordTypeNotPerObject() {
-        Id acquisitionId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Initial Draft').Id;
+        Id acquisitionId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Draft').Id;
         Id dispositionId = insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Initial Draft').Id;
 
         Test.startTest();
@@ -1435,8 +1754,10 @@ private class RecordStageAdvanceServiceTest {
         Assert.isTrue(dispositionUnderPolarity1,
             'A DISPOSITION_PSA must answer to the DISPOSITION_DRIVER gate, which is granting here. '
             + 'False here is the EXACT dead-feature scenario the 3C developer flagged: a '
-            + 'disposition driver refused on the only PSA record type they own, with every walk '
-            + 'test above still green because the sequence never changed.');
+            + 'disposition driver refused on the only PSA record type they own. The gate and the '
+            + 'sequence are independent, so a green walk suite above proves nothing about this — '
+            + 'and since observation 7 split the two PSA sequences, a red here could equally be a '
+            + 'sequence regression. Check both.');
         Assert.isTrue(acquisitionUnderPolarity2,
             'Reversed: the acquisition PSA now follows the deal-driver gate to true');
         Assert.isFalse(dispositionUnderPolarity2,
@@ -1480,6 +1801,87 @@ private class RecordStageAdvanceServiceTest {
     }
 
     /**
+     * 🔴 THE TRANSACTION GATE END TO END, THROUGH REAL System.runAs PERSONAS — not a seeded cache.
+     *
+     * Unlike the two `*_DRIVER` gates, TRANSACTION_STAGE_ACTIONS never loads the record to decide
+     * which gate applies (Transaction__c has a single sequence — see
+     * gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject), so a bare user reaching
+     * hasStageActionAccess never touches Transaction__c's OWD/CRUD at all and the honest,
+     * cache-seeding-free proof used for the two-factor gates is unnecessary here. This test
+     * therefore does what theirs structurally cannot: prove the WHOLE chain
+     * (RecordStageAdvanceService -> TransactionActionPermissionService -> FeatureManagement) with a
+     * real permission-set assignment under a real persona.
+     *
+     * ⚠ REWRITTEN 2026-08-12 (custom-permission migration): TransactionActionPermissionService no
+     * longer delegates to LeadActionPermissionService — it owns its own cache — so every clearCache()
+     * call below targets TransactionActionPermissionService directly, not the Lead gate's cache.
+     */
+    @isTest
+    static void transactionGateDeniesABareUserAndGrantsAPermissionSetHolder() {
+        Id txnId = insertTransaction().Id;
+        User bareUser = buildStandardUser('rsaBare');
+        User grantedUser = buildStandardUser('rsaGranted');
+        Id transactionPermSetId = [
+            SELECT Id FROM PermissionSet WHERE Name = 'Transaction_Stage_Actions_Access' LIMIT 1
+        ].Id;
+        // 🔴 MIXED_DML_OPERATION FIX (2026-08-12): insertTransaction() above is DML on a non-setup
+        // object (Transaction__c), so the User + PermissionSetAssignment inserts below — both
+        // setup-object DML — must be isolated in their own System.runAs block or the platform
+        // throws "DML operation on setup object is not permitted after you have updated a
+        // non-setup object". This is the SAME isolation technique already used in this repo for
+        // this exact shape — see RecordStageAdvanceControllerTest
+        // .refusesAUserWhoIsNotADealDriverAndWritesNothing and TaskRollupServiceTest's
+        // buildMinimumAccessUser/assignPermissionSets callers. Do not "fix" this by reordering the
+        // inserts ahead of insertTransaction() instead of wrapping them — a future test added above
+        // this one that also performs non-setup DML in @TestSetup-adjacent code would silently
+        // reintroduce the failure; the runAs isolation is robust regardless of ordering.
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert new List<User>{ bareUser, grantedUser };
+            insert new PermissionSetAssignment(
+                AssigneeId = grantedUser.Id, PermissionSetId = transactionPermSetId);
+        }
+
+        Test.startTest();
+        Boolean bareAllowed;
+        Boolean grantedAllowed;
+        Boolean bareRefused = false;
+        String bareRefusalMessage;
+        TransactionActionPermissionService.clearCache();
+        System.runAs(bareUser) {
+            bareAllowed = RecordStageAdvanceService.hasStageActionAccess(txnId);
+            try {
+                RecordStageAdvanceService.assertStageActionAccess(txnId);
+                Assert.fail('assertStageActionAccess must REFUSE a user holding neither the '
+                    + 'Transaction permission set nor Modify All Data');
+            } catch (RecordStageAdvanceService.AccessDeniedException e) {
+                bareRefused = true;
+                bareRefusalMessage = e.getMessage();
+            }
+        }
+        TransactionActionPermissionService.clearCache();
+        System.runAs(grantedUser) {
+            grantedAllowed = RecordStageAdvanceService.hasStageActionAccess(txnId);
+            RecordStageAdvanceService.assertStageActionAccess(txnId); // must not throw
+        }
+        TransactionActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isFalse(bareAllowed, 'A user with neither the permission set nor Modify All Data must be denied');
+        Assert.isTrue(bareRefused, 'The server-side assert must refuse the bare user');
+        Assert.areEqual(OpportunityActionPermissionService.NO_PERMISSION_MESSAGE, bareRefusalMessage,
+            'The denial must use the SAME shared wording every other gate uses, so a user can never '
+            + 'tell which of the four gates (Lead / Opportunity / Disposition / Transaction) refused '
+            + 'them from the toast alone');
+        Assert.isTrue(grantedAllowed,
+            'A user holding Transaction_Stage_Actions_Access DIRECTLY must be allowed — proving the '
+            + 'full RecordStageAdvanceService -> TransactionActionPermissionService -> '
+            + 'FeatureManagement chain, not just the leaf service in isolation');
+        Assert.areEqual('Open Contract', [SELECT Stage__c FROM Transaction__c WHERE Id = :txnId].Stage__c,
+            'Neither hasStageActionAccess nor assertStageActionAccess ever writes — the stage is '
+            + 'exactly where it started for both personas');
+    }
+
+    /**
      * The `size() == 1` short-circuit in gateFor(), asserted as a COST rather than by inspection.
      *
      * An object with one configured sequence has one gate by construction, so loading the row
@@ -1489,6 +1891,11 @@ private class RecordStageAdvanceServiceTest {
      *
      * Both permission caches are pre-seeded so the gate itself issues no queries and the only
      * thing being measured is the record load.
+     *
+     * ⚠ REWRITTEN 2026-08-12 (custom-permission migration): TransactionActionPermissionService now
+     * owns its own cache (cachedHasTransactionActionAccess) instead of delegating to
+     * LeadActionPermissionService's cachedPermissionSetNames / cachedHasModifyAllData, so the
+     * Transaction leg is pre-seeded directly rather than through the Lead gate's cache.
      */
     @isTest
     static void gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject() {
@@ -1500,13 +1907,21 @@ private class RecordStageAdvanceServiceTest {
         Id underwritingId = underwriting().Id;
         Id loiId = insertLoiOnRecordType(RT_ACQUISITION_LOI, 'Draft').Id;
         Id ndaId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Sent').Id;
-        Id crId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Initial Draft').Id;
+        Id crId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Draft').Id;
+        // ⚠ Transaction__c is the FIFTH single-sequence object and the only one whose gate runs
+        // through its OWN cache (TransactionActionPermissionService's), so it is pre-seeded
+        // separately below.
+        Id txnId = insertTransaction().Id;
 
         Test.startTest();
         OpportunityActionPermissionService.clearCache();
         DispositionActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         OpportunityActionPermissionService.cachedHasDealActionAccess = true;
         DispositionActionPermissionService.cachedHasDispositionActionAccess = true;
+        // Pre-seed WITHOUT querying, isolating what this test actually measures: whether the RECORD
+        // gets loaded, not whether the permission gate itself issues a query.
+        TransactionActionPermissionService.cachedHasTransactionActionAccess = true;
 
         Integer beforeUnderwriting = Limits.getQueries();
         RecordStageAdvanceService.hasStageActionAccess(underwritingId);
@@ -1524,8 +1939,13 @@ private class RecordStageAdvanceServiceTest {
         RecordStageAdvanceService.hasStageActionAccess(crId);
         Integer crQueries = Limits.getQueries() - beforeCr;
 
+        Integer beforeTxn = Limits.getQueries();
+        RecordStageAdvanceService.hasStageActionAccess(txnId);
+        Integer txnQueries = Limits.getQueries() - beforeTxn;
+
         OpportunityActionPermissionService.clearCache();
         DispositionActionPermissionService.clearCache();
+        TransactionActionPermissionService.clearCache();
         Test.stopTest();
 
         Assert.areEqual(0, underwritingQueries,
@@ -1533,6 +1953,10 @@ private class RecordStageAdvanceServiceTest {
             + 'alone and the record must NOT be loaded. A 1 here means the short-circuit in '
             + 'gateFor() was lost and all four single-sequence objects now pay a query on every '
             + 'record view.');
+        Assert.areEqual(0, txnQueries,
+            'Transaction__c has NO record types at all (not merely one configured sequence like '
+            + 'the other four) so gateFor() must short-circuit here too. A 1 here means the '
+            + 'single-sequence optimisation regressed for the newest object.');
         Assert.areEqual(1, loiQueries,
             'LOI__c has TWO record types with DIFFERENT gates since Tranche 3B, so the row must '
             + 'be loaded to know which gate applies. Zero here would mean the gate fell back to '
@@ -1543,10 +1967,11 @@ private class RecordStageAdvanceServiceTest {
             + 'which gate applies. Zero here would mean the gate silently fell back to the object '
             + 'default and every disposition NDA is gated behind the acquisitions persona.');
         Assert.areEqual(1, crQueries,
-            'Contract_Review__c has TWO record types with DIFFERENT gates since Tranche 3C — even '
-            + 'though they share ONE sequence — so the row must be loaded to know which gate '
-            + 'applies. Zero here would mean the gate silently fell back to the object default and '
-            + 'every disposition PSA is gated behind the acquisitions persona.');
+            'Contract_Review__c has TWO record types with DIFFERENT gates since Tranche 3C — and, '
+            + 'since observation 7 (2026-08-14), two DIFFERENT sequences as well — so the row must '
+            + 'be loaded to know which gate applies. Zero here would mean the gate silently fell '
+            + 'back to the object default and every disposition PSA is gated behind the '
+            + 'acquisitions persona.');
     }
 
     @isTest

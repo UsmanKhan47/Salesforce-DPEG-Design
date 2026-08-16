@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        CustomField.description is capped at 255 characters; this rationale is longer and
+        is operationally important. The comment is INSIDE the root element on purpose - a
+        comment ABOVE <CustomField> breaks `sf` deploy at conversion.
+
+        THE DENOMINATOR IS NINE, IT IS A NAMED CONSTANT LIST, AND IT IS SIGNED OFF.
+        Signed off 2026-08-14 (spec sec 0.0, requirements O4). The nine DEAL-PROCESS keys:
+
+            property_name          property_address       guidance_price
+            guidance_cap_rate      offer_due_date         sale_process
+            listing_broker_name    listing_broker_email   listing_status
+
+        The six PHYSICAL-PROPERTY keys - building_sf, noi, unit_count, occupancy,
+        year_built, asset_type - are EXCLUDED. A land deal legitimately has no building SF
+        and no NOI; scoring it against them would report a complete extraction as a poor
+        one, and the score's whole purpose is to tell an analyst which leads need chasing.
+
+        DO NOT DERIVE THE DENOMINATOR FROM A DESCRIBE. Spec sec 2.2 is explicit: a
+        describe-based denominator silently changes the meaning of every score in the org
+        the moment a field is added. The list is a constant in Apex and the ninth key
+        (listing_status) is new in this same change.
+
+        NOT Parse_Confidence__c. THE TWO MUST NEVER BE CONFLATED, AND THE FAILURE MODE IS
+        SUBTLE. Parse_Confidence__c records the model's certainty about ONE question -
+        is_acquisition_related - which is what the D2 hard relevance gate consumes. A
+        confident, correctly-classified acquisition email can still be almost empty of
+        deal facts, and an unconfident one can be complete. HIGH confidence therefore does
+        NOT imply a high score and a low score does NOT impeach the classification. Both
+        fields are retained, unchanged, side by side.
+
+        FAIL-SOFT IS MANDATORY, NOT DEFENSIVE POLISH. Spec sec 1 constraint 7: the inbound
+        email pipeline must never be made to throw. A defect in scoring must cost nothing
+        but the score - a NULL here plus a Deal_Notes__c note, never an exception. The
+        precedent is InboundEmailFieldUtil, which clips every externally sourced value for
+        exactly this reason. NULL is therefore a MEANINGFUL VALUE here: it reads "not
+        scored", which is not the same as zero.
+
+        PRECISION 3 / SCALE 0 is the whole domain - 0 to 100 inclusive. It is not a
+        constraint being applied; it is the range the value can occupy.
+    -->
+    <fullName>Extraction_Score_Pct__c</fullName>
+    <description>Percent of the nine signed-off deal-process extraction keys captured from the broker email. NOT Parse_Confidence__c, which measures certainty about is_acquisition_related - a different question. Null means not scored, which is not zero.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>How complete the automated extraction was, 0-100. A low score means chase the broker for the missing deal facts. Blank means the score could not be computed, not that nothing was captured.</inlineHelpText>
+    <label>Extraction Score %</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

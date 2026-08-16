@@ -1,0 +1,41 @@
+<template>
+    <lightning-card icon-name="standard:opportunity">
+        <span slot="title">Call for Offers ({count})</span>
+
+        <template if:true={isLoading}>
+            <div class="slds-p-around_medium">
+                <lightning-spinner
+                    alternative-text="Loading call for offers"
+                    size="small"
+                    variant="brand">
+                </lightning-spinner>
+            </div>
+        </template>
+
+        <template if:true={hasError}>
+            <div class="lv-error slds-p-around_medium slds-text-color_error" role="alert">
+                {errorMessage}
+            </div>
+        </template>
+
+        <template if:false={hasError}>
+            <template if:true={isEmpty}>
+                <div class="lv-empty slds-p-around_medium slds-text-color_weak">
+                    No deals have a call-for-offers deadline right now.
+                </div>
+            </template>
+            <template if:false={isEmpty}>
+                <c-list-datatable
+                    key-field="id"
+                    data={rows}
+                    columns={columns}
+                    hide-checkbox-column>
+                </c-list-datatable>
+            </template>
+        </template>
+
+        <div slot="footer" class="view-all-footer">
+            <a href={listUrl} onclick={handleViewAll}>View All</a>
+        </div>
+    </lightning-card>
+</template>

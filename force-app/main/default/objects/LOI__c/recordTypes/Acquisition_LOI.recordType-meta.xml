@@ -33,6 +33,79 @@
         shared, which is why NDA rules must test Disposition__c or RecordTypeId instead. If a
         future change makes any LOI stage shared, every one of those rules must be revisited.
 
+        =====================================================================
+        🔴 RETRACTED 2026-08-14 (Phase 3, observation 5). THE PARAGRAPH DIRECTLY ABOVE, AND THE
+        FIVE-STAGE SEQUENCE DESCRIBED THREE PARAGRAPHS ABOVE IT, ARE BOTH NOW FALSE.
+        THE LAST SENTENCE OF THE RETRACTED PARAGRAPH IS THE ONE THAT CAME TRUE.
+        =====================================================================
+
+        RETRACTED (1), verbatim: "Five stages, UNCHANGED from what the org already runs: Draft ->
+        Prepare/Review -> Sent -> Counter -> Completed. Nothing on the acquisition side is added,
+        removed, renamed or re-ordered by this tranche. This record type exists to FENCE the
+        existing behaviour, not to alter it."
+        The buy-side sequence is now Draft -> Under Review -> Submitted -> Negotiation -> Signed.
+        Prepare/Review, Sent, Counter and Completed are RETIRED (deactivated at Phase 3 D3 after
+        a row migration, never deleted - decision O3). The fencing statement was true of Tranche
+        3B and is not a standing property of this file.
+
+        RETRACTED (2), verbatim: "THE TWO STAGE SETS ARE FULLY DISJOINT... every existing
+        flexipage visibility rule keyed on an acquisition stage value is SELF-LIMITING to
+        acquisition LOIs with no record-type criterion added."
+        'Under Review' is now carried by BOTH record types. It was REUSED, not added - it has
+        been on Disposition_LOI since 3B - which is precisely why the overlap is invisible in the
+        value-set diff for this file and shows up only when both files are read together.
+
+        🔴 SO THE RETRACTED PARAGRAPH'S OWN CLOSING CONDITION HAS FIRED: "If a future change
+        makes any LOI stage shared, every one of those rules must be revisited." It did, and they
+        were. What is NOT true is that the fix was mechanical - see the residual below.
+
+        WHAT SURVIVES THE RETRACTION, AND IT MATTERS: THE TWO TERMINALS ARE STILL DISTINCT.
+        'Signed' is acquisition-only and 'Executed' is disposition-only, so a terminal-state test
+        can still be written by naming values - which is what keeps Is_Advance_Allowed__c's
+        terminal clauses working unchanged. It is the MIDDLE of the sequence that is now
+        ambiguous, and exactly one live rule depends on it: the approval gate. An acquisition LOI
+        at 'Under Review' is awaiting approval; a disposition LOI at 'Under Review' is being read
+        by DPEG and has no approval concept at all. Is_Advance_Allowed__c therefore now carries a
+        RecordType.DeveloperName test INSIDE that one disjunction and nowhere else; its own
+        header records the instruction it retracts to do so.
+
+        ⚠ RESIDUAL, STATED RATHER THAN CLOSED - the Submit for Approval button.
+        flexipages/LOI_Record_Page gates LOI__c.Submit_for_Approval on
+        {!Record.Stage__c} EQUAL 'Prepare/Review', which becomes 'Under Review' - a SHARED value.
+        A flexipage visibility rule cannot express a record-type test directly (recorded in
+        NDA__c.Is_Decline_Allowed__c's header), so that button is no longer self-limiting and an
+        acquisition driver opening a DISPOSITION LOI at 'Under Review' will see it. It is the
+        same residual this page already names and accepts for Advance Stage. It was NOT closed
+        here because the only in-repo mechanism for closing it - a new formula-checkbox
+        discriminator - would make ONE currently-working acquisition button newly dependent on
+        a brand-new field's FLS, which is the same class of trade Is_Decline_Allowed__c's header
+        refuses to make. The named remedy is in the Phase 3 runbook.
+
+        ⚠ THE COST FIGURE ABOVE READ "three ... buttons" UNTIL 2026-08-14 AND WAS WRONG BY A
+        FACTOR OF THREE. It came from the build brief, which assumed all FOUR acquisition
+        visibility rules on LOI_Record_Page would need a record-type criterion. The runbook's own
+        analysis (1.6) then established that only ONE gate becomes shared - Submit_for_Approval,
+        whose criterion moves 'Prepare/Review' -> 'Under Review'. Mark_Countered and
+        Mark_Completed move 'Sent' -> 'Submitted', both acquisition-only, so they stay
+        self-limiting; the acquisition Advance_Stage entry carries no stage criterion at all
+        (its record-type question moved into Is_Advance_Allowed__c's formula). A discriminator
+        would therefore be added to exactly one rule. The overruled figure was then quoted
+        forward into this file; it is corrected here and in the runbook, and gate G7 is now given
+        the real number, because a decision that turns on cost must be handed the true cost.
+        ⚠ THE DECISION IS UNCHANGED, and the smaller number does not reopen it: one button newly
+        dependent on a brand-new field's FLS is still an instance of the retired *_Driver__c
+        defect class - a rule referencing a field the user cannot read evaluates FALSE with no
+        error and no log.
+        ⚠ ALSO NOTE the premise: "a flexipage visibility rule cannot express a record-type test
+        directly" is REPO-ASSERTED AND UNMEASURED. A repo-wide sweep returns zero
+        {!Record.RecordType.*} criteria, but nobody has tried one in this org and been refused.
+        Runbook remedy (a) is to try it, and it falsifies the claim either way.
+
+        ⚠ ORDERING WAS RE-CHECKED, NOT INHERITED. See Stage__c.field-meta.xml's own comment: an
+        APPEND is sufficient for this record type only because the one shared value happens to
+        sit at a position correct for both sequences. Contract_Review__c in this same phase
+        needed an INSERT. Redo the arithmetic; do not carry the answer across.
+
         STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THE PATH FILE. Runtime display
         order comes from Stage__c's picklist value order (sorted=false), filtered by this
         record type - so a record type can only include or exclude, never re-order. The five
@@ -127,7 +200,7 @@
     -->
     <fullName>Acquisition_LOI</fullName>
     <active>true</active>
-    <description>The buy-side LOI, parented by Opportunity. Five stages, unchanged: Draft, Prepare/Review, Sent, Counter, Completed. The five disposition stages are restricted out. See the XML comment in this file.</description>
+    <description>The buy-side LOI, parented by Opportunity. Five stages from 2026-08-14: Draft, Under Review, Submitted, Negotiation, Signed. Under Review is SHARED with Disposition_LOI, so the two sets are no longer disjoint. See the XML comment in this file.</description>
     <label>Acquisition LOI</label>
     <picklistValues>
         <picklist>Ball_In_Court__c</picklist>
@@ -186,19 +259,19 @@
             <default>true</default>
         </values>
         <values>
-            <fullName>Prepare%2FReview</fullName>
+            <fullName>Under Review</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Sent</fullName>
+            <fullName>Submitted</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Counter</fullName>
+            <fullName>Negotiation</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Completed</fullName>
+            <fullName>Signed</fullName>
             <default>false</default>
         </values>
     </picklistValues>

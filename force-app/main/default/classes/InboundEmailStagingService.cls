@@ -17,12 +17,56 @@
  * LAYER — Service (staging write side). Reads delegate to InboundEmailStagingSelector;
  * this class contains NO SOQL of its own.
  *
- * DML MODEL — plain insert/update (system mode), matching the established module pattern
- * (EmailToLeadService, PropertyClaimService). AccessLevel.USER_MODE is intentionally NOT
- * applied: the inbound-email handler runs in an automated context whose "running user" is
- * the Email Service's configured context user, not an interactive user whose FLS is
- * meaningful to enforce on a system-owned audit row. Every write is single-record-shaped
- * (one inbound email == one staging row) and never sits inside a loop.
+ * DML MODEL — SYSTEM MODE, and since 2026-08-15 the SYNCHRONOUS insert DECLARES IT EXPLICITLY
+ * rather than inheriting it. The INTENT has never changed and is still right: the inbound-email
+ * pipeline runs in an automated context whose "running user" is the Email Service's configured
+ * context user, not an interactive user whose FLS is meaningful to enforce on a system-owned
+ * audit row. `AccessLevel.USER_MODE` is intentionally NOT applied anywhere in this class. Every
+ * write is single-record-shaped (one inbound email == one staging row) and never sits inside a
+ * loop.
+ *
+ * ═══ 🔴 THE 2026-08-15 OUTAGE — "PLAIN DML IS SYSTEM MODE" IS FALSE IN AN EMAIL SERVICE ═══
+ * This block used to assert that a bare `insert` gave us system mode. That is the ordinary Apex
+ * rule and it holds everywhere else in this module — but it is NOT true at the Email Service
+ * boundary, and the difference silently discarded EVERY inbound broker email.
+ *
+ * MEASURED, ApexLog 07Liw000000CdnBEAS on `usman-dpeg` (2026-08-15, a real forwarded email):
+ *
+ *     DML_BEGIN|[266]|Op:Insert|Type:Inbound_Email_Staging__c|Rows:1
+ *     common.apex.runtime.impl.dmlwithaccess.UserModeFLSDMLExceptionWithResults:
+ *       Operation failed due to fields being inaccessible on Sobject Inbound_Email_Staging__c
+ *
+ * THE MECHANISM. The org has the release update `EmailsimpleRespectProfiles` at Status
+ * `Invoked` (active). Under it, Apex invoked BY AN EMAIL SERVICE enforces the run-as user's
+ * object and field permissions on otherwise-plain DML. The run-as user here is
+ * `junior.dhanani@usmandpeg.uat`, profile `Minimum Access - Salesforce`, whose only grants come
+ * from `Broker_Protection_Access` — where `Inbound_Email_Staging__c.Status__c` is
+ * `readable=true, editable=FALSE`, the ONLY read-only field of the 24 on this object.
+ * `createStaging` stamps `Status__c = STATUS_PENDING`, so the insert was refused.
+ * 🔴 THIS IS THE ONLY CONTEXT IN THIS APPLICATION WHERE THAT ENFORCEMENT APPLIES. Everything on
+ * the async path (`ExtractAddressQueueable`, the Finalizers, the sweep batches) is an ordinary
+ * Queueable/Batch transaction where plain DML genuinely IS system mode — which is why every
+ * other write in this class is untouched, and why nothing failed until an email actually arrived.
+ *
+ * WHY IT WAS INVISIBLE. `EmailToLeadHandler` catches the DmlException fail-soft and returns
+ * `success = true`, so the platform recorded Success: zero staging rows, zero Leads, no bounce,
+ * no error record, nothing queryable. The staging row IS the durability guarantee, so losing it
+ * loses the entire audit of its own loss.
+ *
+ * 🔴 DO NOT REVERT `createStaging` TO A BARE `insert`. It reintroduces a TOTAL, SILENT inbound-
+ * email outage — every broker email discarded, with the Email Service reporting success.
+ * 🔴 AND THE CORRECT FIX IS NEVER TO GRANT `editable=true` ON `Status__c`. That grant was flipped
+ * true -> false deliberately by code review C3 (2026-08-09) and carries a DO NOT REVERT warning
+ * in `Broker_Protection_Access.permissionset-meta.xml`: `Status__c = 'Failed'` is a MACHINE-ONLY
+ * instruction, and `RoutingRetrySweepBatch` may replay a row on the sole strength of
+ * `isRetryableRoutingState`'s proof that only a Finalizer wrote it. A human able to hand-edit an
+ * `'Error'` row to `'Failed'` bypasses that guard and can mint a second Lead or file the winning
+ * broker as a competing submission against their own Lead — recoverable only by manual registry
+ * surgery. Declaring the access level costs nothing and keeps that control intact.
+ * ⚠ C3's own note says "every Apex writer of Status__c uses plain system-mode `update`, so this
+ * grant removes nothing the pipeline needs; it is a human-facing bypass only." That premise was
+ * correct for the three `update` writers — all async — and FALSE for this one synchronous
+ * `insert`. The premise is what was wrong, not the grant.
  *
  * FAIL-SOFT STATUS WRITES — markProcessed / markSkipped / markError swallow their own
  * DmlExceptions. They are the LAST statement of a routing branch that has already
@@ -263,7 +307,17 @@ public with sharing class InboundEmailStagingService {
                 : request.attachmentStatus,
             Status__c = STATUS_PENDING
         );
-        insert staging;
+        // 🔴 THE ACCESS LEVEL IS DECLARED, NOT INHERITED — see THE 2026-08-15 OUTAGE in the class
+        // header. This is the one DML in this module that runs inside an Email Service
+        // transaction, where the `EmailsimpleRespectProfiles` release update makes a bare
+        // `insert` enforce the run-as user's FLS. `Status__c` is deliberately non-editable for
+        // that user (C3), so the bare form refused every inbound email, silently.
+        //
+        // allOrNone = true, deliberately: this row IS the pipeline's durable landing record and
+        // its absence is the outage. A partial/soft failure here is precisely what must not
+        // happen — the caller's catch turns a thrown DmlException into a reported failure,
+        // whereas a swallowed one is indistinguishable from a healthy pipeline.
+        Database.insert(staging, true, AccessLevel.SYSTEM_MODE);
         return staging.Id;
     }
 

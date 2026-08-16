@@ -57,6 +57,46 @@
         (LeadSource, Status, Industry, Rating, Asset_Type__c, Broker_Priority__c, Deal_Type__c,
         Disqualification_Reason__c, Parse_Confidence__c, Sale_Process__c) were each dry-run-
         validated and remain enumerated identically on both Lead record types.
+        [SUPERSEDED 2026-08-14: the count is now ELEVEN - see FIX ROUND 4 below. Everything
+        else in this paragraph still stands.]
+
+        FIX ROUND 4 (2026-08-14, Phase 1 re-review finding C4, CRITICAL) - Listing_Status__c
+        ADDED. It is the eleventh picklist and was the ONLY custom picklist on Lead missing
+        from this file; its two on-page neighbours, Sale_Process__c and Parse_Confidence__c,
+        were both already here. The field is created by P1-A of the acquisition-observations
+        pack, and the brief that created it did not carry the FIX 2026-08-10 rule forward - the
+        same class of plan defect that produced that fix in the first place.
+
+        WHY THIS IS CRITICAL RATHER THAN TIDYING. Under the drop-on-omission rule asserted
+        above, an omitted picklist renders on this record type with ZERO selectable values.
+        Deal_Facts_Required_For_Under_Review blocks Status = 'Under Review' while
+        Listing_Status__c is blank, so an analyst would see a rendered, editable, FLS-granted
+        field they cannot satisfy, and every pipeline-created Lead would strand at 'New'. That
+        is byte-identical to the outage the Lead_Record_Page fix (review C1) exists to prevent,
+        reached by a third route. Nothing catches it: no Apex writes Lead.Status = 'Under
+        Review', the validation rule reads its fields in system context so it fires regardless,
+        and a picklist with no available values still accepts a system-mode Apex write.
+
+        THE DROP-ON-OMISSION RULE IS REPO-ASSERTED, NOT MEASURED IN THIS ORG. It is stated in
+        the FIX 2026-08-10 paragraph above, in requirements section 3 and in the P1-D4 README,
+        and this file already acts on it - but no describe in this org has confirmed it. This
+        edit was made anyway because it is FREE if the assertion is wrong (enumerating the
+        complete value set is a no-op) and pipeline-stopping if it is right. Phase 3 hits the
+        same question for the LOI and PSA record types, where the answer CHANGES what must ship
+        rather than being free insurance. The cheap falsification is written out in
+        agent-output/runbook-acquisition-observations-phase1.md, section 1, under the heading
+        "C4 (re-review, 2026-08-14)".
+
+        SHAPE. Both values, no default, matching the field's own valueSetDefinition order
+        (On Market, Off Market; sorted=false) and matching the Sale_Process__c block in this
+        same file. The field has no <default>, deliberately - the LLM is instructed not to
+        guess it - so neither value carries one here either. Listing_Status__c is a plain
+        custom picklist with no compoundFieldName, so FIX ROUND 3's prohibition does not apply.
+
+        DEPLOY ORDER. This file must not be deployed before P1-A, which creates
+        Lead.Listing_Status__c; a picklistValues block naming a field that does not exist yet
+        fails the deploy. P1-A already precedes P1-D1, which is where this file ships, so the
+        existing sequence is correct - do not reorder it.
     -->
     <fullName>Acquisition_Broker</fullName>
     <active>true</active>
@@ -116,7 +156,7 @@
             <default>false</default>
         </values>
         <values>
-            <fullName>Commercial</fullName>
+            <fullName>Retail</fullName>
             <default>false</default>
         </values>
     </picklistValues>
@@ -302,6 +342,17 @@
         </values>
         <values>
             <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Listing_Status__c</picklist>
+        <values>
+            <fullName>On Market</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Off Market</fullName>
             <default>false</default>
         </values>
     </picklistValues>

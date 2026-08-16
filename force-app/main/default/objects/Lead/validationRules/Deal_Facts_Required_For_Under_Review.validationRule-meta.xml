@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.description is capped at 255 characters. The rationale below is
+        operationally important, so it lives here rather than being trimmed; a comment is
+        repo-only and is never sent to the Metadata API. It is INSIDE the root element on
+        purpose - a comment ABOVE <ValidationRule> breaks `sf` deploy at conversion with
+        the misleading error "unable to find matching parent xml file". Same shape as the
+        two incumbent Lead rules in this folder.
+
+        WHAT IT DOES. Blocks a Lead from ENTERING 'Under Review' unless Deal Type and
+        Listing Status are BOTH filled. Spec sec 2.4 / requirements sec 3.
+
+        ============================================================================
+        IT ENFORCES TWO FACTS, NOT THREE. THE PROPERTY ADDRESS LEG WAS DELIBERATELY
+        DROPPED - IT IS ENFORCED BY THE INCUMBENT RULE IN THIS SAME FOLDER.
+        ============================================================================
+        USER DECISION, 2026-08-14. The spec's sec 2.4 defines this as a THREE-fact gate
+        (Deal Type + Listing Status + Property Address). The third fact is already
+        enforced, on the identical transition, by the live sibling rule
+
+            Property_And_Email_Required_To_Progress
+
+        whose formula is ISCHANGED(Status) + ISPICKVAL(Status,'Under Review') OR
+        ISPICKVAL(Status,'Qualified'), blocking on ISBLANK(Property_Address__c) OR
+        ISBLANK(Email). Salesforce evaluates EVERY active validation rule on a save and
+        surfaces EVERY failure, so a Lead missing only the address tripped BOTH rules and
+        Lightning showed TWO error messages for ONE missing field. Two messages for one
+        cause is not extra safety - it is noise that trains an analyst to stop reading
+        them.
+
+        The address requirement is therefore NOT forgotten and MUST NOT be re-added here.
+        If you are reading this because a Lead reached 'Under Review' with a blank
+        address, the rule to look at is Property_And_Email_Required_To_Progress, not this
+        one. Note that the incumbent is the STRICTER of the two on address: it gates
+        'Qualified' as well as 'Under Review'.
+
+        THE INCUMBENT WAS NOT TOUCHED, deliberately - it is a live rule with production
+        history and its own Email leg, and editing it is a separate change with its own
+        blast radius.
+
+        THE OUTCOME_NO_ADDRESS EXPLANATION MOVED TO THE INCUMBENT. CLOSED 2026-08-14,
+        USER DECISION. Spec sec 2.4 required that the blocking message NAME the
+        addressless-lead case so it reads as the intended chase rather than a bug - see
+        below for why that matters. This rule cannot carry that clause: it no longer fires
+        on a blank address, and a message describing a condition the rule does not test is
+        worse than no message. So the clause now lives in
+
+            Property_And_Email_Required_To_Progress
+
+        whose <errorMessage> was extended to say that some leads legitimately arrive with
+        no address and that supplying one is the intended next step. ONLY that rule's
+        message changed - its formula, name and every other element are untouched, so it
+        still gates BOTH 'Under Review' AND 'Qualified' and remains the stricter of the
+        two on Property_Address__c. That file's comment points back at this one; the split
+        is discoverable from either side.
+
+        ============================================================================
+        WHY THE ADDRESSLESS POPULATION NEEDS EXPLAINING AT ALL (retained context).
+        ============================================================================
+        Branch (c) of the routing tree (outcome label 'New Lead (property, no address)',
+        OUTCOME_NO_ADDRESS) deliberately holds Property_Address__c NULL: the email named a
+        property the pipeline could not address, so `claimableAddress()` refuses to store a
+        value that could not have produced a claim key. Those Leads are LEGITIMATE and are
+        SUPPOSED to be chased by a human - they have no first-broker-wins protection until
+        someone supplies the address. A blocked save on such a Lead is the system working,
+        not a pipeline defect.
+
+        ============================================================================
+        ASSERTED, NOT ASSUMED: THIS RULE CANNOT FIRE ON THE INBOUND PIPELINE'S OWN LEAD
+        INSERT. Three independent guarantees, any one of which is sufficient.
+        ============================================================================
+
+        (1) STRUCTURAL. ISCHANGED() evaluates to FALSE in a validation rule on record
+            CREATION. It is the first term of the top-level AND(), so this rule is
+            unreachable on ANY insert - not only the pipeline's.
+
+        (2) EMPIRICAL - THE VALUE. Both Lead-creating paths in this application write
+            Status = 'New', never 'Under Review':
+              - EmailToLeadService.cls (constant STATUS_NEW = 'New') - the inbound
+                broker-email pipeline, branches (c) and (e);
+              - BrokerPortalService.cls - the public guest portal.
+            Verified 2026-08-14 by a repo-wide grep for Lead Status writes; those are the
+            only two non-test sites, and no Apex class anywhere writes 'Under Review'.
+            So even without (1), the ISPICKVAL leg is false at insert. Under the staging
+            model the Lead is created ONCE, COMPLETE (ARCHITECTURE.md sec 1), so there is
+            no follow-up pipeline update to catch it either.
+
+        (3) PRECEDENT - ALREADY PROVEN IN PRODUCTION. The incumbent sibling
+            Property_And_Email_Required_To_Progress uses the IDENTICAL
+            ISCHANGED(Status) + ISPICKVAL(Status,'Under Review') shape and has been live
+            through the pipeline's entire production history. Its own comment records the
+            branch-(c) population as unable to PROGRESS - never as unable to be CREATED.
+
+        The only writers of 'Under Review' are the leadMarkUnderReview headless quick
+        action (LDS updateRecord) and a manual edit. Both are deliberate human acts, which
+        is exactly the population this gate is for.
+
+        ============================================================================
+        RESIDUAL, STATED RATHER THAN HIDDEN: 'Qualified' IS NOT GATED BY THIS RULE.
+        ============================================================================
+        The spec says "entry to Under Review", so that is what this enforces. The UI path
+        is New -> Under Review -> Qualified (leadMarkQualified is shown only on the 'Under
+        Review' stage by a Dynamic Actions visibility rule), so in practice a Lead reaches
+        Qualified through this gate. But a direct API write or a manual edit can go New ->
+        Qualified and bypass it. The incumbent DOES gate Qualified for its own two fields,
+        so there is in-repo precedent for adding it here if that hole matters. Not added
+        without a decision.
+
+        ============================================================================
+        FORMULA NOTES.
+        ============================================================================
+        - ISBLANK(TEXT(picklist)) is the blank test for BOTH referenced fields. It
+          composes two standing repo rules: ISBLANK over ISNULL, and TEXT() as the
+          picklist accessor (see Completed_LOI_Before_PSA and No_Backward_Stage_Movement,
+          which record why). Both Deal_Type__c and Listing_Status__c are picklists, so
+          after the address leg was dropped this rule has NO direct-ISBLANK term left -
+          that is expected, not an omission.
+        - NOT(IsConverted) mirrors the incumbent's defensive guard. Database.convertLead
+          DOES change Status (to 'Converted'), so ISCHANGED(Status) is true at conversion;
+          the ISPICKVAL leg already excludes it structurally, but the guard exists so a
+          future edit adding a status to this rule cannot accidentally start blocking
+          conversions.
+        - errorDisplayField is Status - the field being changed, and the only one of the
+          three referenced fields guaranteed present on both the layout and the Path.
+          Attaching to either required field would highlight the wrong field whenever the
+          other one is the blank one.
+        - ISCHANGED-scoping means Leads ALREADY sitting in 'Under Review' are not frozen.
+          Same known-open insert-time hole the incumbent accepts, and accepted here for
+          the same reason.
+        - Listing_Status__c is created in this same pack. A Metadata-API-deployed custom
+          field arrives with NO field permissions for ANY profile, but a validation rule
+          reads the field in SYSTEM context, so this rule works regardless of FLS - the
+          user simply cannot SEE the field they are being asked to fill. That is what
+          post-deploy gate G3 (assign the permission sets) exists to prevent.
+    -->
+    <fullName>Deal_Facts_Required_For_Under_Review</fullName>
+    <active>true</active>
+    <description>Blocks a Lead from entering Under Review unless Deal Type and Listing Status are both filled. Property Address is deliberately NOT tested here - the incumbent rule Property_And_Email_Required_To_Progress already enforces it. See this file&apos;s XML comment.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(Status),
+    NOT(IsConverted),
+    ISPICKVAL(Status, &apos;Under Review&apos;),
+    OR(
+        ISBLANK(TEXT(Deal_Type__c)),
+        ISBLANK(TEXT(Listing_Status__c))
+    )
+)</errorConditionFormula>
+    <errorDisplayField>Status</errorDisplayField>
+    <errorMessage>Deal Type and Listing Status are both required before this lead can move to Under Review. Fill them in on the lead first.</errorMessage>
+</ValidationRule>

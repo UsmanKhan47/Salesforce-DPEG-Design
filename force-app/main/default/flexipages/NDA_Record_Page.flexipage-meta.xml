@@ -13,6 +13,16 @@
          Mark Declined appeared nowhere, leaving the quick action, lwc/ndaMarkDeclined,
          NDA_DISPOSITION_EXPLICIT_TARGETS and the Declined Path step all dead.
 
+         🔬 PHASE 1 UPDATE (2026-08-12) — the mechanism described above is HISTORICAL, not
+         live. Every criterion on this page now reads {!$Permission.CustomPermission.
+         Acquisition_Deal_Actions} / {!$Permission.CustomPermission.Disposition_Deal_Actions}
+         instead of a User field, so the "grants no FLS on User.Deal_Driver__c" failure mode
+         this page's duplicate-entry shape exists to work around cannot recur here - a custom
+         permission has no FLS to be missing. The THREE-ENTRY DUPLICATE SHAPE ITSELF IS
+         UNCHANGED and still required (booleanFilter has no OR): each persona still needs its
+         own entry, now gated by its own custom permission rather than its own flag. See
+         agent-output/design-requirements-custom-permissions.md.
+
          ⚠ DYNAMIC ACTIONS WAS ALREADY ON HERE AND WAS NOT ENABLED ANYWHERE NEW. Turning it on
          a page where it is off SILENTLY EMPTIES that page's action bar - it discards every
          inherited action - which cost three pages their buttons in this repo. This edit only
@@ -73,7 +83,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Deal_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -94,7 +104,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>
@@ -115,7 +125,7 @@
                             <visibilityRule>
                                 <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
-                                    <leftValue>{!$User.Disposition_Driver__c}</leftValue>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
                                 </criteria>

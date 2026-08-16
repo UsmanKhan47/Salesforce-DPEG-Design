@@ -27,9 +27,19 @@
  * existed the gate was purely the Dynamic Actions visibility rule on the Highlights Panel, which is
  * a UX AFFORDANCE ONLY — any user with Opportunity edit access and class access could call these
  * @AuraEnabled methods directly and drive a deal through every stage. The assert asks the exact
- * same question the visibility rules ask (`Deal_Driver__c = true` on the running user, with the
- * documented "Modify All Data" bypass), so no user gains or loses access; what changes is that the
- * rule is now enforced rather than merely displayed.
+ * same question the visibility rules ask (`{!$Permission.CustomPermission.Acquisition_Deal_Actions}`
+ * on the running user, with the documented "Modify All Data" bypass), so no user gains or loses
+ * access; what changes is that the rule is now enforced rather than merely displayed.
+ *
+ * ⚠ THE TOKEN HAS THREE SEGMENTS — `$Permission.CustomPermission.<Name>`. The two-segment
+ * `{!$Permission.<Name>}` and the alternative `{!$CustomPermission.<Name>}` were both REJECTED by
+ * the Metadata API on 2026-08-12, so a rule copied from a shortened form fails the deploy.
+ *
+ * ⚠ THAT QUESTION WAS `{!$User.Deal_Driver__c} EQUAL true` UNTIL 2026-08-12. The flag model was
+ * retired for both the rules and this assert IN THE SAME CHANGE, which is what keeps the two halves
+ * asking one question — a flexipage rule that referenced a FIELD evaluated FALSE for anyone without
+ * FLS on it, hiding the button with no error anywhere. A custom permission has no FLS.
+ * `OpportunityActionPermissionService`'s header carries the measured incidents.
  *
  * The assert runs INSIDE the try with its own catch clause, ahead of the StageAdvanceException and
  * generic clauses. That ordering matters: an AccessDeniedException reaching the generic catch would
@@ -80,8 +90,8 @@ public with sharing class StageAdvanceController {
     }
 
     /**
-     * Moves the deal to an explicit target stage — the branch actions off Under Review, the PSA
-     * off-ramp, and the pre-authorized Dead/Pass off-ramp.
+     * Moves the deal to an explicit target stage — the branch actions off Under Review, the
+     * 'Under Contract (PSA)' off-ramp, and the pre-authorized Dead/Pass off-ramp.
      *
      * @param recordId the Opportunity to advance
      * @param target   the explicit target StageName; must be one of

@@ -7,26 +7,39 @@
         repo-only and is never sent to the Metadata API, so it can be as long as it needs to
         be. Do not paste this back into <description>.
 
-        Stage gate (b): a deal cannot enter PSA until an APPROVED LOI is in place, not merely
+        PHASE 2 (2026-08-14): THE GATED STAGE WAS RENAMED 'PSA' -> 'Under Contract (PSA)'.
+        Only the stage VALUE moved. The rule name, the gate and its remedy are unchanged, and
+        the API name deliberately still reads _Before_PSA - renaming a ValidationRule is a
+        delete-and-recreate, and the new value still contains "PSA".
+
+        Stage gate (b): a deal cannot enter Under Contract (PSA) until an APPROVED LOI is in
+        place, not merely
         a linked one. "In place" is read as LOI_Approved__c = true, the flag set by
         LOI_Approval's Set_LOI_Approved_Flag final action, the only machine-readable evidence
         the LOI approval happened, since the collapsed single LOI stage does not change
         StageName on approval.
 
         Gate applies to the stage transition only (ISCHANGED); existing records already at
-        PSA are unaffected.
+        Under Contract (PSA) are unaffected.
+
+        MIGRATION SAFETY - MEASURED FROM THIS FORMULA, NOT ASSUMED. The P2 backfill that
+        rewrites live rows from 'PSA' to 'Under Contract (PSA)' runs BETWEEN P2-D1 and
+        P2-D2, i.e. while this file still reads ISPICKVAL(StageName, 'PSA'). The backfill
+        sets the NEW value, which does not match that literal, so this rule cannot fire on
+        it. That is why the migration needs no rule deactivation - and why repointing this
+        file BEFORE the backfill would break it.
     -->
     <fullName>Approved_LOI_Before_PSA</fullName>
     <active>true</active>
-    <description>Blocks stage entry to PSA unless an approved LOI (LOI_Approved__c) is in place, not merely a linked one. See the XML comment in this file for full rationale.</description>
+    <description>Blocks stage entry to Under Contract (PSA) unless an approved LOI (LOI_Approved__c) is in place, not merely a linked one. See the XML comment in this file for full rationale.</description>
     <errorConditionFormula>AND(
     ISCHANGED(StageName),
-    ISPICKVAL(StageName, &apos;PSA&apos;),
+    ISPICKVAL(StageName, &apos;Under Contract (PSA)&apos;),
     OR(
         ISBLANK(Primary_LOI__c),
         NOT(LOI_Approved__c)
     )
 )</errorConditionFormula>
     <errorDisplayField>StageName</errorDisplayField>
-    <errorMessage>This deal cannot enter PSA until an approved LOI is in place. Link the primary LOI and complete the LOI approval first.</errorMessage>
+    <errorMessage>This deal cannot enter Under Contract (PSA) until an approved LOI is in place. Link the primary LOI and complete the LOI approval first.</errorMessage>
 </ValidationRule>

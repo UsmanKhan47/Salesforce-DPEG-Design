@@ -12,7 +12,7 @@
     <filters>
         <field>Deal_Bucket__c</field>
         <operation>equals</operation>
-        <value>PSA</value>
+        <value>Under Contract (PSA)</value>
     </filters>
-    <label>Deal Tracker: PSA</label>
+    <label>Deal Tracker: Under Contract (PSA)</label>
 </ListView>

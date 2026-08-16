@@ -4,8 +4,10 @@
  *
  * One inbound call-for-offers email can name several properties; each property that the
  * claim pipeline can match to a CONVERTED winner resolves to a live deal, and this class
- * stamps that deal's call-for-offers block: `Offer_Due_Date__c`, `Listing_Broker_Name__c`
- * and `Listing_Broker_Email__c`. It does nothing else — no stage change, no child record,
+ * stamps that deal's call-for-offers block: `Offer_Due_Date__c`, `Listing_Broker_Name__c`,
+ * `Listing_Broker_Email__c`, — since 2026-08-12 — `Sale_Process__c`, and — since 2026-08-14 —
+ * `Call_For_Offers_Received_Date__c`. It does nothing else
+ * — no stage change, no child record,
  * no notification (D9), no Lead and no registry claim (D3, which is enforced upstream in
  * `ExtractAddressQueueable` and can never be reached from here because this class holds no
  * Lead or registry DML of any kind).
@@ -35,6 +37,19 @@
  * shape makes a total failure indistinguishable from "nothing needed doing"). The caller
  * funnels `refusals` into `Inbound_Email_Staging__c.Error__c`, which is durable.
  *
+ * ═══ Sale_Process__c JOINED THE LAST-WINS SET 2026-08-12 — AND IS THE ONLY DESCRIBE-GUARDED
+ * FIELD HERE ═══
+ * MEASURED on a live run: after a call-for-offers stamp the deal still read
+ * `Sale_Process__c = 'Off-Market'` while the same extraction returned
+ * `sale_process = 'Call for Offers'`. It is a fact about THE CAMPAIGN, in the deadline's class
+ * rather than the listing broker's — the full argument is at the write itself in `buildChange`,
+ * where a future reader will actually be standing. Two things it does NOT change: the three
+ * shared guards (never write blank, never churn an unchanged deal, merge by `recordId` first)
+ * and the governor shape (`getDescribe()` is a describe, not a query, so the pinned
+ * `1 SOQL / <=1 DML` is untouched). 🔴 The one thing it DOES add is a restricted-picklist
+ * describe guard the other fields do not need and must not be "harmonised" away — see
+ * `saleProcessValues()`.
+ *
  * ═══ THE OVERWRITE RULE: LAST EMAIL WINS, PER FIELD, NEVER WITH NULL ═══
  * A call-for-offers deadline is a fact that CHANGES ("deadline extended to Friday"), and the
  * newest email is the authority — fill-if-blank would freeze the first date and make an
@@ -53,11 +68,84 @@
  *     `Opportunity.enableHistory` is `false` today and turning it on is an object-wide change
  *     to a live standard object — out of scope for this tranche.
  *
+ * ═══ 🔴 Call_For_Offers_Received_Date__c JOINED THE STAMP SET 2026-08-14, AND IT IS THE ONLY
+ * FIELD HERE THAT IS PER-EMAIL RATHER THAN PER-PROPERTY ═══
+ * It replaces a DERIVED PROXY. `CallForOffersService` used to answer the table's "Received"
+ * column from `Broker_First_Seen__c` falling back to `Opportunity.CreatedDate` — both of which
+ * answer *when did this DEAL arrive*, never *when did the call-for-offers email land*. On a deal
+ * whose first broker contact predates the campaign by months the column was months wrong, which
+ * is precisely the mistake the column's own label invites. The field is the real value; the
+ * proxy has been renamed and demoted (see that class's header §4).
+ *
+ * WHAT IS WRITTEN: the date of `LLMExtractionResult.sentDatetime` — the email's own send time,
+ * as the caller already parses it for the claim path — falling back to the moment the pipeline
+ * processed the email when the extraction states none (the prompt is deliberately
+ * explicit-or-EMPTY on that key, so a blank is expected traffic, not a fault). 🔴 BOTH LEGS ARE
+ * REAL TIMESTAMPS OF *THIS EMAIL*, which is the whole difference from the proxy: the proxy was a
+ * true fact about a DIFFERENT object. The date a human reads as "received" and the timestamp the
+ * module ARBITRATES with (`Competing_Broker_Submission__c.Submitted_DateTime__c`) are therefore
+ * CONSISTENT BY DERIVATION: both are `parseSentDatetime(extraction.sentDatetime)`, the same
+ * function over the same input, so neither can be re-sourced without the other. The
+ * `EmailThreadAnchorService` shape.
+ *
+ * ⚠ AMENDED 2026-08-14 — THE PREVIOUS WORDING CLAIMED MORE THAN THE CODE DOES AND IS RETRACTED,
+ * verbatim: *"because the caller hands us the SAME `submittedOn` instant it stamps on
+ * `Competing_Broker_Submission__c.Submitted_DateTime__c`, the date a human reads as 'received' and
+ * the timestamp the module ARBITRATES with can never disagree — by construction, not by
+ * convention."* Two things are wrong with it and the second is the one that misleads:
+ *   1. The two values NEVER COEXIST on one email, so there is no disagreement to prevent. The
+ *      caller's call-for-offers branch (`routeCallForOffers`) and its claim branch
+ *      (`routeProperties`) are MUTUALLY EXCLUSIVE — the gate returns before the claim path runs —
+ *      and the gated branch writes no `Competing_Broker_Submission__c` row at all, by design (D3).
+ *   2. It is a SECOND call to `parseSentDatetime`, not a shared variable. On the blank
+ *      `sent_datetime` path that function falls back to `Datetime.now()`, so two calls are two
+ *      different instants, and across midnight two different DATES.
+ * Neither is a defect — the behaviour is right — but "by construction" sent a reader looking for a
+ * shared value, and there is none to find. What is actually guaranteed is the derivation, above.
+ *
+ * LAST-WINS, like the deadline and for a STRONGER reason than the deadline has. The two are ONE
+ * FACT ABOUT ONE EMAIL and must not be allowed to straddle two: under fill-if-blank a deal would
+ * read "Received Jun 1 / Offers due Sep 1" where the September deadline came out of an August
+ * email, and the pair — which exists to answer *how fresh is this deadline* — becomes
+ * unanswerable and actively misleading. The latest call-for-offers email is the one whose
+ * deadline is live, so its arrival date is the matching one.
+ *
+ * PER EMAIL, NOT PER PROPERTY — the one asymmetry in this class. `offerDueDate` and `saleProcess`
+ * are per-property because a portfolio blast can quote a different deadline and a different
+ * process per asset; an email has exactly ONE arrival time, and the extraction carries exactly
+ * one `sent_datetime` for the whole message. The caller therefore sets the identical value on
+ * every request, which also makes the `mergeByRecord` fill-if-present collapse a no-op for it.
+ *
+ * ⚠ TWO NAMED RESIDUALS, STATED RATHER THAN HIDDEN. (1) The two legs read two different clocks —
+ * the BROKER's stated send time, or DPEG's receipt — so two deals stamped by the same blast can
+ * differ by the coordinator's forwarding delay. (2) Last-wins over a broker-stated timestamp is
+ * therefore NOT MONOTONIC: a stale forward of an old message, arriving today but stating a send
+ * time three weeks ago, moves this date BACKWARD. Both are inherited from the claim path
+ * deliberately rather than invented here — `submittedOn` already arbitrates real property claims
+ * on exactly these terms — and the alternative (ignore what the email says, always stamp today)
+ * would report a three-week-old forward as new, which is worse. `Inbound_Email_Staging__c`
+ * remains the byte-exact audit trail either way.
+ *
  * ═══ IDEMPOTENCY IS THE NO-CHANGE SKIP, AND IT IS LOAD-BEARING ═══
  * A record whose stored values ALREADY equal every incoming value is dropped from the update
  * list entirely. That is what makes a platform redelivery — or the same campaign email sent
  * twice — cost ZERO DML rather than churning `LastModifiedDate` on a live deal. It is also
  * why the read exists at all: without it this class could write blind and skip nothing.
+ *
+ * ⚠ AMENDED 2026-08-14 — THE CLAUSE "or the same campaign email sent twice" IS NOW NARROWER BY
+ * EXACTLY ONE DAY, AND THAT IS A DECISION RATHER THAN AN EROSION. The received date is
+ * last-wins and effectively always non-null, so an identical campaign email arriving on a LATER
+ * DAY with no stated `sent_datetime` now changes one field and costs one DML. It is not churn:
+ * a second arrival IS a new fact, and it is the fact the column exists to report. Everything the
+ * original clause was written to protect is intact, one path at a time:
+ *   • a platform REDELIVERY still costs zero — the duplicate-Message-Id guard returns before the
+ *     callout and never reaches this class at all;
+ *   • a `RoutingRetrySweepBatch` replay is not a replay of a WRITE — SP-5 measured that a `Failed`
+ *     row's attempt rolled back and committed nothing, so its retry is the FIRST stamp;
+ *   • an email that DOES state its `sent_datetime` replays to the byte, which is why
+ *     `stamp_replayedWithIdenticalValues_isAZeroDmlNoOp` is unmodified and still passes.
+ * The one genuinely widened case is the narrow one named above: same email, no stated send time,
+ * a different calendar day.
  *
  * ═══ GOVERNOR SHAPE — CONSTANT IN THE NUMBER OF MATCHED DEALS ═══
  * Exactly **1 SOQL and at most 1 DML per call**, whether the email matched one deal or ten.
@@ -110,6 +198,78 @@ public with sharing class CallForOffersStampService {
      * `ExtractAddressQueueable.LEN_LISTING_BROKER_NAME`.
      */
     private static final Integer LEN_LISTING_BROKER_NAME = 120;
+
+    /**
+     * Active values of `Opportunity.Sale_Process__c`, resolved once per transaction.
+     *
+     * 🔴 THIS IS THE ONE GUARD THE OTHER STAMPED FIELDS DO NOT NEED, AND IT IS THE MOST
+     * LIKELY WAY A CORRECT-LOOKING IMPLEMENTATION OF THIS FIELD BREAKS IN PRODUCTION.
+     * `Sale_Process__c` is a RESTRICTED picklist (`<restricted>true</restricted>`, four values:
+     * Off-Market / On-Market Listing / Call for Offers / Auction). An off-list value does NOT
+     * fail at compile time — it fails the DML at runtime with
+     * `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`. ⚠ `allOrNone = false` limits that to the ONE
+     * row, so it does not take the statement down; what it DOES take down is that deal's
+     * deadline and listing-broker stamp in the same row, reported as a refusal that reads like
+     * an approval lock. Guarding AT SOURCE — dropping the value rather than pushing it — is what
+     * keeps a bad picklist value from costing a deal the rest of its stamp.
+     *
+     * ⚠ THE PARSER'S EXISTING GUARD IS NOT THIS GUARD, AND THE DIFFERENCE IS THE WHOLE POINT.
+     * `LLMExtractionParser.parseProperty` already validates `sale_process` against
+     * **`Lead.Sale_Process__c`** (it is parsing a value bound for a Lead). This writes
+     * **`Opportunity.Sale_Process__c`** — a DIFFERENT picklist that merely happens to be
+     * byte-identical today. The moment the two drift, the parser's guard passes a value this
+     * field rejects, and nothing else in the chain would notice.
+     *
+     * `getDescribe()` is a DESCRIBE, not a query: it consumes no SOQL limit, so this cannot move
+     * the class's pinned `1 SOQL / <=1 DML` budget. Same mechanism, same reasoning, as
+     * `LeadConvertService.saleProcessValues()` — which describe-guards this very field for this
+     * very reason. Deliberately NOT a hardcoded list: a value deactivated in Setup must stop
+     * being written without a deploy.
+     */
+    private static Set<String> saleProcessValuesCache;
+
+    /**
+     * TEST-ONLY SEAM #3 — replaces the live picklist describe with a caller-supplied set.
+     *
+     * 🔴 IT EXISTS BECAUSE THE DESCRIBE GUARD IS OTHERWISE UNFALSIFIABLE. Every value that can
+     * reach `buildChange` has already been validated against `Lead.Sale_Process__c` by
+     * `LLMExtractionParser`, and the two picklists are byte-identical today — so no input
+     * reachable through the real pipeline can be off-list, the guard never fires, and no test
+     * can distinguish "the guard works" from "there is no guard". Injecting a set that OMITS a
+     * value the caller then supplies makes the drop OBSERVABLE, which is the only way this guard
+     * is covered at all. (Same problem and same remedy as the `LeadConvertService` and
+     * `PropertyAssetService` describe-guard tests.)
+     *
+     * ⚠ A PLAIN FIELD PLUS AN ACCESSOR METHOD, NEVER THE LAZY STATIC-PROPERTY IDIOM
+     * (`private static Set<String> x { get { if (x == null) ... return x; } set; }`). That idiom
+     * is widely cited and is INFINITE RECURSION in Apex once the getter body references the
+     * property itself — a runtime failure no compile step catches. This shape has no such edge.
+     *
+     * NEVER set this outside a test class.
+     */
+    @TestVisible
+    private static Set<String> simulateSaleProcessValues = null;
+
+    /**
+     * @return The active values of `Opportunity.Sale_Process__c`; memoized per transaction, and
+     *         overridden wholesale by `simulateSaleProcessValues` when a test has supplied one.
+     */
+    private static Set<String> saleProcessValues() {
+        if (simulateSaleProcessValues != null) {
+            return simulateSaleProcessValues;
+        }
+        if (saleProcessValuesCache == null) {
+            Set<String> values = new Set<String>();
+            for (Schema.PicklistEntry entry
+                    : Opportunity.Sale_Process__c.getDescribe().getPicklistValues()) {
+                if (entry.isActive()) {
+                    values.add(entry.getValue());
+                }
+            }
+            saleProcessValuesCache = values;
+        }
+        return saleProcessValuesCache;
+    }
 
     /**
      * TEST-ONLY SEAM #1 — makes `stamp` THROW before doing anything.
@@ -168,6 +328,22 @@ public with sharing class CallForOffersStampService {
         public String listingBrokerName;
         /** The listing broker's address, or null. Sanitized to a valid 80-char Email here. */
         public String listingBrokerEmail;
+        /**
+         * `sale_process` for the property that matched this deal, or null. LAST-WINS, and
+         * DESCRIBE-GUARDED against the live `Opportunity.Sale_Process__c` picklist before it is
+         * written — see `saleProcessValues()` and `buildChange`.
+         */
+        public String saleProcess;
+        /**
+         * The day this call-for-offers email reached DPEG. LAST-WINS like the deadline.
+         *
+         * ⚠ PER EMAIL, NOT PER PROPERTY — the caller sets the SAME value on every request built
+         * from one message. See the class header for why, and for what the caller derives it
+         * from. It is deliberately typed `Date`, matching `Offer_Due_Date__c`: the two are read
+         * side by side in one table row and a DateTime beside a Date renders as two different
+         * kinds of fact.
+         */
+        public Date callForOffersReceivedDate;
     }
 
     /**
@@ -329,6 +505,17 @@ public with sharing class CallForOffersStampService {
             if (String.isBlank(merged.listingBrokerEmail)) {
                 merged.listingBrokerEmail = request.listingBrokerEmail;
             }
+            if (String.isBlank(merged.saleProcess)) {
+                merged.saleProcess = request.saleProcess;
+            }
+            // Fill-if-present like the rest. ⚠ For THIS field the collapse is a formality rather
+            // than a decision: the value is per-EMAIL, so every request built from one message
+            // carries the identical date and there is nothing for the merge to choose between.
+            // It is written in the same shape as its siblings so that a future per-property
+            // source (if one ever exists) inherits the same deterministic list-order rule.
+            if (merged.callForOffersReceivedDate == null) {
+                merged.callForOffersReceivedDate = request.callForOffersReceivedDate;
+            }
         }
         return byRecord;
     }
@@ -338,8 +525,9 @@ public with sharing class CallForOffersStampService {
      *
      * Applies the class header's rule per field: a non-null incoming value OVERWRITES, a
      * null one is ignored, and an incoming value EQUAL to the stored one is not a change.
-     * Values are clipped/sanitized to their destination here because this class is the only
-     * writer of these three fields in the module — the length belongs with the write.
+     * Values are clipped, sanitized or describe-guarded to their destination here because this
+     * class is the only writer of these five fields in the module — the constraint belongs with
+     * the write.
      *
      * @param deal    The stored row, as read by the selector.
      * @param request The merged incoming values for that deal.
@@ -357,6 +545,31 @@ public with sharing class CallForOffersStampService {
             changed = true;
         }
 
+        // ═══ Call_For_Offers_Received_Date__c — LAST-WINS, AND IT IS THE DEADLINE'S OWN PAIR
+        // (added 2026-08-14) ═══
+        // It replaces the derived proxy CallForOffersService used to show in the "Received"
+        // column (Broker_First_Seen__c -> CreatedDate), which answers when the DEAL arrived and
+        // not when the EMAIL did. The three shared guards are unchanged and are what make this
+        // three lines rather than a special case: a null incoming value is never written (an
+        // email the caller could derive no arrival date from must not erase one the deal
+        // already carries), an already-equal value is not a change (the zero-DML replay
+        // guarantee), and requests were merged by recordId before we got here.
+        //
+        // 🔴 LAST-WINS IS NOT PATTERN-MATCHED OFF THE DEADLINE — it is the STRONGER case of the
+        // two. The deadline is last-wins because it CHANGES ("extended to Friday"). This date
+        // does not change; a NEW EMAIL simply has a new one. What forces last-wins here is that
+        // the two fields describe ONE EMAIL and are read as a pair: fill-if-blank would pin the
+        // received date to the first email while the deadline tracked the latest, so the row
+        // would report a September deadline received in June. Freezing one half of a pair is how
+        // a table that exists to answer "how fresh is this?" starts answering it wrongly.
+        // It carries NO describe guard and needs none — unlike Sale_Process__c this is a Date,
+        // so there is no value set to be off.
+        if (request.callForOffersReceivedDate != null
+                && request.callForOffersReceivedDate != deal.Call_For_Offers_Received_Date__c) {
+            change.Call_For_Offers_Received_Date__c = request.callForOffersReceivedDate;
+            changed = true;
+        }
+
         String name = InboundEmailFieldUtil.clip(request.listingBrokerName, LEN_LISTING_BROKER_NAME);
         if (String.isNotBlank(name) && name != deal.Listing_Broker_Name__c) {
             change.Listing_Broker_Name__c = name;
@@ -368,6 +581,42 @@ public with sharing class CallForOffersStampService {
         String email = InboundEmailFieldUtil.sanitizeEmail(request.listingBrokerEmail);
         if (String.isNotBlank(email) && email != deal.Listing_Broker_Email__c) {
             change.Listing_Broker_Email__c = email;
+            changed = true;
+        }
+
+        // ═══ Sale_Process__c — LAST-WINS, AND IT IS THE DEADLINE'S KIND OF FACT, NOT THE
+        // LISTING BROKER'S (added 2026-08-12) ═══
+        // MEASURED: after a call-for-offers stamp a deal still read Sale_Process__c = 'Off-Market'
+        // while the very extraction that produced the stamp returned sale_process = 'Call for
+        // Offers'. The deal contradicted what the pipeline knew.
+        //
+        // 🔴 WHICH OF THIS CLASS'S TWO PER-FIELD RULES APPLIES IS THE WHOLE DECISION, so argue it
+        // rather than pattern-match it. The offer deadline is LAST-WINS because it is a fact about
+        // THE CAMPAIGN and it genuinely CHANGES ("extended to Friday") — fill-if-blank would
+        // freeze the first date and make an extension invisible. The listing broker is not even a
+        // FALLBACK because it is a fact about THE TRANSACTION, and a third party's blast is not
+        // newer information about who is running DPEG's deal. Sale process is a fact about the
+        // CAMPAIGN, in the deadline's class exactly: "this asset is now being sold via a call for
+        // offers" describes how the SELLER is running the process, it is the same subject the
+        // deadline describes, and it genuinely changes when an off-market deal goes to a marketed
+        // campaign. A deal reading 'Off-Market' while this pipeline holds an email announcing a
+        // call for offers is actively misleading the deal team, which is the cost of getting this
+        // classification wrong in the other direction.
+        //
+        // 🔴 AND IT CARRIES ONE GUARD NO OTHER STAMPED FIELD NEEDS: Sale_Process__c is a RESTRICTED
+        // picklist, so an off-list value is an INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST at DML time
+        // that costs this deal its deadline and broker stamp too. The value is checked against the
+        // LIVE picklist and DROPPED if absent — never pushed, never checked against a hardcoded
+        // list. See saleProcessValues(): the parser's existing guard is against Lead's picklist,
+        // not this one. The three shared guards are unchanged — a blank incoming value is never
+        // written (an email silent about the process must not erase what the deal knows), an
+        // already-equal value is not a change (the zero-DML replay guarantee), and requests were
+        // merged by recordId before we got here.
+        String saleProcess = request.saleProcess;
+        if (String.isNotBlank(saleProcess)
+                && saleProcessValues().contains(saleProcess)
+                && saleProcess != deal.Sale_Process__c) {
+            change.Sale_Process__c = saleProcess;
             changed = true;
         }
 

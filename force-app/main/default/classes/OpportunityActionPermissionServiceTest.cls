@@ -2,18 +2,37 @@
  * Tests OpportunityActionPermissionService — the permission gate behind the Opportunity stage quick
  * actions.
  *
- * This is a SECURITY class, so the suite is weighted toward the negative cases: the tests that
- * matter most prove a user is DENIED, and prove a grant is never produced by accident — in
- * particular that PERMISSION SET MEMBERSHIP ALONE DOES NOT GRANT. That last one is the assertion
- * that pins the deliberate design decision behind this class: the gate is two-factor
- * (FLS read on `User.Deal_Driver__c` AND the flag set to true), and swapping it for the Lead-style
- * membership check would widen live access. `membershipWithoutTheFlag_isStillDenied` is what turns
- * that decision into something a future change cannot quietly undo.
+ * ── 🔴 REWRITTEN 2026-08-12 FOR THE CUSTOM-PERMISSION MIGRATION ──────────────
+ * The gate used to be two-factor: FLS read on `User.Deal_Driver__c` (via `WITH USER_MODE`) AND the
+ * flag itself set to true. It is now one factor: holding the `Acquisition_Deal_Actions` custom
+ * permission, granted by the SAME `Acquisition_Deal_Driver` permission set that used to carry the
+ * FLS grant. Every positive-path fixture below is SIMPLER as a direct consequence — "assign the set
+ * AND set the flag" is now just "assign the set" — per
+ * agent-output/design-requirements-custom-permissions.md §7.2.
  *
- * Every scenario runs under System.runAs with a purpose-built user, because "the running user" is
- * the entire input to this class. The transaction cache is cleared before each impersonation —
- * without that, a user switch inside one transaction would silently inherit the previous user's
- * answer and every assertion after the first would be meaningless.
+ * ── 🔴 STEP 0 MEASURED (2026-08-12), BEFORE ANY OF THIS WAS WRITTEN ──────────
+ * A throwaway probe (ProbeCustomPermissionTest, deployed and deleted in the same session) confirmed
+ * FeatureManagement.checkPermission('Acquisition_Deal_Actions') DOES reflect a
+ * PermissionSetAssignment inserted in the SAME test transaction, using the exact fixture shape this
+ * suite already used pre-migration: assign the permission set BEFORE Test.startTest(), then check
+ * inside a System.runAs block. No fixture restructuring was required — this file keeps that shape.
+ *
+ * ── WHAT SURVIVED THE REWRITE, AND WHY ────────────────────────────────────────
+ * `hasDealActionAccess_membershipWithoutTheFlag_isStillDenied` used to pin "permission-set MEMBERSHIP
+ * alone is not the gate" against the retired flag. The FLAG is gone, but the PRINCIPLE it protected —
+ * CAPABILITY (layer 4, "can this code be reached at all") is not AUTHORIZATION (layer 5, "is this
+ * user allowed") — is still load-bearing (ARCHITECTURE.md §2, "Permission Set Architecture"). It is
+ * rewritten below as `capabilitySetWithoutTheAuthorizationSet_isStillDenied`: a user holding
+ * `Opportunity_Stage_Actions_Access` (layer 4) but NOT `Acquisition_Deal_Driver` (layer 5) must still
+ * be denied. If someone ever moves `Acquisition_Deal_Actions` onto the layer-4 set — the exact move
+ * both class headers forbid, because `Opportunity_Stage_Actions_Access` is a member of
+ * `DPEG_Junior_Analyst_PSG` — this test goes red.
+ *
+ * ── WHAT DID NOT SURVIVE ───────────────────────────────────────────────────────
+ * `hasDealActionAccess_flagSetButNoFieldAccess_isDenied` is DELETED, not rewritten. It proved "the
+ * flag alone, without FLS to read it, is not sufficient" — there is no FLS surface left on a custom
+ * permission, so there is no analogous state to construct. Inventing a fixture for it would be
+ * testing nothing.
  *
  * ── WHY THERE IS NO 251-RECORD BULK TEST ──────────────────────────────────────
  * Per .claude/rules/bulk-test-rule.md the 251-record mandate applies to triggers, batches and
@@ -32,6 +51,7 @@
 private class OpportunityActionPermissionServiceTest {
 
     private static final String DEAL_DRIVER_PERM_SET = 'Acquisition_Deal_Driver';
+    private static final String CAPABILITY_PERM_SET = 'Opportunity_Stage_Actions_Access';
     private static final String NO_PERMISSION_MESSAGE =
         'You don\'t have permission to perform this action.';
 
@@ -39,10 +59,7 @@ private class OpportunityActionPermissionServiceTest {
     // DENIED — the cases that make this class worth having
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * No permission set, so no FLS on Deal_Driver__c: factor (a) fails, the selector throws, and the
-     * service must read that as a denial rather than let it escape as a fault.
-     */
+    /** No permission set, so no custom permission and no Modify All Data: denied. */
     @isTest
     static void hasDealActionAccess_bareStandardUser_returnsFalse() {
         User bareUser = buildStandardUser('oapsA');
@@ -61,67 +78,35 @@ private class OpportunityActionPermissionServiceTest {
     }
 
     /**
-     * THE ASSERTION THAT PINS THE DESIGN. This user HOLDS `Acquisition_Deal_Driver` — so they have
-     * FLS read on Deal_Driver__c, factor (a) — but the flag itself is FALSE. Under the current
-     * two-factor gate they are DENIED, which matches the deployed visibility rules exactly.
+     * 🔴 THE ASSERTION THAT REPLACES THE OLD FLAG PIN. This user holds `Opportunity_Stage_Actions_Access`
+     * — the layer-4 CAPABILITY set that lets a quick action reach this class at all — but NOT
+     * `Acquisition_Deal_Driver`, the layer-5 AUTHORIZATION set that carries `Acquisition_Deal_Actions`.
+     * Capability must not imply authorization.
      *
-     * If someone later "aligns with the Lead pattern" by replacing the flag read with
-     * LeadActionPermissionService.hasAnyPermissionSet({'Acquisition_Deal_Driver'}), THIS TEST GOES
-     * RED — which is the whole point. That refactor looks like tidying and is actually a live access
-     * grant to every holder of the permission set whose flag is false.
+     * If someone later "simplifies" by moving `Acquisition_Deal_Actions` onto the capability set (or
+     * grants deal-driving to everyone who can call the gate), THIS TEST GOES RED — which is the whole
+     * point. That move looks like tidying and is actually a live access grant to the entire
+     * `DPEG_Junior_Analyst_PSG` group, which `Opportunity_Stage_Actions_Access` is a member of.
      */
     @isTest
-    static void hasDealActionAccess_membershipWithoutTheFlag_isStillDenied() {
-        User permSetHolder = buildStandardUser('oapsB');
-        permSetHolder.Deal_Driver__c = false;
-        insert permSetHolder;
-        assignPermissionSet(permSetHolder.Id, DEAL_DRIVER_PERM_SET);
-
-        Test.startTest();
-        Boolean allowed;
-        Boolean fieldAccessible;
-        OpportunityActionPermissionService.clearCache();
-        System.runAs(permSetHolder) {
-            fieldAccessible = Schema.SObjectType.User.fields.Deal_Driver__c.isAccessible();
-            allowed = OpportunityActionPermissionService.hasDealActionAccess();
-        }
-        Test.stopTest();
-
-        // Precondition: this user really does hold the permission set's FLS, so a `false` result can
-        // only come from the FLAG, not from a missing grant. Without this the test below would pass
-        // for the wrong reason.
-        Assert.isTrue(fieldAccessible,
-            'PRECONDITION: Acquisition_Deal_Driver must grant FLS read on User.Deal_Driver__c — '
-            + 'otherwise this test proves nothing about the flag');
-
-        Assert.isFalse(allowed,
-            'Holding Acquisition_Deal_Driver is NOT sufficient — the gate is two-factor and this '
-            + 'user\'s Deal_Driver__c is false. A membership-only check would GRANT here and would '
-            + 'silently widen who can drive deals');
-    }
-
-    /**
-     * The mirror image: the flag is TRUE but the user has no FLS to read it. Factor (a) fails, so
-     * they are denied. Proves the flag alone is not sufficient either — both factors are required,
-     * in both directions.
-     */
-    @isTest
-    static void hasDealActionAccess_flagSetButNoFieldAccess_isDenied() {
-        User flaggedButUnprivileged = buildStandardUser('oapsC');
-        flaggedButUnprivileged.Deal_Driver__c = true;
-        insert flaggedButUnprivileged;   // deliberately NO permission set
+    static void capabilitySetWithoutTheAuthorizationSet_isStillDenied() {
+        User capabilityHolder = buildStandardUser('oapsB');
+        insert capabilityHolder;
+        assignPermissionSet(capabilityHolder.Id, CAPABILITY_PERM_SET);
 
         Test.startTest();
         Boolean allowed;
         OpportunityActionPermissionService.clearCache();
-        System.runAs(flaggedButUnprivileged) {
+        System.runAs(capabilityHolder) {
             allowed = OpportunityActionPermissionService.hasDealActionAccess();
         }
         Test.stopTest();
 
         Assert.isFalse(allowed,
-            'Deal_Driver__c = true without FLS read on the field must be denied: the flag is only '
-            + 'meaningful to a user the org has actually provisioned as a deal driver');
+            'Holding Opportunity_Stage_Actions_Access (capability) is NOT sufficient — the running '
+            + 'user must ALSO hold Acquisition_Deal_Driver (authorization). If this ever passes, '
+            + 'the custom permission has been moved onto — or duplicated onto — the capability set, '
+            + 'silently widening deal-driving to the whole DPEG_Junior_Analyst_PSG group.');
     }
 
     @isTest
@@ -145,18 +130,18 @@ private class OpportunityActionPermissionServiceTest {
     }
 
     /**
-     * A grant to a DIFFERENT user must not leak. This is the assertion that would catch a selector
-     * regression dropping the running-user Id filter — the single worst failure this feature could
-     * have.
+     * A grant to a DIFFERENT user must not leak to the running user. Worth keeping even though
+     * FeatureManagement.checkPermission resolves against the running context (there is no explicit
+     * running-user Id filter in this class to regress) — the admin-bypass path still reads through
+     * PermissionSetAssignmentSelector's hard-filtered query, and this pins that a second user's grant
+     * in the same transaction cannot bleed across via a stale cache or a broken filter either way.
      */
     @isTest
-    static void hasDealActionAccess_anotherUserIsTheDealDriver_stillDeniesTheRunningUser() {
+    static void hasDealActionAccess_anotherUserHoldsTheGrant_stillDeniesTheRunningUser() {
         User realDealDriver = buildStandardUser('oapsE');
-        realDealDriver.Deal_Driver__c = true;
         User bareUser = buildStandardUser('oapsF');
         insert new List<User>{ realDealDriver, bareUser };
         assignPermissionSet(realDealDriver.Id, DEAL_DRIVER_PERM_SET);
-        assignPermissionSet(bareUser.Id, DEAL_DRIVER_PERM_SET);
 
         Test.startTest();
         Boolean allowed;
@@ -167,18 +152,17 @@ private class OpportunityActionPermissionServiceTest {
         Test.stopTest();
 
         Assert.isFalse(allowed,
-            'Another user being flagged as a deal driver must never grant access to the running user');
+            'Another user holding Acquisition_Deal_Driver must never grant access to the running user');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // GRANTED
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Both factors satisfied — the intended deal-driver persona. */
+    /** The intended deal-driver persona: holding the permission set is now the whole grant. */
     @isTest
     static void hasDealActionAccess_provisionedDealDriver_returnsTrue() {
         User dealDriver = buildStandardUser('oapsG');
-        dealDriver.Deal_Driver__c = true;
         insert dealDriver;
         assignPermissionSet(dealDriver.Id, DEAL_DRIVER_PERM_SET);
 
@@ -191,14 +175,14 @@ private class OpportunityActionPermissionServiceTest {
         Test.stopTest();
 
         Assert.isTrue(allowed,
-            'FLS read on Deal_Driver__c (from Acquisition_Deal_Driver) plus the flag set to true is '
-            + 'the exact condition the deployed visibility rules use — it must grant access');
+            'Holding Acquisition_Deal_Driver — which now carries the Acquisition_Deal_Actions custom '
+            + 'permission — is the exact condition the deployed FlexiPage visibility rules use; it '
+            + 'must grant access');
     }
 
     @isTest
     static void assertDealActionAccess_provisionedDealDriver_doesNotThrow() {
         User dealDriver = buildStandardUser('oapsH');
-        dealDriver.Deal_Driver__c = true;
         insert dealDriver;
         assignPermissionSet(dealDriver.Id, DEAL_DRIVER_PERM_SET);
 
@@ -213,23 +197,15 @@ private class OpportunityActionPermissionServiceTest {
     }
 
     /**
-     * The documented admin bypass — and the proof that it is LOAD-BEARING, not merely convenient.
+     * The documented admin bypass. The user is on the System Administrator profile (which carries
+     * Modify All Data) and is assigned NO permission set, so a `true` result can ONLY have come from
+     * the Modify All Data branch.
      *
-     * The user is on the System Administrator profile (which carries Modify All Data), is assigned NO
-     * permission set, and has Deal_Driver__c left at its default FALSE, so a `true` result can ONLY
-     * have come from the Modify All Data branch. Every precondition is asserted rather than assumed.
-     *
-     * ⚠ MEASURED IN THIS ORG (this test was written the other way round first and failed):
-     * a System Administrator does NOT have FLS read on `User.Deal_Driver__c`. Custom fields deployed
-     * by the Metadata API arrive with no field permissions for ANY profile — "Modify All Data" is an
-     * object-level permission and does not confer FLS. So `UserSelector` THROWS for a bare admin, and
-     * if `hasModifyAllData()` did not run BEFORE the field read, every administrator in the org would
-     * be DENIED their own feature. The ordering inside computeDealActionAccess() is therefore a
-     * correctness requirement, not an optimisation — `fieldAccessible` is asserted false below to pin
-     * exactly that.
-     *
-     * The flag value is read with an ordinary system-mode test query (NOT through UserSelector) for
-     * the same reason: the selector deliberately cannot read it as this user.
+     * ⚠ THE OLD FLS-LOCKOUT PRECONDITION IS GONE, AND DELIBERATELY NOT REPLACED. Pre-migration this
+     * test had to prove a System Administrator lacks FLS read on `User.Deal_Driver__c` — the reason
+     * the bypass had to run BEFORE the field read. There is no field read left in this class at all,
+     * so there is nothing left to lock an admin out; the ordering is now a COST choice, not a
+     * correctness one (see the class header). This test now only isolates the bypass itself.
      *
      * (A fabricated PermissionSet with PermissionsModifyAllData = true is not an option: the platform
      * rejects it with FIELD_INTEGRITY_EXCEPTION listing ~35 dependent permissions. Using the profile
@@ -237,52 +213,48 @@ private class OpportunityActionPermissionServiceTest {
      * provisioned — same finding as LeadActionPermissionServiceTest.)
      */
     @isTest
-    static void hasDealActionAccess_administrator_isAllowedWithoutTheFlagOrThePermissionSet() {
+    static void hasDealActionAccess_administrator_isAllowedWithoutThePermissionSet() {
         User adminUser = buildUserOnProfile('System Administrator', 'oapsI');
         insert adminUser;
-        // System-mode read: proves the flag is false without needing the FLS this user lacks.
-        Boolean flagValue =
-            [SELECT Deal_Driver__c FROM User WHERE Id = :adminUser.Id].Deal_Driver__c;
 
         Test.startTest();
         Boolean allowed;
-        Boolean fieldAccessible;
         Set<String> heldSetNames = new Set<String>();
         OpportunityActionPermissionService.clearCache();
         System.runAs(adminUser) {
             for (PermissionSetAssignment row : PermissionSetAssignmentSelector.selectForCurrentUser()) {
-                heldSetNames.add(row.PermissionSet.Name);
+                if (row.PermissionSet != null) {
+                    heldSetNames.add(row.PermissionSet.Name);
+                }
             }
-            fieldAccessible = Schema.SObjectType.User.fields.Deal_Driver__c.isAccessible();
             allowed = OpportunityActionPermissionService.hasDealActionAccess();
         }
         Test.stopTest();
 
-        // Preconditions — without these, a passing assertion below could be the ordinary two-factor
-        // grant in disguise rather than the bypass.
         Assert.isFalse(heldSetNames.contains(DEAL_DRIVER_PERM_SET),
-            'The admin must hold NO Acquisition_Deal_Driver set, otherwise this test would not isolate the bypass');
-        Assert.isFalse(flagValue,
-            'The admin\'s Deal_Driver__c must be false, otherwise this test would not isolate the bypass');
-        Assert.isFalse(fieldAccessible,
-            'MEASURED: a System Administrator has NO FLS read on User.Deal_Driver__c — Modify All Data is '
-            + 'an OBJECT permission and confers no field access. This is why the Modify All Data check must '
-            + 'run BEFORE the field read; reversing that order locks every admin out of the feature');
+            'PRECONDITION: the admin must hold NO Acquisition_Deal_Driver set, otherwise this test '
+            + 'would not isolate the Modify All Data bypass');
 
         Assert.isTrue(allowed,
-            'A Modify All Data holder is allowed even without the flag AND without being able to read it — '
-            + 'denying an admin a button whose effect they can already achieve by inline edit, the Path, or '
-            + 'the API would be theatre, not security');
+            'A Modify All Data holder is allowed even without the custom permission — denying an '
+            + 'admin a button whose effect they can already achieve by inline edit, the Path, or the '
+            + 'API would be theatre, not security');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // CACHING + FAILURE MODE
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * 🔴 THE ASSERTION TIGHTENS UNDER THE NEW ORDER. Pre-migration a deal driver still paid the
+     * admin-bypass query first (the FLS read had to run before it, for correctness — see the class
+     * header), so repeated asks cost "at most two" total. The custom-permission check now runs
+     * FIRST and costs ZERO SOQL, and a driver never falls through to the bypass at all — so four
+     * asks by a driver must cost EXACTLY ZERO queries, not merely "not-more-than-two".
+     */
     @isTest
-    static void hasDealActionAccess_repeatedCalls_readTheUserOnlyOnce() {
+    static void hasDealActionAccess_repeatedCallsByADriver_costZeroQueries() {
         User dealDriver = buildStandardUser('oapsJ');
-        dealDriver.Deal_Driver__c = true;
         insert dealDriver;
         assignPermissionSet(dealDriver.Id, DEAL_DRIVER_PERM_SET);
 
@@ -291,7 +263,7 @@ private class OpportunityActionPermissionServiceTest {
         Integer queriesUsed;
         System.runAs(dealDriver) {
             Integer before = Limits.getQueries();
-            // Several quick actions on one Opportunity page can each ask; the reads must not repeat.
+            // Several quick actions on one Opportunity page can each ask; none may cost a query.
             OpportunityActionPermissionService.hasDealActionAccess();
             OpportunityActionPermissionService.hasDealActionAccess();
             OpportunityActionPermissionService.hasDealActionAccess();
@@ -300,15 +272,37 @@ private class OpportunityActionPermissionServiceTest {
         }
         Test.stopTest();
 
-        Assert.isTrue(queriesUsed <= 2,
-            'Four permission asks must cost at most the two initial selector reads (assignments + the user '
-            + 'row), not two per ask. Actual: ' + queriesUsed);
+        Assert.areEqual(0, queriesUsed,
+            'A deal driver must pay ZERO queries: FeatureManagement.checkPermission costs 0 SOQL and '
+            + 'a driver never reaches the Modify All Data bypass read. A nonzero count here means '
+            + 'either the cache regressed or the check order was reverted. Actual: ' + queriesUsed);
+    }
+
+    /** A non-driver still pays at most one query (the bypass read), memoized across repeated asks. */
+    @isTest
+    static void hasDealActionAccess_repeatedCallsByANonDriver_costAtMostOneQuery() {
+        User bareUser = buildStandardUser('oapsNonDriver');
+        insert bareUser;
+
+        Test.startTest();
+        OpportunityActionPermissionService.clearCache();
+        Integer queriesUsed;
+        System.runAs(bareUser) {
+            Integer before = Limits.getQueries();
+            OpportunityActionPermissionService.hasDealActionAccess();
+            OpportunityActionPermissionService.hasDealActionAccess();
+            queriesUsed = Limits.getQueries() - before;
+        }
+        Test.stopTest();
+
+        Assert.isTrue(queriesUsed <= 1,
+            'A non-driver must pay at most ONE query (the Modify All Data bypass read), memoized for '
+            + 'every subsequent ask in the same transaction. Actual: ' + queriesUsed);
     }
 
     @isTest
     static void clearCache_afterAUserSwitch_recomputesForTheNewUser() {
         User dealDriver = buildStandardUser('oapsK');
-        dealDriver.Deal_Driver__c = true;
         User bareUser = buildStandardUser('oapsL');
         insert new List<User>{ dealDriver, bareUser };
         assignPermissionSet(dealDriver.Id, DEAL_DRIVER_PERM_SET);
@@ -334,10 +328,11 @@ private class OpportunityActionPermissionServiceTest {
 
     /**
      * Reaches the load-failure path via the documented test seam. Its real-world trigger is a
-     * setup-object access failure under WITH USER_MODE while reading PermissionSetAssignment, which
-     * cannot be provoked deterministically (every user can read their own rows). What matters is that
-     * the failure PROPAGATES instead of collapsing into a default answer — and that a propagated
-     * fault is NOT memoized as if it were an answer.
+     * setup-object access failure under WITH SYSTEM_MODE while reading PermissionSetAssignment for
+     * the admin bypass — the only remaining query in this class — which cannot be provoked
+     * deterministically (every user can read their own rows). What matters is that the failure
+     * PROPAGATES instead of collapsing into a default answer, and that a propagated fault is NOT
+     * memoized as if it were an answer.
      */
     @isTest
     static void hasDealActionAccess_whenTheLookupFails_propagatesAndCachesNothing() {
@@ -391,36 +386,16 @@ private class OpportunityActionPermissionServiceTest {
         Assert.isTrue(sawFault, 'The underlying fault must propagate for the controller to mask and log');
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // helpers
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /** Assigns a deployed permission set, by API Name, to a user. */
-    private static void assignPermissionSet(Id assigneeId, String permissionSetName) {
-        Id permSetId = [SELECT Id FROM PermissionSet WHERE Name = :permissionSetName LIMIT 1].Id;
-        insert new PermissionSetAssignment(AssigneeId = assigneeId, PermissionSetId = permSetId);
-    }
-
-    /**
-     * Builds (but does not insert) a bare Standard User. Mirrors the helper in
-     * LeadActionPermissionServiceTest — User is a setup object whose required-field shape
-     * TestDataFactory deliberately does not cover, and the repo's existing permission tests build it
-     * locally for the same reason.
-     *
-     * @param tag short per-test token keeping Username unique across methods in one run
-     */
     /**
      * ⚠ COMPANION REGRESSION PIN to the 2026-08-03 Lead-action incident. That incident was reported
      * against the Lead quick actions, but the root cause sat in PermissionSetAssignmentSelector,
-     * which THIS service also consumes — `hasModifyAllData()` calls it OUTSIDE the try/catch that
-     * guards the Deal_Driver__c read, so under the old `WITH USER_MODE` a Minimum Access user made
-     * this gate THROW rather than deny, and the Opportunity actions failed the same way with
-     * "Unable to verify your permissions". No code in this service changed; it inherits the
-     * selector fix.
+     * which THIS service still consumes for the admin bypass — the ONLY query it performs. Under the
+     * old `WITH USER_MODE` a Minimum Access user made this gate THROW rather than deny; the selector
+     * now runs `WITH SYSTEM_MODE`, and this service inherits the fix unchanged by the migration.
      *
-     * The expected answer here is FALSE, not true: a bare Minimum Access user is legitimately not a
-     * deal driver. The regression being pinned is THROW-vs-DENY. A gate that throws is not a
-     * stricter gate — it is a broken one, and it denies the admin-bypass path too.
+     * The expected answer here is FALSE, not true: a bare Minimum Access user legitimately holds
+     * neither the custom permission nor Modify All Data. The regression being pinned is
+     * THROW-vs-DENY, not the flag model this class no longer has.
      *
      * ⚠ DO NOT downgrade this to buildStandardUser: Standard User can read the setup entity and so
      * passes under either mode, which is exactly the blind spot that let this reach production —
@@ -448,8 +423,18 @@ private class OpportunityActionPermissionServiceTest {
             'The deal-action gate must DENY a Minimum Access user, not THROW. A throw reproduces the '
             + '2026-08-03 root cause reaching this service too. Observed: ' + thrown);
         Assert.isFalse(allowed,
-            'A bare Minimum Access user is not a deal driver and holds no Modify All Data, so the '
-            + 'two-factor gate must return false');
+            'A bare Minimum Access user holds neither the custom permission nor Modify All Data, so '
+            + 'the gate must return false');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Assigns a deployed permission set, by API Name, to a user. */
+    private static void assignPermissionSet(Id assigneeId, String permissionSetName) {
+        Id permSetId = [SELECT Id FROM PermissionSet WHERE Name = :permissionSetName LIMIT 1].Id;
+        insert new PermissionSetAssignment(AssigneeId = assigneeId, PermissionSetId = permSetId);
     }
 
     private static User buildStandardUser(String tag) {

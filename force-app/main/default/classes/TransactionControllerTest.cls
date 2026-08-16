@@ -214,6 +214,112 @@ private class TransactionControllerTest {
         System.assertEquals(251, rows.size(), 'getActiveTransactions returns all 251 rows, not capped at 200');
     }
 
+    /**
+     * 🔴 THE PRECEDENCE RULE IS THE POINT (added 2026-08-12, live UI testing fix item 3).
+     * Property__r.Name (the lookup) must WIN, and Property_Name__c (the legacy text field nothing
+     * in the app populates) is only a FALLBACK when the lookup gives nothing. The order must never
+     * reverse — a stale hand-typed name must not beat the live lookup. All four combinations are
+     * built in one method so the winner in each is asserted against the same fixture set, rather
+     * than four separate tests that could each individually pass for the wrong reason.
+     *
+     * scripts/seed-transactions.apex writes hardcoded Property_Name__c values with NO lookup set,
+     * which is exactly the "text only" row below and exactly why the fallback must exist at all.
+     */
+    @isTest
+    static void getActiveTransactions_propertyNamePrecedence_allFourCombinations() {
+        Property__c property = TestDataFactory.createProperty(true); // Name = 'Test Property 0'
+
+        Transaction__c bothSet = TestDataFactory.createTransaction(null, property.Id, false);
+        TestDataFactory.applyOverrides(bothSet, new Map<String, Object>{
+            'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
+            'Property_Name__c' => 'Stale Hand-Typed Name'
+        });
+
+        Transaction__c lookupOnly = TestDataFactory.createTransaction(null, property.Id, false);
+        TestDataFactory.applyOverrides(lookupOnly, new Map<String, Object>{
+            'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
+            'Property_Name__c' => null
+        });
+
+        Transaction__c textOnly = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(textOnly, new Map<String, Object>{
+            'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
+            'Property_Name__c' => 'Seeded Text Name'
+        });
+
+        Transaction__c neitherSet = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(neitherSet, new Map<String, Object>{
+            'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
+            'Property_Name__c' => null
+        });
+
+        List<Transaction__c> fixtures =
+            new List<Transaction__c>{ bothSet, lookupOnly, textOnly, neitherSet };
+        insert fixtures;
+
+        Test.startTest();
+        List<TransactionController.TxnRow> rows = TransactionController.getActiveTransactions();
+        Test.stopTest();
+
+        Map<Id, TransactionController.TxnRow> byId = new Map<Id, TransactionController.TxnRow>();
+        for (TransactionController.TxnRow r : rows) {
+            byId.put(r.id, r);
+        }
+
+        Assert.areEqual('Test Property 0', byId.get(bothSet.Id).propertyName,
+            'Both set: the LOOKUP must win over the stale hand-typed text — a stale name must '
+            + 'never beat the live lookup');
+        Assert.areEqual('Test Property 0', byId.get(lookupOnly.Id).propertyName,
+            'Lookup only: the lookup name is used');
+        Assert.areEqual('Seeded Text Name', byId.get(textOnly.Id).propertyName,
+            'Text only (the seed-script shape — a hardcoded name with NO lookup): the fallback '
+            + 'must supply the name, or every seeded Transaction shows a blank Property column');
+        Assert.isNull(byId.get(neitherSet.Id).propertyName,
+            'Neither set: null is the honest answer (no property exists on this deal — only '
+            + 'LeadConvertService creates a Property__c, so a manually-built deal has none). The '
+            + 'placeholder ("—") is the CLIENT\'s decision, not the controller\'s — returning an '
+            + 'em-dash here would bake UI text into the server response');
+    }
+
+    /**
+     * 🔴 tasksTotal MUST STAY NULL, NOT 0, BEFORE THE DAY-0 FAN-OUT (added 2026-08-12). This is the
+     * fix for the hardcoded '/75' (record page showed '/82') denominator: TaskFanoutService writes
+     * Tasks_Total__c = createdForTxn, a count gated by each Transaction's OWN condition fields, so
+     * no constant is ever right and the client must be able to tell "not fanned out yet" apart from
+     * "fanned out and legitimately produced zero tasks". Coalescing to 0 here would erase that
+     * distinction and reintroduce a version of the exact defect this field replaced.
+     */
+    @isTest
+    static void getActiveTransactions_tasksTotal_nullBeforeFanOutIsNeverCoalescedToZero() {
+        Transaction__c notFannedOut = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(notFannedOut, new Map<String, Object>{
+            'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
+            'Tasks_Fanned_Out__c' => false, 'Tasks_Total__c' => null, 'Tasks_Complete__c' => null
+        });
+        Transaction__c fannedOut = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(fannedOut, new Map<String, Object>{
+            'Status__c' => 'Active', 'Contract_Executed_Date__c' => null,
+            'Tasks_Fanned_Out__c' => true, 'Tasks_Total__c' => 42, 'Tasks_Complete__c' => 10
+        });
+        insert new List<Transaction__c>{ notFannedOut, fannedOut };
+
+        Test.startTest();
+        List<TransactionController.TxnRow> rows = TransactionController.getActiveTransactions();
+        Test.stopTest();
+
+        Map<Id, TransactionController.TxnRow> byId = new Map<Id, TransactionController.TxnRow>();
+        for (TransactionController.TxnRow r : rows) {
+            byId.put(r.id, r);
+        }
+
+        Assert.isNull(byId.get(notFannedOut.Id).tasksTotal,
+            'Not yet fanned out: tasksTotal must be NULL, never 0 — a coalesced 0 is '
+            + 'indistinguishable from a fanned-out Transaction that legitimately produced no tasks');
+        Assert.areEqual(42, byId.get(fannedOut.Id).tasksTotal,
+            'Fanned out: tasksTotal must carry the PER-ROW denominator (42 here), never a shared '
+            + 'constant like the retired hardcoded 75/82');
+    }
+
     // A bare Standard User with no DPEG perm sets: WITH USER_MODE SOQL on the custom
     // Transaction__c object (no object access) throws, exercising each read method's
     // failure catch which maps it to a user-safe AuraHandledException (P6 boundaries).

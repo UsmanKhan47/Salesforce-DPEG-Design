@@ -23,6 +23,69 @@
         record-type-aware branch, unlike LOI__c and NDA__c. Adding a disposition-only status
         here would silently drag that Apex change back into scope.
 
+        =====================================================================
+        🔴 RETRACTED 2026-08-14 (Phase 3, observation 7). THE PARAGRAPH DIRECTLY ABOVE IS FALSE.
+        THIS FILE'S VALUE SET IS UNCHANGED - THE DIVERGENCE ARRIVED FROM THE ACQUISITION SIDE.
+        =====================================================================
+
+        RETRACTED, verbatim: "BOTH RECORD TYPES EXPOSE THE SAME FOUR Negotiation_Status__c
+        VALUES... This is the one place in Tranche 3 where the two sides genuinely share a
+        vocabulary... Contract_Review__c keeps ONE stage map in RecordStageAdvanceService and
+        needs no record-type-aware branch."
+
+        Acquisition_PSA now runs Draft -> Negotiation -> Signed -> Executed. THIS record type
+        still runs Initial Draft -> Revised -> Ready for Execution -> Executed and NOT ONE LINE
+        of its <picklistValues> changed - which is exactly why this retraction is here rather
+        than left to be inferred. `git diff` on this file shows only comment text, while the
+        property the comment asserts has gone.
+
+        🔴 THE PARAGRAPH'S OWN CLOSING WARNING FIRED, JUST MIRRORED. It warned that adding a
+        DISPOSITION-only status would drag the Apex change into scope. An ACQUISITION-only set
+        was added instead; the consequence is identical, and the Apex change was in scope as
+        requirements C9.
+
+        🔴 THE NEXT SENTENCE IS FALSE AS OF 2026-08-14. IT IS KEPT ONLY AS THE RETRACTED TEXT.
+        DO NOT ACT ON IT; THE CORRECTION IS DIRECTLY BELOW. ⚠ THIS IS THE SENTENCE THAT
+        GENERATED A PHANTOM OPEN ITEM AT REVIEW - the two PSA record type files are where a
+        reader lands asking "what does observation 7 still owe?", and the answer they found here
+        described work that had already shipped.
+        [FALSE] "Requirements C9 requires CONTRACT_REVIEW_NEXT_STAGE to be SPLIT, and
+        RecordStageAdvanceService's header still asserts one map shared BY REFERENCE. That is
+        DEVELOPER work." [END FALSE]
+
+        ⇒ THE SPLIT IS DELIVERED, AND THIS RECORD TYPE OWNS THE SECOND MAP. In
+        RecordStageAdvanceService: the doc block preceding the acquisition map now OPENS with
+        "🔴 THE SHARED MAP IS GONE. THIS IS THE SPLIT ITS OWN COMMENT PREDICTED." (~line 645),
+        naming the old CONTRACT_REVIEW_NEXT_STAGE object as history one line below;
+        CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE is declared at ~line 723 and
+        CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE - THIS type's map, the old shared one verbatim -
+        at ~line 749; and the StageConfig at ~lines 1157 / 1159 points each record type at its
+        own map and its own gate. The falsifier is
+        RecordStageAdvanceServiceTest.psaSequencesAreSplitPerRecordType.
+        ⚠ THE COST THE OLD PARAGRAPH WARNED OF IS NOW REAL AND LANDS HERE: a stage added to the
+        acquisition map will NOT reach this one. That is the requirement rather than the hazard,
+        but it is no longer free.
+        ⚠ VERIFY BY IDENTIFIER, NOT BY LINE NUMBER - line numbers in a .cls drift and the names
+        do not.
+
+        ⚠ THE ONLY SHARED VALUE IS NOW 'Executed', AND IT IS THE TERMINAL ON BOTH SIDES. That is
+        what keeps flexipages/Contract_Review_Record_Page correct with no edit - both its Advance
+        Stage entries gate on Negotiation_Status__c NE 'Executed'. Checked, not assumed.
+
+        🔴 THE THREE VALUES THIS RECORD TYPE RUNS ON STAY ACTIVE ON THE FIELD, PERMANENTLY
+        (decision O3, a hard stop). 'Initial Draft', 'Revised' and 'Ready for Execution' are
+        removed from Acquisition_PSA at P3-D3 and are NOT deactivated. Deactivating any of them
+        deletes this record type's entire sequence. ⚠ Contrast LOI__c.Stage__c in the same phase,
+        where the four retired values ARE deactivated - there, no record type still used them.
+        The two changes look alike and are not.
+
+        ⚠ ONE THING TO WATCH THAT IS NOT VISIBLE FROM THIS FILE: flows/PSA_Ready_Notify keys on
+        Negotiation_Status__c = 'Ready for Execution' with NO record-type criterion, so it has
+        always fired for both types. It now fires on 'Ready for Execution' OR 'Signed'.
+        THIS RECORD TYPE'S BEHAVIOUR IS UNCHANGED by that edit - it can never reach 'Signed' -
+        but the flow is now shared in a way it was not, so a future edit to it must not assume a
+        single vocabulary either.
+
         WHAT THE TWO TYPES ACTUALLY DIFFER ON is exactly two things: the counterparty token in
         Ball_In_Court__c (Buyer here, Seller on Acquisition_PSA) and which parent lookup is
         populated. That is the whole delta.
@@ -80,7 +143,7 @@
     -->
     <fullName>Disposition_PSA</fullName>
     <active>true</active>
-    <description>The sell-side PSA. DPEG is the seller, so our legal drafts first and the counterparty is the Buyer; Ball In Court reads Us / Buyer. Parented by Disposition; Opportunity stays blank. Same four Negotiation Status values as the acquisition type.</description>
+    <description>Sell-side PSA. DPEG is seller; counterparty is Buyer (Ball In Court: Us / Buyer). Parented by Disposition. Keeps Initial Draft, Revised, Ready for Execution, Executed - unchanged 2026-08-14; only Executed now shared. See in-file comment.</description>
     <label>Disposition PSA</label>
     <picklistValues>
         <picklist>Ball_In_Court__c</picklist>

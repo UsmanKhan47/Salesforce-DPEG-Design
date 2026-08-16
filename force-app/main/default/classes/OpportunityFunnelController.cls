@@ -13,9 +13,14 @@
  */
 public with sharing class OpportunityFunnelController {
 
+    // ⚠ These are Opportunity.StageName API VALUES, not labels — getStageCounts keys its map on
+    // them and the LWC boards (pipelineStageBoard / totalOpportunities / recentOpportunities) join
+    // on the value this list emits. 'Under Contract (PSA)' was renamed from 'PSA' (Acquisition
+    // Observations phase 2); a stale key here does not error, it renders a permanent zero.
     private static final List<String> STAGE_ORDER = new List<String>{
         'New', 'Under Review', 'Development Review', 'Construction Review', 'Underwriting',
-        'LOI', 'PSA', 'About to Close', 'Closed Won', 'Dead/Pass', 'Portfolio Deal'
+        'LOI', 'Under Contract (PSA)', 'About to Close', 'Closed Won', 'Dead/Pass',
+        'Portfolio Deal'
     };
 
     // Fixed, generic user-safe message for a failed read.
@@ -43,7 +48,8 @@ public with sharing class OpportunityFunnelController {
             }
             // Outcome stages are scoped to the last 90 days by close date so the cards
             // reflect recent activity rather than an ever-growing all-time total.
-            counts.put('PSA', OpportunitySelector.countByStageInLastNDays('PSA', 90));
+            counts.put('Under Contract (PSA)',
+                OpportunitySelector.countByStageInLastNDays('Under Contract (PSA)', 90));
             counts.put('Closed Won', OpportunitySelector.countByStageInLastNDays('Closed Won', 90));
             counts.put('Dead/Pass', OpportunitySelector.countByStageInLastNDays('Dead/Pass', 90));
             List<StageCount> result = new List<StageCount>();
@@ -95,7 +101,13 @@ public with sharing class OpportunityFunnelController {
                 s.pipelineValue = (v == null) ? 0 : v;
             }
             s.landDeals = OpportunitySelector.countByDealType('Land');
-            s.commercialDeals = OpportunitySelector.countByDealType('Commercial');
+            // 'Retail' (was 'Commercial') — the Deal Type migration, phase 1 D3. This is the
+            // QUERY FILTER, so it must move with the picklist value or the tile silently reads 0.
+            // ⚠ The DTO member is still `commercialDeals` and is DELIBERATELY NOT RENAMED: it is
+            // the wire contract `lwc/opportunityPipeline` reads (`s.commercialDeals`), so renaming
+            // it is an LWC + Jest change with no behavioural gain, and the migration's verified
+            // reference inventory scopes this file to the value on this line alone.
+            s.commercialDeals = OpportunitySelector.countByDealType('Retail');
             return s;
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'OpportunityFunnelController.getPipelineSnapshot: '

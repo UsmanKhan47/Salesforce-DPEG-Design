@@ -16,7 +16,7 @@ const CONFIRM = {
  *
  * Development Review and Construction Review are MUTUALLY EXCLUSIVE BRANCHES, not sequential steps —
  * Development Review exists only in the Land business process, Construction Review only in
- * Commercial. That is why this bundle and its Commercial twin hardcode their own target rather than
+ * Retail. That is why this bundle and its Retail twin hardcode their own target rather than
  * sharing advanceDealStage's derive-from-current-stage route: from Under Review the next stage is
  * ambiguous, and only Deal_Type__c resolves it. The visibility rule on the Highlights Panel gates
  * this button on `Deal_Type__c = Land`.

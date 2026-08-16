@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. CustomField.description is
+        capped at 255 characters. The comment is INSIDE the root element on purpose - a
+        comment ABOVE <CustomField> breaks `sf` deploy at conversion.
+
+        THE _Count__c SUFFIX IS REQUIRED HERE FOR A SECOND, WEAKER REASON THAN ON ITS
+        SIBLING - AND THAT IS EXACTLY WHY IT MUST NOT BE DROPPED. `Fields_Missing__c` is
+        not literally rule 4's <Subject>_<PastParticiple> Boolean shape the way
+        Fields_Captured__c is; "Missing" reads as a STATE. But this field sits directly
+        beside a field that IS that shape, so a reader who resolves one as a Boolean
+        resolves the other the same way. Naming the pair inconsistently would be worse
+        than naming either one wrongly. See Fields_Captured_Count__c's comment for the
+        rule-4 argument and the two delete-and-recreate repairs this repo has already paid
+        for (Is_Ready__c, Occupied_Flag__c).
+
+        IT IS DERIVED BUT STORED. missing = 9 - captured, always, so this field carries no
+        information its sibling does not. It is stored anyway because a report filtering
+        "leads missing three or more deal facts" cannot express that against a percent or
+        against a numerator without arithmetic in every report. It costs nothing: both
+        counts and the percent are computed in one pass, in the same insert, with no
+        additional SOQL and no additional DML (spec sec 2.2).
+
+        THE INVARIANT IS LOAD-BEARING AND IS THE CHEAPEST AVAILABLE CANARY. If captured +
+        missing ever fails to equal the signed-off denominator of nine on a scored row,
+        the scoring code and the denominator constant have drifted apart - which is
+        otherwise invisible, because a wrong denominator still produces a plausible
+        percent. Assert it in the Apex tests.
+
+        NULL means not scored (the fail-soft path), which is NOT the same as zero missing.
+        Zero missing is a complete extraction - the best possible answer, not the absence
+        of one.
+    -->
+    <fullName>Fields_Missing_Count__c</fullName>
+    <description>How many of the nine signed-off deal-process extraction keys were NOT captured from the broker email. Always nine minus Fields Captured Count. Null means not scored; zero means a complete extraction.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Count of deal facts the automated extraction did not find, out of nine. A high number means chase the broker before working the lead.</inlineHelpText>
+    <label>Fields Missing Count</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

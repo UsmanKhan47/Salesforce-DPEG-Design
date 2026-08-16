@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Call_For_Offers_Received_Date__c</fullName>
+    <description>The day a call-for-offers email for this deal was received. Stamped by CallForOffersStampService when an inbound call-for-offers email matches a live deal (last email wins, so a later call-for-offers email about the same deal overwrites this date). This is NOT the deal's creation date and NOT first broker contact - it replaces the proxy the call-for-offers surface previously derived from Broker_First_Seen__c/CreatedDate with the real, source-derived date. Pairs with Offer_Due_Date__c (also Date, not DateTime) on the call-for-offers table.</description>
+    <inlineHelpText>Date a call-for-offers email for this deal was received. Set by the inbound email pipeline, not by hand. Not the deal creation date and not first broker contact.</inlineHelpText>
+    <label>Call For Offers Received Date</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Date</type>
+</CustomField>

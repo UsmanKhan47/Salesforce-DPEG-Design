@@ -10,6 +10,8 @@
  *     summary, stage donut, and the row table — the four static reads below).
  *   - ContractExecutionService.handleExecution (idempotency guard: which
  *     executed deals already own a Transaction — selectByOpportunityIds).
+ *   - RecordStageAdvanceService.load (the Advance Stage quick action —
+ *     selectStageRequiredById, added 2026-08-12).
  *
  * WHY A DYNAMIC QUERY LIVES HERE (design §6): the fan-out reads a fixed base
  * field set PLUS an arbitrary set of conditional-gating fields whose API names
@@ -172,13 +174,48 @@ public with sharing class TransactionSelector {
      * Active Transactions, name-ordered, with the columns the Active-Transactions
      * table renders — backs TransactionController.getActiveTransactions.
      *
+     * ── 🔴 `Property__r.Name` IS THE PROPERTY COLUMN'S REAL SOURCE (added 2026-08-12) ──
+     * `Property_Name__c` is a plain Text(120) field that NOTHING IN THE APPLICATION
+     * POPULATES: ContractExecutionService creates every Transaction with the
+     * `Property__c` LOOKUP and never the text twin, so the dashboard's Property
+     * column rendered `—` on every application-created row (measured org-wide: zero
+     * Transactions carry a non-blank value). The lookup traversal is the fix.
+     *
+     * ⚠ `Property_Name__c` STAYS IN THE SELECT and is NOT deleted. It holds the five
+     * names scripts/seed-transactions.apex writes (those seeded rows set the text
+     * field and NOT the lookup, so a lookup-only read would blank the exact rows that
+     * show data today — the fix would invert on the demo data), and FIVE report files
+     * read it directly. The controller coalesces: lookup first, text second. Retiring
+     * the text field and repointing those reports is a separate, tracked change.
+     *
+     * ⚠ THE TRAVERSAL ADDS A CRUD DEPENDENCY, NOT MERELY AN FLS ONE. `WITH USER_MODE`
+     * THROWS rather than degrades, so a persona that can read Transaction__c but has
+     * no read on the `Property__c` OBJECT kills this whole query and with it the
+     * entire Active Transactions LWC. `DPEG_Transaction_Team` composes
+     * `DPEG_Property_View`, and `Transaction__c.Property__c` is granted readable by
+     * both `DPEG_Transaction_Edit` and `DPEG_Transaction_View` (verified 2026-08-12);
+     * `Property__c.Name` is a standard Name field, on which FLS cannot be configured.
+     * Re-check those three facts before adding any further parent traversal here.
+     *
+     * ⚠ `Tasks_Total__c` IS SELECTED PER ROW AND THAT IS THE POINT (added 2026-08-12).
+     * TaskFanoutService writes `Tasks_Total__c = createdForTxn` — the count actually
+     * created for THAT Transaction, gated by that Transaction's own condition fields
+     * (Loan_Required__c and friends from Task_Group_Def__mdt.Condition_Field__c) — so
+     * the denominator genuinely differs between rows and NO CONSTANT CAN BE RIGHT.
+     * The LWC used to hardcode 75 while the record page's Tasks_Display__c formula
+     * showed 82; both were wrong. Do not reintroduce a fixed total anywhere.
+     * ⚠ It is NULL on a Transaction created but not yet fanned out
+     * (`Tasks_Fanned_Out__c = false`), which every consumer must null-guard.
+     * Both permission sets already grant it readable (verified 2026-08-12) — worth
+     * confirming precisely because USER_MODE throws rather than degrades.
+     *
      * @return Active Transactions ordered by Name with the row field set
      *         populated; empty when none are Active.
      */
     public static List<Transaction__c> selectActiveRows() {
         return [
-            SELECT Id, Name, Property_Name__c, Stage__c, Contract_Value__c,
-                   Target_Close_Date__c, Tasks_Complete__c, Risk__c, Owner_Name__c
+            SELECT Id, Name, Property_Name__c, Property__r.Name, Stage__c, Contract_Value__c,
+                   Target_Close_Date__c, Tasks_Complete__c, Tasks_Total__c, Risk__c, Owner_Name__c
             FROM Transaction__c
             WHERE Status__c = :STATUS_ACTIVE
             WITH USER_MODE
@@ -208,6 +245,50 @@ public with sharing class TransactionSelector {
             FROM Transaction__c
             WHERE Opportunity__c IN :opportunityIds
             WITH USER_MODE
+        ];
+    }
+
+    /**
+     * Loads a Transaction for the generic stage-advance quick action — backs
+     * RecordStageAdvanceService.advance (added 2026-08-12).
+     *
+     * FETCH-FOR-USE: the caller reads the stage, derives the next one and writes it
+     * back, so a miss is an error, not a normal state. A single-row SOQL assignment
+     * throws native System.QueryException, matching NdaSelector /
+     * UnderwritingSelector / ContractReviewSelector.selectStageRequiredById and
+     * OpportunitySelector.selectStageRequiredById.
+     *
+     * 🔴 `RecordTypeId` IS DELIBERATELY NOT SELECTED, AND THAT IS A COMPILE FACT
+     * RATHER THAN A PREFERENCE. `Transaction__c` HAS NO RECORD TYPES (there is no
+     * `objects/Transaction__c/recordTypes/` folder, verified in the org 2026-08-12),
+     * and a custom object with zero record types has no `RecordTypeId` field at all —
+     * selecting it would not degrade, it would fail to compile. The three
+     * record-type-free siblings (`Underwriting__c`, `Construction_Feasibility_Review__c`,
+     * `Development_Feasibility_Review__c`) omit it for exactly this reason, and
+     * RecordStageAdvanceService.recordTypeIdOf reads through
+     * getPopulatedFieldsAsMap() precisely so an unselected field is `null` rather
+     * than an SObjectException. The service then takes its single-sequence branch.
+     * ⚠ If `Transaction__c` is ever GIVEN record types, this field becomes mandatory
+     * here — omitting it then would silently route every Transaction to the default
+     * sequence with no error anywhere.
+     *
+     * Field list is deliberately MINIMAL (Id + the stage field) per this selector's
+     * per-caller philosophy: the advance write touches nothing else, and under
+     * `WITH USER_MODE` every extra field is another way for this read to throw.
+     *
+     * @param transactionId Transaction__c Id; must reference an existing row.
+     * @return The Transaction with Id and Stage__c populated.
+     * @throws System.QueryException when no Transaction matches the Id.
+     * @example
+     * Transaction__c txn = TransactionSelector.selectStageRequiredById(recordId);
+     */
+    public static Transaction__c selectStageRequiredById(Id transactionId) {
+        return [
+            SELECT Id, Stage__c
+            FROM Transaction__c
+            WHERE Id = :transactionId
+            WITH USER_MODE
+            LIMIT 1
         ];
     }
 }

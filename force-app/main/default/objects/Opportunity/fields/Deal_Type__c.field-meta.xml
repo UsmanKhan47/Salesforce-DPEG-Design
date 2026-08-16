@@ -16,9 +16,9 @@
                 <label>Land</label>
             </value>
             <value>
-                <fullName>Commercial</fullName>
+                <fullName>Retail</fullName>
                 <default>false</default>
-                <label>Commercial</label>
+                <label>Retail</label>
             </value>
         </valueSetDefinition>
     </valueSet>

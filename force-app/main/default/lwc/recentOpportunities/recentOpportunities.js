@@ -3,6 +3,9 @@ import { NavigationMixin } from 'lightning/navigation';
 import getRecentOpportunities from '@salesforce/apex/OpportunityFunnelController.getRecentOpportunities';
 
 // [background, dot] per stage / deal type for the soft pills.
+// Keys are Opportunity.StageName VALUES, not labels — a miss falls through to FALLBACK, so a
+// stale key here degrades to a grey pill rather than an error. 'Under Contract (PSA)' (was 'PSA')
+// moved with the stage rename, phase 2.
 const STAGE = {
     New:                  ['#eceff1', '#90A4AE'],
     'Under Review':       ['#e8f1fc', '#5C9DED'],
@@ -10,14 +13,17 @@ const STAGE = {
     'Construction Review': ['#e3f4f2', '#26A69A'],
     Underwriting:         ['#e8f1fc', '#1E88E5'],
     LOI:                  ['#e9f2fd', '#42A5F5'],
-    PSA:                  ['#fff1e0', '#FB8C00'],
+    'Under Contract (PSA)': ['#fff1e0', '#FB8C00'],
     'Closed Won':         ['#e8f5e9', '#43A047'],
     'Dead/Pass':          ['#fdeaea', '#E53935'],
     'Portfolio Deal':     ['#efe9e6', '#8D6E63']
 };
+// Keys are Deal_Type__c VALUES, not labels — a miss falls through to FALLBACK, so a stale key
+// here degrades to a grey pill rather than an error. 'Retail' (was 'Commercial') moved with the
+// Deal Type migration, phase 1 D3.
 const DEAL_TYPE = {
-    Land:       ['#eaf6ec', '#43A047'],
-    Commercial: ['#e8f1fc', '#1565c0']
+    Land:   ['#eaf6ec', '#43A047'],
+    Retail: ['#e8f1fc', '#1565c0']
 };
 const FALLBACK = ['#eef1f4', '#94a3b8'];
 const pillWrap = (bg) => `display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:4px;font-weight:600;color:#3e3e3e;background:${bg}`;

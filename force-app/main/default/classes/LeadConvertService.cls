@@ -5,7 +5,7 @@
  *
  *   1. Deal type / record type — carries the lead's Deal Type onto the new
  *      Opportunity and sets the matching Opportunity record type (Land or
- *      Commercial) so the deal lands on the correct sales path. Standard
+ *      Retail) so the deal lands on the correct sales path. Standard
  *      conversion doesn't translate a custom picklist into the record-type
  *      choice, so we apply it here.
  *
@@ -24,6 +24,15 @@
  *      PHYSICAL PROPERTY facts (SF, NOI, units, occupancy, year built/renovated,
  *      lot acres, WALT, ADR, zoning, seller entity) go to the Property__c. Neither
  *      object gets the other half — that split IS the design, not an oversight.
+ *
+ *      ⚠ EXTENDED 2026-08-14 (Acquisition Observations, phase 1) by FOUR fields, all
+ *      DEAL-PROCESS and therefore all to the Opportunity: `Listing_Status__c` (is the
+ *      seller marketing this publicly?) plus the three extraction-completeness numbers
+ *      `Extraction_Score_Pct__c` / `Fields_Captured_Count__c` / `Fields_Missing_Count__c`.
+ *      🔴 THE GOVERNOR CONTRACT BELOW IS UNCHANGED BY THIS — same records, same statements,
+ *      more fields on the SAME `update updates`. No new query, no new DML, and the one new
+ *      picklist adds only a describe (not a query). A future change here that needs a
+ *      SECOND read or a SECOND statement is a contract change and must say so.
  *
  *   4. BROKER CONTACT ROLE (S2, 2026-08-03) — the submitting broker becomes visible
  *      on the deal as a primary OpportunityContactRole with Role = 'Broker'.
@@ -46,7 +55,7 @@
  * conversion behaviour — and it is naturally idempotent if this path ever re-runs.
  *
  * ═══ BULK SHAPE IS A CONTRACT: 2 SOQL, ≤5 DML, CONSTANT — WAS ≤4, RAISED 2026-08-10 ═══
- *   SOQL 1 — RecordTypeSelector (Land / Commercial)
+ *   SOQL 1 — RecordTypeSelector (Land / Retail)
  *   SOQL 2 — OpportunityContactRoleSelector (the rows conversion already created)
  *   DML  1 — Database.insert(properties, false)
  *   DML  2 — update updates                       (all-or-none, deliberately — see below)
@@ -126,6 +135,7 @@ public with sharing class LeadConvertService {
     private static Set<String> saleProcessValuesCache;
     private static Set<String> parseConfidenceValuesCache;
     private static Set<String> contactRoleValuesCache;
+    private static Set<String> listingStatusValuesCache;
 
     /** Active values on Property__c.Asset_Type__c. */
     private static Set<String> assetTypeValues() {
@@ -149,6 +159,23 @@ public with sharing class LeadConvertService {
             parseConfidenceValuesCache = activePicklistValues(Opportunity.Parse_Confidence__c);
         }
         return parseConfidenceValuesCache;
+    }
+
+    /**
+     * Active values on Opportunity.Listing_Status__c (observation 1, 2026-08-14).
+     *
+     * ⚠ THE SOURCE AND TARGET ARE TWO SEPARATE RESTRICTED PICKLISTS THAT MERELY MATCH TODAY.
+     * `Lead.Listing_Status__c` and `Opportunity.Listing_Status__c` are independent field
+     * definitions, so a value active on one is not thereby active on the other — the same
+     * relationship `Sale_Process__c` already has, and the same one CallForOffersStampService's
+     * header records for its own describe guard. Guarding here is what keeps
+     * `update updates` affordably all-or-none.
+     */
+    private static Set<String> listingStatusValues() {
+        if (listingStatusValuesCache == null) {
+            listingStatusValuesCache = activePicklistValues(Opportunity.Listing_Status__c);
+        }
+        return listingStatusValuesCache;
     }
 
     /** Active values on OpportunityContactRole.Role (the ContactRole standard value set). */
@@ -235,8 +262,11 @@ public with sharing class LeadConvertService {
         Map<Id, Id> oppToPropertyId
     ) {
         Map<String, Id> rtByName = new Map<String, Id>();
+        // 'Retail' (was 'Commercial') — the Deal Type migration, phase 1 D3. The set is matched
+        // against RecordType.DeveloperName, so it moves with the record type's DEVELOPER NAME,
+        // not its label; a label-only rename would have left this saying 'Commercial' forever.
         for (RecordType rt : RecordTypeSelector.selectByObjectAndDeveloperNames(
-                'Opportunity', new Set<String>{ 'Land', 'Commercial' })) {
+                'Opportunity', new Set<String>{ 'Land', 'Retail' })) {
             rtByName.put(rt.DeveloperName, rt.Id);
         }
 
@@ -250,7 +280,7 @@ public with sharing class LeadConvertService {
             // OpportunityContactRole created below. The role alone was invisible in practice: a
             // contact role is a related list, so it cannot appear in the highlights panel, a
             // compact layout, a list view column or a report column on the Opportunity. Riding on
-            // this existing loop keeps the class's 2-SOQL / 3-DML contract EXACTLY as documented in
+            // this existing loop keeps the class's 2-SOQL / ≤5-DML contract EXACTLY as documented in
             // the header — the value is already on the Lead, so this adds no query and no
             // statement. ⚠ This is the SUBMITTING broker; the OM's listing broker is a different
             // person and lives in Listing_Broker_Name__c / Listing_Broker_Email__c (set by
@@ -263,7 +293,7 @@ public with sharing class LeadConvertService {
             }
             if (String.isNotBlank(l.Deal_Type__c)) {
                 o.Deal_Type__c = l.Deal_Type__c;
-                Id rtId = rtByName.get(l.Deal_Type__c); // dealType is 'Land' or 'Commercial'
+                Id rtId = rtByName.get(l.Deal_Type__c); // dealType is 'Land' or 'Retail'
                 if (rtId != null) {
                     o.RecordTypeId = rtId;
                 }
@@ -308,6 +338,25 @@ public with sharing class LeadConvertService {
         // Restricted picklists — see the class header. An unknown value is DROPPED, never pushed.
         o.Sale_Process__c = picklistValueOrNull(l.Sale_Process__c, saleProcessValues());
         o.Parse_Confidence__c = picklistValueOrNull(l.Parse_Confidence__c, parseConfidenceValues());
+        // ── Acquisition Observations phase 1 (2026-08-14) ────────────────────────────────────
+        // Listing status is a DEAL-PROCESS fact — is the seller marketing this publicly? — so it
+        // comes HERE and never to the Property__c, exactly like sale process and the offer due
+        // date. The field's own metadata comment states the same split, so the two cannot drift.
+        // ⚠ NOT Broker_Listing__c.Listing_Status__c, which is the disposition side's On Track / …
+        // performance picklist. Nothing may ever map between them.
+        o.Listing_Status__c = picklistValueOrNull(l.Listing_Status__c, listingStatusValues());
+        // The three extraction-completeness numbers travel TOGETHER and unguarded — they are
+        // Number(3,0) mirrors of their Lead sources, so there is no picklist to validate and no
+        // clipping to do. Carrying all three (rather than the percent alone) is what keeps the
+        // denominator RECOVERABLE per record as captured + missing; see ExtractionScoreUtil's
+        // header for why that property is load-bearing and must not be "simplified" away.
+        // ⚠ NULL IS A MEANINGFUL VALUE AND IS COPIED AS-IS. It reads "not scored" — the LLM-down
+        // path — which is not the same as a zero score, and a `!= null` guard here would be
+        // indistinguishable from one on a freshly created Opportunity anyway (every field is
+        // empty at this instant, which is why nothing else in this method guards either).
+        o.Extraction_Score_Pct__c = l.Extraction_Score_Pct__c;
+        o.Fields_Captured_Count__c = l.Fields_Captured_Count__c;
+        o.Fields_Missing_Count__c = l.Fields_Missing_Count__c;
 
         // D-f (approved at Gate 1, 2026-08-03) — NAME THE DEAL AFTER THE PROPERTY.
         // The platform derives Opportunity.Name from Lead.Company, which for an email-born deal

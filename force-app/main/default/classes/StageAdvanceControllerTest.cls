@@ -81,20 +81,34 @@ private class StageAdvanceControllerTest {
     @isTest
     static void advanceToPsaMovesLoiToPsa() {
         Opportunity o = newOpp('LOI');
-        // Entering PSA crosses the signed-NDA gate (which covers PSA) and the approved-LOI gate.
+        // Entering PSA crosses the signed-NDA gate (which covers PSA), the approved-LOI gate, and
+        // — since Completed_LOI_Before_PSA shipped 2026-08-12 — a THIRD gate that reads the primary
+        // LOI's OWN Stage__c, not just the Opportunity's Primary_LOI__c/LOI_Approved__c flags.
+        // TestDataFactory.placeApprovedLoi satisfies the older two but deliberately leaves the
+        // newly-created LOI at its factory-default Stage__c = 'Draft' (see StageApprovalGatesTest's
+        // isolation test), so the primary LOI must separately be driven to 'Completed' before this
+        // deal can legally enter PSA. Driven through RecordStageAdvanceService.advanceTo — the real
+        // production route behind the c/loiMarkCompleted quick action, where 'Signed' is an
+        // allowed explicit target on Acquisition_LOI — rather than a bare field update: neither this
+        // class nor StageAdvanceServiceTest had an established local convention for writing
+        // LOI__c.Stage__c directly, so this follows the class's existing preference for driving
+        // fixtures through real service entry points.
         TestDataFactory.signPrimaryNda(o);
-        TestDataFactory.placeApprovedLoi(o);
+        LOI__c primaryLoi = TestDataFactory.placeApprovedLoi(o);
+        // ⚠ 'Signed' since observation 5 (2026-08-14); it was 'Completed' until the acquisition LOI
+        // sequence was renamed. Must stay in step with Completed_LOI_Before_PSA.
+        RecordStageAdvanceService.advanceTo(primaryLoi.Id, 'Signed');
         Test.startTest();
         StageAdvanceController.advance(o.Id);
         Test.stopTest();
-        System.assertEquals('PSA',
+        System.assertEquals('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'Advance to PSA moves LOI -> PSA');
     }
 
     @isTest
     static void closeDealMovesPsaToClosedWon() {
-        Opportunity o = newOpp('PSA');
+        Opportunity o = newOpp('Under Contract (PSA)');
         // Closed Won is inside the signed-NDA gate's stage list and behind the signed-contract gate.
         TestDataFactory.signPrimaryNda(o);
         TestDataFactory.signContract(o);

@@ -2,7 +2,7 @@
  * Creates review child records for an Opportunity. Two triggers for a review:
  *
  *   1. Stage entry - "Development Review" (Land path) / "Construction Review"
- *      (Commercial path) / "PSA" (opens the Contract Review).
+ *      (Retail path) / "Under Contract (PSA)" (opens the Contract Review).
  *   2. Input-needed checkboxes - Development_Input_Needed__c /
  *      Construction_Input_Needed__c flipping true opens the matching review at
  *      ANY stage, which is how Development/Construction engage BEFORE
@@ -59,13 +59,15 @@
  *               So the failure this guard prevents is not merely severe, it is the LIKELIEST
  *               incomplete-A1 outcome — and it lands on the user least able to diagnose it.
  *
- *   the         RUNS ON ENTRY TO THE PSA STAGE, driven by a DEAL DRIVER WHO HAS EDIT. That is
- *   Contract    the easy half and it is why this case had to be argued from scratch: it is
- *   Review      neither ensureNda's (every Opportunity insert, lead conversion included) nor the
- *   block       LOI block's (runs as a read-only approver inside an approval). MEASURED
- *   (3C)        2026-08-09 — the only route into 'PSA' is StageAdvanceService.advance() from
- *               'LOI' (NEXT_STAGE `'LOI' => 'PSA'`), which asserts
- *               OpportunityActionPermissionService.assertDealActionAccess() first. 'PSA' is NOT
+ *   the         RUNS ON ENTRY TO THE 'Under Contract (PSA)' STAGE, driven by a DEAL DRIVER WHO
+ *   Contract    HAS EDIT. That is the easy half and it is why this case had to be argued from
+ *   Review      scratch: it is neither ensureNda's (every Opportunity insert, lead conversion
+ *   block       included) nor the LOI block's (runs as a read-only approver inside an approval).
+ *   (3C)        MEASURED 2026-08-09 — the only route into 'Under Contract (PSA)' is
+ *               StageAdvanceService.advance() from 'LOI' (NEXT_STAGE
+ *               `'LOI' => 'Under Contract (PSA)'`), which asserts
+ *               OpportunityActionPermissionService.assertDealActionAccess() first.
+ *               'Under Contract (PSA)' is NOT
  *               in ALLOWED_EXPLICIT_TARGETS, so advanceTo cannot reach it; NO approval field
  *               update writes it (the only two write 'Underwriting' and 'LOI'); and NO flow
  *               writes StageName at all. On that evidence alone, unconditional would be
@@ -73,9 +75,11 @@
  *
  *               🔴 TWO FACTS OVERTURN IT, AND BOTH ARE SPECIFIC TO THIS BLOCK.
  *
- *               (a) 'PSA' IS A SEQUENCED GATE WITH EXACTLY ONE ROUTE, SO BLOCKING IT IS NOT
+ *               (a) 'Under Contract (PSA)' IS A SEQUENCED GATE WITH EXACTLY ONE ROUTE, SO
+ *                   BLOCKING IT IS NOT
  *                   "ONE FAILED CLICK" — IT IS THE WHOLE DOWNSTREAM MODULE. A deal that cannot
- *                   enter PSA has no Contract_Review__c, so psaVersionLog has no parent, the PSA
+ *                   enter that stage has no Contract_Review__c, so psaVersionLog has no parent,
+ *                   the PSA
  *                   negotiation cannot be recorded, Negotiation_Status__c can never reach
  *                   'Executed', ContractExecutionService never fires, Contract_Executed_Date__c
  *                   is never stamped — and openTransactionsOnAboutToClose READS THAT STAMP, so
@@ -88,7 +92,8 @@
  *                   THAT HAVE NOTHING TO DO WITH RECORD TYPES. createReviewRecords handles FIVE
  *                   child types in ONE method and ONE trigger invocation, and the Contract Review
  *                   insert runs FIRST — before Underwriting, before the LOI. On a bulk stage move
- *                   where deals enter DIFFERENT stages, one PSA-entering deal on an unassigned
+ *                   where deals enter DIFFERENT stages, one 'Under Contract (PSA)'-entering deal
+ *                   on an unassigned
  *                   profile would abort the chunk before the Underwriting and LOI children were
  *                   even built, taking their Primary_* stamps and the LOI queueable with it.
  *                   ensureNda is a separate method and owns its own transaction; this one does
@@ -126,28 +131,98 @@
  * loudness lives. Same shape and same reasoning as TestDataFactoryTest
  * .createDisposition_defaultOverload_stampsOnMarketRecordType (D13 residual 1).
  *
- * ⚠ WHAT A MASTER-TYPE CONTRACT REVIEW ACTUALLY COSTS, stated so the 3C guard's price is not
- * quietly understated: it matches NEITHER PSA Path, exposes the UNION of both types'
- * Ball_In_Court__c values (so a buy-side PSA offers 'Buyer', which on a purchase names DPEG
- * itself), and sits outside the record-type-scoped sharing this tranche gives the disposition
- * personas. It is NOT, however, functionally dead the way a Master-type DISPOSITION NDA is:
- * both PSA record types share ONE Negotiation_Status__c sequence, so
- * RecordStageAdvanceService's defaultTypeKey routes it to a map that genuinely fits and
- * Advance Stage keeps working. What it gets wrong is the GATE — it answers to DEAL_DRIVER,
- * which is exactly right for the acquisition rows this block is the only creator of. That
- * asymmetry is what makes the guard affordable here and is part of the (a)/(b) argument above.
+ * ⚠ 🔴 WHAT A MASTER-TYPE CONTRACT REVIEW ACTUALLY COSTS — REWRITTEN 2026-08-14, BECAUSE THE
+ * ANSWER CHANGED AND THE OLD ONE MADE THE GUARD LOOK CHEAPER THAN IT NOW IS.
+ *
+ * THIS BLOCK USED TO CONCLUDE: *"It is NOT, however, functionally dead the way a Master-type
+ * DISPOSITION NDA is: both PSA record types share ONE Negotiation_Status__c sequence, so
+ * RecordStageAdvanceService's defaultTypeKey routes it to a map that genuinely fits and Advance
+ * Stage keeps working."* That was true, and observation 7 (design collision C9) killed its premise.
+ * The two PSA record types no longer share a sequence:
+ * `RecordStageAdvanceService.CONTRACT_REVIEW_NEXT_STAGE` was SPLIT into an acquisition map
+ * (`Draft -> Negotiation -> Signed -> Executed`) and a disposition map (the old four values,
+ * unchanged). Do not quote the old sentence; do not restore the shared map to make it true again.
+ *
+ * The cost NOW, in full:
+ *   - it still matches NEITHER PSA Path, still exposes the UNION of both types' Ball_In_Court__c
+ *     values (so a buy-side PSA offers 'Buyer', which on a purchase names DPEG itself), and still
+ *     sits outside the record-type-scoped sharing the 3C tranche gives the disposition personas;
+ *   - and Advance Stage NO LONGER "keeps working" unconditionally. It works only because THIS
+ *     block seeds `Negotiation_Status__c = 'Draft'` explicitly (see the C3 fix at the call site):
+ *     the row lands on a status the acquisition fallback map has an entry for, so the walk
+ *     succeeds even with no record type. Had the seed been left to the field default, a Master-type
+ *     row would be born on 'Initial Draft' and refuse on its first click.
+ * ⇒ THE TWO FIXES ARE LOAD-BEARING TOGETHER, NOT SEPARATELY. The C3 seed is what keeps the guarded
+ *   (null-tolerant) record-type stamp affordable after C9; without it the guard's own degraded path
+ *   would produce a dead record, and the (a)/(b) argument above — which trades a loud failure for a
+ *   silently Master-typed row — would no longer hold, because the row would not be merely
+ *   mislabelled, it would be unusable.
+ *
+ * ⚠ A LEGACY Master-type row (created before this pack, still carrying 'Initial Draft') IS in that
+ * dead state and cannot be rescued from here — the P3 row migration is scoped by record type, so it
+ * is not migrated either. It refuses on its first click, naming its own stale status. Gate T-A1 /
+ * T-B is the remedy. That refusal is the loud symptom RecordStageAdvanceService's header used to
+ * complain this object did not have.
  *
  * ⚠ A creation that SUCCEEDED is not evidence the type landed. Any verification of this must
  * re-query RecordTypeId; the in-memory copy carries whatever was assigned, guard or no guard.
  *
+ * ── 🔴 LOI OWNERSHIP IS THE ACQUISITION QUEUE (2026-08-15) ──────────────────────────────
+ * The LOI block pins OwnerId to the `Acquisition` QUEUE on every auto-created acquisition LOI.
+ *
+ * WHY A QUEUE AT ALL: ownership of an auto-created LOI must be a property of THE PROCESS, not
+ * of whichever principal's transaction happened to run the trigger. The LOI stage is entered by
+ * the LOI approval process's own field update, so with no OwnerId at all the record is owned by
+ * the APPROVER — and with OWD Private on LOI__c that made it uneditable by the deal team (the
+ * observed symptom was "insufficient access rights on object id" when a deal driver clicked
+ * Advance Stage). A queue is the only owner that is neither the approver nor any one person: it
+ * survives reassignment, holiday and departure, and the Acquisitions team reaches it through one
+ * sharing rule instead of through the role hierarchy, which grants access UPWARD and so never
+ * reached a principal-owned row.
+ *
+ * ⚠ THIS SUPERSEDES, RATHER THAN INTRODUCES, AN OWNER ASSIGNMENT. Until this change the block
+ * set `OwnerId = <the deal's owner>`, which was itself the fix for the approver-owns-it defect
+ * described above. That earlier value is NOT deleted — it is now the DEGRADED path (see below),
+ * because it is the best owner available when the queue cannot be resolved.
+ *
+ * 🔴 THE RESOLUTION FAILS SOFT, AND THE REASON IS THE SAME MEASURED ONE AS THE RECORD-TYPE
+ * GUARD BESIDE IT. This block runs as a READ-ONLY APPROVER inside the approval transaction, so
+ * an exception here does not cost an LOI — it rolls back the APPROVAL, and the approver is told
+ * something unintelligible on an Approve click. That is the ApprovalAuditService/D10 shape
+ * ("Nikhil could not approve at all"), and an unresolvable queue must never reproduce it. Two
+ * failure modes are therefore both handled without throwing:
+ *
+ *   (a) THE QUEUE IS MISSING OR RENAMED — the selector returns null.
+ *   (b) 🔴 THE QUEUE EXISTS BUT IS NOT ENABLED FOR LOI__c. This one is easy to miss and is the
+ *       more likely of the two: a queue's `queueSobject` set is separate metadata, and
+ *       queues/Acquisition.queue-meta.xml listed only Lead and Property__c when this code was
+ *       written. Assigning a queue that cannot own the object is refused BY THE DML, i.e. it
+ *       fails exactly where it is least affordable. It is therefore PRE-CHECKED, not caught:
+ *       QueueGroupSelector.selectQueueIdByDeveloperNameForSObject asks QueueSobject, so "exists"
+ *       and "may own an LOI" are one question with one answer and one query. Apex and metadata
+ *       deploy independently and either may land first; both orders are safe.
+ *
+ * A residual try/catch sits behind those two, for anything neither anticipates. It is the
+ * deliberately WIDE catch ApprovalAuditService was forced into (a TypeException is not a
+ * DmlException), not a stylistic one — but note it cannot catch a LimitException, so the pre-check
+ * remains the real mechanism and the catch is only the floor.
+ *
+ * ⚠ THE DEGRADED PATH IS DELIBERATELY *NOT* "LEAVE OwnerId UNSET". Unset means the running user,
+ * and on this path the running user is the approver — the original defect. Falling back to the
+ * deal's owner is strictly the lesser of the two, and is the behaviour this block already had.
+ *
  * Each describe is resolved ONCE per invocation, before its build loop — it costs zero SOQL,
- * but a per-record describe in a 251-deal insert would be 251 of them.
+ * but a per-record describe in a 251-deal insert would be 251 of them. The queue lookup is a
+ * QUERY, so the same rule binds harder: it is resolved once per invocation, inside the
+ * `!loiOpps.isEmpty()` guard, so a chunk entering no LOI stage still costs zero SOQL for it.
  */
 public with sharing class OpportunityReviewService {
 
     @TestVisible private static final String DEV_STAGE = 'Development Review';
     @TestVisible private static final String CON_STAGE = 'Construction Review';
-    @TestVisible private static final String CONTRACT_STAGE = 'PSA';
+    // ⚠ Renamed from 'PSA' (Acquisition Observations phase 2). This is the DECODED runtime
+    // StageName; it carries spaces and parentheses but no '/', so no %2F encoding applies.
+    @TestVisible private static final String CONTRACT_STAGE = 'Under Contract (PSA)';
     @TestVisible private static final String UW_STAGE = 'Underwriting';
     @TestVisible private static final String LOI_STAGE = 'LOI';
 
@@ -174,6 +249,62 @@ public with sharing class OpportunityReviewService {
      */
     @TestVisible
     private static final String ACQUISITION_PSA_RECORD_TYPE = 'Acquisition_PSA';
+
+    /**
+     * The Negotiation_Status__c every auto-created ACQUISITION Contract Review is seeded with
+     * (design collision C3, Acquisition Observations observation 7, 2026-08-14).
+     *
+     * 🔴 IT IS NOT THE FIELD'S DEFAULT, AND THAT IS THE WHOLE POINT. The field-level default is
+     * 'Initial Draft', which after observation 7 belongs to Disposition_PSA ONLY. This constant
+     * pairs with ACQUISITION_PSA_RECORD_TYPE the same way 'Pending' pairs with
+     * ACQUISITION_NDA_RECORD_TYPE in ensureNda and 'Draft' pairs with ACQUISITION_LOI_RECORD_TYPE
+     * in the LOI block: three record-typed children, three seed values this class owns, because
+     * Apex DML does not enforce record-type picklist restriction and the platform will happily
+     * commit a value the record type does not carry.
+     *
+     * ⚠ It COINCIDES with the LOI block's seed stage ('Draft') and with nothing else. They are two
+     * unrelated values on two different fields that happen to share a word; do not extract a shared
+     * constant.
+     */
+    @TestVisible
+    private static final String ACQUISITION_PSA_STATUS = 'Draft';
+
+    /**
+     * DeveloperName of the queue that OWNS every auto-created acquisition LOI (2026-08-15).
+     * Must match queues/Acquisition.queue-meta.xml, whose file name IS its DeveloperName.
+     *
+     * ⚠ It is the DeveloperName, never an Id. A hardcoded Id is org-specific and would make this
+     * class undeployable to any org but the one it was written against — and would fail as a
+     * malformed-Id DML error inside an approval transaction, which is the one failure this block
+     * is built to avoid.
+     */
+    @TestVisible
+    private static final String ACQUISITION_QUEUE_DEVELOPER_NAME = 'Acquisition';
+
+    /**
+     * TEST SEAM — when non-null, the queue DeveloperName the LOI block resolves instead of
+     * ACQUISITION_QUEUE_DEVELOPER_NAME. Exists so a test can drive the REAL selector against a
+     * name that does not exist and prove the degraded path, rather than faking the answer.
+     * Production never sets it.
+     */
+    @TestVisible
+    private static String queueDeveloperNameOverride;
+
+    /**
+     * TEST SEAM — when true, the queue resolution throws before it queries. Exists solely to
+     * exercise the residual catch in acquisitionQueueId(), which no ordinary input can reach
+     * (a missing queue returns null; it does not throw). Production never sets it.
+     */
+    @TestVisible
+    private static Boolean simulateQueueLookupFailure = false;
+
+    /**
+     * The message from the last swallowed queue-resolution failure, or null. In-transaction
+     * only — it exists for tests and debugging, exactly like
+     * EmailThreadAdopterService.lastRunFailureCodes, and is NOT a monitoring surface.
+     */
+    @TestVisible
+    private static String lastQueueLookupError;
 
     /**
      * Called from the Opportunity after-insert / after-update trigger.
@@ -255,20 +386,64 @@ public with sharing class OpportunityReviewService {
         // be one per deal on a bulk stage move, for an answer that cannot vary within a
         // transaction. Same shape as ensureNda's and the LOI block's.
         Id acquisitionPsaRecordTypeId = acquisitionPsaRecordTypeId();
+        // 🔴 Resolved ONCE for the whole chunk, exactly like the record-type describe above and for
+        // the same reason: it is a describe, so it costs no SOQL, but one per record would be 251
+        // of them on a bulk stage move for an answer that cannot vary within a transaction.
+        Boolean canSeedAcquisitionPsaStatus =
+            isActivePicklistValue(Contract_Review__c.Negotiation_Status__c, ACQUISITION_PSA_STATUS);
         List<Contract_Review__c> contractToInsert = new List<Contract_Review__c>();
         for (Id oppId : contractOpps) {
             // ⚠ 'PSA Drafting' is Stage__c, which is a DERIVED PROJECTION — the
             // Contract_Review_Stage_Sync before-save flow recomputes it from
             // Negotiation_Status__c on every save, so this seed is cosmetic and is
-            // immediately replaced by the flow's mapping of the status default ('Initial
-            // Draft' -> 'PSA Drafting', i.e. the same value). It is left exactly as it was:
-            // changing it would be a no-op that reads like a fix.
+            // immediately replaced by the flow's mapping of whatever status this row lands
+            // on. It is left exactly as it was: changing it would be a no-op that reads
+            // like a fix.
             Contract_Review__c cr = new Contract_Review__c(
                 Opportunity__c = oppId, Stage__c = 'PSA Drafting');
+            // ── 🔴 SEED THE NEGOTIATION STATUS EXPLICITLY (design collision C3, 2026-08-14) ──
+            // THIS INSERT USED TO SET NO STATUS AT ALL and take the FIELD-LEVEL DEFAULT, which is
+            // 'Initial Draft'. Observation 7 removes 'Initial Draft' from Acquisition_PSA and
+            // replaces the buy-side sequence with Draft -> Negotiation -> Signed -> Executed, so
+            // the default is now a value this record type does not carry.
+            //
+            // 🔴 THAT FAILS SILENTLY, WHICH IS WHY IT HAD TO BE FIXED HERE RATHER THAN LEFT TO THE
+            // PLATFORM. Apex DML does not enforce record-type picklist restriction, so the insert
+            // COMMITS on the off-set value — no exception, no error, a green deploy. The record is
+            // then unusable from birth: its Path renders blank, and
+            // RecordStageAdvanceService.CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE has no entry for
+            // 'Initial Draft', so Advance Stage refuses on the very first click. Every deal
+            // entering 'Under Contract (PSA)' would produce one.
+            //
+            // ⚠ DO NOT "FIX" THIS BY MOVING THE FIELD-LEVEL DEFAULT. Disposition_PSA still runs on
+            // 'Initial Draft' — DispositionStageEntryService seeds it deliberately, and O3 of the
+            // requirements doc makes keeping that value ACTIVE a hard stop. The default serves the
+            // sell side; the buy side names its own seed here. Exactly the pairing the LOI block
+            // below already makes, and its comment states the principle: the right seed stage is
+            // this method's responsibility, not the platform's.
+            //
+            // 🔴 DESCRIBE-GUARDED, AND THE GUARD IS NOT DEFENSIVE POLISH — IT IS DEPLOY ORDERING.
+            // Negotiation_Status__c is <restricted>true</restricted>, so writing 'Draft' before the
+            // P3-D1 picklist deploy lands throws INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. This
+            // insert runs in an AFTER-UPDATE trigger and shares ONE all-or-none transaction with
+            // four sibling children (see the class header, argument (b)), so that throw would not
+            // cost a Contract Review — it would roll back the deal driver's own stage change and
+            // take the Underwriting and LOI children with it. Unguarded, an Apex deploy that
+            // arrived before its picklist deploy would make 'Under Contract (PSA)' unreachable for
+            // every deal in the org.
+            //
+            // When the value is absent the field falls back to its own default, i.e. EXACTLY
+            // today's behaviour — the change degrades to the status quo rather than to a new
+            // failure. Same shape as the record-type guard three lines below, and the same shape as
+            // LeadConvertService's restricted-picklist guards.
+            if (canSeedAcquisitionPsaStatus) {
+                cr.Negotiation_Status__c = ACQUISITION_PSA_STATUS;
+            }
             // 🔴 GUARDED, and the guard was RE-ARGUED for THIS block, not inherited from
             // ensureNda or from the LOI block (D20/W2). See the class header, argument (a)+(b):
-            // 'PSA' has exactly ONE route in and this insert shares an all-or-none transaction
-            // with four sibling children. Null here is a legitimate answer.
+            // 'Under Contract (PSA)' has exactly ONE route in and this insert shares an
+            // all-or-none transaction with four sibling children. Null here is a legitimate
+            // answer.
             if (acquisitionPsaRecordTypeId != null) {
                 cr.RecordTypeId = acquisitionPsaRecordTypeId;
             }
@@ -294,7 +469,7 @@ public with sharing class OpportunityReviewService {
         }
 
         // Entering Underwriting opens the Underwriting record (same primary-stamp
-        // pattern as the Contract Review at PSA).
+        // pattern as the Contract Review at 'Under Contract (PSA)').
         if (!uwOpps.isEmpty()) {
             List<Underwriting__c> uwToInsert = new List<Underwriting__c>();
             for (Id oppId : uwOpps) {
@@ -328,21 +503,35 @@ public with sharing class OpportunityReviewService {
             // would be one per deal on a bulk stage move, for an answer that cannot vary within a
             // transaction. Same shape as ensureNda's.
             Id acquisitionLoiRecordTypeId = acquisitionLoiRecordTypeId();
+            // 🔴 ONE QUERY FOR THE WHOLE CHUNK, and the rule binds harder here than on the
+            // describe above because this one IS SOQL: per record it would be 251 queries on a
+            // bulk stage move, i.e. past the 100-query governor limit and therefore an
+            // UNCATCHABLE LimitException inside the approval transaction. It sits inside the
+            // `!loiOpps.isEmpty()` guard, so a chunk entering no LOI stage still costs zero.
+            Id acquisitionQueueId = acquisitionQueueId();
             List<LOI__c> loiToInsert = new List<LOI__c>();
             for (Id oppId : loiOpps) {
+                // 🔴 THE ACQUISITION QUEUE OWNS THE LOI, EVERY TIME — ownership must be a
+                // property of the PROCESS, not of whichever principal happened to trigger the
+                // stage entry. The LOI stage is entered by the LOI approval's own field update,
+                // so the running user here is the APPROVER; a queue is the only owner that is
+                // neither the approver nor any single person, and the Acquisitions team reaches
+                // it through one sharing rule rather than through a role hierarchy that grants
+                // access upward and so never reached a principal-owned row.
+                //
+                // ⚠ THE FALLBACK IS THE DEAL'S OWNER, WHICH IS WHAT THIS LINE USED TO BE
+                // UNCONDITIONALLY. It is kept, not deleted: when the queue cannot be resolved
+                // the alternative is to leave OwnerId unset, and unset means the RUNNING USER —
+                // the approver — which is the very defect the deal-owner assignment was added to
+                // fix. Degrading to the previous correct-enough answer beats degrading to the
+                // original bug. See the class header for why the resolution never throws.
+                Id loiOwnerId = (acquisitionQueueId != null)
+                    ? acquisitionQueueId
+                    : ownerByOpp.get(oppId);
                 LOI__c loi = new LOI__c(
                     Opportunity__c = oppId,
                     Property__c = propertyByOpp.get(oppId),
-                    // 🔴 OWNER MUST BE THE DEAL'S OWNER, NOT THE RUNNING USER. Without this the
-                    // LOI is owned by whoever's transaction created it — and that is the APPROVER,
-                    // because the LOI stage is entered by the approval's own field update. With
-                    // OWD Private on LOI__c that made the record UNEDITABLE by the deal team: the
-                    // deal driver holds ViewAllRecords (so it is visible) but not ModifyAllRecords,
-                    // and the role hierarchy grants access upward, not down from a principal. The
-                    // observed symptom was "insufficient access rights on object id" when the deal
-                    // driver clicked Advance Stage on the LOI. The five sibling children never hit
-                    // this because a deal driver creates them and therefore already owns them.
-                    OwnerId = ownerByOpp.get(oppId),
+                    OwnerId = loiOwnerId,
                     // ⚠ 'Draft' is Acquisition_LOI's starting stage and is NOT on Disposition_LOI's
                     // value set (which starts at 'Received'). Record-type picklist restriction is
                     // UI-only and Apex DML does not enforce it, so pairing the record type with the
@@ -498,12 +687,62 @@ public with sharing class OpportunityReviewService {
     }
 
     /**
+     * The Id of the `Acquisition` queue when it exists AND is enabled to own LOI__c, or null.
+     *
+     * Null is a legitimate answer, not an error — the caller then keeps the deal's owner, which
+     * is exactly the behaviour this block had before the queue was introduced. See the class
+     * header for the full argument; the short version is that this code runs as a READ-ONLY
+     * APPROVER inside the approval transaction, so anything that throws here does not cost an
+     * LOI, it rolls back the APPROVAL (the ApprovalAuditService/D10 shape).
+     *
+     * 🔴 IT ASKS QueueSobject, NOT Group, AND THAT IS THE WHOLE POINT OF THE SELECTOR METHOD.
+     * A queue that exists but does not list LOI__c in its `queueSobject` set cannot own one, and
+     * the platform reports that AT DML TIME — i.e. in the transaction that must not fail. The
+     * queue's object list is separate metadata from the queue itself and from this class, and
+     * queues/Acquisition.queue-meta.xml carried only Lead and Property__c when this was written,
+     * so "queue exists" was never a sufficient licence to write the Id. One query answers both.
+     *
+     * ⚠ Unlike acquisitionLoiRecordTypeId() this is NOT a describe — it costs ONE SOQL query per
+     * invocation. It is called once, inside the `!loiOpps.isEmpty()` guard, never per record.
+     *
+     * ⚠ The catch is deliberately WIDE (Exception, not QueryException), for the reason
+     * ApprovalAuditService was forced to widen its own: a TypeException is not a DmlException and
+     * a narrow catch is how D10 escaped and rolled back an approval. It is a floor, not the
+     * mechanism — a LimitException is not catchable at all, which is why the query is hoisted out
+     * of the loop rather than merely wrapped.
+     */
+    private static Id acquisitionQueueId() {
+        try {
+            if (simulateQueueLookupFailure) {
+                throw new QueryException('Simulated queue lookup failure (test seam).');
+            }
+            String developerName = (queueDeveloperNameOverride == null)
+                ? ACQUISITION_QUEUE_DEVELOPER_NAME
+                : queueDeveloperNameOverride;
+            // The object name comes from the describe, not from a string literal, so a future
+            // rename of LOI__c is a COMPILE error here rather than a queue lookup that silently
+            // stops matching. Same `Schema.SObjectType.LOI__c` form the record-type resolver
+            // above uses; it costs no SOQL.
+            return QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(
+                developerName,
+                Schema.SObjectType.LOI__c.getName());
+        } catch (Exception e) {
+            // Swallowed ON PURPOSE, and recorded rather than ignored so the catch is observable
+            // to a test and to a debug session. Rethrowing — or letting this escape — would turn
+            // a misconfigured queue into an approval nobody can complete.
+            lastQueueLookupError = e.getMessage();
+            return null;
+        }
+    }
+
+    /**
      * The Acquisition_PSA record type Id, or null when it does not exist in this org or is not
      * available to the running user — who, on this path, is the DEAL DRIVER who just advanced the
-     * deal from LOI to PSA.
+     * deal from LOI to 'Under Contract (PSA)'.
      *
      * Null is a legitimate answer, not an error: the caller then leaves RecordTypeId unset and the
-     * platform applies its own default, which keeps the LOI -> PSA hop — and therefore the entire
+     * platform applies its own default, which keeps the LOI -> 'Under Contract (PSA)' hop — and
+     * therefore the entire
      * downstream contract module — WORKING in an org where the Tranche 3C record-type metadata has
      * not deployed or where post-deploy gate T-A1 has not assigned it to the deal driver's profile.
      * See the class header for the full guarded-vs-unconditional argument, which was RE-ARGUED for
@@ -524,5 +763,35 @@ public with sharing class OpportunityReviewService {
             .getRecordTypeInfosByDeveloperName()
             .get(ACQUISITION_PSA_RECORD_TYPE);
         return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
+    }
+
+    /**
+     * Whether `value` is an ACTIVE value of `field`'s picklist right now, in this org.
+     *
+     * A describe, not a query — it costs no SOQL. Used to guard a write to a
+     * `<restricted>true</restricted>` picklist whose target value arrives in a SEPARATE metadata
+     * deploy from the Apex that writes it, so that an out-of-order deploy degrades to the field's
+     * own default instead of throwing INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST inside a trigger.
+     * Same shape and same purpose as LeadConvertService's restricted-picklist guards.
+     *
+     * 🔴 IT ASKS THE FIELD, NOT THE RECORD TYPE, AND THAT LIMIT MUST BE UNDERSTOOD BEFORE ANYONE
+     * REUSES IT. getPicklistValues() returns the FIELD's value set; record-type availability is a
+     * different question with a different (and far more expensive, UI-API-only) answer. So this
+     * guard proves "the platform will accept this write", never "this value belongs on this record
+     * type". Pairing the value with the right record type is still the caller's job — which is
+     * exactly the responsibility the C3 comment at the call site claims. A guard that could answer
+     * the record-type question would make that comment unnecessary; this one does not.
+     *
+     * ⚠ `isActive()` matters as much as membership. A DEACTIVATED value is still returned by
+     * getPicklistValues(), so a plain name scan would keep writing a value the field has retired —
+     * which is the exact state observation 5 leaves LOI__c.Stage__c's four old values in.
+     */
+    private static Boolean isActivePicklistValue(Schema.SObjectField field, String value) {
+        for (Schema.PicklistEntry entry : field.getDescribe().getPicklistValues()) {
+            if (entry.isActive() && value.equals(entry.getValue())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

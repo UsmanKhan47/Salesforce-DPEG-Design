@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, DELIBERATELY — see the identical
+        255-character-cap workaround note in Acquisition_Deal_Actions.customPermission-meta.xml
+        and Disposition_Deal_Actions.customPermission-meta.xml.
+
+        PHASE 1 (2026-08-12) of retiring the driver-flag concept — see
+        agent-output/design-requirements-custom-permissions.md section 3.1. 🔴 USER DECISION
+        OVERRIDING THAT DESIGN DOC'S RECOMMENDATION: the design doc recommended DEFERRING a
+        Transaction custom permission because Transaction's gate has no FLS in it at all — it is
+        already MEMBERSHIP-ONLY (Transaction_Stage_Actions_Access, layer 4, no companion
+        User.Transaction_Driver__c field, no layer-5 authorization-flag set — see that file's own
+        comment, which explicitly rejects building one). The user chose to build all three
+        custom permissions in the same pass instead of waiting for "the first time someone wants
+        the Transaction Advance Stage button hidden declaratively" (the design doc's named
+        trigger). This file exists to make that future one-line change already possible.
+
+        UPDATED — a later pass wired this permission into live code:
+        TransactionActionPermissionService now calls
+        FeatureManagement.checkPermission('Transaction_Stage_Actions'), so the "not yet consumed
+        anywhere" claim below no longer holds; it is left in place, superseded, so this comment's
+        history reads in order. No flexipage visibility rule references it (there was none to
+        repoint: Transaction__c appears in zero of the seven driver-gated flexipages, because a
+        visibility rule cannot test permission set membership, only $Permission). Granting it here,
+        through the same membership-only capability set, is still population-preserving in exactly
+        the same way as Transaction_Stage_Actions_Access's own classAccesses grant is
+        redundant-but-self-documenting against DPEG_Apex_Access — see that file's comment.
+
+        Granted through Transaction_Stage_Actions_Access.permissionset-meta.xml, a LAYER-4
+        capability set, member of the DPEG_Transaction_Team permission set group — NOT a layer-5
+        authorization-flag set. That is a deliberate, correct exception to the pattern the other
+        two custom permissions in this repo follow: Transaction was ALREADY membership-only before
+        this change (the user's own prior decision, recorded in that file's header), and adding a
+        custom permission here does not introduce a second factor — it just gives the existing
+        one-factor gate a token that can, in future, also drive a declarative visibility rule.
+        🔴 DO NOT add a User.Transaction_Driver__c field or a Transaction_Deal_Driver
+        layer-5 set on the strength of this file's existence — that would reintroduce the
+        two-factor model the user explicitly rejected for this module.
+    -->
+    <label>Transaction Stage Actions</label>
+    <description>Authorization token for the Transaction stage-advance action, read via FeatureManagement.checkPermission by TransactionActionPermissionService. Granted membership-only via Transaction_Stage_Actions_Access.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>

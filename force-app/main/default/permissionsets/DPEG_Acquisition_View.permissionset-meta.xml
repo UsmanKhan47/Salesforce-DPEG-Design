@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      RECONCILED ORG -> REPO ON 2026-08-14 BEFORE EDITING. A retrieve from usman-dpeg was diffed
+      against this file: 290 fieldPermissions on both sides, identical sets, and the single
+      recordTypeVisibility (Lead.Acquisition_Broker) identical. Zero org-only grants, so nothing
+      was at risk of being wiped. (The <viewAllFields> element present in the org retrieve and
+      absent here is an API-added default, not drift - deliberately not copied in.)
+
+      ADDED 2026-08-14, Acquisition Observations Phase 1 (deploy step P1-A): EIGHT grants -
+      Listing_Status__c, Extraction_Score_Pct__c, Fields_Captured_Count__c and
+      Fields_Missing_Count__c, on BOTH Lead and Opportunity. All editable=false, readable=true,
+      matching this set's read-only contract and how it already carries their siblings.
+
+      🔴 A green field deploy does NOT imply FLS - a Metadata-API-deployed custom field arrives
+      with no field permissions for anybody, and profiles/** is .forceignore'd. Verify in the ORG:
+          SELECT Field FROM FieldPermissions WHERE Parent.Name = 'DPEG_Acquisition_View'
+            AND Field LIKE '%Listing_Status__c' ... (see the runbook for the full literal query)
+      must return 8 rows. Total fieldPermissions on this set moves 290 -> 298.
+
+      ⚠ This set is the PRINCIPAL persona's, and the principals are deliberately read-only on
+      Opportunity - that is load-bearing for the approval processes (ApprovalAuditService's
+      runInMode incident, 2026-08-05). Do not "helpfully" make any of these eight editable here.
+
+      Full sequence: agent-output/runbook-acquisition-observations-phase1.md
+    -->
     <description>Read-only Acquisitions module access for the Principal persona: Read + View All on 13 ACQ objects, full FLS, no Create/Edit/Delete. Also delivers Read on Opportunity, the prerequisite for acting as a named approval approver.</description>
     <fieldPermissions>
         <editable>false</editable>
@@ -504,6 +528,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Lead.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Lead.Property_Address__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -540,6 +579,11 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Lead.Listing_Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Listing_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -867,6 +911,13 @@
         <field>Opportunity.Bundle_LOI__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ADDED 2026-08-14, Acquisition Observations Phase 4. Read-only twin of the grant on
+         DPEG_Acquisition_Edit - follows Offer_Due_Date__c / Sale_Process__c on this set. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Call_For_Offers_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Cash_On_Cash_Return__c</field>
@@ -934,6 +985,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Opportunity.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Opportunity.GRM__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -989,6 +1055,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Opportunity.Listing_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Opportunity.Loan_Required__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1025,6 +1096,20 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.My_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Phase 4 (call-for-offers alerts, 2026-08-14). The two alert MARKER fields, READ-ONLY here:
+         this is the read-only twin of DPEG_Acquisition_Edit, and re-arming an alert by blanking the
+         marker is an EDIT action that belongs only to the Edit set. Full reasoning on the Edit set's
+         copy of these two entries. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Offer_Alert_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Offer_Alert_Last_Interval__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1578,6 +1663,21 @@
     </objectPermissions>
     <recordTypeVisibilities>
         <recordType>Lead.Acquisition_Broker</recordType>
+        <visible>true</visible>
+    </recordTypeVisibilities>
+    <!--
+      ADDED 2026-08-15, live-defect fix (LOI-0009 stranded on Master, no Path). The LOI approval
+      process's field update runs OpportunityReviewService's LOI block AS THE APPROVER, and its
+      acquisitionLoiRecordTypeId() is isAvailable()-guarded — it silently no-ops (RecordTypeId
+      left null) unless the RUNNING USER has this record type available. Nikhil's only acquisition
+      grant was DPEG_Acquisition_View with no LOI__c recordTypeVisibility, so isAvailable() could
+      never be true for him, and the resulting Master-type LOI matches no per-record-type Path
+      (LOI_Path was retired 2026-08-09 in favor of LOI_Path_Acquisition / LOI_Path_Disposition).
+      This grant is the fix: a read-only principal never creates an LOI by hand, but the approval
+      automation running as that principal must be able to see this record type to stamp it.
+    -->
+    <recordTypeVisibilities>
+        <recordType>LOI__c.Acquisition_LOI</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
 </PermissionSet>

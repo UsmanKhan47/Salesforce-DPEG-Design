@@ -107,6 +107,95 @@ private class QueueGroupSelectorTest {
         Assert.isFalse(ids.contains(unqueried.Id), 'A group not named in the set is excluded by the DeveloperName filter');
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // selectQueueIdByDeveloperNameForSObject (OpportunityReviewService — LOI owner)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static final String OWNER_QUEUE_DEV_NAME = 'Test_Loi_Owner_Q';
+
+    /**
+     * Seeds a queue and enables it for `sobjectType`. Both Group and QueueSobject are SETUP
+     * objects, so seeding them together raises no MIXED_DML — which is also why the consumer's
+     * own test (OpportunityReviewServiceTest) cannot seed a queue and must rely on the
+     * org-deployed one instead.
+     */
+    private static Group seedQueueFor(String sobjectType) {
+        Group queue = new Group(
+            Name = 'Test LOI Owner Queue',
+            DeveloperName = OWNER_QUEUE_DEV_NAME,
+            Type = 'Queue'
+        );
+        insert queue;
+        insert new QueueSobject(QueueId = queue.Id, SobjectType = sobjectType);
+        return queue;
+    }
+
+    @isTest
+    static void selectQueueIdByDeveloperNameForSObject_found() {
+        Group queue = seedQueueFor('LOI__c');
+
+        Test.startTest();
+        Id result = QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(
+            OWNER_QUEUE_DEV_NAME, 'LOI__c');
+        Test.stopTest();
+
+        Assert.areEqual(queue.Id, result,
+            'A queue enabled for the object resolves to its Group Id');
+    }
+
+    /**
+     * 🔴 THE CASE THE METHOD EXISTS FOR, and the one selectQueueByDeveloperName cannot answer:
+     * the queue EXISTS but is not enabled to own the object. Assigning it as an OwnerId anyway
+     * is refused BY THE DML — and OpportunityReviewService makes that assignment inside an
+     * approval transaction, where a refusal rolls back the approval rather than the LOI. So
+     * "the queue exists" is not a licence to write its Id; this is.
+     */
+    @isTest
+    static void selectQueueIdByDeveloperNameForSObject_queueNotEnabledForObject_returnsNull() {
+        seedQueueFor('Lead'); // exists, but owns Leads only
+
+        Test.startTest();
+        Id result = QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(
+            OWNER_QUEUE_DEV_NAME, 'LOI__c');
+        Test.stopTest();
+
+        Assert.isNull(result,
+            'A queue that exists but is NOT enabled for the object must resolve to null — '
+            + 'returning its Id here would produce a DML refusal at the caller, which is the '
+            + 'failure this narrower question is designed to prevent');
+        Assert.isNotNull(
+            QueueGroupSelector.selectQueueByDeveloperName(OWNER_QUEUE_DEV_NAME),
+            'CONTROL: the broader Queue-only lookup DOES find it — the two methods answer '
+            + 'genuinely different questions, which is why the caller must use this one');
+    }
+
+    @isTest
+    static void selectQueueIdByDeveloperNameForSObject_missingQueue_returnsNull() {
+        Test.startTest();
+        Id result = QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(
+            'ZZ_Nonexistent_Queue_9x7', 'LOI__c');
+        Test.stopTest();
+
+        Assert.isNull(result, 'An unknown DeveloperName returns null, never an exception');
+    }
+
+    @isTest
+    static void selectQueueIdByDeveloperNameForSObject_blankInput_returnsNull() {
+        Test.startTest();
+        Id nullName = QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(null, 'LOI__c');
+        Id blankName = QueueGroupSelector.selectQueueIdByDeveloperNameForSObject('   ', 'LOI__c');
+        Id nullType = QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(
+            OWNER_QUEUE_DEV_NAME, null);
+        Id blankType = QueueGroupSelector.selectQueueIdByDeveloperNameForSObject(
+            OWNER_QUEUE_DEV_NAME, '  ');
+        Test.stopTest();
+
+        Assert.isNull(nullName, 'Null DeveloperName returns null');
+        Assert.isNull(blankName, 'Blank DeveloperName returns null');
+        Assert.isNull(nullType, 'Null sobjectType returns null');
+        Assert.isNull(blankType, 'Blank sobjectType returns null');
+    }
+
     @isTest
     static void selectRegularAndQueueByDeveloperNames_nullOrEmptyInput_returnsEmpty() {
         Test.startTest();

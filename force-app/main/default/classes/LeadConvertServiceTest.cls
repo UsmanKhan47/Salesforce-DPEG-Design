@@ -127,6 +127,14 @@ private class LeadConvertServiceTest {
         l.Deal_Room_Link__c = 'https://deals.example.invalid/room/orion';
         l.Listing_Broker_Name__c = 'Kevin Girard';
         l.Listing_Broker_Email__c = 'kevin.girard@example.invalid';
+        // Acquisition Observations phase 1 (2026-08-14) — also DEAL-PROCESS, also to the
+        // Opportunity. The three score numbers are internally consistent (7 + 2 = 9, 7/9 = 78%)
+        // because the carry-forward must preserve the identity that makes the denominator
+        // recoverable per record; a fixture that broke it could not detect a service that did.
+        l.Listing_Status__c = 'Off Market';
+        l.Extraction_Score_Pct__c = 78;
+        l.Fields_Captured_Count__c = 7;
+        l.Fields_Missing_Count__c = 2;
         // Physical property facts -> Property__c
         l.Building_SF__c = 84000;
         l.NOI__c = 512345.67;
@@ -162,6 +170,8 @@ private class LeadConvertServiceTest {
                    Guidance_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,
                    Guidance_Cap_Rate__c, Offer_Due_Date__c, Sale_Process__c, Parse_Confidence__c,
                    Deal_Room_Link__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
+                   Listing_Status__c, Extraction_Score_Pct__c,
+                   Fields_Captured_Count__c, Fields_Missing_Count__c,
                    Placer_AI_Link__c, CoStar_Link__c,
                    Building_SF__c, NOI__c, Year_Built__c, Year_Renovated__c, Unit_Count__c,
                    Occupancy_Pct__c, Lot_Size_Acres__c, WALT_Years__c, ADR__c, Zoning__c,
@@ -197,19 +207,19 @@ private class LeadConvertServiceTest {
     }
 
     @isTest
-    static void stampsCommercialDeal() {
+    static void stampsRetailDeal() {
         Test.startTest();
-        Opportunity o = convertLeadOfType('Commercial', 'Commercial Partners Inc');
+        Opportunity o = convertLeadOfType('Retail', 'Commercial Partners Inc');
         Test.stopTest();
-        System.assertEquals('Commercial', o.Deal_Type__c, 'Deal type should carry to Opportunity');
-        System.assertEquals('Commercial', o.RecordType.DeveloperName, 'Should get the Commercial record type');
+        System.assertEquals('Retail', o.Deal_Type__c, 'Deal type should carry to Opportunity');
+        System.assertEquals('Retail', o.RecordType.DeveloperName, 'Should get the Retail record type');
     }
 
     @isTest
     static void createsAndLinksPropertyFromLead() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'CBRE';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         l.Property_Address__c = '123 Main St, El Paso, TX';
         l.Asset_Type__c = 'Retail';
         l.Guidance_Price__c = 8200000;
@@ -247,7 +257,7 @@ private class LeadConvertServiceTest {
         // Conversion IS the approval to underwrite: no checkbox gate, and the
         // converting user lands on the deal as Lead Approved By.
         Test.startTest();
-        Opportunity o = convertLeadOfType('Commercial', 'Straight Through LLC');
+        Opportunity o = convertLeadOfType('Retail', 'Straight Through LLC');
         Test.stopTest();
 
         Opportunity fresh = [SELECT Lead_Approved_By__c FROM Opportunity WHERE Id = :o.Id];
@@ -279,7 +289,7 @@ private class LeadConvertServiceTest {
     static void stampsDealProcessFieldsOntoOpportunity() {
         Lead l = withFullDealScreening(TestDataFactory.createLead(false));
         l.Company = 'Orion Capital Partners';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         insert l;
 
         Test.startTest();
@@ -289,7 +299,9 @@ private class LeadConvertServiceTest {
         Opportunity o = [
             SELECT Asking_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,
                    Guidance_Cap_Rate__c, Offer_Due_Date__c, Sale_Process__c, Parse_Confidence__c,
-                   Deal_Room_Link__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+                   Deal_Room_Link__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
+                   Listing_Status__c, Extraction_Score_Pct__c,
+                   Fields_Captured_Count__c, Fields_Missing_Count__c
             FROM Opportunity WHERE Id = :res.getOpportunityId()
         ];
 
@@ -312,6 +324,22 @@ private class LeadConvertServiceTest {
         Assert.isNull(o.Guidance_Price_Low__c,
             'A single stated price leaves the range EMPTY — the prompt fills one or the other, never both');
         Assert.isNull(o.Guidance_Price_High__c, 'Range high stays empty for a single-price deal');
+
+        // —— Acquisition Observations phase 1 (2026-08-14) ——
+        // Asserted in the SAME test as the rest of the deal-process set, deliberately: these
+        // four are not a separate feature, they are four more members of the split this test
+        // already guards. A separate test would let someone "tidy" one half away.
+        Assert.areEqual('Off Market', o.Listing_Status__c,
+            'Listing status is a DEAL-PROCESS fact (is the seller marketing this publicly?), so it '
+            + 'carries to the OPPORTUNITY — never to the Property__c');
+        Assert.areEqual(78, o.Extraction_Score_Pct__c, 'The extraction score carries');
+        Assert.areEqual(7, o.Fields_Captured_Count__c, 'The captured count carries');
+        Assert.areEqual(2, o.Fields_Missing_Count__c, 'The missing count carries');
+        Assert.areEqual(ExtractionScoreUtil.DENOMINATOR,
+            o.Fields_Captured_Count__c + o.Fields_Missing_Count__c,
+            'ALL THREE numbers must carry together, not just the percent: captured + missing is '
+            + 'what recovers the denominator from the Opportunity, and dropping either count '
+            + 'silently destroys that property on every converted deal');
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -322,7 +350,7 @@ private class LeadConvertServiceTest {
     static void stampsPhysicalFactsOntoProperty() {
         Lead l = withFullDealScreening(TestDataFactory.createLead(false));
         l.Company = 'Meridian Realty Group';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         l.Asset_Type__c = 'Retail';
         insert l;
 
@@ -375,7 +403,7 @@ private class LeadConvertServiceTest {
     static void rangePricedLeadLeavesAskingPriceNull() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Zephyr Industrial Trust';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         l.Property_Address__c = '55 Range Road, Austin TX';
         // The prompt's own rule: a range fills low/high and leaves guidance_price null.
         l.Guidance_Price__c = null;
@@ -499,7 +527,7 @@ private class LeadConvertServiceTest {
     static void unknownPicklistValueIsDroppedNotThrown() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Ashgrove Terminal Partners';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         l.Property_Address__c = '900 Guard Way, Houston TX';
         l.Sale_Process__c = 'Auction';
         l.Parse_Confidence__c = 'HIGH';
@@ -509,6 +537,7 @@ private class LeadConvertServiceTest {
         Lead reRun = reReadForReRun(new Set<Id>{ l.Id })[0];
         reRun.Sale_Process__c = 'Retired Sale Process';   // not on the Opportunity picklist
         reRun.Parse_Confidence__c = 'UNKNOWN';            // not on the Opportunity picklist
+        reRun.Listing_Status__c = 'Pending';              // not on the Opportunity picklist
         reRun.Listing_Broker_Name__c = 'Kevin Girard';    // a NON-picklist field on the same update
         reRun.Offer_Due_Date__c = Date.newInstance(2026, 10, 1);
 
@@ -517,12 +546,17 @@ private class LeadConvertServiceTest {
         Test.stopTest();
 
         Opportunity o = [
-            SELECT Sale_Process__c, Parse_Confidence__c, Listing_Broker_Name__c, Offer_Due_Date__c,
+            SELECT Sale_Process__c, Parse_Confidence__c, Listing_Status__c,
+                   Listing_Broker_Name__c, Offer_Due_Date__c,
                    RecordTypeId, Property__c, Lead_Approved_By__c
             FROM Opportunity WHERE Id = :res.getOpportunityId()
         ];
         Assert.isNull(o.Sale_Process__c, 'An out-of-range restricted-picklist value is DROPPED, never pushed');
         Assert.isNull(o.Parse_Confidence__c, 'Same for the second guarded picklist');
+        Assert.isNull(o.Listing_Status__c,
+            'Same for the THIRD guarded picklist, added 2026-08-14. Lead.Listing_Status__c and '
+            + 'Opportunity.Listing_Status__c are two INDEPENDENT restricted field definitions that '
+            + 'merely match today — an unguarded copy would throw and roll back the whole chunk');
         // The point of the guard is not the two nulls — it is that everything ELSE still landed.
         Assert.areEqual('Kevin Girard', o.Listing_Broker_Name__c,
             'The REST of the stamp must still land. `update updates` is all-or-none, so an unguarded '
@@ -542,7 +576,7 @@ private class LeadConvertServiceTest {
     static void createsPrimaryBrokerOpportunityContactRole() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Pinnacle Brokerage Advisors';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         insert l;
 
         Test.startTest();
@@ -581,7 +615,7 @@ private class LeadConvertServiceTest {
     static void opportunityContactRoleIsIdempotent() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Everline Property Group';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         insert l;
         Database.LeadConvertResult res = convertOne(l);
         Assert.areEqual(1, rolesOn(res.getOpportunityId()).size(), 'Baseline: one role row after conversion');
@@ -683,7 +717,7 @@ private class LeadConvertServiceTest {
     static void blankLeadFieldsLeaveTargetsNull() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Thinmail Holdings';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         // Everything the extraction pipeline might have filled is empty — the common case when an
         // email names a broker and nothing else — EXCEPT the address the conversion gate demands.
         l.Property_Name__c = null;
@@ -691,6 +725,12 @@ private class LeadConvertServiceTest {
         l.Asset_Type__c = null;
         l.Guidance_Price__c = null;
         l.Guidance_Cap_Rate__c = null;
+        // The LLM-DOWN shape: routing branch (c) creates a Lead from the envelope alone, so
+        // ExtractionScoreUtil returns NOT-SCORED and all three numbers are null on the Lead.
+        l.Listing_Status__c = null;
+        l.Extraction_Score_Pct__c = null;
+        l.Fields_Captured_Count__c = null;
+        l.Fields_Missing_Count__c = null;
         insert l;
 
         Test.startTest();
@@ -700,7 +740,9 @@ private class LeadConvertServiceTest {
         Opportunity o = [
             SELECT Name, Property__c, Asking_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,
                    Guidance_Cap_Rate__c, Offer_Due_Date__c, Sale_Process__c, Parse_Confidence__c,
-                   Deal_Room_Link__c, Listing_Broker_Name__c, Listing_Broker_Email__c
+                   Deal_Room_Link__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
+                   Listing_Status__c, Extraction_Score_Pct__c,
+                   Fields_Captured_Count__c, Fields_Missing_Count__c
             FROM Opportunity WHERE Id = :res.getOpportunityId()
         ];
         Assert.isNull(o.Asking_Price__c, 'An empty lead leaves the Opportunity money fields null');
@@ -713,6 +755,16 @@ private class LeadConvertServiceTest {
         Assert.isNull(o.Deal_Room_Link__c, 'and the deal room link');
         Assert.isNull(o.Listing_Broker_Name__c, 'and the listing broker');
         Assert.isNull(o.Listing_Broker_Email__c, 'and their email');
+        Assert.isNull(o.Listing_Status__c, 'and the listing status');
+        // 🔴 NULL AND ZERO ARE DIFFERENT ANSWERS, AND THE CARRY-FORWARD MUST PRESERVE THE
+        // DIFFERENCE. A not-scored Lead (the LLM-down path) means "there was nothing to score";
+        // a 0 would claim the model ran and gave us none of the nine, which would put the most
+        // urgent-looking chase signal in the org onto the one deal nobody can chase anything
+        // about. A `!= null` guard or a defaulting copy in applyDealFields fails HERE.
+        Assert.isNull(o.Extraction_Score_Pct__c,
+            'A not-scored Lead carries a NULL score to the Opportunity, never a 0');
+        Assert.isNull(o.Fields_Captured_Count__c, 'and a null captured count, not a 0');
+        Assert.isNull(o.Fields_Missing_Count__c, 'and a null missing count, not a 9');
         Assert.areEqual(GATE_ADDRESS, o.Name,
             'With no property NAME, the deal is named after the address — the second rung of the '
             + 'precedence chain. The third rung (no name and no address, so Name is left alone) is '
@@ -771,7 +823,7 @@ private class LeadConvertServiceTest {
     static void blankAddressLeavesTheDealNameAloneAndFallsBackToCompany() {
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Thinmail Holdings';
-        l.Deal_Type__c = 'Commercial';
+        l.Deal_Type__c = 'Retail';
         l.Property_Name__c = null;
         l.Property_Address__c = GATE_ADDRESS; // gate tax only — blanked again below, in memory
         l.Street = null;
@@ -893,7 +945,7 @@ private class LeadConvertServiceTest {
     static void bulkConversion251LeadsCreatesPropertiesAndStampsOpportunities() {
         List<Lead> leads = TestDataFactory.createLeads(BULK_N, false);
         for (Integer i = 0; i < leads.size(); i++) {
-            leads[i].Deal_Type__c = Math.mod(i, 2) == 0 ? 'Land' : 'Commercial';
+            leads[i].Deal_Type__c = Math.mod(i, 2) == 0 ? 'Land' : 'Retail';
             // A representative slice of the enriched field set, one field per target object plus
             // one guarded picklist, so the bulk path exercises all three write shapes.
             leads[i].Building_SF__c = 10000 + i;

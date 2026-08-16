@@ -1,8 +1,153 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE FULL RATIONALE LIVES HERE, NOT IN <description>. A comment is repo-only and is never
+        sent to the Metadata API, so it carries what will not fit. It must sit INSIDE the root
+        element - a comment placed ABOVE <CustomField> breaks `sf` deploy at source conversion
+        with the misleading error "unable to find matching parent xml file".
+
+        =====================================================================
+        🔴 RETRACTED 2026-08-14 (Phase 3, observation 5). THE "FULLY DISJOINT" CLAIM THIS FIELD
+        MADE - AND THAT FIVE OTHER FILES RELIED ON - IS NOW FALSE. READ THIS BEFORE CITING IT.
+        =====================================================================
+
+        RETRACTED, verbatim from the <description> this change replaced: "The two sets are FULLY
+        DISJOINT, so unlike NDA__c.Status__c this field alone DOES identify the record type -
+        which is what makes every stage-keyed flexipage rule self-limiting with no record-type
+        criterion."
+
+        WHY IT IS NOW FALSE. The acquisition sequence becomes
+        Draft -> Under Review -> Submitted -> Negotiation -> Signed, and 'Under Review' ALREADY
+        EXISTED as step 2 of the DISPOSITION sequence. It is now carried by BOTH record types.
+        No value was renamed to produce this - 'Under Review' is REUSED rather than added, which
+        is exactly why the overlap is easy to miss when reading the diff.
+
+        ⚠ WHAT THAT COSTS, STATED RATHER THAN LEFT TO BE REDISCOVERED. Every rule anywhere that
+        keys on a Stage__c VALUE and relies on the value alone to identify the record type must
+        be re-read. Four artefacts made that reliance explicitly and all four were amended in
+        this change: both recordTypes/*.recordType-meta.xml files, LOI_Path_Acquisition's
+        header, and flexipages/LOI_Record_Page's header. A fifth, Is_Advance_Allowed__c, carried
+        an explicit instruction NOT to add a record-type test on exactly this premise; that
+        instruction is retracted in that file and the formula now carries one.
+
+        ⚠ THE OVERLAP IS ON A NON-TERMINAL VALUE, WHICH IS THE PART THAT MAKES IT SURVIVABLE.
+        The two terminals stay distinct - 'Signed' on acquisition, 'Executed' on disposition -
+        so every terminal-state test can still be written by naming values. It is the MIDDLE of
+        the sequence that is now ambiguous, and the one live consequence is the approval gate:
+        an acquisition LOI at 'Under Review' is awaiting approval, a disposition LOI at
+        'Under Review' is being read by DPEG and has no approval concept at all.
+
+        ORDERING - CHECKED, NOT ASSUMED. Runtime Path order comes from THIS file's value order
+        (sorted=false) filtered by the record type; a record type can only include or exclude,
+        never re-order. The three new values are APPENDED (positions 11-13), which yields:
+          Acquisition_LOI  -> Draft(1), Under Review(7), Submitted(11), Negotiation(12), Signed(13)
+          Disposition_LOI  -> Received(6), Under Review(7), Countered by DPEG(8),
+                              Counter Received from Buyer(9), Executed(10)   [UNCHANGED]
+        Both are monotonic and correct, so an APPEND is sufficient here and no interleave is
+        needed. That is luck, not a rule: it holds only because the one shared value sits at a
+        position that is correct for both sequences. ⚠ CONTRAST Contract_Review__c's
+        Negotiation_Status__c in this same phase, where the shared value ('Executed') sits at
+        position 4 and an append would have rendered the TERMINAL step FIRST - so the three new
+        values there had to be INSERTED. Anyone adding a value to either field must redo this
+        arithmetic; do not carry the answer across.
+
+        THE FOUR RETIRED ACQUISITION VALUES ARE DEACTIVATED, NOT DELETED (decision O3).
+        'Prepare/Review', 'Sent', 'Counter' and 'Completed' go inactive at Phase 3 D3, AFTER the
+        row migration. Deletion buys nothing an inactive value has not already delivered and
+        breaks reports, dashboards and Paths silently. Every one of the four is also a
+        substring-collision hazard: 'Completed' is ACTIVE on Underwriting__c.Stage__c and on
+        both Feasibility Review Stage__c fields; 'Sent' is ACTIVE on NDA__c.Status__c for BOTH
+        record types; 'Counter' is a strict prefix of 'Countered by DPEG' and
+        'Counter Received from Buyer' ON THIS VERY FIELD; and 'Prepare/Review' carries a literal
+        slash, stored ENCODED as Prepare%2FReview inside a RecordType and LITERALLY everywhere
+        else. Any sweep for these values must be FIELD-scoped, never string-scoped.
+
+        ⚠ COMPARISONS ON THIS FIELD USE TEXT(...), NEVER ISPICKVAL - RecordStageAdvanceService's
+        class header is the standing rule and 'Prepare/Review' is the reason. That rule outlives
+        the value: keep using TEXT() after D3.
+
+        ⚠ objectTranslations/LOI__c-en_US/Stage__c.fieldTranslation-meta.xml enumerates only the
+        FIVE ORIGINAL acquisition values. The five disposition values added in Tranche 3B were
+        never added to it and nothing broke, so the three added here are deliberately not added
+        either - see the runbook's translation note. That file is NOT part of any Phase 3 deploy.
+
+        ================================================================================
+        🔴 READ THIS BEFORE REASONING FROM "THE PSA CASE" - PHASE 3 SWAPPED THE TWO OBJECTS'
+        PROPERTIES, SO THE ANALOGY NOW POINTS AT THE INVERSE OF THE FACTS.
+        ================================================================================
+
+        This field and Contract_Review__c.Negotiation_Status__c are the sibling pair, and repo
+        prose has long reasoned from one to the other. On 2026-08-14 they EXCHANGED the property
+        every one of those arguments rests on:
+
+            BEFORE 2026-08-14                      AFTER
+            LOI__c.Stage__c (this)  DISJOINT  ->   OVERLAPS at 'Under Review'
+                                                       [FROM P3-D1]
+            Negotiation_Status__c   IDENTICAL ->   DISJOINT except the terminal 'Executed'
+                                                       [ONLY FROM P3-D3]
+
+        🔴 THE TWO HALVES DO NOT LAND TOGETHER, AND THE WINDOW BETWEEN THEM IS THE NEAR-TERM
+        STATE - NOTHING IN THIS PACK IS DEPLOYED YET. The LOI overlap arrives at P3-D1, the
+        moment the three new values deploy. The PSA disjointness arrives only at P3-D3, when
+        Acquisition_PSA stops exposing 'Initial Draft', 'Revised' and 'Ready for Execution' -
+        all three of which Disposition_PSA also carries, and all three of which it keeps.
+        FOR THE WHOLE D1 -> D3 WINDOW THE TWO PSA SETS ARE NOT DISJOINT AND A STATUS-KEYED RULE
+        ON Contract_Review__c IS NOT SELF-LIMITING. Reading the row above as if it took effect
+        on 2026-08-14 inverts the fact for exactly the period this block will be read in, which
+        is the opposite of the job it exists to do. flexipages/Contract_Review_Record_Page states
+        the same qualifier: "from P3-D3 a rule keyed on any NON-terminal status value here WOULD
+        be self-limiting". The LOI row needs no such qualifier - its overlap is additive and so
+        arrives with the values themselves, at D1.
+
+        WHY IT MATTERS RATHER THAN BEING TRIVIA. "The sets are disjoint, so a rule keyed on a
+        stage value is SELF-LIMITING to its record type" was TRUE here and FALSE of the PSA; it
+        is FALSE here from P3-D1 and TRUE of the PSA only from P3-D3. Carrying that sentence in
+        either direction after
+        this date carries the exact opposite of the facts, and it fails SILENTLY - a rule that
+        stops being self-limiting renders a button on the wrong record type, and one that becomes
+        self-limiting hides it. Neither errors and no test sees it.
+
+        WHAT IT COST ALREADY: LOI_Record_Page's Submit_for_Approval entry keys on 'Under Review',
+        which is now shared, and carries an OPEN, UNDECIDED residual (runbook 1.6, gate G7). It
+        is also why Is_Advance_Allowed__c's approval clause needed a RecordType.DeveloperName
+        guard - the ONLY clause in that formula that has one.
+
+        ⚠ THE TERMINALS ARE THE PART THAT DID NOT MOVE, on either object: 'Signed' vs 'Executed'
+        here, and 'Executed' shared but sole-terminal on the PSA. That is precisely why every
+        terminal-state test still works by naming values while the MIDDLE of the sequence does
+        not - the overlap is mid-sequence, which is the harder case to notice.
+
+        ⇒ RULE: never inherit a disjointness claim across this object pair. Re-derive it from the
+        two record type files at the moment you need it. It has already inverted once.
+
+        ================================================================================
+        ⚠ THE <inlineHelpText> BELOW IS AT 247 OF ITS 255-CHARACTER CAP, AND IT ENUMERATES
+        EVERY VALUE. THE NEXT VALUE ADDED TO EITHER RECORD TYPE BREACHES IT.
+        ================================================================================
+        MEASURED 2026-08-14 with System.Xml.XmlDocument.Load() on the DECODED stored value, not
+        with a grep - a Get-Content -Raw read mangles the non-ASCII characters this repo's files
+        are full of and reports the wrong number. 247/255 leaves EIGHT characters, and this help
+        text is written as two full enumerations (five acquisition values, then five disposition
+        values). A new value costs ", " plus its own label, so ANY name longer than six
+        characters breaches on the day it is added - and 'Under Review', the shortest value this
+        phase introduced anywhere, is twelve.
+
+        🔴 IT IS NOT A DEFECT TODAY. It is recorded because it is the SAME ELEMENT CLASS this
+        phase already breached TWICE - RecordType.description earlier, and this object's sibling
+        Is_Advance_Allowed__c.inlineHelpText (fixed to 241/255, see that file). Both were caught
+        only by measuring, never by review, and both were introduced by an edit that looked like
+        prose.
+
+        ⇒ WHEN IT BREACHES, DO NOT TRIM A VALUE OUT OF THE LIST to buy room - a help text that
+        enumerates SOME of the choices is worse than one that enumerates none, because the
+        omission reads as "not available on your record type". Drop BOTH enumerations and say
+        the choices differ by record type, which is the only part a user acts on. The full lists
+        already live in <description> above and in the two record type files, neither of which
+        is capped the same way (CustomField.description is 1000).
+    -->
     <fullName>Stage__c</fullName>
-    <description>Lifecycle state of the LOI. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL TEN. Acquisition_LOI exposes Draft, Prepare/Review, Sent, Counter, Completed (unchanged). Disposition_LOI exposes Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed. The two sets are FULLY DISJOINT, so unlike NDA__c.Status__c this field alone DOES identify the record type - which is what makes every stage-keyed flexipage rule self-limiting with no record-type criterion. Five values were APPENDED 2026-08-09 and ZERO were removed, so every existing LOI keeps a valid value and no picklist sweep is needed. Drives the LOI Lightning Path (LOI_Path_Acquisition / LOI_Path_Disposition) and RecordStageAdvanceService.</description>
-    <inlineHelpText>Pick the stage this LOI is in. The choices differ by record type: an acquisition LOI runs Draft, Prepare/Review, Sent, Counter, Completed; a disposition LOI runs Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed.</inlineHelpText>
+    <description>Lifecycle state of the LOI. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL THIRTEEN. Acquisition_LOI runs Draft, Under Review, Submitted, Negotiation, Signed. Disposition_LOI runs Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed. THE TWO SETS ARE NO LONGER DISJOINT - Under Review is on BOTH from 2026-08-14 - so this field alone DOES NOT identify the record type and a stage-keyed rule is NOT self-limiting by construction. The terminals do stay distinct (Signed vs Executed). Prepare/Review, Sent, Counter and Completed are retired acquisition values, inactive after the Phase 3 migration, never deleted. Drives LOI_Path_Acquisition / LOI_Path_Disposition and RecordStageAdvanceService.</description>
+    <inlineHelpText>Pick the stage this LOI is in. The choices differ by record type: an acquisition LOI runs Draft, Under Review, Submitted, Negotiation, Signed; a disposition LOI runs Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed.</inlineHelpText>
     <label>Stage</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
@@ -20,21 +165,25 @@
             <value>
                 <fullName>Prepare/Review</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Prepare/Review</label>
             </value>
             <value>
                 <fullName>Sent</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Sent</label>
             </value>
             <value>
                 <fullName>Counter</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Counter</label>
             </value>
             <value>
                 <fullName>Completed</fullName>
                 <default>false</default>
+                <isActive>false</isActive>
                 <label>Completed</label>
             </value>
             <value>
@@ -61,6 +210,21 @@
                 <fullName>Executed</fullName>
                 <default>false</default>
                 <label>Executed</label>
+            </value>
+            <value>
+                <fullName>Submitted</fullName>
+                <default>false</default>
+                <label>Submitted</label>
+            </value>
+            <value>
+                <fullName>Negotiation</fullName>
+                <default>false</default>
+                <label>Negotiation</label>
+            </value>
+            <value>
+                <fullName>Signed</fullName>
+                <default>false</default>
+                <label>Signed</label>
             </value>
         </valueSetDefinition>
     </valueSet>

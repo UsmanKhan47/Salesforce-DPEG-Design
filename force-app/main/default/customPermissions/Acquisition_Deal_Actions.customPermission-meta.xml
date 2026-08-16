@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, DELIBERATELY.
+        CustomPermission.Description is capped at 255 characters (measured 2026-08-12 via a
+        failed dry-run deploy of this file's first draft: "Value too long for field:
+        Description maximum length is: 255"). Broker_Protection_Access carries the same
+        workaround for the identical reason (see its own header comment). A comment is
+        repo-only and is never sent to the Metadata API, so it can be as long as it needs.
+
+        SPIKE (2026-08-12) — proves whether a {!$Permission.X} FlexiPage Dynamic Actions
+        visibility rule is honoured by the RENDERER, not merely deployed, at API 67.0 -
+        see agent-output/design-requirements-custom-permissions.md section 7.1. This repo has
+        measured a flexipage construct that deployed green, survived a retrieve, and was
+        silently ignored by the renderer (Is_Decline_Allowed__c's parenthesised-OR finding), so
+        a green deploy of this permission is NOT proof it works.
+
+        It was NOT, at spike time, the layer-5 authorization token for the real Acquisitions
+        deal-action gate - Apex still read User.Deal_Driver__c unchanged, and this permission
+        was referenced by exactly ONE FlexiPage criterion (Development_Feasibility_Review_
+        Record_Page). The spike PASSED (renderer honours {!$Permission.CustomPermission.X},
+        confirmed by both a granted-persona and a non-granted-persona page load), which
+        unblocked PHASE 1 below.
+
+        🔬 PHASE 1 (2026-08-12) of retiring the driver-flag concept — see
+        agent-output/design-requirements-custom-permissions.md. This IS NOW the layer-5
+        authorization token the remaining 18 acquisition-gated flexipage criteria are
+        repointed to (Opportunity_Record_Page x8, LOI_Record_Page x4, NDA_Record_Page x1,
+        Contract_Review_Record_Page x1, Underwriting_Record_Page x2, Construction_Feasibility_
+        Review_Record_Page x1 — plus the spike's original Dev_FR criterion, 19 total). It
+        remains granted only through Acquisition_Deal_Driver, whose population is unchanged.
+        UPDATED — a later developer pass swapped OpportunityActionPermissionService.cls off
+        User.Deal_Driver__c entirely; it now calls
+        FeatureManagement.checkPermission('Acquisition_Deal_Actions') as the sole authorization
+        check, so this permission is the live server-side gate, not merely the chrome. The old
+        two-mechanisms-agreeing description below is left in place, superseded, for history.
+        User.Deal_Driver__c and its fieldPermissions grant are UNTOUCHED and remain the rollback
+        lever; they govern nothing today and are deleted in a separate, later phase.
+    -->
+    <label>Acquisition Deal Actions</label>
+    <description>Layer-5 authorization token for the Acquisition stage quick actions. Replaces User.Deal_Driver__c. Grant ONLY via Acquisition_Deal_Driver; never via a layer-4 capability set.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>

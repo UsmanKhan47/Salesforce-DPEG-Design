@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
     <actionSubtype>Action</actionSubtype>
-    <label>Advance to PSA</label>
+    <label>Advance to Under Contract (PSA)</label>
     <lightningWebComponent>advanceDealStage</lightningWebComponent>
     <optionsCreateFeedItem>false</optionsCreateFeedItem>
     <type>LightningWebComponent</type>

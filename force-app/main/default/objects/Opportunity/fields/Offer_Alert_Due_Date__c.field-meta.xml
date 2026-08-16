@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Offer_Alert_Due_Date__c</fullName>
+    <label>Offer Alert Due Date</label>
+    <description>The other half of the call-for-offers alert idempotency marker (O2), and it is LOAD-BEARING rather than defensive polish. It snapshots the Offer Due Date that Offer Alert Last Interval was computed against. CallForOffersStampService is LAST-EMAIL-WINS on Offer Due Date ON PURPOSE - a call-for-offers deadline is a fact that changes ("extended to Friday") - so without this snapshot an extension would leave the marker armed against a date that no longer exists and the re-armed ladder would never fire again. CallForOffersAlertBatch compares this to the live Offer Due Date and, when they differ, treats the marker as blank and re-runs the whole 7 / 3 / 1 / 0 ladder against the new deadline. This is what lets the stamp service move the deadline while knowing nothing at all about the alert feature. Written by CallForOffersAlertBatch in system mode.</description>
+    <inlineHelpText>Set by the daily call-for-offers alert job. The Offer Due Date that the last alert was sent against; when the deal's Offer Due Date changes, the alerts start again.</inlineHelpText>
+    <externalId>false</externalId>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

@@ -2078,6 +2078,174 @@ private class ExtractAddressQueueableTest {
             'and it certainly claims nothing');
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // LABEL FIX, 2026-08-12 — PropertyExtraction.hasNoExtractedValues(), consumed by
+    // firstProperty()/isFootnotable(). MEASURED: an internal email ("Team lunch Friday + Q3
+    // expense reports") returned ONE structurally EMPTY property object, and firstProperty()
+    // used to accept any non-null element — so `stampable` was non-null and routeNoProperty
+    // chose OUTCOME_NO_ADDRESS, the population an admin works to CHASE A MISSING ADDRESS.
+    //
+    // Direct unit coverage of the predicate itself lives in PropertyExtractionTest.cls
+    // (including the required two-way case: all-empty -> true, one numeric member set ->
+    // false). The two tests below are the INTEGRATION proof — that the predicate is actually
+    // wired into the two call sites end to end — and deliberately do not re-prove the
+    // predicate's own logic.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void execute_structurallyEmptyProperty_labelsAsNoPropertyNotNoAddress() {
+        // 🔴 THE MEASURED DEFECT, DIRECTLY. Before this fix this test would have asserted
+        // OUTCOME_NO_ADDRESS — mislabelling a team-lunch email into the queue an admin works to
+        // chase a missing address for.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'ops@zzinternal.example.invalid', 'forwarder-lunch@example.invalid',
+            'Team lunch Friday + Q3 expense reports', 'no property mentioned anywhere in this body',
+            'msg-empty-property@example.invalid', null, null);
+        // A single property object with EVERY field null/blank — the exact shape parseProperty
+        // produces from an empty map, and parseProperties adds it to result.properties because
+        // it came from the enriched `properties` array (unlike the legacy shape, which only
+        // synthesizes an element when property_address is non-blank).
+        setAddresslessMock(new List<Map<String, Object>>{ new Map<String, Object>() });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Outcome__c, Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_NO_PROPERTY, updatedStaging.Outcome__c,
+            '🔴 THE FIX: a structurally empty property object must be treated exactly like ZERO '
+            + 'properties, never like a named-but-addressless one');
+        Assert.isNotNull(updatedStaging.Result_Record_Id__c,
+            'Branch (c) still creates a Lead — that is UNCHANGED. This label fix does not make '
+            + 'branch (c) unreachable and does not suppress the Lead (it is also the LLM-outage '
+            + 'landing point); only the OUTCOME label moves');
+
+        Lead created = [
+            SELECT Property_Name__c, Property_Address__c, Deal_Notes__c
+            FROM Lead WHERE Id = :updatedStaging.Result_Record_Id__c
+        ];
+        Assert.isNull(created.Property_Name__c, 'Nothing was extracted, so nothing is stamped');
+        Assert.isNull(created.Property_Address__c, '');
+        Assert.isTrue(created.Deal_Notes__c == null || !created.Deal_Notes__c.contains('(unidentified property)'),
+            '🔴 THE SECOND-ORDER FIX (isFootnotable): before this change the spillover note would '
+            + 'have printed "- (unidentified property) (no usable address)" into Deal_Notes__c on '
+            + 'the very Lead this label fix exists to clean up. An object that states nothing is '
+            + 'not a property that failed to route — there is nothing to footnote. Actual: '
+            + created.Deal_Notes__c);
+    }
+
+    @isTest
+    static void execute_emptyPropertyAmongNamedOnes_isSkippedForBothStampingAndFootnote() {
+        // The mixed case: a structurally empty object ALONGSIDE genuinely addressless-but-named
+        // properties. Proves firstProperty() skips PAST the empty one (rather than merely
+        // handling the single-property case) and that isFootnotable() excludes it specifically
+        // while still footnoting its real siblings.
+        Integer leadsBefore = [SELECT COUNT() FROM Lead];
+        Inbound_Email_Staging__c staging = insertStaging(
+            'broker-mixed-empty@example.invalid', 'forwarder-mixed-empty@example.invalid',
+            'FW: three items, one is not a property', 'body naming two assets and one non-item',
+            'msg-mixed-empty@example.invalid', null, null);
+        setAddresslessMock(new List<Map<String, Object>>{
+            new Map<String, Object>(), // structurally empty — must be invisible everywhere
+            new Map<String, Object>{ 'property_name' => 'Beta Plaza', 'property_address' => '' },
+            new Map<String, Object>{ 'property_name' => 'Gamma Center', 'property_address' => '' }
+        });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(leadsBefore + 1, [SELECT COUNT() FROM Lead], 'Still exactly one Lead');
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Outcome__c, Result_Record_Id__c, Property_Count__c
+            FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_NO_ADDRESS, updatedStaging.Outcome__c,
+            'Beta Plaza SAYS something (a name), so this is the genuine chase-the-address case, '
+            + 'unlike the previous test');
+        Assert.areEqual(3, updatedStaging.Property_Count__c,
+            'Property_Count__c still counts the structurally empty object — it is a real element '
+            + 'of the model\'s array, only the ROUTING treats it as absent');
+
+        Lead created = [
+            SELECT Property_Name__c, Deal_Notes__c
+            FROM Lead WHERE Id = :updatedStaging.Result_Record_Id__c
+        ];
+        Assert.areEqual('Beta Plaza', created.Property_Name__c,
+            'firstProperty() must skip PAST the structurally empty object and stamp the first one '
+            + 'that actually says something — not merely tolerate it as a single-property input');
+        Assert.isTrue(created.Deal_Notes__c.contains('Gamma Center'),
+            'The genuinely addressless SECOND property is still footnoted');
+        Assert.isFalse(created.Deal_Notes__c.contains('(unidentified property)'),
+            'and the structurally empty object is excluded from the footer, not printed as an '
+            + 'unidentified one. Actual: ' + created.Deal_Notes__c);
+    }
+
+    /**
+     * 🔴 CODE REVIEW W3 — A STANDALONE FALSIFIER FOR THE COMPOSITION, ADDED ON EXPLICIT REQUEST.
+     *
+     * The two tests immediately above already exercise this exact shape end to end
+     * (`execute_structurallyEmptyProperty_labelsAsNoPropertyNotNoAddress` asserts BOTH the label
+     * and the missing footnote line for a single structurally-empty property object). VERIFIED
+     * BY REASONING (this suite cannot be deployed from this pass): reverting `firstProperty`
+     * (~L1574-1584) to its pre-2026-08-12 form —
+     *   `if (property != null) { return property; }`
+     * — dropping the `&& !property.hasNoExtractedValues()` term — makes `stampable` resolve to
+     * the EMPTY `PropertyExtraction` object itself (a non-null reference), which flips
+     * `routeNoProperty`'s ternary (`stampable == null ? OUTCOME_NO_PROPERTY : OUTCOME_NO_ADDRESS`)
+     * to `OUTCOME_NO_ADDRESS`. That fails assertion (a) below in EITHER this test or its sibling
+     * above — both already catch that specific revert.
+     *
+     * This test exists anyway, as its own independent regression pin per the code review
+     * instruction, rather than relying solely on the sibling test above surviving future edits
+     * to that method. It is deliberately narrower than the sibling test (no `Property_Name__c` /
+     * `Property_Address__c` / `Result_Record_Id__c` assertions) so its failure message points
+     * unambiguously at the ONE composition the review flagged: the label AND the footnote.
+     *
+     * Assertion (b) additionally pins `isFootnotable`'s `!property.hasNoExtractedValues()` term
+     * (~L1943-1946) directly — see that method's own Javadoc ("MUST NOT BE DROPPED AS
+     * REDUNDANT"). NOTE: in this single-property shape, (b) does not by itself discriminate
+     * against the `firstProperty`-only revert described above, because `exclude` and the empty
+     * property are the SAME object reference and `isFootnotable`'s `property != exclude` identity
+     * check already keeps it out of the footer regardless of the `hasNoExtractedValues()` term.
+     * (b) is retained anyway because it independently falsifies a DIFFERENT, equally real
+     * regression — someone dropping the `hasNoExtractedValues()` term from `isFootnotable` while
+     * leaving `firstProperty` alone — which
+     * `execute_emptyPropertyAmongNamedOnes_isSkippedForBothStampingAndFootnote` above also catches
+     * (there `exclude` is a DIFFERENT object, 'Beta Plaza', so identity alone cannot protect the
+     * empty object; only the `hasNoExtractedValues()` term does).
+     */
+    @isTest
+    static void execute_allEmptyPropertyObject_pinsLabelAndFootnoteIndependently() {
+        Inbound_Email_Staging__c staging = insertStaging(
+            'ops@w3falsifier.example.invalid', 'forwarder-w3falsifier@example.invalid',
+            'Re: parking garage repaving schedule', 'no property named anywhere in this body',
+            'msg-w3-all-empty@example.invalid', null, null);
+        // Reuses the existing helper rather than inventing a second mock shape (per instruction).
+        setAddresslessMock(new List<Map<String, Object>>{ new Map<String, Object>() });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Inbound_Email_Staging__c updatedStaging = [
+            SELECT Outcome__c, Result_Record_Id__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ];
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_NO_PROPERTY, updatedStaging.Outcome__c,
+            '(a) An all-empty property object must resolve to OUTCOME_NO_PROPERTY, never '
+            + 'OUTCOME_NO_ADDRESS — this is the assertion that goes RED if firstProperty() is '
+            + 'reverted to its old non-null-only test');
+
+        Lead created = [SELECT Deal_Notes__c FROM Lead WHERE Id = :updatedStaging.Result_Record_Id__c];
+        Assert.isTrue(
+            created.Deal_Notes__c == null || !created.Deal_Notes__c.contains('(unidentified property)'),
+            '(b) The all-empty property object must never appear in the "not routed" footer as '
+            + '"- (unidentified property) (no usable address)". Actual: ' + created.Deal_Notes__c);
+    }
+
     /**
      * ⚠ THE SENDER MUST STAY AN ORDINARY HUMAN ADDRESS. This test targets the LLM HARD GATE
      * (D2: is_acquisition_related = false AND confidence >= 0.85), which is judged AFTER the
@@ -4088,6 +4256,153 @@ private class ExtractAddressQueueableTest {
             + 'replies in the campaign thread will route to the Opportunity and the EAC Thread '
             + 'Adopter will begin re-pointing captured replies onto it. Both are behaviour changes '
             + 'on live features and belong in the UAT script');
+    }
+
+    // ── Defect 4 (2026-08-12): sale_process reaches the deal, per property ───
+
+    @isTest
+    static void callForOffers_matchedWithSaleProcess_stampsSaleProcessOntoTheDeal() {
+        // 🔴 THE APEX HALF OF DEFECT 4, END TO END. CallForOffersStampServiceTest already proves
+        // the describe guard, the last-wins merge and the no-change skip directly against the
+        // service; THIS test proves only that routeCallForOffers actually reads
+        // property.saleProcess and carries it onto the StampRequest — the wiring, not the rule.
+        // (Whether the MODEL correctly returns sale_process for a genuine call-for-offers email
+        // is a prompt question and is NOT unit-testable — the model is mocked here as everywhere
+        // else in this class.)
+        Id dealId = registerConvertedWinner('4200 sale process ave');
+        Date due = Date.today().addDays(9);
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4200 Sale Process Ave',
+            'Offers are due on 4200 Sale Process Ave.',
+            'msg-cfo-saleprocess@example.invalid', null, null);
+
+        List<Map<String, Object>> properties = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'property_address' => '4200 Sale Process Ave',
+                'offer_due_date' => String.valueOf(due),
+                'sale_process' => 'Call for Offers'
+            }
+        };
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'call_for_offers',
+                'category_confidence' => 0.95,
+                'is_acquisition_related' => true,
+                'confidence' => 0.96,
+                'broker_name' => 'Blast Broker',
+                'broker_email' => 'listings@buildout.example.invalid',
+                'sent_datetime' => ''
+            }, properties)));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Opportunity stamped = [
+            SELECT Offer_Due_Date__c, Sale_Process__c FROM Opportunity WHERE Id = :dealId
+        ];
+        Assert.areEqual(due, stamped.Offer_Due_Date__c, 'Precondition: the deadline still lands');
+        Assert.areEqual('Call for Offers', stamped.Sale_Process__c,
+            'DEFECT 4, THE WIRING: sale_process is read PER PROPERTY in routeCallForOffers and '
+            + 'carried onto CallForOffersStampService.StampRequest.saleProcess — a deal reading '
+            + 'Off-Market while this pipeline holds a call-for-offers email is the defect this '
+            + 'closes');
+    }
+
+    // ── Call_For_Offers_Received_Date__c (2026-08-14): the email's own arrival ──
+
+    @isTest
+    static void callForOffers_matched_stampsTheEmailsOwnSendDateAsTheReceivedDate() {
+        // 🔴 THE WIRING TEST FOR THE FIELD THAT REPLACED A PROXY, AND THE FIXTURE IS BUILT SO THAT
+        // A PROXY CANNOT PASS IT. The stated send time is over three months before this test runs,
+        // so `Date.today()`, the Opportunity's CreatedDate (created seconds ago by
+        // registerConvertedWinner) and Broker_First_Seen__c (null) are ALL different from the
+        // expected value. Only reading extraction.sent_datetime produces it.
+        //
+        // ⚠ 12:00:00 GMT ON PURPOSE. `parseSentDatetime` parses GMT and the stamp takes `.date()`
+        // in the running user's zone; midday keeps the calendar date identical for any offset from
+        // -11 to +11, so this assertion is not quietly measuring the CI box's time zone.
+        Id dealId = registerConvertedWinner('4300 received date ave');
+        Date due = Date.today().addDays(8);
+        Datetime sentOn = Datetime.valueOfGmt('2026-05-04 12:00:00');
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4300 Received Date Ave',
+            'Offers are due on 4300 Received Date Ave.',
+            'msg-cfo-received@example.invalid', null, null);
+
+        List<Map<String, Object>> properties = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'property_address' => '4300 Received Date Ave',
+                'offer_due_date' => String.valueOf(due)
+            }
+        };
+        Test.setMock(HttpCalloutMock.class, new LLMExtractionCalloutMock(200,
+            LLMExtractionCalloutMock.enrichedBody(new Map<String, Object>{
+                'email_category' => 'call_for_offers',
+                'category_confidence' => 0.95,
+                'is_acquisition_related' => true,
+                'confidence' => 0.96,
+                'broker_name' => 'Blast Broker',
+                'broker_email' => 'listings@buildout.example.invalid',
+                'sent_datetime' => '2026-05-04 12:00:00'
+            }, properties)));
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Opportunity stamped = [
+            SELECT Offer_Due_Date__c, Call_For_Offers_Received_Date__c, Broker_First_Seen__c,
+                   CreatedDate
+            FROM Opportunity WHERE Id = :dealId
+        ];
+        Assert.areEqual(due, stamped.Offer_Due_Date__c, 'Precondition: the deadline still lands');
+        Assert.areEqual(sentOn.date(), stamped.Call_For_Offers_Received_Date__c,
+            'THE RECEIVED DATE COMES FROM THE EMAIL. It is the SAME parsed instant the claim path '
+            + 'stamps on Competing_Broker_Submission__c.Submitted_DateTime__c, so what a human '
+            + 'reads as "received" and what this module ARBITRATES with cannot disagree');
+        Assert.areNotEqual(Date.today(), stamped.Call_For_Offers_Received_Date__c,
+            'and it is emphatically NOT "today" — a stamp that quietly used the clock would pass a '
+            + 'weaker version of this test every day of the year');
+        Assert.areNotEqual(stamped.CreatedDate.date(), stamped.Call_For_Offers_Received_Date__c,
+            'nor the deal\'s own creation date, which is what the retired proxy actually resolved '
+            + 'to in production (nothing in this repo writes Broker_First_Seen__c)');
+    }
+
+    @isTest
+    static void callForOffers_matchedWithNoSentDatetime_fallsBackToTheDayItReachedThePipeline() {
+        // The other leg, and it is a DECISION rather than a default. The prompt is deliberately
+        // explicit-or-EMPTY on sent_datetime, so a blank is expected traffic — and DPEG's own
+        // receipt is still a real timestamp OF THIS EMAIL, which is the whole difference from the
+        // proxy this field replaced (a real timestamp of a DIFFERENT object). The alternative,
+        // leaving it null, would blank the column for the majority of matched deals in exchange
+        // for nothing: there is no third, better source.
+        Id dealId = registerConvertedWinner('4400 no send time ave');
+        Date due = Date.today().addDays(6);
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'listings@buildout.example.invalid', 'coordinator@dpeg.example.invalid',
+            'Call for Offers | 4400 No Send Time Ave',
+            'Offers are due on 4400 No Send Time Ave.',
+            'msg-cfo-nosendtime@example.invalid', null, null);
+        // setCallForOffersPropertiesMock sends sent_datetime = '' — the blank case, which is also
+        // why every OTHER call-for-offers test in this class stamps today rather than a fixed date.
+        setCallForOffersPropertiesMock('listings@buildout.example.invalid',
+            new List<String>{ '4400 No Send Time Ave' }, due, 'Dana Lister');
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(Date.today(),
+            [SELECT Call_For_Offers_Received_Date__c FROM Opportunity WHERE Id = :dealId]
+                .Call_For_Offers_Received_Date__c,
+            'With no stated send time the pipeline\'s own receipt date is used — never null, and '
+            + 'never the deal\'s age');
     }
 
     // ── 🔴 W1: no listing broker in the body -> the deal keeps the one it knows ──

@@ -334,7 +334,7 @@ private class EmailToLeadServiceTest {
         PropertyExtraction property = new PropertyExtraction();
         property.propertyName = 'Royal Inn';
         property.assetType = 'Retail';
-        property.dealType = 'Commercial';
+        property.dealType = 'Retail';
         property.guidancePrice = 7100000;
         property.capRate = 6.75;
         property.noi = 479250;
@@ -526,6 +526,210 @@ private class EmailToLeadServiceTest {
         Assert.areEqual('Acquisition_Broker', readBack.RecordType.DeveloperName,
             'An inbound broker Lead without this record type matches no sharing rule once Lead OWD '
             + 'is Private, so the acquisitions team never sees it.');
+    }
+
+    // ── listing status + extraction score (observation 1, 2026-08-14) ────────
+    //
+    // Both land in the SAME insert that already creates the Lead — no extra DML, no extra SOQL.
+    // Every test below therefore reads the Lead back ONCE after a single createLeadFromExtracted
+    // call; if either addition had needed a second statement, the existing budget assertions in
+    // ExtractAddressQueueableTest would fail rather than these.
+
+    /**
+     * A request whose block captures a KNOWN 7 of the 9 signed-off keys, so the numbers asserted
+     * below are derived from the fixture rather than copied from a passing run.
+     *
+     * Captured (7): property_name, property_address, offer_due_date, sale_process,
+     *               listing_status, listing_broker_name, listing_broker_email.
+     * Missing  (2): guidance_price, guidance_cap_rate — deliberately left out so the test can
+     *               tell a real fraction from a hardcoded 100%.
+     *
+     * ⚠ `request.propertyAddress` IS SET AS WELL AS `property.propertyAddress`, and it is the one
+     * that counts (code review C2, 2026-08-14). The score reads the RESOLVED address — the value
+     * createLeadFromExtracted actually stamps onto Lead.Property_Address__c — because
+     * ExtractAddressQueueable.claimableAddress nulls a raw address that does not normalize. Here
+     * the two agree, which is the ordinary winner-branch shape; the case where they DISAGREE is
+     * addressLessRequest() below.
+     */
+    private static EmailToLeadService.LeadRequest sevenOfNineRequest() {
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        PropertyExtraction property = new PropertyExtraction();
+        property.propertyName = 'Orion ParkView';
+        property.propertyAddress = '1400 Royal Lane, Dallas TX';
+        property.offerDueDate = Date.today().addDays(21);
+        property.saleProcess = 'Call for Offers';
+        property.listingStatus = 'Off Market';
+        request.property = property;
+        request.propertyAddress = property.propertyAddress;   // what claimableAddress would return
+        request.listingBrokerName = 'Dana Listing';
+        request.listingBrokerEmail = 'dana@listingfirm.example.invalid';
+        return request;
+    }
+
+    /**
+     * The OUTCOME_NO_ADDRESS shape: the same seven-of-nine block, except the model's address is a
+     * value that is non-blank but normalizes to empty, so ExtractAddressQueueable.claimableAddress
+     * resolved it to NULL and this Lead will carry a blank Property_Address__c.
+     *
+     * Routing branch (c) — the population the score exists to queue up for chasing.
+     */
+    private static EmailToLeadService.LeadRequest addressLessRequest() {
+        EmailToLeadService.LeadRequest request = sevenOfNineRequest();
+        request.property.propertyAddress = '###';   // non-blank raw, empty normalized
+        request.propertyAddress = null;             // claimableAddress' answer
+        return request;
+    }
+
+    @isTest
+    static void createLeadFromExtracted_listingStatus_isStampedVerbatim() {
+        // The ninth extraction key. Written raw for the same reason Sale_Process__c is: the value
+        // arrives PRE-VALIDATED from LLMExtractionParser against this very field's active values,
+        // so a second rule set here is how the two would drift apart.
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        PropertyExtraction property = new PropertyExtraction();
+        property.listingStatus = 'Off Market';
+        request.property = property;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Lead created = [SELECT Listing_Status__c FROM Lead WHERE Id = :leadId];
+        Assert.areEqual('Off Market', created.Listing_Status__c,
+            'A parser-validated Listing_Status__c value must be written as-is');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_extractionScore_isStampedFromTheStampedPropertyBlock() {
+        // 🔴 THE SCORE MEASURES THE BLOCK THIS LEAD IS BEING STAMPED WITH, NOT THE EMAIL. One
+        // email can pitch up to ten properties and each gets its own Lead, so a score computed
+        // email-wide would describe a record it does not sit on. Asserting 7 / 2 / 78 — rather
+        // than "not null" — is what makes that visible: the fixture supplies exactly seven of
+        // the nine, and 7/9 is 77.77%, which rounds to 78. A truncating implementation would
+        // give 0 here and a hardcoded one would give 100.
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(sevenOfNineRequest());
+        Test.stopTest();
+
+        Lead created = [
+            SELECT Extraction_Score_Pct__c, Fields_Captured_Count__c, Fields_Missing_Count__c
+            FROM Lead WHERE Id = :leadId
+        ];
+        Assert.areEqual(7, created.Fields_Captured_Count__c,
+            'Seven of the nine signed-off keys were supplied by this fixture');
+        Assert.areEqual(2, created.Fields_Missing_Count__c,
+            'guidance_price and guidance_cap_rate were deliberately withheld');
+        Assert.areEqual(78, created.Extraction_Score_Pct__c,
+            '7/9 is 77.77%, which rounds to 78 — not 0 (integer truncation) and not 100');
+        Assert.areEqual(ExtractionScoreUtil.DENOMINATOR,
+            created.Fields_Captured_Count__c + created.Fields_Missing_Count__c,
+            'captured + missing must recover the denominator FROM THE RECORD — that is what '
+            + 'makes a future change to the nine keys auditable instead of a silent re-basing');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_rawAddressThatDoesNotNormalize_scoresTheAddressAsMissing() {
+        // 🔴 CODE REVIEW C2 (2026-08-14), PINNED FROM THE STORED RECORD RATHER THAN FROM THE
+        // SCORER. This is the OUTCOME_NO_ADDRESS population — routing branch (c) — and it is the
+        // exact population the score exists to queue up, so getting it wrong is worse here than
+        // anywhere else.
+        //
+        // The defect: ExtractionScoreUtil read `property.propertyAddress` (the RAW model value,
+        // non-blank) while EmailToLeadService stamps Lead.Property_Address__c from
+        // `request.propertyAddress` (already nulled by ExtractAddressQueueable.claimableAddress
+        // because '###' normalizes to empty). So the score counted as CAPTURED a field the very
+        // same insert left BLANK, and the work queue built to chase a missing address ranked
+        // these leads as complete as an addressed one. Reverting the scorer to the DTO read makes
+        // this test go red at 7 / 2 / 78 — byte-identical to the ADDRESSED fixture above — while
+        // the Property_Address__c assertion below still passes. That contradiction, one record
+        // reporting both "address captured" and "address blank", is what this test exists to
+        // catch, and it is why the assertion is made against the STORED Lead.
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(addressLessRequest());
+        Test.stopTest();
+
+        Lead created = [
+            SELECT Property_Address__c, Property_Name__c,
+                   Extraction_Score_Pct__c, Fields_Captured_Count__c, Fields_Missing_Count__c
+            FROM Lead WHERE Id = :leadId
+        ];
+        Assert.isNull(created.Property_Address__c,
+            'PRECONDITION AND THE WHOLE POINT: an address that does not normalize is never '
+            + 'stamped, so this Lead genuinely has no address to score as captured');
+        Assert.areEqual('Orion ParkView', created.Property_Name__c,
+            'The rest of the block is stamped exactly as on the addressed fixture — only the '
+            + 'address differs, so the score delta below can have no other cause');
+        Assert.areEqual(6, created.Fields_Captured_Count__c,
+            'Six of the nine landed. The seventh, property_address, did not — and the score must '
+            + 'report what the RECORD carries, not what the model said');
+        Assert.areEqual(3, created.Fields_Missing_Count__c,
+            'The address is NAMED as missing, which is what makes this lead findable by the '
+            + 'queue that exists to chase exactly that');
+        Assert.areEqual(ExtractionScoreUtil.DENOMINATOR,
+            created.Fields_Captured_Count__c + created.Fields_Missing_Count__c,
+            'captured + missing must still recover the denominator FROM THE RECORD on the '
+            + 'address-less path');
+        Assert.areEqual(67, created.Extraction_Score_Pct__c,
+            '6/9 is 66.66%, which rounds to 67 — one whole point below the 78 the addressed '
+            + 'fixture scores, and that difference IS the address');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_nullProperty_leavesTheScoreNullNotZero() {
+        // 🔴 NULL AND ZERO ARE DIFFERENT ANSWERS, AND THIS IS THE PATH WHERE IT MATTERS MOST.
+        // Routing branch (c) creates a Lead from the envelope alone when extraction degraded
+        // (the LLM-down path), so nothing was ever scored. A 0 here would be a CLAIM that the
+        // model ran and gave us none of the nine — which would put the most urgent-looking
+        // "chase this" signal in the org on the one lead nobody can chase anything about.
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Lead created = [
+            SELECT Extraction_Score_Pct__c, Fields_Captured_Count__c, Fields_Missing_Count__c
+            FROM Lead WHERE Id = :leadId
+        ];
+        Assert.isNull(created.Extraction_Score_Pct__c,
+            'A Lead with no property block was not scored, and not-scored is NULL, never 0');
+        Assert.isNull(created.Fields_Captured_Count__c, 'All three read null together');
+        Assert.isNull(created.Fields_Missing_Count__c, 'All three read null together');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_scoringFailure_stillCreatesTheLeadAndNotesTheGap() {
+        // 🔴 THE FAIL-SOFT GUARANTEE, FALSIFIED RATHER THAN ASSERTED. Spec §1 constraint 7: the
+        // inbound email pipeline must never be made to throw. ExtractionScoreUtil is total by
+        // construction, so the only way to reach EmailToLeadService's catch is the seam — and
+        // without reaching it, "a scoring defect costs nothing but the score" is a claim no test
+        // has ever checked. Remove the try/catch and this test goes red with an uncaught
+        // exception, having created no Lead at all: exactly the outage it exists to prevent.
+        ExtractionScoreUtil.simulateScoreFailure = true;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(sevenOfNineRequest());
+        Test.stopTest();
+
+        Assert.isNotNull(leadId, 'The Lead must still be created — the score is the only casualty');
+
+        Lead created = [
+            SELECT Property_Name__c, Listing_Status__c, Deal_Notes__c,
+                   Extraction_Score_Pct__c, Fields_Captured_Count__c, Fields_Missing_Count__c
+            FROM Lead WHERE Id = :leadId
+        ];
+        Assert.areEqual('Orion ParkView', created.Property_Name__c,
+            'Everything else on the record must be untouched by a scoring failure');
+        Assert.areEqual('Off Market', created.Listing_Status__c,
+            'The ninth extraction key is stamped independently of whether it can be SCORED');
+        Assert.isNull(created.Extraction_Score_Pct__c,
+            'A failed score is NULL — never a partial value and never a 0');
+        Assert.isNull(created.Fields_Captured_Count__c, 'No half-written state: all three are null');
+        Assert.isNull(created.Fields_Missing_Count__c, 'No half-written state: all three are null');
+        Assert.isTrue(
+            created.Deal_Notes__c != null
+                && created.Deal_Notes__c.contains(EmailToLeadService.SCORE_FAILED_NOTE),
+            'The omission must be EXPLAINED on the record a human is already working, not left '
+            + 'as an unexplained blank — same contract as the parser rejection notes. Actual: '
+            + created.Deal_Notes__c);
     }
 
     // ── deleteLead (lost-race cleanup) ───────────────────────────────────────

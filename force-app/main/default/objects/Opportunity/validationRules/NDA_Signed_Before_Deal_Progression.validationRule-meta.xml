@@ -9,10 +9,18 @@
 
         REPLACES NDA_Signed_Before_Underwriting (2026-08-04, destructive rename, see
         manifest/stage-validations). Widened from a single Underwriting-entry gate to a
-        5-stage gate covering Underwriting, LOI, PSA, About to Close AND Closed Won, closing
+        5-stage gate covering Underwriting, LOI, Under Contract (PSA), About to Close AND
+        Closed Won, closing
         the shortcut hole where a deal could reach Closed Won via About to Close with an
         unsigned NDA. A future stage added to the pipeline must be added to this OR list
         explicitly, it is not covered automatically.
+
+        PHASE 2 (2026-08-14): the third gated stage was renamed 'PSA' ->
+        'Under Contract (PSA)'. Only the value moved; the stage list is otherwise unchanged.
+        MIGRATION SAFETY - MEASURED FROM THIS FORMULA, NOT ASSUMED: the P2 backfill runs
+        BETWEEN P2-D1 and P2-D2, while this OR list still names 'PSA'. It writes the NEW
+        value, which matches no entry in the list, so the OR is false and this rule cannot
+        fire on the backfill. Repointing this file BEFORE the backfill would break it.
 
         Gate applies to the stage transition only (ISCHANGED), so approval-process
         rejections and existing records already sitting in a gated stage are unaffected
@@ -21,13 +29,13 @@
     -->
     <fullName>NDA_Signed_Before_Deal_Progression</fullName>
     <active>true</active>
-    <description>Blocks stage entry to Underwriting, LOI, PSA, About to Close, or Closed Won unless the primary NDA is signed. See the XML comment in this file for full rationale.</description>
+    <description>Blocks stage entry to Underwriting, LOI, Under Contract (PSA), About to Close, or Closed Won unless the primary NDA is signed. See the XML comment in this file.</description>
     <errorConditionFormula>AND(
     ISCHANGED(StageName),
     OR(
         ISPICKVAL(StageName, &apos;Underwriting&apos;),
         ISPICKVAL(StageName, &apos;LOI&apos;),
-        ISPICKVAL(StageName, &apos;PSA&apos;),
+        ISPICKVAL(StageName, &apos;Under Contract (PSA)&apos;),
         ISPICKVAL(StageName, &apos;About to Close&apos;),
         ISPICKVAL(StageName, &apos;Closed Won&apos;)
     ),

@@ -21,7 +21,7 @@ private class CloseDateGateTest {
 
     @isTest
     static void closeDateGate_blocksAboutToCloseEntryWithPastCloseDate() {
-        Opportunity o = newOpp('PSA');
+        Opportunity o = newOpp('Under Contract (PSA)');
         insert o; // ISCHANGED(StageName) is false on insert, so every gate is bypassed here.
         TestDataFactory.signPrimaryNda(o); // isolate: About to Close entry is ALSO NDA-gated
 
@@ -43,7 +43,7 @@ private class CloseDateGateTest {
         }
         System.assert(blocked, 'Entering About to Close with a Close Date already in the past must be blocked');
 
-        System.assertEquals('PSA',
+        System.assertEquals('Under Contract (PSA)',
             [SELECT StageName FROM Opportunity WHERE Id = :o.Id].StageName,
             'A rejected save must leave the stage untouched');
     }

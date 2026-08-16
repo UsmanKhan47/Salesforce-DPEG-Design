@@ -9,34 +9,45 @@
         acquisitions half look like the trivial one-field set it is safe to fold away. It is not.
 
         🔴 DO NOT FOLD THIS SET INTO DPEG_Acquisition_Edit, AND DO NOT DELETE IT AS "TRIVIAL".
-        This is a LAYER-5 AUTHORIZATION FLAG set: exactly one fieldPermissions entry, on a User
-        field, read by a two-factor gate. It is the twin of Disposition_Deal_Driver, whose own
-        comment argues the same case for the sell side.
+        This is a LAYER-5 AUTHORIZATION set: it carries the Acquisition_Deal_Actions custom
+        permission - the live authorization grant, read via FeatureManagement.checkPermission.
+        The retired User.Deal_Driver__c fieldPermissions entry that used to sit alongside it as
+        a rollback lever was REMOVED 2026-08-12 (Phase 2 Step 1 of retiring the driver-flag
+        concept - see the PHASE 2 note below). It is the twin of Disposition_Deal_Driver, whose
+        own comment argues the same case for the sell side.
 
         THE GATE IS TWO-FACTOR (ARCHITECTURE.md section 2, "Opportunity deal-action gate is
         TWO-FACTOR"). OpportunityActionPermissionService.hasDealActionAccess() requires BOTH:
-          (a) CAPABILITY    - assignment of a set granting FLS read on User.Deal_Driver__c, i.e.
-                              THIS set. UserSelector reads the field WITH USER_MODE, and USER_MODE
-                              THROWS rather than degrades, so an unassigned user makes the query
-                              throw and the service converts that throw to false.
-          (b) AUTHORIZATION - Deal_Driver__c = true on the running user's OWN User record.
+          (a) CAPABILITY    - can the user reach the code at all? Apex class access, granted by
+                              Opportunity_Stage_Actions_Access, NOT this set.
+          (b) AUTHORIZATION - does the user hold the Acquisition_Deal_Actions custom permission?
+                              Granted ONLY by assignment of THIS set.
+                              FeatureManagement.checkPermission('Acquisition_Deal_Actions') simply
+                              returns false for a user who lacks the grant - unlike the retired
+                              User.Deal_Driver__c FLS read, there is no throw/degrade distinction
+                              to reason about here.
         The six deployed Dynamic Actions visibility rules on Opportunity_Record_Page ask the
-        identical question ({!$User.Deal_Driver__c} EQUAL true), so the button chrome and the
-        server-side assertion agree by construction.
+        identical question ({!$Permission.CustomPermission.Acquisition_Deal_Actions} EQUAL true),
+        so the button chrome and the server-side assertion agree by construction.
 
         THREE WAYS TO BREAK IT, ALL OF WHICH LOOK LIKE TIDYING:
-          1. Moving this fieldPermission into DPEG_Acquisition_Edit (or into the new
-             Opportunity_Stage_Actions_Access capability set) hands factor (a) to that set's
-             ENTIRE population as a side effect of editing acquisitions. The gate becomes
-             one-factor for everyone who holds it.
+          1. Moving this customPermissions grant into DPEG_Acquisition_Edit (or into
+             Opportunity_Stage_Actions_Access, the layer-4 capability set) hands factor (b) to
+             that set's ENTIRE population as a side effect of editing acquisitions capability.
+             The gate becomes one-factor for everyone who holds the broader set.
           2. Replacing the gate with a permission-set MEMBERSHIP check does the same thing in
-             code: a holder of this set with Deal_Driver__c = false is DENIED today and would be
-             GRANTED by a membership check.
-             OpportunityActionPermissionServiceTest.hasDealActionAccess_membershipWithoutTheFlag_isStillDenied
-             exists to go red if anyone tries. Do not modify that test.
-          3. Deleting this set as a "trivial one-field set" denies EVERY deal driver - silently.
-             The USER_MODE read throws, the service returns false, and the buttons simply stop
-             working. No error surfaces anywhere.
+             code: a user who holds the CAPABILITY set (Opportunity_Stage_Actions_Access - can
+             reach the Apex) but does NOT hold THIS set - and so lacks the Acquisition_Deal_Actions
+             custom permission - is DENIED today (checkPermission returns false) and would be
+             GRANTED by a membership-only check that stops asking after factor (a).
+             OpportunityActionPermissionServiceTest.capabilitySetWithoutTheAuthorizationSet_isStillDenied
+             (renamed from ...hasDealActionAccess_membershipWithoutTheFlag_isStillDenied when the
+             mechanism moved off the FLS flag) exists to go red if anyone tries. Do not modify
+             that test.
+          3. Deleting this set as "trivial" denies EVERY deal driver - silently. This set is the
+             ONLY grantor of the Acquisition_Deal_Actions custom permission; delete it and
+             FeatureManagement.checkPermission simply returns false for everyone who used to
+             hold it - no throw, no error, the buttons just stop working.
 
         THE CAPABILITY HALF NOW LIVES IN Opportunity_Stage_Actions_Access (added 2026-08-10).
         The two sets are the two factors of one gate and must never be merged, in either
@@ -46,19 +57,55 @@
         rather than through DPEG_Junior_Analyst_PSG - deliberately, because its population is
         narrower than any group's. Deploying it grants nobody anything.
 
-        ⚠ AN ADMIN SMOKE TEST PROVES NOTHING ABOUT THIS GATE. A bare System Administrator has no
-        FLS on User.Deal_Driver__c either - Metadata-API-deployed custom fields arrive with no
-        field permissions for ANY profile, System Administrator included, and Modify All Data is
-        an OBJECT permission that confers no FLS. That is precisely why the service checks Modify
-        All Data BEFORE it reads the flag; reversing those two statements locks out every
-        administrator. Acceptance-test as a real deal-driver persona.
+        ⚠ AN ADMIN SMOKE TEST PROVES NOTHING ABOUT THIS GATE. A bare System Administrator does
+        not hold the Acquisition_Deal_Actions custom permission either, unless separately
+        assigned - Modify All Data is an OBJECT permission that confers no custom-permission
+        grant. UPDATED - unlike the retired FLS mechanism, FeatureManagement.checkPermission
+        never throws for an unassigned user, so there is no provisioning-gap risk of locking an
+        administrator out; OpportunityActionPermissionService now checks Modify All Data AFTER
+        the custom-permission read (the inverse of the retired ordering rule; see
+        Opportunity_Stage_Actions_Access's own header for the full note). Acceptance-test as a
+        real deal-driver persona regardless.
+
+        🔬 SPIKE (2026-08-12, PASSED) then PHASE 1 (2026-08-12) — READ IN ORDER AS HISTORY; the
+        sections above this block already describe the LANDED, current mechanism (updated in the
+        same pass that corrected this comment) - this SPIKE/PHASE 1 narrative is retained purely
+        as the record of how the token was proven and rolled out, not as a still-pending caveat.
+        The spike proved {!$Permission.CustomPermission.Acquisition_Deal_Actions} is honoured
+        by the FlexiPage renderer at API 67.0 (granted-persona sees the button, non-granted
+        does not), consumed then by exactly ONE FlexiPage criterion
+        (Development_Feasibility_Review_Record_Page) and by NO Apex.
+
+        PHASE 1 widened that to the remaining 18 acquisition-gated criteria across 6 more
+        FlexiPages (see agent-output/design-requirements-custom-permissions.md) — the
+        customPermissions grant below is the layer-5 AUTHORIZATION TOKEN for the whole
+        Acquisitions deal-action gate's declarative half.
+        UPDATED — a later developer pass swapped OpportunityActionPermissionService.cls off
+        User.Deal_Driver__c entirely: it now calls
+        FeatureManagement.checkPermission('Acquisition_Deal_Actions') as the sole
+        server-side authorization check. The FLS-flag mechanism described above this note was
+        RETIRED and governed nothing from that point on; it was left in place, superseded, as
+        a rollback lever pending live UI verification.
+
+        🔬 PHASE 2 STEP 1 (2026-08-12) — THE ROLLBACK LEVER IS SPENT, NOT HELD IN RESERVE.
+        The custom-permission token was verified directly in the Lightning UI: on one NDA__c
+        record sitting at the one remaining stage-criterion gap, the Advance Stage action was
+        HIDDEN for a System Administrator holding no custom permission and VISIBLE for the real
+        Junior Analyst persona holding Acquisition_Deal_Actions via this set. That confirms
+        {!$Permission.CustomPermission.Acquisition_Deal_Actions} is honoured correctly by every
+        one of the 24 acquisition/disposition-gated FlexiPage criteria and by the sole Apex
+        consumer, with nothing still depending on the FLS flag in either direction. The
+        User.Deal_Driver__c fieldPermissions grant has therefore been REMOVED from this file —
+        it is not a rollback path any more, it is a deleted one. Reverting to flag-based
+        visibility would require recreating the field, not just re-adding a grant here.
+        User.Deal_Driver__c itself is NOT deleted by this step — that is a separate, later,
+        destructive deploy.
     -->
-    <description>Marks the &quot;Junior&quot; deal-driver: grants read on User.Deal_Driver__c so the deal-driving quick actions (stage advances; Submit for Approval) show only for holders whose Deal_Driver__c = true. Not assigned to approvers.</description>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>User.Deal_Driver__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
+    <description>Marks the &quot;Junior&quot; deal-driver. Grants the Acquisition_Deal_Actions custom permission (the live server-side authorization check). The retired User.Deal_Driver__c FLS grant was removed 2026-08-12 (Phase 2 Step 1) — see the class comment.</description>
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Acquisition_Deal_Actions</name>
+    </customPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Acquisition Deal Driver</label>
 </PermissionSet>

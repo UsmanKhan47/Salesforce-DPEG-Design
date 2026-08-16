@@ -1,12 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, and it is INSIDE the root element
+        on purpose - a comment ABOVE <CustomField> breaks the sf deploy at conversion with a
+        misleading "unable to find matching parent xml file".
+
+        PHASE 2 (2026-08-14) - TWO STRINGS CHANGED ON ONE LINE AND THEY ARE NOT THE SAME KIND
+        OF THING. The formula line below used to read:
+            IF(ISPICKVAL(StageName,'PSA'), 'PSA',
+        The FIRST 'PSA' is the Opportunity STAGE VALUE, renamed to 'Under Contract (PSA)' by
+        this phase; leaving it would send every migrated deal to the 'Interested Deals'
+        fall-through bucket, SILENTLY. The SECOND is this formula's own OUTPUT LABEL - it was
+        moved too, so the Deal Tracker does not show a bucket called 'PSA' full of deals whose
+        stage reads Under Contract (PSA), which is the confusion this rename exists to remove.
+
+        THE OUTPUT MOVE HAS TWO CONSUMERS AND NEITHER IS IN THIS FILE:
+          1. objects/Opportunity/listViews/Deal_Tracker_PSA - its filter is
+             Deal_Bucket__c EQUALS <value>, so that value moved with this string. Deploy the
+             two together, or the list view silently returns nothing.
+          2. classes/ContractExecutionServiceTest.cls asserts Deal_Bucket__c == 'PSA' (one
+             assertion, measured 2026-08-14). That is the DEVELOPER half of Phase 2 and is
+             listed in requirements sec 6.2 under TEST. It fails LOUDLY, not silently.
+        Org-side reports and dashboards filtering or grouping Deal_Bucket__c = 'PSA' are the
+        silent ones - they are not represented in this repo at all. Post-deploy gate G8.
+
+        ORDERING: this repoint must land AFTER the P2 backfill. Before it, live rows hold
+        'PSA' and this formula would bucket every one of them as 'Interested Deals'.
+
+        The other four Deal_Tracker_* list views filter on Dead, Bought/Closed, Interested
+        Deals and LOI - measured 2026-08-14 - so none of them is affected by this change.
+    -->
     <fullName>Deal_Bucket__c</fullName>
     <description>Deal-tracker buckets, derived from stage + deal category. Reporting-only projection - automation must branch on StageName/Deal_Category__c, never on this formula (before-save flows cannot read formula fields).</description>
     <externalId>false</externalId>
     <formula>IF(OR(ISPICKVAL(Deal_Category__c,&apos;Dead&apos;), ISPICKVAL(StageName,&apos;Dead/Pass&apos;)), &apos;Dead&apos;,
 IF(ISPICKVAL(StageName,&apos;Closed Won&apos;), &apos;Bought/Closed&apos;,
 IF(ISPICKVAL(StageName,&apos;About to Close&apos;), &apos;About to Close&apos;,
-IF(ISPICKVAL(StageName,&apos;PSA&apos;), &apos;PSA&apos;,
+IF(ISPICKVAL(StageName,&apos;Under Contract (PSA)&apos;), &apos;Under Contract (PSA)&apos;,
 IF(ISPICKVAL(StageName,&apos;LOI&apos;), &apos;LOI&apos;,
 &apos;Interested Deals&apos;)))))</formula>
     <label>Deal Tracker Bucket</label>

@@ -17,6 +17,19 @@ const LEAD_META = [
 
 // Opportunity stages in funnel order (Portfolio Deal intentionally excluded).
 // First five render in the left column, last five in the right column.
+//
+// ⚠ `key` is the Opportunity.StageName API VALUE and is the join onto
+// OpportunityFunnelController.getStageCounts — `label` is display text only, and the two are
+// already allowed to differ ('Dead/Pass' renders as 'Dead'). 'Under Contract (PSA)' was renamed
+// from 'PSA' (Acquisition Observations phase 2); a stale KEY renders a permanent 0 rather than
+// erroring, so it must move with the picklist.
+//
+// ⚠ The 'Under Contract (PSA)' row's LABEL deliberately drops the '(PSA)'. This component renders
+// `label` followed by `suffix`, so carrying the stage value verbatim produced
+// 'Under Contract (PSA) (Last 90 Days)' — two parenthesised groups in a row. Same key/label split
+// as 'Dead/Pass' -> 'Dead' three rows below. The KEY is untouched: it is the join and must stay
+// byte-exact. c/totalOpportunities renders the identical string from its own STAGE_META; the two
+// were changed together.
 const OPP_META = [
     { key: 'New',                 label: 'New',                 suffix: '',               icon: 'utility:add',      color: '#16A39B' },
     { key: 'Under Review',        label: 'Under Review',        suffix: '',               icon: 'utility:list',     color: '#2E86DE' },
@@ -24,7 +37,7 @@ const OPP_META = [
     { key: 'Construction Review', label: 'Construction Review', suffix: '',               icon: 'utility:setup',    color: '#1FA7A0' },
     { key: 'Underwriting',        label: 'Underwriting',        suffix: '',               icon: 'utility:money',    color: '#2E86DE' },
     { key: 'LOI',                 label: 'LOI',                 suffix: '',               icon: 'utility:upload',   color: '#3E8FE0' },
-    { key: 'PSA',                 label: 'PSA',                 suffix: '(Last 90 Days)', icon: 'utility:contract', color: '#F08C00' },
+    { key: 'Under Contract (PSA)', label: 'Under Contract',       suffix: '(Last 90 Days)', icon: 'utility:contract', color: '#F08C00' },
     { key: 'About to Close',      label: 'About to Close',      suffix: '',               icon: 'utility:clock',    color: '#E8A33D' },
     { key: 'Closed Won',          label: 'Closed Won',          suffix: '(Last 90 Days)', icon: 'utility:favorite', color: '#27AE60' },
     { key: 'Dead/Pass',           label: 'Dead',                suffix: '(Last 90 Days)', icon: 'utility:close',     color: '#E0463F' }

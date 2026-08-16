@@ -58,11 +58,37 @@ public class PropertyExtraction implements Comparable {
     /** `asset_type` — an ACTIVE value of Lead.Asset_Type__c, or null. */
     public String assetType;
 
-    /** `deal_type` — an ACTIVE value of Lead.Deal_Type__c ('Land' / 'Commercial'), or null. */
+    /** `deal_type` — an ACTIVE value of Lead.Deal_Type__c ('Land' / 'Retail'), or null. */
     public String dealType;
 
     /** `sale_process` — an ACTIVE value of Lead.Sale_Process__c, or null. */
     public String saleProcess;
+
+    /**
+     * `listing_status` — an ACTIVE value of Lead.Listing_Status__c ('On Market' / 'Off
+     * Market'), or null. Added 2026-08-14 (observation 1).
+     *
+     * ⚠ IT DEFAULTS TO NULL AND THE PARSER NEVER GUESSES ONE. A wrong On/Off Market is worse
+     * than an empty one, because the analyst has no signal that it needs correcting — the
+     * field's own metadata comment records that as the reason it carries no `<default>`. A
+     * LEGACY-SHAPE response (the one-line prompt rollback) carries no such key at all and
+     * therefore parses to null here, so reverting the prompt degrades this to manual entry
+     * rather than stranding the feature.
+     *
+     * ⚠ NOT `sale_process`, and not derivable from it. `sale_process` says HOW the seller is
+     * running the process (Off-Market / On-Market Listing / Call for Offers / Auction); this
+     * says whether the property is publicly marketed at all. They correlate and they are not
+     * the same fact — an Auction can be either — so neither may be inferred from the other.
+     *
+     * ⚠ NOT `Broker_Listing__c.Listing_Status__c`, which is the DISPOSITION side's
+     * On Track / … performance picklist. Nothing may ever map between the two; the Lead
+     * field's own metadata comment carries the full note.
+     *
+     * PER-PROPERTY, deliberately, and it sits here rather than on LLMExtractionResult for the
+     * same reason `sale_process` does: a portfolio blast can pitch one off-market asset
+     * alongside one that is openly listed, and the routing tree mints one Lead per property.
+     */
+    public String listingStatus;
 
     // ── economics ────────────────────────────────────────────────────────────
 
@@ -134,6 +160,68 @@ public class PropertyExtraction implements Comparable {
     /** PropertyMatchingService.deriveClusterKey(normalizedAddress) — the lock partition and
      *  the PRIMARY sort key. Null until the queueable computes it. */
     public String clusterKey;
+
+    /**
+     * TRUE when the model returned a property OBJECT that states nothing whatsoever — every
+     * extracted member null or blank. Such an object is a structural artefact of the response
+     * schema, not a property.
+     *
+     * ═══ WHY THIS EXISTS (defect fix, 2026-08-12) ═══
+     * A live internal email ("Team lunch Friday + Q3 expense reports") came back with ONE
+     * property object in which every field was empty. `ExtractAddressQueueable.firstProperty`
+     * returns the first NON-NULL element, and an empty object is non-null, so branch (c)
+     * labelled the resulting Lead `OUTCOME_NO_ADDRESS` ("New Lead (property, no address)") —
+     * the population an administrator is meant to CHASE A MISSING ADDRESS for. A team-lunch
+     * email sitting in that queue is a defect in the queue, not merely a cosmetic one.
+     *
+     * 🔴 THE PREDICATE IS "STATES NOTHING AT ALL", DELIBERATELY NOT "HAS NO NAME AND NO
+     * ADDRESS", AND THE DIFFERENCE IS A REAL POPULATION. An email that describes a property
+     * only by its facts — "128-unit multifamily, 6.2 cap, $14M, seller is a 1031 buyer" —
+     * carries no name and no address AND IS EXACTLY WHAT `OUTCOME_NO_ADDRESS` IS FOR. Skipping
+     * on name-and-address alone would strip that Lead's whole deal block (FIX 2's
+     * `applyPropertyBlock` stamp) and relabel a genuine chase-the-address property as "no
+     * property". Requiring EVERY member to be empty is the narrower rule and is the one that
+     * matches the observed artefact exactly.
+     *
+     * ⚠ `normalizedAddress` and `clusterKey` are EXCLUDED on purpose: they are routing keys
+     * derived by `ExtractAddressQueueable`, not values the email stated, so counting them would
+     * make the answer depend on when the predicate is called.
+     *
+     * ⚠ IT LIVES ON THE DTO, NOT ON ITS CALLER, so the field list it walks is maintained beside
+     * the fields themselves. A new member added above without a line here silently narrows the
+     * predicate, which is the one way this can rot — the same reason the parser's own field
+     * mapping lives next to these declarations.
+     *
+     * @return true when the email stated nothing about this property.
+     * @example
+     * // not a property at all — neither stamp it onto a Lead nor footnote it:
+     * if (property.hasNoExtractedValues()) { continue; }
+     */
+    public Boolean hasNoExtractedValues() {
+        return String.isBlank(propertyName)
+            && String.isBlank(propertyAddress)
+            && String.isBlank(assetType)
+            && String.isBlank(dealType)
+            && String.isBlank(saleProcess)
+            && String.isBlank(listingStatus)
+            && String.isBlank(zoning)
+            && String.isBlank(sellerEntity)
+            && String.isBlank(dealRoomLink)
+            && guidancePrice == null
+            && guidancePriceLow == null
+            && guidancePriceHigh == null
+            && capRate == null
+            && noi == null
+            && occupancyPct == null
+            && adr == null
+            && buildingSf == null
+            && lotSizeAcres == null
+            && unitCount == null
+            && yearBuilt == null
+            && yearRenovated == null
+            && waltYears == null
+            && offerDueDate == null;
+    }
 
     /**
      * Total order over (clusterKey, normalizedAddress) — the lock-acquisition order that

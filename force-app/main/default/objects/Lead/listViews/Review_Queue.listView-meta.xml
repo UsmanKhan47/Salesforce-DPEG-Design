@@ -10,6 +10,7 @@
     <columns>Guidance_Price__c</columns>
     <columns>Broker_First__c</columns>
     <columns>Parse_Confidence__c</columns>
+    <columns>Extraction_Score_Pct__c</columns>
     <filterScope>Everything</filterScope>
     <filters>
         <field>Parse_Confidence__c</field>

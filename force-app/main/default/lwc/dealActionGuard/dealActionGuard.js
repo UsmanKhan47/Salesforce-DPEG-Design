@@ -44,11 +44,26 @@ import hasDealActionAccess from '@salesforce/apex/OpportunityActionPermissionCon
  * OpportunityApprovalController.submitForApproval). So this check is a courtesy that produces a
  * better message; removing it would degrade UX but not open a hole.
  *
- * The question it asks is `Deal_Driver__c = true` on the running user (plus the documented Modify
- * All Data bypass) — identical to the `{!$User.Deal_Driver__c}` Dynamic Actions visibility rules on
+ * The question it asks is whether the running user holds the `Acquisition_Deal_Actions` CUSTOM
+ * PERMISSION (plus the documented "Modify All Data" bypass) — identical to the
+ * `{!$Permission.CustomPermission.Acquisition_Deal_Actions}` Dynamic Actions visibility rules on
  * Opportunity_Record_Page. Hiding the button and enforcing at click time are COMPLEMENTARY, not
  * alternatives (ARCHITECTURE.md §5): a headless quick action owns no button markup, so there is no
  * `disabled` attribute any of these components could set.
+ *
+ * ⚠ UNTIL 2026-08-12 BOTH HALVES OF THAT SENTENCE NAMED A `User` CHECKBOX — the Apex gate read
+ * `Deal_Driver__c = true` and the visibility rules read `{!$User.Deal_Driver__c}`. Both were retired
+ * together, and the reason is worth knowing from the CLIENT side too: a flexipage rule referencing a
+ * FIELD evaluates FALSE for any user lacking FLS READ on it, with no error and no log — so the
+ * button simply vanished for users who were in fact authorized, and this module's toast was the only
+ * thing that ever explained anything. A custom permission has no FLS surface at all, so the two
+ * halves can no longer disagree. See OpportunityActionPermissionService's header for the measured
+ * incidents.
+ *
+ * ⚠ NOTHING IN THIS FILE CHANGED FOR THAT MIGRATION — no import, no call signature, no wording.
+ * `hasDealActionAccess()` still takes no argument and still answers a Boolean; only the token behind
+ * it moved. That is the intended shape: the client never names the mechanism, so the mechanism can
+ * be replaced server-side.
  */
 
 /** Shown when the running user is not a deal driver. Identical wording to the Apex denial. */

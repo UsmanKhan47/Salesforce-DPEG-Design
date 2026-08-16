@@ -1,5 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      RECONCILED ORG -> REPO ON 2026-08-14 BEFORE EDITING. A retrieve from usman-dpeg was
+      diffed against this file: 290 fieldPermissions on both sides, identical sets, and the six
+      recordTypeVisibilities identical. Zero org-only grants, so nothing was at risk of being
+      wiped by this deploy. (The org retrieve also emits <viewAllFields>false</viewAllFields> on
+      every objectPermissions block where this file omits it - that is a default-valued element
+      the API adds on retrieve, NOT drift, and it was deliberately not "fixed" into this file.)
+      Reconcile again next time; a past clean reconciliation is a snapshot, not a guarantee.
+
+      ADDED 2026-08-14, Acquisition Observations Phase 1 (deploy step P1-A): EIGHT grants -
+      Listing_Status__c, Extraction_Score_Pct__c, Fields_Captured_Count__c and
+      Fields_Missing_Count__c, on BOTH Lead and Opportunity. All editable, matching how this set
+      already carries their siblings (Parse_Confidence__c, Property_Address__c, Deal_Type__c,
+      Sale_Process__c, Offer_Due_Date__c are all editable=true here).
+
+      🔴 THESE GRANTS ARE THE WHOLE POINT OF STEP P1-A AND A GREEN FIELD DEPLOY DOES NOT IMPLY
+      THEM. A Metadata-API-deployed custom field arrives with NO field permissions for ANY
+      profile, System Administrator included, and profiles/** is .forceignore'd so there is no
+      profile-level fallback. Verify in the ORG, not in the deploy log:
+          SELECT Field FROM FieldPermissions
+          WHERE Parent.Name = 'DPEG_Acquisition_Edit'
+            AND Field IN ('Lead.Listing_Status__c','Lead.Extraction_Score_Pct__c',
+                          'Lead.Fields_Captured_Count__c','Lead.Fields_Missing_Count__c',
+                          'Opportunity.Listing_Status__c','Opportunity.Extraction_Score_Pct__c',
+                          'Opportunity.Fields_Captured_Count__c',
+                          'Opportunity.Fields_Missing_Count__c')
+      must return 8 rows. Total fieldPermissions on this set moves 290 -> 298.
+
+      Opportunity.Retail record-type visibility is added to this set at step P1-D1 and
+      Opportunity.Commercial is removed at P1-D4 - see
+      agent-output/runbook-acquisition-observations-phase1.md.
+    -->
     <description>Least-privilege Acquisitions module access for the Acquisitions Analyst persona: Create/Read/Edit (no Delete) on the 13 ACQ objects, View All for read, full FLS. Edit on rows not owned comes from sharing rules (queue + team), never Modify All.</description>
     <fieldPermissions>
         <editable>true</editable>
@@ -464,6 +496,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Lead.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.First_Seen_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -540,6 +587,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Listing_Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Listing_Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -867,6 +919,16 @@
         <field>Opportunity.Bundle_LOI__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ADDED 2026-08-14, Acquisition Observations Phase 4 (declarative-only field add).
+         Call_For_Offers_Received_Date__c is stamped by CallForOffersStampService; grant follows
+         its neighbours Offer_Due_Date__c / Sale_Process__c on this same set - editable=true so an
+         analyst can hand-correct a mis-stamped date, matching how those two are already granted
+         here. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Call_For_Offers_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Cash_On_Cash_Return__c</field>
@@ -934,6 +996,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Extraction_Score_Pct__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Fields_Captured_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Fields_Missing_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.GRM__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -989,6 +1066,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.Listing_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.Loan_Required__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1025,6 +1107,30 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.My_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Phase 4 (call-for-offers alerts, 2026-08-14). The two alert MARKER fields.
+         They are alert bookkeeping, not deal data: CallForOffersAlertBatch reads them WITH
+         SYSTEM_MODE and writes them with AccessLevel.SYSTEM_MODE, so the job works with or without
+         this grant. They are granted anyway for two reasons, and EDITABLE for the second:
+           (1) diagnosis — "why did I not get an alert for this deal?" is answerable only by looking
+               at Offer_Alert_Last_Interval__c and Offer_Alert_Due_Date__c;
+           (2) RECOVERY — blanking Offer_Alert_Last_Interval__c is the supported way to re-arm the
+               alerts for a deal, exactly as SETTING Property__c.SharePoint_Folder_Status__c back to
+               'Pending' is that feature's recovery action (see the comment on those fields).
+         🔴 They are deliberately NOT selected by either USER_MODE call-for-offers read
+         (OpportunitySelector, see the block comment there): WITH USER_MODE throws on the WHOLE ROW
+         for ONE inaccessible field, so putting a brand-new field in a user-facing read makes the
+         table and the panel depend on FLS that nobody needs. This grant is a convenience; nothing
+         breaks without it. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Offer_Alert_Last_Interval__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1604,12 +1710,25 @@
         <recordType>NDA__c.Acquisition_NDA</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
+    <!--
+      P1-D4 IS DONE: Opportunity.Commercial has been removed from this set and the record type
+      itself is retired. Opportunity.Retail replaced it. The two coexisted from P1-D1 until P1-D4
+      on purpose - visibility is what lets a user SELECT a record type, so granting Retail only
+      after the migration would have left every user on this set unable to create a commercial
+      deal for the whole window. Do not re-add Commercial; the record type no longer exists and
+      the deploy would fail.
+      ⚠ PermissionSet.recordTypeVisibilities has NO <default> element - only a Profile can name
+      the default record type, and profiles/** is .forceignore'd. Setting Retail as the default
+      is an IN-ORG post-deploy step (gate G5); if it is missed, new Opportunities keep defaulting
+      to the retired Commercial type and nothing errors.
+      Sequence: agent-output/runbook-acquisition-observations-phase1.md
+    -->
     <recordTypeVisibilities>
-        <recordType>Opportunity.Commercial</recordType>
+        <recordType>Opportunity.Land</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
-        <recordType>Opportunity.Land</recordType>
+        <recordType>Opportunity.Retail</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
 </PermissionSet>

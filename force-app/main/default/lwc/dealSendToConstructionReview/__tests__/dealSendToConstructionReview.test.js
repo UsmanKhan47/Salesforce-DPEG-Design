@@ -105,7 +105,7 @@ describe('c-deal-send-to-construction-review', () => {
 
     it('ERROR BRANCH: surfaces the Apex error message and does NOT refresh the record', async () => {
         advanceTo.mockRejectedValue({
-            body: { message: 'Only Commercial deals go to Construction Review.' }
+            body: { message: 'Only Retail deals go to Construction Review.' }
         });
 
         const element = createComponent();
@@ -121,7 +121,7 @@ describe('c-deal-send-to-construction-review', () => {
         );
         expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
         expect(toastHandler.mock.calls[0][0].detail.message).toBe(
-            'Only Commercial deals go to Construction Review.'
+            'Only Retail deals go to Construction Review.'
         );
 
         // No record refresh on the failure path.

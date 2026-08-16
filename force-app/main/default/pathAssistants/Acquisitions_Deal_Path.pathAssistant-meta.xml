@@ -35,7 +35,7 @@
         <fieldNames>Contract_Signed__c</fieldNames>
         <fieldNames>Contract_Executed_Date__c</fieldNames>
         <info>Seller issues the first PSA draft; a Contract Review opens automatically. Log every version and counter in the negotiation log. On full execution (Negotiation Status = Executed) the Transaction is created, the 75-task fan-out fires, and Transactions + IR + Due Diligence are notified.</info>
-        <picklistValueName>PSA</picklistValueName>
+        <picklistValueName>Under Contract (PSA)</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Is_Portfolio_Parent__c</fieldNames>

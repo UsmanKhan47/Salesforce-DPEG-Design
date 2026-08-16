@@ -1,0 +1,172 @@
+--- a/force-app/main/default/objects/Lead/fields/Deal_Type__c.field-meta.xml
++++ b/force-app/main/default/objects/Lead/fields/Deal_Type__c.field-meta.xml
+@@ -15,12 +15,6 @@
+                 <label>Land</label>
+             </value>
+             <value>
+-                <fullName>Commercial</fullName>
+-                <default>false</default>
+-                <isActive>false</isActive>
+-                <label>Commercial</label>
+-            </value>
+-            <value>
+                 <fullName>Retail</fullName>
+                 <default>false</default>
+                 <label>Retail</label>
+--- a/force-app/main/default/objects/Opportunity/fields/Deal_Type__c.field-meta.xml
++++ b/force-app/main/default/objects/Opportunity/fields/Deal_Type__c.field-meta.xml
+@@ -16,12 +16,6 @@
+                 <label>Land</label>
+             </value>
+             <value>
+-                <fullName>Commercial</fullName>
+-                <default>false</default>
+-                <isActive>false</isActive>
+-                <label>Commercial</label>
+-            </value>
+-            <value>
+                 <fullName>Retail</fullName>
+                 <default>false</default>
+                 <label>Retail</label>
+--- a/force-app/main/default/objects/Lead/recordTypes/Acquisition_Broker.recordType-meta.xml
++++ b/force-app/main/default/objects/Lead/recordTypes/Acquisition_Broker.recordType-meta.xml
+@@ -116,10 +116,6 @@
+             <default>false</default>
+         </values>
+         <values>
+-            <fullName>Commercial</fullName>
+-            <default>false</default>
+-        </values>
+-        <values>
+             <fullName>Retail</fullName>
+             <default>false</default>
+         </values>
+--- a/force-app/main/default/objects/Lead/recordTypes/IR_Investor.recordType-meta.xml
++++ b/force-app/main/default/objects/Lead/recordTypes/IR_Investor.recordType-meta.xml
+@@ -115,10 +115,6 @@
+             <default>false</default>
+         </values>
+         <values>
+-            <fullName>Commercial</fullName>
+-            <default>false</default>
+-        </values>
+-        <values>
+             <fullName>Retail</fullName>
+             <default>false</default>
+         </values>
+--- a/force-app/main/default/objects/Opportunity/recordTypes/Land.recordType-meta.xml
++++ b/force-app/main/default/objects/Opportunity/recordTypes/Land.recordType-meta.xml
+@@ -84,10 +84,6 @@
+     <picklistValues>
+         <picklist>Deal_Type__c</picklist>
+         <values>
+-            <fullName>Commercial</fullName>
+-            <default>false</default>
+-        </values>
+-        <values>
+             <fullName>Land</fullName>
+             <default>false</default>
+         </values>
+--- a/force-app/main/default/objects/Opportunity/recordTypes/Retail.recordType-meta.xml
++++ b/force-app/main/default/objects/Opportunity/recordTypes/Retail.recordType-meta.xml
+@@ -20,19 +20,21 @@
+         would leave every resolution site saying 'Commercial' forever. The spec approved a
+         FULL rename; D3 is where that is paid for.
+ 
+-        TRANSITIONAL: THE Deal_Type__c BLOCK STILL ENUMERATES 'Commercial'. That is
+-        deliberate for the D1->D4 window. The migration between D1 and D2 moves a record's
+-        RECORD TYPE and its Deal_Type__c VALUE in the same pass; a record that lands on
+-        this record type while still holding 'Commercial' must render correctly. Apex DML
++        D4 IS DONE. The transitional Deal_Type__c 'Commercial' enumeration that this
++        block used to carry through the D1->D4 window has been REMOVED, together with the
++        Commercial record type and business process. Do not re-add it: after the migration
++        no row holds the value and the value no longer exists on the field. If a record
++        still renders a blank Deal Type, the cause is a missed migration row, not a
++        missing enumeration - re-run the [MIG] verification queries in the runbook.
++        (Historical note, kept because it explains why the value was ever here: Apex DML
+         does NOT enforce record-type picklist restriction (ARCHITECTURE.md sec 2), so
+-        omitting it would not have blocked anything - it would only have made the UI
+-        disagree with the stored value. Remove that one <values> block at D4, together
+-        with the Commercial record type and business process.
++        omitting it during the window would not have blocked anything - it would only have
++        made the UI disagree with the stored value.)
+     -->
+     <fullName>Retail</fullName>
+     <active>true</active>
+     <businessProcess>Retail</businessProcess>
+-    <description>Commercial acquisition deals. Replaces the Commercial record type, which is retired at Phase 1 D4. Deal_Type__c still enumerates the outgoing Commercial value for the migration window only.</description>
++    <description>Retail acquisition deals. Replaced the retired Commercial record type at Phase 1 D4 (2026-08). Apex resolves this type by DeveloperName - see RecordTypeSelector and LeadConvertService.</description>
+     <label>Retail</label>
+     <picklistValues>
+         <picklist>Asset_Type__c</picklist>
+@@ -114,10 +116,6 @@
+     <picklistValues>
+         <picklist>Deal_Type__c</picklist>
+         <values>
+-            <fullName>Commercial</fullName>
+-            <default>false</default>
+-        </values>
+-        <values>
+             <fullName>Land</fullName>
+             <default>false</default>
+         </values>
+--- a/force-app/main/default/permissionsets/DPEG_Acquisition_Edit.permissionset-meta.xml
++++ b/force-app/main/default/permissionsets/DPEG_Acquisition_Edit.permissionset-meta.xml
+@@ -1677,12 +1677,12 @@
+         <visible>true</visible>
+     </recordTypeVisibilities>
+     <!--
+-      Opportunity.Commercial and Opportunity.Retail COEXIST DELIBERATELY from P1-D1 until P1-D4.
+-      Retail is added here in the SAME deploy that creates the record type (P1-D1), BEFORE the
+-      migration moves deals onto it. If it were added later, every user on this set would lose
+-      the ability to create a commercial deal for the whole window between the migration and the
+-      grant - visibility is what lets a user SELECT a record type, so the gap is silent on
+-      existing rows and blocking on new ones. Commercial is removed at P1-D4 and not before.
++      P1-D4 IS DONE: Opportunity.Commercial has been removed from this set and the record type
++      itself is retired. Opportunity.Retail replaced it. The two coexisted from P1-D1 until P1-D4
++      on purpose - visibility is what lets a user SELECT a record type, so granting Retail only
++      after the migration would have left every user on this set unable to create a commercial
++      deal for the whole window. Do not re-add Commercial; the record type no longer exists and
++      the deploy would fail.
+       ⚠ PermissionSet.recordTypeVisibilities has NO <default> element - only a Profile can name
+       the default record type, and profiles/** is .forceignore'd. Setting Retail as the default
+       is an IN-ORG post-deploy step (gate G5); if it is missed, new Opportunities keep defaulting
+@@ -1690,10 +1690,6 @@
+       Sequence: agent-output/runbook-acquisition-observations-phase1.md
+     -->
+     <recordTypeVisibilities>
+-        <recordType>Opportunity.Commercial</recordType>
+-        <visible>true</visible>
+-    </recordTypeVisibilities>
+-    <recordTypeVisibilities>
+         <recordType>Opportunity.Land</recordType>
+         <visible>true</visible>
+     </recordTypeVisibilities>
+--- a/force-app/main/default/permissionsets/DPEG_Admin_Access.permissionset-meta.xml
++++ b/force-app/main/default/permissionsets/DPEG_Admin_Access.permissionset-meta.xml
+@@ -282,10 +282,10 @@
+       but have no recordType metadata in this repo. That is why they cannot be verified by a
+       file-based check, and it is unrelated to the duplication.
+ 
+-      Opportunity.Commercial below is RETIRED AT PHASE 1 D4 - see the deploy runbook,
+-      agent-output/runbook-acquisition-observations-phase1.md. It is deliberately left in place
+-      until then; Opportunity.Retail is added alongside it at D1 so the two coexist through the
+-      migration window.
++      Opportunity.Commercial WAS RETIRED AT PHASE 1 D4 and has been removed from this set;
++      Opportunity.Retail replaced it. The two coexisted from D1 through the migration window on
++      purpose. Do not re-add Commercial - the record type no longer exists and the deploy would
++      fail. Sequence: agent-output/runbook-acquisition-observations-phase1.md.
+     -->
+     <recordTypeVisibilities>
+         <recordType>Account.Broker_Firm</recordType>
+@@ -344,10 +344,6 @@
+         <visible>true</visible>
+     </recordTypeVisibilities>
+     <recordTypeVisibilities>
+-        <recordType>Opportunity.Commercial</recordType>
+-        <visible>true</visible>
+-    </recordTypeVisibilities>
+-    <recordTypeVisibilities>
+         <recordType>Opportunity.Land</recordType>
+         <visible>true</visible>
+     </recordTypeVisibilities>

@@ -28,7 +28,11 @@ export default class OpportunityPipeline extends LightningElement {
             { key: 'open',  label: 'Open Deals',       value: s.openDeals != null ? String(s.openDeals) : '0',             iconName: 'utility:opportunity', iconColor: '#1565c0' },
             { key: 'value', label: 'Pipeline Value',    value: formatMoney(s.pipelineValue),                                iconName: 'utility:money',       iconColor: '#2BAFAC' },
             { key: 'land',  label: 'Land Deals',        value: s.landDeals != null ? String(s.landDeals) : '0',             iconName: 'utility:location',    iconColor: '#43A047' },
-            { key: 'comm',  label: 'Commercial Deals',  value: s.commercialDeals != null ? String(s.commercialDeals) : '0', iconName: 'utility:company',     iconColor: '#1565c0' }
+            // USER-FACING LABEL, repointed with the Deal Type migration (phase 1 D3). The wire
+            // member `s.commercialDeals` is the Apex DTO's name and is deliberately unchanged —
+            // OpportunityFunnelController.getPipelineSnapshot now counts Deal_Type__c = 'Retail'
+            // into it. Renaming the member would be an Apex + LWC + Jest change for no gain.
+            { key: 'comm',  label: 'Retail Deals',      value: s.commercialDeals != null ? String(s.commercialDeals) : '0', iconName: 'utility:company',     iconColor: '#1565c0' }
         ];
     }
 }

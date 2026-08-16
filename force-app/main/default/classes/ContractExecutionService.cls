@@ -4,7 +4,7 @@
  *
  *   1. Stamps the parent Opportunity: Contract_Signed__c, Contract_Executed_Date__c
  *      (Day 0), Deal_Status__c = 'Contract Signed'. The deal stays at the coarse
- *      'PSA' stage; Deal_Status marks it executed / about to close.
+ *      'Under Contract (PSA)' stage; Deal_Status marks it executed / about to close.
  *   2. Notifies Transactions_Team + Investor_Relations (PSA executed) and
  *      Due_Diligence (Danish: DD materials available once the contract is signed).
  *
