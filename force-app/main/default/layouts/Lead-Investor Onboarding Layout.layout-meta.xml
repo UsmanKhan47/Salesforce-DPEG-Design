@@ -11,9 +11,41 @@
                 <field>Name</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>Phone</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Required</behavior>
+                <field>LeadSource</field>
+            </layoutItems>
+            <!-- Status is NOT one of the 7 requested fields, but Salesforce rejects any Lead
+                 layout that omits it: Lead.Status is a database-required standard field (see
+                 the memory-recorded live-describe finding: nillable=false, independently of
+                 FLS/permissionable) and a check-only dry-run validate against this org failed
+                 with "Layout must contain an item for required layout field: Status" until this
+                 item was added back. Placed last in this column so it disturbs the requested
+                 field order as little as possible.
+                 Behavior is Required, not Readonly: a check-only dry-run deploy of this layout
+                 against DPEG-IR-Implementation on 2026-08-15 (both alone and paired with the
+                 Investor Onboarding record page) FAILED with "[Layout] Lead-Investor Onboarding
+                 Layout :: Field:Status must not be Readonly" ; the platform rejects Readonly on
+                 a database-required standard field outright, regardless of any default value
+                 supplied by a business process.
+                 Preventing hand-edits to Status day-to-day is an OPEN QUESTION, not a solved
+                 one ; do not assume this Required setting alone keeps it safe. A Dynamic Forms
+                 conversion of the record page (omitting Status from the field body entirely)
+                 was attempted on 2026-08-15 specifically to close that gap and was rejected by
+                 the platform (see agent memory for the full investigation) ; the record page
+                 has been reverted to its original force:detailPanel / page-layout-driven shape.
+                 The standard "Edit" record action reads its field list from THIS layout
+                 regardless of what the record page displays, and this layout lists Status as
+                 Required (i.e. editable) ; that Edit modal remains a live path to hand-edit
+                 Status today. Field-level permission (FLS) is the only mechanism identified so
+                 far that would actually prevent a hand-edit ; it has not yet been applied.
+                 Status is still expected to move primarily via the Under Review / Create
+                 Profile quick actions, but that is a UX convention here, not an enforced
+                 restriction. This layout-level Required setting exists only to satisfy the
+                 platform's own layout-validation rule, not to express an access decision. -->
             <layoutItems>
                 <behavior>Required</behavior>
                 <field>Status</field>
@@ -21,12 +53,8 @@
         </layoutColumns>
         <layoutColumns>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>Email</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>LeadSource</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
@@ -44,10 +72,6 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Referred_By__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Readonly</behavior>
-                <field>OwnerId</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>
@@ -85,11 +109,6 @@
             <actionType>QuickAction</actionType>
             <sortOrder>4</sortOrder>
         </platformActionListItems>
-        <platformActionListItems>
-            <actionName>ChangeOwnerOne</actionName>
-            <actionType>StandardButton</actionType>
-            <sortOrder>5</sortOrder>
-        </platformActionListItems>
     </platformActionList>
     <quickActionList>
         <quickActionListItems>
@@ -119,10 +138,9 @@
         <fields>TASK.LAST_UPDATE</fields>
         <relatedList>RelatedHistoryList</relatedList>
     </relatedLists>
-    <runAssignmentRulesDefault>true</runAssignmentRulesDefault>
+    <runAssignmentRulesDefault>false</runAssignmentRulesDefault>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>
     <showRunAssignmentRulesCheckbox>true</showRunAssignmentRulesCheckbox>
-    <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
 </Layout>

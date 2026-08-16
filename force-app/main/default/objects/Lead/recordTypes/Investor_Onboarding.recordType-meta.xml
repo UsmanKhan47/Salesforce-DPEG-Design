@@ -3,6 +3,7 @@
     <fullName>Investor_Onboarding</fullName>
     <active>true</active>
     <businessProcess>Investor Onboarding Lead</businessProcess>
+    <compactLayoutAssignment>Investor_Onboarding_Layout</compactLayoutAssignment>
     <description>Tracks prospective investor from Web-to-Lead, Email-to-Lead, and manual entry .</description>
     <label>Investor Onboarding</label>
     <picklistValues>

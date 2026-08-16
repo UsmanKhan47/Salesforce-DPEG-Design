@@ -26,13 +26,20 @@
  * ── MODE ────────────────────────────────────────────────────────────────────────────────────
  * `with sharing` per ARCHITECTURE.md §2 (mandatory on every selector).
  *
- * `WITH USER_MODE` (API 67) on BOTH methods — the §2 default, and here a deliberate choice rather
- * than an inherited one. This is a USER-INITIATED path: a person clicks the "Investor Converted"
- * quick action, a Screen Flow runs, and this Apex reads on their behalf at their request. It is
- * NOT one of the automation/guest paths that earn SYSTEM_MODE in §2's exception table
- * (LeadSelector.GuestReads, EmailThreadGuardService, the rollup recomputes). A permission gap on
- * this path is a real provisioning defect and SHOULD surface as an error the user can report, not
- * be bypassed into a silently wrong answer.
+ * ⚠ AMENDED 2026-08-16 — THIS CLASS NOW MIXES MODES DELIBERATELY. READ THE METHOD, NOT THE CLASS.
+ * This paragraph used to read "`WITH USER_MODE` on BOTH methods"; there are now three methods and
+ * that claim is false. The rule is per-method and turns on WHO ASKED FOR THE READ:
+ *
+ *   • selectByIds, selectContactsByEmails — `WITH USER_MODE`. The §2 default, and here a deliberate
+ *     choice rather than an inherited one. This is a USER-INITIATED path: a person clicks the
+ *     "Investor Converted" quick action, a Screen Flow runs, and this Apex reads on their behalf at
+ *     their request. A permission gap on that path is a real provisioning defect and SHOULD surface
+ *     as an error the user can report, not be bypassed into a silently wrong answer.
+ *   • selectContactsByIds — `WITH SYSTEM_MODE`. The cascade-delete safety re-query. The user did not
+ *     ask for it; it is performed on their behalf to decide whether a delete is safe, which is §2's
+ *     automation-path exception. A USER_MODE throw there does not degrade, it disables the cleanup
+ *     org-wide and strands temporary Accounts — the exact precondition for the measured data loss.
+ *     The full justification, and the separate sharing analysis, live at that method.
  *
  * ⚠ USER_MODE THROWS, IT DOES NOT DEGRADE. Both queries touch FLS-permissionable fields
  * (Lead.Email / FirstName / LastName / Status, Contact.Email / AccountId), so a user without the
@@ -60,6 +67,19 @@ public with sharing class InvestorLeadConvertSelector {
      *   • FirstName / LastName / Status / RecordTypeId are diagnostic: they let the service say
      *     WHICH Lead it refused and why, which is the difference between a Flow the user can act
      *     on and one that reports "something went wrong".
+     *   • Is_Accredited__c / Referred_By__c are CARRIED, not read for display: the service copies
+     *     them onto the Contact the conversion creates, riding on the detach statement it already
+     *     issues (InvestorLeadConvertService.detachContacts). They are here — rather than in a
+     *     second read — precisely so the feature's 1-SOQL contract is unchanged: this is a FIELD
+     *     LIST widening, not a new query. Standard fields (Name, Email, Phone) are mapped by
+     *     Database.convertLead itself and are deliberately NOT carried in Apex.
+     *
+     * ⚠ WIDENING THE FIELD LIST WIDENS THE FLS SURFACE. Under WITH USER_MODE a persona without
+     * Read on EITHER carried field makes this query THROW, which the service reports as
+     * ERROR_READ_DENIED on every Result — i.e. the whole conversion is refused, not degraded.
+     * DPEG_IR_Default_Access (the only permission set granting this feature's Apex) grants both
+     * Lead fields readable+editable, so the designed persona is covered; any NEW persona given this
+     * action must be granted both.
      *
      * NO RECORD TYPE FILTER, DELIBERATELY. RecordTypeId is SELECTED but not FILTERED. Restricting
      * to the Investor_Onboarding record type would make a Lead on any other type return zero rows
@@ -74,8 +94,9 @@ public with sharing class InvestorLeadConvertSelector {
      *
      * @param leadIds The Leads to read; null or empty returns an empty list WITHOUT querying, so
      *                callers pay no SOQL for an empty key set.
-     * @return Matching Leads (Id, Email, FirstName, LastName, Status, IsConverted, RecordTypeId);
-     *         an empty list when the input is null/empty or nothing is visible (never null).
+     * @return Matching Leads (Id, Email, FirstName, LastName, Status, IsConverted, RecordTypeId,
+     *         Is_Accredited__c, Referred_By__c); an empty list when the input is null/empty or
+     *         nothing is visible (never null).
      * @throws System.QueryException when the running user lacks Read on Lead or on any selected
      *         FLS-permissionable field. Left to propagate by design — see the class header.
      * @example
@@ -86,10 +107,71 @@ public with sharing class InvestorLeadConvertSelector {
             return new List<Lead>();
         }
         return [
-            SELECT Id, Email, FirstName, LastName, Status, IsConverted, RecordTypeId
+            SELECT Id, Email, FirstName, LastName, Status, IsConverted, RecordTypeId,
+                   Is_Accredited__c, Referred_By__c
             FROM Lead
             WHERE Id IN :leadIds
             WITH USER_MODE
+        ];
+    }
+
+    /**
+     * The CASCADE-DELETE SAFETY RE-QUERY. Reads back the Contacts the conversion just created so the
+     * caller can PROVE, from the database rather than from a save-result, that each one is no longer
+     * parented to its temporary Account before that Account is deleted.
+     *
+     * 🔴 THIS METHOD EXISTS BECAUSE A Database.SaveResult IS NOT EVIDENCE OF THE STORED STATE. It
+     * reports that a statement was accepted, not that a particular field now holds a particular
+     * value. Deleting an Account cascade-deletes its Contacts, so the ONLY safe precondition for
+     * that delete is a re-read showing AccountId = null. See
+     * InvestorLeadConvertService.confirmDetachments — a Contact that does not come back from this
+     * query, for ANY reason, is treated as still attached and its temporary Account is left alone.
+     *
+     * ── MODE: `WITH SYSTEM_MODE`, AND THIS IS THE ONE METHOD HERE THAT EARNS IT ─────────────────
+     * The class header's blanket "USER_MODE on both methods, this is a user-initiated path" reasoning
+     * was written when this class had two methods and is NO LONGER TRUE OF THE WHOLE CLASS. It still
+     * governs selectByIds and selectContactsByEmails, which back reads the user actually asked for.
+     * This read is different in kind: the user asked to convert a Lead, not to re-read a Contact.
+     * This is a safety check the platform performs ON THEIR BEHALF, which is exactly the
+     * automation-path exception in ARCHITECTURE.md §2.
+     *
+     * The consequence of getting it wrong is the whole reason for the distinction: USER_MODE THROWS,
+     * IT DOES NOT DEGRADE. A persona without FLS Read on Contact.AccountId would make this query
+     * raise System.QueryException, no Contact would ever be confirmed, and therefore NO temporary
+     * Account would ever be deleted — every conversion would strand one. That is not a harmless
+     * degradation: a stranded "IR Conversion Temp Account" is precisely what a human later deletes by
+     * hand, and that manual delete cascade-destroys the investor Contact. MEASURED on
+     * DPEG-IR-Implementation 2026-08-16: two investor Contacts (003ak00001tGp3CAAS,
+     * 003ak00001tuSHhAAM) were destroyed exactly that way. Choosing USER_MODE here would convert a
+     * field-permission gap into the very data loss this re-query exists to prevent.
+     *
+     * ⚠ SHARING IS A SEPARATE QUESTION AND WAS ASKED SEPARATELY (ARCHITECTURE.md §2 is explicit that
+     * SYSTEM_MODE lifts CRUD/FLS and never sharing). It needs no `without sharing` inner class:
+     * Contact's org-wide default in this org is ReadWrite for internal users — measured 2026-08-16
+     * via Tooling `EntityDefinition.InternalSharingModel` — so `with sharing` cannot filter these
+     * rows for any internal persona, and the Contact was created seconds earlier in this same
+     * transaction by the running user. If Contact OWD is ever narrowed to Private or
+     * ControlledByParent, revisit this: a sharing-filtered row would read as "unconfirmed", which
+     * fails CLOSED (the Account is left behind) — inconvenient, never destructive.
+     *
+     * @param contactIds The Contacts to re-read; null or empty returns an empty list WITHOUT
+     *                   querying, so callers pay no SOQL for an empty key set.
+     * @return Matching Contacts (Id, AccountId); an empty list when the input is null/empty or
+     *         nothing matches (never null). NOT index-parallel to the input — the caller must map
+     *         by Id and treat an absent Id as "not confirmed".
+     * @example
+     * Map<Id, Contact> byId =
+     *     new Map<Id, Contact>(InvestorLeadConvertSelector.selectContactsByIds(contactIds));
+     */
+    public static List<Contact> selectContactsByIds(Set<Id> contactIds) {
+        if (contactIds == null || contactIds.isEmpty()) {
+            return new List<Contact>();
+        }
+        return [
+            SELECT Id, AccountId
+            FROM Contact
+            WHERE Id IN :contactIds
+            WITH SYSTEM_MODE
         ];
     }
 

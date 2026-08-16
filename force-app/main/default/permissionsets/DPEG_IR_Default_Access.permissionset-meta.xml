@@ -8,10 +8,31 @@
         <apexClass>InvestorLeadConvertService</apexClass>
         <enabled>true</enabled>
     </classAccesses>
-    <description>IR layer-3 module data. Lead CRUD minus Delete w/ onboarding FLS; Contact/Account read/create/edit(+Account delete); Task/Event CRUD; EditTask+EmailSingle+ConvertLeads; 3 IR flow accesses; Investor_Onboarding+Investor RTs visible; conversion access.</description>
+    <description>IR layer-3 module data. Lead CRUD minus Delete w/ onboarding FLS; Contact/Account CRUD(+Account delete); Task/Event CRUD; EditTask+EmailSingle+ConvertLeads+EmailTemplateManagement; 3 IR flows; Investor_Onboarding+Investor RTs visible; conversion access.</description>
     <fieldPermissions>
         <editable>true</editable>
         <field>Account.Phone</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        Contact.AccountId is LOAD-BEARING FOR THE IR CONVERSION, not a display grant. Step 4 of
+        InvestorLeadConvertService (detachContacts) writes AccountId = null to release the investor
+        Contact from the temporary Account before that Account is deleted. Until 2026-08-16 this
+        grant was absent from EVERY parent held by the IR persona. Measured: a FieldPermissions
+        query for Contact.AccountId returned rows for roughly 99 other permission sets but none for
+        DPEG_IR_Default_Access, DPEG_App_IR, or the DPEG-IR-SF-Minimum Access profile, while an
+        administrator (who has it via xDO_Base_Access / SDO_Admin_Base_Access) could run the same
+        conversion cleanly. That asymmetry matches the reported symptom exactly: the investor
+        Contact kept its temporary Account, the Account was therefore deliberately not deleted, and
+        yet the step 7 fields (RecordTypeId, Is_Accredited__c) DID save. Only the statement
+        touching THIS field failed.
+        The requirement is that every holder of this permission set gets the identical result, so
+        the field the feature writes is granted here explicitly rather than relying on the persona
+        inheriting it from somewhere else.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.AccountId</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -21,7 +42,17 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Contact.Is_Accredited__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Contact.Phone</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Referred_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -40,6 +71,11 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Is_Owner_Investor_Onboarding_Queue__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>Lead.LeadSource</field>
         <readable>true</readable>
@@ -54,6 +90,10 @@
         <field>Lead.Referred_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <flowAccesses>
+        <enabled>true</enabled>
+        <flow>IR_Lead_Assignment_to_User</flow>
+    </flowAccesses>
     <flowAccesses>
         <enabled>true</enabled>
         <flow>IR_Lead_Create_Profile_Flow</flow>
@@ -121,9 +161,45 @@
         <recordType>Lead.Investor_Onboarding</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
+    <!--
+        AccessContentBuilder ("Access drag-and-drop content builder") + CreateLtngTempInPub
+        ("Manage Public Lightning Email Templates") are the pair needed to build AND edit a
+        Lightning (SFX) email template in Content Builder. AccessContentBuilder alone opens the
+        Builder; without CreateLtngTempInPub the Save button fails once the template lives in a
+        SHARED folder (IR_Email_Templates_Lightning), because a shared-folder template counts as
+        "public" for this permission's purposes. AccessContentBuilder was already granted in the
+        org (reconciled 2026-08-15) and is added here so a future deploy of this file does not
+        silently wipe it; see ARCHITECTURE.md's PermissionSet REPLACE-not-merge warning.
+        CreateLtngTempInPub was net-new in both the org and this file before this change.
+
+        EmailTemplateManagement ("Manage Email Templates", added 2026-08-15) is the narrow,
+        purpose-built permission (confirmed via live PermissionSet describe) for viewing,
+        creating, editing and deleting email templates and folders in Setup, WITHOUT needing the
+        much broader CustomizeApplication permission already on this set. It is added because it
+        is the CORRECT scoped grant for this feature going forward — CustomizeApplication is left
+        untouched per instruction, but this set should not depend on it for email-template access
+        specifically. CreateLtngTempFolder ("Create Folders for Lightning Email Templates") was
+        considered and deliberately NOT added: the requirement is to create/edit TEMPLATES inside
+        the existing shared IR_Email_Templates_Lightning folder, not to create new folders.
+        EmailTemplate `objectPermissions` (allowRead/allowCreate/allowEdit) was verified via a
+        real check-only dry-run deploy to be a structurally valid PermissionSet element at API
+        67.0 (it deployed with zero errors) — but a live org-wide query found ZERO existing
+        ObjectPermissions rows for EmailTemplate across every permission set and profile in this
+        org, and the documented access model for this object is the special userPermissions above
+        rather than object CRUD, so it was deliberately NOT added here to avoid an unverified,
+        unprecedented grant with no evidence it does anything.
+    -->
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>AccessContentBuilder</name>
+    </userPermissions>
     <userPermissions>
         <enabled>true</enabled>
         <name>ConvertLeads</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>CreateLtngTempInPub</name>
     </userPermissions>
     <userPermissions>
         <enabled>true</enabled>
@@ -136,6 +212,10 @@
     <userPermissions>
         <enabled>true</enabled>
         <name>EmailSingle</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>EmailTemplateManagement</name>
     </userPermissions>
     <userPermissions>
         <enabled>true</enabled>

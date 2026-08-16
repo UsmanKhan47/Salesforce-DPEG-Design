@@ -7,7 +7,7 @@
         <locationY>0</locationY>
         <actionName>emailSimple</actionName>
         <actionType>emailSimple</actionType>
-        <description>Sends the Investor Welcome Lightning email template to the new Contact and logs it on the Contact&apos;s activity timeline. Deliberately does NOT set relatedRecordId (WhatId) -- WhatId only accepts &quot;What&quot; entities (Account, Opportunity, Case, Campaign, custom objects), never a &quot;Who&quot; entity like Contact. This action runs off a Contact record, so binding relatedRecordId to $Record.Id fails at runtime with &quot;Invalid entity type for whatId.&quot; recipientId plus logEmailOnSend=true alone are sufficient to log the email on the Contact&apos;s activity timeline. Do not re-add relatedRecordId here.</description>
+        <description>Sends the Investor Welcome Lightning email template to the new Contact and logs it on the Contact&apos;s activity timeline. Deliberately does NOT set relatedRecordId (WhatId) -- WhatId only accepts &quot;What&quot; entities (Account, Opportunity, Case, Campaign, custom objects), never a &quot;Who&quot; entity like Contact. This action runs off a Contact record, so binding relatedRecordId to $Record.Id fails at runtime with &quot;Invalid entity type for whatId.&quot; recipientId plus logEmailOnSend=true alone are sufficient to log the email on the Contact&apos;s activity timeline. Do not re-add relatedRecordId here. The template referenced by emailTemplateId (rec_EmailTemplate.Id) is now a genuine Lightning (SFX, UiType=SFX) template, DeveloperName Investor_Welcome_Email_LTN, loaded as a DATA record by scripts/load-lightning-email-templates.apex rather than deployed via force-app metadata -- its RelatedEntityType is Contact and it uses live {{{Recipient.*}}} merge fields, since the recipient here IS the investor.</description>
         <flowTransactionModel>CurrentTransaction</flowTransactionModel>
         <inputParameters>
             <name>emailTemplateId</name>
@@ -59,7 +59,7 @@
             <label>Template Found and Email Present</label>
         </rules>
     </decisions>
-    <description>Sends the Investor Welcome Lightning email to a newly created Investor-record-type Contact and logs it on the Contact&apos;s activity timeline.</description>
+    <description>Sends the Investor Welcome Lightning (SFX) email template to a newly created Investor-record-type Contact and logs it on the Contact&apos;s activity timeline. The template is resolved at runtime by DeveloperName (Investor_Welcome_Email_LTN), NOT the pre-existing classic (Aloha) Investor_Welcome_Email template, which this flow no longer references. The Lightning template is record-managed via scripts/load-lightning-email-templates.apex (idempotent DML upsert by DeveloperName) rather than deployed as force-app metadata, because the Metadata API EmailTemplate type has no element that carries HtmlValue as Lightning Builder content.</description>
     <environments>Default</environments>
     <interviewLabel>Investor Welcome Flow {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Investor Welcome Flow</label>
@@ -79,13 +79,13 @@
         <connector>
             <targetReference>Decision_Ready_To_Send</targetReference>
         </connector>
-        <description>Looks up the Investor Welcome Email Lightning email template by its developer name so the send-email step can reference it by Id.</description>
+        <description>Looks up the Investor Welcome Email Lightning (SFX) email template by its developer name so the send-email step can reference it by Id. Filters on Investor_Welcome_Email_LTN, NOT Investor_Welcome_Email -- the latter is the pre-existing CLASSIC (Aloha) template in the IR_Email_Templates folder. MEASURED (Savepoint-wrapped DML probe, DPEG-IR-Implementation): EmailTemplate.DeveloperName is unique ORG-WIDE, not merely per-folder, so the two templates could not share a DeveloperName even in different folders -- the Lightning template was therefore given the distinct DeveloperName Investor_Welcome_Email_LTN, which by itself is already unambiguous (no UiType/RelatedEntityType filter is needed).</description>
         <filterLogic>and</filterLogic>
         <filters>
             <field>DeveloperName</field>
             <operator>EqualTo</operator>
             <value>
-                <stringValue>Investor_Welcome_Email</stringValue>
+                <stringValue>Investor_Welcome_Email_LTN</stringValue>
             </value>
         </filters>
         <getFirstRecordOnly>true</getFirstRecordOnly>

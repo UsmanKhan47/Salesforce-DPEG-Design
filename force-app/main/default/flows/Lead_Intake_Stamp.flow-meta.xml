@@ -99,6 +99,7 @@
         <connector>
             <targetReference>Needs_First_Seen</targetReference>
         </connector>
+        <filterFormula>{!$Record.RecordType.DeveloperName} = &apos;Acquisition_Broker&apos;</filterFormula>
         <object>Lead</object>
         <recordTriggerType>CreateAndUpdate</recordTriggerType>
         <triggerType>RecordBeforeSave</triggerType>

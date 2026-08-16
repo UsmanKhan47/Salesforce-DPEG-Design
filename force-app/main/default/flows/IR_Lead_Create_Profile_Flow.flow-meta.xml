@@ -36,6 +36,32 @@
     </actionCalls>
     <apiVersion>67.0</apiVersion>
     <decisions>
+        <name>Decision_Is_Accredited</name>
+        <label>Is Accredited?</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <defaultConnector>
+            <targetReference>Decision_Required_Fields</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>Is Accredited</defaultConnectorLabel>
+        <description>Gates conversion on Is_Accredited__c, replacing a layout-level required checkbox (Checkbox fields cannot be marked Required on a page layout). If the Lead is not marked Is Accredited, the flow shows a dedicated error screen and ends without converting. Otherwise it proceeds exactly as before to the existing required-field checks.</description>
+        <rules>
+            <name>Not_Accredited</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>rec_Lead.Is_Accredited__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <booleanValue>false</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Screen_Error_Not_Accredited</targetReference>
+            </connector>
+            <label>Not Accredited</label>
+        </rules>
+    </decisions>
+    <decisions>
         <name>Decision_Required_Fields</name>
         <label>Check Required Fields</label>
         <locationX>0</locationX>
@@ -164,7 +190,7 @@
         <locationY>0</locationY>
         <assignNullValuesIfNoRecordsFound>true</assignNullValuesIfNoRecordsFound>
         <connector>
-            <targetReference>Decision_Required_Fields</targetReference>
+            <targetReference>Decision_Is_Accredited</targetReference>
         </connector>
         <description>Retrieves the Lead record identified by the recordId input, including the fields required to validate the profile.</description>
         <faultConnector>
@@ -231,6 +257,24 @@
             <name>Success_Message</name>
             <fieldType>DisplayText</fieldType>
             <fieldText>&lt;p style=&quot;text-align: center;&quot;&gt;&lt;br&gt;&lt;/p&gt;&lt;p style=&quot;text-align: center;&quot;&gt;&lt;img src=&quot;/resource/Assets/success.png&quot; alt=&quot;Success&quot; width=&quot;96&quot; height=&quot;96&quot;&gt;&lt;/p&gt;&lt;p style=&quot;text-align: center;&quot;&gt;&lt;span style=&quot;font-size: 16px;&quot;&gt;Success! The Lead has been converted. The investor Contact has been created and the Lead status is now Converted.&lt;/span&gt;&lt;/p&gt;</fieldText>
+        </fields>
+        <nextOrFinishButtonLabel>Finish</nextOrFinishButtonLabel>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Screen_Error_Not_Accredited</name>
+        <label>Create Profile</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <allowBack>false</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <description>Displays an error explaining that the Lead must be marked Is Accredited before a profile can be created.</description>
+        <fields>
+            <name>Error_Not_Accredited_Message</name>
+            <fieldType>DisplayText</fieldType>
+            <fieldText>&lt;p style=&quot;text-align: center;&quot;&gt;&lt;br&gt;&lt;/p&gt;&lt;p style=&quot;text-align: center;&quot;&gt;&lt;img src=&quot;/resource/Assets/error.png&quot; alt=&quot;Error&quot; width=&quot;96&quot; height=&quot;96&quot;&gt;&lt;/p&gt;&lt;p style=&quot;text-align: center;&quot;&gt;&lt;span style=&quot;font-size: 16px;&quot;&gt;Error: This Lead must be marked Is Accredited before a profile can be created. Please update Is Accredited on the Lead and try again. No Contact was created and the Lead was not converted.&lt;/span&gt;&lt;/p&gt;</fieldText>
         </fields>
         <nextOrFinishButtonLabel>Finish</nextOrFinishButtonLabel>
         <showFooter>true</showFooter>

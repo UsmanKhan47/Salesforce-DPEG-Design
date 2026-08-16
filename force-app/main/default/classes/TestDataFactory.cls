@@ -624,6 +624,82 @@ public with sharing class TestDataFactory {
     }
 
     /**
+     * Leads on the `Investor_Onboarding` record type, ready for InvestorLeadConvertService.
+     *
+     * DELIBERATELY SEPARATE FROM createLeads. That method stamps `Acquisition_Broker` and carries
+     * the acquisition field set (Deal_Type__c, Guidance_Price__c, ...), none of which belongs on an
+     * IR Lead — and a Lead on the wrong record type never reaches the IR code paths at all, so
+     * reusing it would silently produce tests that prove nothing.
+     *
+     * FIELDS ARE THE IR CONVERSION'S OWN PRECONDITIONS, not decoration: IR_Lead_Create_Profile_Flow
+     * refuses to convert unless Email, Phone, LastName and Is_Accredited__c are all populated, so a
+     * Lead built here satisfies that gate by construction.
+     *
+     * 🔴 OWNERSHIP IS HANDED BACK TO THE RUNNING USER AFTER INSERT, AND THIS IS LOAD-BEARING.
+     * IR_Lead_Assignment_Flow is a before-save flow on Create that reassigns OwnerId to the
+     * Investor Onboarding QUEUE, and Database.convertLead REFUSES a queue-owned Lead — MEASURED on
+     * DPEG-IR-Implementation 2026-08-16: `REQUIRED_FIELD_MISSING: Converted objects can only be
+     * owned by users. If the lead is not owned by a user, you must specify a user for the Owner
+     * field.` Without this second update every conversion test would fail on that error instead of
+     * exercising the code under test. This mirrors the real UI journey, where the "Assign to Me"
+     * action claims the Lead out of the queue before "Create Profile" is available.
+     *
+     * @param count    Number of Leads.
+     * @param doInsert Insert when true. Ownership is only reclaimed when this is true — there is no
+     *                 Id to update otherwise.
+     * @return The Leads (Ids populated when doInsert).
+     */
+    public static List<Lead> createInvestorOnboardingLeads(Integer count, Boolean doInsert) {
+        requirePositive(count);
+        List<Lead> leads = new List<Lead>();
+        for (Integer i = 0; i < count; i++) {
+            Integer u = nextUnique();
+            // NAMES ARE DELIBERATELY MADE HIGHLY DISTINCT, not merely index-suffixed. The org's
+            // Contact duplicate rule fuzzy-matches a NEW Contact against OPEN LEADS, so in a bulk
+            // conversion the Contact minted for Lead i can match Leads i+1..N and the platform
+            // rejects the conversion with DUPLICATES_DETECTED. MEASURED 2026-08-16: with
+            // FirstName 'IR' / LastName 'Investor <i>', 3 of 50 conversions failed that way.
+            // Seeding the unique counter into BOTH name parts removes the fuzzy similarity.
+            leads.add(new Lead(
+                FirstName = 'Irina' + u,
+                LastName = 'Vanterpool' + u,
+                Company = 'IR Investor Co ' + i + '-' + u,
+                Email = 'ir.investor' + u + '@example.invalid',
+                Phone = '555010' + i,
+                Status = 'New',
+                Is_Accredited__c = true
+            ));
+        }
+        Id irRt = recordTypeId(Lead.SObjectType, 'Investor_Onboarding');
+        if (irRt != null) {
+            for (Lead l : leads) {
+                l.RecordTypeId = irRt;
+            }
+        }
+        // insertAllowingDuplicates, NOT insertIf. The org's Lead duplicate rule matches on the
+        // name/company shape these records share, and a bulk batch trips DUPLICATES_DETECTED on
+        // row 0 — MEASURED at 50 Leads, 2026-08-16. The duplicate rule is production behaviour
+        // worth keeping; it just must not decide whether this factory can seed a fixture.
+        if (doInsert) {
+            insertAllowingDuplicates(leads);
+        }
+
+        if (doInsert) {
+            List<Lead> reclaimOwnership = new List<Lead>();
+            for (Lead l : leads) {
+                reclaimOwnership.add(new Lead(Id = l.Id, OwnerId = UserInfo.getUserId()));
+            }
+            update reclaimOwnership;   // one DML for the whole collection, never inside a loop
+        }
+        return leads;
+    }
+
+    /** Single Investor Onboarding Lead. @param doInsert Insert when true. @return The Lead. */
+    public static Lead createInvestorOnboardingLead(Boolean doInsert) {
+        return createInvestorOnboardingLeads(1, doInsert)[0];
+    }
+
+    /**
      * Opportunities at StageName 'New' — valid in BOTH the Land and Commercial
      * business processes, and the only stage that does not cascade a feasibility
      * review / Contract Review / Underwriting child on insert.

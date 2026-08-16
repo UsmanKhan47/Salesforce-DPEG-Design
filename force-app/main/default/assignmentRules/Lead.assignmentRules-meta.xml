@@ -1,22 +1,2 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<AssignmentRules xmlns="http://soap.sforce.com/2006/04/metadata">
-    <assignmentRule>
-        <fullName>DPEG Lead Assignment Rule</fullName>
-        <active>true</active>
-        <ruleEntry>
-            <assignedTo>Investor_Onboarding_Queue</assignedTo>
-            <assignedToType>Queue</assignedToType>
-            <criteriaItems>
-                <field>Lead.RecordTypeId</field>
-                <operation>equals</operation>
-                <value>Investor Onboarding</value>
-            </criteriaItems>
-            <criteriaItems>
-                <field>Lead.Status</field>
-                <operation>equals</operation>
-                <value>New</value>
-            </criteriaItems>
-            <template>IR_Email_Templates/DPEG_IR_Lead_Queue_Assignment_Notification</template>
-        </ruleEntry>
-    </assignmentRule>
-</AssignmentRules>
+<AssignmentRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
