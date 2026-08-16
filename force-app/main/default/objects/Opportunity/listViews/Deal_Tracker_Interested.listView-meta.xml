@@ -14,5 +14,5 @@
         <operation>equals</operation>
         <value>Interested Deals</value>
     </filters>
-    <label>Deal Tracker: Interested Deals</label>
+    <label>Interested Deals</label>
 </ListView>

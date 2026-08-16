@@ -1,0 +1,143 @@
+<!--
+  marketDataSync — see marketDataSync.js for the full rationale. The four things this template must
+  keep true, all of them argued at length in that header:
+
+    1. the Last Synced row is labelled "Last Synced (manual)" and carries the helptext. Both are
+       mitigations for a Sync button that contacts nothing.
+    2. there is NO spinner and NO busy state anywhere in this file.
+    3. an unsupported `source` renders a VISIBLE role="alert", never an empty card.
+    4. the Sync button is `variant="neutral"`. A brand button asserts a primacy this stub has not
+       earned, and it would read as the primary action of the record page.
+
+  ⚠ Do NOT apply the repo's `.lv-*` list-view chrome here. Measured: those table classes live in a
+  single bundle, and this is a field section, not a list.
+-->
+<template>
+    <template lwc:if={isConfigured}>
+        <div class="slds-card mds-card">
+            <!--
+              Matches a Dynamic Forms fieldSection header: slds-section__title + slds-text-title_caps
+              is what the platform itself renders for a collapsible field section, which is the whole
+              of "keep the design the same" at the heading level.
+            -->
+            <h3
+                class="slds-section__title slds-text-title_caps slds-p-around_small mds-header"
+            >
+                <lightning-icon
+                    icon-name={iconName}
+                    size="x-small"
+                    alternative-text=""
+                    class="slds-m-right_x-small"
+                ></lightning-icon>
+                <span>{cardTitle}</span>
+            </h3>
+
+            <!--
+              lightning-record-form in mode="view" renders platform-identical field rows WITH the
+              per-field inline-edit pencils. lightning-output-field would have been closer to
+              pixel-identical but READ-ONLY, and every field here is behavior=Edit on the layout
+              today — so that would have been a functional regression, not a styling choice.
+            -->
+            <div class="slds-p-horizontal_small">
+                <lightning-record-form
+                    record-id={recordId}
+                    object-api-name={objectApiName}
+                    fields={formFields}
+                    columns="2"
+                    mode="view"
+                    density="comfy"
+                ></lightning-record-form>
+            </div>
+
+            <div class="slds-grid slds-wrap slds-p-horizontal_small slds-p-top_x-small">
+                <div class="slds-col slds-size_1-of-2">
+                    <div class="slds-form-element slds-form-element_readonly">
+                        <span class="slds-form-element__label">
+                            <!--
+                              "(manual)" is NOT a caption style choice. Without it the row asserts a
+                              freshness the data does not have: the figures above were typed by hand,
+                              possibly months ago. If a real integration ever lands, this label and
+                              the helptext change in the same commit as the callout.
+                            -->
+                            Last Synced (manual)
+                            <lightning-helptext
+                                content={helpText}
+                            ></lightning-helptext>
+                        </span>
+                        <div class="slds-form-element__control">
+                            <div class="slds-form-element__static">
+                                <template lwc:if={hasLastSynced}>
+                                    <!--
+                                      A plain value row via lightning-formatted-date-time — NOT a
+                                      badge and NOT a coloured pill. It is a value, not a status, and
+                                      nothing ages or expires it (residual R6), so any colour band
+                                      would be inventing a meaning the data cannot support.
+                                    -->
+                                    <lightning-formatted-date-time
+                                        value={lastSynced}
+                                        year="numeric"
+                                        month="short"
+                                        day="2-digit"
+                                        hour="2-digit"
+                                        minute="2-digit"
+                                    ></lightning-formatted-date-time>
+                                </template>
+                                <template lwc:elseif={lastSyncedPending}>
+                                    <!--
+                                      🔴 The record wire has not answered yet, so we do not know
+                                      whether this deal has ever been synced. "Never" would be an
+                                      ASSERTION made before the fact is in hand — the same
+                                      confident-wrong-answer defect the "Not available" state exists
+                                      to prevent on the error branch, and the three-state access gate
+                                      exists to prevent on the button. aria-hidden because a screen
+                                      reader should be told nothing here, not told a dash.
+                                    -->
+                                    <span
+                                        class="mds-muted"
+                                        aria-hidden="true"
+                                        >{loadingLabel}</span
+                                    >
+                                </template>
+                                <template lwc:else>
+                                    <span class="mds-muted">{emptyLastSyncedLabel}</span>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                class="slds-grid slds-grid_align-end slds-grid_vertical-align-center slds-wrap slds-p-around_small mds-footer"
+            >
+                <!--
+                  The reason is rendered BESIDE the disabled button, never instead of it. Hiding the
+                  button would be indistinguishable from "this feature is not for me"; leaving it
+                  live would fail at click time with a raw platform error.
+                -->
+                <template lwc:if={showDisabledReason}>
+                    <p class="mds-reason slds-p-right_small" role="note">
+                        {disabledReason}
+                    </p>
+                </template>
+                <lightning-button
+                    variant="neutral"
+                    label="Sync"
+                    title={syncButtonTitle}
+                    disabled={syncDisabled}
+                    onclick={handleSync}
+                ></lightning-button>
+            </div>
+        </div>
+    </template>
+
+    <template lwc:else>
+        <!--
+          🔴 A misconfigured instance must SAY SO. An empty card is indistinguishable from "this deal
+          has no market data", and nothing else in the org would ever report the mistake.
+        -->
+        <div class="slds-card slds-p-around_small mds-card">
+            <p class="mds-error" role="alert">{configError}</p>
+        </div>
+    </template>
+</template>

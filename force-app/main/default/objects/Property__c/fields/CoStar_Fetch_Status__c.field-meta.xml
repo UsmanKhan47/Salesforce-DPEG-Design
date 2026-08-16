@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CoStar_Fetch_Status__c</fullName>
+    <description>Twin of Placer_Fetch_Status__c for the CoStar block. Not Synced is the default for a manually-entered property (indistinguishable from "never attempted" otherwise); Success/Error are reserved for the day an ASB spoke performs a real fetch.</description>
+    <label>CoStar Fetch Status</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Not Synced</fullName>
+                <default>true</default>
+                <label>Not Synced</label>
+            </value>
+            <value>
+                <fullName>Success</fullName>
+                <default>false</default>
+                <label>Success</label>
+            </value>
+            <value>
+                <fullName>Error</fullName>
+                <default>false</default>
+                <label>Error</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CoStar_Exit_Cap_Rate__c</fullName>
+    <description>CoStar projected exit cap rate for this property. Exit cap only - "cap compression" (a comparison of exit vs. entry/market cap) is deliberately not built here because the FSD does not define its base, and a stored field with an unstated definition would be a confident wrong answer. Manually entered today - no live CoStar connection exists (§18.4 "Integration Off" fallback). Owner: CoStar.</description>
+    <label>CoStar Exit Cap Rate</label>
+    <precision>5</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Percent</type>
+</CustomField>

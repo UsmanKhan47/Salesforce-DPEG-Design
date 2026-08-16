@@ -15,5 +15,5 @@
         <operation>notEqual</operation>
         <value>Dead</value>
     </filters>
-    <label>Deal Tracker: All Deals</label>
+    <label>All Deals</label>
 </ListView>

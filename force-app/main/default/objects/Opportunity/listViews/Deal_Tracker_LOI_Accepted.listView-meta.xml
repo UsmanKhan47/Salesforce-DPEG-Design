@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ListView xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Deal_Tracker_PSA</fullName>
+    <fullName>Deal_Tracker_LOI_Accepted</fullName>
     <columns>OPPORTUNITY.NAME</columns>
     <columns>OPPORTUNITY.STAGE_NAME</columns>
     <columns>Deal_Status__c</columns>
@@ -8,11 +8,12 @@
     <columns>Asset_Type__c</columns>
     <columns>Asking_Price__c</columns>
     <columns>OPPORTUNITY.CLOSE_DATE</columns>
+    <columns>Deal_Sub_Stage__c</columns>
     <filterScope>Everything</filterScope>
     <filters>
-        <field>Deal_Bucket__c</field>
+        <field>Deal_Sub_Stage__c</field>
         <operation>equals</operation>
-        <value>Under Contract (PSA)</value>
+        <value>LOI - Accepted</value>
     </filters>
-    <label>Deal Tracker: Under Contract (PSA)</label>
+    <label>LOI Accepted</label>
 </ListView>

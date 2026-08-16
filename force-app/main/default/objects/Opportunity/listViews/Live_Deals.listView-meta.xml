@@ -19,5 +19,10 @@
         <operation>greaterOrEqual</operation>
         <value>LAST_N_MONTHS:3</value>
     </filters>
+    <filters>
+        <field>OPPORTUNITY.STAGE_NAME</field>
+        <operation>notEqual</operation>
+        <value>Dead/Pass</value>
+    </filters>
     <label>Live Deals</label>
 </ListView>

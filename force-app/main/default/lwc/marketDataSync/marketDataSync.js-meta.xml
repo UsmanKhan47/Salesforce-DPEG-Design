@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Market Data Sync</masterLabel>
+    <description>One market-data source (Placer or CoStar) rendered as an Opportunity detail card, with a Last Synced (manual) row and a Sync button. STUB: Sync stamps a timestamp and contacts no external system. Drop one instance per source and set the Data source property.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <!--
+                The ELEMENT form. The `objects=` ATTRIBUTE form is rejected by the Metadata API.
+                Restricting to Opportunity is deliberate: every field this component renders arrives
+                as an @salesforce/schema/Opportunity.* import, so an instance on any other object
+                could never render anything.
+            -->
+            <objects>
+                <object>Opportunity</object>
+            </objects>
+            <!--
+                🔴 A targetConfig property CANNOT be constrained to an enum, so this default and this
+                description are the only declarative guard rails. The component therefore validates
+                the value at runtime against its own CONFIG_BY_SOURCE keys and renders a visible
+                role="alert" naming the accepted values when it misses - a silently empty card is
+                indistinguishable from "this deal has no market data".
+            -->
+            <property
+                name="source"
+                type="String"
+                label="Data source"
+                default="Placer"
+                required="true"
+                description="Placer or CoStar (case-sensitive). Selects the card title, icon, fields and Last Synced field."
+            />
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

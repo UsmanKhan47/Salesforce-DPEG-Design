@@ -607,6 +607,185 @@ private class OpportunitySelectorTest {
             + 'Test.stopTest() is restored to pre-test values and would be silently vacuous');
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // selectTopByAmount — the "Top 5 Largest Deals" card (FSD §24.2, tranche 2)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE FIXTURE INVERTS `Amount` AGAINST `Asking_Price__c`, AND WITHOUT THAT THIS TEST
+     * WOULD BE VACUOUS. `TestDataFactory.createOpportunities` seeds the two fields to the
+     * SAME value, so against the plain setup data `selectTopByAmount` and
+     * `selectTopByAskingPrice` return an IDENTICAL list and no assertion can tell them
+     * apart. The three rows below make the two orderings opposite.
+     *
+     * ⚠ It also parks the two BIGGEST amounts on closed stages, so a missing stage filter
+     * shows up at positions 0 and 1 rather than at the tail of the list.
+     *
+     * 🔴 THE CLOSED STAGES ARE SET **BEFORE THE INSERT** — do not convert this to an
+     * insert-then-update. Every Opportunity stage gate here is guarded by
+     * `ISCHANGED(StageName)`, false on insert and true on update, so an update to
+     * `'Closed Won'` is BLOCKED by `Contract_Signed_Before_Closed_Won` (no executed PSA on
+     * this fixture) and by `NDA_Signed_Before_Deal_Progression` (no signed Primary NDA),
+     * while the insert passes. Building a real NDA/LOI/PSA chain would be a large fixture for
+     * a test that only needs rows to EXIST at closed stages.
+     */
+    private static void seedAmountRanking() {
+        List<Opportunity> ranked = TestDataFactory.createOpportunities(3, false);
+        // Biggest Amount, smallest Asking Price — must lead an Amount ranking.
+        ranked[0].Name = 'AmountLeader';
+        ranked[0].Amount = 90000000;
+        ranked[0].Asking_Price__c = 1;
+        // Closed, and larger than everything in the 251-row setup — must NEVER appear.
+        ranked[1].Name = 'ClosedGiant';
+        ranked[1].StageName = 'Closed Won';
+        ranked[1].Amount = 99000000;
+        ranked[2].Name = 'DeadGiant';
+        ranked[2].StageName = 'Dead/Pass';
+        ranked[2].Amount = 98000000;
+        insert ranked;
+    }
+
+    @isTest
+    static void selectTopByAmount_ordersByAmountAndExcludesClosedDeals() {
+        seedAmountRanking();
+
+        Test.startTest();
+        List<Opportunity> top = OpportunitySelector.selectTopByAmount(5);
+        Test.stopTest();
+
+        Assert.areEqual(5, top.size(), 'LIMIT caps the result at 5');
+        Assert.areEqual('AmountLeader', top[0].Name,
+            'The largest ACTIVE Amount leads. Reading "ClosedGiant" means the stage filter was '
+            + 'dropped; reading a setup row means the ORDER BY moved off Amount.');
+        for (Integer i = 1; i < top.size(); i++) {
+            Assert.isTrue(top[i - 1].Amount >= top[i].Amount,
+                'Rows must be ordered by Amount descending');
+        }
+        for (Opportunity o : top) {
+            Assert.isTrue(
+                !OpportunitySelector.CLOSED_STAGES.contains(o.StageName),
+                'No closed deal may appear: ' + o.Name + ' at ' + o.StageName);
+        }
+    }
+
+    /**
+     * The filter runs in the QUERY, not after the LIMIT.
+     *
+     * ⚠ This is the falsifier for "filter in Apex after the selector returns". With the two
+     * closed giants outranking every setup row, a post-LIMIT filter would return THREE rows
+     * here instead of five — a subtly short list nobody would notice on a home page.
+     */
+    @isTest
+    static void selectTopByAmount_stillFillsTheLimitWhenClosedDealsOutrankActiveOnes() {
+        seedAmountRanking();
+
+        Test.startTest();
+        List<Opportunity> top = OpportunitySelector.selectTopByAmount(5);
+        Test.stopTest();
+
+        Assert.areEqual(5, top.size(),
+            'Five ACTIVE rows come back even though the two largest deals in the org are closed');
+    }
+
+    @isTest
+    static void selectTopByAmount_selectsEveryFieldTheCardRenders() {
+        Test.startTest();
+        List<Opportunity> top = OpportunitySelector.selectTopByAmount(1);
+        Test.stopTest();
+
+        Assert.areEqual(1, top.size(), 'precondition: the setup data yields a row');
+        // A field the caller reads but the SELECT omits throws SObjectException at runtime,
+        // not at compile time — so the field list is pinned here rather than trusted.
+        Assert.isNotNull(top[0].Name, 'Name backs the record link');
+        Assert.isNotNull(top[0].StageName, 'StageName backs the stage pill');
+        Assert.isNotNull(top[0].Deal_Type__c, 'Deal_Type__c backs the deal-type pill');
+        Assert.isNotNull(top[0].Amount, 'Amount is the ranking value and the Amount column');
+        Assert.isNotNull(top[0].CloseDate, 'CloseDate backs the Close Date column');
+        Assert.isNotNull(top[0].CreatedDate, 'CreatedDate backs the Age column');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // selectMarketSnapshotSourceByIds — the underwriting market freeze (FSD §18.3)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The traversed `Property__r` block comes back populated, so `MarketDataSnapshotService`
+     * can compose from it without a second query.
+     *
+     * ⚠ ONE VALUE FROM EACH PROVIDER BLOCK IS ASSERTED. A SELECT that dropped a whole
+     * provider would still return rows and still populate `Property__r`, so asserting only
+     * "Property__r is not null" would pass on a half-built field list.
+     */
+    @isTest
+    static void selectMarketSnapshotSourceByIds_returnsTheTraversedMarketBlock() {
+        Property__c property = TestDataFactory.createProperty(false);
+        property.Placer_State_Rank__c = 7;
+        property.CoStar_Pct_Leased__c = 88.00;
+        insert property;
+
+        Opportunity deal = TestDataFactory.createOpportunity((Id) null, false);
+        deal.Property__c = property.Id;
+        insert deal;
+
+        Test.startTest();
+        List<Opportunity> rows =
+            OpportunitySelector.selectMarketSnapshotSourceByIds(new Set<Id>{ deal.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'The requested deal comes back');
+        Assert.areEqual(property.Id, rows[0].Property__c, 'with its Property lookup');
+        Assert.isNotNull(rows[0].Property__r, 'and the parent traversal populated');
+        // ⚠ Compared with `==` rather than Assert.areEqual: these fields come back as Decimal,
+        // and Assert.areEqual(Object, Object) treats an Integer literal and a Decimal as
+        // UNEQUAL even when they denote the same number. Decimal `==` compares by value and
+        // ignores scale, which is what is wanted for a Number(6,0) / Percent(5,2) read-back.
+        Assert.isTrue(rows[0].Property__r.Placer_State_Rank__c == 7, 'a Placer-block value');
+        Assert.isTrue(rows[0].Property__r.CoStar_Pct_Leased__c == 88.00, 'and a CoStar-block value');
+    }
+
+    /**
+     * A deal with no Property still comes back, with `Property__r` null.
+     *
+     * 🔴 THE ROW MUST NOT BE FILTERED OUT. `MarketDataSnapshotService` distinguishes "no
+     * Property" (a legitimate outcome it explains on the record) from "the deal could not be
+     * read" (a failure it reports as one). A selector that dropped Property-less deals would
+     * silently collapse the two into the failure branch.
+     */
+    @isTest
+    static void selectMarketSnapshotSourceByIds_returnsADealWithNoPropertyRatherThanDroppingIt() {
+        Opportunity deal = TestDataFactory.createOpportunity((Id) null, true);
+
+        Test.startTest();
+        List<Opportunity> rows =
+            OpportunitySelector.selectMarketSnapshotSourceByIds(new Set<Id>{ deal.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, rows.size(), 'A Property-less deal is still returned');
+        Assert.isNull(rows[0].Property__c, 'with a null Property lookup');
+        Assert.isNull(rows[0].Property__r, 'and a null parent, which the service reports explicitly');
+    }
+
+    @isTest
+    static void selectMarketSnapshotSourceByIds_isEmptySafeAndCostsOneQueryAtBulk() {
+        Set<Id> ids = new Map<Id, Opportunity>([SELECT Id FROM Opportunity]).keySet();
+        Assert.areEqual(BULK_N, ids.size(), 'precondition: the 251-row setup is in place');
+
+        Test.startTest();
+        List<Opportunity> none =
+            OpportunitySelector.selectMarketSnapshotSourceByIds(new Set<Id>());
+
+        Integer before = Limits.getQueries();
+        List<Opportunity> all = OpportunitySelector.selectMarketSnapshotSourceByIds(ids);
+        Integer used = Limits.getQueries() - before;
+        Test.stopTest();
+
+        Assert.isTrue(none.isEmpty(), 'An empty Id set returns an empty list, never null');
+        Assert.areEqual(BULK_N, all.size(), 'All 251 deals come back in one read');
+        Assert.areEqual(1, used,
+            'ONE query regardless of deal count. Measured inside the transaction — Limits.* '
+            + 'after Test.stopTest() is restored to pre-test values and would be silently vacuous');
+    }
+
     private static User buildStandardUser() {
         Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
         String unique = 'oppsel' + System.currentTimeMillis();

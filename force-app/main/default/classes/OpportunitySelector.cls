@@ -18,18 +18,25 @@
  *     selectCallForOffersOpen / selectCallForOffersById, both `WITH USER_MODE`)
  *   - CallForOffersAlertBatch (the daily offer-deadline alert job —
  *     queryCallForOffersAlerts, `WITH SYSTEM_MODE`)
+ *   - MarketDataSnapshotService (the underwriting-approval market freeze —
+ *     selectMarketSnapshotSourceByIds; `WITH SYSTEM_MODE`, see MODE below)
+ *   - TopDealsController (the "Top 5 Largest Deals" home-page card —
+ *     selectTopByAmount, `WITH USER_MODE`)
  *
- * MODE — most queries are `WITH USER_MODE` (API 67). **TWO are `WITH SYSTEM_MODE`:**
- * `selectCallForOffersTargetsByIds` and `queryCallForOffersAlerts`. Read the METHOD,
- * not the class.
+ * MODE — most queries are `WITH USER_MODE` (API 67). **THREE are `WITH SYSTEM_MODE`:**
+ * `selectCallForOffersTargetsByIds`, `queryCallForOffersAlerts` and
+ * `selectMarketSnapshotSourceByIds`. Read the METHOD, not the class.
  *
- * ⚠ THIS PARAGRAPH SAID "the ONE `WITH SYSTEM_MODE` method" UNTIL 2026-08-14 AND THAT
- * IS NOW FALSE — amended in place rather than left standing. The second entrant is the
- * alert job's locator, and its justification is argued at its own declaration rather
- * than borrowed from the first: it is SYSTEM_MODE because it selects two custom fields
- * created in that same change, which arrive with no FLS for any profile including the
- * deploying administrator. Do not read a future third SYSTEM_MODE method as conformant
- * because two already exist — read its header.
+ * ⚠ THIS PARAGRAPH SAID "the ONE `WITH SYSTEM_MODE` method" UNTIL 2026-08-14 AND "TWO"
+ * UNTIL 2026-08-16 — amended in place each time rather than left standing. The second
+ * entrant is the alert job's locator, and its justification is argued at its own
+ * declaration rather than borrowed from the first: it is SYSTEM_MODE because it selects
+ * two custom fields created in that same change, which arrive with no FLS for any
+ * profile including the deploying administrator. The third (the market-data freeze) is
+ * argued at ITS own declaration for a THIRD reason again — it runs inside an
+ * APPROVAL-TRIGGERED flow, so a throw does not merely disable the feature, it rolls back
+ * the approval. Do not read a future fourth SYSTEM_MODE method as conformant because
+ * three already exist — read its header.
  *
  * The thirteen USER_MODE methods back reads a human explicitly asked for. Opportunity
  * is the only standard-object selector in A1; per the P4 design §5 every standard
@@ -120,6 +127,176 @@ public with sharing class OpportunitySelector {
             WITH USER_MODE
             ORDER BY Asking_Price__c DESC NULLS LAST, CreatedDate DESC
             LIMIT :maxRows
+        ];
+    }
+
+    /**
+     * The stages a deal is CLOSED at, for the "largest ACTIVE deals" read below.
+     *
+     * ⚠ `'Dead/Pass'` is the LITERAL runtime value and is what belongs in Apex and in a
+     * ListView filter. The `Dead%2FPass` encoding applies inside BusinessProcess /
+     * RecordType / picklist METADATA only — getting it backwards yields a filter that
+     * silently never matches, so every dead deal stays in the list and nothing errors.
+     *
+     * 🔴 THE FILTER IS ON `StageName` AND MUST NEVER MOVE TO `Deal_Category__c`. Verified
+     * repo-wide 2026-08-16: NOTHING in this application ever writes
+     * `Deal_Category__c = 'Dead'` — its only writer is `flows/Transaction_Complete_Close`,
+     * which writes `'Closed'`, and the field is a restricted picklist DEFAULTING to
+     * `'Live'`. A `Deal_Category__c` filter therefore reads as a dead exclusion and is one.
+     *
+     * ⚠ `'About to Close'` is deliberately ABSENT. It is a live, working deal that has not
+     * closed, and it is exactly the kind of deal this card exists to surface.
+     */
+    @TestVisible
+    private static final Set<String> CLOSED_STAGES = new Set<String>{ 'Closed Won', 'Dead/Pass' };
+
+    /**
+     * Top Opportunities by `Amount` (largest first, amount-less deals last), EXCLUDING
+     * closed deals — backs the "Top 5 Largest Deals" home-page card (FSD §24.2, "the five
+     * biggest active deals, any stage except Closed").
+     *
+     * 🔴 IT RANKS ON `Amount`, NOT ON `Asking_Price__c`, AND THE TWO ARE DIFFERENT
+     * QUESTIONS. `Asking_Price__c` is what the SELLER wants; `Amount` is what the DEAL is
+     * worth to DPEG. `selectTopByAskingPrice` above answers the first and backs
+     * `lwc/recentOpportunities`; this answers the second and backs `lwc/topLargestDeals`.
+     * ⚠ They are DELIBERATELY two methods and two cards (user decision, 2026-08-16): an
+     * earlier design proposed adding this stage filter to `selectTopByAskingPrice` and
+     * relabelling the existing card. That was OVERRULED — the two lists answer different
+     * questions and a deal can top one and not the other. Do not merge them, and do not
+     * "harmonise" this method's ORDER BY onto `Asking_Price__c`; that silently turns this
+     * card into a duplicate of the other one.
+     *
+     * ⚠ `TestDataFactory.createOpportunities` seeds `Amount` and `Asking_Price__c` to the
+     * SAME value, so a test that does not deliberately diverge them cannot tell these two
+     * methods apart and is VACUOUS. `OpportunitySelectorTest.selectTopByAmount_*` inverts
+     * them on purpose.
+     *
+     * MODE — `WITH USER_MODE`, and that is the correct answer rather than the convenient
+     * one: this backs a card a human opened a home page to read, so an FLS gap here is a
+     * real provisioning gap and the fix is a permission set, not a mode change
+     * (ARCHITECTURE.md §2). 🔴 BUT THE GRANT MUST BE VERIFIED BEFORE THIS SHIPS:
+     * `Opportunity.Amount` is `permissionable`, and as at 2026-08-16 it is granted by NO
+     * permission set in this repo (measured — it appears only in `profiles/**`, which is
+     * `.forceignore`d and never deploys). USER_MODE throws on the WHOLE ROW for ONE
+     * inaccessible field, so a persona without that grant gets `System.QueryException:
+     * No such column 'Amount' on entity 'Opportunity'` — an FLS DENIAL wearing a schema
+     * error — and the whole card renders its error banner. That failure is LOUD, which is
+     * why it is the right posture here and the wrong one inside an approval-triggered
+     * flow (see `selectMarketSnapshotSourceByIds`). Grant `Opportunity.Amount` readable on
+     * `DPEG_Acquisition_Edit` / `DPEG_Acquisition_View` / `DPEG_Opportunity_View` — the
+     * three sets that already carry `Opportunity.Deal_Bucket__c`.
+     *
+     * @param maxRows Row cap (LIMIT).
+     * @return Opportunities not at a closed stage, ordered by Amount DESC NULLS LAST,
+     *         CreatedDate DESC; empty when nothing matches. Never null.
+     */
+    public static List<Opportunity> selectTopByAmount(Integer maxRows) {
+        return [
+            SELECT Id, Name, StageName, Deal_Type__c, Asset_Type__c,
+                   Amount, CloseDate, CreatedDate
+            FROM Opportunity
+            WHERE StageName NOT IN :CLOSED_STAGES
+            WITH USER_MODE
+            ORDER BY Amount DESC NULLS LAST, CreatedDate DESC
+            LIMIT :maxRows
+        ];
+    }
+
+    /**
+     * The deal header plus its Property's ENTIRE live market-data block — the read behind
+     * `MarketDataSnapshotService`'s freeze at underwriting approval (FSD §18.3 / §18.4).
+     *
+     * ═════════════════════════════════════════════════════════════════════════════
+     * 🔴 MODE — `WITH SYSTEM_MODE`. A `USER_MODE` THROW HERE ROLLS BACK AN APPROVAL.
+     * ═════════════════════════════════════════════════════════════════════════════
+     * Every `Placer_*` / `CoStar_*` field in this SELECT is a Metadata-API-deployed custom
+     * field, and such fields arrive with NO field permissions for ANY profile, System
+     * Administrator INCLUDED. Under `USER_MODE` this read throws
+     * `System.QueryException: No such column '<field>' on entity 'Property__c'` — an FLS
+     * DENIAL wearing a schema error — and it does so inside an `@InvocableMethod` called
+     * from `flows/Opportunity_UW_Approved_Notify`, an APPROVAL-TRIGGERED flow. So the
+     * consequence is not "the snapshot is missing": it is the same shape as the
+     * Disposition-NDA auto-create row in ARCHITECTURE.md §2's automation-path table — the
+     * exception escapes and takes the principal's approval down with it.
+     *
+     * The read is also one the running user never ASKED for. A principal pressed Approve;
+     * the platform is copying market data on their behalf. That is the definition of an
+     * automation path.
+     *
+     * ═════════════════════════════════════════════════════════════════════════════
+     * ⚠ SHARING IS A SEPARATE DECISION AND IS DELIBERATELY *NOT* ESCAPED
+     * ═════════════════════════════════════════════════════════════════════════════
+     * Conflating the two is the D25 mistake this repo has already paid for once, so it is
+     * argued here rather than assumed. `SYSTEM_MODE` lifts CRUD and FLS and NEVER sharing.
+     * No `without sharing` inner class is added, and the class stays `with sharing`,
+     * because the argument is STRUCTURAL rather than optimistic:
+     *
+     *   - The ROOT object is `Opportunity` — the very deal the approver has just approved,
+     *     so it is visible to them by construction. `Opportunity` OWD is also `ReadWrite`.
+     *   - `Property__r.*` is a PARENT-LOOKUP TRAVERSAL, and traversal is not
+     *     sharing-filtered; sharing filters the ROOT rows of a query.
+     *
+     * 🔴 READING `Property__c` AS A ROOT OBJECT WOULD BE A DEFECT, AND THAT IS WHY THIS
+     * METHOD LIVES HERE RATHER THAN ON `PropertySelector`. `Property__c` is
+     * `sharingModel = Private`; its single sharing rule is an OWNER rule scoped to rows
+     * owned by the `Acquisition` QUEUE, and a `LeadConvertService`-created Property is
+     * owned by the CONVERTER — so a principal approver is not reached. A root-level read
+     * would return ZERO ROWS and the snapshot would be SILENTLY EMPTY while
+     * `Market_Data_As_Of_Date__c` stamped: a record asserting "these are the numbers the
+     * principals saw" and naming none. Nothing would throw and no test would fail.
+     *
+     * ⚠ NAMED FALLBACK, recorded rather than built: if traversal ever DOES prove to be
+     * sharing-filtered, the remedy is a `private without sharing` inner class on
+     * `PropertySelector` holding only that query — mirroring the existing
+     * `FolderCreationReads` / `AssetCreationReads` — and NEVER `without sharing` on a
+     * class backing a dozen user-facing reads.
+     *
+     * ⚠ FIELD SET — the composer names every field it reads, so ADDING a market field to
+     * `Property__c` and forgetting it here means the snapshot silently under-reports while
+     * still claiming completeness. Two `Property__c` LongTextArea fields
+     * (`Comp_Sales__c`, `Visitor_Demographics__c`) are DELIBERATELY out of this list: they
+     * are free-text narrative rather than metrics, they are unbounded, and either one
+     * could consume the whole 32,768-character snapshot field by itself. That omission is
+     * stated in the composed text so a reader is not misled into thinking they were blank.
+     *
+     * NOT-FOUND CONTRACT: read-for-use over a SET — returns the rows that exist. A missing
+     * Id simply does not come back; the caller stamps a self-reporting body for it rather
+     * than assuming success.
+     *
+     * @param opportunityIds Deals to snapshot; empty-safe.
+     * @return The matching Opportunities with `Property__r` populated where the deal has a
+     *         Property; empty when none match. Never null.
+     */
+    public static List<Opportunity> selectMarketSnapshotSourceByIds(Set<Id> opportunityIds) {
+        return [
+            SELECT Id, Name, Property__c,
+                   Property__r.Name,
+                   Property__r.Placer_State_Rank__c,
+                   Property__r.Placer_State_Percentile__c,
+                   Property__r.Placer_MSA_Rank__c,
+                   Property__r.Placer_National_Rank__c,
+                   Property__r.Monthly_Visits__c,
+                   Property__r.Trade_Area_Population__c,
+                   Property__r.Peak_Hour__c,
+                   Property__r.YoY_Growth__c,
+                   Property__r.Comp_Monthly_Visits__c,
+                   Property__r.Placer_Data_Source__c,
+                   Property__r.Placer_Last_Synced_DateTime__c,
+                   Property__r.Placer_Fetch_Status__c,
+                   Property__r.CoStar_Pct_Leased__c,
+                   Property__r.CoStar_Location_Score__c,
+                   Property__r.CoStar_Asking_Rent_PSF__c,
+                   Property__r.CoStar_Exit_Cap_Rate__c,
+                   Property__r.Market_Rent_PSF__c,
+                   Property__r.Market_Cap_Rate__c,
+                   Property__r.Occupancy_Rate_Market__c,
+                   Property__r.Days_On_Market_Avg__c,
+                   Property__r.CoStar_Data_Source__c,
+                   Property__r.CoStar_Last_Synced_DateTime__c,
+                   Property__r.CoStar_Fetch_Status__c
+            FROM Opportunity
+            WHERE Id IN :opportunityIds
+            WITH SYSTEM_MODE
         ];
     }
 

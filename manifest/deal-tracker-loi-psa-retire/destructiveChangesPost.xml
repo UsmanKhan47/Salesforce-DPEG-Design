@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    FSD Gap Closure Tranche 2, Item 3 (§24.1) - 2026-08-16.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+
+    Retires Deal_Tracker_LOI and Deal_Tracker_PSA (both Opportunity ListViews),
+    superseded by the five-way split delivered in this same tranche:
+    Deal_Tracker_LOI_Pending, Deal_Tracker_LOI_Submitted, Deal_Tracker_LOI_Accepted,
+    Deal_Tracker_PSA_Negotiation, Deal_Tracker_PSA_Executed - all filtered on the
+    new Opportunity.Deal_Sub_Stage__c formula field. Leaving the two originals in
+    place alongside the five splits would produce TEN "Deal Tracker" views where
+    the FSD names eight.
+
+    POST-destructive gate G8 (design-requirements-fsd-tranche-2.md): before this
+    deploys, verify neither retired view is pinned in anyone's Lightning nav or
+    referenced by an org-side report - list-view references from those surfaces
+    are not represented in this repo and this manifest cannot detect them.
+
+    Deploy (only once authorised by the user, and only after G2 confirms
+    Deal_Sub_Stage__c is filterable in the org - see the field's own XML comment):
+      sf project deploy start \
+        --manifest manifest/deal-tracker-loi-psa-retire/package.xml \
+        --post-destructive-changes manifest/deal-tracker-loi-psa-retire/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    Rollback: a deleted ListView is recoverable from git history (this repo held
+    both files up to this same commit) and can be re-created by a fresh deploy.
+    -->
+    <types>
+        <members>Opportunity.Deal_Tracker_LOI</members>
+        <members>Opportunity.Deal_Tracker_PSA</members>
+        <name>ListView</name>
+    </types>
+    <version>67.0</version>
+</Package>

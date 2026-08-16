@@ -259,16 +259,6 @@
                 <identifier>RecordAsking_Price_cField2</identifier>
             </fieldInstance>
         </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Market_Cap_Rate__c</fieldItem>
-                <identifier>RecordMarket_Cap_Rate_cField2</identifier>
-            </fieldInstance>
-        </itemInstances>
         <name>Facet-06e3fc20-5d0f-467d-a5a5-e93c8a318f35</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -423,90 +413,6 @@
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
-        <name>Facet-jf9tastmj9i</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.OneDrive_Folder_URL__c</fieldItem>
-                <identifier>RecordOneDrive_Folder_URL_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet-9vvjxhojbz8</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-jf9tastmj9i</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column22</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-9vvjxhojbz8</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column23</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-sf20vh0mky</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <name>Facet-569bddd9-d02c-4f49-8df6-679479a164cb</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.CoStar_URL__c</fieldItem>
-                <identifier>RecordCoStar_URL_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet-5f566859-e43a-4235-b843-a3636cc60546</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-569bddd9-d02c-4f49-8df6-679479a164cb</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column24</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-5f566859-e43a-4235-b843-a3636cc60546</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column25</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-3d6fcd59-0c02-4f08-8f3b-df6bc0970b09</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
@@ -587,8 +493,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Placer_URL__c</fieldItem>
-                <identifier>RecordPlacer_URL_cField</identifier>
+                <fieldItem>Record.OneDrive_Folder_URL__c</fieldItem>
+                <identifier>RecordOneDrive_Folder_URL_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -678,37 +584,21 @@
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet-sf20vh0mky</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
+                    <name>source</name>
                     <value>Placer</value>
                 </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection12</identifier>
+                <componentName>marketDataSync</componentName>
+                <identifier>placerSyncCard</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet-3d6fcd59-0c02-4f08-8f3b-df6bc0970b09</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
+                    <name>source</name>
                     <value>CoStar</value>
                 </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection13</identifier>
+                <componentName>marketDataSync</componentName>
+                <identifier>costarSyncCard</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>
@@ -1147,6 +1037,26 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.UW_Approval_Date__c</fieldItem>
                 <identifier>RecordUW_Approval_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Market_Data_As_Of_Date__c</fieldItem>
+                <identifier>RecordMarket_Data_As_Of_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Market_Data_Snapshot__c</fieldItem>
+                <identifier>RecordMarket_Data_Snapshot_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>

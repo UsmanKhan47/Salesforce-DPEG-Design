@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Market_Data_Snapshot__c</fullName>
+    <description>System-written by MarketDataSnapshotService when this deal ENTERS underwriting approval (Underwriting_Status__c = &apos;Approved by Principals&apos;). Not for manual entry. Frozen, composed, human-readable copy of every Property__c market value the principals saw at approval - evidentiary, not analytical. A re-approval re-snapshots deliberately. This field is NOT reportable or filterable per metric; that cost was accepted deliberately (Q1) in exchange for the live and frozen layers never drifting, since both are composed by one method.</description>
+    <label>Market Data Snapshot</label>
+    <length>32768</length>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>20</visibleLines>
+</CustomField>

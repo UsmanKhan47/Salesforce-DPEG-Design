@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CoStar_Last_Synced_DateTime__c</fullName>
+    <description>Stamped by the Sync button on the CoStar card. STUB: no external system is contacted, so this records when a user pressed the button, not when data was refreshed.</description>
+    <externalId>false</externalId>
+    <label>CoStar Last Synced</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+    <unique>false</unique>
+</CustomField>

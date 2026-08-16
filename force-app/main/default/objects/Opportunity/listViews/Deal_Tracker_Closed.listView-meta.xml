@@ -14,5 +14,5 @@
         <operation>equals</operation>
         <value>Bought/Closed</value>
     </filters>
-    <label>Deal Tracker: Bought / Closed</label>
+    <label>Bought/Closed Deals</label>
 </ListView>

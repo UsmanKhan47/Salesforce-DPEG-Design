@@ -170,6 +170,77 @@ private class ContractExecutionServiceTest {
         System.assertEquals(Date.today(), cr.Execution_Date__c, 'CR execution date stamped');
     }
 
+    /**
+     * 🔴 FOUR NOTIFICATIONS PER EXECUTED ACQUISITION PSA, NOT THREE (FSD §23 gap #7,
+     * tranche 2, 2026-08-16). `Acquisitions_Team` — the team that WORKED the deal — was the
+     * only one not told it had executed.
+     *
+     * ⚠ THIS ASSERTS THE BATCH THAT WAS BUILT, NOT THE NOTIFICATIONS THAT WERE SENT, AND THE
+     * DISTINCTION IS WHY THE SEAM EXISTS RATHER THAN BEING AN `Assert` ON
+     * `GroupNotifier.sentCount`. Custom notifications cannot be queried in Apex, and
+     * `sentCount` counts only SUCCESSFUL sends — which is zero in any test org, because
+     * group MEMBERSHIP is not deployable metadata, so `Acquisitions_Team` and its three
+     * siblings resolve to no users. A `sentCount` assertion would read `0` whether this
+     * method built three notifications, four, or none, i.e. it would be VACUOUS and would
+     * pass unchanged if gap #7 were reverted. `GroupNotifierTest` already pins the SEND
+     * mechanism against a group with real members; this pins the RECIPIENT SET.
+     *
+     * ⚠ THE COUNT IS ASSERTED AS WELL AS THE MEMBERSHIP. Asserting only "Acquisitions_Team is
+     * in there" would stay green if a future edit duplicated a recipient — which is not
+     * cosmetic here, because each extra send costs ~6 ms of a 10 s synchronous CPU budget
+     * (the arithmetic is in the class header).
+     */
+    @isTest
+    static void executionNotifiesAcquisitionsAlongsideTheOriginalThree() {
+        Contract_Review__c cr = dealAtPsa();
+
+        Test.startTest();
+        cr.Negotiation_Status__c = 'Executed';
+        update cr;
+        Test.stopTest();
+
+        List<GroupNotifier.Request> built = ContractExecutionService.lastRunNotifications;
+        Assert.areEqual(4, built.size(),
+            'ONE executed acquisition PSA builds exactly four notifications - one per team. '
+            + 'Three means gap #7 was reverted; five means a recipient was duplicated.');
+
+        Set<String> groups = new Set<String>();
+        for (GroupNotifier.Request r : built) {
+            groups.add(r.recipientGroup);
+            Assert.areEqual(cr.Opportunity__c, r.targetRecordId,
+                'Every notification points at the deal, so the recipient can open it');
+            Assert.isTrue(String.isNotBlank(r.title), 'and carries a title');
+            Assert.isTrue(String.isNotBlank(r.body), 'and a body naming the deal');
+        }
+        Assert.areEqual(
+            new Set<String>{ 'Transactions_Team', 'Investor_Relations', 'Due_Diligence', 'Acquisitions_Team' },
+            groups,
+            'The three original recipients are UNCHANGED and Acquisitions_Team is added. '
+            + 'A missing original is a regression, not a rewrite.');
+    }
+
+    /**
+     * A DISPOSITION PSA still notifies NOBODY. Gap #7 sits inside `stampOpportunities`, which
+     * only the acquisition arm reaches, so the sell-side arm is untouched by construction —
+     * exactly as the Offering shell is. Asserting it here is what stops a future "just move
+     * the notify block up a level" refactor from telling the acquisitions team about a SALE.
+     */
+    @isTest
+    static void anExecutedDispositionPsaBuildsNoAcquisitionNotifications() {
+        ContractExecutionService.lastRunNotifications = new List<GroupNotifier.Request>();
+        Disposition__c sale =
+            TestDataFactory.createDisposition(TestDataFactory.defaultPropertyAsset().Id, true);
+        Contract_Review__c psa = salePsa(sale.Id);
+
+        Test.startTest();
+        execute(new List<Contract_Review__c>{ psa });
+        Test.stopTest();
+
+        Assert.areEqual(0, ContractExecutionService.lastRunNotifications.size(),
+            'The disposition arm builds no deal notifications at all - stampOpportunities, '
+            + 'which owns them, is unreachable from a Contract Review with a null Opportunity__c');
+    }
+
     @isTest
     static void aboutToCloseOpensTheTransactionDatedFromDayZero() {
         Contract_Review__c cr = dealAtPsa();

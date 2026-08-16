@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        FSD TRANCHE 2, ITEM 3 (2026-08-16) - WHY THIS FIELD EXISTS AND WHAT EACH BRANCH MEANS.
+        This note lives in a comment, not in <description>, and is INSIDE the root element on
+        purpose - a comment ABOVE <CustomField> breaks the sf deploy at conversion with a
+        misleading "unable to find matching parent xml file". Precedent: Deal_Bucket__c.
+
+        (i) WHY THIS FIELD EXISTS AT ALL. A Salesforce list-view filter cannot traverse a
+        lookup. The FSD's five LOI/PSA sub-states (Pending/Submitted/Accepted,
+        Negotiation/Executed) are CHILD-RECORD states living on LOI__c / Contract_Review__c,
+        not on Opportunity. This same-object text formula is what makes them filterable, the
+        exact mechanism Deal_Bucket__c already uses for its own five buckets.
+
+        (ii) DEAD IS TESTED FIRST AND RETURNS BLANK, so all five Deal_Tracker_LOI_*/PSA_*
+        list views inherit the dead exclusion for free and cannot drift from it - same shape
+        as Deal_Bucket__c's own dead clause.
+
+        (iii) A BLANK Primary_LOI__c / Primary_Contract__c FALLS TO THE ENTRY STATE, NOT TO
+        BLANK. Primary_LOI__c / Primary_Contract__c are stamped only for the child
+        OpportunityReviewService itself creates (ARCHITECTURE.md §2), so an irregularly
+        created child leaves the lookup null. A deal sitting at the LOI stage with no LOI
+        record genuinely IS "LOI - Pending" - failing to a meaningful bucket beats dropping
+        the deal out of every view.
+
+        (iv) ACQUISITION-ONLY, STRUCTURALLY. Reaching through Primary_LOI__c from an
+        Opportunity can only ever reach an acquisition LOI - a disposition LOI hangs off
+        Disposition__c and has no Opportunity lookup at all. That matters because
+        LOI__c.Stage__c's acquisition and disposition value sets overlap at 'Under Review'
+        (see that field's own header) - this formula never reads Stage__c and never reaches a
+        disposition row, so the overlap cannot mislead it.
+
+        (v) LOI_Approved__c MEANS "DPEG approved SENDING the LOI", NOT "the seller accepted"
+        (see that field's own <description>) - that is exactly the Pending -> Submitted
+        boundary this formula draws.
+
+        (vi) Contract_Signed__c IS STAMPED BY ContractExecutionService AT PSA EXECUTION.
+        ⚠ That field's own <description> currently reads "Checked when the LOI is fully
+        executed" - THAT DESCRIPTION IS STALE AND WRONG; the class header is authoritative.
+        Flagged as a finding, not corrected here (out of this item's scope).
+
+        (vii) 🔴 UNVERIFIED - THE SINGLE HIGHEST-RISK ASSUMPTION IN THIS FIELD.
+        Deal_Bucket__c proves a SAME-OBJECT formula is filterable in a Salesforce list view.
+        It does NOT prove a CROSS-OBJECT one is. Three of the five branches below
+        (PSA - Executed, PSA - Negotiation, LOI - Pending) read only same-object fields
+        (Contract_Signed__c, LOI_Approved__c) so they are unaffected either way. The two that
+        read Primary_LOI__r.LOI_Signed__c (LOI - Submitted, LOI - Accepted) are the ones at
+        risk. VERIFY IN ORG BEFORE TRUSTING THE DEPLOY: save one of the five
+        Deal_Tracker_LOI_*/PSA_* list views by hand and confirm it actually filters (post-
+        deploy gate G2). NAMED FALLBACK if it fails: a Checkbox on Opportunity maintained by
+        the already-live flows/LOI_Signed_Notify (which fires on exactly
+        LOI__c.LOI_Signed__c = true), turning the formula fully same-object. Do not build
+        that fallback speculatively.
+
+        Uses ISPICKVAL(...), never == on a picklist, and never ISPICKVAL on LOI__c.Stage__c -
+        the standing repo rule, because 'Prepare/Review' carries a literal slash.
+    -->
+    <fullName>Deal_Sub_Stage__c</fullName>
+    <description>LOI/PSA sub-stage for list-view filtering, derived from stage + child-record signature. Reporting-only projection - automation must branch on StageName/LOI__c/Contract_Review__c fields directly, never on this formula (before-save flows cannot read formula fields). See the XML comment on this file for the branch-by-branch rationale.</description>
+    <externalId>false</externalId>
+    <formula>IF( OR( ISPICKVAL(StageName, &apos;Dead/Pass&apos;), ISPICKVAL(Deal_Category__c, &apos;Dead&apos;) ), &apos;&apos;,
+IF( ISPICKVAL(StageName, &apos;LOI&apos;),
+      IF( AND( NOT(ISBLANK(Primary_LOI__c)), Primary_LOI__r.LOI_Signed__c ), &apos;LOI - Accepted&apos;,
+      IF( LOI_Approved__c,                                                    &apos;LOI - Submitted&apos;,
+                                                                              &apos;LOI - Pending&apos; ) ),
+IF( ISPICKVAL(StageName, &apos;Under Contract (PSA)&apos;),
+      IF( Contract_Signed__c, &apos;PSA - Executed&apos;, &apos;PSA - Negotiation&apos; ),
+      &apos;&apos; ) ) )</formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+    <label>Deal Sub Stage</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

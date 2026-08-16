@@ -5,8 +5,10 @@
  *   1. Stamps the parent Opportunity: Contract_Signed__c, Contract_Executed_Date__c
  *      (Day 0), Deal_Status__c = 'Contract Signed'. The deal stays at the coarse
  *      'Under Contract (PSA)' stage; Deal_Status marks it executed / about to close.
- *   2. Notifies Transactions_Team + Investor_Relations (PSA executed) and
- *      Due_Diligence (Danish: DD materials available once the contract is signed).
+ *   2. Notifies Transactions_Team + Investor_Relations (PSA executed), Due_Diligence
+ *      (Danish: DD materials available once the contract is signed) and — since tranche 2,
+ *      2026-08-16, FSD §23 gap #7 — Acquisitions_Team. THAT IS FOUR PER DEAL, NOT THREE;
+ *      see the CPU arithmetic below before adding a fifth.
  *   3. Opens the IR `Offering__c` shell (FSD Tranche 1, 2026-08-16) via
  *      OfferingService.ensureOnPsaExecuted — idempotent, allOrNone = false, SYSTEM_MODE, and
  *      ACQUISITION-ONLY BY CONSTRUCTION because the call sits inside stampOpportunities, whose
@@ -31,6 +33,30 @@
  *   ACQUISITION  (Opportunity__c set)   -> stamp the Opportunity (Contract Signed, Day 0) + notify
  *   DISPOSITION  (Disposition__c set)   -> move Disposition__c.Disposition_Stage__c to 'Closing'
  *
+ * ── 🔴 THE NOTIFICATION CPU BUDGET — READ THIS BEFORE ADDING A FIFTH RECIPIENT ──
+ * `GroupNotifier`'s MEASURED cost model (its own header, measured on `usman-dpeg`
+ * 2026-08-14) is **≈ 6.0 ms CPU per `send()` + 0.22 ms per RECIPIENT**, with zero SOQL and
+ * zero DML per send. `stampOpportunities` sends one notification PER OPPORTUNITY PER GROUP,
+ * so the count scales with the trigger chunk:
+ *
+ *     recipients per deal      3  ->  4         (tranche 2, gap #7)
+ *     sends at a 200-row chunk 600 -> 800
+ *     synchronous CPU          ~3.7 s -> ~5.0 s   against a 10 s limit
+ *
+ * ⚠ THAT IS A PRE-EXISTING EXPOSURE WIDENED BY ~25%, NOT A NEW ONE — and it is spent BEFORE
+ * the rest of the transaction (the stamp, the Offering shell, every downstream trigger). A
+ * 200-row `Contract_Review__c` chunk all flipping to `Executed` at once is a data-load
+ * scenario rather than an ordinary day, which is why gap #7 was built as asked rather than
+ * deferred. But the headroom is now roughly half, and a FIFTH recipient takes it to ~6.3 s.
+ * 🔴 Anyone adding one should either bound the chunk or move the notification batch
+ * asynchronous — and must not do it on the assumption that this is still cheap.
+ *
+ * ⚠ Do NOT "optimise" this by calling `GroupNotifier.send()` inside the loop. That is the
+ * exact defect the batching comment inside `stampOpportunities` records: it re-enters an
+ * already-bulkified method once per record and costs 3 fresh QUERIES each time (1,800 for a
+ * 200-record chunk against a 100-query limit). `notify()` is O(1) in queries for any batch
+ * size, so a fourth recipient adds CPU and NOT A SINGLE QUERY.
+ *
  * ⚠ THE BRANCH IS ADDITIVE, NOT DEFENSIVE, AND THE DIFFERENCE MATTERS TO ANYONE PRICING IT. An
  * earlier brief warned that an executed SALE would mint a phantom acquisition `Transaction__c`.
  * THAT RISK NO LONGER EXISTS and nothing here guards against it: Transaction creation left this
@@ -51,6 +77,25 @@
  *      neither. An if/else on record type would have had to invent an answer for both cases.
  */
 public with sharing class ContractExecutionService {
+
+    /**
+     * The notification batch the last `stampOpportunities` built, in build order — a
+     * `lastRun*` test seam of the house shape (`ExtractAddressQueueable.lastRunQueryCount`,
+     * `EmailThreadAdopterService.lastRunFailureCodes`, `DealFolderQueueable.lastRunChainedIds`).
+     *
+     * 🔴 IT EXISTS BECAUSE THE NOTIFICATION SET IS OTHERWISE UNFALSIFIABLE FROM A TEST.
+     * Custom notifications cannot be queried in Apex, and `GroupNotifier.sentCount` counts
+     * only SUCCESSFUL sends — which is zero here, because group MEMBERSHIP is not deployable
+     * metadata, so `Acquisitions_Team` and its siblings resolve to no users in a test org.
+     * An assertion on `sentCount` would therefore be VACUOUS: it would read `0` whether this
+     * method sent three notifications, four, or none at all. Asserting the batch this method
+     * BUILT is the only non-vacuous pin available without inserting `GroupMember` rows under
+     * `System.runAs` (a setup-object mixed-DML hop for a read-only fact).
+     *
+     * ⚠ In-transaction only; it does not survive the transaction and is not for monitoring.
+     */
+    @TestVisible
+    private static List<GroupNotifier.Request> lastRunNotifications = new List<GroupNotifier.Request>();
 
     @TestVisible private static final String EXECUTED = 'Executed';
 
@@ -253,7 +298,13 @@ public with sharing class ContractExecutionService {
             notifications.add(buildNotification('Due_Diligence',
                 'Due diligence materials available',
                 o.Name + ': the contract is signed - DD materials are ready for review.', o.Id));
+            // FSD §23 gap #7 (tranche 2, 2026-08-16). The team that WORKED the deal was the
+            // only one not told it had executed. See the CPU arithmetic in the class header.
+            notifications.add(buildNotification('Acquisitions_Team',
+                'PSA executed',
+                o.Name + ': the PSA is executed.', o.Id));
         }
+        lastRunNotifications = notifications;
         GroupNotifier.notify(notifications);
 
         // ── THE IR OFFERING SHELL (FSD Tranche 1, Item 1 — FSD §9 Conversion 3) ──

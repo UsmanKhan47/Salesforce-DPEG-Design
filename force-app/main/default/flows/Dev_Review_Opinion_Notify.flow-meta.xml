@@ -7,11 +7,48 @@
         <locationY>288</locationY>
         <actionName>GroupNotifier</actionName>
         <actionType>apex</actionType>
+        <connector>
+            <targetReference>Notify_Development_Construction_Team</targetReference>
+        </connector>
         <flowTransactionModel>CurrentTransaction</flowTransactionModel>
         <inputParameters>
             <name>recipientGroup</name>
             <value>
                 <stringValue>Acquisitions_Team</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value>
+                <stringValue>Development opinion received</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value>
+                <elementReference>fBody</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <actionCalls>
+        <name>Notify_Development_Construction_Team</name>
+        <label>Notify Development Construction Team</label>
+        <locationX>176</locationX>
+        <locationY>408</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value>
+                <stringValue>Development_Construction_Team</stringValue>
             </value>
         </inputParameters>
         <inputParameters>

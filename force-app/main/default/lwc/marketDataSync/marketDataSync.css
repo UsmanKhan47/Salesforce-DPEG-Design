@@ -1,0 +1,51 @@
+/*
+ * marketDataSync — SLDS 2 design tokens only (--slds-g-*), each with a literal fallback so the card
+ * still renders where a token is not resolved. No hardcoded colour appears without one, and there is
+ * no hardcoded spacing at all: every gap comes from an SLDS utility class in the template.
+ *
+ * The styling deliberately does almost nothing. "Keep the design the same" means the card must look
+ * like the flexipage:fieldSection it replaces, and that section's appearance comes from SLDS's own
+ * classes (slds-card, slds-section__title, slds-form-element) — so anything added here is a
+ * DIVERGENCE from the target, not an improvement toward it.
+ */
+
+.mds-card {
+    /* The FlexiPage region already supplies the surrounding gutter. */
+    margin: 0;
+}
+
+.mds-header {
+    display: flex;
+    align-items: center;
+}
+
+/*
+ * "Never" / "Not available" in the Last Synced row. Muted because the absence of a value is not an
+ * error and must not read as one — the row is legitimately empty on every deal until someone
+ * presses the button.
+ */
+.mds-muted {
+    color: var(--slds-g-color-neutral-base-60, #939393);
+}
+
+/*
+ * The unsupported-source alert. Colour REINFORCES the role="alert"; it never carries the meaning on
+ * its own, because the message names the property and enumerates the accepted values in words.
+ */
+.mds-error {
+    color: var(--slds-g-color-error-base-30, #b71c1c);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    margin: 0;
+}
+
+/* The "you do not have edit access" note beside a disabled button. */
+.mds-reason {
+    color: var(--slds-g-color-neutral-base-30, #444444);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    margin: 0;
+}
+
+.mds-footer {
+    border-top: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+}

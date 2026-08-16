@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Monthly_Visits__c</fullName>
+    <description>Placer.ai monthly visit count for this deal. Manually entered - no live Placer.ai connection exists. Mirrors Property__c.Monthly_Visits__c; the two are not reconciled.</description>
+    <externalId>false</externalId>
+    <label>Monthly Visits</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

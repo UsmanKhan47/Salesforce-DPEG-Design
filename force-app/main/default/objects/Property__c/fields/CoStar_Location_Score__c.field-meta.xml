@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CoStar_Location_Score__c</fullName>
+    <description>CoStar location quality score for this property. Manually entered today - no live CoStar connection exists (§18.4 "Integration Off" fallback). Owner: CoStar.</description>
+    <externalId>false</externalId>
+    <label>CoStar Location Score</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>1</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

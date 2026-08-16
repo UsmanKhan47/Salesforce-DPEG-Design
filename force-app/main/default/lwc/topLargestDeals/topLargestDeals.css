@@ -1,0 +1,27 @@
+/*
+ * Shared `.lv-*` list-view chrome, matching every other list card on the Acquisition home
+ * page (c/recentOpportunities, c/recentLeads). Keeping the footer identical is the point —
+ * two cards side by side that style their "View All" differently read as a defect.
+ *
+ * SLDS 2 design tokens with hex fallbacks, so the card still renders correctly if it is
+ * ever placed somewhere the DPEG token set has not loaded.
+ *
+ * ⚠ THE STAGE / DEAL-TYPE PILL COLOURS ARE NOT HERE, AND THAT IS STRUCTURAL RATHER THAN AN
+ * OVERSIGHT. They live as inline styles built in the JS and passed through
+ * `typeAttributes`, because `c/listDatatable` is a `lightning/datatable` SUBCLASS and a
+ * datatable subclass cannot reach its custom cell templates from a `.css` file — see that
+ * bundle's own class comment. Moving them here would silently stop applying them.
+ */
+.view-all-footer {
+    text-align: center;
+}
+
+.view-all-footer a {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    text-decoration: none;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}
+
+.view-all-footer a:hover {
+    text-decoration: underline;
+}

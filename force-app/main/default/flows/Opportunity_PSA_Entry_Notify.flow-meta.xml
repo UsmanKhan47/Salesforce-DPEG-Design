@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Notify_Acquisitions_Team</name>
+        <label>Notify Acquisitions Team</label>
+        <locationX>176</locationX>
+        <locationY>288</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <connector>
+            <targetReference>Notify_Legal_Team</targetReference>
+        </connector>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value>
+                <stringValue>Acquisitions_Team</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value>
+                <stringValue>Deal under contract (PSA)</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value>
+                <elementReference>$Record.Name</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <actionCalls>
+        <name>Notify_Legal_Team</name>
+        <label>Notify Legal Team</label>
+        <locationX>176</locationX>
+        <locationY>408</locationY>
+        <actionName>GroupNotifier</actionName>
+        <actionType>apex</actionType>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>recipientGroup</name>
+            <value>
+                <stringValue>Legal_Team</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>title</name>
+            <value>
+                <stringValue>Deal under contract (PSA) - legal review</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>body</name>
+            <value>
+                <elementReference>$Record.Name</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>targetRecordId</name>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </inputParameters>
+        <nameSegment>GroupNotifier</nameSegment>
+    </actionCalls>
+    <apiVersion>67.0</apiVersion>
+    <environments>Default</environments>
+    <interviewLabel>Opportunity PSA Entry Notify {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Opportunity PSA Entry Notify</label>
+    <processType>AutoLaunchedFlow</processType>
+    <runInMode>SystemModeWithoutSharing</runInMode>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Notify_Acquisitions_Team</targetReference>
+        </connector>
+        <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>StageName</field>
+            <operator>EqualTo</operator>
+            <value>
+                <stringValue>Under Contract (PSA)</stringValue>
+            </value>
+        </filters>
+        <object>Opportunity</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>
