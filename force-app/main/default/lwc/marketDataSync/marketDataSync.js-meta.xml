@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Market Data Sync</masterLabel>
-    <description>One market-data source (Placer or CoStar) rendered as an Opportunity detail card, with a Last Synced (manual) row and a Sync button. STUB: Sync stamps a timestamp and contacts no external system. Drop one instance per source and set the Data source property.</description>
+    <description>One market-data source (Placer or CoStar) as an Opportunity card, with a Last Synced (manual) row and a Sync button. STUB: Sync stamps a timestamp and contacts no external system. Drop one instance per source and set the Data source property.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>
