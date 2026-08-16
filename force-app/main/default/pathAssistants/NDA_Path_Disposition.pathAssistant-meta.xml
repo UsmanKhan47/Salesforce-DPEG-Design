@@ -50,12 +50,40 @@
         executed file is attached to the record. Method__c already offers DocuSign, so an
         envelope callback can drive the same states later without reshaping this path.
 
-        STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THIS FILE. Runtime display order
-        comes from the Status__c picklist value order (sorted=false); the order in this file is
-        only for readability. The master set is deliberately ordered
+        STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THIS FILE, FOR THE PATH BUBBLES.
+        Runtime PATH display order comes from the Status__c picklist value order (sorted=false);
+        the order in this file is only for readability.
+
+        ⚠ AMENDED 2026-08-16 - THE CLAIM THIS PARAGRAPH USED TO MAKE IS NOW FALSE AND IS RETRACTED
+        RATHER THAN SILENTLY LEFT TO MISLEAD. It asserted the master set was "deliberately ordered
         Pending, Not Sent, Sent, Received, Signed, Declined so that BOTH record types render
         correctly with one ordering: acquisition sees Pending -> Sent -> Received -> Signed and
-        disposition sees Not Sent -> Sent -> Signed -> Declined.
+        disposition sees Not Sent -> Sent -> Signed -> Declined." The acquisition NDA sequence was
+        REVERSED the same day (commit 804e688): acquisition now runs
+        Pending -> Received -> Signed -> Sent, with 'Sent' TERMINAL rather than a middle step, and
+        this file's own sequence (Not Sent -> Sent -> Signed -> Declined, below) is unchanged. The
+        master field's value order was DELIBERATELY NOT touched by that reversal (see the decision
+        recorded in NDA_Path_Acquisition's own comment) - which means the "one master order serves
+        both" claim this paragraph made is no longer even attempted, let alone true: the master
+        order (Pending, Not Sent, Sent, Received, Signed, Declined) puts acquisition's 'Signed'
+        ahead of 'Sent', the OPPOSITE of the reversed acquisition sequence's ... Signed -> Sent.
+
+        🔴 THE UNDERLYING CONSTRAINT IS REAL AND IS THE REASON NO FIX WAS ATTEMPTED HERE:
+        acquisition and disposition need OPPOSITE orders on the values they SHARE. Acquisition now
+        ends ... Signed -> Sent; disposition ends ... Sent -> Signed. ONE master picklist order
+        cannot satisfy both directions for the same shared pair at once, so there is no reordering
+        of Status__c that fixes the acquisition side without breaking this one.
+
+        WHAT IS STILL GENUINELY UNVERIFIED, RECORDED HERE RATHER THAN ASSUMED IN EITHER DIRECTION:
+        whether the Path's bubble order and the Status__c field's edit-form DROPDOWN order are
+        actually driven by this master field's value order at all, versus by each record type's
+        own picklistValues order (Acquisition_NDA's was reordered to Pending, Received, Signed,
+        Sent in the same follow-up that added this comment) or by each PathAssistant file's own
+        <pathAssistantSteps> order. No in-org check was performed to distinguish these. See
+        NDA_Path_Acquisition's own comment for the fuller statement of this open question and its
+        stated fallback - the Path bubbles in BOTH files are independently confirmed to already
+        list the correct sequence for their own record type regardless of which mechanism turns
+        out to govern rendering, so nothing here depends on resolving it.
 
         NOT SENT SITS SECOND IN THE MASTER SET ON PURPOSE, AND MOVING IT IS SAFE. It was
         originally appended fifth, which rendered this path as Sent, Signed, Not Sent, Declined -

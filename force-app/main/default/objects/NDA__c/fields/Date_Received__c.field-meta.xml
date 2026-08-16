@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        This comment must stay INSIDE the root <CustomField> element - a comment placed ABOVE the
+        root breaks `sf` deploy at source conversion with "unable to find matching parent xml
+        file".
+
+        USER DECISION 2026-08-16 (post-reversal follow-up), CLOSING FSD §27.6. Under the reversed
+        acquisition NDA sequence (Pending -> Received -> Signed -> Sent, commit 804e688), the
+        Received step had no field of its own to record a date against - a gap flagged in that
+        commit's pathAssistants/NDA_Path_Acquisition comment and tracked as FSD §27.6. This field
+        closes it. It follows the established shape of its Date_Sent__c / Date_Signed__c siblings
+        on this object exactly: plain Date, not required, not tracked, no default value, no
+        formula - a manual stamp a user enters on the Received Path step, the same way Date_Sent__c
+        is entered on Sent and Date_Signed__c on Signed.
+
+        ⚠ NOTHING POPULATES THIS FIELD AUTOMATICALLY. It is not derived, not defaulted from
+        CreatedDate, and not written by any flow or trigger in this repo - a user stamps it by hand
+        at the Received Path step, exactly like Date_Sent__c and Date_Signed__c. Do not mistake a
+        blank value for "not yet received" versus "received but the date was never entered" - both
+        read the same way.
+
+        SCOPE: Acquisition_NDA only, by content rather than by restriction - there is no picklist
+        to restrict on a Date field. Disposition_NDA has no Received step in its own sequence
+        (Not Sent -> Sent -> Signed, plus the Declined off-ramp) and does not surface this field on
+        its Path; see pathAssistants/NDA_Path_Disposition's own comment for that decision and why
+        it was made on the evidence rather than for symmetry with the acquisition side.
+
+        Deliberately NOT wired into Days_Out__c or any other formula in this same follow-up -
+        Days_Out__c's own comment names this field as the rejected "candidate remedy 1" and records
+        why remedy 2 (restriction to non-terminal statuses) was chosen instead. Re-pointing
+        Days_Out__c at this field is a future decision, not an implication of adding it.
+    -->
+    <fullName>Date_Received__c</fullName>
+    <label>Date Received</label>
+    <description>Date the counterparty's NDA was received by DPEG, ahead of DPEG's own review and signature. Manual stamp entered on the Received step of the acquisition NDA Path - nothing populates it automatically. Not surfaced on the disposition NDA Path, which has no Received step.</description>
+    <inlineHelpText>Enter the date the broker's NDA arrived. This is not set automatically - stamp it yourself when you log the received document.</inlineHelpText>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

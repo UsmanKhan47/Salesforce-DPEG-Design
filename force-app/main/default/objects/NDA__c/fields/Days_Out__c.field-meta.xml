@@ -3,33 +3,120 @@
     <!--
         This comment must stay INSIDE the root <CustomField> element - a comment placed ABOVE the
         root breaks `sf` deploy at source conversion with "unable to find matching parent xml
-        file". The formula below is UNCHANGED by this note; this is documentation only.
+        file".
 
-        🔴 KNOWN CONSEQUENCE OF THE 2026-08-16 ACQUISITION NDA SEQUENCE REVERSAL - RECORDED, NOT
-        FIXED. This formula (TODAY() - Date_Sent__c) was written when the acquisition sequence was
-        Pending -> Sent -> Received -> Signed, with 'Sent' as a MIDDLE step - so it correctly
-        counted days an NDA had been out awaiting signature. The sequence is now
-        Pending -> Received -> Signed -> Sent, with 'Sent' as the TERMINAL step, so this same
-        formula now counts days since the NDA was FINISHED, growing forever after completion
-        rather than stopping. It is user-visible: Days_Out__c is a column on
-        reports/Acquisitions/NDA_Tracker_Recent, so a completed NDA will read e.g. "out 340 days".
+        🔴 USER DECISION 2026-08-16 (post-reversal follow-up, option 2 of the three candidates this
+        comment used to list) - THE FORMULA IS NOW RECORD-TYPE AWARE AND BLANKS ON TERMINAL STATES.
+        The pre-reversal formula (TODAY() - Date_Sent__c) counted days an NDA had been out awaiting
+        signature, back when 'Sent' was a MIDDLE step on the acquisition sequence
+        (Pending -> Sent -> Received -> Signed). The sequence reversed to
+        Pending -> Received -> Signed -> Sent with 'Sent' now TERMINAL there, so the old formula
+        would have counted days since the NDA was FINISHED, growing forever. A flat status
+        exclusion cannot fix this: 'Sent' is terminal on Acquisition_NDA but a genuine WAITING
+        state on Disposition_NDA (Not Sent -> Sent -> Signed, plus the Declined off-ramp), so the
+        same status value means opposite things depending on record type - the formula must branch
+        on RecordType.DeveloperName, not on Status__c alone.
 
-        This field is unchanged by the sequence-reversal change and the drift is intentionally
-        left for a USER decision. Candidate remedies, named without choosing one:
-          1. Re-point the formula at a future Date_Received__c field once one exists (see the
-             companion gap noted in pathAssistants/NDA_Path_Acquisition's own 2026-08-16 comment
-             and FSD §27.6) - would restore "days awaiting signature" as the meaning.
-          2. Restrict the formula to non-terminal statuses (e.g. blank once Status__c = 'Sent' on
-             an Acquisition_NDA row) - keeps the field but stops it from growing past completion.
-          3. Retire this field for acquisition NDAs specifically, since disposition NDAs' own
-             'Sent' is not terminal and are unaffected by this drift.
-        Do not implement any of the three without an explicit decision from whoever owns this
-        report/field.
+        The new formula returns blank once the NDA has reached ITS OWN record type's terminal
+        state - 'Sent' for Acquisition_NDA, 'Signed' OR 'Declined' for Disposition_NDA - and
+        computes TODAY() - Date_Sent__c only while genuinely outstanding.
+
+        🔴 COUNTER-INTUITIVE CONSEQUENCE, STATED PLAINLY SO IT IS NOT MISTAKEN FOR A BUG: on
+        Acquisition_NDA the ONLY status that ever populates Date_Sent__c is 'Sent' itself (see the
+        Sent step's <fieldNames> in pathAssistants/NDA_Path_Acquisition), and 'Sent' is now
+        terminal - so Days_Out__c IS PERMANENTLY BLANK FOR EVERY ACQUISITION NDA after this change.
+        That is the CORRECT outcome under the reversed process: nothing is out awaiting return
+        anymore; the waiting period is now "the broker's NDA has not arrived yet", which has no
+        stamped date until Date_Received__c is populated (added in this same follow-up - see that
+        field's own comment) and this field was never re-pointed at it (candidate remedy 1 was not
+        chosen; remedy 2, restriction, was). The field remains fully meaningful on Disposition_NDA,
+        where 'Sent' is a real waiting state and the days-out count still runs until Signed or
+        Declined.
+
+        ⚠ REPORT CONSEQUENCE: reports/Acquisitions/NDA_Tracker_Recent will now show a blank
+        Days_Out__c for every acquisition row. This is INTENDED and strictly better than the
+        growing-forever number the pre-fix formula would have shown for a completed NDA - do not
+        "fix" the report's blankness back without revisiting this decision first.
+
+        🔴 CORRECTION 2026-08-16 (SAME-DAY, POST-REVIEW) - THE FIRST VERSION OF THIS FORMULA HAD NO
+        BRANCH FOR A BLANK / MASTER RECORD TYPE, AND THAT WAS THE CASE THAT ACTUALLY MATTERED. It
+        tested RecordType.DeveloperName = "Acquisition_NDA" and = "Disposition_NDA" only. A row
+        whose RecordTypeId is null or Master matches NEITHER, so the OR was false and the formula
+        fell through to TODAY() - Date_Sent__c regardless. RecordStageAdvanceService.sequenceFor /
+        sequenceKeyFor (see that class) treats a null/Master record type as ACQUISITION via
+        StageConfig.defaultTypeKey, and its own header calls that fallback "LOAD-BEARING, NOT
+        DEFENSIVE": between the record-type deploy (T1) and the row migration (gate T-B), every
+        live NDA in the org sits on Master. Left unfixed, this field's restriction would have done
+        nothing on today's real data - Days_Out__c would keep growing forever on precisely the
+        acquisition NDAs this change exists to fix, while the repo looked correct and the org was
+        unchanged. Confirmed empirically (not merely reasoned) 2026-08-16: SELECT Id,
+        DeveloperName, Name FROM RecordType WHERE SobjectType = 'NDA__c' against usman-dpeg returns
+        only Acquisition_NDA and Disposition_NDA - the Master pseudo-type has no queryable row on
+        this object, so a record with RecordTypeId null OR pointed at Master resolves
+        RecordType.DeveloperName to BLANK either way. ISBLANK(RecordType.DeveloperName) below is
+        therefore the correct and sufficient test for "this row has no real record type yet" - no
+        separate literal "Master" string comparison is needed or added.
+
+        THE FIX TREATS BLANK RECORD TYPE AS ACQUISITION, TO MATCH
+        RecordStageAdvanceService.defaultTypeKey - NAMED HERE ON PURPOSE SO THE TWO CANNOT DRIFT
+        APART WITHOUT SOMEONE NOTICING. If that service's fallback is ever repointed to a different
+        default (e.g. if the disposition side becomes the majority-live-data type), THIS FORMULA
+        MUST MOVE WITH IT - grep this repo for "defaultTypeKey" before changing either one alone.
+
+        ⚠ THIS COUPLING IS TEMPORARY IN INTENT, NOT IN ENFORCEMENT. It exists only because of the
+        un-run row migration (gate T-B) that RecordStageAdvanceService's own header describes -
+        once every live NDA carries a real record type, the blank/Master branch below becomes
+        unreachable on live data and could in principle be retired. But nothing in this repo
+        guarantees WHEN that migration runs, so the formula must keep handling a blank record type
+        correctly regardless of whether that day has arrived - this is not a stopgap that is safe
+        to leave half-done.
+
+        ⚠ KNOWN, DELIBERATE ASYMMETRY - DO NOT "FIX" IT HERE. A Master-type DISPOSITION row (should
+        one ever exist) is treated as ACQUISITION by this formula, exactly as
+        RecordStageAdvanceService already treats it. That is a pre-existing consequence of the
+        SHARED fallback documented in that class's header, not a new decision made here, and
+        matching it - rather than inventing a different, field-local rule - is the point. A
+        Master-type disposition NDA is architecturally supposed to be closed by gate T-A1/T-B, the
+        same gate this whole correction is scoped around.
+
+        🔴 SHAPE CHOSEN, ARGUED DELIBERATELY: "Acquisition_NDA OR blank" (enumeration), NOT "NOT
+        Disposition_NDA" (inversion). Two candidate shapes were considered:
+          - Enumeration ("Acquisition_NDA OR blank") lists the acquisition case explicitly. A
+            future THIRD record type on this object (named, real, not yet configured) falls
+            through to the OLD, safe TODAY() - Date_Sent__c behavior - it keeps counting rather
+            than silently going blank under a rule nobody decided applies to it.
+          - Inversion ("NOT Disposition_NDA") makes acquisition the default for everything else,
+            silently sweeping a future third record type into the acquisition terminal-blanking
+            rule with no one having decided that is correct for it.
+        Enumeration was chosen because it matches RecordStageAdvanceService's OWN stated stance in
+        the opposite direction: that class explicitly REFUSES (never defaults) "A REAL, NAMED
+        record type with no configured sequence" - its header calls a silent fallback there
+        "unsafe rather than merely untidy". A formula cannot throw, so it cannot literally refuse -
+        but enumeration is the shape that does NOT silently apply the acquisition rule to an
+        unconfigured third type, which is the same caution in formula terms: an unrecognised
+        record type keeps showing its (possibly stale) day count rather than having it silently
+        hidden by a rule that was only ever argued for two named types plus the migration-window
+        blank/Master case.
     -->
     <fullName>Days_Out__c</fullName>
-    <description>Days since the NDA was sent (TODAY - Date Sent). Gives the dashboard NDA Tracker table a numeric column and flags aging NDAs.</description>
+    <description>Days since the NDA was sent (TODAY - Date Sent), blank once the NDA reaches its own record type's terminal state (Sent for Acquisition_NDA or blank/Master, matching RecordStageAdvanceService.defaultTypeKey; Signed or Declined for Disposition_NDA). Acquisition and not-yet-migrated (blank/Master) NDAs therefore read permanently blank once Sent - see the field's own comment for why. Gives the dashboard NDA Tracker table a numeric column and flags aging NDAs still genuinely outstanding.</description>
     <externalId>false</externalId>
-    <formula>IF(ISBLANK(Date_Sent__c), null, TODAY() - Date_Sent__c)</formula>
+    <formula><![CDATA[IF(
+  ISBLANK(Date_Sent__c),
+  null,
+  IF(
+    OR(
+      AND(
+        OR(RecordType.DeveloperName = "Acquisition_NDA", ISBLANK(RecordType.DeveloperName)),
+        TEXT(Status__c) = "Sent"
+      ),
+      AND(RecordType.DeveloperName = "Disposition_NDA", TEXT(Status__c) = "Signed"),
+      AND(RecordType.DeveloperName = "Disposition_NDA", TEXT(Status__c) = "Declined")
+    ),
+    null,
+    TODAY() - Date_Sent__c
+  )
+)]]></formula>
     <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
     <label>Days Out</label>
     <precision>18</precision>

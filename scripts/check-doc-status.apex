@@ -11,5 +11,5 @@ if (target == null) {
 }
 System.debug('TARGET OPP :: ' + target);
 OpportunityDocStatusController.DocStatus d = OpportunityDocStatusController.getDocStatus(target);
-System.debug('NDA :: has=' + d.hasNda + ' status=' + d.ndaStatus + ' sent=' + d.ndaSent + ' expiry=' + d.ndaExpiry + ' signed=' + d.ndaSigned);
+System.debug('NDA :: has=' + d.hasNda + ' status=' + d.ndaStatus + ' signedCopyReturned=' + d.ndaSignedCopyReturned + ' expiry=' + d.ndaExpiry + ' signed=' + d.ndaSigned);
 System.debug('LOI :: has=' + d.hasLoi + ' status=' + d.loiStatus + ' price=' + d.loiOfferPrice + ' cap=' + d.loiCapRate + ' submitted=' + d.loiSubmitted);

@@ -109,11 +109,46 @@
         (objects/NDA__c/fields/Days_Out__c.field-meta.xml) for the candidate remedies. The formula
         was deliberately NOT changed here.
 
-        (b) lwc/dealDocStatus shows the same drift. OpportunityDocStatusController exposes
-        ndaSent = nda.Date_Sent__c and the component labels it as the NDA being sent to the
-        counterparty. Under this order that date now means "signed copy returned to the broker" -
-        the opposite of what the label says. Apex/LWC are out of scope for this metadata-only
-        change; recorded here so a future Apex/LWC pass has the pointer.
+        (b) SUPERSEDED 2026-08-16 (SAME-DAY FOLLOW-UP) - THE PARAGRAPH THIS REPLACES GUESSED WRONG
+        ABOUT WHAT THE LABEL WAS, AND THE ACTUAL LABEL WAS MORE DANGEROUS THAN THE GUESS. It read
+        "OpportunityDocStatusController exposes ndaSent = nda.Date_Sent__c and the component
+        labels it as the NDA being sent to the counterparty" and reasoned from the DTO member's
+        name rather than from the component itself. THAT IS FALSE. The live lwc/dealDocStatus
+        label was `Received <date>`, not "sent to the counterparty" - confirmed by a developer
+        agent actually reading the component, not inferred from the DTO name.
+
+        WHY THE REAL LABEL WAS MORE DANGEROUS THAN THE GUESSED ONE. The guessed label ("sent to
+        the counterparty") would have merely contradicted the new order - a user could notice the
+        mismatch and go looking for why. The ACTUAL label, "Received <date>", did something worse:
+        this same reorder made 'Received' a genuine step in the acquisition sequence with its own
+        field (NDA__c.Date_Received__c, added in this same follow-up - see that field's own
+        comment). So the stale label did not read as WRONG, it read as a CORRECT date for a
+        DIFFERENT step - a user seeing "Received Mar 10" would reasonably conclude that is when
+        the broker's NDA arrived, when it is in fact when DPEG returned the signed copy. A
+        misleading-but-plausible label is worse than an obviously wrong one, because nothing
+        prompts anyone to check it.
+
+        FIXED, SAME FOLLOW-UP: the label now reads `Signed copy returned <date>`, and the DTO
+        member on OpportunityDocStatusController was RENAMED ndaSent -> ndaSignedCopyReturned.
+        Anyone grepping for ndaSent after 2026-08-16 will find nothing - the new name is recorded
+        here for exactly that reason. Apex/LWC were out of scope for the metadata-only NDA
+        tranche this file otherwise belongs to; this fix landed in the parallel developer change.
+
+        TWO FURTHER, OPEN CONSEQUENCES OF THE SAME REORDER, RECORDED HERE BRIEFLY BECAUSE THEY
+        CURRENTLY LIVE ONLY IN AN AGENT REPORT:
+
+        - NDA_TONE in lwc/dealDocStatus may now be INVERTED. 'Sent' renders blue (in progress)
+          though it is now terminal, while 'Signed' renders green (done) though it is now
+          mid-sequence. 'Received: blue' was added because that status was falling through to
+          grey, the unknown-status fallback. The Sent/Signed colours were deliberately NOT changed
+          as part of this fix - it is a real judgement call (the deal gate releases at Signed; the
+          NDA process itself finishes at Sent) and is left with the user.
+
+        - A DATA RESIDUAL THE REORDER CANNOT FIX. The value set was reordered, not migrated, so
+          acquisition NDAs worked before 2026-08-16 carry Date_Sent__c stamped under the OLD
+          meaning ("we sent it out"), and nothing on the record distinguishes those rows from ones
+          stamped under the new meaning. The label above is therefore UNCONDITIONAL by necessity -
+          a status-conditional label would invent a rule the data cannot support.
     -->
     <fullName>Acquisition_NDA</fullName>
     <active>true</active>

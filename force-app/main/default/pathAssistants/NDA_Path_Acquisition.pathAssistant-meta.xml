@@ -52,10 +52,16 @@
         Date_Sent__c WAS ALSO REMOVED FROM THE Received STEP'S <fieldNames> in the same pass
         (2026-08-16). Under the new order nothing has been sent to anyone by the time a record
         reaches Received - it is the SECOND step, right after Pending - so stamping a "sent" date
-        there no longer makes sense; OneDrive_URL__c (the returned document) stays. The Received
-        step is left with NO date field to record its own result: there is no Date_Received__c on
-        NDA__c. The correct fix is adding one, which is OUT OF SCOPE for this change and is
-        already tracked as a gap (FSD §27.6, source-document scope).
+        there no longer makes sense; OneDrive_URL__c (the returned document) stays.
+
+        ⚠ AMENDED 2026-08-16 (SAME-DAY FOLLOW-UP) - THE GAP THE PARAGRAPH ABOVE FLAGGED IS NOW
+        CLOSED. The Received step was left with no date field to record its own result when the
+        sequence reversal shipped, tracked as FSD §27.6. NDA__c.Date_Received__c now exists
+        (objects/NDA__c/fields/Date_Received__c.field-meta.xml - a plain Date, manually stamped,
+        matching the shape of Date_Sent__c and Date_Signed__c on this object) and is added to this
+        step's <fieldNames> below, ahead of OneDrive_URL__c. Not surfaced on
+        NDA_Path_Disposition - see that file's own comment for why the disposition side does not
+        carry it.
 
         ⚠ THE MASTER-FIELD-ORDER NOTE ABOVE IS ALSO NOW STALE. That paragraph states this file's
         step order happened to already match the Status__c FIELD's master value order (Pending,
@@ -63,11 +69,35 @@
         needed. That coincidence is GONE: this change reordered only this file's
         <pathAssistantSteps> and the Acquisition_NDA record type's own picklistValues order, not
         the master Status__c field (objects/NDA__c/fields/Status__c.field-meta.xml), so the
-        master order and this file's new step order no longer match. Whether anything besides
-        the Path bubbles themselves (e.g. a Status__c dropdown, which the record type's own
-        picklistValues order was also just changed to try to influence - see that file) still
-        reads the master order at runtime was out of scope for this change and needs a decision
-        from whoever requested it.
+        master order and this file's new step order no longer match.
+
+        🔴 THE PATH BUBBLES ARE VERIFIED CORRECT (2026-08-16 follow-up). <pathAssistantSteps>
+        order in this file is Pending -> Received -> Signed -> Sent, which IS the intended
+        sequence per the reversal above - confirmed, not amended, since it already read that way.
+
+        🔴 THE DROPDOWN IS A DIFFERENT QUESTION AND HAS A GENUINE, UNRESOLVABLE-BY-ORDERING
+        CONSTRAINT (2026-08-16 follow-up, replacing the "needs a decision from whoever requested
+        it" note this paragraph used to end on). The master Status__c field is deliberately NOT
+        reordered to fix the acquisition dropdown, and it cannot be: the two record types need
+        OPPOSITE orders on the values they SHARE. Acquisition ends ... Signed -> Sent; disposition
+        ends ... Sent -> Signed (Not Sent -> Sent -> Signed, plus the Declined off-ramp - see
+        NDA_Path_Disposition). One master picklist order cannot satisfy both directions for the
+        same pair of values at once, so reordering the master field to put 'Sent' after 'Signed'
+        for the acquisition side would necessarily put disposition's 'Sent' after its own
+        'Signed' too - breaking the sell-side dropdown to fix the buy-side one. This is not a
+        gap to close; it is a structural property of one shared field serving two opposite
+        processes, and NDA_Path_Disposition's own comment carries the matching, now-corrected
+        statement of the same constraint from the disposition side.
+
+        WHAT IS STILL GENUINELY UNVERIFIED: whether the record type's own picklistValues order
+        (in objects/NDA__c/recordTypes/Acquisition_NDA.recordType-meta.xml, already reordered to
+        Pending, Received, Signed, Sent) influences the runtime Status__c DROPDOWN at all,
+        independently of the master field's own value order. That needs an in-org check - open an
+        Acquisition NDA record and read the Status__c dropdown's rendered order - which was not
+        performed as part of this follow-up. IF the record type's order does NOT drive the
+        dropdown, the acquisition dropdown order cannot be corrected without harming disposition
+        (per the constraint above), and the Path bubbles - already verified correct - remain the
+        authoritative visual sequence for users regardless of what the dropdown shows.
     -->
     <active>true</active>
     <entityName>NDA__c</entityName>
@@ -80,6 +110,7 @@
         <picklistValueName>Pending</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
+        <fieldNames>Date_Received__c</fieldNames>
         <fieldNames>OneDrive_URL__c</fieldNames>
         <info>The broker&apos;s NDA has arrived. Review the terms and route it for DPEG signature - NDA Signed stays FALSE at this step, so the deal cannot advance to Underwriting yet.</info>
         <picklistValueName>Received</picklistValueName>

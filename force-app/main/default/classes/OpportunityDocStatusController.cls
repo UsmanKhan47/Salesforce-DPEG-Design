@@ -48,7 +48,12 @@ public with sharing class OpportunityDocStatusController {
                 d.ndaId = nda.Id;
                 d.ndaName = nda.Name;
                 d.ndaStatus = nda.Status__c;
-                d.ndaSent = nda.Date_Sent__c;
+                // Date_Sent__c pairs with the 'Sent' step, which the 2026-08-16 reorder made the
+                // TERMINAL acquisition state (Pending -> Received -> Signed -> Sent). It therefore
+                // records the day DPEG returned the SIGNED copy to the broker, not the day an NDA
+                // went out awaiting signature. The DTO member is named for that meaning rather
+                // than for the field, so the next reader does not have to re-derive it.
+                d.ndaSignedCopyReturned = nda.Date_Sent__c;
                 d.ndaExpiry = nda.NDA_Expiry_Date__c;
                 d.ndaSigned = nda.NDA_Signed__c == true;
             }
@@ -130,7 +135,19 @@ public with sharing class OpportunityDocStatusController {
         @AuraEnabled public Id ndaId;
         @AuraEnabled public String ndaName;
         @AuraEnabled public String ndaStatus;
-        @AuraEnabled public Date ndaSent;
+        /**
+         * Sourced from NDA__c.Date_Sent__c. Renamed from `ndaSent` on 2026-08-16: after the
+         * acquisition NDA reorder (Pending -> Received -> Signed -> Sent) that field marks the
+         * LAST step, so "sent" named the wrong end of the exchange and implied the deal was
+         * still waiting on the counterparty when it is in fact past the NDA gate.
+         *
+         * ⚠ HISTORICAL ROWS CARRY THE OLD MEANING AND NOTHING DISTINGUISHES THEM. The value set
+         * was reordered, not migrated, so an NDA worked before 2026-08-16 has Date_Sent__c
+         * stamped when the BLANK NDA went out. There is no discriminator on the record, so this
+         * is stated rather than guarded — a status-conditional label would invent a rule the
+         * data cannot support.
+         */
+        @AuraEnabled public Date ndaSignedCopyReturned;
         @AuraEnabled public Date ndaExpiry;
         @AuraEnabled public Boolean ndaSigned = false;
 

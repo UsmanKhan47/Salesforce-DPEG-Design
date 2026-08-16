@@ -3,7 +3,15 @@ import { NavigationMixin } from 'lightning/navigation';
 import getDocStatus from '@salesforce/apex/OpportunityDocStatusController.getDocStatus';
 
 // Status -> pill tone (drives the CSS class). Anything unmapped falls back to grey.
-const NDA_TONE = { Pending: 'amber', Sent: 'blue', Signed: 'green' };
+// `Received` was added by the 2026-08-16 acquisition NDA reorder; without an entry a live,
+// mid-process stage renders in the grey "nothing here" tone, which is what every OTHER
+// unmapped/unknown value renders as. Blue matches every in-process value in the maps below.
+// ⚠ The Sent/Signed tones are NOT adjusted here and are believed inverted by that same
+// reorder: `Sent` is now terminal but renders blue (in progress) while the mid-sequence
+// `Signed` renders green (done). Which of the two deserves green is a real judgement call —
+// the deal gate (NDA_Signed__c) releases at Signed, while the NDA process finishes at Sent —
+// so it is left for a decision rather than guessed at.
+const NDA_TONE = { Pending: 'amber', Received: 'blue', Sent: 'blue', Signed: 'green' };
 const LOI_TONE = {
     Draft: 'grey',
     Working: 'blue',
@@ -78,10 +86,16 @@ export default class DealDocStatus extends NavigationMixin(LightningElement) {
     get ndaPillClass() {
         return `pill pill--${NDA_TONE[this.data && this.data.ndaStatus] || 'grey'}`;
     }
+    // NDA__c.Date_Sent__c pairs with 'Sent', the TERMINAL acquisition state since the
+    // 2026-08-16 reorder, so it dates the return of the SIGNED copy to the broker. The
+    // previous label read "Received <date>", which now names a different step entirely —
+    // 'Received' is its own status in this sequence and is due its own date field.
     get ndaMeta() {
         if (!this.data) return '';
         const parts = [];
-        if (this.data.ndaSent) parts.push(`Received ${this.fmtDate(this.data.ndaSent)}`);
+        if (this.data.ndaSignedCopyReturned) {
+            parts.push(`Signed copy returned ${this.fmtDate(this.data.ndaSignedCopyReturned)}`);
+        }
         if (this.data.ndaExpiry) parts.push(`Expires ${this.fmtDate(this.data.ndaExpiry)}`);
         return parts.join('  ·  ');
     }

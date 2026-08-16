@@ -796,6 +796,18 @@
         <field>NDA__c.Counterparty_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        Post-reversal follow-up (2026-08-16), closing FSD §27.6. Read-only twin of the grant on
+        DPEG_Acquisition_Edit - see that set's comment for the full rationale. Reconciled against
+        usman-dpeg via sf project retrieve (2026-08-16) before this edit: the only delta found was
+        the repo being ahead by the two NDA_Alert_* grants further down this file (not yet
+        deployed) - no org-side-only grant on this set was at risk.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Date_Received__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>NDA__c.Date_Sent__c</field>
