@@ -874,6 +874,28 @@
         <field>NDA__c.Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        FSD Gap Tranche 1, Item 2 (2026-08-16). NDA_Alert_Last_Interval__c and
+        NDA_Alert_Expiry_Date__c are the NDA expiry-reminder ladder's system-maintained marker
+        fields, read and stamped by NdaExpiryAlertBatch WITH SYSTEM_MODE - so this grant is for
+        the human editors of this record (an acquisitions persona correcting a mis-set marker,
+        the same convenience shape DPEG_Acquisition_Edit already extends to
+        Offer_Alert_Last_Interval__c / Offer_Alert_Due_Date__c on Opportunity), not a
+        prerequisite for the batch job itself. EDITABLE, matching the sibling NDA__c fields on
+        this set. Reconciled against usman-dpeg via sf project retrieve (2026-08-16) before this
+        edit - the live NDA__c/Offering__c fieldPermissions and objectPermissions on this set
+        matched the repo file exactly, so no org-side-only grant was at risk of being replaced.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.NDA_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.NDA_Alert_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Offering__c.IR_Owner__c</field>

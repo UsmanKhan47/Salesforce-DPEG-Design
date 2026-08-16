@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>NDA_Alert_Last_Interval__c</fullName>
+    <description>System-maintained expiry-alert marker. Holds the smallest reminder-ladder rung (in days before NDA_Expiry_Date__c) already notified by NdaExpiryAlertBatch. Not for manual entry - see NDA_Alert_Expiry_Date__c, its required companion snapshot.</description>
+    <externalId>false</externalId>
+    <label>NDA Alert Last Interval</label>
+    <precision>2</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

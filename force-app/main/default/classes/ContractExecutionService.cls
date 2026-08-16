@@ -7,6 +7,11 @@
  *      'Under Contract (PSA)' stage; Deal_Status marks it executed / about to close.
  *   2. Notifies Transactions_Team + Investor_Relations (PSA executed) and
  *      Due_Diligence (Danish: DD materials available once the contract is signed).
+ *   3. Opens the IR `Offering__c` shell (FSD Tranche 1, 2026-08-16) via
+ *      OfferingService.ensureOnPsaExecuted — idempotent, allOrNone = false, SYSTEM_MODE, and
+ *      ACQUISITION-ONLY BY CONSTRUCTION because the call sits inside stampOpportunities, whose
+ *      Id set can only hold non-null Opportunity__c parents. It adds NO notification (IR is
+ *      already told in step 2) and NO Primary_Offering__c stamp. See OfferingService's header.
  *
  * ⚠ THIS CLASS NOW HAS TWO ENTRY POINTS ON TWO DIFFERENT TRIGGERS, AND THEY DO DIFFERENT THINGS.
  *
@@ -180,9 +185,26 @@ public with sharing class ContractExecutionService {
     }
 
     /**
-     * The ACQUISITION arm — unchanged behaviour, extracted from handleExecution in Tranche 3C so
-     * the two sides are separately readable and the disposition arm cannot be short-circuited by
-     * the acquisition arm's early return.
+     * The ACQUISITION arm — extracted from handleExecution in Tranche 3C so the two sides are
+     * separately readable and the disposition arm cannot be short-circuited by the acquisition
+     * arm's early return.
+     *
+     * ⚠ "UNCHANGED BEHAVIOUR" WAS TRUE UNTIL 2026-08-16 AND IS NO LONGER — amended in place rather
+     * than left standing. This method now also opens the IR `Offering__c` shell, as its LAST
+     * statement. That is FSD Tranche 1 Item 1, and the placement is the whole acquisition-only
+     * mechanism: see the note at the call and `OfferingService`'s class header.
+     *
+     * ⚠ THE `Executed_PSA_Before_Contract_Date` VALIDATION RULE (added in the same tranche) MEETS
+     * THIS METHOD'S `Database.update(oppUpdates, true, SYSTEM_MODE)`, and `AccessLevel.SYSTEM_MODE`
+     * bypasses CRUD and FLS but **NOT validation rules**. The rule is written to be inert here: it
+     * fires only when `Primary_Contract__r.Negotiation_Status__c <> 'Executed'` AND
+     * `Primary_Contract__c` is non-blank, and by the time this runs the Contract Review row is
+     * already written with `Executed` inside the same transaction. There is also no catch anywhere
+     * on this path, so a block would propagate out of the trigger and — through
+     * `RecordStageAdvanceController`'s fixed generic message — reach the user as "this change could
+     * not be saved" with no clue why. `ContractExecutionServiceTest` staying green IS the proof
+     * that the cross-object rule sees the in-transaction status (post-deploy gate G5); do not
+     * weaken those tests.
      *
      * @param executedOppIds Opportunities whose PSA just became Executed; empty-safe.
      */
@@ -233,6 +255,28 @@ public with sharing class ContractExecutionService {
                 o.Name + ': the contract is signed - DD materials are ready for review.', o.Id));
         }
         GroupNotifier.notify(notifications);
+
+        // ── THE IR OFFERING SHELL (FSD Tranche 1, Item 1 — FSD §9 Conversion 3) ──
+        // 🔴 IT IS HERE, INSIDE stampOpportunities, AND NOWHERE ELSE — that placement is what makes
+        // it ACQUISITION-ONLY STRUCTURALLY. `executedOppIds` can only ever contain non-null
+        // Contract_Review__c.Opportunity__c parents (see handleExecution's two independent `if`s), so
+        // a sell-side PSA never reaches this line and NO record-type test and NO new guard is needed.
+        // Same discriminator, and the same migration-window reason, as the class header gives.
+        //
+        // ⚠ IT RUNS LAST, DELIBERATELY. Everything above it is deployed, live behaviour; running the
+        // new insert after it means the new code cannot precede or endanger the stamp or the three
+        // notifications. Nothing an observer sees depends on the order — the insert and the update
+        // commit in one transaction — so this costs nothing and buys blast-radius containment.
+        //
+        // ⚠ NO SECOND NOTIFICATION. IR is already told, three lines above, at this exact moment.
+        // ⚠ NO Primary_Offering__c STAMP. The field does not exist and must not be added for
+        // symmetry with Primary_LOI__c — see OfferingService's header §6.
+        // ⚠ AND DO NOT RE-ADD TRANSACTION CREATION HERE while adding to this method; it moved to
+        // openTransactionsOnAboutToClose on 2026-08-05 and the class header says why.
+        //
+        // Budget: +1 SOQL / +1 DML per trigger chunk, CONSTANT in deal count. A chunk executing no
+        // acquisition PSA never reaches this method at all (the early return above).
+        OfferingService.ensureOnPsaExecuted(executedOppIds);
     }
 
     /**

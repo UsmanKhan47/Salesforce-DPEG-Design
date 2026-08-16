@@ -292,6 +292,38 @@
         <field>Opportunity.Offer_Alert_Last_Interval__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- FSD Gap Tranche 1, code-review Fix 2 (W2), added 2026-08-16.
+         NDA_Alert_Last_Interval__c / NDA_Alert_Expiry_Date__c are the direct NDA__c sibling of
+         the Opportunity.Offer_Alert_* markers two entries above, which this set already grants -
+         that existing entry is the decisive counter-evidence against the earlier reasoning that
+         this set carries only three hand-picked NDA__c fields: alert-marker fields ARE the
+         established pattern here, not the exception.
+         NOT COSMETIC: NdaExpiryAlertBatch.finish() is deliberately only a debug line BECAUSE the
+         durable record of every alert sent lives on these two fields on each NDA - the class
+         header calls them "queryable and reportable". Without FLS here, a bare administrator can
+         neither query nor report on them, so the one feature whose entire failure mode is
+         SILENCE (see gates G1/G2 in agent-output/design-requirements-fsd-tranche-1.md) has its
+         only durable record invisible to the person diagnosing it.
+         EDITABLE, matching the Offer_Alert_* precedent immediately above and the sibling NDA__c
+         fields elsewhere on this set: blanking the marker is the supported way to re-arm a
+         deal's alerts, and an administrator correcting one by hand needs write access, not only
+         read.
+         RECONCILED AGAINST usman-dpeg 2026-08-16 (retrieved via sf project retrieve into a
+         scratch directory and diffed field-by-field, record-type-by-record-type, tab-by-tab,
+         app-by-app against this file): ZERO differences found on any of the four grant lists -
+         fieldPermissions, recordTypeVisibilities, tabSettings, applicationVisibilities all match
+         the org exactly. Nothing org-side is at risk of being wiped by this addition; this is a
+         pure, additive edit. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.NDA_Alert_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.NDA_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
     <!--

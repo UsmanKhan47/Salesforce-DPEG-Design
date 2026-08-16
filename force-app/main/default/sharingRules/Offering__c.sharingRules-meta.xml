@@ -1,3 +1,154 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT AND MUST SIT INSIDE THE ROOT ELEMENT - a comment placed
+        ABOVE <SharingRules> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
 
+        FSD Gap Tranche 1, Item 1 follow-up (2026-08-16). The design gate flagged that
+        OfferingService.ensureOnPsaExecuted (developer work, same PR) creates an Offering__c
+        shell on PSA execution that is invisible to the Investor Relations team: Offering__c is
+        sharingModel Private with zero sharing rules, the new row is owned by whichever
+        acquisitions persona executed the PSA, and IR_Owner__c is deliberately left null (it is
+        a User lookup and Investor_Relations is a public GROUP, not a user - no IR owner is
+        derivable at creation time). The user's explicit directive: "They will be visible to IR
+        team, right now give them read/write permission."
+
+        DPEG_IR_Edit / DPEG_IR_View now grant Offering__c object and field permissions (this
+        same PR), but object permissions alone do not grant record access on a Private-OWD
+        object - this rule is the other half.
+
+        =====================================================================
+        OWNER-BASED, NOT CRITERIA-BASED - AND WHY.
+        =====================================================================
+        Offering__c has NO record types (verified against the object metadata and the org,
+        2026-08-16) and no picklist or checkbox that distinguishes "the Offerings IR needs to
+        see" from any others - every single row this object will ever hold is created for
+        exactly the reason IR needs to see it (OfferingService is its only non-test creator).
+        A criteria rule exists to carve out a SUBSET by which KIND of row it is (see
+        NDA__c.sharingRules-meta.xml's RecordTypeId-scoped rules for that shape); there is no
+        subset to carve here, so a criteria rule would need an artificial always-true condition
+        for no benefit over an owner rule.
+
+        The owning population is exactly "whichever acquisitions persona executed the PSA" -
+        the field set OfferingService writes contains no owner override, so the row is owned by
+        the running user, drawn from the Acquisitions_Analyst role and its subordinates. This
+        is the SAME shape five other acquisitions/disposition child objects already use for an
+        acquisitions-owned-record-shared-to-a-team rule - BOV_Submission__c, Broker_Listing__c,
+        Disposition__c, Disposition_Offer__c and Wire__c all carry a sharingOwnerRules entry
+        with sharedFrom roleAndSubordinates Acquisitions_Analyst. This rule is the same
+        mechanism pointed at a different sharedTo group (Investor_Relations instead of
+        DPEG_Acquisitions_Team), because the population that needs the access is IR, not the
+        acquisitions team who already own the rows.
+
+        =====================================================================
+        Edit, not Read - matching the user's literal instruction.
+        =====================================================================
+        The user asked for "read/write permission", so this rule grants Edit. Object CRUD is
+        still the ceiling: DPEG_IR_View holders get Read only regardless of this rule, because
+        DPEG_IR_View's Offering__c objectPermissions carries allowEdit=false. A second,
+        Read-level rule to the same group would be redundant (Salesforce takes the most
+        permissive of overlapping rules on one object/group pair) and would only double the
+        one-at-a-time sharing-rule deploy hazard below for no behavioural difference - see
+        NDA__c.sharingRules-meta.xml's own reasoning for why it DID need two rules (a different
+        population, Principals, needing a genuinely lower access level).
+
+        =====================================================================
+        OWD VERIFIED, NOT ASSUMED.
+        =====================================================================
+        Offering__c is sharingModel Private with enableSharing true, confirmed in
+        objects/Offering__c/Offering__c.object-meta.xml. A sharing rule on a Public
+        Read/Write object would be meaningless, so this was checked before the rule was written.
+
+        =====================================================================
+        🔴 DEPLOY THIS ONE AT A TIME WITH ANY OTHER PENDING SHARING RULE CHANGE.
+        =====================================================================
+        A batch deploy of sharing rules rolls ALL of them back in this org - established in
+        the 2026-07-22 RBAC build and repeated in NDA__c.sharingRules-meta.xml's own comment.
+        This file introduces exactly one rule, so it is a single deploy on its own, but if it
+        is bundled with any other sharing-rule change in the same deploy operation, split them.
+
+        🔴 GROUP MEMBERSHIP IS NOT DEPLOYABLE METADATA. If Investor_Relations or
+        Acquisitions_Analyst-and-subordinates is empty or wrong in the target org, this rule
+        grants NOTHING and IR sees zero Offerings - which looks exactly like "no Offering has
+        been created yet". Verify membership as a post-deploy gate (mirrors gate G4 in
+        agent-output/design-requirements-fsd-tranche-1.md), and verify it by OPENING AN
+        OFFERING AS AN IR USER, not as an administrator.
+
+        🔴 RECALCULATION MAY NOT BE INSTANT. Sharing recalculation runs in the background after
+        deploy; on an org with existing Offering__c rows a check immediately after deploy may
+        not yet reflect the rule. Do not read that as a failed rule until recalculation
+        completes.
+
+        ACQUISITIONS ACCESS IS UNAFFECTED. DPEG_Acquisition_Edit / _View already carry
+        viewAllRecords on Offering__c, so the buy-side module's own visibility is untouched by
+        this rule; it only widens access to Investor_Relations.
+
+        =====================================================================
+        🔴 KNOWN, ACCEPTED RESIDUAL - RECORD THIS BEFORE HUNTING THROUGH PERMISSION SETS.
+        =====================================================================
+        This rule shares an Offering__c only when its OWNER falls inside
+        roleAndSubordinates Acquisitions_Analyst. The role hierarchy is DPEG_Principal at the
+        top with THREE children - Acquisitions_Analyst, Investor_Relations_Manager,
+        Transactions_Coordinator - so this rule covers that one branch and nothing above or
+        beside it.
+
+        An Offering__c is owned by whichever user executed the PSA: the record is inserted by
+        ContractExecutionService running in that user's context, with no OwnerId set
+        explicitly, so ownership is simply "whoever was logged in when the PSA was marked
+        Executed."
+
+        ⇒ AN OFFERING CREATED BY A USER OUTSIDE THE Acquisitions_Analyst BRANCH - a principal
+        sitting at DPEG_Principal itself, a System Administrator, or anyone in the
+        Investor_Relations_Manager or Transactions_Coordinator branches - IS NOT SHARED TO THE
+        Investor_Relations GROUP BY THIS RULE, and IR simply cannot see that row. This is a
+        REAL PATH, NOT A HYPOTHETICAL ONE: both DPEG_Acquisition_Edit and DPEG_Admin_Access
+        grant Contract_Review__c edit, so an administrator running UAT or a data fix, or a
+        principal executing a PSA directly, both reach ContractExecutionService and both mint
+        an Offering this rule does not reach.
+
+        🔴 THE FAILURE MODE IS SILENT. There is no error, no failed job, and nothing in the UI
+        that flags it - the Offering__c row simply does not appear in the IR user's list view
+        or search, indistinguishable from "no Offering was created for this deal." A future
+        reader chasing "IR cannot see an Offering" should check THE TAB FIRST, THEN THIS RULE.
+        Code review C1 (2026-08-16) found this exact tranche shipped with object permissions,
+        field permissions and this sharing rule all correctly granted, and NO ROUTE TO THE
+        RECORD AT ALL - Investor_Relations.app-meta.xml declared no Offering__c tab and the
+        only <tab>Offering__c</tab> grant in permissionsets/ was on DPEG_Admin_Access, so an IR
+        user with full access still had nowhere to click. That gap is fixed
+        (applications/Investor_Relations.app-meta.xml + the Offering__c tabSettings entry on
+        DPEG_App_Investor_Relations, the layer-2 app-visibility set), but a FUTURE tab
+        regression is just as silent as a sharing gap and costs nothing to rule out first: it
+        is one file to open, versus recalculation, role hierarchy and ownership to reason
+        through below. Only once the tab is confirmed present and visible should this rule -
+        and DPEG_IR_Edit / DPEG_IR_View's object and field permissions, which are correctly
+        granted and are not the usual cause - be re-audited.
+
+        THIS IS A USER DECISION MADE ON 2026-08-16, NOT AN OVERSIGHT. It was offered as a
+        Gate-1 choice against a criteria-based alternative that would share every Offering__c
+        record regardless of owner, and the user chose to keep the narrower owner-based rule
+        and accept this residual rather than widen it. Do not read this comment as a defect in
+        the rule - the rule is correct for its intended, and by far most common, population
+        (an Acquisitions_Analyst-branch user executing the PSA); this note exists to bound that
+        correctness, not to question it.
+
+        REMEDY, IF THIS RESIDUAL EVER NEEDS CLOSING: replace or supplement this
+        sharingOwnerRules entry with a sharingCriteriaRules entry that matches ALL Offering__c
+        records (an always-true criterion, since the object carries no record type or
+        discriminating field - see the "OWNER-BASED, NOT CRITERIA-BASED" section above for why
+        that tradeoff was rejected the first time) granting Edit to the same Investor_Relations
+        group. That closes the gap for every owner, not only Acquisitions_Analyst and its
+        subordinates, at the cost of losing the narrower, ownership-scoped grant.
+    -->
+    <sharingOwnerRules>
+        <fullName>Offering_IR_Visibility</fullName>
+        <accessLevel>Edit</accessLevel>
+        <label>Offering IR Visibility</label>
+        <sharedTo>
+            <group>Investor_Relations</group>
+        </sharedTo>
+        <sharedFrom>
+            <roleAndSubordinates>Acquisitions_Analyst</roleAndSubordinates>
+        </sharedFrom>
+    </sharingOwnerRules>
+</SharingRules>

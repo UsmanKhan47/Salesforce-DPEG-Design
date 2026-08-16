@@ -11,6 +11,19 @@
         segregated from Acquisitions. No actionOverrides: this task creates the app shell
         only, on standard object pages; a dedicated IR record page is a follow-up, not part
         of this task.
+
+        =====================================================================
+        Offering__c TAB ADDED 2026-08-16 - FSD Gap Tranche 1, Item 1, code-review Fix 1 (C1).
+        =====================================================================
+        OfferingService.ensureOnPsaExecuted (this same tranche) grants DPEG_IR_Edit / _View
+        object and field access to Offering__c, and Offering__c.sharingRules-meta.xml grants
+        record access, but neither gives IR a ROUTE to the record: this app declared only
+        standard-Lead / standard-Contact / standard-Account / standard-report, and the only
+        <tab>Offering__c</tab> grant anywhere in permissionsets/ was on DPEG_Admin_Access.
+        Without this line an IR user with full object, field and record access still has
+        nowhere to click to reach an Offering. Tab VISIBILITY is granted on the layer-2
+        DPEG_App_Investor_Relations permission set, matching the other four tabs on this app -
+        see that file's own comment.
     -->
     <brand>
         <headerColor>#0B5394</headerColor>
@@ -30,5 +43,6 @@
     <tabs>standard-Contact</tabs>
     <tabs>standard-Account</tabs>
     <tabs>standard-report</tabs>
+    <tabs>Offering__c</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>

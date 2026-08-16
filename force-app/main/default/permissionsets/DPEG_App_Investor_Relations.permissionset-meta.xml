@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Offering__c TAB SETTING ADDED 2026-08-16 - FSD Gap Tranche 1, code-review Fix 1 (C1).
+        This is the layer-2 app-visibility set (ARCHITECTURE.md, Permission Set Architecture -
+        "app visibility: applicationVisibilities + tabSettings"), so it is the correct home for
+        the Offering__c tab grant that makes the app-level fix in
+        applications/Investor_Relations.app-meta.xml actually reach a user - see that file's
+        comment for the full incident. DPEG_IR_Edit / DPEG_IR_View (layer 3) already carry the
+        object and field permissions; they deliberately do NOT carry tabSettings, matching how
+        the other four tabs on this app are split across these same two layers.
+    -->
     <applicationVisibilities>
         <application>Investor_Relations</application>
         <visible>true</visible>
@@ -21,6 +31,10 @@
     </tabSettings>
     <tabSettings>
         <tab>standard-report</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Offering__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
 </PermissionSet>

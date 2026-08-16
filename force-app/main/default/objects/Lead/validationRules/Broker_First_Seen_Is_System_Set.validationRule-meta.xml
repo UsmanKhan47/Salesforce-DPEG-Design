@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.description is capped at 255 characters. The full rationale below is
+        operationally important, so it lives here rather than being trimmed; a comment is
+        repo-only and is never sent to the Metadata API. It is INSIDE the root element on
+        purpose - a comment ABOVE <ValidationRule> breaks `sf` deploy at conversion with the
+        misleading error "unable to find matching parent xml file". Same shape as the house
+        precedent, Contract_Signed_Before_Closed_Won.
+
+        =====================================================================
+        WHAT IT DOES AND WHY THIS FIELD, NOT THE ONE THE FSD NAMED.
+        =====================================================================
+        FSD Gap Tranche 1 §26 asks for "Broker First-Seen Timestamp is system-set and cannot be
+        edited". The FSD names Opportunity.Broker_First_Seen__c. Repo-wide grep (2026-08-16)
+        found NOTHING writes that field - no Apex writer, no Flow writer - so a rule built there
+        would permanently lock an already-blank field and remove the only way it could ever be
+        populated (a human typing it), which is strictly worse than no rule at all.
+
+        Lead.First_Seen_Date__c is the field the FSD's intent actually runs on: it drives
+        Lead.BP_Expiry__c (First_Seen_Date__c + 90, the 90-day broker-protection window),
+        Days_in_System__c, LeadSelector ordering, LeadFunnelController and the Lead Funnel Path.
+        This is a deliberate USER-APPROVED RE-TARGET (Gate 1, Q3.3 = accept), not a substitution
+        made unilaterally by this agent.
+
+        =====================================================================
+        THE FORMULA AND WHY EACH WRITER IS OR IS NOT CAUGHT.
+        =====================================================================
+        AND(ISCHANGED(First_Seen_Date__c), NOT(ISBLANK(PRIORVALUE(First_Seen_Date__c))))
+
+        - Any INSERT (EmailToLeadHandler's staging pipeline via EmailToLeadService, the public
+          Broker Portal via BrokerPortalService, manual creation, Data Loader): ISCHANGED() is
+          FALSE on record creation, so this rule cannot fire on insert. Deliberate hole,
+          consistent with the deployed NDA-adjacent Lead rules in this same folder.
+        - flows/Lead_Intake_Stamp (before-save, assigns First_Seen_Date__c ONLY when the field
+          IsNull): fires ISCHANGED = true, but PRIORVALUE is blank, so the second AND() clause
+          exempts it. The exemption falls out of the formula shape rather than needing a
+          record-type or running-user carve-out.
+        - Database.convertLead: only enforces Lead validation rules when
+          shouldLeadConvertRequireValidation is true in Setup. That setting lives in
+          settings/LeadConfig.settings-meta.xml, which is .forceignore'd and therefore an
+          UNVERIFIED SNAPSHOT of the org - it must be checked in Setup, not designed against the
+          repo file (post-deploy gate G6). Either way this rule is INERT at conversion: standard
+          conversion does not write First_Seen_Date__c at all, so ISCHANGED is false regardless
+          of which way that setting is set.
+        - Manual edit / inline edit / API write / Data Loader change to an ALREADY-STAMPED Lead:
+          fires, and correctly - this is the population the rule exists to protect.
+
+        =====================================================================
+        BYPASS: DELIBERATELY NONE (Gate 1, Q3.1 = accept "no bypass").
+        =====================================================================
+        The rule's entire purpose is anti-tampering. An admin bypass re-opens the field for
+        exactly the population most able to tamper with it, and a genuine data correction has an
+        auditable path already (deactivate this rule, correct the value, reactivate). If a
+        bypass is ever added, it MUST be a Custom Permission checked via
+        {!$Permission.CustomPermission.<Name>} - never a reference to a User field. A rule bound
+        to a field evaluates FALSE for anyone lacking FLS READ on that field, silently, with no
+        error and no log - this is exactly why the org-wide *_Driver__c authorization-flag model
+        was retired in favour of custom permissions on 2026-08-12 (see ARCHITECTURE.md §2).
+
+        =====================================================================
+        FLS AND THIS RULE ARE COMPLEMENTARY, NOT ALTERNATIVES.
+        =====================================================================
+        Removing First_Seen_Date__c edit FLS from a profile/permission set stops that persona
+        from editing it in the UI, but does nothing about a Data Loader run or an API call by a
+        user who DOES hold the FLS grant. This validation rule is what closes that gap; it runs
+        in system context regardless of the running user's FLS.
+    -->
+    <fullName>Broker_First_Seen_Is_System_Set</fullName>
+    <active>true</active>
+    <description>Blocks changing First_Seen_Date__c once stamped by Lead_Intake_Stamp. Starts the 90-day broker protection window; must not be hand-edited afterward. See the XML comment for full rationale and why this replaces the FSD-named Opportunity field.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(First_Seen_Date__c),
+    NOT(ISBLANK(PRIORVALUE(First_Seen_Date__c)))
+)</errorConditionFormula>
+    <errorDisplayField>First_Seen_Date__c</errorDisplayField>
+    <errorMessage>First Seen Date is set automatically the first time this lead is seen and cannot be changed afterward. It drives the 90-day broker protection window.</errorMessage>
+</ValidationRule>

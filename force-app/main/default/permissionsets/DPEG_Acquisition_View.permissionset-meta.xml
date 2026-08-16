@@ -866,6 +866,25 @@
         <field>NDA__c.Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        FSD Gap Tranche 1, Item 2 (2026-08-16). Read-only twin of the grant on
+        DPEG_Acquisition_Edit - see that set's comment for the full rationale.
+        NDA_Alert_Last_Interval__c / NDA_Alert_Expiry_Date__c are the NDA expiry-reminder
+        ladder's system-maintained marker fields; this set gets READ ONLY, matching how the
+        sibling Offer_Alert_Last_Interval__c / Offer_Alert_Due_Date__c grant is scoped on this
+        object. Reconciled against usman-dpeg via sf project retrieve (2026-08-16) before this
+        edit - matched the repo file exactly.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.NDA_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.NDA_Alert_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Offering__c.IR_Owner__c</field>

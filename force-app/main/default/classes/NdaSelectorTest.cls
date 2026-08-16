@@ -142,7 +142,12 @@ private class NdaSelectorTest {
             'Status__c is the NDA stage field and must be populated for the advance');
         // 🔴 FIELD-LIST CONTRACT. RecordTypeId is what lets RecordStageAdvanceService tell an
         // Acquisition_NDA from a Disposition_NDA — the two sequences diverge on the SHARED value
-        // 'Sent' (acquisition -> Received, disposition -> Signed). Narrowing the SELECT does not
+        // 'Sent': it is the acquisition sequence's TERMINAL (no hop at all) and a mid-sequence hop
+        // to 'Signed' on the disposition one. ⚠ This line read "(acquisition -> Received,
+        // disposition -> Signed)" until the acquisition reorder of 2026-08-16
+        // (Pending -> Received -> Signed -> Sent), which moved 'Sent' from second position to last;
+        // the divergence it illustrates got SHARPER, not weaker — one record type now refuses where
+        // the other writes. Narrowing the SELECT does not
         // fail loudly; it silently routes every NDA to the acquisition sequence, so the only way to
         // catch it is to assert the field was actually QUERIED.
         //
@@ -395,5 +400,224 @@ private class NdaSelectorTest {
         Assert.areEqual(0, rows.size(),
             'An Opportunity-parented NDA must not appear in the Disposition read - if it did, an '
             + 'unrelated acquisition NDA could suppress a disposition\'s auto-created buyer NDA');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // queryExpiryAlerts — the reminder job's WORK QUEUE (FSD Tranche 1, Item 2)
+    //
+    // 🔴 EVERY FILTER BELOW IS A SEPARATE WAY TO SHIP THE FEATURE WRONG, AND TWO OF THEM SHIP IT
+    // WRONG *SILENTLY*: a locator that returns nothing produces an all-zeros finish() summary
+    // indistinguishable from "no NDA is expiring". They are tested one at a time for that reason.
+    //
+    // ⚠ These tests run the locator through `Database.getQueryLocator` and iterate it, because the
+    // filters and the ORDER BY are exactly the half a direct `NdaExpiryAlertBatch.execute(...)`
+    // call skips.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** Drain the reminder locator into a list of Ids, in locator order. */
+    private static List<Id> expiryAlertIds() {
+        List<Id> ids = new List<Id>();
+        Database.QueryLocator locator = NdaSelector.queryExpiryAlerts();
+        Database.QueryLocatorIterator it = locator.iterator();
+        while (it.hasNext()) {
+            ids.add(((NDA__c) it.next()).Id);
+        }
+        return ids;
+    }
+
+    /** A SIGNED acquisition NDA expiring `days` from today. */
+    private static NDA__c signedAcquisitionNdaExpiringIn(Id opportunityId, Integer days) {
+        NDA__c nda = TestDataFactory.createSignedNdas(1, opportunityId, false)[0];
+        nda.NDA_Expiry_Date__c = Date.today().addDays(days);
+        insert nda;
+        return nda;
+    }
+
+    @isTest
+    static void queryExpiryAlerts_selectsASignedAcquisitionNdaInsideTheCeiling() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c nda = signedAcquisitionNdaExpiringIn(opp.Id, 3);
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isTrue(ids.contains(nda.Id),
+            'A signed acquisition NDA three days from expiry is exactly the population this job '
+            + 'exists for');
+    }
+
+    /**
+     * 🔴 THE FINDING-A TEST. The obvious implementation of "acquisition NDAs only" —
+     * `RecordType.DeveloperName = 'Acquisition_NDA'` — returns ZERO ROWS for every un-migrated row
+     * until post-deploy gate T-A1/T-B, because every live NDA still sits on MASTER. The job would
+     * run daily, log all zeros and look completely healthy.
+     *
+     * This test deliberately creates its NDA with **no record type stamped at all**, which is the
+     * migration-window shape, and requires it to be selected anyway. A record-type filter fails
+     * here; the `Opportunity__c != NULL` discriminator passes.
+     */
+    @isTest
+    static void queryExpiryAlerts_selectsAnAcquisitionNdaWithNoRecordTypeStamped() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c nda = new NDA__c(
+            Opportunity__c = opp.Id,
+            Status__c = 'Signed',
+            NDA_Signed__c = true,
+            Date_Signed__c = Date.today(),
+            Is_Non_Expiring__c = false,
+            NDA_Expiry_Date__c = Date.today().addDays(2),
+            Counterparty_Name__c = 'Master-type Counterparty'
+        );
+        insert nda;
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isTrue(ids.contains(nda.Id),
+            '🔴 The discriminator is Opportunity__c != NULL, NOT the record type. A record-type '
+            + 'filter would miss this row — and every live acquisition NDA is this shape until '
+            + 'post-deploy gate T-A1/T-B, so the feature would ship INERT while looking healthy');
+    }
+
+    @isTest
+    static void queryExpiryAlerts_ignoresADispositionNda() {
+        // The other half of the discriminator: a sell-side NDA carries Disposition__c and a NULL
+        // Opportunity__c, so the split is exact and survives the migration in both directions.
+        Disposition__c disp = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id, true);
+        NDA__c nda = TestDataFactory.createDispositionNda(disp.Id, false);
+        nda.Status__c = 'Signed';
+        nda.NDA_Signed__c = true;
+        nda.NDA_Expiry_Date__c = Date.today().addDays(2);
+        insert nda;
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isFalse(ids.contains(nda.Id),
+            'A disposition NDA is not the Acquisition team\'s to chase');
+    }
+
+    @isTest
+    static void queryExpiryAlerts_ignoresANonExpiringNda() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c nda = TestDataFactory.createSignedNdas(1, opp.Id, false)[0];
+        nda.NDA_Expiry_Date__c = Date.today().addDays(2);
+        nda.Is_Non_Expiring__c = true;
+        insert nda;
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isFalse(ids.contains(nda.Id),
+            'Is_Non_Expiring__c = true means the date is not a deadline — matching the deployed '
+            + 'NDAs_Expiring_This_Month report, so the report and the reminder cannot disagree');
+    }
+
+    @isTest
+    static void queryExpiryAlerts_ignoresAnUnsignedNda() {
+        // Gate 1 decision Q2.1(a): SIGNED only, matching the deployed report exactly. An NDA still
+        // being chased is a different problem with a different owner.
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c nda = TestDataFactory.createNda(opp.Id, false); // seeds at 'Pending'
+        nda.NDA_Expiry_Date__c = Date.today().addDays(2);
+        insert nda;
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isFalse(ids.contains(nda.Id),
+            'Only Signed NDAs are reminded about — Status__c = \'Signed\' matches the deployed '
+            + 'Acquisitions/NDAs_Expiring_This_Month report');
+    }
+
+    @isTest
+    static void queryExpiryAlerts_ignoresAnNdaWithNoExpiryDateAtAll() {
+        // ⚠ Note this also covers the NDA auto-created by OpportunityReviewService on every
+        // Opportunity insert, which carries no expiry date — so it can never pollute the queue.
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c nda = TestDataFactory.createSignedNdas(1, opp.Id, false)[0];
+        nda.NDA_Expiry_Date__c = null;
+        insert nda;
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isFalse(ids.contains(nda.Id), 'No expiry date means no countdown and no reminder');
+    }
+
+    @isTest
+    static void queryExpiryAlerts_appliesTheCeilingButDeliberatelyNoFloor() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c beyondCeiling = signedAcquisitionNdaExpiringIn(opp.Id, 6);
+        NDA__c onCeiling = signedAcquisitionNdaExpiringIn(opp.Id, 5);
+        NDA__c longExpired = signedAcquisitionNdaExpiringIn(opp.Id, -120);
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isFalse(ids.contains(beyondCeiling.Id),
+            'Six days out is outside the widest rung and is never even read');
+        Assert.isTrue(ids.contains(onCeiling.Id),
+            'and the ceiling is inclusive at exactly the widest rung — narrowing it below 5 is the '
+            + 'ONLY way to break this feature');
+        Assert.isTrue(ids.contains(longExpired.Id),
+            '🔴 THERE IS DELIBERATELY NO FLOOR. An NDA whose expiry passed with no marker genuinely '
+            + 'is owed its one reminder; the monotone marker is what stops it spamming. Adding a '
+            + 'floor is an ALERT-LOSS decision, not a tuning knob');
+    }
+
+    @isTest
+    static void queryExpiryAlerts_ordersBySoonestExpiryWithAnIdTieBreak() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        NDA__c later = signedAcquisitionNdaExpiringIn(opp.Id, 4);
+        NDA__c sooner = signedAcquisitionNdaExpiringIn(opp.Id, 1);
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Assert.isTrue(ids.indexOf(sooner.Id) < ids.indexOf(later.Id),
+            'Soonest expiry first. ⚠ NDA_Expiry_Date__c is a Date, so many rows share one value — '
+            + 'the Id ASC tie-break is what keeps chunk composition deterministic between passes');
+    }
+
+    /**
+     * 251 rows through the real locator. `.claude/rules/bulk-test-rule.md`, no exemption claimed.
+     *
+     * ⚠ They share ONE parent Opportunity on purpose: 251 Opportunities would cost 251
+     * auto-created NDAs and 251 Primary_NDA__c stamps in the fixture, which measures the fixture
+     * rather than the locator. The discriminator under test is `Opportunity__c != NULL`, not which
+     * deal it points at.
+     */
+    @isTest
+    static void queryExpiryAlerts_bulk251RowsAreAllSelectedAndOrdered() {
+        Opportunity opp = TestDataFactory.createOpportunity(null, true);
+        List<NDA__c> ndas = TestDataFactory.createSignedNdas(BULK_N, opp.Id, false);
+        for (Integer i = 0; i < ndas.size(); i++) {
+            ndas[i].NDA_Expiry_Date__c = Date.today().addDays(Math.mod(i, 6));
+        }
+        insert ndas;
+
+        Test.startTest();
+        List<Id> ids = expiryAlertIds();
+        Test.stopTest();
+
+        Set<Id> selected = new Set<Id>(ids);
+        Integer inside = 0;
+        for (NDA__c nda : ndas) {
+            if (selected.contains(nda.Id)) {
+                inside++;
+            }
+        }
+        Assert.areEqual(BULK_N, inside,
+            'All 251 rows are inside the ceiling (0-5 days) and all 251 are selected');
     }
 }

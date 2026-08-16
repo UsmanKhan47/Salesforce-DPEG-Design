@@ -587,4 +587,371 @@ private class ContractExecutionServiceTest {
         Assert.areEqual(0, [SELECT COUNT() FROM Transaction__c],
             'and no sell-side PSA opens a Transaction, at any volume');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // THE IR OFFERING SHELL (FSD Tranche 1, Item 1 — 2026-08-16)
+    //
+    // 🔴 THESE TESTS OWN THE **SEAM**, NOT THE SERVICE. `OfferingServiceTest` proves the service in
+    // isolation (idempotency, the explicit Draft, the null IR_Owner__c, the 1-SOQL/1-DML budget).
+    // What only this class can prove is that the call is wired into the real trigger cascade AND
+    // that ACQUISITION-ONLY is structural — which is a property of WHERE the call sits
+    // (`stampOpportunities`, whose Id set can only hold non-null Opportunity__c parents), not of
+    // any guard inside the service. A disposition test in OfferingServiceTest would be meaningless
+    // because the service is never handed a disposition.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private static List<Offering__c> offeringsFor(Id opportunityId) {
+        return [
+            SELECT Id, Opportunity__c, Status__c, IR_Owner__c
+            FROM Offering__c WHERE Opportunity__c = :opportunityId
+        ];
+    }
+
+    @isTest
+    static void executingAnAcquisitionPsaOpensTheIrOfferingShell() {
+        Contract_Review__c cr = dealAtPsa();
+        Assert.areEqual(0, offeringsFor(cr.Opportunity__c).size(),
+            'PRECONDITION: reaching PSA does not itself create an Offering — execution does');
+
+        Test.startTest();
+        cr.Negotiation_Status__c = 'Executed';
+        update cr;
+        Test.stopTest();
+
+        List<Offering__c> shells = offeringsFor(cr.Opportunity__c);
+        Assert.areEqual(1, shells.size(),
+            'Executing the PSA opens exactly one Offering shell — before this, IR was notified at '
+            + 'this exact moment and handed nothing to work from');
+        Assert.areEqual('Draft', shells[0].Status__c, 'at Draft, set explicitly');
+        Assert.isNull(shells[0].IR_Owner__c,
+            'and with no IR owner named — IR_Owner__c is a User lookup while Investor_Relations is '
+            + 'a public GROUP, so no owner is derivable. IR visibility is closed separately, by '
+            + 'DPEG_IR_Edit / _View plus the Offering_IR_Visibility owner sharing rule');
+    }
+
+    @isTest
+    static void reExecutingAnAcquisitionPsaNeverOpensASecondShell() {
+        Contract_Review__c cr = dealAtPsa();
+        cr.Negotiation_Status__c = 'Executed';
+        update cr;
+        Assert.areEqual(1, offeringsFor(cr.Opportunity__c).size(), 'PRECONDITION: one shell exists');
+
+        Test.startTest();
+        // Back out and re-execute — the real route a deal takes when Legal corrects a status.
+        // ⚠ 'Ready for Execution' is a real Negotiation_Status__c value (the picklist is
+        // Draft / Negotiation / Signed / Ready for Execution / Initial Draft / Revised / Executed);
+        // this must stay a value that actually exists, or the update silently fails the restricted
+        // picklist and the second 'Executed' write is not a TRANSITION at all.
+        update new Contract_Review__c(Id = cr.Id, Negotiation_Status__c = 'Ready for Execution');
+        update new Contract_Review__c(Id = cr.Id, Negotiation_Status__c = 'Executed');
+        Test.stopTest();
+
+        Assert.areEqual(1, offeringsFor(cr.Opportunity__c).size(),
+            'A second execution must never mint a second shell. 🔴 This is the assertion a '
+            + 'sharing-filtered guard read would INVERT rather than merely weaken: zero rows means '
+            + '"no Offering exists", so the service would create a duplicate — see '
+            + 'OfferingSelector.ExecutionHandoffReads');
+    }
+
+    /**
+     * 🔴 ACQUISITION-ONLY, PROVED ON THE SHAPE THAT WOULD BREAK IT. A sell-side PSA carries
+     * `Disposition__c` and a NULL `Opportunity__c`, so it never enters `executedOppIds` and never
+     * reaches `OfferingService` at all. There is no record-type test and no guard anywhere — the
+     * placement of the call IS the mechanism, and this test is what holds it there.
+     */
+    @isTest
+    static void executingADispositionPsaOpensNoOfferingAtAll() {
+        Disposition__c sale = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id, true);
+        Contract_Review__c psa = salePsa(sale.Id);
+
+        Test.startTest();
+        psa.Negotiation_Status__c = 'Executed';
+        update psa;
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Offering__c],
+            'An executed SALE must not mint an acquisition artifact. If this ever goes red, '
+            + 'someone moved the OfferingService call out of stampOpportunities');
+    }
+
+    @isTest
+    static void aMixedChunkOpensShellsOnlyForTheAcquisitionHalf() {
+        Contract_Review__c buy = dealAtPsa();
+        Disposition__c sale = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id, true);
+        Contract_Review__c sell = salePsa(sale.Id);
+
+        Test.startTest();
+        execute(new List<Contract_Review__c>{
+            new Contract_Review__c(Id = buy.Id),
+            new Contract_Review__c(Id = sell.Id)
+        });
+        Test.stopTest();
+
+        Assert.areEqual(1, offeringsFor(buy.Opportunity__c).size(),
+            'The acquisition half gets its shell');
+        Assert.areEqual(1, [SELECT COUNT() FROM Offering__c],
+            'and the disposition half contributes none — one chunk, two arms, independently');
+        Assert.areEqual('Closing', stageOf(sale.Id),
+            'while the disposition arm still ran, so the two are genuinely independent rather '
+            + 'than one having short-circuited the other');
+    }
+
+    /**
+     * 251 acquisition PSAs executed in one transaction produce 251 Offerings.
+     *
+     * `.claude/rules/bulk-test-rule.md`, no exemption claimed: this is a real trigger path. The
+     * budget claim being defended is `+1 SOQL / +1 DML per chunk, CONSTANT in deal count` — a
+     * per-record selector call breaks the 100-query limit at this volume and a per-record insert
+     * breaks the 150-statement limit, so a regression fails HERE with an exception rather than in
+     * production on a real bulk close.
+     *
+     * ⚠ It deliberately does NOT also drive `About to Close`; that half is covered by
+     * `bulkExecution251ContractsHandsOffToTransactions` and adding it here would make a failure
+     * ambiguous between two cascades.
+     */
+    @isTest
+    static void bulkExecution251AcquisitionPsasOpen251Offerings() {
+        List<Opportunity> opps = TestDataFactory.createOpportunities(251, false);
+        for (Opportunity o : opps) {
+            o.StageName = 'LOI';
+        }
+        insert opps;
+
+        TestDataFactory.signPrimaryNda(opps);
+        List<LOI__c> primaryLois = TestDataFactory.placeApprovedLoi(opps);
+        List<LOI__c> completedLois = new List<LOI__c>();
+        for (LOI__c primaryLoi : primaryLois) {
+            completedLois.add(new LOI__c(Id = primaryLoi.Id, Stage__c = 'Signed'));
+        }
+        update completedLois;
+
+        for (Opportunity o : opps) {
+            o.StageName = 'Under Contract (PSA)';
+        }
+        update opps; // auto-creates 251 Contract Reviews (+ Primary_Contract__c stamp)
+
+        List<Contract_Review__c> reviews = [
+            SELECT Id FROM Contract_Review__c WHERE Opportunity__c IN :opps
+        ];
+        Assert.areEqual(251, reviews.size(), 'PRECONDITION: a Contract Review per deal');
+
+        Test.startTest();
+        execute(reviews);
+        Test.stopTest();
+
+        Assert.areEqual(251, [SELECT COUNT() FROM Offering__c WHERE Opportunity__c IN :opps],
+            'Every executed acquisition PSA opens exactly one Offering. A number BELOW 251 with no '
+            + 'exception means the guard or the insert is not bulk-safe across the two trigger '
+            + 'chunks (200 + 51); an exception means a SOQL or DML statement moved inside a loop.');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // REGRESSION PINNING FOR THE `Executed_PSA_Before_Contract_Date` VALIDATION RULE
+    // (FSD Tranche 1, Item 3 — the rule itself is admin metadata; these are its falsifiers)
+    //
+    // ⚠ THE TWO METHODS BELOW COVER THE RULE'S TWO STRUCTURAL HOLES AND THEY ARE DIFFERENT KINDS
+    // OF TEST — do not read the second as a sibling of the first.
+    //   aPsaExecutionOnADealWithABlankPrimaryContractStillExecutes
+    //       a FALSIFIER for desired behaviour. The rule EXEMPTS a blank Primary_Contract__c, and
+    //       this goes red if that exemption is ever removed.
+    //   aPsaExecutionIsBlockedWhenPrimaryContractPointsAtADifferentUnexecutedReview  (2026-08-16)
+    //       🔴 a PIN on a KNOWN LIMITATION accepted in review (W1). Nothing exempts a WRONG-ROW
+    //       Primary_Contract__c, so the execution is refused and rolls back. It asserts what the
+    //       code DOES, not what it should do, and it is EXPECTED TO GO RED if the hole is ever
+    //       closed — its own header says what to do then.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 THE FALSIFIER FOR REMOVING `NOT(ISBLANK(Primary_Contract__c))` FROM THE RULE.
+     *
+     * `OpportunityReviewService` stamps `Primary_Contract__c` only for the Contract Review IT
+     * creates on entry to `Under Contract (PSA)`. A Contract Review created any other way — by
+     * hand, by a data load, on a deal that reached PSA by an unusual route — executes without ever
+     * being the primary. Without the ISBLANK clause the rule then fires on
+     * `stampOpportunities`'s `Database.update(oppUpdates, true, SYSTEM_MODE)` — and
+     * `AccessLevel.SYSTEM_MODE` bypasses CRUD and FLS but **NOT validation rules** — so the
+     * all-or-none update throws inside an after-update trigger and **THE ENTIRE PSA EXECUTION
+     * ROLLS BACK**.
+     *
+     * ⚠ AND THE USER WOULD NEVER LEARN WHY: `stampOpportunities` has no catch, so the DmlException
+     * propagates out of the trigger, and a user executing through the Advance Stage action hits
+     * `RecordStageAdvanceController`, which converts EVERY exception into one fixed generic string.
+     *
+     * ⚠ THE COST IS STATED RATHER THAN HIDDEN: the rule is unenforceable on exactly these deals, so
+     * it protects the ordinary path and fails OPEN on the irregular one. That is the correct trade
+     * — a rolled-back PSA execution is worse than an unguarded manual date on an irregular deal —
+     * but it is a decision, not an oversight.
+     */
+    @isTest
+    static void aPsaExecutionOnADealWithABlankPrimaryContractStillExecutes() {
+        Opportunity deal = TestDataFactory.createOpportunity(null, true);
+        // A Contract Review created directly, NOT by the stage-entry auto-create — so nothing ever
+        // stamps Primary_Contract__c on the deal.
+        Contract_Review__c orphanPsa = TestDataFactory.createContractReviews(
+            1, deal.Id, TestDataFactory.CONTRACT_REVIEW_RT_ACQUISITION, true)[0];
+        Assert.isNull(
+            [SELECT Primary_Contract__c FROM Opportunity WHERE Id = :deal.Id].Primary_Contract__c,
+            'PRECONDITION: this deal has NO primary contract — the shape the rule must not block');
+
+        Test.startTest();
+        orphanPsa.Negotiation_Status__c = 'Executed';
+        update orphanPsa;
+        Test.stopTest();
+
+        Opportunity after = [
+            SELECT Contract_Signed__c, Contract_Executed_Date__c, Deal_Status__c
+            FROM Opportunity WHERE Id = :deal.Id
+        ];
+        Assert.isTrue(after.Contract_Signed__c, 'The execution stands');
+        Assert.isNotNull(after.Contract_Executed_Date__c,
+            '🔴 and Day 0 is still stamped. If this goes red, the ISBLANK(Primary_Contract__c) '
+            + 'clause was removed from Executed_PSA_Before_Contract_Date and every deal without a '
+            + 'primary contract can no longer execute its PSA at all');
+        Assert.areEqual(1, offeringsFor(deal.Id).size(),
+            'and the Offering shell still opens, because the whole transaction survived');
+    }
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS PINS A **KNOWN LIMITATION**, NOT DESIRED BEHAVIOUR.
+     *    Accepted in code review on 2026-08-16 (finding W1, "accept and document").
+     *    🔴 IF A FUTURE CHANGE FIXES THE HOLE, **THIS TEST SHOULD GO RED** — and that inversion
+     *    is the entire point of it existing. See "WHAT TO DO WHEN THIS GOES RED" at the bottom.
+     * ═══════════════════════════════════════════════════════════════════════════════════════
+     *
+     * ── THE SECOND STRUCTURAL HOLE IN `Executed_PSA_Before_Contract_Date` ──
+     * `aPsaExecutionOnADealWithABlankPrimaryContractStillExecutes` (directly above) covers the
+     * hole the rule DOES exempt: a **BLANK** `Primary_Contract__c`. This is the other one, and
+     * nothing exempts it — a **WRONG-ROW** `Primary_Contract__c`.
+     *
+     * The mismatch is in the code, not in the fixture. `handleExecution` collects
+     * `cr.Opportunity__c` for ANY Contract Review that just became `Executed`, while the rule tests
+     * `Primary_Contract__r.Negotiation_Status__c` — i.e. the service asks "did SOME PSA on this deal
+     * execute?" and the rule asks "did THE PRIMARY one execute?". Those are different questions the
+     * moment a deal carries more than one Contract Review, which
+     * `aPsaExecutionOnADealWithABlankPrimaryContractStillExecutes` already establishes is a real
+     * shape (hand-created, data-loaded, or a deal that reached PSA by an unusual route).
+     *
+     * So on the shape below the rule fires on a deal whose PSA genuinely DID execute,
+     * `stampOpportunities`'s `Database.update(oppUpdates, true, AccessLevel.SYSTEM_MODE)` throws
+     * inside a `Contract_Review__c` AFTER-UPDATE trigger — `AccessLevel.SYSTEM_MODE` bypasses CRUD
+     * and FLS but **NOT validation rules** — and **THE WHOLE PSA EXECUTION ROLLS BACK**: the
+     * `Executed` status, `Contract_Signed__c`, Day 0, the three notifications and the Offering
+     * shell. And the user learns nothing: `stampOpportunities` has no catch, so the exception
+     * propagates out of the trigger, and a user driving this through the Advance Stage action hits
+     * `RecordStageAdvanceController`, which converts EVERY exception into one fixed generic string.
+     *
+     * ── WHY THIS IS ACCEPTED RATHER THAN FIXED (the decision, so nobody re-litigates it here) ──
+     * Narrowing the rule is not cleanly possible: a validation rule cannot aggregate child records,
+     * and there is no "has an executed PSA" rollup on `Opportunity` to test instead
+     * (`Contract_Review__c.Opportunity__c` is a Lookup, so no roll-up summary field exists).
+     * Closing it properly means adding that rollup and re-pointing the rule, which is its own
+     * design pass — the same disposition as the `Transaction__c` companion rule the VR's own XML
+     * comment defers. The matching paragraph is being added to that comment in parallel.
+     *
+     * ── WHY THE ASSERTIONS ARE SHAPED THE WAY THEY ARE ──
+     * ⚠ A test asserting the execution SUCCEEDS would be red, and a red test cannot ship. This
+     * therefore asserts the ACTUAL behaviour. It also deliberately does NOT assert the exception's
+     * TYPE or its MESSAGE TEXT: the refusal reaches this caller through a trigger, so its wrapping
+     * is a platform property, and its wording belongs to a metadata file this test does not own
+     * (a reworded `errorMessage` must not turn this red for the wrong reason). What is asserted is
+     * the shape that is true however the platform surfaces it — the DML is refused, and NOTHING the
+     * execution should have done actually happened. The captured type and message are carried into
+     * the failure messages so a red run is diagnosable without a rerun.
+     *
+     * ── 🔴 WHAT TO DO WHEN THIS GOES RED ──
+     * A red here means one of two things, and they need opposite responses:
+     *   1. THE HOLE WAS CLOSED — an executed-PSA rollup was added and the rule re-pointed at it, or
+     *      `handleExecution`/`stampOpportunities` was re-keyed on the PRIMARY contract. Then this
+     *      test must be REWRITTEN to assert the execution SUCCEEDS (Contract Signed, Day 0, one
+     *      Offering) and renamed accordingly. Do not delete it — it becomes the regression pin for
+     *      the fix.
+     *   2. THE RULE WAS WEAKENED OR DEACTIVATED for an unrelated reason. Then the hole is gone by
+     *      accident and `aPsaExecutionOnADealWithABlankPrimaryContractStillExecutes` is the test to
+     *      read next, because the two share the rule.
+     * Either way, do NOT "repair" this by loosening the assertions.
+     */
+    @isTest
+    static void aPsaExecutionIsBlockedWhenPrimaryContractPointsAtADifferentUnexecutedReview() {
+        // CR#1 — created by the stage-entry auto-create, so IT is the deal's Primary_Contract__c,
+        // and it is left UN-EXECUTED.
+        Contract_Review__c primary = dealAtPsa();
+        Id dealId = primary.Opportunity__c;
+
+        Opportunity before = [
+            SELECT Primary_Contract__c, Contract_Signed__c, Contract_Executed_Date__c
+            FROM Opportunity WHERE Id = :dealId
+        ];
+        Assert.areEqual(primary.Id, before.Primary_Contract__c,
+            'PRECONDITION: entry to Under Contract (PSA) must have stamped CR#1 as the primary — '
+            + 'without that this reproduces the BLANK-primary case, which the rule already exempts '
+            + 'and which the test above already owns');
+        Assert.isNull(before.Contract_Executed_Date__c,
+            'PRECONDITION: Day 0 must be unset, or stampOpportunities never assigns it and '
+            + 'ISCHANGED(Contract_Executed_Date__c) is false — the rule would then not fire at all '
+            + 'and this test would prove nothing');
+        Assert.areNotEqual('Executed',
+            [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :primary.Id]
+                .Negotiation_Status__c,
+            'PRECONDITION: the PRIMARY contract review must NOT be executed — it is the wrong-row '
+            + 'value the rule reads through Primary_Contract__r');
+
+        // CR#2 — a second Contract Review on the SAME deal, created by hand exactly as a data load
+        // or an unusual route would. It never becomes the primary.
+        Contract_Review__c second = TestDataFactory.createContractReviews(
+            1, dealId, TestDataFactory.CONTRACT_REVIEW_RT_ACQUISITION, true)[0];
+        Assert.areEqual(primary.Id,
+            [SELECT Primary_Contract__c FROM Opportunity WHERE Id = :dealId].Primary_Contract__c,
+            'PRECONDITION: creating a second Contract Review must NOT re-stamp Primary_Contract__c '
+            + '— OpportunityReviewService stamps it only for the review IT creates on stage entry. '
+            + 'If this ever changes, the wrong-row shape stops being reachable this way and this '
+            + 'test needs a different fixture, not a deletion');
+
+        Exception thrown = null;
+        Test.startTest();
+        try {
+            update new Contract_Review__c(Id = second.Id, Negotiation_Status__c = 'Executed');
+        } catch (Exception e) {
+            thrown = e;
+        }
+        Test.stopTest();
+
+        String observed = (thrown == null)
+            ? '(no exception was thrown)'
+            : thrown.getTypeName() + ' | ' + thrown.getMessage();
+
+        Assert.isNotNull(thrown,
+            '🔴 KNOWN LIMITATION (accepted 2026-08-16, review W1): executing a NON-PRIMARY Contract '
+            + 'Review on a deal whose Primary_Contract__c points at a DIFFERENT, un-executed review '
+            + 'is currently REFUSED, because Executed_PSA_Before_Contract_Date reads the primary '
+            + 'while ContractExecutionService keys on any executed review. A pass here means the '
+            + 'refusal is gone — read this method\'s "WHAT TO DO WHEN THIS GOES RED" block before '
+            + 'changing anything: if the hole was closed on purpose, REWRITE this test to assert '
+            + 'success, do not delete it.');
+
+        // The whole statement — and everything its triggers did — rolled back together.
+        Opportunity after = [
+            SELECT Contract_Signed__c, Contract_Executed_Date__c, Deal_Status__c
+            FROM Opportunity WHERE Id = :dealId
+        ];
+        Assert.isFalse(after.Contract_Signed__c,
+            'The refusal takes the ENTIRE execution with it, not just the date: Contract Signed is '
+            + 'not stamped. Observed refusal: ' + observed);
+        Assert.isNull(after.Contract_Executed_Date__c,
+            'and Day 0 is not stamped, so a Transaction opened later would date its ~75-task '
+            + 'checklist from today instead. Observed refusal: ' + observed);
+        Assert.areNotEqual('Contract Signed', after.Deal_Status__c,
+            'and the deal status is not advanced either. Observed refusal: ' + observed);
+        Assert.areNotEqual('Executed',
+            [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :second.Id]
+                .Negotiation_Status__c,
+            '🔴 and the LEGAL STATE is lost too — the Contract Review does not even record that it '
+            + 'was executed, because the failing Opportunity update rolls back the very DML that '
+            + 'set it. That is what makes this a limitation worth pinning rather than a cosmetic '
+            + 'one. Observed refusal: ' + observed);
+        Assert.areEqual(0, offeringsFor(dealId).size(),
+            'and no Offering shell opens, since the whole transaction was rolled back');
+    }
 }

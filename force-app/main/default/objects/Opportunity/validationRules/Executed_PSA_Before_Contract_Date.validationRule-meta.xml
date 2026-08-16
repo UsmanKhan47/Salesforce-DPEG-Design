@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.description is capped at 255 characters. The full rationale below is
+        operationally important, so it lives here rather than being trimmed; a comment is
+        repo-only and is never sent to the Metadata API. It is INSIDE the root element on
+        purpose - a comment ABOVE <ValidationRule> breaks `sf` deploy at conversion with the
+        misleading error "unable to find matching parent xml file". Same shape as the house
+        precedent, Contract_Signed_Before_Closed_Won.
+
+        =====================================================================
+        🔴 THE FSD'S STATED RATIONALE IS WRONG. THIS COMMENT CORRECTS IT RATHER THAN
+        PROPAGATING IT INTO METADATA (Gate 1, Q3.4 = accept).
+        =====================================================================
+        FSD Gap Tranche 1 §29.1 asks for this rule so the Day-0 75-task fan-out cannot fire
+        early. It does NOT: flows/Transaction_Task_Fanout.flow-meta.xml is RecordAfterSave on
+        Transaction__c, filtered on Transaction__c.Contract_Executed_Date__c IsNull=false AND
+        Tasks_Fanned_Out__c EqualTo false. It never reads Opportunity.Contract_Executed_Date__c
+        at all, so a rule on THIS field cannot arm or disarm that flow.
+
+        WHAT THIS RULE ACTUALLY PREVENTS: a MIS-DATED 75-task checklist, not an early one.
+        ContractExecutionService.openTransactionsOnAboutToClose copies
+        Opportunity.Contract_Executed_Date__c into Transaction__c.Contract_Executed_Date__c as
+        Day 0, and every one of the ~75 checklist tasks is dated by offset from that value. A
+        hand-typed Opportunity date - entered before the PSA is actually executed - produces a
+        checklist whose every deadline is silently wrong, not a checklist that never should have
+        existed. That is a real defect worth guarding against; it is simply not the defect the
+        FSD named.
+
+        A companion rule directly on Transaction__c.Contract_Executed_Date__c, which WOULD gate
+        the fan-out itself, is a deliberate tranche-2 candidate (Gate 1, Q3.4 recommendation
+        (a), option (b) declined for this tranche) - see the flagged-findings list in
+        agent-output/design-requirements-fsd-tranche-1.md. It needs its own design pass: that
+        field is set at INSERT by openTransactionsOnAboutToClose with allOrNone=true inside an
+        Opportunity after-update trigger, so a validation-rule block there would roll back the
+        deal's own stage change, and the rule would need a two-hop
+        Opportunity__r.Primary_Contract__r.Negotiation_Status__c reference from Transaction__c.
+
+        =====================================================================
+        WHY Negotiation_Status__c AND NOT Stage__c.
+        =====================================================================
+        Contract_Review__c.Stage__c is RECOMPUTED by the before-save flow
+        Contract_Review_Stage_Sync on every save. A direct write to Stage__c commits and is
+        silently discarded (measured repo trap, recorded on Contract_Review__c CTR-0000).
+        Negotiation_Status__c is the field the deal driver actually moves via the Advance Stage
+        action (RecordStageAdvanceService), and 'Executed' is its terminal value on BOTH the
+        Acquisition_PSA and Disposition_PSA record types (see the XML comment on
+        Contract_Review__c.Negotiation_Status__c).
+
+        =====================================================================
+        🔴 NOT(ISBLANK(Primary_Contract__c)) IS MANDATORY, NOT DEFENSIVE POLISH.
+        =====================================================================
+        ContractExecutionService.stampOpportunities writes Contract_Executed_Date__c via
+        Database.update(oppUpdates, true, AccessLevel.SYSTEM_MODE) - ALL-OR-NONE - from inside a
+        Contract_Review__c AFTER-UPDATE trigger. AccessLevel.SYSTEM_MODE bypasses CRUD and FLS;
+        it does NOT bypass validation rules. Opportunity.Primary_Contract__c is stamped by
+        OpportunityReviewService only for the Contract Review IT creates on entry to
+        'Under Contract (PSA)'. A Contract Review created any other way - by hand, by a data
+        load, on a deal that reached PSA by an unusual route - executes without ever having been
+        stamped as the primary. Without this clause, Primary_Contract__r.Negotiation_Status__c
+        would be blank, the rule would fire, and the all-or-none update would throw and roll
+        back the ENTIRE PSA execution: Contract_Signed__c, the Day-0 stamp, and the three
+        GroupNotifier notifications (Investor Relations, Transactions, Due Diligence) - all of
+        it, on a deal that just legitimately executed its PSA.
+
+        STATED COST, NOT HIDDEN: with this clause, the rule is UNENFORCEABLE on exactly the
+        deals with no primary contract - it fails OPEN on the irregular path and protects only
+        the ordinary one. That is the correct trade (a rolled-back PSA execution is worse than
+        an unguarded manual date on an irregular deal), but it is a decision, not an oversight.
+
+        A second, independent reason the exemption must ship: ContractExecutionService.
+        stampOpportunities has NO catch of its own, so a DmlException from a blocked update
+        propagates out of the trigger. A user executing the PSA through the Advance Stage action
+        hits RecordStageAdvanceController, which converts EVERY exception into one fixed generic
+        string ("This change could not be saved") - so this rule's errorMessage would never
+        reach the user who tripped it through that path; only a direct edit or Data Loader run
+        would ever see the real text.
+
+        =====================================================================
+        ORDERING - MUST BE PROVEN, NOT ASSUMED (post-deploy gate G5).
+        =====================================================================
+        stampOpportunities runs from ContractReviewTrigger AFTER UPDATE, i.e. after the
+        Contract Review row is written to the database within the same transaction, so the
+        cross-object formula reference Primary_Contract__r.Negotiation_Status__c should evaluate
+        against the already-committed 'Executed' value. If it does not, the all-or-none
+        Opportunity update throws inside the after-update trigger and rolls back the whole PSA
+        execution. Run ContractExecutionServiceTest end-to-end IMMEDIATELY after this rule
+        deploys - a green run there IS the proof this ordering works; do not ship without it.
+
+        =====================================================================
+        WRITERS THIS RULE MEETS.
+        =====================================================================
+        - ContractExecutionService.stampOpportunities (Apex, all-or-none, SYSTEM_MODE): FIRES,
+          and a block here is FATAL to the whole PSA execution absent the Primary_Contract__c
+          exemption above. The primary hazard this rule was built against.
+        - Manual edit / inline edit / Data Loader: FIRES - the population this rule exists for.
+        - flows/Transaction_Complete_Close: does NOT write this field. Verified 2026-08-16:
+          flows/Transaction_Task_Fanout.flow-meta.xml is the ONLY flow in the repo referencing
+          Contract_Executed_Date__c (on Transaction__c, a different object entirely).
+        - Approval-process field updates: do not fire validation rules in this org (measured,
+          see ApprovalAuditService's class header and ARCHITECTURE.md §2).
+        - INSERT: does NOT fire - ISCHANGED() is false on record creation. Deliberate hole, the
+          same shape the deployed NDA-adjacent rules in this repo accept.
+
+        =====================================================================
+        BYPASS: DELIBERATELY NONE (Gate 1, Q3.2 = accept "no bypass").
+        =====================================================================
+        The exemption this rule needs is STRUCTURAL (a blank Primary_Contract__c), not
+        persona-based, so there is no population a bypass would legitimately serve.
+
+        =====================================================================
+        🔴 CODE REVIEW FIX 3 (W1, 2026-08-16) - A SECOND, UNCLOSED STRUCTURAL HOLE, WITH THE
+        IDENTICAL FATAL CONSEQUENCE. THE EXEMPTION ANALYSIS ABOVE IS NOT COMPLETE.
+        =====================================================================
+        The blank-Primary_Contract__c exemption above answers "what if there is NO primary
+        contract?". It does not answer a second question with the same shape: what if there
+        are TWO Contract Reviews on the same deal and the one that executes is NOT the primary?
+
+        ContractExecutionService.handleExecution collects Contract_Review__c.Opportunity__c for
+        ANY Contract Review that just transitioned to Executed - not only the primary one - but
+        this rule tests Primary_Contract__r.Negotiation_Status__c specifically. Those need not
+        be the same row: Contract_Review__c -> Opportunity is a plain Lookup, so an Opportunity
+        can carry more than one Contract Review, and OpportunityReviewService stamps
+        Primary_Contract__c only for the child it creates on entry to 'Under Contract (PSA)'.
+        A hand-created second Contract Review (CR#2) on a deal that already has its primary
+        (CR#1, not executed) is unremarkable and unblocked by anything else in this schema.
+
+        CONCRETE SEQUENCE: deal has CR#1 (primary, still Negotiating) and CR#2 (hand-created,
+        not primary). A user executes CR#2. ContractReviewTrigger fires, handleExecution
+        collects this Opportunity into executedOppIds, and stampOpportunities writes
+        Contract_Executed_Date__c via Database.update(oppUpdates, true, SYSTEM_MODE). This rule
+        then evaluates Primary_Contract__r.Negotiation_Status__c - which is CR#1's status, still
+        NOT 'Executed' - so the rule FIRES, the all-or-none update throws, and THE ENTIRE PSA
+        EXECUTION ROLLS BACK: Contract_Signed__c, the Day-0 stamp, and the three GroupNotifier
+        notifications, all of it, on a deal whose PSA (CR#2) just legitimately executed. This is
+        the exact outcome this rule exists to prevent, produced by a path the blank-primary
+        exemption does not cover: ISBLANK(Primary_Contract__c) is FALSE here (CR#1 is stamped as
+        primary), so that clause does not save this case. As with the blank-primary case,
+        stampOpportunities has no catch of its own, so a user hitting this through the Advance
+        Stage action sees only RecordStageAdvanceController's fixed generic "This change could
+        not be saved" - no indication that the wrong Contract Review was the one they executed.
+
+        THIS IS ACCEPTED AS A KNOWN LIMITATION, NOT MISSED. Found in code review 2026-08-16
+        (Fix 3 / W1) against the version of this rule already deployed to this branch. Per the
+        explicit decision already taken at that review: DO NOT narrow this rule to close it here.
+        A validation rule cannot count or aggregate child records, so there is no formula-only
+        way to ask "is ANY Contract Review on this Opportunity Executed?" - only "is THE PRIMARY
+        one Executed?" - and no rollup of executed-PSA-count exists on Opportunity today. Closing
+        this properly needs a new rollup field (e.g. a Number or Formula on Opportunity counting
+        or flagging Contract Review children with Negotiation_Status__c = 'Executed', maintained
+        by a trigger or declarative rollup) and this rule re-targeted to test THAT field instead
+        of Primary_Contract__r.Negotiation_Status__c - which is its own design pass and is out of
+        scope for this tranche.
+
+        STATE THIS PLAINLY: the analysis above (writers this rule meets, the blank-primary
+        exemption, the ordering proof) covers the ORDINARY one-Contract-Review-per-deal path and
+        the ZERO-primary irregular path. It does NOT cover the TWO-OR-MORE-Contract-Reviews
+        irregular path, and a reader should not treat the exemption analysis in this file as
+        exhaustive just because it is thorough. This paragraph exists so that gap is found here,
+        in review, rather than in a rolled-back production PSA execution.
+    -->
+    <fullName>Executed_PSA_Before_Contract_Date</fullName>
+    <active>true</active>
+    <description>Blocks setting/changing Contract_Executed_Date__c unless the deal's Primary Contract Review is Executed. Guards against a mis-dated 75-task Transaction checklist, not the fan-out itself. See the XML comment in this file for full rationale.</description>
+    <errorConditionFormula>AND(
+    ISCHANGED(Contract_Executed_Date__c),
+    NOT(ISBLANK(Contract_Executed_Date__c)),
+    NOT(ISBLANK(Primary_Contract__c)),
+    TEXT(Primary_Contract__r.Negotiation_Status__c) &lt;&gt; &apos;Executed&apos;
+)</errorConditionFormula>
+    <errorDisplayField>Contract_Executed_Date__c</errorDisplayField>
+    <errorMessage>Contract Executed Date can only be set once the PSA is Executed. Execute the PSA on the Contract Review first.</errorMessage>
+</ValidationRule>

@@ -14,6 +14,32 @@
  * Javadoc, which is where the justification lives (ARCHITECTURE.md §2). Same shape as
  * TaskSelector and InboundEmailStagingSelector.
  *
+ * ⚠ AMENDED AGAIN 2026-08-16 (FSD Tranche 1, Item 2) — THE SENTENCE ABOVE NOW UNDERSTATES IT IN
+ * BOTH HALVES, AND SHARING HAS JOINED MODE AS A PER-METHOD PROPERTY.
+ *   MODE     this class has **SEVEN** public methods. **TWO** are `WITH SYSTEM_MODE` —
+ *            `selectByDispositionIds` and `queryExpiryAlerts` — and the **FIVE** remaining ones
+ *            stay `WITH USER_MODE`: `selectById`, `selectLatestByOpportunityId`,
+ *            `selectLatestByDispositionId`, `selectByOpportunityIds` and
+ *            `selectStageRequiredById`.
+ *            ⚠ THE COUNT IS ENUMERATED RATHER THAN ASSERTED BECAUSE IT WAS WRONG HERE FIRST, AND
+ *            THE WRONG NUMBER PROPAGATED. This block said "the FOUR remaining methods" when
+ *            `queryExpiryAlerts` was added (2026-08-16), and ARCHITECTURE.md said the same in two
+ *            places — one of them a 2026-08-09 sentence that was ALREADY wrong when written, since
+ *            the class carried five `USER_MODE` methods then too. Corrected in all three places on
+ *            2026-08-16 (code review W4). ARCHITECTURE.md §2 states that these class headers ARE
+ *            the authoritative `SYSTEM_MODE` inventory, so a miscount here is not cosmetic: it is
+ *            the number a future reviewer reconciles the doc against. Re-count against the method
+ *            list, not against this sentence, whenever a method is added or removed.
+ *            🔴 Do NOT read a future third SYSTEM_MODE method as conformant because two already
+ *            exist — read its own header. The two present justifications are different arguments
+ *            reaching the same answer.
+ *   SHARING  🔴 THE CLASS-LEVEL `with sharing` KEYWORD IS NO LONGER THE WHOLE ANSWER.
+ *            `queryExpiryAlerts` runs in a `private without sharing` inner class,
+ *            `ExpiryAlertReads`, and that is the ONE method here that escapes sharing.
+ *            `selectByDispositionIds` deliberately does NOT — its own header argues why, and the
+ *            two must not be harmonised. Conflating mode and sharing is the D25 mistake this repo
+ *            has already paid for once; each is argued at its own declaration.
+ *
  * ⚠ NDA__c IS DUAL-PARENTED (Opportunity__c and Disposition__c), so this selector now
  * serves BOTH modules: selectLatestByOpportunityId for Acquisitions and
  * selectLatestByDispositionId for the Disposition BOV Outreach pill. They are separate
@@ -245,5 +271,173 @@ public with sharing class NdaSelector {
             WITH USER_MODE
             LIMIT 1
         ];
+    }
+
+    /**
+     * `NDA__c.Status__c` value the expiry-reminder ladder is scoped to. Gate 1 decision Q2.1
+     * (a): SIGNED NDAs only.
+     *
+     * ⚠ IT MATCHES THE DEPLOYED `Acquisitions/NDAs_Expiring_This_Month` REPORT, WHICH IS WHY IT IS
+     * `'Signed'` AND NOT SOMETHING ARGUED FROM FIRST PRINCIPLES. That report — the only existing
+     * expiry-tracking surface in this repo — filters `Status__c equals Signed` AND
+     * `Is_Non_Expiring__c = 0`. Matching it exactly is what stops the report and the reminder
+     * disagreeing on day one about which NDAs are expiring. Changing this constant without
+     * changing that report re-opens exactly that divergence.
+     */
+    @TestVisible
+    private static final String STATUS_SIGNED = 'Signed';
+
+    /**
+     * 🔴 HOW WIDE THE LOCATOR REACHES — `TODAY + 5`, the WIDEST rung of `NdaExpiryService`'s ladder.
+     *
+     * ⚠ IT IS DUPLICATED KNOWLEDGE, AND THIS IS THE ONE PLACE THAT IS ALLOWED. A
+     * `Database.QueryLocator` cannot bind an Apex collection, so `NdaExpiryService.ALERT_INTERVALS`
+     * cannot be read here; and a selector calling a service would invert the layering
+     * (`.claude/rules/apex-layering-rule.md`). The same trade, for the same reason, as
+     * `OpportunitySelector.queryCallForOffersAlerts`'s `+ 7`.
+     *
+     * 🔴 IT IS A **CEILING**, NOT A THRESHOLD. Widening it merely costs rows the in-memory ladder
+     * then skips; narrowing it below the widest rung is the ONLY way to break the feature — every
+     * NDA outside it becomes invisible to the job and is silently never reminded about. **Whoever
+     * adds a rung above 5 to `NdaExpiryService` must widen this too.**
+     */
+    @TestVisible
+    private static final Integer ALERT_CEILING_DAYS = 5;
+
+    /**
+     * THE REMINDER JOB'S WORK QUEUE — every signed, expiring ACQUISITION NDA close enough to be
+     * inside the reminder ladder. Backs `NdaExpiryAlertBatch.start` (FSD Tranche 1, Item 2).
+     *
+     * ═══ 🔴 THE DISCRIMINATOR IS `Opportunity__c != NULL`, DELIBERATELY **NOT** THE RECORD TYPE ═══
+     * The requirement is "acquisition NDAs". The obvious mechanism —
+     * `RecordType.DeveloperName = 'Acquisition_NDA'` — would **SHIP THIS FEATURE INERT**, and
+     * silently: until post-deploy gate T-A1 / T-B every live `NDA__c` row still sits on **Master**
+     * (which is exactly why `RecordStageAdvanceService` carries a null/Master fallback). A
+     * record-type filter therefore returns ZERO ROWS for every un-migrated acquisition NDA, the job
+     * runs daily, `finish()` logs an all-zeros summary, and the feature looks completely healthy
+     * from every angle a deploy log or a test run can see.
+     *
+     * The parent lookup is the discriminator `Contract_Review__c.Disposition__c`'s own field
+     * metadata mandates ("this lookup, NOT the record type, is the discriminator anything outside
+     * the record page should test"), and it is the one `ContractExecutionService.handleExecution`
+     * uses, for its stated reason 2: *"It WORKS DURING THE MIGRATION WINDOW."* A disposition NDA
+     * carries `Disposition__c` with a null `Opportunity__c`, so the split is exact and survives the
+     * migration in both directions.
+     *
+     * ═══ ▸ MODE = `WITH SYSTEM_MODE`, on AUTOMATION-PATH grounds (ARCHITECTURE.md §2) ═══
+     * No principal ever asks for this read; a scheduler performs it on the Acquisition team's
+     * behalf. And the argument here is unusually concrete rather than generic: this query selects
+     * `NDA_Alert_Last_Interval__c` and `NDA_Alert_Expiry_Date__c`, **both created in this same
+     * tranche**. A Metadata-API-deployed custom field arrives with NO field permissions for ANY
+     * profile, System Administrator included — so under `USER_MODE` this locator would THROW for
+     * the very administrator who deployed it, on day one, and the whole reminder feature would be
+     * dead while everything looked shipped. `USER_MODE` throws; it does not degrade.
+     *
+     * ═══ 🔴 ▸ SHARING = `without sharing`, VIA `ExpiryAlertReads` — AND THIS IS THE ONE PLACE THE
+     *         CALL-FOR-OFFERS PRECEDENT MUST **NOT** BE COPIED VERBATIM ═══
+     * `OpportunitySelector.queryCallForOffersAlerts` is `WITH SYSTEM_MODE` on a `with sharing`
+     * class, and its header argues `with sharing` is SUFFICIENT **because `Opportunity` internal
+     * OWD is `ReadWrite` (measured)**. 🔴 THAT JUSTIFICATION DOES NOT TRANSFER, and copying the
+     * keyword without the argument is the trap:
+     *   - `objects/NDA__c/NDA__c.object-meta.xml` -> `sharingModel = Private`.
+     *   - `sharingRules/NDA__c.sharingRules-meta.xml` holds exactly TWO rules
+     *     (`NDA_Disposition_Team_RW`, `NDA_Disposition_Principals_R`) and BOTH are criteria-scoped
+     *     to `RecordTypeId = 'Disposition NDA'`. **There is NO sharing rule covering acquisition
+     *     NDAs at all** — they are reachable only via `viewAllRecords = true` on an acquisitions
+     *     permission set.
+     * So under `with sharing` a scheduling principal without an acquisitions permission set sees
+     * only the NDAs they personally own. The locator returns zero rows, `finish()` logs all-zeros,
+     * and that is **INDISTINGUISHABLE FROM "no NDA is expiring"** — the 2026-08-08
+     * `InboundEmailStagingSelector.RoutingReads` incident, one module later. `SYSTEM_MODE` cannot
+     * help: it lifts CRUD and FLS and **NEVER** sharing.
+     *
+     * ⚠ AND THE READ FIX IS ONLY HALF OF IT. The batch's marker WRITE has the identical exposure —
+     * a Private-OWD `update` by a non-owner is REFUSED — and it is fixed separately, in
+     * `NdaExpiryAlertBatch.MarkerWrites`. Neither covers the other.
+     *
+     * ═══ THE CEILING IS A REAL FILTER; THERE IS DELIBERATELY NO FLOOR ═══
+     * `NDA_Expiry_Date__c <= TODAY + 5` is exactly the widest rung of the ladder, so an NDA 30 days
+     * out is never even read. There is NO lower bound: a long-expired NDA stays in this locator
+     * forever and is skipped IN MEMORY, because the marker makes it a no-op (once rung 2 is
+     * stamped, the strictly-smaller test can never pass again). That costs one row per pass and
+     * buys correctness for the case that actually matters — an NDA whose expiry passed before this
+     * feature existed, or before it was signed, which has no marker and genuinely is owed its one
+     * reminder. ⚠ Adding a floor would silence that NDA, so it is an ALERT-LOSS decision, not a
+     * tuning knob: if the expired population ever grows enough to matter, take it THEN with the
+     * population as evidence.
+     *
+     * ⚠ ORDER BY carries an `Id ASC` TIE-BREAK. `NDA_Expiry_Date__c` is a Date, so many rows share
+     * one value and a bare single-key sort leaves chunk composition non-deterministic between
+     * passes. It costs nothing and makes the ordering assertable.
+     *
+     * @return A locator over signed, expiring acquisition NDAs, soonest expiry first.
+     * @example
+     * public Database.QueryLocator start(Database.BatchableContext ctx) {
+     *     return NdaSelector.queryExpiryAlerts();
+     * }
+     */
+    public static Database.QueryLocator queryExpiryAlerts() {
+        return new ExpiryAlertReads().expiryAlertLocator();
+    }
+
+    /**
+     * 🔴 THE EXPIRY-REMINDER WORK QUEUE, WHICH MUST RUN **WITHOUT SHARING**.
+     *
+     * It is its own class rather than a keyword on `NdaSelector` because `NdaSelector` backs FIVE
+     * user-facing reads (the Deal Summary NDA row, the BOV Outreach pill, the auto-create
+     * idempotency guard and the stage-advance load). A `without sharing` outer class would widen
+     * every one of them silently. The escape is scoped to exactly one query, exactly as
+     * `InboundEmailStagingSelector.RoutingReads`, `PropertyAssetSelector.AssetCreationReads` and
+     * `PropertySelector.FolderCreationReads` are.
+     *
+     * The full argument — Private OWD, two sharing rules both scoped to the DISPOSITION record
+     * type, and why a filtered read here is indistinguishable from a healthy job — is on
+     * `queryExpiryAlerts`. Read it before changing this keyword.
+     *
+     * ⚠ RESIDUAL, STATED BECAUSE IT COULD NOT BE MEASURED FROM SOURCE: whether the platform
+     * re-applies the BATCH CLASS's sharing context when it chunks a locator built here is not
+     * established by any file in this repo. The three in-repo precedents above all build their
+     * locator in a `without sharing` inner class while leaving the batch/caller `with sharing`, so
+     * none of them answers it either.
+     *
+     * ✅ THE REMEDY WAS TAKEN UP FRONT ON 2026-08-16 (code review W2) RATHER THAN LEFT AS A WATCH.
+     * ⚠ This paragraph used to end "If it does not, the remedy is `without sharing` on
+     * `NdaExpiryAlertBatch` with its own written justification" — that is now DONE, not pending.
+     * `NdaExpiryAlertBatch` is `without sharing`, argued in its own class header §4b, and the
+     * argument is that it costs nothing: that class holds ZERO SOQL and ZERO direct DML (its one
+     * `Database.update` lives in its own `without sharing` inner class) and every callee declares
+     * its own sharing keyword, so the keyword widens nothing while closing the only path by which
+     * the escape here could be silently re-applied.
+     *
+     * 🔴 THAT DID NOT CLOSE GATE G2 AND IS NOT A SUBSTITUTE FOR IT. Nothing above is a measurement.
+     * G2 still stands: confirm AS THE SCHEDULING PRINCIPAL that a real pass selects — and stamps —
+     * an acquisition NDA that principal does not own.
+     *
+     * ⚠ AND IT IS STILL NOT A LICENCE TO WIDEN **THIS** SELECTOR. `NdaSelector` backs five
+     * user-facing reads; the escape stays scoped to this one query whatever the batch class says.
+     */
+    private without sharing class ExpiryAlertReads {
+
+        /**
+         * Signed, expiring acquisition NDAs inside the ladder, read without sharing.
+         *
+         * @return The locator; soonest expiry first, `Id ASC` as the tie-break.
+         */
+        private Database.QueryLocator expiryAlertLocator() {
+            Date ceiling = Date.today().addDays(ALERT_CEILING_DAYS);
+            String signedStatus = STATUS_SIGNED;
+            return Database.getQueryLocator([
+                SELECT Id, Name, Opportunity__c, Counterparty_Name__c, Status__c,
+                       NDA_Expiry_Date__c, NDA_Alert_Last_Interval__c, NDA_Alert_Expiry_Date__c
+                FROM NDA__c
+                WHERE NDA_Expiry_Date__c != NULL
+                  AND NDA_Expiry_Date__c <= :ceiling
+                  AND Is_Non_Expiring__c = FALSE
+                  AND Opportunity__c != NULL
+                  AND Status__c = :signedStatus
+                WITH SYSTEM_MODE
+                ORDER BY NDA_Expiry_Date__c ASC, Id ASC
+            ]);
+        }
     }
 }

@@ -13,8 +13,36 @@
         Record type visibility is scoped to Lead.IR_Investor / Contact.Investor /
         Account.Investor_Entity only, so an IR user cannot create or see a broker-typed row.
         Carries no broker field and no acquisitions Lead deal-screening field.
+
+        =====================================================================
+        ADDED 2026-08-16 - Offering__c, user directive (FSD Gap Tranche 1, Q1.2 follow-up).
+        =====================================================================
+        The design gate for FSD Tranche 1 flagged that OfferingService.ensureOnPsaExecuted
+        leaves every new Offering__c row invisible to IR (Private OWD, zero sharing rules, and
+        neither DPEG_IR_Edit nor DPEG_IR_View carried the object at all). The user's explicit
+        instruction was: "They will be visible to IR team, right now give them read/write
+        permission" - not a Gate-1 option letter, a directive. This set therefore gains
+        allowRead=true, allowEdit=true on Offering__c and EDITABLE FLS on its three fields.
+
+        allowCreate and allowDelete are DELIBERATELY false. The shell is created by
+        OfferingService (system mode, off the ContractExecutionService PSA-execution path); the
+        user asked for read/write on the record, not the ability to mint or remove one, and
+        granting Create here would let IR bypass the one-shell-per-Opportunity idempotency the
+        service enforces via OfferingSelector.selectByOpportunityIds.
+
+        NO viewAllRecords/modifyAllRecords, matching every other grant on this set - see
+        Offering__c.sharingRules-meta.xml (Offering_IR_Visibility, Edit, owner-based from
+        roleAndSubordinates Acquisitions_Analyst) for how IR actually reaches a row it does not
+        own. New Offerings are owned by whichever acquisitions persona executed the PSA, never
+        by IR, which is exactly why record access must come from that sharing rule rather than
+        from viewAllRecords on this set.
+
+        Reconciled against usman-dpeg via sf project retrieve (2026-08-16) before this edit:
+        the live set carried NO Offering__c objectPermissions or fieldPermissions entries at
+        all, matching the repo file, so this is a pure addition with nothing org-side at risk
+        of being replaced.
     -->
-    <description>Investor Relations: Create/Read/Edit (no Delete) on IR-record-type Lead/Contact/Account only. No viewAllRecords/modifyAllRecords - visibility comes from sharing rules, not this set. Scoped to IR record types only; no broker or deal-screening fields.</description>
+    <description>Investor Relations: Create/Read/Edit (no Delete) on IR-record-type Lead/Contact/Account only, plus Read/Edit on Offering__c (user directive). No viewAllRecords/modifyAllRecords - visibility comes from sharing rules, not this set.</description>
     <fieldPermissions>
         <editable>true</editable>
         <field>Account.AccountSource</field>
@@ -115,6 +143,21 @@
         <field>Lead.Website</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Offering__c.IR_Owner__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG IR Edit</label>
     <objectPermissions>
@@ -124,6 +167,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Lead</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Offering__c</object>
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
