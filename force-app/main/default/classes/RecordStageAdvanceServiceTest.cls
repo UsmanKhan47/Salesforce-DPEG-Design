@@ -46,7 +46,10 @@
  *
  * ── ⚠ THE TWO MULTI-RECORD-TYPE OBJECTS ARE NOT THE SAME SHAPE, AND THE TESTS DIFFER ──
  * NDA__c's two value sets OVERLAP ('Sent', 'Signed'), so the current stage alone cannot identify
- * the sequence — sharedSentStatusAdvancesDifferentlyPerRecordType is the proof.
+ * the sequence — sharedSentStatusIsTerminalOnAcquisitionAndAHopOnDisposition and its 2026-08-16
+ * sibling sharedSignedStatusDivergesInTheOppositeDirection are the proof. ⚠ The first of those was
+ * sharedSentStatusAdvancesDifferentlyPerRecordType until the acquisition reorder; the second did
+ * not exist, because 'Signed' used to be terminal on BOTH types and so discriminated nothing.
  *
  * 🔴 LOI__c's TWO VALUE SETS OVERLAP TOO, SINCE 2026-08-14. This paragraph used to read "LOI__c's
  * are FULLY DISJOINT, so no equivalent test is possible or needed"; observation 5 renamed
@@ -99,9 +102,15 @@
  * falsifier, and dispositionNdaAcceptsDeclinedAsAnExplicitTarget is its complement: without the
  * pair, a refusal could pass simply because 'Declined' was configured nowhere at all.
  *
- * sharedSentStatusAdvancesDifferentlyPerRecordType is the second half of the argument. Both NDA
- * record types carry 'Sent', and from it the acquisition NDA goes to 'Received' while the
- * disposition NDA goes to 'Signed'. One object-level map cannot express that at any price.
+ * sharedSentStatusIsTerminalOnAcquisitionAndAHopOnDisposition is the second half of the argument.
+ * ⚠ REWRITTEN 2026-08-16. RETRACTED, verbatim: "sharedSentStatusAdvancesDifferentlyPerRecordType is
+ * the second half of the argument. Both NDA record types carry 'Sent', and from it the acquisition
+ * NDA goes to 'Received' while the disposition NDA goes to 'Signed'." The acquisition reorder made
+ * 'Sent' that sequence's TERMINAL, so from it an acquisition NDA is REFUSED while a disposition NDA
+ * still goes to 'Signed' — the same key must now yield a refusal on one record type and a write on
+ * the other, which is a STRONGER claim than the one this paragraph used to make, not a weaker one.
+ * sharedSignedStatusDivergesInTheOppositeDirection pins the mirror case ('Signed': a hop to 'Sent'
+ * on acquisition, terminal on disposition). One object-level map cannot express either at any price.
  *
  * ── 🔴 AND THE THIRD PER-RECORD-TYPE AXIS: THE PERMISSION GATE ───────────────
  * theGateIsResolvedPerRecordTypeNotPerObject. Since 2026-08-09 the gate lives on StageTypeConfig
@@ -551,14 +560,22 @@ private class RecordStageAdvanceServiceTest {
     // ═════════════════════════════════════════════════════════════════════════
 
     @isTest
-    static void acquisitionNdaWalksPendingThroughReceivedToSigned() {
+    static void acquisitionNdaWalksPendingReceivedSignedToSent() {
         // ⚠ NDA__c is one of the two objects whose stage field is not Stage__c (Status__c here,
         // Negotiation_Status__c on Contract_Review__c). If the config ever hardcoded Stage__c this
         // walk would fail on the very first hop.
         //
-        // 'Received' was INSERTED between 'Sent' and 'Signed' by decision D14.1. The four-hop shape
-        // is the whole acquisition half of Tranche 3A, so this walk is where a regression to the
-        // old three-state map would surface.
+        // 🔴 REORDERED 2026-08-16 (user decision), and RENAMED with it — this method was
+        // acquisitionNdaWalksPendingThroughReceivedToSigned and asserted
+        // Pending -> Sent -> Received -> Signed (D14.1), with 'Signed' terminal. The VALUE SET is
+        // unchanged; the ORDER is reversed at both ends. The business sequence is now: the broker's
+        // NDA arrives (Pending), we receive it (Received), we sign it (Signed), we send the signed
+        // copy back (Sent). 'Sent' is TERMINAL.
+        //
+        // The final BLOCKED line is therefore the load-bearing assertion in this test, not a
+        // footnote: it is what pins 'Sent' as the end of the acquisition sequence. A build that
+        // reverted the reorder would still produce four messages, so only the ORDER and that last
+        // line tell the two apart.
         Id ndaId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Pending').Id;
 
         Test.startTest();
@@ -567,16 +584,17 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual(
             new List<String>{
-                'NDA moved to Sent.',
                 'NDA moved to Received.',
                 'NDA moved to Signed.',
-                'BLOCKED: There is no next step available from the Signed stage.'
+                'NDA moved to Sent.',
+                'BLOCKED: There is no next step available from the Sent stage.'
             },
             messages,
-            'The Acquisition_NDA map must be exactly Pending -> Sent -> Received -> Signed (D14.1), '
-            + 'with Signed terminal');
-        Assert.areEqual('Signed', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,
-            'The walk must leave the NDA at its terminal status');
+            'The Acquisition_NDA map must be exactly Pending -> Received -> Signed -> Sent '
+            + '(2026-08-16 user decision, which REVERSES D14.1\'s placement of "Sent"), with SENT '
+            + 'terminal. A red here reading "...moved to Sent." first is the old D14.1 order');
+        Assert.areEqual('Sent', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,
+            'The walk must leave the NDA at its terminal status, which is now Sent and not Signed');
     }
 
     @isTest
@@ -585,6 +603,12 @@ private class RecordStageAdvanceServiceTest {
         // does not carry at all ('Not Sent'). If the service fell back to the acquisition map, the
         // very first hop would be refused with "no next step available from the Not Sent stage" —
         // so this walk fails LOUDLY rather than subtly if record-type resolution breaks.
+        //
+        // 🔴 THIS TEST IS DELIBERATELY UNCHANGED BY THE 2026-08-16 ACQUISITION REORDER, AND THAT IS
+        // ITS SECOND JOB. It is the REGRESSION GUARD for the shared-'Sent' divergence: the sell-side
+        // sequence keeps 'Sent' MID-sequence and 'Signed' TERMINAL, which is now the exact mirror of
+        // the acquisition map. Anyone who "reconciles" the two maps — in either direction — reds
+        // this walk or the acquisition one, never neither.
         Id ndaId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Not Sent').Id;
 
         Test.startTest();
@@ -606,33 +630,103 @@ private class RecordStageAdvanceServiceTest {
     }
 
     @isTest
-    static void sharedSentStatusAdvancesDifferentlyPerRecordType() {
-        // 🔴 THE ARGUMENT FOR THE WHOLE CHANGE, IN ONE TEST.
+    static void sharedSentStatusIsTerminalOnAcquisitionAndAHopOnDisposition() {
+        // 🔴 THE ARGUMENT FOR THE WHOLE CHANGE, IN ONE TEST — AND IT GOT STRONGER ON 2026-08-16.
+        //
+        // ⚠ RENAMED AND REWRITTEN. This method was sharedSentStatusAdvancesDifferentlyPerRecordType
+        // and asserted 'NDA moved to Received.' for the acquisition NDA and 'NDA moved to Signed.'
+        // for the disposition one, both from 'Sent'. The acquisition half is dead: after the reorder
+        // 'Sent' is the acquisition sequence's TERMINAL, so advance() REFUSES it. The old name is
+        // now a lie ("advances differently" — it does not advance at all), which is why the rename
+        // travels with the rewrite.
+        //
         // 'Sent' is present on BOTH NDA record types, so the current stage alone cannot identify the
-        // sequence. From it an acquisition NDA must reach 'Received' and a disposition NDA must
-        // reach 'Signed'. No Map<SObjectType, ...> can produce two answers for one key, so this test
-        // is unpassable by any object-level design — which is exactly what makes it worth having.
+        // sequence. From it an acquisition NDA must now be REFUSED and a disposition NDA must reach
+        // 'Signed'. That is a sharper divergence than the one this test used to measure — the same
+        // key must yield a refusal on one record type and a write on the other — and no
+        // Map<SObjectType, ...> can produce both for one key at any price.
         Id acquisitionId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Sent').Id;
         Id dispositionId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Sent').Id;
 
         Test.startTest();
-        String acquisitionMessage = RecordStageAdvanceService.advance(acquisitionId);
+        Boolean acquisitionRefused = false;
+        String acquisitionMessage;
+        try {
+            RecordStageAdvanceService.advance(acquisitionId);
+            Assert.fail('advance() MUST refuse an Acquisition_NDA already on Sent — Sent is that '
+                + 'sequence\'s terminal since 2026-08-16. Returning normally means the acquisition '
+                + 'map still carries a hop out of Sent, i.e. the old D14.1 order');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            acquisitionRefused = true;
+            acquisitionMessage = e.getMessage();
+        }
         String dispositionMessage = RecordStageAdvanceService.advance(dispositionId);
         Test.stopTest();
 
-        Assert.areEqual('NDA moved to Received.', acquisitionMessage,
-            'From Sent, an Acquisition_NDA advances to Received');
+        Assert.isTrue(acquisitionRefused,
+            'From Sent, an Acquisition_NDA has nowhere to go — Sent is terminal there');
+        Assert.areEqual('There is no next step available from the Sent stage.', acquisitionMessage,
+            'and the refusal is the ordinary terminal wording, not a hint or an access denial');
         Assert.areEqual('NDA moved to Signed.', dispositionMessage,
-            'From the SAME status, a Disposition_NDA advances to Signed instead');
+            'From the SAME status, a Disposition_NDA still advances to Signed. This half is the '
+            + 'regression guard: the sell-side map was deliberately not touched');
 
         Set<Id> ndaIds = new Set<Id>{ acquisitionId, dispositionId };
         Map<Id, NDA__c> stored = new Map<Id, NDA__c>([
             SELECT Id, Status__c FROM NDA__c WHERE Id IN :ndaIds
         ]);
-        Assert.areEqual('Received', stored.get(acquisitionId).Status__c,
-            'and the acquisition NDA must actually be written to Received');
+        Assert.areEqual('Sent', stored.get(acquisitionId).Status__c,
+            'and a refused advance must not write — the acquisition NDA is still on Sent');
         Assert.areEqual('Signed', stored.get(dispositionId).Status__c,
             'and the disposition NDA must actually be written to Signed');
+    }
+
+    @isTest
+    static void sharedSignedStatusDivergesInTheOppositeDirection() {
+        // 🔴 THE OTHER HALF OF THE SHARED-VALUE DIVERGENCE, ADDED 2026-08-16, AND IT RUNS THE OTHER
+        // WAY. 'Signed' is the second value both NDA record types carry. Before the reorder it was
+        // TERMINAL on both, so it discriminated nothing and no test needed it. It now does the exact
+        // opposite of 'Sent': a hop (to 'Sent') on Acquisition_NDA and the TERMINAL on
+        // Disposition_NDA.
+        //
+        // Without this test a build that reverted ONLY the acquisition map's last entry
+        // ('Signed' => 'Sent') would still pass the sibling above, because 'Sent' would be terminal
+        // on the acquisition side either way. The pair is what pins both edges.
+        Id acquisitionId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Signed').Id;
+        Id dispositionId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Signed').Id;
+
+        Test.startTest();
+        String acquisitionMessage = RecordStageAdvanceService.advance(acquisitionId);
+
+        Boolean dispositionRefused = false;
+        String dispositionMessage;
+        try {
+            RecordStageAdvanceService.advance(dispositionId);
+            Assert.fail('advance() MUST refuse a Disposition_NDA on Signed — Signed is that '
+                + 'sequence\'s terminal and always has been. Returning normally means the '
+                + 'acquisition reorder leaked into the sell-side map');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            dispositionRefused = true;
+            dispositionMessage = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.areEqual('NDA moved to Sent.', acquisitionMessage,
+            'From Signed, an Acquisition_NDA advances to Sent — we return the signed copy to the '
+            + 'broker, which ends the buy-side NDA');
+        Assert.isTrue(dispositionRefused,
+            'From the SAME status, a Disposition_NDA has nowhere to go: Signed is terminal on a sale');
+        Assert.areEqual('There is no next step available from the Signed stage.', dispositionMessage,
+            'and the refusal is the ordinary terminal wording');
+
+        Set<Id> ndaIds = new Set<Id>{ acquisitionId, dispositionId };
+        Map<Id, NDA__c> stored = new Map<Id, NDA__c>([
+            SELECT Id, Status__c FROM NDA__c WHERE Id IN :ndaIds
+        ]);
+        Assert.areEqual('Sent', stored.get(acquisitionId).Status__c,
+            'and the acquisition NDA must actually be written to Sent');
+        Assert.areEqual('Signed', stored.get(dispositionId).Status__c,
+            'and the refused disposition NDA must be untouched');
     }
 
     @isTest
@@ -654,9 +748,13 @@ private class RecordStageAdvanceServiceTest {
         String message = RecordStageAdvanceService.advance(ndaId);
         Test.stopTest();
 
-        Assert.areEqual('NDA moved to Sent.', message,
+        // ⚠ THE EXPECTED HOP MOVED ON 2026-08-16 and this test is the reason to say so out loud:
+        // it asserted 'NDA moved to Sent.' / 'Sent' because the acquisition map's FIRST hop out of
+        // 'Pending' used to be 'Sent'. The reorder makes it 'Received'. Nothing about the FALLBACK
+        // changed — only the sequence it falls back to.
+        Assert.areEqual('NDA moved to Received.', message,
             'An NDA with no explicit record type must follow the acquisition sequence');
-        Assert.areEqual('Sent', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,
+        Assert.areEqual('Received', [SELECT Status__c FROM NDA__c WHERE Id = :ndaId].Status__c,
             'and the write must actually happen — the fallback is a working path, not a refusal');
     }
 
@@ -1179,7 +1277,15 @@ private class RecordStageAdvanceServiceTest {
         // and neither map contains an entry producing 'Declined' — so the only route to it is the
         // allow-listed explicit call above. This is the same discipline that keeps 'Approved' out of
         // the Underwriting map.
-        Id acquisitionId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Sent').Id;
+        //
+        // ⚠ THE ACQUISITION FIXTURE MOVED FROM 'Sent' TO 'Pending' ON 2026-08-16, AND ONLY BECAUSE
+        // IT HAD TO. 'Sent' is now the acquisition sequence's TERMINAL, so advance() would throw
+        // rather than return a message and this test would fail on the setup rather than on its
+        // claim. 'Pending' is the buy-side stage furthest from the off-ramp and keeps the assertion
+        // shape identical (a returned message that must not contain 'Declined'). The DISPOSITION
+        // fixture stays on 'Sent' deliberately — that is the status the Mark Declined action keys
+        // on, so it is the exact state in which advance() must still refuse to derive the off-ramp.
+        Id acquisitionId = insertNdaOnRecordType(RT_ACQUISITION_NDA, 'Pending').Id;
         Id dispositionId = insertNdaOnRecordType(RT_DISPOSITION_NDA, 'Sent').Id;
 
         Test.startTest();

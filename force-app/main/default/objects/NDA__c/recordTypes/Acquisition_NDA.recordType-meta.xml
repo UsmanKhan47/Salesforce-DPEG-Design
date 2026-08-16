@@ -54,10 +54,70 @@
         must be migrated off Master (branch on the parent: Disposition__c populated ->
         Disposition_NDA, else Acquisition_NDA). profiles/** is .forceignore'd in this repo, so
         none of that can be deployed from here.
+
+        =====================================================================
+        AMENDED 2026-08-16 - SEQUENCE REVERSED. THE D14.1 PARAGRAPHS ABOVE DESCRIBE THE
+        SUPERSEDED "Pending -> Sent -> Received -> Signed" ORDER AND ARE RETAINED VERBATIM AS
+        THE RECORD OF WHAT CHANGED. THE VALUE SET ITSELF DID NOT CHANGE - still exactly Pending,
+        Sent, Received, Signed - only their intended PROCESS ORDER did.
+        =====================================================================
+
+        THE SEQUENCE IS NOW Pending -> Received -> Signed -> Sent, and 'Sent' IS NOW TERMINAL,
+        not 'Signed': the broker's NDA arrives (Pending), DPEG receives it (Received) and signs
+        it (Signed), then DPEG sends the signed copy back to the broker (Sent). The
+        <picklistValues><picklist>Status__c</picklist> block below was reordered to match, and
+        the companion Path (pathAssistants/NDA_Path_Acquisition) was reordered the same way -
+        see that file's own 2026-08-16 amendment for the full rationale and for the info-text
+        wording that still describes the old direction and needs a separate reviewed reword.
+
+        ⚠ WHETHER THIS LIST ORDER ACTUALLY CONTROLS THE RUNTIME Status__c DROPDOWN ORDER FOR
+        THIS RECORD TYPE, INDEPENDENTLY OF THE MASTER FIELD'S OWN VALUE ORDER, WAS NOT VERIFIED
+        AS PART OF THIS CHANGE - see the companion Path file's amendment, which flags the same
+        open question for the Path's own step order. The master Status__c field
+        (objects/NDA__c/fields/Status__c.field-meta.xml) was deliberately NOT touched here.
+
+        CORRECTED 2026-08-16 - the paragraph this replaces asserted that the NDA_Signed_Status_Sync
+        flow "was made record-type-aware in the same change: Acquisition_NDA now reads 'Signed' OR
+        'Sent' as signed". THAT IS FALSE. The flow was never touched by this change - git history
+        shows it last modified in an earlier commit, it contains zero record-type branching, and
+        it tests Status__c = 'Signed' only. No flow change was needed, and none was made.
+
+        WHY NO FLOW CHANGE WAS NEEDED, VERIFIED BY MECHANISM RATHER THAN BY TRUSTING THE FLOW'S
+        OWN DESCRIPTION: NDA_Signed_Status_Sync's Is_Signed decision sets NDA_Signed__c TRUE when
+        Status__c = 'Signed', and its false branch carries a
+        <defaultConnectorLabel>Not Signed</defaultConnectorLabel> but NO <defaultConnector> -
+        nothing connects to the flow's own Set_Signed_False assignment, so that assignment is
+        UNREACHABLE. The checkbox therefore LATCHES: once true it stays true through every later
+        Status__c change, including this reorder's new final hop from 'Signed' to 'Sent'. Moving
+        an acquisition NDA off 'Signed' and onto the new terminal 'Sent' therefore leaves
+        NDA_Signed__c TRUE and the Opportunity gate NDA_Signed_Before_Deal_Progression unaffected -
+        no widening of the flow's logic was required to make that true, because the flow already
+        never turns the checkbox back off. See flows/NDA_Signed_Status_Sync's own 2026-08-16
+        comment for the full rationale and the warning against ever connecting that dead branch;
+        RecordStageAdvanceService's class header carries the same analysis - the two are written
+        to agree, not to be read independently.
+
+        TWO FURTHER KNOWN CONSEQUENCES OF THE REORDER, DOCUMENTED HERE AND DELIBERATELY NOT FIXED
+        AS PART OF THIS CHANGE - both need a USER decision, not a metadata edit:
+
+        (a) NDA__c.Days_Out__c (IF(ISBLANK(Date_Sent__c), null, TODAY() - Date_Sent__c)) now
+        measures the wrong thing for an acquisition NDA. Under the old order 'Sent' was a middle
+        step, so this counted days an NDA had been out awaiting signature. Under this order 'Sent'
+        is TERMINAL, so the counter starts when the NDA is FINISHED and grows forever afterward.
+        It is user-visible: Days_Out__c is a column on reports/Acquisitions/NDA_Tracker_Recent, so
+        a completed NDA will read "out 340 days". See the field's own XML comment
+        (objects/NDA__c/fields/Days_Out__c.field-meta.xml) for the candidate remedies. The formula
+        was deliberately NOT changed here.
+
+        (b) lwc/dealDocStatus shows the same drift. OpportunityDocStatusController exposes
+        ndaSent = nda.Date_Sent__c and the component labels it as the NDA being sent to the
+        counterparty. Under this order that date now means "signed copy returned to the broker" -
+        the opposite of what the label says. Apex/LWC are out of scope for this metadata-only
+        change; recorded here so a future Apex/LWC pass has the pointer.
     -->
     <fullName>Acquisition_NDA</fullName>
     <active>true</active>
-    <description>The buy-side NDA, parented by Opportunity. Four states: Pending, Sent, Received, Signed (decision D14.1 - Received was ADDED, Sent retained, so no data migration). Not Sent and Declined are restricted out. See the XML comment in this file.</description>
+    <description>The buy-side NDA, parented by Opportunity. Four states in process order: Pending, Received, Signed, Sent (reordered 2026-08-16 - Sent is now terminal). Not Sent and Declined are restricted out. See the XML comment in this file.</description>
     <label>Acquisition NDA</label>
     <picklistValues>
         <picklist>Method__c</picklist>
@@ -88,15 +148,15 @@
             <default>true</default>
         </values>
         <values>
-            <fullName>Sent</fullName>
-            <default>false</default>
-        </values>
-        <values>
             <fullName>Received</fullName>
             <default>false</default>
         </values>
         <values>
             <fullName>Signed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Sent</fullName>
             <default>false</default>
         </values>
     </picklistValues>

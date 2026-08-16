@@ -35,8 +35,14 @@
  * stage sequences per type (D7 / D14.1 / D6, plus observation 7):
  *
  *   NDA__c
- *   Acquisition_NDA   Pending  -> Sent -> Received -> Signed        explicit targets: none
+ *   Acquisition_NDA   Pending  -> Received -> Signed -> Sent        explicit targets: none
  *                     gate: DEAL_DRIVER
+ *                     ⚠ REORDERED 2026-08-16 (user decision). 'Sent' moved from the SECOND
+ *                     position to the TERMINAL one and changed meaning with it: it is now "the
+ *                     signed copy has been returned to the broker", not "we issued it". D14.1's
+ *                     placement of 'Sent' is REVERSED — see NDA_ACQUISITION_NEXT_STAGE for the
+ *                     retracted argument, the unmigrated-row residual, and why this needed NO
+ *                     change to NDA_Signed_Status_Sync (the deal gate's checkbox LATCHES true).
  *   Disposition_NDA   Not Sent -> Sent -> Signed                    explicit targets: {Declined}
  *                     gate: DISPOSITION_DRIVER
  *
@@ -112,9 +118,21 @@
  * follow). Objects with a single sequence short-circuit and still pay nothing.
  *
  * ⚠ ON NDA__c, 'Sent' and 'Signed' are SHARED by both value sets, so the CURRENT STAGE ALONE DOES
- * NOT IDENTIFY THE PATH. From 'Sent' an acquisition NDA advances to 'Received' and a disposition
- * NDA advances to 'Signed'. That single fact is why an object-keyed map cannot express this feature
- * and why the record type has to be read off the record.
+ * NOT IDENTIFY THE PATH. 🔴 SINCE 2026-08-16 THAT IS TRUE MORE STRONGLY THAN BEFORE, NOT LESS.
+ * The example this block used to give is now WRONG and is corrected here rather than deleted, so
+ * nobody re-derives the old map from it. RETRACTED, verbatim: "From 'Sent' an acquisition NDA
+ * advances to 'Received' and a disposition NDA advances to 'Signed'."
+ *
+ * What is true now, on BOTH shared values, in OPPOSITE directions:
+ *   'Sent'    acquisition: advances NOWHERE — it is the TERMINAL of that sequence.
+ *             disposition: advances to 'Signed'.
+ *   'Signed'  acquisition: advances to 'Sent'.
+ *             disposition: advances NOWHERE — it is the TERMINAL of that sequence.
+ *
+ * So one of the two record types reaches "no next step available" from each shared value while the
+ * other keeps walking — the same key must produce a hop on one type and a refusal on the other.
+ * That single fact is why an object-keyed map cannot express this feature and why the record type
+ * has to be read off the record. The conclusion is unchanged; only the illustration moved.
  *
  * 🔴 ON LOI__c THE TWO STAGE SETS ARE NO LONGER DISJOINT — 'Under Review' IS SHARED BY BOTH SINCE
  * 2026-08-14 (observation 5). It is the acquisition sequence's second stage and the disposition
@@ -463,19 +481,76 @@ public with sharing class RecordStageAdvanceService {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * NDA__c.Status__c / Acquisition_NDA — Pending -> Sent -> Received -> Signed. 'Signed' is
-     * terminal.
+     * NDA__c.Status__c / Acquisition_NDA — Pending -> Received -> Signed -> Sent. 🔴 'Sent' is
+     * TERMINAL.
      *
-     * ⚠ 'Received' was INSERTED between 'Sent' and 'Signed' by decision D14.1 (2026-08-09). The
-     * source document describes the acquisition NDA as Pending -> Received -> Signed; D14.1 reads
-     * that as the broker-facing milestones and keeps 'Sent' as the internal step it pairs with
-     * Date_Sent__c. Retaining 'Sent' is what makes the change ADDITIVE — every existing acquisition
-     * NDA keeps a valid value and no row migration is needed for the value set itself.
+     * ── 🔴 REORDERED 2026-08-16 (USER DECISION). D14.1's PLACEMENT OF 'Sent' IS REVERSED. ──
+     * The four values are unchanged; their ORDER is not, and 'Sent' now MEANS something different.
+     * The business sequence is: the broker's NDA arrives (Pending), we receive it (Received), we
+     * sign it (Signed), and we send the signed copy BACK to the broker (Sent) — which ends the
+     * acquisition NDA's life. So 'Sent' is no longer "we issued it"; it is "the executed copy is
+     * with the broker".
+     *
+     * ⚠ SUPERSEDED. D14.1's argument is retained rather than deleted because the git history reads
+     * oddly without it and because it still explains why the VALUE exists at all. RETRACTED,
+     * verbatim: "'Received' was INSERTED between 'Sent' and 'Signed' by decision D14.1
+     * (2026-08-09). The source document describes the acquisition NDA as Pending -> Received ->
+     * Signed; D14.1 reads that as the broker-facing milestones and keeps 'Sent' as the internal
+     * step it pairs with Date_Sent__c. Retaining 'Sent' is what makes the change ADDITIVE — every
+     * existing acquisition NDA keeps a valid value and no row migration is needed for the value set
+     * itself." What survives: the value set is still exactly these four, so this reorder is again
+     * additive-by-value and again needs no value-set migration. What does NOT survive: 'Sent' is
+     * not an internal pre-issue step and no longer pairs with Date_Sent__c as the SECOND hop —
+     * Date_Sent__c is now stamped at the END of the sequence, not near its start. Do not "restore"
+     * the old order on the strength of the D14.1 sentence above.
+     *
+     * ⚠ THE ROWS THEMSELVES ARE NOT MIGRATED BY THIS CHANGE, AND THAT IS A REAL RESIDUAL. Every
+     * acquisition NDA parked on 'Sent' under the OLD meaning ("we issued it, awaiting the broker")
+     * now reads as TERMINAL and can no longer be advanced at all — it will be refused with "There
+     * is no next step available from the Sent stage." Those rows need a data pass (most belong on
+     * 'Pending' or 'Received'); nothing in Apex can tell the two meanings apart, because the value
+     * is identical.
+     *
+     * 🔴 THERE IS A LIVE DEAL GATE ON THE FAR SIDE OF THIS SEQUENCE, AND THE REORDER IS SAFE ONLY
+     * BECAUSE THE CHECKBOX FEEDING IT *LATCHES*. This is the one thing to understand before moving
+     * any value in this map again.
+     *
+     * `NDA_Signed__c` is derived by `NDA_Signed_Status_Sync`, a BEFORE-SAVE flow on NDA__c. It sets
+     * the checkbox TRUE when `Status__c = 'Signed'` and it NEVER SETS IT FALSE: the `Is_Signed`
+     * decision carries a `<defaultConnectorLabel>Not Signed</defaultConnectorLabel>` but NO
+     * `<defaultConnector>`, so the false branch simply TERMINATES, and the `Set_Signed_False`
+     * assignment the flow defines is UNREACHABLE — nothing connects to it. Once true, the checkbox
+     * stays true through every later status change.
+     *
+     * ⚠ THE FLOW'S OWN `<description>` CONTRADICTS ITS OWN ELEMENT GRAPH AND IS THE TRAP HERE. It
+     * claims the flow derives the checkbox "in both directions: Status = 'Signed' sets the checkbox
+     * true, any other Status sets it false." The second half is not implemented. Read the
+     * connectors, not the description — an earlier draft of THIS comment asserted the two-direction
+     * behaviour as fact on the strength of that sentence and was wrong.
+     *
+     * The gate itself: `NDA_Signed_Before_Deal_Progression` (Opportunity) blocks Underwriting / LOI
+     * / Under Contract (PSA) / About to Close / Closed Won unless `Primary_NDA__r.NDA_Signed__c` is
+     * true.
+     *
+     * ⇒ SO MOVING AN ACQUISITION NDA OFF 'Signed' AND ONTO THE NEW TERMINAL 'Sent' LEAVES THE
+     * CHECKBOX TRUE AND THE DEAL GATE UNAFFECTED. This reorder required NO flow change, and none
+     * was made.
+     *
+     * 🔴 BUT THE LATCH IS NOW LOAD-BEARING FOR THIS MAP, WHICH IT WAS NOT BEFORE. Under the OLD
+     * order 'Signed' was terminal, so an acquisition NDA never left it and the latch was never
+     * exercised; the flow's unreachable false branch was harmless dead metadata. Under THIS order
+     * the final hop deliberately moves the record PAST 'Signed'. ⇒ IF ANYONE EVER CONNECTS THAT
+     * DEFAULT BRANCH — "fixing" the flow to match its own description, which reads like an
+     * unfinished job — the final Advance Stage click would set `NDA_Signed__c` back to FALSE and
+     * LOCK THE DEAL out of Underwriting, LOI, PSA, About to Close and Closed Won. The button would
+     * appear to complete the NDA and would in fact un-sign it. That is the hazard to guard: a
+     * FUTURE flow change, not this map. Anyone making the flow set false must ALSO exempt the
+     * acquisition terminal 'Sent'.
      */
     private static final Map<String, String> NDA_ACQUISITION_NEXT_STAGE = new Map<String, String>{
-        'Pending' => 'Sent',
-        'Sent' => 'Received',
-        'Received' => 'Signed'
+        'Pending' => 'Received',
+        'Received' => 'Signed',
+        'Signed' => 'Sent'
     };
 
     /**
@@ -485,6 +560,15 @@ public with sharing class RecordStageAdvanceService {
      * inconsistency to reconcile; it is the requirement. A disposition NDA goes straight from Sent
      * to Signed (there is no "received back from the broker" step on a sale, because DPEG issues
      * the NDA), while an acquisition NDA passes through 'Received'.
+     *
+     * ⚠ AMENDED 2026-08-16 — THE TWO MAPS NOW DISAGREE MORE, NOT LESS, AND THIS MAP DID NOT MOVE.
+     * The sentence above understates it as of the acquisition reorder: on THIS map 'Sent' is a
+     * mid-sequence hop to 'Signed', while on the acquisition map it maps NOWHERE AT ALL — it is
+     * the terminal. And the divergence now runs in the OPPOSITE direction on the other shared
+     * value: 'Signed' is terminal here and a hop (to 'Sent') there. Both sequences are correct for
+     * their own side of the business; do NOT harmonise either one toward the other. This map is
+     * verbatim what it has always been — Not Sent -> Sent -> Signed — and the acquisition change
+     * deliberately left it untouched.
      */
     private static final Map<String, String> NDA_DISPOSITION_NEXT_STAGE = new Map<String, String>{
         'Not Sent' => 'Sent',
@@ -914,8 +998,16 @@ public with sharing class RecordStageAdvanceService {
      * 🔴 THE SAFETY ARGUMENT FOR LOI__c CHANGED ON 2026-08-14 AND IS NOW WEAKER. This block used to
      * read: "NDA__c: the only shared stage values ('Sent', 'Signed') have a hop or are terminal on
      * BOTH record types, so neither reaches this map. LOI__c: the two value sets are fully
-     * DISJOINT, so a key can only ever match one record type's stage in the first place." The NDA
-     * half still holds. The LOI half is FALSE — observation 5 made 'Under Review' a stage on BOTH
+     * DISJOINT, so a key can only ever match one record type's stage in the first place." ⚠ THE NDA
+     * HALF HELD UNTIL 2026-08-16 AND NO LONGER DOES: the acquisition reorder made 'Sent' TERMINAL on
+     * Acquisition_NDA while it remains a HOP on Disposition_NDA, and made 'Signed' a HOP on
+     * Acquisition_NDA while it remains TERMINAL on Disposition_NDA — so neither shared value has the
+     * same hop-or-terminal status on both types any more, which is exactly the premise that sentence
+     * rested on. What it buys, as it happens, is safety rather than risk: a hint fires ONLY where
+     * there is no hop, so `NDA|Sent` could now fire on the acquisition type alone and `NDA|Signed` on
+     * the disposition type alone — one wording, one record type, no collision. Before the reorder
+     * `NDA|Signed` would have fired on BOTH. The instruction is still the LOI one below: check, do
+     * not assume. The LOI half is FALSE — observation 5 made 'Under Review' a stage on BOTH
      * LOI record types, so a hint keyed `LOI|Under Review` would now fire on a purchase AND a sale
      * with one wording. There is no such key today, which is the only reason this is a note rather
      * than a defect.

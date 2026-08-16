@@ -1,5 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT MUST STAY INSIDE THE ROOT <Flow> ELEMENT. A comment placed ABOVE <Flow>
+        breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        THE Is_Signed DECISION'S FALSE BRANCH IS DEFINED BUT UNCONNECTED, AND THIS IS LOAD-BEARING
+        - DO NOT "FINISH" IT (added 2026-08-16, acquisition NDA sequence reversal). The
+        Set_Signed_False assignment exists in this flow's metadata, but Is_Signed carries a
+        <defaultConnectorLabel>Not Signed</defaultConnectorLabel> with NO <defaultConnector>, so
+        nothing ever routes to Set_Signed_False. The flow therefore only ever SETS the checkbox
+        true; it never clears it. This is despite the description above (prior to this comment)
+        having claimed the derivation runs "in both directions" - it does not, and the second half
+        was never implemented. That claim has been corrected in the description, but a flow editor
+        who trusts the OLD wording, sees an unconnected assignment sitting right there, and
+        connects it as an "unfinished job" will silently break acquisition NDA processing.
+
+        WHY: the acquisition NDA sequence is now Pending -> Received -> Signed -> Sent, with
+        'Sent' as the TERMINAL step (not 'Signed' - see objects/NDA__c/recordTypes/
+        Acquisition_NDA.recordType-meta.xml and RecordStageAdvanceService.NDA_ACQUISITION_NEXT_STAGE
+        for the full rationale). The Opportunity gate NDA_Signed_Before_Deal_Progression blocks
+        Underwriting / LOI / Under Contract (PSA) / About to Close / Closed Won unless
+        Primary_NDA__r.NDA_Signed__c is true. The reorder is safe TODAY only because the checkbox
+        LATCHES: an acquisition NDA moving from 'Signed' to 'Sent' keeps NDA_Signed__c = TRUE,
+        because nothing ever sets it back to false.
+
+        IF ANYONE CONNECTS THE DEFAULT BRANCH TO Set_Signed_False, the final Advance Stage click
+        (Signed -> Sent) will set NDA_Signed__c back to FALSE and LOCK the deal out of every stage
+        past the NDA gate - the button will appear to complete the NDA and will in fact un-sign it.
+        A disposition NDA has no equivalent hazard (its own 'Sent' is NOT terminal - see
+        RecordStageAdvanceService.NDA_DISPOSITION_NEXT_STAGE), so if the two-directional behaviour
+        is ever genuinely needed, whoever implements it MUST exempt the acquisition terminal
+        'Sent' explicitly (e.g. branch on RecordType.DeveloperName, or on Status__c != 'Sent' for
+        Acquisition_NDA rows) rather than restoring a blanket Status != 'Signed' => false rule.
+    -->
     <apiVersion>67.0</apiVersion>
     <assignments>
         <name>Set_Signed_False</name>
@@ -87,7 +121,7 @@
             <label>Stamp</label>
         </rules>
     </decisions>
-    <description>Derives NDA_Signed__c from Status__c on every save, in both directions: Status = &apos;Signed&apos; sets the checkbox true, any other Status sets it false. Also stamps Date_Signed__c to TODAY() the first time Status reaches &apos;Signed&apos; with a blank date - never overwrites an existing date and never clears it when Status moves away. Before-save so NDA_Signed_Before_Deal_Progression and any other validation rule reading NDA_Signed__c sees the synced value in the same transaction. See NDA_Signed__c/Status__c field history for the defect this fixes (NDA-0004, a0Jiw0000002k6nEAA).</description>
+    <description>Derives NDA_Signed__c from Status__c on every save, in ONE direction only: Status = &apos;Signed&apos; sets the checkbox true. It does NOT set it false for any other Status - the false branch is defined but deliberately unconnected, so the checkbox latches true once set. Also stamps Date_Signed__c to TODAY() the first time Status reaches &apos;Signed&apos; with a blank date - never overwrites an existing date and never clears it when Status moves away. Before-save so NDA_Signed_Before_Deal_Progression and any other validation rule reading NDA_Signed__c sees the synced value in the same transaction. See NDA_Signed__c/Status__c field history for the defect this fixes (NDA-0004, a0Jiw0000002k6nEAA). See the in-root XML comment in this file (added 2026-08-16) before connecting the unreachable false branch.</description>
     <environments>Default</environments>
     <interviewLabel>NDA Signed Status Sync {!$Flow.CurrentDateTime}</interviewLabel>
     <label>NDA Signed Status Sync</label>

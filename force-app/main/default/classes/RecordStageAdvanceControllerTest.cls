@@ -192,8 +192,15 @@ private class RecordStageAdvanceControllerTest {
     static void noNextStepSurfacesItsMessageVerbatim() {
         // A terminal stage. The service's message is user-actionable, so the controller's typed
         // clause must carry it out unchanged rather than replacing it with the generic wording.
+        //
+        // 🔴 THE TERMINAL STAGE OF THE ACQUISITION NDA MOVED FROM 'Signed' TO 'Sent' ON 2026-08-16
+        // (user decision: Pending -> Received -> Signed -> Sent). This fixture used to sit on
+        // 'Signed' and expect "There is no next step available from the Signed stage." — under the
+        // new order 'Signed' HAS a hop, so that version of this test would have advanced the NDA
+        // successfully and failed on its own Assert.fail. The subject of the test is unchanged: a
+        // terminal stage's message must reach the LWC verbatim. Only which value is terminal moved.
         NDA__c record = nda();
-        record.Status__c = 'Signed';
+        record.Status__c = 'Sent';
         update record;
 
         Test.startTest();
@@ -201,7 +208,7 @@ private class RecordStageAdvanceControllerTest {
             RecordStageAdvanceController.advance(record.Id);
             Assert.fail('A terminal stage has no next step');
         } catch (AuraHandledException e) {
-            Assert.areEqual('There is no next step available from the Signed stage.', e.getMessage(),
+            Assert.areEqual('There is no next step available from the Sent stage.', e.getMessage(),
                 'A user-actionable service message must reach the LWC verbatim');
         }
         Test.stopTest();

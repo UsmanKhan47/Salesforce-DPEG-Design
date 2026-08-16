@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        This comment must stay INSIDE the root <CustomField> element - a comment placed ABOVE the
+        root breaks `sf` deploy at source conversion with "unable to find matching parent xml
+        file". The formula below is UNCHANGED by this note; this is documentation only.
+
+        🔴 KNOWN CONSEQUENCE OF THE 2026-08-16 ACQUISITION NDA SEQUENCE REVERSAL - RECORDED, NOT
+        FIXED. This formula (TODAY() - Date_Sent__c) was written when the acquisition sequence was
+        Pending -> Sent -> Received -> Signed, with 'Sent' as a MIDDLE step - so it correctly
+        counted days an NDA had been out awaiting signature. The sequence is now
+        Pending -> Received -> Signed -> Sent, with 'Sent' as the TERMINAL step, so this same
+        formula now counts days since the NDA was FINISHED, growing forever after completion
+        rather than stopping. It is user-visible: Days_Out__c is a column on
+        reports/Acquisitions/NDA_Tracker_Recent, so a completed NDA will read e.g. "out 340 days".
+
+        This field is unchanged by the sequence-reversal change and the drift is intentionally
+        left for a USER decision. Candidate remedies, named without choosing one:
+          1. Re-point the formula at a future Date_Received__c field once one exists (see the
+             companion gap noted in pathAssistants/NDA_Path_Acquisition's own 2026-08-16 comment
+             and FSD §27.6) - would restore "days awaiting signature" as the meaning.
+          2. Restrict the formula to non-terminal statuses (e.g. blank once Status__c = 'Sent' on
+             an Acquisition_NDA row) - keeps the field but stops it from growing past completion.
+          3. Retire this field for acquisition NDAs specifically, since disposition NDAs' own
+             'Sent' is not terminal and are unaffected by this drift.
+        Do not implement any of the three without an explicit decision from whoever owns this
+        report/field.
+    -->
     <fullName>Days_Out__c</fullName>
     <description>Days since the NDA was sent (TODAY - Date Sent). Gives the dashboard NDA Tracker table a numeric column and flags aging NDAs.</description>
     <externalId>false</externalId>

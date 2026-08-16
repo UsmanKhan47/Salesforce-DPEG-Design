@@ -30,6 +30,44 @@
         Status__c picklist value order (sorted=false), which is Pending, Sent, Received, Signed,
         Not Sent, Declined - so the four values this type exposes already fall in the right
         sequence with no reordering of the master value set.
+
+        =====================================================================
+        AMENDED 2026-08-16 - SEQUENCE REVERSED. THE PARAGRAPHS ABOVE DESCRIBE THE SUPERSEDED
+        D14.1 ORDER AND ARE RETAINED VERBATIM AS THE RECORD OF WHAT CHANGED.
+        =====================================================================
+
+        THE SEQUENCE IS NOW Pending -> Received -> Signed -> Sent. 'Sent' IS NOW TERMINAL, not
+        'Signed'. The process direction itself reversed: the broker's NDA now ARRIVES first
+        (Pending), DPEG receives it (Received) and signs it (Signed), then DPEG sends the signed
+        copy back to the broker (Sent) - the opposite of the D14.1 process above, where DPEG
+        sent the NDA out first and it came back signed.
+
+        REVIEWED REWORD DONE 2026-08-16 - the paragraph this replaces flagged all four <info>
+        texts as carried over unchanged and describing the superseded direction. That pass is now
+        complete: Pending, Received and Sent were reworded to match the new direction (the
+        broker's NDA arriving, being reviewed for DPEG signature, and the signed copy going back
+        out, respectively); Signed's text was left unchanged, as flagged, because it is
+        direction-neutral and needed no rework.
+
+        Date_Sent__c WAS ALSO REMOVED FROM THE Received STEP'S <fieldNames> in the same pass
+        (2026-08-16). Under the new order nothing has been sent to anyone by the time a record
+        reaches Received - it is the SECOND step, right after Pending - so stamping a "sent" date
+        there no longer makes sense; OneDrive_URL__c (the returned document) stays. The Received
+        step is left with NO date field to record its own result: there is no Date_Received__c on
+        NDA__c. The correct fix is adding one, which is OUT OF SCOPE for this change and is
+        already tracked as a gap (FSD §27.6, source-document scope).
+
+        ⚠ THE MASTER-FIELD-ORDER NOTE ABOVE IS ALSO NOW STALE. That paragraph states this file's
+        step order happened to already match the Status__c FIELD's master value order (Pending,
+        Sent, Received, Signed, ...), so no separate reorder of the master field was ever
+        needed. That coincidence is GONE: this change reordered only this file's
+        <pathAssistantSteps> and the Acquisition_NDA record type's own picklistValues order, not
+        the master Status__c field (objects/NDA__c/fields/Status__c.field-meta.xml), so the
+        master order and this file's new step order no longer match. Whether anything besides
+        the Path bubbles themselves (e.g. a Status__c dropdown, which the record type's own
+        picklistValues order was also just changed to try to influence - see that file) still
+        reads the master order at runtime was out of scope for this change and needs a decision
+        from whoever requested it.
     -->
     <active>true</active>
     <entityName>NDA__c</entityName>
@@ -38,19 +76,12 @@
     <pathAssistantSteps>
         <fieldNames>Counterparty_Name__c</fieldNames>
         <fieldNames>Method__c</fieldNames>
-        <info>NDA opened for the deal. Confirm the counterparty and how it will be sent, then send it out.</info>
+        <info>The broker&apos;s NDA is expected but has not arrived. Confirm the counterparty and the delivery method, then chase it until it lands.</info>
         <picklistValueName>Pending</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <fieldNames>Date_Sent__c</fieldNames>
         <fieldNames>OneDrive_URL__c</fieldNames>
-        <info>NDA sent to the counterparty. Track the days out and follow up until it comes back signed.</info>
-        <picklistValueName>Sent</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <fieldNames>Date_Sent__c</fieldNames>
-        <fieldNames>OneDrive_URL__c</fieldNames>
-        <info>The NDA has come back from the broker but is not yet fully executed. Attach the returned document and check it before marking it Signed - NDA Signed stays FALSE at this step, so the deal still cannot advance to Underwriting.</info>
+        <info>The broker&apos;s NDA has arrived. Review the terms and route it for DPEG signature - NDA Signed stays FALSE at this step, so the deal cannot advance to Underwriting yet.</info>
         <picklistValueName>Received</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
@@ -58,6 +89,12 @@
         <fieldNames>NDA_Signed__c</fieldNames>
         <info>NDA fully executed. NDA Signed = TRUE is what unlocks advancing the deal to Underwriting.</info>
         <picklistValueName>Signed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Date_Sent__c</fieldNames>
+        <fieldNames>OneDrive_URL__c</fieldNames>
+        <info>Signed copy returned to the broker. This is the final step - the deal gate is already open and nothing comes back.</info>
+        <picklistValueName>Sent</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>Acquisition_NDA</recordTypeName>
 </PathAssistant>
