@@ -132,6 +132,29 @@ describe('c-market-data-sync', () => {
         element.shadowRoot.querySelector('lightning-button').click();
     }
 
+    function sectionTitleOf(element) {
+        return element.shadowRoot
+            .querySelector('.mds-section-title')
+            .textContent.trim();
+    }
+
+    /** Every lightning-icon inside the section header, by icon-name. */
+    function iconNamesInHeader(element) {
+        return Array.from(
+            element.shadowRoot.querySelectorAll(
+                '.slds-section__title lightning-icon'
+            )
+        ).map((icon) => icon.iconName);
+    }
+
+    function toggleButtonOf(element) {
+        return element.shadowRoot.querySelector('.slds-section__title-action');
+    }
+
+    function sectionContentOf(element) {
+        return element.shadowRoot.querySelector('.slds-section__content');
+    }
+
     /**
      * Asserts the Sync button carries no tooltip.
      *
@@ -161,9 +184,12 @@ describe('c-market-data-sync', () => {
 
         await flushPromises();
 
-        expect(element.shadowRoot.querySelector('.mds-header').textContent).toContain(
-            'Placer'
-        );
+        // SENTENCE case, exactly as a native field section renders it. The first version used
+        // `slds-text-title_caps` (the utility-bar treatment), which rendered "PLACER".
+        expect(sectionTitleOf(element)).toBe('Placer');
+        // 🔴 No source icon: the only lightning-icon in the header is the collapse chevron. Dropped
+        // by user decision so the card matches the native "Broker" section, which has none.
+        expect(iconNamesInHeader(element)).toEqual(['utility:switch']);
 
         const fields = fieldApiNamesOn(element);
         // The exact list, not a containment check: an extra field on this card is a real defect —
@@ -184,9 +210,8 @@ describe('c-market-data-sync', () => {
 
         await flushPromises();
 
-        expect(element.shadowRoot.querySelector('.mds-header').textContent).toContain(
-            'CoStar'
-        );
+        expect(sectionTitleOf(element)).toBe('CoStar');
+        expect(iconNamesInHeader(element)).toEqual(['utility:switch']);
 
         const fields = fieldApiNamesOn(element);
         expect(fields).toEqual(['CoStar_URL__c', 'Market_Cap_Rate__c']);
@@ -237,6 +262,97 @@ describe('c-market-data-sync', () => {
         expect(element.shadowRoot.querySelector('.mds-muted').textContent).toBe(
             'Never'
         );
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // The collapsible field-section header (SLDS Expandable Section blueprint)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('SECTION: defaults to EXPANDED, matching a native Dynamic Forms field section', async () => {
+        const element = createComponent({ source: 'Placer' });
+        getObjectInfo.emit(objectInfoWith(true));
+        await flushPromises();
+
+        expect(
+            element.shadowRoot.querySelector('.slds-section').className
+        ).toContain('slds-is-open');
+        expect(toggleButtonOf(element).getAttribute('aria-expanded')).toBe('true');
+        expect(sectionContentOf(element).getAttribute('aria-hidden')).toBe(
+            'false'
+        );
+        expect(
+            element.shadowRoot.querySelector('lightning-record-form')
+        ).not.toBeNull();
+    });
+
+    it('SECTION: the WHOLE BAR is the toggle, and clicking it collapses the section', async () => {
+        const element = createComponent({ source: 'Placer' });
+        getObjectInfo.emit(objectInfoWith(true));
+        await flushPromises();
+
+        // The click target is a button carrying `slds-section__title-action` — the full-width bar, as
+        // it is natively, not a chevron with a label sitting beside it.
+        const toggle = toggleButtonOf(element);
+        expect(toggle.tagName).toBe('BUTTON');
+        expect(toggle.className).toContain('slds-button');
+
+        toggle.click();
+        await flushPromises();
+
+        expect(
+            element.shadowRoot.querySelector('.slds-section').className
+        ).not.toContain('slds-is-open');
+        expect(toggleButtonOf(element).getAttribute('aria-expanded')).toBe(
+            'false'
+        );
+
+        // ...and back again: the control is a toggle, not a one-way close.
+        toggleButtonOf(element).click();
+        await flushPromises();
+
+        expect(toggleButtonOf(element).getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('SECTION A11Y: aria-controls resolves to the content container that is actually rendered', async () => {
+        const element = createComponent({ source: 'CoStar' });
+        getObjectInfo.emit(objectInfoWith(true));
+        await flushPromises();
+
+        // LWC mangles template ids at runtime and rewrites idref attributes to match, so this asserts
+        // the RESOLVED pair rather than the literal authored string — a dangling aria-controls is
+        // invisible to a reader of the template but is a real defect for assistive technology.
+        const controls = toggleButtonOf(element).getAttribute('aria-controls');
+        expect(controls).toBeTruthy();
+        expect(sectionContentOf(element).getAttribute('id')).toBe(controls);
+        expect(element.shadowRoot.querySelector(`[id="${controls}"]`)).not.toBeNull();
+    });
+
+    it('SECTION A11Y: collapsed content is hidden from AT and holds no focusable control', async () => {
+        const element = createComponent({ source: 'Placer' });
+        getObjectInfo.emit(objectInfoWith(true));
+        getRecord.emit(recordWith(PLACER_STAMP, OLD_STAMP));
+        await flushPromises();
+
+        toggleButtonOf(element).click();
+        await flushPromises();
+
+        const content = sectionContentOf(element);
+        // The container survives so aria-controls still resolves...
+        expect(content).not.toBeNull();
+        expect(content.getAttribute('aria-hidden')).toBe('true');
+        expect(content.className).toContain('slds-hide');
+
+        // ...but the body is UNMOUNTED, not merely styled away. That distinction is the point: hiding
+        // by stylesheet alone is not "hidden from assistive technology", and leaving focusable
+        // controls inside an aria-hidden container is itself an accessibility defect (and the reason
+        // the collapsed sa11y assertion below can pass at all).
+        expect(
+            element.shadowRoot.querySelector('lightning-record-form')
+        ).toBeNull();
+        expect(element.shadowRoot.querySelector('lightning-button')).toBeNull();
+        expect(
+            element.shadowRoot.querySelector('lightning-formatted-date-time')
+        ).toBeNull();
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -768,6 +884,20 @@ describe('c-market-data-sync', () => {
         getRecord.emit(recordWith(COSTAR_STAMP, NEW_STAMP));
         await flushPromises();
 
+        await expect(element).toBeAccessible();
+    });
+
+    it('J12 A11Y: the COLLAPSED section is accessible', async () => {
+        const element = createComponent({ source: 'Placer' });
+        getObjectInfo.emit(objectInfoWith(true));
+        getRecord.emit(recordWith(PLACER_STAMP, OLD_STAMP));
+        await flushPromises();
+
+        toggleButtonOf(element).click();
+        await flushPromises();
+
+        // The header is now an interactive control, so both of its states have to be checked — a
+        // toggle that is accessible only when open is not accessible.
         await expect(element).toBeAccessible();
     });
 

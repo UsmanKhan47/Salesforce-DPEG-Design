@@ -14,9 +14,20 @@
     margin: 0;
 }
 
-.mds-header {
-    display: flex;
-    align-items: center;
+/*
+ * The grey header bar of the collapsible field section.
+ *
+ * ⚠ SLDS's own `.slds-section__title-action` ALREADY supplies this background, the full width and the
+ * padding — so this declaration is deliberately DEFENSIVE rather than load-bearing. It is stated
+ * because the header is the one thing the user has already reported once, and a transparent bar is
+ * the exact failure to not repeat. The token resolves to the same neutral SLDS itself uses, so the
+ * two agree today and both follow the theme rather than freezing a hex.
+ *
+ * Everything else about the bar — the chevron rotation, the width, the collapse — comes from SLDS via
+ * the blueprint classes and the `slds-is-open` wrapper. Do not re-implement any of it here.
+ */
+.mds-section-action {
+    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
 }
 
 /*

@@ -66,6 +66,20 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last
  * latter mattering most, because a duplicate folder is an EXTERNAL write no Salesforce transaction
  * can roll back. Recorded here so the next author does not have to re-derive it.
  *
+ * ── THE HEADER IS THE SLDS EXPANDABLE-SECTION BLUEPRINT (2026-08-17) ──────────
+ * The card header reproduces a native Dynamic Forms `fieldSection` exactly: a full-width grey bar
+ * that IS the button, a `utility:switch` chevron SLDS rotates off `slds-is-open`, and a SENTENCE-CASE
+ * title. The first version used `slds-section__title slds-text-title_caps` plus a source icon, which
+ * rendered as small uppercase text ("PLACER") beside a coloured glyph — visibly a different construct
+ * from the neighbouring native "Broker" section, which is the whole of "keep the design the same".
+ * `slds-text-title_caps` is the utility-bar/caps treatment, not what a collapsible section renders.
+ *
+ * 🔴 THE SOURCE ICONS ARE GONE AND `iconName` WAS REMOVED FROM `CONFIG_BY_SOURCE` — user decision:
+ * an exact match beats keeping them, because the native sections have no icon. Removed from the
+ * config rather than left unused, so nothing invites a later reader to render it again.
+ *
+ * ⚠ STATED LIMITATION: the collapse state is NOT PERSISTED across page loads — see `_isOpen`.
+ *
  * ── KNOWN INTERACTION, accepted (no code change available) ────────────────────
  * Pressing Sync while an inline edit is open in this card's own `lightning-record-form` may discard
  * the unsaved draft, because the write re-emits the record through the LDS cache and the form
@@ -191,7 +205,6 @@ const LOADING_LABEL = '—';
 const CONFIG_BY_SOURCE = {
     Placer: {
         title: 'Placer',
-        iconName: 'standard:location',
         fields: [PLACER_URL_FIELD, MONTHLY_VISITS_FIELD],
         stampField: PLACER_LAST_SYNCED_FIELD,
         helpText:
@@ -200,7 +213,6 @@ const CONFIG_BY_SOURCE = {
     },
     CoStar: {
         title: 'CoStar',
-        iconName: 'standard:metrics',
         fields: [COSTAR_URL_FIELD, MARKET_CAP_RATE_FIELD],
         stampField: COSTAR_LAST_SYNCED_FIELD,
         helpText:
@@ -335,6 +347,18 @@ export default class MarketDataSync extends LightningElement {
      */
     _recordLoaded = false;
 
+    /**
+     * Whether the field section is expanded. Defaults to OPEN, matching a native Dynamic Forms field
+     * section.
+     *
+     * ⚠ STATED LIMITATION: collapse state is NOT PERSISTED. Navigating away and back, or reloading
+     * the page, returns the section to expanded. A native field section remembers its state per user
+     * because the platform stores it server-side against the FlexiPage; an LWC has no equivalent, and
+     * the alternatives (a user-level custom setting, localStorage) would each add a persistence
+     * mechanism and a failure mode to a purely cosmetic preference. Deliberately not built.
+     */
+    _isOpen = true;
+
     // ─────────────────────────────────────────────────────────────────────────
     // Configuration
     // ─────────────────────────────────────────────────────────────────────────
@@ -383,10 +407,6 @@ export default class MarketDataSync extends LightningElement {
         return this.config ? this.config.title : '';
     }
 
-    get iconName() {
-        return this.config ? this.config.iconName : undefined;
-    }
-
     get helpText() {
         return this.config ? this.config.helpText : '';
     }
@@ -415,6 +435,48 @@ export default class MarketDataSync extends LightningElement {
      */
     get stampFieldList() {
         return this.config ? [this.config.stampField] : undefined;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // The collapsible field-section header (SLDS "Expandable Section" blueprint)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    get isOpen() {
+        return this._isOpen;
+    }
+
+    /**
+     * `slds-is-open` is the ONLY thing that needs to change: SLDS itself rotates the chevron
+     * (`.slds-is-open .slds-section__title-action-icon`) and reveals the content off this one class,
+     * so neither is re-implemented here.
+     */
+    get sectionClass() {
+        return this._isOpen ? 'slds-section slds-is-open' : 'slds-section';
+    }
+
+    /**
+     * `slds-hide` is belt-and-braces alongside SLDS's own `.slds-section__content` display rule. The
+     * real guarantee is that the body is UNMOUNTED when collapsed (see the template) — hiding by
+     * stylesheet alone is not "hidden from assistive technology", and it would leave focusable
+     * controls inside an `aria-hidden` container, which is itself an accessibility defect.
+     */
+    get sectionContentClass() {
+        return this._isOpen
+            ? 'slds-section__content'
+            : 'slds-section__content slds-hide';
+    }
+
+    /** Strings, not booleans: ARIA state attributes are enumerated values, not boolean attributes. */
+    get ariaExpanded() {
+        return this._isOpen ? 'true' : 'false';
+    }
+
+    get ariaHidden() {
+        return this._isOpen ? 'false' : 'true';
+    }
+
+    handleToggleSection() {
+        this._isOpen = !this._isOpen;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -14,44 +14,99 @@
 -->
 <template>
     <template lwc:if={isConfigured}>
+        <!--
+          The outer card is UNCHANGED from the deployed version. Only the header inside it changes —
+          the user accepted the surrounding container and reported the header alone, so the card stays
+          exactly as it was rather than being swept up in the fix.
+        -->
         <div class="slds-card mds-card">
+        <div class={sectionClass}>
             <!--
-              Matches a Dynamic Forms fieldSection header: slds-section__title + slds-text-title_caps
-              is what the platform itself renders for a collapsible field section, which is the whole
-              of "keep the design the same" at the heading level.
+              THE SLDS "EXPANDABLE SECTION" BLUEPRINT, REPRODUCED EXACTLY — this is what a native
+              Dynamic Forms fieldSection renders, and matching it is the whole of "keep the design
+              the same" at the heading level.
+
+              The previous version used `slds-section__title slds-text-title_caps` with a
+              lightning-icon, which rendered as small uppercase text ("PLACER") beside a coloured
+              icon. The neighbouring native "Broker" section renders a full-width grey bar with a
+              collapse chevron and a SENTENCE-CASE title, so the two did not read as the same
+              construct. `slds-text-title_caps` is the utility-bar/caps treatment; it is not what a
+              collapsible field section renders.
+
+              🔴 THE WHOLE BAR IS THE BUTTON, as it is natively — not a chevron with a label beside
+              it. `.slds-section__title-action` is what supplies the full width and the grey; the
+              wrapper's `slds-is-open` is what rotates the chevron and reveals the content.
+
+              🔴 NO SOURCE ICON. Dropped deliberately (user decision): the native "Broker" section
+              has none, and an exact match was chosen over keeping the Placer/CoStar icons. The
+              `iconName` key was removed from CONFIG_BY_SOURCE too rather than left as dead config
+              that a later reader would try to re-render.
             -->
-            <h3
-                class="slds-section__title slds-text-title_caps slds-p-around_small mds-header"
-            >
-                <lightning-icon
-                    icon-name={iconName}
-                    size="x-small"
-                    alternative-text=""
-                    class="slds-m-right_x-small"
-                ></lightning-icon>
-                <span>{cardTitle}</span>
+            <h3 class="slds-section__title">
+                <button
+                    class="slds-button slds-section__title-action mds-section-action"
+                    type="button"
+                    aria-expanded={ariaExpanded}
+                    aria-controls="sectionContent"
+                    onclick={handleToggleSection}
+                >
+                    <!--
+                      utility:switch is the SLDS collapse chevron. It points right when closed and
+                      SLDS rotates it 90 degrees via `.slds-is-open .slds-section__title-action-icon`,
+                      so the rotation is driven by the wrapper class and needs no CSS here.
+                      aria-hidden: the button is already named by the title text beside it.
+                    -->
+                    <lightning-icon
+                        icon-name="utility:switch"
+                        size="xx-small"
+                        alternative-text=""
+                        aria-hidden="true"
+                        class="slds-section__title-action-icon slds-m-right_x-small"
+                    ></lightning-icon>
+                    <span class="slds-truncate mds-section-title" title={cardTitle}
+                        >{cardTitle}</span
+                    >
+                </button>
             </h3>
 
-            <!--
-              lightning-record-form in mode="view" renders platform-identical field rows WITH the
-              per-field inline-edit pencils. lightning-output-field would have been closer to
-              pixel-identical but READ-ONLY, and every field here is behavior=Edit on the layout
-              today — so that would have been a functional regression, not a styling choice.
-            -->
-            <div class="slds-p-horizontal_small">
-                <lightning-record-form
-                    record-id={recordId}
-                    object-api-name={objectApiName}
-                    fields={formFields}
-                    columns="2"
-                    mode="view"
-                    density="comfy"
-                ></lightning-record-form>
-            </div>
+            <div
+                id="sectionContent"
+                class={sectionContentClass}
+                aria-hidden={ariaHidden}
+            >
+                <!--
+                  The body is UNMOUNTED when collapsed, not merely styled away. In the org SLDS's own
+                  `.slds-section__content` display rule would hide it, but "hidden from assistive
+                  technology" must not depend on a stylesheet being present — and leaving focusable
+                  controls inside an aria-hidden container is itself an accessibility defect. The
+                  container survives so `aria-controls` always resolves to a real element.
+                -->
+                <template lwc:if={isOpen}>
+                    <!--
+                      lightning-record-form in mode="view" renders platform-identical field rows WITH
+                      the per-field inline-edit pencils. lightning-output-field would have been closer
+                      to pixel-identical but READ-ONLY, and every field here is behavior=Edit on the
+                      layout today — so that would have been a functional regression, not a styling
+                      choice.
+                    -->
+                    <div class="slds-p-horizontal_small slds-p-top_x-small">
+                        <lightning-record-form
+                            record-id={recordId}
+                            object-api-name={objectApiName}
+                            fields={formFields}
+                            columns="2"
+                            mode="view"
+                            density="comfy"
+                        ></lightning-record-form>
+                    </div>
 
-            <div class="slds-grid slds-wrap slds-p-horizontal_small slds-p-top_x-small">
-                <div class="slds-col slds-size_1-of-2">
-                    <div class="slds-form-element slds-form-element_readonly">
+                    <div
+                        class="slds-grid slds-wrap slds-p-horizontal_small slds-p-top_x-small"
+                    >
+                        <div class="slds-col slds-size_1-of-2">
+                            <div
+                                class="slds-form-element slds-form-element_readonly"
+                            >
                         <span class="slds-form-element__label">
                             <!--
                               "(manual)" is NOT a caption style choice. Without it the row asserts a
@@ -104,30 +159,33 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
+                        </div>
+                    </div>
 
-            <div
-                class="slds-grid slds-grid_align-end slds-grid_vertical-align-center slds-wrap slds-p-around_small mds-footer"
-            >
-                <!--
-                  The reason is rendered BESIDE the disabled button, never instead of it. Hiding the
-                  button would be indistinguishable from "this feature is not for me"; leaving it
-                  live would fail at click time with a raw platform error.
-                -->
-                <template lwc:if={showDisabledReason}>
-                    <p class="mds-reason slds-p-right_small" role="note">
-                        {disabledReason}
-                    </p>
+                    <div
+                        class="slds-grid slds-grid_align-end slds-grid_vertical-align-center slds-wrap slds-p-around_small mds-footer"
+                    >
+                        <!--
+                          The reason is rendered BESIDE the disabled button, never instead of it.
+                          Hiding the button would be indistinguishable from "this feature is not for
+                          me"; leaving it live would fail at click time with a raw platform error.
+                        -->
+                        <template lwc:if={showDisabledReason}>
+                            <p class="mds-reason slds-p-right_small" role="note">
+                                {disabledReason}
+                            </p>
+                        </template>
+                        <lightning-button
+                            variant="neutral"
+                            label="Sync"
+                            title={syncButtonTitle}
+                            disabled={syncDisabled}
+                            onclick={handleSync}
+                        ></lightning-button>
+                    </div>
                 </template>
-                <lightning-button
-                    variant="neutral"
-                    label="Sync"
-                    title={syncButtonTitle}
-                    disabled={syncDisabled}
-                    onclick={handleSync}
-                ></lightning-button>
             </div>
+        </div>
         </div>
     </template>
 
