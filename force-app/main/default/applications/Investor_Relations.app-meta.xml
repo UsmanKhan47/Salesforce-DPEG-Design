@@ -1,38 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!--
-        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
-        CustomApplication.Description is capped at 255 characters. The full rationale below
-        is operationally important, so it was moved here rather than trimmed; a comment is
-        repo-only and is never sent to the Metadata API, so it can be as long as it needs to
-        be. Do not paste this back into <description>.
-
-        DPEG Investor Relation is the IR-record-type Lead/Contact/Account population,
-        segregated from Acquisitions.
-
-        RECORD PAGE ASSIGNMENT (2026-08-12, amended 2026-08-12 to add the Admin block): the
-        dedicated IR Lead record page, Investor_Onboarding_Lead_Record_Page, is assigned here
-        via TWO profileActionOverrides blocks below, each scoped to the Lead.Investor_Onboarding
-        record type — one for DPEG-IR-SF-Minimum Access, one for Admin (System Administrator).
-        This assignment carries cross-org dependencies that must already exist in the target org
-        before this file can deploy there: (a) the DPEG-IR-SF-Minimum Access profile, (b) the
-        System Administrator (Admin) profile, and (c) the Lead.Investor_Onboarding record type.
-        Deploying this file to an org missing any of those will fail. These two entries bind the
-        page for those TWO profiles only; a user on any other profile will not receive this page
-        from either entry and will see the org default record page for that record type instead.
-        See the comment directly above the profileActionOverrides blocks for the REPLACE-on-deploy
-        hazard this element carries.
-
-        MILESTONE 3 (2026-08-12): the <label> below was changed from the plural "Investor
-        Relations" to the singular "Investor Relation" per the user's specified app name.
-        THE API NAME (fullName, and therefore this file's name) DELIBERATELY DOES NOT
-        CHANGE and stays Investor_Relations. Renaming the API name would deploy as a brand
-        new CustomApplication rather than a rename of this one, orphaning every reference
-        that already points at Investor_Relations (permission sets, tab settings, this file
-        itself) and leaving a duplicate app behind. If a future request asks for the label
-        and API name to match, that is a distinct, larger change (new app, migrate
-        assignments, retire this one) and not a simple label edit.
-    -->
     <brand>
         <headerColor>#0B5394</headerColor>
         <logo>DPEG_Logo_Clear</logo>
@@ -47,22 +14,6 @@
     <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
     <label>Investor Relation</label>
     <navType>Standard</navType>
-    <!--
-        ⚠ profileActionOverrides REPLACES ON DEPLOY, WHOLESALE — it does not merge with the org's
-        existing list. Deploying this file overwrites EVERY profileActionOverride the org currently
-        has for this app with EXACTLY the blocks listed below and no others. Reconcile this list
-        against the live org (e.g. a targeted retrieve of this one CustomApplication) before making
-        any future edit here — if a block that exists in the org is missing from this file when it
-        is deployed, that assignment is silently deleted with no deploy error.
-
-        BOTH blocks below are required, or an entire profile loses the Investor Onboarding Lead
-        record page with no warning:
-          - DPEG-IR-SF-Minimum Access: without it, IR users fall back to the org default Lead
-            record page for the Investor_Onboarding record type.
-          - Admin (System Administrator): without it, every admin loses the same page — the
-            Investor Onboarding Lead record page silently stops rendering for System Administrator
-            users, with no deploy error and nothing in the deploy result to indicate why.
-    -->
     <profileActionOverrides>
         <actionName>View</actionName>
         <content>Investor_Onboarding_Lead_Record_Page</content>
@@ -80,6 +31,15 @@
         <recordType>Lead.Investor_Onboarding</recordType>
         <type>Flexipage</type>
         <profile>Admin</profile>
+    </profileActionOverrides>
+    <profileActionOverrides>
+        <actionName>View</actionName>
+        <content>Investor_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <pageOrSobjectType>Contact</pageOrSobjectType>
+        <recordType>Contact.Investor</recordType>
+        <type>Flexipage</type>
+        <profile>DPEG-IR-SF-Minimum Access</profile>
     </profileActionOverrides>
     <tabs>standard-Lead</tabs>
     <tabs>standard-Contact</tabs>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE INVESTOR CONTACT PAGE LAYOUT. Carries exactly the five requested fields: Name, Email,
+        Phone, Is Accredited and Referred By.
+
+        🔴 THIS FILE CANNOT ASSIGN ITSELF TO A PROFILE + RECORD TYPE. Layout assignment lives in
+        Profile metadata (<layoutAssignments>), and profiles are .forceignore'd in this repo
+        (see .forceignore line 28 - they were excluded because they are unportable and produced
+        394 deploy errors). So deploying this file CREATES the layout but leaves it unassigned;
+        binding it to Contact.Investor for the DPEG-IR-SF-Minimum Access profile is a manual step
+        in Setup, or requires un-ignoring profiles. Documented rather than silently skipped.
+
+        ACTIVITY IS NOT A LAYOUT SECTION IN LIGHTNING. The requested "Activity section with Log a
+        Call / Email / Task" is delivered by the ACTIVITY PANEL on the Lightning record page
+        (flexipages/Investor_Record_Page, sidebar region,
+        runtime_sales_activities:activityPanel), not by this layout. What the layout DOES control
+        is which actions appear in the highlights action bar and the mobile action list, so
+        LogACall, SendEmail and NewTask are declared in <platformActionList> below - those three
+        are what populate the Activity composer's tabs.
+
+        RELATED LISTS: Open + History activity related lists are included so the Activity timeline
+        has something to render against on the Related tab.
+    -->
+    <fullName>Contact-Investor Layout</fullName>
+    <layoutSections>
+        <customLabel>false</customLabel>
+        <detailHeading>false</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Information</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Required</behavior>
+                <field>Name</field>
+            </layoutItems>
+            <!--
+                AccountId IS NOT OPTIONAL HERE AND IS NOT A DESIGN CHOICE. It was not in the
+                requested field list, but the platform REFUSES the layout without it:
+                "Layout must contain an item for required layout field: AccountId" (measured on a
+                check-only deploy, 2026-08-17). It is declared Readonly rather than Edit because
+                an IR investor Contact is created ACCOUNT-LESS by design - the conversion detaches
+                it and deletes the temporary Account - so this field should be visible for
+                diagnosis but never hand-edited into pointing at an Account again.
+            -->
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>AccountId</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Email</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Phone</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Is_Accredited__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Referred_By__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>false</customLabel>
+        <detailHeading>false</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Custom Links</label>
+        <layoutColumns/>
+        <layoutColumns/>
+        <style>CustomLinks</style>
+    </layoutSections>
+    <platformActionList>
+        <actionListContext>Record</actionListContext>
+        <platformActionListItems>
+            <actionName>LogACall</actionName>
+            <actionType>QuickAction</actionType>
+            <sortOrder>0</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>SendEmail</actionName>
+            <actionType>QuickAction</actionType>
+            <sortOrder>1</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>NewTask</actionName>
+            <actionType>QuickAction</actionType>
+            <sortOrder>2</sortOrder>
+        </platformActionListItems>
+    </platformActionList>
+    <quickActionList>
+        <quickActionListItems>
+            <quickActionName>LogACall</quickActionName>
+        </quickActionListItems>
+        <quickActionListItems>
+            <quickActionName>SendEmail</quickActionName>
+        </quickActionListItems>
+        <quickActionListItems>
+            <quickActionName>NewTask</quickActionName>
+        </quickActionListItems>
+    </quickActionList>
+    <relatedLists>
+        <fields>TASK.SUBJECT</fields>
+        <fields>ACTIVITY.TASK</fields>
+        <fields>TASK.DUE_DATE</fields>
+        <fields>TASK.STATUS</fields>
+        <relatedList>RelatedActivityList</relatedList>
+    </relatedLists>
+    <relatedLists>
+        <fields>TASK.SUBJECT</fields>
+        <fields>ACTIVITY.TASK</fields>
+        <fields>TASK.LAST_UPDATE</fields>
+        <relatedList>RelatedHistoryList</relatedList>
+    </relatedLists>
+    <showEmailCheckbox>false</showEmailCheckbox>
+    <showHighlightsPanel>false</showHighlightsPanel>
+    <showInteractionLogPanel>false</showInteractionLogPanel>
+    <showRunAssignmentRulesCheckbox>false</showRunAssignmentRulesCheckbox>
+    <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
+</Layout>

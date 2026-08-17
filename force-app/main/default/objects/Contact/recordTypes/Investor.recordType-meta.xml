@@ -80,6 +80,15 @@
     -->
     <fullName>Investor</fullName>
     <active>true</active>
+    <!--
+        COMPACT LAYOUT BINDING LIVES HERE, NOT ON THE COMPACT LAYOUT. A CompactLayout file does
+        not name the record type it serves; this assignment is the only thing that connects
+        Investor_Compact_Layout to this record type, so the two files must deploy TOGETHER or the
+        compact layout lands in the org unassigned and the record type silently keeps the
+        Primary/default compact layout. Same shape as the Lead side, where
+        Lead/recordTypes/Investor_Onboarding assigns Investor_Onboarding_Layout.
+    -->
+    <compactLayoutAssignment>Investor_Compact_Layout</compactLayoutAssignment>
     <description>Investor contact. Layout/FLS/reporting only - sharing is inherited from the parent Account. See the XML comment in this file.</description>
     <label>Investor</label>
     <picklistValues>
