@@ -6,12 +6,19 @@
  * 🔴 THE CARD WAS RE-RANKED AND CUT TO TWO COLUMNS ON 2026-08-17 (user decision). It used
  * to render six columns from a wrapper of eight members and rank on `Amount`. The wire
  * contract is now a LIST of { id, name, askingPrice } and the card renders exactly two
- * columns: Property Name (a url column linking to the record, labelled from `name`) and
+ * columns: Deal Name (a url column linking to the record, labelled from `name`) and
  * Asking Price. The removed PILLS test went with the Stage and Deal Type columns.
+ *
+ * ⚠ THE FIRST COLUMN'S HEADING WAS BRIEFLY `Property Name` AND IS NOW `Deal Name` AGAIN
+ * (user decision, 2026-08-17, reversing an earlier instruction). Only the heading moved —
+ * the column has always rendered `Opportunity.Name`, never a `Property__r.Name` traversal,
+ * so no assertion below changed with it. ⚠ The component's own header prose still argues the
+ * `Property Name` labelling in several places; that file belongs to another session and is
+ * theirs to reconcile, not this suite's.
  *
  * 🔴 THREE TESTS HERE ARE FALSIFIERS RATHER THAN COVERAGE:
  *
- *   'COLUMNS: exactly two'  -> reds if a removed column creeps back, or if the Property Name
+ *   'COLUMNS: exactly two'  -> reds if a removed column creeps back, or if the Deal Name
  *      column stops being a `url` type (the link is the part that would be silently lost).
  *   'renders rows in the SERVER order' -> reds if anyone adds a client-side sort. The
  *      fixture is deliberately NOT in asking-price order, so a component that re-sorts would
@@ -106,18 +113,21 @@ describe('c-top-largest-deals', () => {
         expect(datatable(element).data).toEqual([]);
     });
 
-    it('COLUMNS: exactly two — a Property Name link and an Asking Price', async () => {
+    it('COLUMNS: exactly two — a Deal Name link and an Asking Price', async () => {
         const element = createComponent();
 
         getTopDeals.emit(DEALS);
         await Promise.resolve();
 
+        // ⚠ THE LABEL IS `Deal Name` — user decision, 2026-08-17, REVERSING an earlier
+        // instruction to relabel it `Property Name`. Only the heading moved: the column still
+        // renders `Opportunity.Name` and still links to the record, so nothing below changed.
         const columns = datatable(element).columns;
-        expect(columns.map((c) => c.label)).toEqual(['Property Name', 'Asking Price']);
+        expect(columns.map((c) => c.label)).toEqual(['Deal Name', 'Asking Price']);
 
-        // 🔴 The link is the part a "simplification" would drop silently. "Property Name" is
-        // Opportunity.Name relabelled (user decision) — it must stay a url column pointing at
-        // the record, with `name` as the visible label.
+        // 🔴 The link is the part a "simplification" would drop silently. The value is
+        // Opportunity.Name (never `Property__r.Name` — no traversal, see the component header)
+        // and it must stay a url column pointing at the record, with `name` as the label.
         expect(columns[0].type).toBe('url');
         expect(columns[0].fieldName).toBe('recordUrl');
         expect(columns[0].typeAttributes.label.fieldName).toBe('name');
