@@ -7,28 +7,45 @@ import getTopDeals from '@salesforce/apex/TopDealsController.getTopDeals';
  * active deals, any stage except Closed*).
  *
  * ═════════════════════════════════════════════════════════════════════════════
- * 🔴 THIS IS NOT `c/recentOpportunities`, AND MERGING THEM WOULD BE A REGRESSION
+ * 🔴 RE-RANKED ONTO `Asking_Price__c` AND CUT TO TWO COLUMNS (user decision, 2026-08-17)
  * ═════════════════════════════════════════════════════════════════════════════
- * `c/recentOpportunities` sits on the SAME home page and also shows five deals. They are
- * deliberately separate because they rank on different facts:
+ * This card ranks on **`Asking_Price__c`** and shows exactly two columns — Property Name and
+ * Asking Price. It is a DELIBERATE change of the question the card answers, taken by the user
+ * with the alternatives on the table: it is now "the five highest ASKING PRICES among active
+ * deals", not "the five biggest deal Amounts". Different deals appear.
  *
- *   c/recentOpportunities   ranks by `Asking_Price__c`  — what the SELLER wants.
- *   c/topLargestDeals (this) ranks by `Amount`          — what the DEAL is worth to DPEG.
+ * ⚠ SUPERSEDED, 2026-08-16, kept verbatim so nobody restores it from the retired argument:
  *
- * The tranche-2 design proposed closing §24.2 by adding a stage filter to
- * `recentOpportunities` and relabelling it. **THAT WAS OVERRULED BY THE USER (2026-08-16)**
- * — `recentOpportunities`, its controller method and its selector method are UNTOUCHED.
+ *     "c/recentOpportunities   ranks by `Asking_Price__c`  — what the SELLER wants.
+ *      c/topLargestDeals (this) ranks by `Amount`          — what the DEAL is worth to DPEG.
+ *      ⇒ Do NOT re-point this component's wire ... Either change makes this a second copy of
+ *      a card the page already carries."
  *
- * ⇒ Do NOT re-point this component's wire at `OpportunityFunnelController`, and do NOT
- *   "de-duplicate" the two cards. Either change makes this a second copy of a card the page
- *   already carries. `TopDealsControllerTest.ranksOnAmountAndNotOnAskingPrice` is the
- *   server-side falsifier; the `ORDER` test below is the client-side one.
+ * 🔴 THAT SEPARATION ARGUMENT IS NOW MOSTLY SPENT, AND SAYING SO IS THE HONEST POSITION.
+ * Both cards now rank on the same field. What still distinguishes them is narrower than it
+ * was and is worth knowing before anyone merges them:
  *
- * ⚠ A SEPARATE CARD IS NOT THE SAME MISTAKE AS `c/transactionAdvanceStage`. ARCHITECTURE.md
- * §5 records that bundle being created and deleted the same day for being byte-identical to
- * an existing one below the comments. This one DIFFERS in the fact it ranks on, in its Apex
- * wire, in its columns (Amount and Close Date, where the other has Asking Price and NOI)
- * and in the question it answers. That is a genuine split, not a copy with a new header.
+ *   c/recentOpportunities  every stage, incl. Closed Won / Dead/Pass; Asking Price + NOI.
+ *   c/topLargestDeals      ACTIVE deals only (`OpportunitySelector.CLOSED_STAGES` excluded,
+ *                          which is the FSD §24.2 requirement); Property Name + Asking Price.
+ *
+ * ⇒ Adding the stage filter to `selectTopByAskingPrice` — the tranche-2 proposal the user
+ *   OVERRULED on 2026-08-16 — would collapse the last real difference. `recentOpportunities`,
+ *   `OpportunityFunnelController.getRecentOpportunities` and
+ *   `OpportunitySelector.selectTopByAskingPrice` remain UNTOUCHED.
+ *   `TopDealsControllerTest.excludesClosedAndDeadDeals` is the server-side falsifier.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════
+ * "PROPERTY NAME" IS `Opportunity.Name`, RELABELLED — NOT `Property__r.Name`
+ * ═════════════════════════════════════════════════════════════════════════════
+ * User decision, 2026-08-17, and it is the same reasoning `OpportunitySelector`'s
+ * call-for-offers block comment already records for that surface: `LeadConvertService` names
+ * the deal after the property (marketing name, else the address), so `Name` already IS the
+ * property name on every lead-converted deal. Traversing `Property__r.Name` instead would
+ * add a cross-object CRUD/FLS dependency under `WITH USER_MODE` — which throws for the WHOLE
+ * ROW rather than blanking one column — and would render an empty cell on any deal with a
+ * null `Property__c` (a manually built deal has none). Zero traversal, zero new FLS surface,
+ * zero blank rows.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * ERROR HANDLING — an inline banner, not a toast
@@ -39,84 +56,46 @@ import getTopDeals from '@salesforce/apex/TopDealsController.getTopDeals';
  * a toast: this card is passive page furniture the user did not click, so a toast would
  * appear unprompted and then vanish, leaving a permanently empty card with no explanation.
  *
- * 🔴 THE MOST LIKELY REAL-WORLD ERROR IS AN FLS GAP ON `Opportunity.Amount`, which is
- * granted by NO permission set in this repo as at 2026-08-16. The selector is
- * `WITH USER_MODE` on purpose (this backs a read a human asked for), and USER_MODE throws on
- * the WHOLE ROW for ONE inaccessible field — so the whole card fails rather than showing a
- * blank column. That is the intended, LOUD posture; the fix is a permission-set grant.
+ * 🔴 THE MOST LIKELY REAL-WORLD ERROR IS AN FLS GAP ON `Opportunity.Asking_Price__c`. The
+ * selector is `WITH USER_MODE` on purpose (this backs a read a human asked for), and
+ * USER_MODE throws on the WHOLE ROW for ONE inaccessible field — so the whole card fails
+ * rather than showing a blank column. That is the intended, LOUD posture; the fix is a
+ * permission-set grant. ⚠ The read's FLS surface SHRANK with this change: it no longer
+ * selects `Amount`, `Deal_Type__c` or `Asset_Type__c`, so three of the four ways it could
+ * throw are gone.
  *
  * ⚠ THE ERROR BRANCH KEEPS THE COUNT AT ZERO AND HIDES THE TABLE. An error state that still
  * rendered the last-known rows would assert a ranking the server just refused to confirm.
+ *
+ * ⚠ THE STAGE / DEAL-TYPE PILL MAPS ARE GONE, NOT MISPLACED. This card had `STAGE` /
+ * `DEAL_TYPE` colour maps and `pillWrap` / `pillDot` builders serving its Stage and Deal Type
+ * columns; with those columns removed they had no reader, so they were deleted rather than
+ * left as unreferenced constants. `c/recentOpportunities` keeps its own copies for its own
+ * pills, and `c/listDatatable`'s `pill` cell type is unchanged and still used there.
  */
 
-// [background, dot] per stage / deal type for the soft pills.
-// Keys are Opportunity.StageName VALUES, not labels — a miss falls through to FALLBACK, so a
-// stale key here degrades to a grey pill rather than an error.
-// ⚠ 'Closed Won' and 'Dead/Pass' are deliberately ABSENT: the server excludes them, so a key
-// for either would be unreachable styling that quietly implies this card can show them.
-const STAGE = {
-    New: ['#eceff1', '#90A4AE'],
-    'Under Review': ['#e8f1fc', '#5C9DED'],
-    'Development Review': ['#efe9f7', '#7E57C2'],
-    'Construction Review': ['#e3f4f2', '#26A69A'],
-    Underwriting: ['#e8f1fc', '#1E88E5'],
-    LOI: ['#e9f2fd', '#42A5F5'],
-    'Under Contract (PSA)': ['#fff1e0', '#FB8C00'],
-    'About to Close': ['#e8f5e9', '#66BB6A'],
-    'Portfolio Deal': ['#efe9e6', '#8D6E63']
-};
-
-// Keys are Deal_Type__c VALUES, not labels — a miss falls through to FALLBACK.
-const DEAL_TYPE = {
-    Land: ['#eaf6ec', '#43A047'],
-    Retail: ['#e8f1fc', '#1565c0']
-};
-
-const FALLBACK = ['#eef1f4', '#94a3b8'];
-
-const pillWrap = (bg) =>
-    `display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:4px;font-weight:600;color:#3e3e3e;background:${bg}`;
-const pillDot = (c) =>
-    `width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0`;
-
 const COLUMNS = [
+    // ⚠ STILL A `url` COLUMN. Only the LABEL and the removal of its five siblings changed —
+    // losing the link to the record would be a regression, so the type and typeAttributes are
+    // exactly what they were under the old "Deal Name" heading.
     {
-        label: 'Deal Name',
+        label: 'Property Name',
         fieldName: 'recordUrl',
         type: 'url',
         typeAttributes: { label: { fieldName: 'name' }, target: '_self' }
     },
-    {
-        label: 'Stage',
-        fieldName: 'stage',
-        type: 'pill',
-        initialWidth: 160,
-        typeAttributes: {
-            wrapStyle: { fieldName: 'stageWrap' },
-            dotStyle: { fieldName: 'stageDot' }
-        }
-    },
-    {
-        label: 'Deal Type',
-        fieldName: 'dealType',
-        type: 'pill',
-        initialWidth: 115,
-        typeAttributes: {
-            wrapStyle: { fieldName: 'dtWrap' },
-            dotStyle: { fieldName: 'dtDot' }
-        }
-    },
-    { label: 'Amount', fieldName: 'amountLabel', type: 'text', initialWidth: 120 },
-    { label: 'Close Date', fieldName: 'closeDateLabel', type: 'text', initialWidth: 120 },
-    { label: 'Age', fieldName: 'age', type: 'text', initialWidth: 80 }
+    { label: 'Asking Price', fieldName: 'askingPriceLabel', type: 'text', initialWidth: 140 }
 ];
 
 /**
  * $1.2M / $850K / $0 — compact currency, matching the sibling deal cards on this page.
  *
- * ⚠ A null renders as an em dash, NOT as `$0`. An amount-less deal is one nobody has costed
- * yet; `$0` would assert it is worth nothing, which is a different and wrong claim. The
- * server sorts nulls last for the same reason.
+ * ⚠ A null renders as an em dash, NOT as `$0`. A price-less deal is one nobody has quoted
+ * yet; `$0` would assert the seller wants nothing for it, which is a different and wrong
+ * claim. The server sorts nulls last for the same reason.
+ *
+ * ⚠ It is the SAME helper the removed `Amount` column used, deliberately unchanged: the ask
+ * and the deal value are both money and must not render in two different formats on one page.
  */
 const money = (n) => {
     if (n === null || n === undefined) {
@@ -130,17 +109,6 @@ const money = (n) => {
     }
     return '$' + n;
 };
-
-/**
- * The Apex `Date` arrives as an ISO `yyyy-MM-dd` string.
- *
- * ⚠ It is rendered VERBATIM rather than through `new Date(...).toLocaleDateString()`.
- * Parsing a bare ISO date in JS treats it as UTC midnight and then renders it in the
- * browser's local zone, which shifts the displayed day backwards for every user west of
- * GMT — a close date that silently reads as the day before. Passing the string through has
- * no timezone surface at all.
- */
-const isoDate = (value) => (value ? String(value) : '—');
 
 export default class TopLargestDeals extends NavigationMixin(LightningElement) {
     columns = COLUMNS;
@@ -192,33 +160,21 @@ export default class TopLargestDeals extends NavigationMixin(LightningElement) {
 
     /**
      * ⚠ NO CLIENT-SIDE `slice` AND NO CLIENT-SIDE SORT. The server already applies
-     * `ORDER BY Amount DESC NULLS LAST` and `LIMIT 5`, so re-imposing either here would put
-     * a second, drifting copy of the ranking rule in JS — and a client sort would silently
-     * reorder rows the server deliberately ordered by a tiebreak (`CreatedDate DESC`) this
-     * component cannot see.
+     * `ORDER BY Asking_Price__c DESC NULLS LAST` and `LIMIT 5`, so re-imposing either here
+     * would put a second, drifting copy of the ranking rule in JS — and a client sort would
+     * silently reorder rows the server deliberately ordered by a tiebreak (`CreatedDate
+     * DESC`) this component cannot see.
      */
     get rows() {
         if (!this.data) {
             return [];
         }
-        return this.data.map((r) => {
-            const [sBg, sDot] = STAGE[r.stage] || FALLBACK;
-            const [dBg, dDot] = DEAL_TYPE[r.dealType] || FALLBACK;
-            return {
-                id: r.id,
-                recordUrl: `/lightning/r/Opportunity/${r.id}/view`,
-                name: r.name,
-                stage: r.stage,
-                stageWrap: pillWrap(sBg),
-                stageDot: pillDot(sDot),
-                dealType: r.dealType || '—',
-                dtWrap: pillWrap(dBg),
-                dtDot: pillDot(dDot),
-                amountLabel: money(r.amount),
-                closeDateLabel: isoDate(r.closeDate),
-                age: r.days + 'd'
-            };
-        });
+        return this.data.map((r) => ({
+            id: r.id,
+            recordUrl: `/lightning/r/Opportunity/${r.id}/view`,
+            name: r.name,
+            askingPriceLabel: money(r.askingPrice)
+        }));
     }
 
     get count() {

@@ -6,11 +6,14 @@
  * SLDS 2 design tokens with hex fallbacks, so the card still renders correctly if it is
  * ever placed somewhere the DPEG token set has not loaded.
  *
- * ⚠ THE STAGE / DEAL-TYPE PILL COLOURS ARE NOT HERE, AND THAT IS STRUCTURAL RATHER THAN AN
- * OVERSIGHT. They live as inline styles built in the JS and passed through
- * `typeAttributes`, because `c/listDatatable` is a `lightning/datatable` SUBCLASS and a
- * datatable subclass cannot reach its custom cell templates from a `.css` file — see that
- * bundle's own class comment. Moving them here would silently stop applying them.
+ * ⚠ SUPERSEDED, 2026-08-17. This file used to carry a note explaining that the STAGE and
+ * DEAL-TYPE pill colours were not here — that they lived as inline styles built in the JS,
+ * because `c/listDatatable` is a `lightning/datatable` SUBCLASS and a datatable subclass
+ * cannot reach its custom cell templates from a `.css` file. THAT CARD NO LONGER HAS PILLS:
+ * the two `pill` columns were removed when this card was cut to Property Name + Asking Price,
+ * and the colour maps went with them. The underlying platform constraint is still real and is
+ * still recorded where it still bites — `c/recentOpportunities` and `c/listDatatable`'s own
+ * class comment. Do not "restore" pill styling here; there is nothing left to style.
  */
 .view-all-footer {
     text-align: center;

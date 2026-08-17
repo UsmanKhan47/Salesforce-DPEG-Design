@@ -169,6 +169,12 @@ private class TopDealsControllerTest {
         Assert.isNotNull(first.name, 'name backs the Property Name link label');
         Assert.isNotNull(first.askingPrice, 'askingPrice backs the compact-currency column');
 
+        // 🔴 SINGLE-ARGUMENT `JSON.serialize` ON PURPOSE — IT DOES **NOT** SUPPRESS NULL
+        // MEMBERS, which is what makes this a count of the DTO's WIDTH rather than of one
+        // row's populated fields. The two-argument form `JSON.serialize(first, true)` is the
+        // suppress-Apex-object-nulls variant: switching to it would silently make this a
+        // size-2 assertion on any unpriced deal — a test that passes for the wrong reason and
+        // stops detecting a regrown member the moment the fixture changes. Do not "improve" it.
         Map<String, Object> wire =
             (Map<String, Object>) JSON.deserializeUntyped(JSON.serialize(first));
         Assert.areEqual(3, wire.size(),

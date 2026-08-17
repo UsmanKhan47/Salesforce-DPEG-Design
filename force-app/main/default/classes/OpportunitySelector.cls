@@ -21,7 +21,11 @@
  *   - MarketDataSnapshotService (the underwriting-approval market freeze —
  *     selectMarketSnapshotSourceByIds; `WITH SYSTEM_MODE`, see MODE below)
  *   - TopDealsController (the "Top 5 Largest Deals" home-page card —
- *     selectTopByAmount, `WITH USER_MODE`)
+ *     selectTopActiveByAskingPrice, `WITH USER_MODE`)
+ *   - PropertyPackageController (the c/packageSiblings card on the Opportunity record
+ *     page — selectPackageAnchorById, `WITH USER_MODE`; the OPPORTUNITY-rooted half of
+ *     that feature's two reads, the package-rooted half being
+ *     PropertyPackageSelector.selectWithMembersById)
  *
  * MODE — most queries are `WITH USER_MODE` (API 67). **THREE are `WITH SYSTEM_MODE`:**
  * `selectCallForOffersTargetsByIds`, `queryCallForOffersAlerts` and
@@ -39,10 +43,10 @@
  * three already exist — read its header.
  *
  * The thirteen USER_MODE methods back reads a human explicitly asked for. Opportunity
- * is the only standard-object selector in A1; per the P4 design §5 every standard
- * field selected there (Id, Name, StageName, CloseDate, CreatedDate) is
+ * is the only standard-object selector in A1; per the P4 design §5 the standard
+ * fields selected across them (Id, Name, StageName, CloseDate, CreatedDate) are
  * `permissionable=false` and therefore never subject to FLS — USER_MODE cannot
- * throw on it — and every custom field selected (Deal_Type__c, Asset_Type__c,
+ * throw on them — and every custom field selected (Deal_Type__c, Asset_Type__c,
  * Asking_Price__c, Underwritten_NOI__c, Primary_*__c, and since 2026-08-14
  * Offer_Due_Date__c, Call_For_Offers_Received_Date__c, Broker_First_Seen__c,
  * Sale_Process__c, Listing_Broker_Name__c, Listing_Broker_Email__c,
@@ -54,6 +58,25 @@
  * USER_MODE method here means re-verifying that grant list first**: USER_MODE throws
  * on the WHOLE ROW for ONE inaccessible field, so a new field can break a caller that
  * has nothing to do with it.
+ *
+ * 🔴 AND THAT RULE IS NOT CUSTOM-FIELD-ONLY. THE LESSON STANDS; ITS EXAMPLE HAS GONE.
+ * The paragraph above enumerates the standard fields that are `permissionable=false`.
+ * `Amount` is NOT among them and IS permissionable, so a standard field can throw here
+ * exactly like a custom one. That was not theoretical: `Amount` was read as "standard
+ * fields are always safe", a test was written asserting USER_MODE cannot throw for a
+ * restricted persona, and it FAILED ON FIRST EXECUTION (2026-08-16, `RunLocalTests`).
+ * ⇒ **Check `permissionable` on a STANDARD field before assuming it is FLS-free.**
+ *
+ * ⚠ SUPERSEDED, 2026-08-17: the example was `selectTopByAmount`, which selected `Amount`.
+ * That method was re-ranked and RENAMED to `selectTopActiveByAskingPrice` (user decision),
+ * and **no method on this class selects `Amount` any more** — so the counterexample is
+ * historical rather than live. It is kept because it is the reason the `Opportunity.Amount`
+ * grants exist on `DPEG_Acquisition_Edit` / `_View` / `DPEG_Opportunity_View`; do not read
+ * this paragraph as evidence that some query here still depends on them. 🔴 NOR SHOULD
+ * THOSE GRANTS BE REMOVED ON THE STRENGTH OF THIS NOTE — this class is not their only
+ * possible consumer (layouts, list views and org-side reports name fields directly), and a
+ * `PermissionSet` deploy REPLACES its whole `<fieldPermissions>` set, so dropping one is a
+ * live-access change, not a tidy-up. That is an admin decision with its own evidence.
  *
  * SHARING — the class stays `with sharing`, and for the SYSTEM_MODE method that is a
  * SEPARATE decision from the mode, deliberately argued separately (see that method's
@@ -113,7 +136,17 @@ public with sharing class OpportunitySelector {
 
     /**
      * Top Opportunities by asking price (largest first, priceless deals last) —
-     * backs the "recent / biggest deals" list.
+     * backs the "recent / biggest deals" list (`lwc/recentOpportunities`, via
+     * `OpportunityFunnelController.getRecentOpportunities`).
+     *
+     * ⚠ IT HAS A NEAR-TWIN SINCE 2026-08-17 AND THE TWO MUST NOT BE MERGED.
+     * `selectTopActiveByAskingPrice` below carries the IDENTICAL ORDER BY and differs in
+     * exactly one axis: it excludes `CLOSED_STAGES`. 🔴 ADDING THAT FILTER HERE WOULD BREAK
+     * THIS METHOD'S OWN CALLER — `recentOpportunities` shows deals at ANY stage — and it is
+     * precisely the tranche-2 proposal the user OVERRULED on 2026-08-16. This method, its
+     * controller method, its card, its label and its placement stay UNTOUCHED.
+     * ⚠ It also selects `Underwritten_NOI__c`, which its card renders as an NOI column and
+     * the other card does not have.
      *
      * @param maxRows Row cap (LIMIT).
      * @return Opportunities ordered by Asking_Price__c DESC NULLS LAST,
@@ -151,53 +184,115 @@ public with sharing class OpportunitySelector {
     private static final Set<String> CLOSED_STAGES = new Set<String>{ 'Closed Won', 'Dead/Pass' };
 
     /**
-     * Top Opportunities by `Amount` (largest first, amount-less deals last), EXCLUDING
-     * closed deals — backs the "Top 5 Largest Deals" home-page card (FSD §24.2, "the five
-     * biggest active deals, any stage except Closed").
+     * Top ACTIVE Opportunities by `Asking_Price__c` (highest first, price-less deals last),
+     * EXCLUDING closed deals — backs the "Top 5 Largest Deals" home-page card
+     * (FSD §24.2, "the five biggest active deals, any stage except Closed").
      *
-     * 🔴 IT RANKS ON `Amount`, NOT ON `Asking_Price__c`, AND THE TWO ARE DIFFERENT
-     * QUESTIONS. `Asking_Price__c` is what the SELLER wants; `Amount` is what the DEAL is
-     * worth to DPEG. `selectTopByAskingPrice` above answers the first and backs
-     * `lwc/recentOpportunities`; this answers the second and backs `lwc/topLargestDeals`.
-     * ⚠ They are DELIBERATELY two methods and two cards (user decision, 2026-08-16): an
-     * earlier design proposed adding this stage filter to `selectTopByAskingPrice` and
-     * relabelling the existing card. That was OVERRULED — the two lists answer different
-     * questions and a deal can top one and not the other. Do not merge them, and do not
-     * "harmonise" this method's ORDER BY onto `Asking_Price__c`; that silently turns this
-     * card into a duplicate of the other one.
+     * ═════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS METHOD WAS `selectTopByAmount` AND RANKED ON `Amount` UNTIL 2026-08-17.
+     * ═════════════════════════════════════════════════════════════════════════
+     * The user re-ranked the card onto `Asking_Price__c` DELIBERATELY, with the
+     * alternatives on the table: it now answers "the five highest ASKING PRICES among
+     * active deals", not "the five biggest deal Amounts". Different deals appear.
+     *
+     * ⚠ RETRACTED, verbatim, because the next reader will otherwise restore it from the
+     * argument rather than from the decision:
+     *
+     *     "🔴 IT RANKS ON `Amount`, NOT ON `Asking_Price__c`, AND THE TWO ARE DIFFERENT
+     *      QUESTIONS ... do not 'harmonise' this method's ORDER BY onto `Asking_Price__c`;
+     *      that silently turns this card into a duplicate of the other one."
+     *
+     * That prohibition is SPENT — the harmonisation it forbade is the change that was made,
+     * on the user's instruction. The observation UNDER it is still true and still worth
+     * knowing: `Asking_Price__c` is what the SELLER wants and `Amount` is what the DEAL is
+     * worth to DPEG, so this card no longer reports the second of those at all.
+     *
+     * 🔴 IT WAS RENAMED RATHER THAN LEFT AS `selectTopByAmount`, AND THE ALTERNATIVE WAS
+     * WEIGHED. A method named for the field it no longer orders by is a lying name — the
+     * exact defect shape ARCHITECTURE.md §2 records for `LoiSelector`'s and `NdaSelector`'s
+     * stale headers. A SIBLING method was the other option and was rejected: this method has
+     * exactly ONE production caller (`TopDealsController.getTopDeals`, verified repo-wide
+     * 2026-08-17), so a sibling would leave `selectTopByAmount` with ZERO callers — dead
+     * code carrying a live-looking Javadoc. A rename touches one call site plus this class's
+     * own tests.
+     *
+     * ═════════════════════════════════════════════════════════════════════════
+     * 🔴 IT IS A SECOND METHOD, NOT A REUSE OF `selectTopByAskingPrice` ABOVE — AND THAT IS
+     * NOW THE ONLY THING SEPARATING THE TWO HOME-PAGE CARDS. READ THIS BEFORE MERGING THEM.
+     * ═════════════════════════════════════════════════════════════════════════
+     * Both methods now ORDER BY `Asking_Price__c DESC NULLS LAST, CreatedDate DESC`. They
+     * differ in one axis and it is load-bearing:
+     *
+     *   selectTopByAskingPrice        NO stage filter — closed deals included. Selects
+     *                                 `Underwritten_NOI__c` (its card shows an NOI column).
+     *                                 Backs `lwc/recentOpportunities`.
+     *   selectTopActiveByAskingPrice  EXCLUDES `CLOSED_STAGES`, which is the whole of FSD
+     *                                 §24.2's "any stage except Closed". Backs
+     *                                 `lwc/topLargestDeals`.
+     *
+     * ⚠ Folding this into `selectTopByAskingPrice` by adding the stage filter there is
+     * PRECISELY the tranche-2 proposal the user OVERRULED on 2026-08-16, and it would break
+     * that method's own caller: `OpportunityFunnelController.getRecentOpportunities` shows
+     * deals at ANY stage. So the reuse is not available, and the duplication that remains is
+     * an ORDER BY clause rather than a query.
      *
      * ⚠ `TestDataFactory.createOpportunities` seeds `Amount` and `Asking_Price__c` to the
-     * SAME value, so a test that does not deliberately diverge them cannot tell these two
-     * methods apart and is VACUOUS. `OpportunitySelectorTest.selectTopByAmount_*` inverts
-     * them on purpose.
+     * SAME value. That still matters, in the opposite direction from before: a test using
+     * the factory defaults cannot prove this method ranks on `Asking_Price__c` rather than
+     * on `Amount`, because both orderings agree. `OpportunitySelectorTest` and
+     * `TopDealsControllerTest` diverge the two fields on purpose.
      *
      * MODE — `WITH USER_MODE`, and that is the correct answer rather than the convenient
      * one: this backs a card a human opened a home page to read, so an FLS gap here is a
      * real provisioning gap and the fix is a permission set, not a mode change
-     * (ARCHITECTURE.md §2). 🔴 BUT THE GRANT MUST BE VERIFIED BEFORE THIS SHIPS:
-     * `Opportunity.Amount` is `permissionable`, and as at 2026-08-16 it is granted by NO
-     * permission set in this repo (measured — it appears only in `profiles/**`, which is
-     * `.forceignore`d and never deploys). USER_MODE throws on the WHOLE ROW for ONE
-     * inaccessible field, so a persona without that grant gets `System.QueryException:
-     * No such column 'Amount' on entity 'Opportunity'` — an FLS DENIAL wearing a schema
-     * error — and the whole card renders its error banner. That failure is LOUD, which is
-     * why it is the right posture here and the wrong one inside an approval-triggered
-     * flow (see `selectMarketSnapshotSourceByIds`). Grant `Opportunity.Amount` readable on
-     * `DPEG_Acquisition_Edit` / `DPEG_Acquisition_View` / `DPEG_Opportunity_View` — the
-     * three sets that already carry `Opportunity.Deal_Bucket__c`.
+     * (ARCHITECTURE.md §2). USER_MODE throws on the WHOLE ROW for ONE inaccessible field,
+     * so a persona without the grant gets `System.QueryException: No such column
+     * 'Asking_Price__c' on entity 'Opportunity'` — an FLS DENIAL wearing a schema error —
+     * and the whole card renders its error banner. That failure is LOUD, which is why it is
+     * the right posture here and the wrong one inside an approval-triggered flow (see
+     * `selectMarketSnapshotSourceByIds`).
+     *
+     * ✅ THE FLS SURFACE SHRANK WITH THIS CHANGE, and that is worth stating because it is
+     * the one unambiguous improvement in it. The SELECT dropped `Amount` (permissionable
+     * standard), `Deal_Type__c` and `Asset_Type__c` (Metadata-API-deployed customs, which
+     * arrive with no field permissions for ANY profile) along with the columns that read
+     * them, and `CloseDate` with the Close Date column. The only remaining FLS-bearing field
+     * is `Asking_Price__c` — already granted on `DPEG_Acquisition_Edit` /
+     * `DPEG_Acquisition_View` / `DPEG_Opportunity_View`, and already proven in production by
+     * `selectTopByAskingPrice`, which the `recentOpportunities` card has run on for months.
+     * `Id` / `Name` / `StageName` / `CreatedDate` are `permissionable=false`.
+     *
+     * ⚠ `StageName` IS SELECTED THOUGH NO COLUMN RENDERS IT. SOQL does not require a field
+     * to be selected to filter on it, but `OpportunitySelectorTest` asserts row-by-row that
+     * no returned deal sits at a closed stage — an assertion that reads `o.StageName` and
+     * would throw `SObjectException` without it. It costs nothing (`permissionable=false`)
+     * and it is what makes the exclusion falsifiable rather than trusted.
+     *
+     * ⚠ HISTORICAL, KEPT BECAUSE IT IS THE REASON THE `Opportunity.Amount` GRANTS EXIST:
+     * this method's `Amount` version shipped on 2026-08-16 having found that field granted
+     * by NO permission set in this repo (it appeared only in `profiles/**`, which is
+     * `.forceignore`d and never deploys); the remedy — readable on `DPEG_Acquisition_Edit` /
+     * `DPEG_Acquisition_View` / `DPEG_Opportunity_View` — was applied verbatim and verified
+     * IN SOURCE on 2026-08-17. 🔴 THIS METHOD NO LONGER SELECTS `Amount`, so it is no longer
+     * that grant's consumer. Do NOT infer that the grants may now be dropped: the class
+     * header explains why that is an admin decision needing its own evidence.
+     *
+     * ⚠ STILL TRUE, AND THE PART A READER MUST NOT SKIP: a persona holding none of those
+     * three sets is still denied `Asking_Price__c`, by design. That is not a defect —
+     * `TopDealsController` converts it into a user-safe message, pinned by
+     * `TopDealsControllerTest.anUnprovisionedPersonaGetsTheUserSafeMessageNotARawQueryException`.
      *
      * @param maxRows Row cap (LIMIT).
-     * @return Opportunities not at a closed stage, ordered by Amount DESC NULLS LAST,
-     *         CreatedDate DESC; empty when nothing matches. Never null.
+     * @return Opportunities not at a closed stage, ordered by Asking_Price__c DESC NULLS
+     *         LAST, CreatedDate DESC; empty when nothing matches. Never null.
      */
-    public static List<Opportunity> selectTopByAmount(Integer maxRows) {
+    public static List<Opportunity> selectTopActiveByAskingPrice(Integer maxRows) {
         return [
-            SELECT Id, Name, StageName, Deal_Type__c, Asset_Type__c,
-                   Amount, CloseDate, CreatedDate
+            SELECT Id, Name, StageName, Asking_Price__c, CreatedDate
             FROM Opportunity
             WHERE StageName NOT IN :CLOSED_STAGES
             WITH USER_MODE
-            ORDER BY Amount DESC NULLS LAST, CreatedDate DESC
+            ORDER BY Asking_Price__c DESC NULLS LAST, CreatedDate DESC
             LIMIT :maxRows
         ];
     }
@@ -350,6 +445,63 @@ public with sharing class OpportunitySelector {
     public static Opportunity selectPrimaryRefsById(Id opportunityId) {
         return [
             SELECT Id, Primary_NDA__c, Primary_LOI__c, Primary_Underwriting__c
+            FROM Opportunity
+            WHERE Id = :opportunityId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+    }
+
+    /**
+     * The `Property_Package__c` one deal belongs to — the ANCHOR read behind the
+     * `c/packageSiblings` card on the Opportunity record page.
+     *
+     * 🔴 IT LIVES HERE, NOT IN `PropertyPackageSelector`, BECAUSE THIS IS A QUERY AGAINST
+     * OPPORTUNITY. .claude/rules/apex-layering-rule.md is explicit that all SOQL for an
+     * object lives in that object's selector and "nothing else queries it".
+     * `PropertyPackageSelector.selectWithMembersById` owns the PACKAGE-rooted read (which
+     * returns both member collections via relationship subqueries, so the feature costs two
+     * queries in total rather than three). `LeadSelector.selectPackageAnchorById` is this
+     * method's exact twin — change both or neither.
+     *
+     * USER_MODE, per the §2 default and the class header above: this backs a card on a
+     * record page the human already opened, at their request. It is NOT one of this class's
+     * three automation-path SYSTEM_MODE methods and must not become a fourth — the
+     * arguments for those three (a trigger that would roll back a stage change, a batch
+     * locator reading a field with no FLS for any profile, an approval-triggered flow) do
+     * not apply to a user-requested page read. `Opportunity.Property_Package__c` is granted
+     * in DPEG_Acquisition_Edit and DPEG_Acquisition_View, declared in-file.
+     *
+     * NOT-FOUND CONTRACT — an empty list, never null and never a throw, DELIBERATELY unlike
+     * the `selectStageRequiredById` / `selectPrimaryRefsById` fetch-for-use family
+     * immediately around it. Those two are dereferenced straight away by callers for whom a
+     * miss is a defect; this one backs a card whose job is to render nothing when there is
+     * nothing to render.
+     *
+     * ═══ ⚠ THE PACKAGE'S `Name` IS DELIBERATELY NOT SELECTED HERE (2026-08-17, review W2) ═══
+     * The spanning `Property_Package__r.Name` was in this SELECT and was REMOVED. The only consumer
+     * — `PropertyPackageController.resolvePackageId` — reads `Property_Package__c` and nothing else;
+     * the card's heading comes from `PropertyPackageSelector.selectWithMembersById`, which selects
+     * `Name` off the package itself one query later. A parent traversal under `WITH USER_MODE` needs
+     * READ on the parent OBJECT as well as FLS on the field, so carrying it here was an extra,
+     * unused way for this anchor read to THROW. `LeadSelector.selectPackageAnchorById` was changed
+     * identically — change both or neither.
+     *
+     * @param opportunityId The deal whose package to resolve; null returns an empty list
+     *                      WITHOUT querying.
+     * @return At most one Opportunity (Id, Property_Package__c — the Id only, never the
+     *         package's Name); empty when the Id is null or matches no row.
+     * @throws System.QueryException when the running user lacks FLS on
+     *         `Opportunity.Property_Package__c`.
+     * @example
+     * List<Opportunity> rows = OpportunitySelector.selectPackageAnchorById(recordId);
+     */
+    public static List<Opportunity> selectPackageAnchorById(Id opportunityId) {
+        if (opportunityId == null) {
+            return new List<Opportunity>();
+        }
+        return [
+            SELECT Id, Property_Package__c
             FROM Opportunity
             WHERE Id = :opportunityId
             WITH USER_MODE

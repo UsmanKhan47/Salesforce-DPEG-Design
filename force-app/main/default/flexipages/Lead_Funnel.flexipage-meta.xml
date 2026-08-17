@@ -19,12 +19,6 @@
         </itemInstances>
         <itemInstances>
             <componentInstance>
-                <componentName>topLargestDeals</componentName>
-                <identifier>topLargestDealsComponent</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
                 <componentName>callForOffersList</componentName>
                 <identifier>callForOffersListComponent</identifier>
             </componentInstance>
@@ -39,6 +33,12 @@
         <type>Region</type>
     </flexiPageRegions>
     <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentName>topLargestDeals</componentName>
+                <identifier>topLargestDealsComponent</identifier>
+            </componentInstance>
+        </itemInstances>
         <itemInstances>
             <componentInstance>
                 <componentName>leadChannels</componentName>

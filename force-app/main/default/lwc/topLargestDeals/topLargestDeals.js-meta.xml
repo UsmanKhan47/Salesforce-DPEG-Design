@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Top 5 Largest Deals</masterLabel>
-    <description>The five biggest ACTIVE deals by Opportunity Amount, any stage except Closed Won or Dead/Pass (FSD 24.2). Distinct from Recent Opportunities, which ranks by Asking Price.</description>
+    <description>The five highest ACTIVE deals by Asking Price, any stage except Closed Won or Dead/Pass (FSD 24.2). Two columns: Property Name (the Opportunity name) and Asking Price. Recent Opportunities ranks on the same field but does not exclude closed deals.</description>
     <targets>
         <target>lightning__AppPage</target>
         <target>lightning__HomePage</target>

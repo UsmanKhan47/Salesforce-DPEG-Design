@@ -36,7 +36,12 @@
     <!-- FSD Tranche 2 finding (2026-08-16): Opportunity.Amount had NO FLS grant in any
          deployable permission set - see DPEG_Acquisition_Edit's comment on this same field
          for the full writeup. Reconciled against usman-dpeg before this edit: zero org-side
-         FieldPermissions rows for this field on this set. -->
+         FieldPermissions rows for this field on this set.
+
+         ⚠ RETIRED 2026-08-17: see DPEG_Acquisition_Edit's comment on this same field - the
+         consuming method (selectTopByAmount) was renamed and no longer selects Amount. This
+         grant is retained for reasons independent of that method and is not implicated by the
+         rename; removing it needs its own evidence. -->
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Amount</field>

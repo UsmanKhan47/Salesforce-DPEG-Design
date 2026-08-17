@@ -3,8 +3,26 @@
  *
  * Coverage: every method (aggregate, count, dynamic count, top-N list, two
  * fetch-for-use single-row reads) plus a 251-record bulk aggregate and a
- * System.runAs(Standard User) proof that USER_MODE does not throw for the
- * restricted persona the P4 design §5 measured.
+ * `System.runAs(Standard User)` proof that **`countByStage` specifically** does not throw
+ * under USER_MODE for the restricted persona the P4 design §5 measured.
+ *
+ * 🔴 THAT PROOF IS SCOPED TO ONE METHOD AND DOES **NOT** GENERALISE TO THIS CLASS.
+ * `userMode_standardUser_doesNotThrow` calls only `countByStage()`, a `StageName`-only
+ * aggregate — and `StageName` is `permissionable=false`, so USER_MODE has nothing to deny.
+ * Every method here that selects a CUSTOM field, or the permissionable standard field
+ * `Amount`, behaves the OPPOSITE way for that same persona: `WITH USER_MODE` throws on the
+ * WHOLE ROW for ONE inaccessible field.
+ *
+ * ⚠ THIS SENTENCE USED TO READ AS A CLASS-WIDE CLAIM ("a proof that USER_MODE does not throw
+ * for the restricted persona") AND WAS CORRECTED ON 2026-08-17 (code review W2) RATHER THAN
+ * LEFT STANDING. It is not a hypothetical drift: a test asserting exactly that premise for
+ * `selectTopByAmount` FAILED ON FIRST EXECUTION on 2026-08-16 (`RunLocalTests`) and had to be
+ * rewritten to assert the throw — see
+ * `TopDealsControllerTest.anUnprovisionedPersonaGetsTheUserSafeMessageNotARawQueryException`.
+ * ⇒ **Before adding a field to any `WITH USER_MODE` method on this class, read
+ * `OpportunitySelector`'s own header** (the grant list, and the 🔴 `Amount` counterexample
+ * showing the trap is not custom-field-only). This header is not evidence that the addition
+ * is safe for a restricted persona, and reading it as such is how that trap gets re-entered.
  *
  * @TestSetup builds 251 'New' Opportunities (factory default CloseDate = today+90,
  * Deal_Type__c = 'Retail'); test methods QUERY that data — they never call
@@ -608,18 +626,30 @@ private class OpportunitySelectorTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // selectTopByAmount — the "Top 5 Largest Deals" card (FSD §24.2, tranche 2)
+    // selectTopActiveByAskingPrice — the "Top 5 Largest Deals" card (FSD §24.2)
+    //
+    // 🔴 RENAMED FROM `selectTopByAmount` ON 2026-08-17 WITH THE RANKING IT NAMES. The card
+    // was re-ranked onto `Asking_Price__c` and cut to two columns (user decision), so the
+    // method's old name described an ORDER BY it no longer had. These tests were repointed,
+    // and their FIXTURE WAS INVERTED with them — see `seedAskingPriceRanking`.
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * 🔴 THE FIXTURE INVERTS `Amount` AGAINST `Asking_Price__c`, AND WITHOUT THAT THIS TEST
+     * 🔴 THE FIXTURE INVERTS `Asking_Price__c` AGAINST `Amount`, AND WITHOUT THAT THESE TESTS
      * WOULD BE VACUOUS. `TestDataFactory.createOpportunities` seeds the two fields to the
-     * SAME value, so against the plain setup data `selectTopByAmount` and
-     * `selectTopByAskingPrice` return an IDENTICAL list and no assertion can tell them
-     * apart. The three rows below make the two orderings opposite.
+     * SAME value, so against the plain setup data an asking-price ranking and an `Amount`
+     * ranking return an IDENTICAL list and no assertion can tell them apart. The three rows
+     * below make the two orderings opposite.
      *
-     * ⚠ It also parks the two BIGGEST amounts on closed stages, so a missing stage filter
-     * shows up at positions 0 and 1 rather than at the tail of the list.
+     * ⚠ THE INVERSION POINTS THE OTHER WAY THAN IT USED TO. It formerly gave the leader the
+     * biggest `Amount` and an asking price of 1; it now gives the leader the biggest ASKING
+     * PRICE and an `Amount` of 1. A row that led under the old ordering must not lead under
+     * the new one, or the falsifier is not a falsifier.
+     *
+     * ⚠ It also parks the two BIGGEST asking prices on closed stages, so a missing stage
+     * filter shows up at positions 0 and 1 rather than at the tail of the list. Both closed
+     * rows set BOTH fields, so the fixture stays meaningful if this card is ever re-ranked
+     * again in either direction.
      *
      * 🔴 THE CLOSED STAGES ARE SET **BEFORE THE INSERT** — do not convert this to an
      * insert-then-update. Every Opportunity stage gate here is guarded by
@@ -629,38 +659,45 @@ private class OpportunitySelectorTest {
      * while the insert passes. Building a real NDA/LOI/PSA chain would be a large fixture for
      * a test that only needs rows to EXIST at closed stages.
      */
-    private static void seedAmountRanking() {
+    private static void seedAskingPriceRanking() {
         List<Opportunity> ranked = TestDataFactory.createOpportunities(3, false);
-        // Biggest Amount, smallest Asking Price — must lead an Amount ranking.
-        ranked[0].Name = 'AmountLeader';
-        ranked[0].Amount = 90000000;
-        ranked[0].Asking_Price__c = 1;
+        // Biggest Asking Price, smallest Amount — must lead an asking-price ranking, and
+        // must NOT lead an Amount one (every setup row outranks an Amount of 1).
+        ranked[0].Name = 'AskingPriceLeader';
+        ranked[0].Asking_Price__c = 90000000;
+        ranked[0].Amount = 1;
         // Closed, and larger than everything in the 251-row setup — must NEVER appear.
         ranked[1].Name = 'ClosedGiant';
         ranked[1].StageName = 'Closed Won';
+        ranked[1].Asking_Price__c = 99000000;
         ranked[1].Amount = 99000000;
         ranked[2].Name = 'DeadGiant';
         ranked[2].StageName = 'Dead/Pass';
+        ranked[2].Asking_Price__c = 98000000;
         ranked[2].Amount = 98000000;
         insert ranked;
     }
 
     @isTest
-    static void selectTopByAmount_ordersByAmountAndExcludesClosedDeals() {
-        seedAmountRanking();
+    static void selectTopActiveByAskingPrice_ordersByAskingPriceAndExcludesClosedDeals() {
+        seedAskingPriceRanking();
 
         Test.startTest();
-        List<Opportunity> top = OpportunitySelector.selectTopByAmount(5);
+        List<Opportunity> top = OpportunitySelector.selectTopActiveByAskingPrice(5);
         Test.stopTest();
 
         Assert.areEqual(5, top.size(), 'LIMIT caps the result at 5');
-        Assert.areEqual('AmountLeader', top[0].Name,
-            'The largest ACTIVE Amount leads. Reading "ClosedGiant" means the stage filter was '
-            + 'dropped; reading a setup row means the ORDER BY moved off Amount.');
+        Assert.areEqual('AskingPriceLeader', top[0].Name,
+            'The highest ACTIVE Asking_Price__c leads. Reading "ClosedGiant" means the stage '
+            + 'filter was dropped; reading a setup row means the ORDER BY moved off '
+            + 'Asking_Price__c (this row carries an Amount of 1 on purpose).');
         for (Integer i = 1; i < top.size(); i++) {
-            Assert.isTrue(top[i - 1].Amount >= top[i].Amount,
-                'Rows must be ordered by Amount descending');
+            Assert.isTrue(top[i - 1].Asking_Price__c >= top[i].Asking_Price__c,
+                'Rows must be ordered by Asking_Price__c descending');
         }
+        // 🔴 The stage predicate is pinned HERE rather than in TopDealsControllerTest,
+        // because this is the only layer that still sees StageName: the two-column cut
+        // removed `stage` from TopDealsController.TopDealRow.
         for (Opportunity o : top) {
             Assert.isTrue(
                 !OpportunitySelector.CLOSED_STAGES.contains(o.StageName),
@@ -676,32 +713,52 @@ private class OpportunitySelectorTest {
      * here instead of five — a subtly short list nobody would notice on a home page.
      */
     @isTest
-    static void selectTopByAmount_stillFillsTheLimitWhenClosedDealsOutrankActiveOnes() {
-        seedAmountRanking();
+    static void selectTopActiveByAskingPrice_stillFillsTheLimitWhenClosedDealsOutrankActiveOnes() {
+        seedAskingPriceRanking();
 
         Test.startTest();
-        List<Opportunity> top = OpportunitySelector.selectTopByAmount(5);
+        List<Opportunity> top = OpportunitySelector.selectTopActiveByAskingPrice(5);
         Test.stopTest();
 
         Assert.areEqual(5, top.size(),
-            'Five ACTIVE rows come back even though the two largest deals in the org are closed');
+            'Five ACTIVE rows come back even though the two most expensive deals in the org '
+            + 'are closed');
     }
 
+    /**
+     * The SELECT is exactly what the card and its own filter need — and NOTHING MORE.
+     *
+     * 🔴 THE SECOND HALF IS THE MORE VALUABLE ONE. A field the caller reads but the SELECT
+     * omits throws `SObjectException` at RUNTIME, not at compile time, so the presence half
+     * has to be pinned. But under `WITH USER_MODE` the ABSENCE half matters just as much:
+     * USER_MODE throws on the WHOLE ROW for ONE inaccessible field, so every field this
+     * query does not need is a way for the card to fail for a persona in exchange for
+     * nothing on screen. `Amount` is asserted absent as the representative — it was in this
+     * SELECT until 2026-08-17 and is the one a revert would put back first.
+     */
     @isTest
-    static void selectTopByAmount_selectsEveryFieldTheCardRenders() {
+    static void selectTopActiveByAskingPrice_selectsTheCardsFieldsAndNoOthers() {
         Test.startTest();
-        List<Opportunity> top = OpportunitySelector.selectTopByAmount(1);
+        List<Opportunity> top = OpportunitySelector.selectTopActiveByAskingPrice(1);
         Test.stopTest();
 
         Assert.areEqual(1, top.size(), 'precondition: the setup data yields a row');
-        // A field the caller reads but the SELECT omits throws SObjectException at runtime,
-        // not at compile time — so the field list is pinned here rather than trusted.
-        Assert.isNotNull(top[0].Name, 'Name backs the record link');
-        Assert.isNotNull(top[0].StageName, 'StageName backs the stage pill');
-        Assert.isNotNull(top[0].Deal_Type__c, 'Deal_Type__c backs the deal-type pill');
-        Assert.isNotNull(top[0].Amount, 'Amount is the ranking value and the Amount column');
-        Assert.isNotNull(top[0].CloseDate, 'CloseDate backs the Close Date column');
-        Assert.isNotNull(top[0].CreatedDate, 'CreatedDate backs the Age column');
+        Assert.isNotNull(top[0].Name, 'Name backs the Property Name link label');
+        Assert.isNotNull(top[0].Asking_Price__c,
+            'Asking_Price__c is the ranking value and the Asking Price column');
+        Assert.isNotNull(top[0].CreatedDate, 'CreatedDate is the ORDER BY tiebreak');
+        Assert.isNotNull(top[0].StageName,
+            'StageName is not rendered but IS asserted row-by-row above, so it stays selected');
+
+        try {
+            Decimal unused = top[0].Amount;
+            Assert.fail('Amount must NOT be in this SELECT. It was removed with the Amount '
+                + 'column on 2026-08-17; re-adding it re-adds a permissionable standard '
+                + 'field to a WITH USER_MODE query that no longer renders it. Read back: '
+                + unused);
+        } catch (SObjectException e) {
+            // Expected: "SObject row was retrieved via SOQL without querying the requested field".
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
