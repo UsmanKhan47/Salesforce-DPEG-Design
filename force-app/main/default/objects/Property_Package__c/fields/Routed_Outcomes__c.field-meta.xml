@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Routed_Outcomes__c</fullName>
+    <description>Full per-property routing audit for the source email: address, outcome, and the record it routed to for every property named, including properties won by another broker.</description>
+    <inlineHelpText>Do not edit directly. Set by the Broker Protection pipeline once every property in the email has finished routing.</inlineHelpText>
+    <label>Routed Outcomes</label>
+    <length>32768</length>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>LongTextArea</type>
+    <visibleLines>10</visibleLines>
+</CustomField>

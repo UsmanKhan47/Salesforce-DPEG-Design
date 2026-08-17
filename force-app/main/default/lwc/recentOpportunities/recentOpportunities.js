@@ -15,8 +15,7 @@ const STAGE = {
     LOI:                  ['#e9f2fd', '#42A5F5'],
     'Under Contract (PSA)': ['#fff1e0', '#FB8C00'],
     'Closed Won':         ['#e8f5e9', '#43A047'],
-    'Dead/Pass':          ['#fdeaea', '#E53935'],
-    'Portfolio Deal':     ['#efe9e6', '#8D6E63']
+    'Dead/Pass':          ['#fdeaea', '#E53935']
 };
 // Keys are Deal_Type__c VALUES, not labels — a miss falls through to FALLBACK, so a stale key
 // here degrades to a grey pill rather than an error. 'Retail' (was 'Commercial') moved with the

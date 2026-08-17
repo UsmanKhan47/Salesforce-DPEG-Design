@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        WHY THIS EXISTS (2026-08-17 bug fix). Account.Record_Type_Is_Immutable
+        (AND(NOT(ISNEW()), ISCHANGED(RecordTypeId))) blocks EVERY post-creation change to
+        Account.RecordTypeId, including the one LeadConvertService.stampConvertedPartyRecordTypes
+        makes on purpose: standard Database.convertLead does not map record types onto the
+        Account it creates (see that method's header, LeadConvertService.cls), so conversion
+        follow-up UPDATEs the converted Account to Broker_Firm. That UPDATE trips the same rule
+        the IR-segregation change built to stop a record type being changed AFTER creation - the
+        rule cannot tell "the deliberate one-time conversion stamp" apart from "someone
+        reparenting an Account across the sharing boundary later," because both are
+        ISCHANGED(RecordTypeId) on an existing row. Database.update(..., false) then swallows the
+        failure silently, so RecordTypeId stayed null and
+        LeadConvertServiceTest.conversionStampsBrokerRecordTypesOnContactAndAccount failed on
+        "Actual: null" - not a permission-set provisioning gap (LeadConvertService.cls's own
+        FIX ROUND 1 comment mis-diagnosed it that way; corrected in the same change that added
+        this permission).
+
+        The validation rule's own comment prescribes the fix: "If an exemption is ever needed,
+        add a custom permission and gate on $Permission - never widen the rule itself." This is
+        that custom permission, and it is scoped as narrowly as a $Permission gate can be scoped:
+        it is granted ONLY to the two permission sets that cover every principal that actually
+        reaches this UPDATE (traced via the call path, not assumed):
+
+          1. Lead_Stage_Actions_Access - the permission set this repo already uses as the sole
+             gate for "who may convert a Lead" (it carries the ConvertLeads user permission and
+             is documented "Assign to reps who advance/convert Leads from the Lead record page").
+             LeadConvertTrigger fires after Lead update; conversion is a USER-INITIATED action
+             (see LeadConvertService.recordTypeId's header), so the real-world population that
+             ever triggers stampConvertedPartyRecordTypes is exactly this permission set's
+             holders.
+          2. DPEG_Admin_Access - measured live against usman-dpeg (2026-08-17): the principal
+             Apex tests and ad hoc admin conversions run as
+             (usman.khan.dpeg@avanzasolutions.com) holds DPEG_Admin_Access but NOT
+             Lead_Stage_Actions_Access. Modify All Data does not confer a custom-permission grant
+             (see Acquisition_Deal_Driver.permissionset-meta.xml's identical note), so without
+             this grant conversionStampsBrokerRecordTypesOnContactAndAccount would still fail
+             for that principal even after the validation-rule change. Granting it here is
+             consistent with the rule's own comment that admins are intended to be out of scope.
+
+        ⚠ THIS IS NOT A GENERAL RECORD-TYPE-CHANGE BYPASS. Because $Permission gates by WHO the
+        running user is, not by WHICH CODE PATH is running, any holder of either permission set
+        above could in principle also change an existing Account's RecordTypeId by hand (Data
+        Loader, UI edit) while this permission is active - that is the accepted, understood
+        tradeoff of the $Permission mechanism the rule's own comment calls for, not a design
+        oversight. Do not grant this permission set membership to any other permission set,
+        profile, or persona without re-reading this note; the whole point of scoping it to
+        exactly these two sets is that both populations are already the ones this UPDATE is
+        meant to run for.
+    -->
+    <label>Lead Convert Account Record Type Stamp</label>
+    <description>Exempts Account.Record_Type_Is_Immutable for LeadConvertService's post-conversion Broker_Firm stamp. Granted only via Lead_Stage_Actions_Access and DPEG_Admin_Access - see the in-file comment.</description>
+    <isLicensed>false</isLicensed>
+</CustomPermission>

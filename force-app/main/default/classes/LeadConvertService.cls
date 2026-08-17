@@ -34,6 +34,23 @@
  *      picklist adds only a describe (not a query). A future change here that needs a
  *      SECOND read or a SECOND statement is a contract change and must say so.
  *
+ *      ⚠ EXTENDED AGAIN 2026-08-17 (multi-property email package) by ONE field carried to
+ *      BOTH sides — `Property_Package__c` onto the Opportunity (applyDealFields) AND onto
+ *      the Property__c (buildProperty). It is the one enrichment field that is NOT split by
+ *      meaning, because the package is a fact about the EMAIL rather than about the deal or
+ *      the building: all three record types are members of the same one-to-many, so all
+ *      three carry it. 🔴 THE GOVERNOR CONTRACT BELOW IS AGAIN UNCHANGED — two in-memory
+ *      assignments on records already being written, zero queries, zero statements, and no
+ *      picklist so not even a describe.
+ *      🔴 IT ANSWERS ONE QUESTION — "WHICH INBOUND BROKER EMAIL ROUTED THIS RECORD?" — AND
+ *      MUST NEVER BE MADE TO ANSWER A SECOND. See the long warning at the assignment in
+ *      applyDealFields: the deal-bundling question a human used to answer by hand ("which
+ *      seller's bundle is this deal part of?") was a DIFFERENT fact with a different source
+ *      and a different lifetime, it has now been retired from this org, and if it ever
+ *      returns it needs its OWN new field rather than a widened meaning for this one. No
+ *      test can detect that kind of repurposing, so that comment plus ARCHITECTURE.md §1/§2
+ *      residual R1 are the only control.
+ *
  *   4. BROKER CONTACT ROLE (S2, 2026-08-03) — the submitting broker becomes visible
  *      on the deal as a primary OpportunityContactRole with Role = 'Broker'.
  *
@@ -358,6 +375,40 @@ public with sharing class LeadConvertService {
         o.Fields_Captured_Count__c = l.Fields_Captured_Count__c;
         o.Fields_Missing_Count__c = l.Fields_Missing_Count__c;
 
+        // ── The multi-property PACKAGE, carried forward (2026-08-17) ─────────────────────────
+        // One inbound broker email that named several properties produced several Leads, all
+        // stamped with one Property_Package__c at insert (Decision C1). Carrying it here is what
+        // keeps the grouping alive AFTER conversion, so the Acquisitions team can still see that
+        // three deals came off one email.
+        //
+        // ZERO SOQL AND ZERO DML: `l` is a Trigger.new record that already carries the value and
+        // `o` is already in the `updates` list this method's caller writes with ONE statement — so
+        // the class's 2 SOQL / ≤5 DML contract in the header is UNCHANGED. It is a lookup, not a
+        // picklist, so there is nothing to describe-guard; a SetNull delete constraint means a
+        // deleted package blanks this field rather than cascading into the deal.
+        //
+        // 🔴 THIS LOOKUP ANSWERS EXACTLY ONE QUESTION, AND MUST NEVER BE MADE TO ANSWER A SECOND:
+        // "WHICH INBOUND BROKER EMAIL ROUTED THIS RECORD?" It is PIPELINE-DERIVED — one broker email
+        // -> many Leads/Opportunities/Properties — and it is written ONLY by the Broker Protection
+        // pipeline. That is the whole of its meaning.
+        //
+        // ⚠ THERE USED TO BE A SECOND, UNRELATED GROUPING ON Opportunity, WHICH IS WHY THIS WARNING
+        // IS HERE AT ALL. It answered a DIFFERENT question — "which SELLER'S deal bundle is this part
+        // of?" — a MANUAL grouping of several deals under one LOI, anchored by an Opportunity
+        // self-lookup and flagged by its own stage on the Acquisitions path. It was dormant for its
+        // entire life (no automation ever read or wrote it) and it is now RETIRED outright: the stage
+        // value, the path step, the funnel stage list and the FLS grants went in phases A1/A2 of the
+        // Portfolio Deal rename, and the Opportunity fields themselves in phase A3.
+        //
+        // 🔴 THE SURVIVING RULE IS ABOUT THE QUESTIONS, NOT ABOUT THE FIELD NAMES. "Which email routed
+        // this record" and "which seller's bundle is this deal in" are different facts, from different
+        // sources (a pipeline versus a human), with different lifetimes. If a seller-bundle
+        // requirement ever comes back it must get its OWN new field — it must never be satisfied by
+        // widening, overloading or cross-populating THIS one, whatever this one happens to be called
+        // by then. NO AUTOMATED TEST CAN DETECT THAT REPURPOSING: this comment and ARCHITECTURE.md
+        // §1/§2 (residual R1) are the only control. Decision A2, user-directed.
+        o.Property_Package__c = l.Property_Package__c;
+
         // D-f (approved at Gate 1, 2026-08-03) — NAME THE DEAL AFTER THE PROPERTY.
         // The platform derives Opportunity.Name from Lead.Company, which for an email-born deal
         // is either 'Unknown - Via Email' or (after the S4 prompt rule) the broker's FIRM — so
@@ -428,6 +479,14 @@ public with sharing class LeadConvertService {
         p.ADR__c = l.ADR__c;
         p.Zoning__c = l.Zoning__c;
         p.Seller_Entity__c = l.Seller_Entity__c;
+        // The multi-property PACKAGE, carried forward (2026-08-17). The Property is the third and
+        // last member of the package's one-to-many, and it is the member that makes the grouping
+        // legible on the package's own record page: three Properties from one email, side by side.
+        // ZERO SOQL and ZERO DML — this record is already in the list `createProperties` inserts
+        // with ONE statement, so the class's 2 SOQL / ≤5 DML contract is UNCHANGED. See
+        // applyDealFields above for the ONE question this lookup answers ("which inbound broker email
+        // routed this record?") and why a seller-bundle meaning must never be poured into it.
+        p.Property_Package__c = l.Property_Package__c;
         // ⚠ NEVER WRITE Property__c.Lot_Size__c HERE. It is SQUARE FEET, entered from the
         // Offering Memorandum; we hold ACRES only (LLMExtractionParser canonicalizes lot_size_sf
         // into acres and stores nothing else). Computing SF = acres x 43,560 would derive one
@@ -560,10 +619,30 @@ public with sharing class LeadConvertService {
      * stamp a record type must not roll back the structural RecordTypeId / Property__c link on
      * the Opportunity, which `update updates` guarantees all-or-none above.
      *
-     * ═══ FIX ROUND 1 (2026-08-10) — DIAGNOSED: THIS IS A PROVISIONING GAP, NOT AN APEX DEFECT ═══
+     * ═══ FIX ROUND 1 (2026-08-10) — SUPERSEDED, WAS A MISDIAGNOSIS. SEE THE 2026-08-17 ═══
+     * ═══ CORRECTION BELOW FOR THE REAL ROOT CAUSE AND FIX. ═══
      * conversionStampsBrokerRecordTypesOnContactAndAccount failed with "Actual: null" after
-     * deploy. Reproduced live via a savepoint-wrapped anonymous-Apex probe against usman-dpeg
-     * (rolled back, no permanent org change) rather than by inspection:
+     * deploy. The fix-round investigation below concluded this was a permission-set
+     * provisioning gap on DPEG_Admin_Access and that "no code change here can fix it." Three
+     * later, independently-measured repo facts falsify that conclusion:
+     *   1. DPEG_Admin_Access.permissionset-meta.xml (lines ~389-410) carries a 2026-08-14
+     *      re-measurement: a live retrieve from usman-dpeg found all six IR-segregation
+     *      recordTypeVisibilities entries already present and live, exactly once, all
+     *      visible=true. The "grant never landed" premise below was itself wrong.
+     *   2. TestDataFactoryTest.factoryStampsAcquisitionSideRecordTypes asserts Lead
+     *      .Acquisition_Broker, Account.Broker_Firm and Contact.Broker all stamp successfully on
+     *      INSERT for the same principal — impossible if isAvailable() were false for it.
+     *   3. TestDataFactory.cls (lines ~313-319) documents the opposite finding in writing:
+     *      isAvailable() returns true for the admin test-running user for all three record
+     *      types.
+     * The paragraph below is left in place, struck through in spirit, purely as a record of the
+     * mistaken hypothesis — do not act on it. Do NOT redeploy DPEG_Admin_Access hoping to fix
+     * this; that file replaces its entire fieldPermissions set on every deploy and this was
+     * never what was broken there.
+     *
+     * ═══ ORIGINAL (WRONG) FIX ROUND 1 TEXT, PRESERVED FOR HISTORY ═══
+     * Reproduced live via a savepoint-wrapped anonymous-Apex probe against usman-dpeg (rolled
+     * back, no permanent org change) rather than by inspection:
      *   - recordTypeId(Contact.SObjectType, 'Broker') and recordTypeId(Account.SObjectType,
      *     'Broker_Firm') both resolve non-null Ids, but Schema.RecordTypeInfo.isAvailable()
      *     returns FALSE for both, for the exact principal every Apex test and anonymous
@@ -578,18 +657,38 @@ public with sharing class LeadConvertService {
      *   - ConvertedContactId / ConvertedAccountId ARE populated correctly at this point (verified
      *     by direct read-back), and nothing runs afterward to clear a stamp that never landed —
      *     ruling out hypotheses 2-4 the fix-round brief asked to check first.
-     *   - ROOT CAUSE, confirmed by a read-only metadata retrieve of the LIVE org copy of
-     *     DPEG_Admin_Access (not the repo file): the org's deployed permission set does NOT
-     *     contain the six IR-segregation <recordTypeVisibilities> entries the repo file declares
-     *     (Account.Broker_Firm, Account.Investor_Entity, Contact.Broker, Contact.Investor,
-     *     Lead.Acquisition_Broker, Lead.IR_Investor) — only the pre-existing ones (Contract
-     *     Review / Disposition / LOI / NDA / Opportunity) are live. Task 2's grant was committed
-     *     to source but never actually landed in the org; the record types themselves (Task 1)
-     *     did land, which is why they resolve to a non-null Id and why this looked like a
-     *     visibility-check bug rather than a deploy gap. THIS APEX WAS NEVER THE PROBLEM — the
-     *     guard is doing exactly what it is supposed to do, silently and correctly, in front of a
-     *     principal the org has not yet provisioned. Remedy is a permission-set redeploy, out of
-     *     this class's scope and out of Apex's control entirely — no code change here can fix it.
+     *   - CONCLUDED (WRONGLY — see the correction above): a read-only metadata retrieve of the
+     *     LIVE org copy of DPEG_Admin_Access was reported to be missing the six IR-segregation
+     *     recordTypeVisibilities entries. A later, independent 2026-08-14 re-measurement of the
+     *     same org found them present. Two same-day-class "measured retrieves" reaching opposite
+     *     conclusions is itself the lesson: re-verify a live-org measurement before writing
+     *     "confirmed" into a comment, especially when the conclusion is "no code change can fix
+     *     this."
+     *
+     * ═══ REAL ROOT CAUSE (measured 2026-08-17, see conversionStampsBrokerRecordTypesOnContact ═══
+     * ═══ AndAccount's actual failure and Account.Record_Type_Is_Immutable) ═══
+     * This IS an Apex/validation-rule interaction, not a provisioning gap. The Account write
+     * below is an UPDATE (isAvailable() was true all along; recordTypeId() returned a real,
+     * usable Id): Database.convertLead does not map record types onto the Account it creates,
+     * so this method updates the already-created Account's RecordTypeId afterward. That trips
+     * Account.Record_Type_Is_Immutable (objects/Account/validationRules/), which blocks
+     * ISCHANGED(RecordTypeId) on any existing row — it cannot distinguish this deliberate,
+     * one-time post-conversion stamp from an unrelated later reparenting, because both look
+     * identical to the formula. Database.update(accountUpdates, false) — deliberate, see below —
+     * swallows the resulting failure silently, so RecordTypeId stayed null and the test's Account
+     * assertion failed while its earlier Contact assertion (a plain Contact UPDATE, no matching
+     * rule on Contact) passed. That asymmetry is what ruled out a visibility/provisioning
+     * explanation in the first place: a missing record-type grant would have failed the Contact
+     * assertion too.
+     *
+     * THE FIX: a custom permission, exactly as Record_Type_Is_Immutable's own comment prescribes
+     * ("If an exemption is ever needed, add a custom permission and gate on $Permission — never
+     * widen the rule itself"). Lead_Convert_Account_RecordType_Stamp
+     * (force-app/main/default/customPermissions/) is gated into the rule's formula and granted
+     * only to Lead_Stage_Actions_Access (the real conversion-triggering population) and
+     * DPEG_Admin_Access (the principal this class's own tests and ad hoc admin conversions run
+     * as). See the validation rule's and the custom permission's own in-file comments for the
+     * full trace. No change to this method or its DML shape was needed or made.
      *
      * ═══ HOW A SKIPPED STAMP BECOMES VISIBLE ═══ (the fix-round brief's "think carefully" ask)
      * allOrNone = false is kept for the reason stated above; a hard throw here would take down

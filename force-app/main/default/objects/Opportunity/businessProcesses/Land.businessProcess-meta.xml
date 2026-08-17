@@ -16,8 +16,8 @@
         the encoding applies inside BusinessProcess/RecordType metadata only, to slashes
         only. Do not generalise it to the parentheses.
 
-        P2-D3 (staged, NOT applied here) removes the 'PSA' <values> block from this file.
-        See agent-output/p2-d3-retire-psa/.
+        P2-D3 removed the bare 'PSA' <values> block from this file; only
+        'Under Contract (PSA)' remains. That retirement is complete, not staged.
     -->
     <fullName>Land</fullName>
     <isActive>true</isActive>

@@ -191,6 +191,45 @@ private class LeadSelectorTest {
         Assert.isFalse(recentIds.contains(toConvert.Id), 'The converted lead is excluded from the recent list');
     }
 
+    /**
+     * The 2026-08-17 widening: `Extraction_Score_Pct__c` is SELECTED, so `LeadFunnelController` can
+     * carry it to the renamed 'Score' column.
+     *
+     * 🔴 THIS IS A "THE FIELD IS IN THE SELECT" TEST AND IT NEEDS A NON-NULL VALUE TO BE HONEST. A
+     * queried-but-unset field and a NOT-queried field are indistinguishable through
+     * `getPopulatedFieldsAsMap()` (it drops a null-valued queried field), and reading an unqueried
+     * field throws `SObjectException` rather than returning null — so the only assertion that
+     * discriminates is a stored value coming back intact. Dropping the field from the SELECT makes
+     * this method throw, not merely return null.
+     *
+     * ⚠ It also pins that NULL SURVIVES AS NULL. Scoring is fail-soft by mandate, so "not scored" is a
+     * real state the whole feature depends on; a selector that coalesced it would make the client's
+     * neutral band unreachable.
+     */
+    @isTest
+    static void selectRecent_selectsTheExtractionScoreAndKeepsNullAsNull() {
+        List<Lead> leads = TestDataFactory.createLeads(2, false);
+        leads[0].Extraction_Score_Pct__c = 78;
+        leads[1].Extraction_Score_Pct__c = null; // not scored — NOT zero
+        insertWithDupBypass(leads);
+
+        Test.startTest();
+        List<Lead> recent = LeadSelector.selectRecent(10);
+        Test.stopTest();
+
+        Map<Id, Lead> byId = new Map<Id, Lead>(recent);
+        Assert.areEqual(2, byId.size(), 'Both open leads are returned');
+        // `.intValue()` per the `Property_Count__c.intValue()` precedent in
+        // PropertyPackageSelectorTest — an Integer literal against a Decimal-typed Number field is a
+        // contested `Assert.areEqual` comparison in this codebase, and the field is Number(3,0).
+        Assert.areEqual(78, byId.get(leads[0].Id).Extraction_Score_Pct__c.intValue(),
+            'Extraction_Score_Pct__c is in the SELECT and its stored value round-trips — reading it '
+            + 'would throw SObjectException if the field were dropped from the query');
+        Assert.isNull(byId.get(leads[1].Id).Extraction_Score_Pct__c,
+            'An unscored lead comes back NULL, never 0 — "not scored" is a meaningful state and the '
+            + 'selector must not coalesce it');
+    }
+
     @isTest
     static void selectRecent_nullOrNonPositiveLimit_returnsEmpty() {
         insertLeads(3);

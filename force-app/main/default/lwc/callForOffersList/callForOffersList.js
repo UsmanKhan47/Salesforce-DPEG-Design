@@ -2,13 +2,22 @@
  * c-call-for-offers-list — the call-for-offers table for the ACQUISITION app's Lead Funnel tab.
  *
  * Lists the MATCHED OPPORTUNITIES — deals that already carry a call-for-offers due date — with
- * received date, property name, due date and days remaining, property name linking to the deal.
+ * property name, due date and days remaining, property name linking to the deal.
  * It deliberately does NOT list gated `Inbound_Email_Staging__c` rows: those are emails the pipeline
  * declined to make a Lead from, and a table of them would answer a different question.
  *
- * ⚠ THE "RECEIVED" COLUMN CARRIES TWO DIFFERENT FACTS AND NAMES THE SECOND ONE IN WORDS — see the
- * `receivedLabel` helper below before touching it. Collapsing them is a one-line change that
- * reintroduces a defect nobody can see on screen.
+ * ── ⚠ SUPERSEDED 2026-08-17 — THE "RECEIVED" COLUMN WAS REMOVED (user request) ───────────────
+ * RETRACTED, verbatim: "⚠ THE 'RECEIVED' COLUMN CARRIES TWO DIFFERENT FACTS AND NAMES THE SECOND
+ * ONE IN WORDS — see the `receivedLabel` helper below before touching it. Collapsing them is a
+ * one-line change that reintroduces a defect nobody can see on screen."
+ *
+ * That warning guarded a column this table no longer renders, so the `receivedLabel` helper it
+ * pointed at is gone too. 🔴 IT IS NOT A LICENCE TO COLLAPSE THE SERVER'S TWO FIELDS. The DTO still
+ * carries `receivedDate` (the stamped `Call_For_Offers_Received_Date__c` — when a call-for-offers
+ * email actually reached DPEG) and `dealArrivedDate` (when the DEAL arrived) as SEPARATE facts, and
+ * `CallForOffersService` header §4 plus `receivedDateIsTheStampedFieldAndNeverTheProxy` still
+ * enforce the split. Removing a column is not evidence the distinction died — this component simply
+ * stopped displaying it. Anything reinstating a received/arrival cell must re-read that §4 first.
  *
  * ── ⚠ IT LIVES ON THE LEAD FUNNEL TAB, NOT A HOME PAGE, AND THAT IS A SETTLED DECISION ───────
  * Requirements §9 C11 measured that the Acquisition app has NO home page at all: there is no
@@ -56,12 +65,35 @@ const FALLBACK_ERROR = 'Unable to load call for offers.';
  * Urgency -> [background, dot] for the soft "days remaining" pill.
  * Keys are `CallForOffersService.Urgency` member NAMES. A miss falls through to FALLBACK, so a
  * stale key here degrades to a grey pill rather than an error — the `recentOpportunities` contract.
+ *
+ * ── 🔴 THE PALETTE HAS TWO FAMILIES, AND THE BOUNDARY BETWEEN THEM CARRIES MEANING ──────────
+ * ORANGE = a deadline still ahead of you (APPROACHING, CRITICAL). RED = a deadline you have hit or
+ * passed (DUE_TODAY, OVERDUE). That line is the whole point of the map, and it is the one thing not
+ * to blur when adding or retuning a band.
+ *
+ * ⚠ AMENDED 2026-08-17 — CRITICAL MOVED OUT OF THE RED FAMILY (user request, after seeing it live).
+ * RETRACTED, verbatim: `CRITICAL: ['#fdeaea', '#e53935']`. It shared OVERDUE's and DUE_TODAY's
+ * `#fdeaea` background, so "Due in 2 days" and "Overdue by 2 days" rendered as the same pale pink
+ * cell — two rows sitting adjacent in this table, saying opposite things, looking identical. Colour
+ * is the fast read on a table this size, so a deal two days OUT was being reported at a glance as a
+ * deal already missed. Only CRITICAL was flagged and only CRITICAL moved: DUE_TODAY and OVERDUE stay
+ * red, because for them "you have run out of time" is exactly what red should say.
+ *
+ * ⚠ CRITICAL IS DELIBERATELY DEEPER THAN APPROACHING RATHER THAN A SECOND SHADE OF IT — the 1-3 day
+ * window has to read as more pressed than the 4-7 day one, or the two thirds of the map that are
+ * still "ahead of you" collapse into one indistinguishable band and the ladder stops being visible.
+ * The two are one step apart in both channels (background #fff1e0 -> #ffe8cc, dot #fb8c00 -> #e65100).
+ *
+ * 🔴 NO THRESHOLD APPEARS IN THIS FILE AND NONE MAY BE ADDED. These are the six
+ * `CallForOffersService.Urgency` members, recoloured; the DAY COUNTS that decide which member a deal
+ * gets (7 / 3 / 1 / 0) live in that service, which `CallForOffersAlertBatch` also fires on. Retuning
+ * a colour here is a display change. Retuning a boundary is a server change.
  */
 const URGENCY = {
     NO_DUE_DATE: ['#eceff1', '#90a4ae'],
     SCHEDULED: ['#e8f5e9', '#43a047'],
     APPROACHING: ['#fff1e0', '#fb8c00'],
-    CRITICAL: ['#fdeaea', '#e53935'],
+    CRITICAL: ['#ffe8cc', '#e65100'],
     DUE_TODAY: ['#fdeaea', '#c62828'],
     OVERDUE: ['#fdeaea', '#b71c1c']
 };
@@ -73,23 +105,26 @@ const pillDot = (c) => `width:7px;height:7px;border-radius:50%;background:${c};f
 
 const COLUMNS = [
     {
-        label: 'Property',
+        label: 'Deal',
         fieldName: 'recordUrl',
         type: 'url',
         typeAttributes: { label: { fieldName: 'propertyName' }, target: '_self' }
     },
-    // ⚠ WIDER THAN ITS SIBLING ON PURPOSE. This cell renders either a bare date ("Jul 1, 2026")
-    // or the labelled fallback "Deal arrived Jul 1, 2026" (see `receivedLabel`) — roughly 13
-    // characters longer, and a datatable text cell truncates with an ellipsis. Left at the 130px
-    // the bare date needed, the caveat is the part that disappears, leaving the reader looking at
-    // a date whose qualification has been cut off — worse than either alternative.
-    // ⚠ NOT MEASURED IN A BROWSER, and it cannot be from the Jest suite: jsdom performs no layout,
-    // so every width and overflow read is 0 there. The suite asserts the CONFIGURED width only;
-    // the rendered fit is a UAT check.
-    { label: 'Received', fieldName: 'receivedLabel', type: 'text', initialWidth: 190 },
-    { label: 'Offers Due', fieldName: 'dueLabel', type: 'text', initialWidth: 130 },
+    { label: 'Due Date', fieldName: 'dueLabel', type: 'text', initialWidth: 130 },
+    // ⚠ LABEL-ONLY RENAME 2026-08-17 ('Days Remaining' -> 'Urgency', 'Offers Due' -> 'Due Date').
+    // NOTHING BELOW THE LABEL CHANGED, AND THAT IS THE WHOLE POINT: `fieldName`, `type: 'pill'` and
+    // both `typeAttributes` are untouched, so the cell still renders `CallForOffersService`'s OWN
+    // label ("Due in 21 days" / "Overdue by 3 days") coloured by that service's six-state `Urgency`
+    // ladder via the `URGENCY` map above.
+    //
+    // 🔴 THE NEW HEADER NAMES A DERIVED BAND, WHICH IS EXACTLY WHAT THE CELL ALREADY SHOWS — SO DO
+    // NOT READ 'Urgency' AS AN INVITATION TO COMPUTE ONE HERE. The class header's §"DATA ACCESS"
+    // note stands unchanged: the ladder is a RULE that `CallForOffersAlertBatch` also fires on and
+    // `c-call-for-offers-panel` also paints, so a client-side day count would put a second copy of
+    // it in a second language, and the first symptom of the drift would be this table calling a deal
+    // urgent while the alert job disagreed.
     {
-        label: 'Days Remaining',
+        label: 'Urgency',
         fieldName: 'countdown',
         type: 'pill',
         initialWidth: 170,
@@ -119,35 +154,6 @@ const formatDate = (value) => {
         return '—';
     }
     return `${MONTHS[parseInt(parts[1], 10) - 1]} ${parseInt(parts[2], 10)}, ${parts[0]}`;
-};
-
-/**
- * What goes in the "Received" column.
- *
- * 🔴 TWO SOURCES, AND THE CELL SAYS WHICH ONE IT IS IN WORDS. `receivedDate` is
- * `Call_For_Offers_Received_Date__c` — the day a call-for-offers email for this deal actually
- * reached DPEG. `dealArrivedDate` is when the DEAL arrived (`Broker_First_Seen__c` / the
- * Opportunity's created date), which is a DIFFERENT FACT and was, until 2026-08-14, silently
- * rendered here as if it were the first one — months adrift on any deal whose broker relationship
- * predates the campaign.
- *
- * ⚠ THE PREFIX IS THE WHOLE POINT AND MUST NOT BECOME A GLYPH. A "~", an asterisk or a tooltip is
- * scanned past in a dense table; "Deal arrived" is read. Do not "clean this up" into
- * `formatDate(r.receivedDate || r.dealArrivedDate)` — that single expression IS the defect this
- * change removed, and it would be invisible in review because the column would still look right.
- * The server keeps the two apart for the same reason (`CallForOffersService` header §4).
- *
- * @param {object} row A `CallForOffersService.CallForOffers` row.
- * @returns {string} The cell text: a date, a labelled deal-arrival date, or an em dash.
- */
-const receivedLabel = (row) => {
-    if (row.receivedDate) {
-        return formatDate(row.receivedDate);
-    }
-    if (row.dealArrivedDate) {
-        return `Deal arrived ${formatDate(row.dealArrivedDate)}`;
-    }
-    return '—';
 };
 
 export default class CallForOffersList extends NavigationMixin(LightningElement) {
@@ -217,7 +223,6 @@ export default class CallForOffersList extends NavigationMixin(LightningElement)
                 id: r.opportunityId,
                 recordUrl: r.recordUrl,
                 propertyName: r.propertyName,
-                receivedLabel: receivedLabel(r),
                 dueLabel: formatDate(r.dueDate),
                 // The SERVER's label, never a client-side day count — see the class header.
                 countdown: r.label,

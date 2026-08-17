@@ -15,8 +15,14 @@ const LEAD_META = [
     { key: 'Disqualified', label: 'Disqualified', suffix: '(Last 90 Days)', icon: 'utility:close',   color: '#E0463F' }
 ];
 
-// Opportunity stages in funnel order (Portfolio Deal intentionally excluded).
-// First five render in the left column, last five in the right column.
+// Opportunity stages in funnel order. This list now mirrors
+// OpportunityFunnelController.STAGE_ORDER one-for-one — the legacy 'Portfolio Deal' stage that this
+// list used to exclude by hand was retired at the source (Portfolio Deal rename, Phase A1), so there
+// is no longer anything to exclude here.
+//
+// ⚠ EXACTLY 10 ENTRIES. `oppRowsLeft` is slice(0, 5) and `oppRowsRight` is slice(5, 10), so an
+// 11th entry renders NOWHERE — it is silently dropped, not wrapped. Adding a stage means changing
+// the column split too. First five render in the left column, last five in the right column.
 //
 // ⚠ `key` is the Opportunity.StageName API VALUE and is the join onto
 // OpportunityFunnelController.getStageCounts — `label` is display text only, and the two are

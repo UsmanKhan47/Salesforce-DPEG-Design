@@ -1,2 +1,0 @@
-- [Deploy verification](deploy-verification.md) — `sf` exit codes lie in both directions; "Status: Pending" with 0 components is not success. Verify server-side.
-- [Activity panel / layout coupling](activity-panel-layout-coupling.md) — flexipage `activityPanel` + layout `platformActionList` are one atomic deploy; splitting = no composer buttons.

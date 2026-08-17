@@ -1,0 +1,33 @@
+/*
+ * The shared .lv-* list-view chrome (centred View All footer, and the two non-table states) used by
+ * every list card in this repo — byte-for-byte the rules c/callForOffersList carries, because this
+ * card sits in the same region of the same page and must not look different from its neighbours.
+ *
+ * Deliberately minimal: SLDS carries the card, the table and the spacing. Colours come from SLDS 2
+ * global design tokens with a literal fallback, so the component still renders correctly if a token is
+ * absent (no hardcoded palette — ARCHITECTURE.md §5).
+ */
+
+.view-all-footer {
+    text-align: center;
+}
+
+.view-all-footer a {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    text-decoration: none;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}
+
+.view-all-footer a:hover {
+    text-decoration: underline;
+}
+
+/*
+ * The empty and error states REPLACE the table rather than sitting above it, so the two can never be
+ * shown at once, and the card does not jump height between states.
+ */
+.lv-empty,
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    text-align: center;
+}

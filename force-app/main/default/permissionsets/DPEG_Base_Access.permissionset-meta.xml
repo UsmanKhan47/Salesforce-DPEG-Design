@@ -1,10 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Grants Lightning Experience User so every DPEG team member logs into Lightning, not Classic.</description>
+    <!--
+        AllowViewEditConvertedLeads ADDED 2026-08-17 (business requirement: every Lead must be
+        visible to the acquisition team). Confirmed by measurement: after
+        sharingRules/Lead.sharingRules-meta.xml's new Lead_Acquisition_Team_All rule was live,
+        UserRecordAccess for both Junior Dhanani and Nikhil Dhanani against non-converted Leads
+        showed correct Edit/Read access, but against every CONVERTED Lead sampled (13 of 42
+        live Leads in this org) returned ZERO rows for both users - not even an explicit
+        HasReadAccess=false row. This is a Salesforce platform gate independent of sharing and
+        object CRUD: a converted Lead is invisible to a user who lacks this userPermission,
+        regardless of any sharing rule or Edit/Read grant on Lead. No permission set in this
+        repo granted it before this change (grepped force-app/main/default/permissionsets/).
+
+        WHY DPEG_Base_Access (layer 1) AND NOT A MODULE SET. This is the one permission set
+        common to BOTH DPEG_Junior_Analyst_PSG and DPEG_Principal_PSG (see their
+        permissionsetgroup-meta.xml files) - the requirement is for the whole acquisition team,
+        not one persona, and this is a platform userPermissions grant, which is layer 1's exact
+        contract per ARCHITECTURE.md's seven-layer permission set model.
+    -->
+    <description>Grants Lightning Experience User so every DPEG team member logs into Lightning, not Classic. Also grants View and Edit Converted Leads, without which a converted Lead is invisible regardless of sharing/CRUD (2026-08-17).</description>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Base Access</label>
     <userPermissions>
         <enabled>true</enabled>
         <name>LightningExperienceUser</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>AllowViewEditConvertedLeads</name>
     </userPermissions>
 </PermissionSet>

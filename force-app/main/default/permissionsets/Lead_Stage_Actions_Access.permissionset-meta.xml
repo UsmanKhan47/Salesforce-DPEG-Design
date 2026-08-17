@@ -12,6 +12,25 @@
         <enabled>true</enabled>
     </classAccesses>
     <!--
+        Lead_Convert_Account_RecordType_Stamp added 2026-08-17 (bug fix, LeadConvertServiceTest).
+        This set already gates WHO may convert a Lead (ConvertLeads below), so it is the correct
+        place to also gate the one validation-rule exemption that conversion's own follow-up
+        Account.RecordTypeId stamp needs - see Record_Type_Is_Immutable.validationRule-meta.xml
+        and the custom permission's own in-file comment for the full mechanism and call-path
+        trace. Do not grant this custom permission anywhere else without re-reading both.
+
+        Placed here (after ALL classAccesses, not between them) because the PermissionSet XSD
+        requires every element of the same type to stay contiguous - inserting this block
+        between the two classAccesses blocks broke a validation-only deploy with "Element
+        classAccesses is duplicated at this location" (measured 2026-08-17 dry run). Same class
+        of ordering trap as the XML-comment-above-root issue documented elsewhere in this repo,
+        different element.
+    -->
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Lead_Convert_Account_RecordType_Stamp</name>
+    </customPermissions>
+    <!--
         Contact.Email and Lead.Email (read-only) are required by LeadConvertMatchService — without
         read on these fields, its USER_MODE-scoped duplicate-contact matching during Lead conversion
         silently degrades and can mint duplicate Contacts (Gate-2 W1, 2026-08-03). Both rows were

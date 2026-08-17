@@ -88,9 +88,16 @@ describe('c-total-opportunities', () => {
     it('DATA BRANCH: ignores unknown labels and defaults unreported stages to 0', async () => {
         const element = createComponent();
 
+        // ⚠ '__NOT_A_REAL_STAGE__' is a DELIBERATELY SYNTHETIC value, not a real Opportunity
+        // stage. The point of this fixture is only that the label is absent from STAGE_META, so
+        // the component drops the row instead of rendering a tenth card. A value that can never
+        // exist in the OpportunityStage picklist keeps that intent readable on its own and keeps
+        // the test independent of which stages the org happens to have configured — the previous
+        // fixture used a real-but-unmapped stage, which quietly lost its meaning the moment that
+        // stage was retired from the picklist.
         getStageCounts.emit([
             { label: 'LOI', count: 12 },
-            { label: 'Portfolio Deal', count: 99 } // not in STAGE_META -> ignored
+            { label: '__NOT_A_REAL_STAGE__', count: 99 } // not in STAGE_META -> ignored
         ]);
         await Promise.resolve();
 

@@ -79,7 +79,7 @@ const COLUMNS = [
     // losing the link to the record would be a regression, so the type and typeAttributes are
     // exactly what they were under the old "Deal Name" heading.
     {
-        label: 'Property Name',
+        label: 'Deal Name',
         fieldName: 'recordUrl',
         type: 'url',
         typeAttributes: { label: { fieldName: 'name' }, target: '_self' }

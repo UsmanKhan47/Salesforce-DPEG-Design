@@ -76,7 +76,9 @@
  * SP-2) from the LAST statement of `finish()`. Every `insertContentDocuments(...)` fixture and
  * every `ContentDocumentLink` assertion that used to live in this file were REMOVED — this
  * class must never create a `ContentVersion` at all (T3), and its DML budget is CONSTANT
- * whether or not an email carries an attachment (T4: 7 exact at N=1, 43 exact at N=10). The
+ * whether or not an email carries an attachment (T4: 7 exact at N=1, 45 exact at N=10 — the N=10
+ * figure was 43 when this note was written and was RE-PINNED to 45 on 2026-08-17 by the property
+ * package; the N=1 figure of 7 did NOT move, deliberately, and must not). The
  * section near the bottom of this file ("ATTACHMENT PERSISTENCE v2") tests the guarded-chain
  * DECISION (what would be enqueued, and the release path on a gate/duplicate) via the
  * `lastRunEnqueuedTargets` seam; the real conversion is `AttachmentPersistQueueableTest.cls`'s
@@ -85,6 +87,26 @@
  * Isolated coverage of `InboundEmailAttachmentService.classify()/stageBytes()/persist()/
  * linkTo()` themselves lives in `InboundEmailAttachmentServiceTest.cls` and
  * `EmailToLeadHandlerTest.cls`, which this file's assertions deliberately do not duplicate.
+ *
+ * 2026-08-17 — PROPERTY PACKAGE (the multi-property email grouping). A new section at the BOTTOM
+ * of this class covers it, and ONE existing number moved while THREE deliberately did not — read
+ * that split first, because it is where the design lives:
+ *   • MOVED: `DML_BUDGET` at N=10, 43 -> 45. The package costs a pre-loop insert (Decision C1) plus
+ *     a post-loop `Routed_Outcomes__c` audit stamp (Decision B2). ⚠ The design predicted 44 and
+ *     treated the audit copy as free; it is not, and the +1 is FLAGGED at that assertion rather than
+ *     absorbed silently.
+ *   • 🔴 NOT MOVED, ON PURPOSE: both `singlePropertyDmlBudget` ceilings (20) and — decisively — the
+ *     `== 7` EQUALITY at execute_singlePropertyWinner_dmlBudgetIsExactlySevenRegardlessOfACarrier.
+ *     Those are the PERMANENT FALSIFIER for Decision E, "a single-property email creates ZERO
+ *     Property_Package__c rows". Anyone who loosens the `workList.size() > 1` gate, or moves package
+ *     creation above it, breaks the equality first. DO NOT RAISE THEM TO ACCOMMODATE A PACKAGE.
+ *   • ALSO NOT MOVED: `CFO_DML_BUDGET` (8). The U2 call-for-offers branch creates no Lead and never
+ *     reaches routeProperties' package at all.
+ * The section itself asserts Decision E twice over (a row count AND the de-duplicated-gate
+ * discriminator), C1's one-package-per-email-with-links-at-insert, B2's audit naming the property
+ * that went to another broker, the isolation-catch case (every property fails -> exactly ONE
+ * package, never two and never zero), and residual R3 (the reply branch returns before the callout,
+ * so it can never produce a package).
  *
  * ⚠ 2026-07-31 — THE PER-TRANSACTION-SINGLETON EXEMPTION NO LONGER COVERS THIS CLASS.
  * D1 multi-property extraction made execute() LOOP, so `.claude/rules/bulk-test-rule.md`
@@ -1211,7 +1233,29 @@ private class ExtractAddressQueueableTest {
         // attachment at all — there is no "+1" delta here anymore. See T4 in
         // AttachmentPersistQueueableTest.cls for the file job's own budget, which is where that
         // work (and its cost) now lives.
-        final Integer DML_BUDGET = 43;      // async cap is 150
+        //
+        // 🔴 RE-PINNED AGAIN 2026-08-17 from 43 to 45: the multi-property PROPERTY PACKAGE adds
+        // exactly TWO statements to a multi-property email — the pre-loop
+        // `PropertyPackageService.createForEmail` insert (Decision C1) and the post-loop
+        // `stampRoutedOutcomes` audit copy (Decision B2) — and ZERO to every other shape.
+        //
+        // ⚠ THE DESIGN PREDICTED 44, NOT 45, AND THE EXTRA ONE IS FLAGGED RATHER THAN ABSORBED.
+        // The design's arithmetic counted the insert and treated B2's audit copy as free. It is
+        // not: `buildRoutedAudit()` only exists AFTER the loop while the package Id is needed
+        // BEFORE it (so each Lead is stamped at insert with no Lead re-update), and Apex DML
+        // cannot write two SObject types in one statement — so the two requirements cannot share
+        // a statement. The full argument, and the three rejected alternatives, are at the
+        // `stampRoutedOutcomes` call site in `ExtractAddressQueueable.finish()`.
+        // ⇒ DELETING THAT ONE LINE returns this number to 44 and trades away Decision B2 (the
+        //   package would then no longer record the properties that went to another broker).
+        //   That is the trade; it is a product decision, not a tuning knob.
+        //
+        // 🔴 WHAT THIS EQUALITY REALLY PROTECTS IS CONSTANCY, NOT THE NUMBER 45. The package costs
+        // 2 statements at N=2 and 2 at N=10. A change that created or stamped the package INSIDE
+        // the per-property loop would cost 2N and would fail HERE — which is why this stays an
+        // equality assertion and why the package is created outside the loop and outside its
+        // isolation catch.
+        final Integer DML_BUDGET = 45;      // async cap is 150
 
         Inbound_Email_Staging__c staging = insertStaging(
             'blast.broker@example.invalid', 'forwarder20@example.invalid',
@@ -1252,7 +1296,10 @@ private class ExtractAddressQueueableTest {
         Assert.areEqual(DML_BUDGET, ExtractAddressQueueable.lastRunDmlCount,
             'THE LOAD-BEARING ASSERTION, N=10: exactly ' + DML_BUDGET + ' DML statements, CONSTANT — file '
             + 'linking no longer happens in this class at all (it moved to AttachmentPersistQueueable, '
-            + '2026-08-06), so this number must never move because of an attachment.');
+            + '2026-08-06), so this number must never move because of an attachment. Of these, exactly '
+            + 'TWO belong to the property package (one insert + one audit stamp) and both are CONSTANT '
+            + 'in property count — if this reads 2N-ish, someone has moved package work inside the '
+            + 'per-property loop.');
         Assert.isTrue(ExtractAddressQueueable.lastRunQueryCount > 0,
             'Sanity: the telemetry must actually have been captured, or the two assertions above are vacuous');
     }
@@ -2837,6 +2884,16 @@ private class ExtractAddressQueueableTest {
         // ⚠ THE COUNTERS ARE READ FROM THE STATICS THE QUEUEABLE CAPTURES INSIDE execute(), never
         // from Limits.* after Test.stopTest(): stopTest RESTORES the pre-test counters, so the
         // obvious assertion would be silently vacuous.
+        //
+        // 🔴 DELIBERATELY UNCHANGED BY THE 2026-08-17 PROPERTY PACKAGE, AND THAT IS NOT INERTIA —
+        // THIS CEILING IS PART OF THE PERMANENT FALSIFIER FOR DECISION E ("a single-property email
+        // creates ZERO Property_Package__c rows"). The package gate is `workList.size() > 1`, so a
+        // one-property email must not insert a package or stamp an audit. Loosening that gate to
+        // `>= 1`, or moving creation above the gate, adds 2 DML here and 1 row to the object; the
+        // EQUALITY twin at execute_singlePropertyWinner_dmlBudgetIsExactlySevenRegardlessOfACarrier
+        // is what makes that impossible to miss, and
+        // execute_singlePropertyEmail_createsNoPackageAtAll asserts the row count directly.
+        // DO NOT RAISE EITHER NUMBER TO ACCOMMODATE A PACKAGE.
         final Integer singlePropertyQueryBudget = 30;   // async cap is 200
         final Integer singlePropertyDmlBudget = 20;     // async cap is 150
 
@@ -3855,6 +3912,16 @@ private class ExtractAddressQueueableTest {
         // T4, N=1 half — re-pinned 2026-08-06 from a "+1 with an attachment" shape (8) to a flat,
         // CONSTANT 7: file linking left this class entirely, so a Pending carrier must cost this
         // class NOTHING beyond the ordinary winner-claim DML.
+        //
+        // 🔴 THIS EXACT 7 IS THE PERMANENT FALSIFIER FOR DECISION E — THE MOST LOAD-BEARING NUMBER
+        // THE 2026-08-17 PROPERTY PACKAGE DID NOT MOVE. The package gate is `workList.size() > 1`,
+        // so a SINGLE-property email must create no package and stamp no audit: 0 extra DML. An
+        // EQUALITY assertion (not a ceiling) is what makes any of the plausible regressions fail
+        // loudly here — loosening the gate, creating the package before the gate, or "helpfully"
+        // grouping every email so the object is never empty. If you are here because this now reads
+        // 8 or 9, the fix is the gate, NOT this number.
+        // The N=10 DML_BUDGET (45) is where the package's cost is legitimately paid, and
+        // execute_singlePropertyEmail_createsNoPackageAtAll asserts the same rule as a row count.
         final Integer singlePropertyDmlBudget = 7;
 
         Inbound_Email_Staging__c staging = insertStaging(
@@ -3882,7 +3949,10 @@ private class ExtractAddressQueueableTest {
     // ═════════════════════════════════════════════════════════════════════════
     // ROUTING RESILIENCE (2026-08-08) — T9: the Finalizer attach must be
     // completely inert on the ordinary SUCCESS path. All five governor budgets
-    // pinned above (30/20/20/120/43) are UNCHANGED by this feature (design §8):
+    // pinned above (30/20/20/120/45) are UNCHANGED by this feature (design §8):
+    // ⚠ the last of those five read 43 until 2026-08-17, when the property package
+    // re-pinned DML_BUDGET at N=10 to 45; it is quoted here only to say this
+    // feature does not move it, so the value must track the assertion.
     // System.attachFinalizer is not a governed statement, and RoutingFailureFinalizer
     // runs in its own transaction after this one, so it cannot appear in this
     // class's own counters. This section proves the ONE thing that IS observable
@@ -3989,7 +4059,7 @@ private class ExtractAddressQueueableTest {
      * 🔴 THE PINNED BUDGET FOR THE CALL-FOR-OFFERS BRANCH. It had none before 4B, so nothing
      * would have caught a per-property query creeping in.
      *
-     * CEILINGS, not equalities, and deliberately so — unlike the winner path's exact 43/7,
+     * CEILINGS, not equalities, and deliberately so — unlike the winner path's exact 45/7,
      * this branch's query count VARIES LEGITIMATELY with how many properties match:
      * findMatchingRegistry costs 1 on an exact hit and 2 on a miss (the fuzzy 90-day scan), and
      * resolveLiveRecord costs 1 only when a registry row was found. Pinning an equality would
@@ -4882,5 +4952,266 @@ private class ExtractAddressQueueableTest {
         Assert.isNull(updated.Result_Record_Id__c, '');
         Assert.isNull(updated.Error__c, 'An empty work-list is not an error');
         Assert.areEqual(leadsBefore, [SELECT COUNT() FROM Lead], 'and still no Lead');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // PROPERTY PACKAGE — the multi-property email grouping (2026-08-17)
+    //
+    // Decisions under test: C1 (created ONCE, pre-loop, so Leads are stamped at insert),
+    // E (the gate is the ROUTABLE count, so single-property emails create nothing) and
+    // B2 (the package carries the full routed audit, including properties that went to
+    // ANOTHER broker).
+    //
+    // ⚠ VOLUME HERE IS 10 AND 15, NEVER 251 — the same reasoning restated for this section
+    // rather than left to be inferred from the D1 block above. `.claude/rules/bulk-test-rule.md`'s
+    // narrowed exemption applies: `System.enqueueJob` caps at 50 calls per transaction, and 251
+    // properties in ONE email would exhaust the SOQL limit at roughly 14-24 properties — which is
+    // exactly why MAX_PROPERTIES is 10. A 251-property email is not a volume production can reach,
+    // so a test that asserts one would encode a state that cannot occur (the anti-pattern the
+    // exemption exists to prevent). The package's real volume risk is that its cost grows PER
+    // PROPERTY, and that is covered by the CONSTANT, EQUALITY DML budget at N=10 in
+    // execute_tenPropertyEmail_routesEveryPropertyAndStaysInsideTheGovernorBudget — not by row
+    // counts. Governor figures are read from `ExtractAddressQueueable.lastRunDmlCount` /
+    // `lastRunQueryCount`, captured INSIDE the async context, never from `Limits.*` after
+    // `Test.stopTest()` (stopTest restores the pre-test counters, which makes the obvious
+    // assertion silently vacuous).
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void execute_multiPropertyEmail_createsExactlyOnePackageLinkingEveryWinnerLead() {
+        // Decision C1's core promise: ONE package for the EMAIL (not one per property), with every
+        // Lead already carrying the link — no Lead is re-updated to acquire it.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'package.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: Three-property portfolio', 'Three assets attached.',
+            'msg-package-three@example.invalid', null, null);
+        setPropertiesMock('package.broker@example.invalid',
+            new List<String>{ '1001 Package St', '1002 Package St', '1003 Package St' });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        List<Property_Package__c> packages = [
+            SELECT Id, Name, Property_Count__c, Broker_Email__c, Broker_Name__c,
+                   Source_Staging_Id__c, Received_DateTime__c, Routed_Outcomes__c
+            FROM Property_Package__c
+        ];
+        Assert.areEqual(1, packages.size(),
+            'EXACTLY ONE package for the email. One per property would defeat the whole point — the '
+            + 'package exists to say "these records arrived together"');
+        Property_Package__c pkg = packages[0];
+
+        List<Lead> routed = [
+            SELECT Id, Property_Package__c FROM Lead
+            WHERE Property_Address__c LIKE '%Package St'
+        ];
+        Assert.areEqual(3, routed.size(), 'Precondition: three winner Leads, or the link assertion below is vacuous');
+        for (Lead l : routed) {
+            Assert.areEqual(pkg.Id, l.Property_Package__c,
+                'EVERY winner Lead must carry the package, stamped AT INSERT (Decision C1)');
+        }
+
+        Assert.areEqual('FW: Three-property portfolio', pkg.Name,
+            'Name is the email subject (clipped to 80) — the one value a human recognises the package by');
+        Assert.areEqual(3, pkg.Property_Count__c,
+            'Property_Count__c is what the email NAMED, de-duplicated');
+        Assert.areEqual('package.broker@example.invalid', pkg.Broker_Email__c,
+            'The RESOLVED (post-U1 envelope-arbitration) broker — the same identity the module '
+            + 'arbitrated the claims on, never a second independently-derived guess');
+        Assert.areEqual(String.valueOf(staging.Id), pkg.Source_Staging_Id__c,
+            'Source_Staging_Id__c is a TEXT pointer back to the staging row (the Result_Record_Id__c '
+            + 'precedent), which is what makes the raw email recoverable from the package');
+        Assert.areEqual(3, pkg.Routed_Outcomes__c.split('\n').size(),
+            'Decision B2: the package carries the FULL per-property audit, one line per property');
+    }
+
+    @isTest
+    static void execute_singlePropertyEmail_createsNoPackageAtAll() {
+        // 🔴 DECISION E, ASSERTED AS A ROW COUNT. The DML-budget assertions elsewhere in this class
+        // (the `== 7` equality especially) catch the same regression as a NUMBER; this catches it as
+        // a FACT, which is the version a reviewer can read without knowing the budget. A package
+        // whose only member is the record you are already looking at is noise on every ordinary
+        // Lead in the org — and it would appear on the overwhelming majority of them.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'solo.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: 2001 Solo Way', 'One asset.',
+            'msg-package-single@example.invalid', null, null);
+        setPropertiesMock('solo.broker@example.invalid', new List<String>{ '2001 Solo Way' });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Property_Package__c],
+            'A single-property email must create ZERO packages (Decision E — the gate is the '
+            + 'ROUTABLE count, workList.size() > 1)');
+        Lead solo = [SELECT Property_Package__c FROM Lead WHERE Property_Address__c = '2001 Solo Way' LIMIT 1];
+        Assert.isNull(solo.Property_Package__c,
+            'and the Lead it did create must carry no package — recentLeads renders an EMPTY CELL '
+            + 'for this Lead, never a dead link');
+    }
+
+    @isTest
+    static void execute_duplicateAddressesInOneEmail_createNoPackageEitherBecauseTheGateIsDeduplicated() {
+        // The discriminating case between the THREE counts this class holds, and the reason the gate
+        // is `workList.size()` rather than `propertyCount`. This email NAMES two properties, so
+        // propertyCount is 2 — but they normalize to ONE address, so exactly one Lead exists and a
+        // package would have a single member. Gating on the pre-de-duplication count would create
+        // one here; gating on the work-list does not.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'dupe.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: 3001 Duplicate Dr', 'Same asset, written twice.',
+            'msg-package-dupe@example.invalid', null, null);
+        setPropertiesMock('dupe.broker@example.invalid',
+            new List<String>{ '3001 Duplicate Dr', '3001 Duplicate Dr.' });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(2, [
+            SELECT Property_Count__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id
+        ].Property_Count__c, 'Precondition: the extraction FOUND two properties (propertyCount = 2)');
+        Assert.areEqual(1, [SELECT COUNT() FROM Lead WHERE Property_Address__c LIKE '3001 Duplicate%'],
+            'Precondition: they de-duplicate to ONE routed Lead');
+        Assert.areEqual(0, [SELECT COUNT() FROM Property_Package__c],
+            'So NO package: the gate counts records that will EXIST, not addresses the model listed. '
+            + 'This is the test that fails if anyone swaps workList.size() for propertyCount');
+    }
+
+    @isTest
+    static void execute_mixedOutcomeEmail_packageAuditNamesThePropertyWonByAnotherBroker() {
+        // 🔴 DECISION B2, AND THE ONLY CASE WHERE IT EARNS ITS EXTRA DML STATEMENT. One email, three
+        // branches: winner + competing + repeat. The winner's Lead is linked, but the competing
+        // property produced NO Lead for this broker (2026-07-31) and the repeat reused an older
+        // record — so WITHOUT the audit text the package would silently claim the email was about
+        // one property. Routed_Outcomes__c is the only place on the package that says otherwise.
+        Lead otherWinner = TestDataFactory.createLead(true);
+        TestDataFactory.createPropertyRegistry('4002 audit st', otherWinner.Id, true);
+
+        Lead priorLead = TestDataFactory.createLead(true);
+        Competing_Broker_Submission__c priorSub =
+            TestDataFactory.createCompetingBrokerSubmission(priorLead.Id, false);
+        priorSub.Broker_Email__c = 'audit.broker@example.invalid';
+        priorSub.Property_Address_Raw__c = '4003 Audit St';
+        priorSub.Submitted_DateTime__c = Datetime.now().addDays(-1);
+        insert priorSub;
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'audit.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: mixed audit', 'body',
+            'msg-package-audit@example.invalid', null, null);
+        setPropertiesMock('audit.broker@example.invalid',
+            new List<String>{ '4001 Audit St', '4002 Audit St', '4003 Audit St' });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Property_Package__c pkg = [
+            SELECT Id, Property_Count__c, Routed_Outcomes__c FROM Property_Package__c LIMIT 1
+        ];
+        Assert.areEqual(3, pkg.Property_Count__c,
+            'The package records all THREE properties the email named, even though only one became a Lead');
+
+        String audit = pkg.Routed_Outcomes__c;
+        Assert.areEqual(3, audit.split('\n').size(), 'One audit line per property. Actual: ' + audit);
+        Assert.isTrue(audit.contains('4001 audit st') && audit.contains(ExtractAddressQueueable.OUTCOME_WINNER),
+            'The winner property and its outcome. Actual: ' + audit);
+        Assert.isTrue(audit.contains('4002 audit st') && audit.contains(ExtractAddressQueueable.OUTCOME_DUPLICATE),
+            'THE WHOLE POINT OF B2: the property that went to ANOTHER broker is named on the package, '
+            + 'with the outcome that says so. Actual: ' + audit);
+        Assert.isTrue(audit.contains('4003 audit st') && audit.contains(ExtractAddressQueueable.OUTCOME_REPEAT),
+            'and the repeat, which reused an earlier record rather than creating one. Actual: ' + audit);
+
+        // Only the record THIS email created is a member. The other broker's winner and the repeat's
+        // prior Lead predate this email and must not be retro-fitted into its package.
+        Assert.areEqual(1, [SELECT COUNT() FROM Lead WHERE Property_Package__c = :pkg.Id],
+            'Exactly ONE member Lead: the winner. A competing broker gets no Lead, and the repeat\'s '
+            + 'prior Lead belongs to an earlier email — pulling either in would misstate what arrived together');
+        Assert.areEqual(pkg.Id,
+            [SELECT Property_Package__c FROM Lead WHERE Property_Address__c = '4001 Audit St' LIMIT 1]
+                .Property_Package__c,
+            'and it is the winner Lead that carries it');
+    }
+
+    @isTest
+    static void execute_perPropertyFailure_neitherDuplicatesNorOrphansThePackage() {
+        // The isolation catch runs PER ITERATION, so anything inside it runs up to N times. This is
+        // why the package is created ABOVE the loop: with both properties failing, there must still
+        // be exactly ONE package — not two, and not zero.
+        //
+        // ⚠ `forceRouteFailure` is ALL-OR-NOTHING per job (one static boolean, not property-indexed
+        // — see the note above execute_multiPropertyCleanRun_...), so BOTH properties fail here.
+        // That is the harsher case for this assertion, not a weaker one: every iteration takes the
+        // catch, so a package created inside the loop would be created twice.
+        Inbound_Email_Staging__c staging = insertStaging(
+            'failpkg.broker@example.invalid', 'coordinator@dpeg.example.invalid',
+            'FW: two failing properties', 'body',
+            'msg-package-failure@example.invalid', null, null);
+        setPropertiesMock('failpkg.broker@example.invalid',
+            new List<String>{ '5001 Fail St', '5002 Fail St' });
+
+        Test.startTest();
+        ExtractAddressQueueable.forceRouteFailure = true;
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+        ExtractAddressQueueable.forceRouteFailure = false;
+
+        List<Property_Package__c> packages = [
+            SELECT Id, Property_Count__c, Routed_Outcomes__c FROM Property_Package__c
+        ];
+        Assert.areEqual(1, packages.size(),
+            'EXACTLY ONE package even though every property failed. Two would mean creation moved '
+            + 'inside the per-property try/catch; zero would mean it moved below the loop');
+        Assert.areEqual(2, packages[0].Property_Count__c,
+            'It still records what the email named — the count comes from the extraction, not from '
+            + 'how many properties happened to route');
+        Assert.isTrue(packages[0].Routed_Outcomes__c.contains(ExtractAddressQueueable.OUTCOME_ERROR),
+            'and the audit records the failures, which is how a human finds a package with no members. '
+            + 'Actual: ' + packages[0].Routed_Outcomes__c);
+
+        Assert.areEqual(0, [SELECT COUNT() FROM Lead WHERE Property_Package__c = :packages[0].Id],
+            'A MEMBERLESS package is the accepted residual (design R6), NOT a bug: it records that a '
+            + 'multi-property email arrived and failed, which is strictly more than the silence the '
+            + 'alternative would leave. It is not "orphaned" — Source_Staging_Id__c still points at '
+            + 'the email.');
+        Assert.areEqual('Error',
+            [SELECT Status__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id].Status__c,
+            'and the staging row is in the human queue, per this class\'s partial-success contract');
+    }
+
+    @isTest
+    static void execute_replyBranch_createsNoPackageBecauseItReturnsBeforeTheCallout() {
+        // Residual R3, pinned so it reads as a KNOWN BOUNDARY rather than a defect. Branch (a)
+        // returns before the LLM callout (C-6), so a follow-up email naming further properties never
+        // reaches the work-list and can never join or create a package. Nothing here is broken; the
+        // standing branch-(a) trade-off simply extends to this feature.
+        Lead threadLead = TestDataFactory.createLead(true);
+        insert new Task(
+            Subject = 'Original thread', Status = 'Completed', TaskSubtype = 'Email',
+            WhoId = threadLead.Id,
+            Inbound_Message_Id__c = 'pkg-thread-root@example.invalid',
+            Thread_Key__c = 'pkg-thread-root@example.invalid'
+        );
+
+        Inbound_Email_Staging__c staging = insertStaging(
+            'thread@example.invalid', 'coordinator@dpeg.example.invalid',
+            'RE: Original thread', 'and here are three more assets',
+            'msg-package-reply@example.invalid', '<pkg-thread-root@example.invalid>', null);
+        setPropertiesMock('thread@example.invalid',
+            new List<String>{ '6001 Reply St', '6002 Reply St', '6003 Reply St' });
+
+        Test.startTest();
+        System.enqueueJob(new ExtractAddressQueueable(staging.Id, null, null));
+        Test.stopTest();
+
+        Assert.areEqual(ExtractAddressQueueable.OUTCOME_REPLY,
+            [SELECT Outcome__c FROM Inbound_Email_Staging__c WHERE Id = :staging.Id].Outcome__c,
+            'Precondition: this must genuinely be the reply branch, or the assertion below proves nothing');
+        Assert.areEqual(0, [SELECT COUNT() FROM Property_Package__c],
+            'No callout means no work-list means no package (residual R3). The remedy, if this ever '
+            + 'matters, is a change to branch (a) — not to the package gate');
     }
 }

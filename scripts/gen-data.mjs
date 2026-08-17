@@ -31,7 +31,11 @@ const deals = [
   ['Riverside Commons', '1200 Riverside Dr', 'Austin', 'Mixed-Use', 27400000, 6.4, 6.3, 'Under Contract', 'Contract Signed', 'Live', 1],
   ['Oak Street Center', '450 Oak St', 'Dallas', 'Retail Strip', 21100000, 6.6, 6.5, 'Closed Won', 'Asset Under Management', 'Closed', 2],
   ['Texas City Storage', '2800 Palmer Hwy', 'Texas City', 'Industrial', 12750000, 7.8, 7.9, 'Dead/Pass', 'Killed', 'Dead', 3],
-  ['Pearland Pad #14', '2700 Pearland Pkwy', 'Pearland', 'Land', 6800000, 6.9, 6.7, 'Portfolio Deal', 'Evaluating', 'Live', 4],
+  // Stage was 'Portfolio Deal' until the legacy Opportunity Portfolio Deal concept was retired
+  // (Portfolio Deal rename, Phase A1). Reassigned to 'New' — the stage the seed set's other
+  // Evaluating/Live deal (Hwy 290 Retail Center) already uses — so a seed rebuild cannot
+  // resurrect the retired stage. Do NOT restore 'Portfolio Deal' here.
+  ['Pearland Pad #14', '2700 Pearland Pkwy', 'Pearland', 'Land', 6800000, 6.9, 6.7, 'New', 'Evaluating', 'Live', 4],
 ];
 const properties = deals.map((d, i) =>
   rec('Property__c', `prop_${i}`, {
@@ -45,7 +49,6 @@ const opportunities = deals.map((d, i) => {
     Asset_Type__c: d[3], Asking_Price__c: d[4], Amount: d[4], My_Cap_Rate__c: d[5], Market_Cap_Rate__c: d[6],
     Deal_Status__c: d[8], Deal_Category__c: d[9], Broker_First_Seen__c: '2026-04-01',
   };
-  if (d[0] === 'Pearland Pad #14') f.Is_Portfolio_Parent__c = true;
   if (d[7] === 'Dead/Pass') f.Rejection_Reason__c = 'Bad Anchor Tenant';
   return rec('Opportunity', `opp_${i}`, f);
 });

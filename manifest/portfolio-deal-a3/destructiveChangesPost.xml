@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Phase A3 of the "Property Package -> Portfolio Deal" rename program.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+
+    Phases A1/A2 (2026-08-17, see docs/2026-08-17-portfolio-deal-rename-phase-a1.md
+    and -phase-a2.md) removed every functional reference to the legacy, dormant
+    "Portfolio Deal" Opportunity concept, including the 'Portfolio Deal' stage
+    picklist value. This phase deletes the three field definitions themselves.
+
+    Re-verified fresh for A3 (repo grep + live org MetadataComponentDependency
+    query against all three field Ids on 2026-08-17):
+      - Zero MetadataComponentDependency rows refer to any of the three fields.
+      - The only remaining repo references are: the field definitions themselves,
+        this manifest family, scripts/gen-metadata.mjs (also being cleaned up in
+        this same phase), and COMMENT-ONLY mentions in 4 Apex classes and 2 LWC
+        JS files (LeadConvertService/Test, PropertyPackageController/Test,
+        recentPackages, packageSiblings) explaining why an unrelated, currently
+        settled feature must never be confused with this dormant one. Those
+        comment rewrites are a separate, parallel task and are NOT touched here.
+      - 41 profiles still carry stale <fieldPermissions> entries for these three
+        fields. This matches an existing, established repo precedent: those same
+        41 profiles still carry a stale fieldPermissions entry for
+        User.Deal_Driver__c, a field that no longer exists. Field deletion in this
+        org does not get followed by a profile cleanup pass; that is consistent
+        with prior practice, not a new gap introduced here. (Precedent detail: only
+        Deal_Driver__c is in those 41 profiles. User.Disposition_Driver__c is in
+        ZERO of them - repo grep, 2026-08-17 - so it never was part of this
+        precedent, even though it was deleted alongside Deal_Driver__c.)
+
+    THE DRIVER-FIELD PRECEDENT IS VERIFIED, AND THREE OTHER FILES APPEAR TO
+    CONTRADICT IT. READ THIS BEFORE "CORRECTING" EITHER SIDE:
+      - Evidence the two fields are gone: a FieldDefinition query against
+        usman-dpeg on 2026-08-17 for EVERY custom field on User returned ZERO
+        rows. The identical query shape run against Opportunity returned
+        Is_Portfolio_Parent__c and Portfolio_Deal__c, so the empty result is a
+        real absence, not a misfiring query. Both field definitions were also
+        removed from source in commit 57f20c0, "Phase 2: delete the driver flag
+        fields, their FLS grants and UserSelector" (2026-08-12), whose message
+        records the post-deletion verification.
+      - The three files that still describe those fields as live -
+        DispositionActionPermissionService.cls, the Acquisition_Deal_Actions
+        custom permission and the Acquisition_Deal_Driver permission set - each
+        document an EARLIER step of that same 2026-08-12 sequence (Phase 1 /
+        Phase 2 Step 1) and each defer the deletion to "a separate, later phase".
+        Commit 57f20c0 IS that later phase. They are stale snapshots, not
+        counter-evidence. Rewriting them belongs to whoever owns the driver-flag
+        retirement; it is NOT this phase's work and is not done here.
+
+    That same evidence is why User.Deal_Driver__c and User.Disposition_Driver__c
+    were pruned from manifest/package.xml as stale members in this phase. That
+    prune is safe independently of any of the above: removing a member from a
+    manifest deletes nothing, it only stops that member being retrieved or
+    redeployed through that file.
+
+    DELETES EXACTLY THREE FIELDS, ALL ON Opportunity:
+      - Portfolio_Deal__c       (self-lookup, the "bundle" anchor)
+      - Is_Portfolio_Parent__c  (checkbox)
+      - Bundle_LOI__c           (checkbox)
+
+    POST-destructive (not pre-): this manifest's companion package.xml carries
+    the Apex/LWC comment-only rewrites from a parallel task, so the field
+    deletion must land AFTER those regular components deploy successfully in the
+    same transaction.
+
+    Deploy (only once authorised by the user; devops runs a validation-only
+    dry-run first per standing project practice):
+      sf project deploy start \
+        --manifest manifest/portfolio-deal-a3/package.xml \
+        --post-destructive-changes manifest/portfolio-deal-a3/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    Do NOT pass --purge-on-delete — documented as non-functional on production
+    orgs and fails silently rather than erroring.
+
+    Rollback: deleted custom fields are recoverable from the org's field recycle
+    bin for 15 days; the metadata is also recoverable from git history.
+    -->
+    <types>
+        <members>Opportunity.Portfolio_Deal__c</members>
+        <members>Opportunity.Is_Portfolio_Parent__c</members>
+        <members>Opportunity.Bundle_LOI__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>67.0</version>
+</Package>

@@ -1,8 +1,25 @@
 <template>
-    <lightning-card icon-name="standard:event" title="Call for Offers">
-        <span slot="title">Call for Offers</span>
+    <lightning-card icon-name="standard:event">
+        <span slot="title" class="card-title">Call for Offers</span>
 
-        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+        <!--
+          ── THE LAYOUT IS `c/dealDocStatus`'s, DELIBERATELY AND ALMOST LITERALLY ──
+          This panel sits DIRECTLY BELOW `dealDocStatus` in the Opportunity record page's `sidebar`
+          region, with `brokerFirmCard` above that. Those cards share one visual grammar — a `.body`
+          opened by a hairline border-top, then compact rows of [icon chip] [bold label] ....... [pill],
+          each with a small grey meta line beneath and hairline dividers between — and this component
+          now speaks it: same row geometry, same pill geometry, same type scale, same divider.
+
+          🔴 AN EARLIER VERSION OF THIS TEMPLATE (2026-08-17, same day) LED WITH A 20px HERO DATE AND A
+          FULL-WIDTH SLDS BUTTON. It was rejected on sight as unprofessional and off-theme, and the
+          reason is worth keeping: it was designed against the payload in isolation rather than against
+          the two cards it is stacked with, so every one of its dimensions — type scale, pill radius,
+          button weight, absent border-top — disagreed with its neighbours. ⚠ DO NOT reintroduce a
+          headline number, a hero block or a `lightning-button` here. If this card ever needs to look
+          different from `dealDocStatus`, that is a decision about the whole sidebar, not about this
+          bundle.
+        -->
+        <div class="body">
             <template if:true={isLoading}>
                 <lightning-spinner
                     alternative-text="Loading the offer deadline"
@@ -12,53 +29,88 @@
             </template>
 
             <template if:true={hasError}>
-                <div class="cfo-error slds-text-color_error" role="alert">{errorMessage}</div>
+                <div class="cfo-error" role="alert">Offer deadline could not be loaded: {errorMessage}</div>
             </template>
 
             <template if:true={hasNoDeadline}>
-                <p class="cfo-empty slds-text-color_weak">{detail}</p>
+                <div class="cfo-empty">{detail}</div>
             </template>
 
             <template if:true={hasDeadline}>
-                <!--
-                  The badge is a colour-coded URGENCY indicator, so its meaning must not depend on
-                  colour alone: the label itself ("Due in 3 days" / "Overdue by 2 days") carries the
-                  state in words, which is what makes it readable to a screen reader and to anyone
-                  who cannot distinguish the amber and red variants.
-                -->
-                <div class={badgeClass}>{badgeLabel}</div>
-
-                <p class="cfo-detail slds-text-color_weak slds-m-top_x-small">{detail}</p>
-
-                <dl class="slds-list_horizontal slds-wrap slds-m-top_small">
-                    <template for:each={rows} for:item="row">
-                        <dt
-                            key={row.key}
-                            class="cfo-term slds-item_label slds-text-color_weak slds-truncate"
-                            title={row.term}>
-                            {row.term}
-                        </dt>
-                        <dd
-                            key={row.key}
-                            class="cfo-value slds-item_detail slds-truncate"
-                            title={row.value}>
-                            {row.value}
-                        </dd>
-                    </template>
-                </dl>
-
-                <div class="slds-m-top_small">
-                    <template if:true={hasBrokerEmail}>
-                        <a href={brokerMailto} class="cfo-link slds-m-right_medium">
-                            Email listing broker
-                        </a>
-                    </template>
-                    <template if:true={hasDealRoomLink}>
-                        <a href={dealRoomLink} target="_blank" rel="noopener noreferrer" class="cfo-link">
-                            Open deal room
-                        </a>
-                    </template>
+                <!-- THE DEADLINE ROW. The label names the fact; the pill carries the urgency. -->
+                <div class="row">
+                    <div class="row-head">
+                        <span class="row-left">
+                            <span class="row-icon row-icon--due">
+                                <lightning-icon icon-name="utility:clock" size="x-small"></lightning-icon>
+                            </span>
+                            <span class="row-name">Offer Deadline</span>
+                        </span>
+                        <!--
+                          The pill is a colour-coded URGENCY indicator, so its meaning must not depend on
+                          colour alone: the label itself ("Due in 3 days" / "Overdue by 2 days") carries
+                          the state in words, which is what makes it readable to a screen reader and to
+                          anyone who cannot distinguish the amber and red variants.
+                        -->
+                        <span class={badgeClass}>{badgeLabel}</span>
+                    </div>
+                    <div class="row-meta cfo-date">{dueDateFormatted}</div>
                 </div>
+
+                <!--
+                  ⚠ ABSENT, NOT BLANK, AND ABSENT IS THE COMMON CASE. This is
+                  `Call_For_Offers_Received_Date__c` verbatim — the day a call-for-offers email
+                  actually reached DPEG. `CallForOffersStampService` stamps it only when such an email
+                  matches an ALREADY-CONVERTED winner, and most registry winners are unconverted, so a
+                  large population legitimately has a deadline and no received date. The divider is
+                  inside this branch so no card ever ends on a rule with nothing beneath it.
+
+                  🔴 DO NOT FALL BACK TO `dealArrivedDate` HERE. It answers a DIFFERENT question (when
+                  the DEAL arrived, not the email) and coalescing the two IS the defect
+                  `CallForOffersService` header §4 was written to remove. If the arrival date is ever
+                  wanted on this panel it goes in its OWN row, labelled "Deal Arrived".
+                -->
+                <template if:true={hasReceivedDate}>
+                    <div class="divider"></div>
+                    <div class="row">
+                        <div class="row-head">
+                            <span class="row-left">
+                                <span class="row-icon row-icon--received">
+                                    <lightning-icon icon-name="utility:email" size="x-small"></lightning-icon>
+                                </span>
+                                <span class="row-name row-name--muted">Call for Offers Received</span>
+                            </span>
+                        </div>
+                        <div class="row-meta cfo-received">{receivedDateFormatted}</div>
+                    </div>
+                </template>
+
+                <!--
+                  The deal room is an ANCHOR wearing the sibling card's own record-link styling
+                  (`.row-name` bold brand blue), NOT a `lightning-button`: `dealDocStatus` renders every
+                  openable thing exactly this way, and a real anchor keeps middle-click, open-in-new-tab
+                  and copy-link-address, which a button plus `window.open` loses to a popup blocker.
+                -->
+                <template if:true={hasDealRoomLink}>
+                    <div class="divider"></div>
+                    <div class="row">
+                        <div class="row-head">
+                            <span class="row-left">
+                                <span class="row-icon row-icon--room">
+                                    <lightning-icon icon-name="utility:new_window" size="x-small"></lightning-icon>
+                                </span>
+                                <a
+                                    href={dealRoomLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="row-name cfo-dealroom"
+                                    title="Open the deal room in a new tab">
+                                    Deal Room
+                                </a>
+                            </span>
+                        </div>
+                    </div>
+                </template>
             </template>
         </div>
     </lightning-card>

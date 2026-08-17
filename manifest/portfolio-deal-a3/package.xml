@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Companion manifest for manifest/portfolio-deal-a3/destructiveChangesPost.xml.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead.
+
+    Unlike the manifest/destructive/ precedent (which shipped its field deletion
+    alone against an empty companion package.xml), this wave is NOT empty: it
+    also carries the comment-only rewrites a parallel task is making to the 4
+    Apex classes and 2 LWC bundles that reference the retired "Portfolio Deal"
+    concept in explanatory comments only (no functional change, no test
+    behaviour change). Bundling them here lets the whole wave -- regular
+    components plus the post-destructive field deletion -- land as one atomic
+    transaction, per this phase's instructions.
+
+    These 6 components are deploy-time no-ops from a metadata-shape perspective
+    (comments are compiled/stripped, not stored); they are included so the
+    Metadata API transaction is atomic with the field deletion, not because the
+    field deletion depends on them.
+    -->
+    <types>
+        <members>LeadConvertService</members>
+        <members>LeadConvertServiceTest</members>
+        <members>PropertyPackageController</members>
+        <members>PropertyPackageControllerTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>recentPackages</members>
+        <members>packageSiblings</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <version>67.0</version>
+</Package>

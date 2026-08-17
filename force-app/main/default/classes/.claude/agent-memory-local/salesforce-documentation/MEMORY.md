@@ -1,3 +1,0 @@
-- [Docs folder location convention](docs-folder-convention.md) — existing docs/ is nested under docs/superpowers/{plans,specs,reports}/ from a prior tool; this role's own template saves flat at docs/[date]-[task].md — followed the flat convention
-- [DPEG design-decision doc style](design-decision-doc-style.md) — user wants a "Key Design Decisions and Rationale" section as the centerpiece, each decision backed by code/test evidence, not just restated from the brief
-- [Verification-before-writing habit](verification-habit.md) — always grep/read the actual files to confirm claims handed to you (counts, field names, drift claims) before putting them in docs; caught one count nuance (ahe() helper count 3→4) this way

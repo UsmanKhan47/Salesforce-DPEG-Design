@@ -3,7 +3,7 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Call for Offers</masterLabel>
-    <description>This deal's call-for-offers deadline, days remaining with a colour-coded urgency badge, sale process, listing broker and deal room link. Intended for Opportunity_Record_Page, above the Activity component.</description>
+    <description>This deal's offer deadline with a colour-coded urgency pill, the date a call-for-offers email arrived, and a deal room link, as compact rows matching the Deal Summary card. Intended for the Opportunity_Record_Page sidebar, below Deal Summary.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>

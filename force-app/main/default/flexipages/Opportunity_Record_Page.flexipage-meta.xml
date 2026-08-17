@@ -259,6 +259,36 @@
                 <identifier>RecordAsking_Price_cField2</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.My_Cap_Rate__c</fieldItem>
+                <identifier>RecordMy_Cap_Rate_cField2</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Guidance_Price_Low__c</fieldItem>
+                <identifier>RecordGuidance_Price_Low_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Contract_Executed_Date__c</fieldItem>
+                <identifier>RecordContract_Executed_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-06e3fc20-5d0f-467d-a5a5-e93c8a318f35</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -277,10 +307,20 @@
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.RecordTypeId</fieldItem>
+                <identifier>RecordRecordTypeIdField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Amount</fieldItem>
-                <identifier>RecordAmountField</identifier>
+                <fieldItem>Record.My_Price__c</fieldItem>
+                <identifier>RecordMy_Price_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -299,8 +339,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.My_Cap_Rate__c</fieldItem>
-                <identifier>RecordMy_Cap_Rate_cField2</identifier>
+                <fieldItem>Record.LeadSource</fieldItem>
+                <identifier>RecordLeadSourceField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -309,8 +349,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.LeadSource</fieldItem>
-                <identifier>RecordLeadSourceField</identifier>
+                <fieldItem>Record.OneDrive_Folder_URL__c</fieldItem>
+                <identifier>RecordOneDrive_Folder_URL_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-63a5fe22-5a6f-40a6-8353-bbfdaa65ffde</name>
@@ -414,138 +454,6 @@
     </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Deal_Category__c</fieldItem>
-                <identifier>RecordDeal_Category_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Asset_Type__c</fieldItem>
-                <identifier>RecordAsset_Type_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Property_Address__c</fieldItem>
-                <identifier>RecordProperty_Address_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Guidance_Price_Low__c</fieldItem>
-                <identifier>RecordGuidance_Price_Low_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.My_Price__c</fieldItem>
-                <identifier>RecordMy_Price_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet-99b1ea4d-959f-4ab9-9a99-64a96ccd2cec</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Contract_Executed_Date__c</fieldItem>
-                <identifier>RecordContract_Executed_Date_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Rejection_Reason__c</fieldItem>
-                <identifier>RecordRejection_Reason_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.OneDrive_Folder_URL__c</fieldItem>
-                <identifier>RecordOneDrive_Folder_URL_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Offer_Due_Date__c</fieldItem>
-                <identifier>RecordOffer_Due_Date_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Sale_Process__c</fieldItem>
-                <identifier>RecordSale_Process_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <name>Facet-fde55415-3edb-4c7e-91d7-9b503335bb9b</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-99b1ea4d-959f-4ab9-9a99-64a96ccd2cec</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column11</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-fde55415-3edb-4c7e-91d7-9b503335bb9b</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:column</componentName>
-                <identifier>flexipage_column12</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-c0671279-507c-4e0a-ac9d-622c5c371ccb</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
                     <name>columns</name>
@@ -599,24 +507,6 @@
                 </componentInstanceProperties>
                 <componentName>marketDataSync</componentName>
                 <identifier>costarSyncCard</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>columns</name>
-                    <value>Facet-c0671279-507c-4e0a-ac9d-622c5c371ccb</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>horizontalAlignment</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>label</name>
-                    <value>Acquisition Deal Details</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:fieldSection</componentName>
-                <identifier>flexipage_fieldSection6</identifier>
             </componentInstance>
         </itemInstances>
         <name>detailContent</name>
@@ -1913,6 +1803,19 @@
             <componentInstance>
                 <componentName>callForOffersPanel</componentName>
                 <identifier>callForOffersPanelComponent</identifier>
+            </componentInstance>
+        </itemInstances>
+        <!--
+            Multi-Property Email Package Grouping (2026-08-17). c-packageSiblings is object-agnostic
+            (recordId + objectApiName only, no schema import) and is placed identically on
+            Lead_Record_Page.flexipage-meta.xml per ARCHITECTURE.md section 5's "one bundle, not one
+            per object" precedent. It renders nothing when the Opportunity has no
+            Property_Package__c (the common single-property case) - never an empty card.
+        -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>packageSiblings</componentName>
+                <identifier>packageSiblings</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

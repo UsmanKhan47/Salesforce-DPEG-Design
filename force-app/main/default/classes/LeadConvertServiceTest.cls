@@ -161,10 +161,18 @@ private class LeadConvertServiceTest {
      * field` for every test that drives the service directly off this helper's output — the
      * live trigger path is unaffected because Trigger.new in an after-update trigger already
      * carries every field.
+     *
+     * ⚠ Property_Package__c was ADDED here 2026-08-17 (multi-property email package) FOR THE SAME
+     * REASON, and it is worth stating that this trap recurs on EVERY field the service starts
+     * reading: `applyDealFields` and `buildProperty` both now read `l.Property_Package__c`, so
+     * omitting it here would throw the identical `SObjectException` for every test in this class
+     * that drives the service off this helper — while the live trigger path stayed perfectly green,
+     * because Trigger.new carries every field. ⇒ ADDING A FIELD TO THE SERVICE MEANS ADDING IT
+     * HERE, and the failure is a test-only one that looks like a service defect.
      */
     private static List<Lead> reReadForReRun(Set<Id> leadIds) {
         return [
-            SELECT Id, Name, Company, Street, City, State, PostalCode,
+            SELECT Id, Name, Company, Street, City, State, PostalCode, Property_Package__c,
                    IsConverted, ConvertedOpportunityId, ConvertedContactId, ConvertedAccountId,
                    Deal_Type__c, Asset_Type__c, Property_Name__c, Property_Address__c,
                    Guidance_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,
@@ -695,6 +703,138 @@ private class LeadConvertServiceTest {
             'LeadConvertService is pinned at <=5 DML statements, CONSTANT in batch size. It moved '
             + 'from 3 to 5 in the IR segregation change to stamp the converted Contact and Account '
             + 'record types. A number that grows with record count means a statement moved inside a loop.');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 5b. THE MULTI-PROPERTY EMAIL PACKAGE, CARRIED FORWARD (2026-08-17)
+    //
+    // One inbound broker email naming several properties produces several Leads, all stamped
+    // with ONE Property_Package__c at insert. Conversion must carry that grouping onto BOTH
+    // records it creates, or the package silently loses its members the moment the deals are
+    // worked — which is precisely when an analyst needs to see them together.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** A package to hang the fixture Leads off. Inserted directly — nothing in this class routes
+     *  an email, and PropertyPackageService's own creation path is tested in its own class. */
+    private static Property_Package__c insertPackage(String name) {
+        Property_Package__c pkg = new Property_Package__c(Name = name, Property_Count__c = 3);
+        insert pkg;
+        return pkg;
+    }
+
+    @isTest
+    static void packageIsCarriedToBothTheOpportunityAndTheProperty() {
+        Property_Package__c pkg = insertPackage('FW: Three-property portfolio');
+
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = 'Package Brokerage LLC';
+        l.Deal_Type__c = 'Retail';
+        l.Property_Address__c = GATE_ADDRESS;
+        l.Property_Package__c = pkg.Id;
+        insert l;
+
+        Test.startTest();
+        Database.LeadConvertResult res = convertOne(l);
+        Test.stopTest();
+
+        Opportunity o = [
+            SELECT Property_Package__c, Property__c, Property__r.Property_Package__c
+            FROM Opportunity WHERE Id = :res.getOpportunityId()
+        ];
+        Assert.areEqual(pkg.Id, o.Property_Package__c,
+            'BOTH HALVES MATTER, AND THIS IS THE FIRST: the deal must stay in its package after '
+            + 'conversion. Without it the grouping dies at exactly the moment the deals become '
+            + 'workable, which is when a human needs to see that three of them came off one email');
+        Assert.isNotNull(o.Property__c, 'Precondition: conversion created the Property');
+        Assert.areEqual(pkg.Id, o.Property__r.Property_Package__c,
+            'AND THE SECOND: the Property__c is the third member of the package one-to-many, and it '
+            + 'is the member that makes the grouping legible on the package\'s own record page');
+    }
+
+    @isTest
+    static void aLeadWithNoPackageLeavesBothLookupsBlank() {
+        // The overwhelmingly common case, asserted so the carry-forward can never be "helpful" —
+        // e.g. defaulting to some other package, or to any OTHER grouping someone decides a deal
+        // ought to belong to. This lookup answers only "which inbound broker email routed this
+        // record?", and a deal that came off no multi-property email is in no package at all.
+        // Null in, null out.
+        Lead l = TestDataFactory.createLead(false);
+        l.Company = 'Solo Brokerage LLC';
+        l.Deal_Type__c = 'Retail';
+        l.Property_Address__c = GATE_ADDRESS;
+        insert l;
+
+        Test.startTest();
+        Database.LeadConvertResult res = convertOne(l);
+        Test.stopTest();
+
+        Opportunity o = [
+            SELECT Property_Package__c, Property__r.Property_Package__c
+            FROM Opportunity WHERE Id = :res.getOpportunityId()
+        ];
+        Assert.isNull(o.Property_Package__c, 'No package on the Lead means none on the deal');
+        Assert.isNull(o.Property__r.Property_Package__c, 'and none on the Property');
+    }
+
+    /**
+     * 🔴 THE CONTRACT ASSERTION FOR THIS CHANGE: the package carry-forward adds ZERO SOQL and ZERO
+     * DML, so LeadConvertService's 2 SOQL / <=5 DML budget is UNCHANGED.
+     *
+     * ⚠ IT IS A COMPARISON, NOT AN ABSOLUTE BUDGET, and for the reason
+     * `stampCostDoesNotScaleWithBatchSize` states: the measured window contains the whole
+     * Opportunity-update cascade, whose cost is not this service's to pin. Two invocations in the
+     * SAME transaction — one carrying a package, one not — cancel that noise exactly. If the
+     * carry-forward ever needed a query (say, to resolve a package by name) the deltas would
+     * diverge here, which is the only place that would be visible.
+     *
+     * The absolute `<= 5` is asserted too, mirroring conversionDmlIsConstantAcross251Leads, because
+     * "unchanged relative to a run that is itself broken" would prove nothing.
+     */
+    @isTest
+    static void packageCarryForwardAddsNoQueryAndNoDml() {
+        Property_Package__c pkg = insertPackage('FW: budget check');
+
+        // ONE factory call for both Leads, deliberately: the factory's per-record suffix makes each
+        // Company and Email unique WITHIN a call, so a single call is the shape least likely to
+        // collide with a live Lead duplicate rule.
+        List<Lead> pair = TestDataFactory.createLeads(2, false);
+        pair[0].Property_Package__c = pkg.Id;   // index 0 carries the package
+        insert pair;
+        List<Lead> withPackage = new List<Lead>{ pair[0] };
+        List<Lead> withoutPackage = new List<Lead>{ pair[1] };
+
+        String status = convertedStatus();
+        convertChunk(withPackage, 0, 1, status);
+        convertChunk(withoutPackage, 0, 1, status);
+
+        List<Lead> packagedReRun = reReadForReRun(idsOf(withPackage));
+        List<Lead> plainReRun = reReadForReRun(idsOf(withoutPackage));
+        Assert.areEqual(pkg.Id, packagedReRun[0].Property_Package__c,
+            'Precondition: the re-read must actually carry the package, or this test is vacuous — '
+            + 'and it only does because Property_Package__c was added to reReadForReRun');
+
+        Test.startTest();
+        Integer q0 = Limits.getQueries();
+        Integer d0 = Limits.getDmlStatements();
+        LeadConvertService.stampConvertedOpportunities(plainReRun, null);
+        Integer q1 = Limits.getQueries();
+        Integer d1 = Limits.getDmlStatements();
+        LeadConvertService.stampConvertedOpportunities(packagedReRun, null);
+        Integer q2 = Limits.getQueries();
+        Integer d2 = Limits.getDmlStatements();
+        Test.stopTest();
+
+        Assert.areEqual(q1 - q0, q2 - q1,
+            'A Lead CARRYING a package must cost exactly the same number of queries as one without: '
+            + 'the value is already on the Trigger.new record, so carrying it is an in-memory '
+            + 'assignment. Divergence here means someone added a read');
+        Assert.areEqual(d1 - d0, d2 - d1,
+            'and exactly the same number of DML statements: both assignments ride records the '
+            + 'service was already writing (the `updates` list and the `properties` list), so there '
+            + 'is no second statement. Divergence means someone added one');
+        Assert.isTrue(d2 - d1 <= 5,
+            'and the absolute contract still holds at <=5 DML — otherwise "unchanged" would only '
+            + 'mean "equally broken"');
     }
 
     // ═════════════════════════════════════════════════════════════════════════

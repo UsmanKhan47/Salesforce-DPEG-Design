@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Constructive manifest for the three unrelated RunLocalTests-blocking bug fixes
+        (2026-08-17, code review APPROVED WITH WARNINGS). Deployed in ONE transaction,
+        paired via --post-destructive-changes with
+        manifest/microbatch-selfreg-retire/destructiveChangesPost.xml (whose own
+        package.xml is intentionally empty - see that file's comment). Do not add the
+        destructive members here; do not add these constructive members there.
+
+        Fix 1 (Account RecordType immutability vs Lead conversion deadlock):
+          - CustomPermission Lead_Convert_Account_RecordType_Stamp
+          - ValidationRule Account.Record_Type_Is_Immutable (adds the $Permission gate)
+          - PermissionSet Lead_Stage_Actions_Access (grants the custom permission)
+          - PermissionSet DPEG_Admin_Access (grants the custom permission)
+          - ApexClass LeadConvertService (comment-only change; corrects the FIX ROUND 1
+            misdiagnosis and documents the real root cause and fix)
+        See LeadConvertService.cls (stampConvertedPartyRecordTypes), the validation
+        rule's own comment, and the custom permission's own comment for the full trace.
+
+        Fix 2 (BrokerPortalService org drift):
+          - ApexClass BrokerPortalService - no local source change; the repo copy has
+            been correct since 2026-08-10, the deployed org copy is stale/missing the
+            record-type-stamping logic. This manifest exists to force it to actually
+            redeploy.
+    -->
+    <types>
+        <members>Lead_Convert_Account_RecordType_Stamp</members>
+        <name>CustomPermission</name>
+    </types>
+    <types>
+        <members>Account.Record_Type_Is_Immutable</members>
+        <name>ValidationRule</name>
+    </types>
+    <types>
+        <members>Lead_Stage_Actions_Access</members>
+        <members>DPEG_Admin_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>LeadConvertService</members>
+        <members>BrokerPortalService</members>
+        <name>ApexClass</name>
+    </types>
+    <version>67.0</version>
+</Package>

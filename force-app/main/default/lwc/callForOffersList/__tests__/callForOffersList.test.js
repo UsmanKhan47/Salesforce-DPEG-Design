@@ -37,6 +37,11 @@ jest.mock('lightning/navigation', () => {
     return { NavigationMixin, CurrentPageReference: jest.fn() };
 });
 
+// ⚠ `receivedDate` / `dealArrivedDate` ARE STILL ON THE SERVER DTO AND ARE DELIBERATELY KEPT HERE,
+// even though the "Received" column that rendered them was removed on 2026-08-17. The fixture's job
+// is to mirror what `CallForOffersController.getUpcoming` actually returns; trimming it to only the
+// fields the table happens to paint today would hide a future contract change. See
+// `CallForOffersService` header §4 — the two dates remain separate facts server-side.
 const DEALS = [
     {
         opportunityId: '006000000000001AAA',
@@ -126,67 +131,106 @@ describe('c-call-for-offers-list', () => {
 
         const rows = element.shadowRoot.querySelector('c-list-datatable').data;
         expect(rows[0].dueLabel).toBe('Aug 17, 2026');
-        expect(rows[0].receivedLabel).toBe('Jul 1, 2026');
     });
 
     it('shows an em dash rather than a broken date when a date is missing', async () => {
         const element = build();
-        getUpcoming.emit([
-            { ...DEALS[0], receivedDate: null, dealArrivedDate: null, dueDate: null }
-        ]);
+        getUpcoming.emit([{ ...DEALS[0], dueDate: null }]);
         await flush();
 
         const rows = element.shadowRoot.querySelector('c-list-datatable').data;
-        expect(rows[0].receivedLabel).toBe('—');
         expect(rows[0].dueLabel).toBe('—');
     });
 
-    it('renders the STAMPED received date and never the deal-arrival proxy', async () => {
-        // 🔴 THE CLIENT HALF OF THE 2026-08-14 CHANGE. Until then this column showed
-        // `Broker_First_Seen__c ?? CreatedDate` — when the DEAL arrived — under the heading
-        // "Received". The fixture makes the two disagree by five months so a coalesce cannot
-        // pass: `formatDate(r.receivedDate || r.dealArrivedDate)` would still print a plausible
-        // date, which is exactly why this needs a test rather than review.
-        const element = build();
-        getUpcoming.emit(DEALS);
-        await flush();
-
-        const rows = element.shadowRoot.querySelector('c-list-datatable').data;
-        expect(rows[0].receivedLabel).toBe('Jul 1, 2026');
-        expect(rows[0].receivedLabel).not.toContain('Feb');
-        expect(rows[0].receivedLabel).not.toContain('Deal arrived');
-    });
-
-    it('LABELS the deal-arrival fallback in words when nothing has been stamped yet', async () => {
-        // The migration affordance. The stamped field only exists on deals a call-for-offers email
-        // has actually matched, so a long-lived population arrives here with a deadline and no
-        // received date. It still shows the deal's arrival — but the cell SAYS SO, because a bare
-        // date in this column is read as an email timestamp.
+    it('renders exactly three columns and no "Received" column', async () => {
+        // 🔴 THE PIN FOR THE 2026-08-17 REMOVAL. "Received" was dropped at the user's request; the
+        // date it rendered is not shown anywhere in this table any more. This asserts the whole
+        // column SET rather than just the absence, so a silent re-add fails here — and so does a
+        // reordering that quietly reintroduces the cell under a different heading.
         //
-        // ⚠ A "~" or a tooltip would not do: both are scanned past in a dense table. If this
-        // assertion is ever relaxed to a symbol, the distinction has been given up.
-        const element = build();
-        getUpcoming.emit([{ ...DEALS[0], receivedDate: null }]);
-        await flush();
-
-        const rows = element.shadowRoot.querySelector('c-list-datatable').data;
-        expect(rows[0].receivedLabel).toBe('Deal arrived Feb 10, 2026');
-    });
-
-    it('keeps the Received column wide enough for the labelled fallback', async () => {
-        // ⚠ THIS ASSERTS THE CONFIGURED WIDTH, NOT THE RENDERED FIT, AND CANNOT ASSERT MORE:
-        // jsdom performs no layout, so scrollWidth/clientWidth are 0 here and the obvious
-        // overflow test would be vacuously green. What it does catch is someone restoring the
-        // pre-change 130px — at which point the "Deal arrived" caveat, not the date, is what the
-        // ellipsis eats. The rendered fit is a UAT check.
+        // ⚠ The server still sends `receivedDate` and `dealArrivedDate` as separate facts and its
+        // own tests still enforce that split (`CallForOffersService` header §4). This assertion is
+        // about what the TABLE paints, not about the DTO, and must not be read as licence to
+        // collapse the two fields in Apex.
         const element = build();
         getUpcoming.emit(DEALS);
         await flush();
 
-        const received = element.shadowRoot
+        const labels = element.shadowRoot
             .querySelector('c-list-datatable')
-            .columns.find((c) => c.label === 'Received');
-        expect(received.initialWidth).toBeGreaterThanOrEqual(190);
+            .columns.map((c) => c.label);
+        expect(labels).toEqual(['Property', 'Due Date', 'Urgency']);
+        expect(labels).not.toContain('Received');
+        // The two 2026-08-17 renames were LABEL-ONLY. Pinning the old headings as ABSENT is what
+        // makes the rename visible here rather than silently reversible.
+        expect(labels).not.toContain('Offers Due');
+        expect(labels).not.toContain('Days Remaining');
+    });
+
+    it('the renamed "Urgency" column still reads the SERVER label and pill styles, unchanged', async () => {
+        // 🔴 THE HALF OF THE RENAME THAT NEEDS PINNING. 'Days Remaining' -> 'Urgency' is a heading
+        // change, and the risk is that a future reader takes the new heading as a cue to compute a
+        // band client-side. This asserts the cell is still wired to `countdown` (the server's own
+        // `CallForOffersService` label) as a `pill` with both style attributes — so re-deriving the
+        // ladder in JS, or swapping the column to `type: 'text'`, reds here.
+        const element = build();
+        getUpcoming.emit(DEALS);
+        await flush();
+
+        const table = element.shadowRoot.querySelector('c-list-datatable');
+        const urgency = table.columns.find((c) => c.label === 'Urgency');
+        expect(urgency.fieldName).toBe('countdown');
+        expect(urgency.type).toBe('pill');
+        expect(urgency.typeAttributes.wrapStyle).toEqual({ fieldName: 'pillWrap' });
+        expect(urgency.typeAttributes.dotStyle).toEqual({ fieldName: 'pillDot' });
+        // The value is the server's string verbatim, never a locally counted number of days.
+        expect(table.data[0].countdown).toBe(DEALS[0].label);
+    });
+
+    it('🔴 a deadline still AHEAD never wears the same pill colour as one already missed', async () => {
+        // THE FALSIFIER FOR THE 2026-08-17 RECOLOUR, AND THE COVERAGE GAP THAT LET THE DEFECT SHIP.
+        // Until now this suite asserted the pill's WIRING (fieldName / type / typeAttributes) and never
+        // its VALUES, so `CRITICAL` and `OVERDUE` shared the background `#fdeaea` for as long as the
+        // component existed and every test here passed. "Due in 2 days" and "Overdue by 2 days" sat
+        // adjacent in this table in the same pale pink — opposite facts, one appearance.
+        //
+        // ⚠ IT ASSERTS THE PARTITION, NOT THE HEXES. The rule is that ahead-of-you bands (APPROACHING,
+        // CRITICAL) must not share a background with hit-or-passed ones (DUE_TODAY, OVERDUE); a future
+        // retune of any individual colour stays green, while collapsing the two families again reds
+        // here whatever the new values are. Pinning literal hexes instead would fail on every harmless
+        // tweak and would still not say what the colours are FOR.
+        const paint = async (urgency) => {
+            const element = build();
+            getUpcoming.emit([{ ...DEALS[0], urgency }]);
+            await flush();
+            const [row] = element.shadowRoot.querySelector('c-list-datatable').data;
+            expect(row.pillWrap).toContain('background:');
+            const background = row.pillWrap.split('background:')[1];
+            document.body.removeChild(element);
+            return background;
+        };
+
+        const [approaching, critical, dueToday, overdue] = [
+            await paint('APPROACHING'),
+            await paint('CRITICAL'),
+            await paint('DUE_TODAY'),
+            await paint('OVERDUE')
+        ];
+
+        // Across the line: no ahead-of-you band may look like a missed one. `CRITICAL` vs `OVERDUE` is
+        // the exact pair the user reported.
+        expect(critical).not.toBe(overdue);
+        expect(critical).not.toBe(dueToday);
+        expect(approaching).not.toBe(overdue);
+        expect(approaching).not.toBe(dueToday);
+
+        // Within the line: the two ahead-of-you bands are distinguishable from each other too, so the
+        // 1-3 day window still reads as more pressed than the 4-7 day one...
+        expect(critical).not.toBe(approaching);
+        // ...while the two out-of-time bands legitimately SHARE a background (they differ only in dot
+        // saturation), which is what stops the assertions above passing because nothing matches
+        // anything.
+        expect(dueToday).toBe(overdue);
     });
 
     it('renders an empty state instead of a table when nothing matches', async () => {

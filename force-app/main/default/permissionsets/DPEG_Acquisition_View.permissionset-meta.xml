@@ -925,7 +925,12 @@
     <!-- FSD Tranche 2 finding (2026-08-16): Opportunity.Amount had NO FLS grant in any
          deployable permission set - see DPEG_Acquisition_Edit's comment on this same field
          for the full writeup. Reconciled against usman-dpeg before this edit: zero org-side
-         FieldPermissions rows for this field on this set. -->
+         FieldPermissions rows for this field on this set.
+
+         ⚠ RETIRED 2026-08-17: see DPEG_Acquisition_Edit's comment on this same field - the
+         consuming method (selectTopByAmount) was renamed and no longer selects Amount. This
+         grant is retained for reasons independent of that method and is not implicated by the
+         rename; removing it needs its own evidence. -->
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Amount</field>
@@ -944,11 +949,6 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Broker_First_Seen__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Opportunity.Bundle_LOI__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <!-- ADDED 2026-08-14, Acquisition Observations Phase 4. Read-only twin of the grant on
@@ -1080,11 +1080,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Opportunity.Is_Portfolio_Parent__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
         <field>Opportunity.Lead_Approved_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1200,11 +1195,6 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Placer_URL__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Opportunity.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1677,6 +1667,57 @@
         <field>Property__c.SharePoint_Folder_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        Property_Package__c (Multi-Property Email Package Grouping, 2026-08-17). Read-only twin of
+        the grant on DPEG_Acquisition_Edit - see that set's comment for the full rationale. All
+        seven fields plus the three lookups (Lead/Opportunity/Property__c.Property_Package__c) are
+        readable=true, editable=false, matching this set's read-only contract.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Property_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Received_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Routed_Outcomes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Source_Staging_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Property_Package__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Property_Package__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.Property_Package__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Acquisition View</label>
     <objectPermissions>
@@ -1686,6 +1727,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Opportunity</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property_Package__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

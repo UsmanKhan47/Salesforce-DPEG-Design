@@ -12,15 +12,41 @@
 
         ADMINS ARE OUT OF SCOPE BY DESIGN (spec section 5) - a user with Modify All Data is
         already outside this boundary everywhere else in the org, so the rule does not attempt
-        to stop them; $Permission is deliberately not consulted. If an exemption is ever needed,
+        to stop them; $Permission was originally not consulted. If an exemption is ever needed,
         add a custom permission and gate on $Permission - never widen the rule itself.
+
+        EXEMPTION ADDED 2026-08-17 (bug fix, LeadConvertServiceTest). This rule and
+        LeadConvertService.stampConvertedPartyRecordTypes (added 2026-08-10, IR segregation)
+        deadlocked: standard Database.convertLead does not map record types onto the Account it
+        creates, so conversion follow-up UPDATEs the converted Account to Broker_Firm - a
+        deliberate, one-time, post-creation RecordTypeId change that this rule cannot
+        distinguish from the unrestricted reparenting it exists to block, because both are
+        ISCHANGED(RecordTypeId) on an existing row. Database.update(..., false) swallowed the
+        resulting failure silently, so RecordTypeId stayed null and
+        conversionStampsBrokerRecordTypesOnContactAndAccount failed on "Actual: null". This was
+        never a permission-set provisioning gap - see the corrected diagnosis in
+        LeadConvertService.cls (stampConvertedPartyRecordTypes's header) for the full mechanism.
+
+        Per this comment's own prescription above, the fix is a custom permission, not a
+        widened rule: Lead_Convert_Account_RecordType_Stamp
+        (force-app/main/default/customPermissions/), gated with
+        NOT($Permission.Lead_Convert_Account_RecordType_Stamp) below. It is granted ONLY to
+        Lead_Stage_Actions_Access (the real conversion-triggering population - it already gates
+        who may convert a Lead at all) and DPEG_Admin_Access (the principal Apex tests and ad
+        hoc admin conversions run as, measured live against usman-dpeg 2026-08-17 to hold
+        DPEG_Admin_Access but not Lead_Stage_Actions_Access). See the custom permission's own
+        in-file comment for the full call-path trace and the accepted tradeoff (a $Permission
+        gate scopes by WHO the user is, not by WHICH CODE runs, so either grantee could in
+        principle also hand-edit RecordTypeId while holding it - the same tradeoff this
+        comment's original text already anticipated).
     -->
     <fullName>Record_Type_Is_Immutable</fullName>
     <active>true</active>
     <description>An account's record type cannot be changed - it is the sharing boundary for the account and every contact under it. See the XML comment in this file.</description>
     <errorConditionFormula>AND(
     NOT(ISNEW()),
-    ISCHANGED(RecordTypeId)
+    ISCHANGED(RecordTypeId),
+    NOT($Permission.Lead_Convert_Account_RecordType_Stamp)
 )</errorConditionFormula>
     <errorMessage>An account's record type cannot be changed. It controls which team can see this account and all of its contacts. Contact a system administrator if this account is filed under the wrong team.</errorMessage>
 </ValidationRule>

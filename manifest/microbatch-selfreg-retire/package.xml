@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Companion manifest for destructiveChangesPost.xml in this folder.
+         Intentionally EMPTY of types. The Metadata API requires a package.xml
+         alongside any destructive manifest; this wave deploys no new metadata, it
+         only retires the MicrobatchSelfReg boilerplate cluster. Do not add members
+         here. The comment sits INSIDE the root element by repo convention: a
+         comment placed above the root breaks source conversion with a misleading
+         "unable to find matching parent xml file" error. -->
+    <version>67.0</version>
+</Package>

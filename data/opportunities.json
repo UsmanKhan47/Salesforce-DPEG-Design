@@ -178,7 +178,7 @@
         "referenceId": "opp_9"
       },
       "Name": "Pearland Pad #14",
-      "StageName": "Portfolio Deal",
+      "StageName": "New",
       "CloseDate": "2026-09-30",
       "AccountId": "@acc_4",
       "Property__c": "@prop_9",
@@ -189,8 +189,7 @@
       "Market_Cap_Rate__c": 6.7,
       "Deal_Status__c": "Evaluating",
       "Deal_Category__c": "Live",
-      "Broker_First_Seen__c": "2026-04-01",
-      "Is_Portfolio_Parent__c": true
+      "Broker_First_Seen__c": "2026-04-01"
     }
   ]
 }

@@ -51,9 +51,9 @@ private class OpportunityFunnelControllerTest {
         List<OpportunityFunnelController.StageCount> counts = OpportunityFunnelController.getStageCounts();
         Test.stopTest();
 
-        System.assertEquals(11, counts.size(), 'All 11 funnel stages are always returned, in funnel order');
+        System.assertEquals(10, counts.size(), 'All 10 funnel stages are always returned, in funnel order');
         System.assertEquals('New', counts[0].label, 'Funnel order starts at New');
-        System.assertEquals('Portfolio Deal', counts[10].label, 'Funnel order ends at Portfolio Deal');
+        System.assertEquals('Dead/Pass', counts[9].label, 'Funnel order ends at Dead/Pass');
 
         Map<String, Integer> countByLabel = new Map<String, Integer>();
         for (OpportunityFunnelController.StageCount sc : counts) {
@@ -69,8 +69,10 @@ private class OpportunityFunnelControllerTest {
         System.assertEquals(1, countByLabel.get('Under Contract (PSA)'), 'Only the recently-closed PSA opportunity falls in the 90-day window');
         System.assertEquals(1, countByLabel.get('Closed Won'), 'Only the recently-closed Closed Won opportunity falls in the 90-day window');
         System.assertEquals(1, countByLabel.get('Dead/Pass'), 'Only the recently-closed Dead/Pass opportunity falls in the 90-day window');
-        System.assertEquals(0, countByLabel.get('Portfolio Deal'),
-            'Portfolio Deal is not reachable via either the Land or Retail business process and stays 0');
+        // The legacy 'Portfolio Deal' stage was retired (Portfolio Deal rename, Phase A1) and is no
+        // longer emitted by STAGE_ORDER, so there is no longer a permanently-zero card to assert on.
+        Assert.isFalse(countByLabel.containsKey('Portfolio Deal'),
+            'The retired Portfolio Deal stage is no longer returned by the funnel');
     }
 
     @isTest
@@ -149,7 +151,7 @@ private class OpportunityFunnelControllerTest {
         OpportunityFunnelController.PipelineSnapshot snap = OpportunityFunnelController.getPipelineSnapshot();
         Test.stopTest();
 
-        System.assertEquals(11, counts.size(), 'All 11 funnel stages are always returned, even with zero data');
+        System.assertEquals(10, counts.size(), 'All 10 funnel stages are always returned, even with zero data');
         for (OpportunityFunnelController.StageCount sc : counts) {
             System.assertEquals(0, sc.count, 'Every stage count is 0 when there are no opportunities: ' + sc.label);
         }

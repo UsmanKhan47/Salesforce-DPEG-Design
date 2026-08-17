@@ -1,82 +1,207 @@
 /*
- * SLDS 2 design tokens throughout (--slds-g-*), each with a literal fallback so the panel still
- * renders correctly where a token is not resolved. No hardcoded colour appears without one.
+ * c-call-for-offers-panel — styled to match `c/dealDocStatus`, the card DIRECTLY ABOVE this one in
+ * the Opportunity record page's `sidebar` region, and `c/brokerFirmCard` above that.
+ *
+ * 🔴 THE ROW GEOMETRY IS COPIED FROM THAT NEIGHBOUR ON PURPOSE — row padding, icon-chip size, label
+ * weight, meta size, divider colour, and the pill's 2px/10px padding, 11px type, weight 700 and
+ * nowrap. An earlier version of this stylesheet invented its own scale (a 20px headline and a
+ * full-width SLDS button) and read as a foreign card wedged into the stack. Matching the neighbour is
+ * the requirement; if these numbers change, change them in `dealDocStatus` too or the cards drift.
+ *
+ * ⚠ THE ONE DELIBERATE DEPARTURE IS THE PILL'S RADIUS. `dealDocStatus` uses 11px, a capsule; this
+ * card uses the smaller `--slds-g-radius-border-1` step, because the capsule was rejected by the user
+ * on sight. Do not "restore" it for consistency — see the prohibition at `.cfo-badge` below.
+ *
+ * ⚠ SLDS 2 TOKENS WITH LITERAL FALLBACKS THROUGHOUT (`var(--slds-g-*, <literal>)`), so this bundle
+ * keeps 0 SLDS-linter violations where the neighbouring cards use raw hex and carry warnings. Do not
+ * "simplify" a wrapper back to a bare literal.
+ *
+ * 🔴 BUT DO NOT READ A FALLBACK AS A STATEMENT OF WHAT RENDERS. A `var()` fallback applies ONLY when
+ * the hook is UNDEFINED; when it is defined the HOOK WINS, so a literal here can silently describe
+ * something the org never draws. That is not hypothetical — `--slds-g-radius-border-circle, 11px`
+ * shipped as a 50% ELLIPSE while this file read as "11px". ⚠ NO GATE IN THIS PIPELINE CATCHES IT:
+ * Jest asserts class names, and the SLDS linter checks only that a hook was USED, never what it
+ * RESOLVES TO. Only someone looking at the rendered page can. The fallbacks below were chosen to
+ * match the neighbour's appearance, and apart from the radius they are UNVERIFIED against a browser.
  */
 
+:host {
+    display: block;
+}
+
 /*
- * The urgency badge. Colour is a REINFORCEMENT, never the only carrier of meaning — the label text
- * inside it always names the state in words ("Due in 3 days", "Overdue by 2 days"), which is what
- * keeps the panel readable without colour vision and to a screen reader.
+ * The hairline that separates the card header from its content — the single most recognisable part
+ * of this sidebar's card grammar, and the thing the previous version was most obviously missing.
+ */
+.body {
+    padding: 0 var(--slds-g-spacing-4, 14px) var(--slds-g-spacing-3, 10px);
+    border-top: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e8ec);
+}
+
+.body > :first-child {
+    padding-top: var(--slds-g-spacing-2, 6px);
+}
+
+.card-title {
+    font-weight: var(--slds-g-font-weight-7, 700);
+    font-size: var(--slds-g-font-scale-base, 13px);
+    color: var(--slds-g-color-on-surface-2, #181818);
+}
+
+/* ── ROWS ──────────────────────────────────────────────────────────────── */
+
+.row {
+    padding: var(--slds-g-spacing-2, 8px) 0;
+}
+
+.row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--slds-g-spacing-3, 10px);
+}
+
+.row-left {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--slds-g-spacing-2, 9px);
+    min-width: 0;
+}
+
+/* The 28px tinted chip the sibling card puts behind every row icon. */
+.row-icon {
+    flex: 0 0 auto;
+    width: var(--slds-g-sizing-8, 28px);
+    height: var(--slds-g-sizing-8, 28px);
+    border-radius: var(--slds-g-radius-border-2, 8px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--slds-g-color-neutral-base-95, #eef1f4);
+}
+
+/*
+ * The chips are tinted per row so the three rows are distinguishable at a glance, matching the
+ * sibling card's per-document tints. `--slds-c-icon-color-foreground-default` is the supported hook
+ * for recolouring `lightning-icon` from outside it; setting it HERE rather than as an inline `style`
+ * attribute on each icon is what keeps the template free of hardcoded colour.
+ */
+.row-icon--due {
+    background: var(--slds-g-color-warning-container-1, #fdf3e3);
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-warning-base-30, #a86403);
+}
+
+.row-icon--received {
+    background: var(--slds-g-color-success-container-1, #e6f4ea);
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-success-base-30, #1b7a4b);
+}
+
+/*
+ * The deal room keeps `.row-icon`'s NEUTRAL chip and takes only a brand-blue icon, so the icon
+ * matches the blue "Deal Room" link beside it. ⚠ An earlier draft paired a purple BACKGROUND token
+ * with a brand-blue ICON token, which reads as a mistake whichever way the two resolve.
+ */
+.row-icon--room {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-brand-base-50, #0176d3);
+}
+
+.row-name {
+    font-size: var(--slds-g-font-scale-base, 13px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    min-width: 0;
+}
+
+/* A label that names a fact rather than opening a record is dark, not link-blue. */
+.row-name--muted {
+    color: var(--slds-g-color-on-surface-2, #16325c);
+    font-weight: var(--slds-g-font-weight-6, 600);
+}
+
+.row-meta {
+    margin-top: var(--slds-g-spacing-1, 4px);
+    /* The sibling card's meta line sits between 11 and 12px; `neg-1` is that step. */
+    font-size: var(--slds-g-font-scale-neg-1, 11.5px);
+    color: var(--slds-g-color-neutral-base-60, #5a6b7b);
+}
+
+.divider {
+    height: var(--slds-g-sizing-border-1, 1px);
+    background: var(--slds-g-color-border-1, #f0f2f5);
+}
+
+/* ── THE URGENCY PILL ──────────────────────────────────────────────────── */
+
+/*
+ * Geometry is the sibling card's `.pill` in every respect but the radius (see the header). Colour is
+ * a REINFORCEMENT and never the only
+ * carrier of meaning — the label text inside always names the state in words ("Due in 3 days",
+ * "Overdue by 2 days"), which is what keeps the panel readable without colour vision.
  */
 .cfo-badge {
     display: inline-flex;
     align-items: center;
-    padding: var(--slds-g-spacing-2, 0.25rem) var(--slds-g-spacing-4, 0.75rem);
-    border-radius: var(--slds-g-radius-border-2, 0.25rem);
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-    font-weight: var(--slds-g-font-weight-6, 600);
+    padding: var(--slds-g-spacing-1, 2px) var(--slds-g-spacing-3, 10px);
+    /*
+     * 🔴 A SMALL RADIUS — A ROUNDED RECTANGLE, NOT A CAPSULE. DO NOT USE
+     * `--slds-g-radius-border-circle` HERE. That hook resolves to a FULL round (50%), which on an
+     * element far wider than it is tall renders an ELLIPSE, not the 11px capsule its literal
+     * fallback implies — and a fallback only applies when the hook is UNDEFINED, so the org showed
+     * the ellipse while this file read as if it showed 11px. It was rejected on sight, and it was
+     * the only use of that hook in the repo. `--slds-g-radius-border-1` is what `rentRoll`'s status
+     * badge uses, which is the closest in-repo precedent for a squarer pill.
+     */
+    border-radius: var(--slds-g-radius-border-1, 4px);
+    font-size: var(--slds-g-font-scale-neg-2, 11px);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    line-height: var(--slds-g-font-lineheight-2, 1.45);
+    white-space: nowrap;
+    /* It must never be compressed to fit; the label beside it truncates instead. */
+    flex: 0 0 auto;
 }
 
 .cfo-badge--muted {
-    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
-    color: var(--slds-g-color-neutral-base-30, #444444);
+    background: var(--slds-g-color-neutral-base-95, #eef1f4);
+    color: var(--slds-g-color-neutral-base-60, #5a6b7b);
 }
 
 .cfo-badge--green {
-    background: var(--slds-g-color-success-container-1, #e8f5e9);
-    color: var(--slds-g-color-success-base-30, #2e7d32);
+    background: var(--slds-g-color-success-container-1, #e6f4ea);
+    color: var(--slds-g-color-success-base-30, #1b7a4b);
 }
 
 .cfo-badge--amber {
-    background: var(--slds-g-color-warning-container-1, #fff1e0);
-    color: var(--slds-g-color-warning-base-30, #8c4b00);
+    background: var(--slds-g-color-warning-container-1, #fdf3e3);
+    color: var(--slds-g-color-warning-base-30, #a86403);
 }
 
 .cfo-badge--red {
-    background: var(--slds-g-color-error-container-1, #fdeaea);
-    color: var(--slds-g-color-error-base-30, #b71c1c);
+    background: var(--slds-g-color-error-container-1, #fdeceb);
+    color: var(--slds-g-color-error-base-30, #b3271e);
 }
 
-.cfo-detail,
-.cfo-empty,
+/* ── STATES ────────────────────────────────────────────────────────────── */
+
+.cfo-empty {
+    padding: var(--slds-g-spacing-2, 8px) 0;
+    font-size: var(--slds-g-font-scale-neg-1, 12.5px);
+    color: var(--slds-g-color-neutral-base-60, #aeb8c4);
+    font-style: italic;
+}
+
 .cfo-error {
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-    margin: 0;
+    padding: var(--slds-g-spacing-2, 8px) 0;
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    color: var(--slds-g-color-error-1, #b3271e);
 }
 
-.cfo-link {
-    color: var(--slds-g-color-brand-base-50, #0176d3);
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+/* An anchor, so it must not arrive underlined the way a bare link does. */
+.cfo-dealroom {
     text-decoration: none;
+    cursor: pointer;
 }
 
-.cfo-link:hover {
+.cfo-dealroom:hover,
+.cfo-dealroom:focus {
     text-decoration: underline;
-}
-
-/*
- * The definition list is rendered two-up. `slds-list_horizontal` handles the layout; these only
- * give the label column a stable width so the values line up between rows.
- *
- * ⚠ NAMESPACED CLASSES (`cfo-*`), NOT `dt.slds-item_label`. Overriding an SLDS class from a
- * component stylesheet is unsupported and the SLDS 2 linter flags it (`slds/no-slds-class-overrides`)
- * — SLDS owns those selectors and can change them under us. The element carries BOTH classes: the
- * SLDS one for layout, ours for the two properties we actually set.
- */
-/*
- * ⚠ The `9rem` below is the ONE remaining SLDS-linter warning in this bundle
- * (slds/no-hardcoded-values-slds2), and it is knowingly kept: the linter's own message is "There's
- * no replacement styling hook for the 9rem static value", i.e. SLDS 2 offers no sizing token for a
- * definition-list label column. Removing it as the linter suggests would let the label column
- * collapse to its content width, so the four values no longer line up. Replace it the moment a
- * sizing hook exists. The linter reports 0 errors for this bundle and 0 violations of any kind for
- * callForOffersList.
- */
-.cfo-term {
-    width: 9rem;
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-}
-
-.cfo-value {
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
 }

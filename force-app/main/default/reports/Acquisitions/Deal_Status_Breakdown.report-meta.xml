@@ -340,9 +340,6 @@
         <field>Opportunity.Broker_First_Seen__c</field>
     </columns>
     <columns>
-        <field>Opportunity.Bundle_LOI__c</field>
-    </columns>
-    <columns>
         <field>Opportunity.CoStar_URL__c</field>
     </columns>
     <columns>
@@ -350,9 +347,6 @@
     </columns>
     <columns>
         <field>Opportunity.Deal_Category__c</field>
-    </columns>
-    <columns>
-        <field>Opportunity.Is_Portfolio_Parent__c</field>
     </columns>
     <columns>
         <field>Opportunity.Loan_Required__c</field>
@@ -371,9 +365,6 @@
     </columns>
     <columns>
         <field>Opportunity.Placer_URL__c</field>
-    </columns>
-    <columns>
-        <field>Opportunity.Portfolio_Deal__c</field>
     </columns>
     <columns>
         <field>Opportunity.Property__c</field>

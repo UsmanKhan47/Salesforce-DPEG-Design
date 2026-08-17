@@ -546,6 +546,50 @@
         <field>Lead.Email</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        Property_Package__c (Multi-Property Email Package Grouping, 2026-08-17). This is the
+        permission set the pipeline runs under, so it needs full editable+readable on every field
+        of the new object plus the write target Lead.Property_Package__c (stamped by
+        EmailToLeadService.createLeadFromExtracted at Lead insert). The insert itself is
+        AccessLevel.SYSTEM_MODE (metadata-API-deployed fields arrive with no FLS for anybody, System
+        Administrator included), so this grant is for human visibility/correction on this persona,
+        not a prerequisite for the pipeline write.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Property_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Received_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Routed_Outcomes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Source_Staging_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Property_Package__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Broker Protection Access</label>
     <objectPermissions>
@@ -582,6 +626,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Property_Registry__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property_Package__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

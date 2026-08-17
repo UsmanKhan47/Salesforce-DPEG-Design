@@ -1,5 +1,74 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        RULE 4, Lead_Acquisition_Team_All, ADDED 2026-08-17. "Every Lead must be visible to
+        the acquisition team" (explicit business requirement) was NOT satisfied by rules 1-3
+        above, confirmed by measurement, not assumption:
+
+          - Rule 1 (Lead_Acquisition_Queue_RW) shares Leads OWNED BY THE Acquisition QUEUE.
+            Live Lead ownership in this org has ZERO rows owned by that queue (queried
+            2026-08-17: 41 owned by the System Administrator user, 1 owned by Junior Dhanani
+            himself) - LeadConvertService/EmailToLeadService never assign the queue as owner.
+          - Rules 2 and 3 (Lead_Acquisition_Broker / Lead_IR_Investor) are RecordTypeId
+            criteria rules. 41 of the 42 live Leads have RecordTypeId = null (no record type
+            assigned), so neither rule's `equals` criterion ever matches them.
+          - UserRecordAccess was queried directly for both Junior Dhanani and Nikhil Dhanani
+            against several admin-owned, null-record-type Leads: HasReadAccess=false,
+            HasEditAccess=false, MaxAccessLevel=None for both users on every one of them,
+            confirming zero effective Lead sharing exists today regardless of what is
+            committed in this file.
+
+        WHY A NEW CRITERIA RULE, NOT AN OWNER RULE ON THE SYSTEM ADMINISTRATOR ROLE. The
+        System Administrator user who owns 41/42 Leads has NO UserRole assigned (confirmed by
+        query) - a Role-based sharedFrom can never reach an owner with no Role, and any other
+        future owner (another admin, an Automated Process running the Broker Protection
+        pipeline) is equally unpredictable. A criteria-based rule shares by what the RECORD
+        IS, never by who owns it, so it is the only construct that can guarantee "every Lead"
+        rather than "every Lead owned by a role we happened to enumerate."
+
+        WHY Company != '' AS THE CRITERION. Salesforce criteria rules require at least one
+        criteriaItem; there is no literal "match everything" option. Company is a required
+        standard Lead field - and this org's own EmailToLeadService.COMPANY_PLACEHOLDER
+        convention (ARCHITECTURE.md) confirms it is never left blank even on
+        automation-created Leads - so "Company notEqual blank" is true for every Lead that has
+        ever existed or ever will. This has NO precedent elsewhere in this repo's
+        sharingRules/ folder (verified by grep before writing it) - the LOI__c file's own
+        comment records the same situation for its RecordTypeId value format ("the one
+        element below with no in-repo precedent"). 🔴 CreatedDate WAS TRIED FIRST AND
+        REJECTED AT DEPLOY: "Custom Field Definition ID: bad value for restricted picklist
+        field: CreatedDate" - audit/system fields are apparently not eligible
+        SharingCriteriaRule criteria fields on this object, confirmed by measurement, not
+        assumed. Company was substituted and deployed clean. If a future edit ever needs a
+        different always-true field, expect the same restriction and confirm at deploy first.
+
+        WHY DPEG_Acquisitions_Team AND NOT A SECOND Principals RULE (unlike the NDA__c /
+        LOI__c disposition pattern, which needs two rules for two populations). Queried
+        directly: DPEG_Acquisitions_Team's only two members are the Role group for "DPEG
+        Principal" and the RoleAndSubordinatesInternal group for "Acquisitions Analyst" - i.e.
+        Nikhil Dhanani (DPEG Principal role) and Junior Dhanani (Acquisitions Analyst role,
+        a child of DPEG Principal) are BOTH already inside this one group by role nesting.
+        A second rule to a Principals group would be redundant here, unlike the disposition
+        objects where Principals sit outside DPEG_Acquisitions_Team's membership.
+
+        ACCESS LEVEL IS Edit, AND OBJECT CRUD IS STILL THE CEILING - matching the pattern used
+        throughout this repo's other sharing rules. DPEG_Acquisition_Edit (Junior's set) grants
+        allowEdit=true on Lead; DPEG_Acquisition_View (Nikhil's, via DPEG_Principal_PSG) grants
+        allowRead=true / allowEdit=false. Sharing this rule at Edit does not over-grant Nikhil -
+        his own object CRUD still caps him to Read.
+
+        🔴 DEPLOY ONE RULE AT A TIME - established in the 2026-07-22 RBAC build and repeated by
+        every sharing-rule file added since (see NDA__c.sharingRules-meta.xml,
+        LOI__c.sharingRules-meta.xml). Rules 1-3 in this file were committed on 2026-07-22 but
+        are, per the measurement above, NOT currently live in this org - deploy this file in
+        two passes: first rules 1-3 exactly as they already exist, confirming that state
+        independently; then this rule 4 alone, so a rejection of the untested CreatedDate
+        criterion cannot roll back rules 1-3 with it.
+
+        🔴 GROUP MEMBERSHIP IS NOT DEPLOYABLE METADATA and CRITERIA-BASED SHARING RECALCULATES
+        ASYNCHRONOUSLY - both standing cautions from the LOI__c/NDA__c files apply identically
+        here. Verify post-deploy via UserRecordAccess for both Junior and Nikhil against a
+        broad sample of Leads, not just the record(s) used to author this rule.
+    -->
     <sharingOwnerRules>
         <fullName>Lead_Acquisition_Queue_RW</fullName>
         <accessLevel>Edit</accessLevel>
@@ -35,6 +104,20 @@
         </criteriaItems>
         <sharedTo>
             <group>Investor_Relations</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Lead_Acquisition_Team_All</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>Business requirement: every Lead must be visible to the acquisition team, regardless of owner or record type. Company is used as an always-true criterion (standard Lead.Company is required and this org's own EmailToLeadService.COMPANY_PLACEHOLDER convention confirms it is never left blank, even on automation-created Leads) because owner/role-based sharing cannot reach an owner with no Role (the System Administrator user who owns 41/42 live Leads), and 41 of those 42 have RecordTypeId null so rules 2/3 above never match them either. CreatedDate was tried first and rejected by the org at deploy time ("bad value for restricted picklist field: CreatedDate") - audit/system fields are not eligible SharingCriteriaRule criteria fields here, so a real, always-populated business field was substituted. See the in-root comment at the top of this file for the full measurement.</description>
+        <label>Lead Acquisition Team All</label>
+        <criteriaItems>
+            <field>Company</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
         </sharedTo>
     </sharingCriteriaRules>
 </SharingRules>

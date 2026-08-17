@@ -62,7 +62,7 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>collapsed</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>enableActionsConfiguration</name>
@@ -74,11 +74,11 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideChatterActions</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideSlackAction</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentName>force:highlightsPanel</componentName>
                 <identifier>highlightsPanel</identifier>
@@ -134,16 +134,6 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Email</fieldItem>
                 <identifier>RecordEmailField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>required</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Status</fieldItem>
-                <identifier>RecordStatusField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-leadInfoCol1</name>
@@ -288,6 +278,16 @@
                 <identifier>RecordDPEG_First_cField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Disqualification_Reason__c</fieldItem>
+                <identifier>RecordDisqualification_Reason_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-dealIntakeCol1</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -368,26 +368,6 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Duplicate_Flag__c</fieldItem>
-                <identifier>RecordDuplicate_Flag_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Broker_Priority__c</fieldItem>
-                <identifier>RecordBroker_Priority_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
                 <fieldItem>Record.CoStar_Link__c</fieldItem>
                 <identifier>RecordCoStar_Link_cField</identifier>
             </fieldInstance>
@@ -410,16 +390,6 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Deal_Notes__c</fieldItem>
                 <identifier>RecordDeal_Notes_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Disqualification_Reason__c</fieldItem>
-                <identifier>RecordDisqualification_Reason_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-dealIntakeCol2</name>
@@ -530,6 +500,16 @@
                 <identifier>RecordSeller_Entity_cField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.ADR__c</fieldItem>
+                <identifier>RecordADR_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-dealScreeningCol1</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -612,26 +592,6 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.WALT_Years__c</fieldItem>
                 <identifier>RecordWALT_Years_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.ADR__c</fieldItem>
-                <identifier>RecordADR_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Deal_Room_Link__c</fieldItem>
-                <identifier>RecordDeal_Room_Link_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -896,6 +856,19 @@
             <componentInstance>
                 <componentName>competingBrokerSubmissions</componentName>
                 <identifier>competingBrokerSubmissions</identifier>
+            </componentInstance>
+        </itemInstances>
+        <!--
+            Multi-Property Email Package Grouping (2026-08-17). c-packageSiblings is object-agnostic
+            (recordId + objectApiName only, no schema import) and is placed identically on
+            Opportunity_Record_Page.flexipage-meta.xml per ARCHITECTURE.md section 5's
+            "one bundle, not one per object" precedent. It renders nothing when the Lead has no
+            Property_Package__c (the common single-property case) - never an empty card.
+        -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>packageSiblings</componentName>
+                <identifier>packageSiblings</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

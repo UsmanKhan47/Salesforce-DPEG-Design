@@ -58,8 +58,6 @@
         <members>LeaseRenewalController</members>
         <members>LeaseRenewalControllerTest</members>
         <members>LoiGateTest</members>
-        <members>MicrobatchSelfRegController</members>
-        <members>MicrobatchSelfRegControllerTest</members>
         <members>MyProfilePageController</members>
         <members>MyProfilePageControllerTest</members>
         <members>NdaSelector</members>
@@ -134,7 +132,6 @@
         <members>ForgotPasswordConfirm</members>
         <members>IdeasHome</members>
         <members>InMaintenance</members>
-        <members>MicrobatchSelfReg</members>
         <members>MyProfilePage</members>
         <members>SiteLogin</members>
         <members>SiteRegister</members>
@@ -601,7 +598,6 @@
         <members>Opportunity.Asking_Price__c</members>
         <members>Opportunity.Asset_Type__c</members>
         <members>Opportunity.Broker_First_Seen__c</members>
-        <members>Opportunity.Bundle_LOI__c</members>
         <members>Opportunity.Cash_on_Cash_Return__c</members>
         <members>Opportunity.CoStar_URL__c</members>
         <members>Opportunity.Construction_Input_Needed__c</members>
@@ -618,7 +614,6 @@
         <members>Opportunity.Guidance_Cap_Rate__c</members>
         <members>Opportunity.Hold_Period__c</members>
         <members>Opportunity.Initiate_Underwriting__c</members>
-        <members>Opportunity.Is_Portfolio_Parent__c</members>
         <members>Opportunity.LOI_Approved__c</members>
         <members>Opportunity.LOI_Prep_Approval_Date__c</members>
         <members>Opportunity.LOI_Prep_Approved_By__c</members>
@@ -630,7 +625,6 @@
         <members>Opportunity.My_Price__c</members>
         <members>Opportunity.OneDrive_Folder_URL__c</members>
         <members>Opportunity.Placer_URL__c</members>
-        <members>Opportunity.Portfolio_Deal__c</members>
         <members>Opportunity.Price_PSF__c</members>
         <members>Opportunity.Primary_Contract__c</members>
         <members>Opportunity.Primary_LOI__c</members>
@@ -784,8 +778,6 @@
         <members>Unit__c.Suite_Number__c</members>
         <members>Unit__c.Tenant_Name__c</members>
         <members>Unit__c.Yardi_Unit_Id__c</members>
-        <members>User.Deal_Driver__c</members>
-        <members>User.Disposition_Driver__c</members>
         <members>Wire__c.Confirmed_Wire_Amount__c</members>
         <members>Wire__c.Disposition__c</members>
         <members>Wire__c.Verbal_Verification_Completed__c</members>

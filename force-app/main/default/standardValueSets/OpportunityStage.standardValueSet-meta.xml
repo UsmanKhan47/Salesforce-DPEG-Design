@@ -5,26 +5,36 @@
         element on purpose - a comment ABOVE <StandardValueSet> breaks `sf` deploy at
         conversion with a misleading "unable to find matching parent xml file".
 
-        PHASE 2 (2026-08-14) - 'PSA' IS BEING REPLACED BY 'Under Contract (PSA)'.
-        This file is at the ADDITIVE step (P2-D1): BOTH values are present and active.
-        'Under Contract (PSA)' is placed immediately after 'PSA' so that removing 'PSA'
-        at P2-D3 leaves the pipeline order intact (LOI -> Under Contract (PSA) ->
+        PHASE 2 (2026-08-14) RETIRED 'PSA', REPLACING IT WITH 'Under Contract (PSA)'.
+        'Under Contract (PSA)' sits immediately after where 'PSA' used to be listed so that
+        removing 'PSA' left the pipeline order intact (LOI -> Under Contract (PSA) ->
         About to Close). <sorted> is false, so position here is the displayed order.
 
-        <forecastCategory>Forecast</forecastCategory> and <probability>85</probability>
-        are COPIED FROM THE OUTGOING 'PSA' ENTRY VERBATIM, not chosen. They are the whole
-        reason this is a value migration rather than a new stage: forecastCategory drives
-        every forecast roll-up and probability drives Expected Revenue, so a deal that
-        moves from 'PSA' to 'Under Contract (PSA)' must not move in any forecast. If the
-        outgoing entry is ever edited before P2-D3, re-copy - do not re-derive.
+        <forecastCategory>Forecast</forecastCategory> and <probability>85</probability> on
+        'Under Contract (PSA)' were COPIED FROM THE RETIRED 'PSA' ENTRY VERBATIM, not chosen.
+        They are the whole reason this was a value migration rather than a new stage:
+        forecastCategory drives every forecast roll-up and probability drives Expected
+        Revenue, so a deal that moved from 'PSA' to 'Under Contract (PSA)' did not move in
+        any forecast.
 
-        NO %2F ENCODING APPLIES TO THIS VALUE. 'Under Contract (PSA)' contains spaces and
+        NO %2F ENCODING APPLIES TO 'Under Contract (PSA)'. It contains spaces and
         parentheses but no slash. The 'Dead/Pass' entry below is LITERAL here and is
         encoded 'Dead%2FPass' only inside BusinessProcess/RecordType metadata; that
         precedent invites exactly the wrong instinct. Do not encode the parentheses.
 
-        P2-D3 (staged, NOT applied here) sets <isActive>false</isActive> on the 'PSA'
-        entry. See agent-output/p2-d3-retire-psa/.
+        'PSA' IS NOW FULLY RETIRED (Phase A2 reconciliation, 2026-08-17). This file
+        previously carried a 'PSA' <standardValue> with <isActive>false</isActive>, described
+        at the time as "P2-D3, staged, not applied here" - that description was stale: the
+        org's live StageName picklist had already dropped 'PSA' entirely (not even present as
+        an inactive value), confirmed via a live sobject describe of Opportunity against
+        usman-dpeg. That local/org drift is reconciled here by deleting the block outright
+        rather than deploying it as inactive. Every other Opportunity-stage metadata file that
+        once referenced the bare 'PSA' literal (business processes, validation rules, the
+        Deal_Bucket__c formula, path assistants) was already repointed to 'Under Contract
+        (PSA)' during Phase 2 - re-verified by repo-wide grep on 2026-08-17, no remaining
+        active reference to bare 'PSA' exists outside this historical note. The
+        agent-output/p2-d3-retire-psa/ directory this comment used to point to no longer
+        exists in this repo (confirmed 2026-08-17).
     -->
     <sorted>false</sorted>
     <standardValue>
@@ -82,16 +92,6 @@
         <won>false</won>
     </standardValue>
     <standardValue>
-        <fullName>PSA</fullName>
-        <default>false</default>
-        <isActive>false</isActive>
-        <label>PSA</label>
-        <closed>false</closed>
-        <forecastCategory>Forecast</forecastCategory>
-        <probability>85</probability>
-        <won>false</won>
-    </standardValue>
-    <standardValue>
         <fullName>Under Contract (PSA)</fullName>
         <default>false</default>
         <label>Under Contract (PSA)</label>
@@ -125,15 +125,6 @@
         <closed>true</closed>
         <forecastCategory>Omitted</forecastCategory>
         <probability>0</probability>
-        <won>false</won>
-    </standardValue>
-    <standardValue>
-        <fullName>Portfolio Deal</fullName>
-        <default>false</default>
-        <label>Portfolio Deal</label>
-        <closed>false</closed>
-        <forecastCategory>Pipeline</forecastCategory>
-        <probability>20</probability>
         <won>false</won>
     </standardValue>
 </StandardValueSet>

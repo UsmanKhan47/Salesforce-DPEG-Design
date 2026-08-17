@@ -502,6 +502,45 @@ private class EmailToLeadServiceTest {
             'The soft gate is expressed as Parse_Confidence__c = LOW, which is what feeds the existing Review_Queue list view');
     }
 
+    // ── property package (2026-08-17, Decision C1) ──────────────────────────
+
+    /**
+     * `propertyPackageId` is an ADDITIVE, nullable field on `LeadRequest` (design §developer prompt
+     * item 4): stamped onto the Lead AT INSERT so no Lead is ever re-updated to acquire its package.
+     * `ExtractAddressQueueableTest`'s multi-property section exercises this line too, end to end
+     * through the real routing tree — this is the DIRECT, isolated counterpart, matching the pattern
+     * every other `LeadRequest` field on this class already has its own test for.
+     */
+    @isTest
+    static void createLeadFromExtracted_propertyPackageId_isStampedOntoTheLeadAtInsert() {
+        Property_Package__c pkg = new Property_Package__c(Name = 'FW: direct stamp check', Property_Count__c = 2);
+        insert pkg;
+        EmailToLeadService.LeadRequest request = enrichedRequest();
+        request.propertyPackageId = pkg.Id;
+
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(request);
+        Test.stopTest();
+
+        Assert.areEqual(pkg.Id, [SELECT Property_Package__c FROM Lead WHERE Id = :leadId].Property_Package__c,
+            'propertyPackageId must land on Property_Package__c in the SAME insert as every other field '
+            + 'on this Lead — no second DML statement exists to carry it');
+    }
+
+    @isTest
+    static void createLeadFromExtracted_noPropertyPackageId_leavesTheLookupBlank() {
+        // The overwhelmingly common case: a single-property email never sets propertyPackageId, and
+        // every pre-existing LeadRequest fixture in this file (via enrichedRequest()) leaves it at its
+        // Apex default of null. This is the discriminator that proves the test above is asserting the
+        // ASSIGNMENT and not a default that is always populated regardless of the request.
+        Test.startTest();
+        Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
+        Test.stopTest();
+
+        Assert.isNull([SELECT Property_Package__c FROM Lead WHERE Id = :leadId].Property_Package__c,
+            'An ordinary request with no package must leave the Lead\'s Property_Package__c blank');
+    }
+
     @isTest
     static void createLeadFromExtracted_nullProperty_leavesTheScreeningFieldsBlank() {
         Test.startTest();

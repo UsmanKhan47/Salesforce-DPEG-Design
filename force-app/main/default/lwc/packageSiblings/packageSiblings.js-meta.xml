@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Property Package</masterLabel>
+    <description>Other Leads and Opportunities created from the same multi-property broker email. One object-agnostic bundle for both the Lead and Opportunity record pages; renders nothing when the record has no Property Package.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+</LightningComponentBundle>

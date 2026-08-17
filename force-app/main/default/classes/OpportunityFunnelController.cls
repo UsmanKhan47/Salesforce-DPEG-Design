@@ -19,8 +19,7 @@ public with sharing class OpportunityFunnelController {
     // Observations phase 2); a stale key here does not error, it renders a permanent zero.
     private static final List<String> STAGE_ORDER = new List<String>{
         'New', 'Under Review', 'Development Review', 'Construction Review', 'Underwriting',
-        'LOI', 'Under Contract (PSA)', 'About to Close', 'Closed Won', 'Dead/Pass',
-        'Portfolio Deal'
+        'LOI', 'Under Contract (PSA)', 'About to Close', 'Closed Won', 'Dead/Pass'
     };
 
     // Fixed, generic user-safe message for a failed read.

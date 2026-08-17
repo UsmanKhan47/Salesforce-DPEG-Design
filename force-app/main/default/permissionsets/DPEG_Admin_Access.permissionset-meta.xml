@@ -125,6 +125,20 @@
         <application>Transaction</application>
         <visible>true</visible>
     </applicationVisibilities>
+    <!--
+        Lead_Convert_Account_RecordType_Stamp added 2026-08-17 (bug fix, LeadConvertServiceTest).
+        Measured live against usman-dpeg: the principal Apex tests (and ad hoc admin lead
+        conversions) run as holds THIS set but not Lead_Stage_Actions_Access, and Modify All
+        Data does not confer a custom-permission grant (see Acquisition_Deal_Driver's identical
+        note on this exact point). Without this grant, conversionStampsBrokerRecordTypesOnContactAndAccount
+        would still fail post-fix for that principal. See
+        Record_Type_Is_Immutable.validationRule-meta.xml and the custom permission's own
+        in-file comment for the full mechanism and the accepted scoping tradeoff.
+    -->
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Lead_Convert_Account_RecordType_Stamp</name>
+    </customPermissions>
     <description>Restores what the Admin profile grants but never deploys (profiles are .forceignored): every custom tab, eighteen field grants, the four Lightning apps, and the Opportunity/Disposition/NDA/LOI/Account/Contact/Lead record types. See the in-file comment.</description>
     <fieldPermissions>
         <editable>true</editable>
@@ -322,6 +336,66 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>NDA__c.NDA_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!-- Property_Package__c provisioning gap, closed 2026-08-17 (code review finding). This set is
+         the ONLY one of the seven layers that restores Admin-profile FLS/tabs/apps/record types
+         .forceignore'd out of profiles/**, and Property_Package__c FLS was granted in exactly
+         three places when it shipped the same day - DPEG_Acquisition_Edit, DPEG_Acquisition_View,
+         Broker_Protection_Access - and NOT here. Consequence: a System Administrator holding none
+         of those three (this repo's own admin user is one - see the applicationVisibilities
+         comment above, "the administrator usman.khan.dpeg is in NO permission set group") gets a
+         PERMANENT RED ERROR BANNER on the Lead Funnel homepage instead of the graceful "nothing to
+         show" a missing grant produces elsewhere, because BOTH homepage reads are `WITH USER_MODE`
+         and a USER_MODE query THROWS on the whole row for one inaccessible field:
+           • `PropertyPackageSelector.selectRecent` (the new c/recentPackages widget) selects
+             Property_Count__c / Broker_Name__c / Broker_Email__c / Received_DateTime__c directly
+             off Property_Package__c.
+           • `LeadSelector.selectRecent` (the pre-existing recentLeads Package column, widened
+             2026-08-17) selected Lead.Property_Package__c and spanned Property_Package__r.Name off
+             it - same query the whole Lead Funnel homepage already depended on. 🔴 CORRECTED
+             2026-08-17 (later same day): the recentLeads Package column was removed and
+             `LeadSelector.selectRecent` no longer selects `Property_Package__c` at all - this
+             bullet's claim is retired, not merely reworded. The `Lead.Property_Package__c` FLS
+             grant below (line ~377) is still load-bearing, but now for a DIFFERENT consumer:
+             `LeadSelector.selectPackageAnchorById`, which backs the `c/packageSiblings` "Same
+             Email" card on the Lead record page. The grant itself is unchanged - only the reason
+             it must not be removed has changed.
+         `Property_Package__c.Name` needs no grant - custom-object Name fields are
+         `permissionable=false` (verified for this object earlier the same day) - and neither does
+         the `Property_Package__r.Name` traversal's OBJECT-level read, which `Modify All Data`
+         (the System Administrator profile's own system permission) already confers on every
+         object; that is also why this set carries no `<objectPermissions>` block for
+         Property_Package__c, matching every other object restored here.
+         SCOPED NARROWLY TO THE REPORTED GAP: the Opportunity.Property_Package__c and
+         Property__c.Property_Package__c lookups are NOT granted here - neither
+         `PropertyPackageSelector.selectRecent` nor `LeadSelector.selectRecent` reads them; they
+         back the separate c/packageSiblings card on the Opportunity/Property record pages, which
+         is not the homepage this finding is about. Add them here only if a future admin-visibility
+         gap is measured against THAT feature. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Property_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property_Package__c.Received_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Property_Package__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>

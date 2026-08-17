@@ -62,11 +62,6 @@
         <field>Opportunity.Broker_First_Seen__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Opportunity.Bundle_LOI__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <!-- ADDED 2026-08-14, Acquisition Observations Phase 4. Layer-3b Opportunity subset grant -
          follows Offer_Due_Date__c / Sale_Process__c on this same set (both already carried here
          for the Transactions team's read of the deal). -->
@@ -178,11 +173,6 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Initiate_Underwriting__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Opportunity.Is_Portfolio_Parent__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -318,11 +308,6 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Opportunity.Placer_URL__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Opportunity.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

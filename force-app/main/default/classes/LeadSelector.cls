@@ -47,9 +47,31 @@
  * cannot throw; the remaining selected / aggregated standard fields (Id, Name,
  * Status, ConvertedDate, LastModifiedDate) are `permissionable=false` (never
  * FLS-subject), and the custom fields selected by selectRecent (Parse_Confidence__c,
- * Guidance_Price__c, Broker_First__c, Property_Address__c, Asset_Type__c,
- * First_Seen_Date__c, Broker_Priority__c) are granted by the deployed Acquisition
- * permission sets (P3 custom-field FLS gap = 0).
+ * Extraction_Score_Pct__c, Guidance_Price__c, Broker_First__c, Property_Address__c,
+ * Asset_Type__c, First_Seen_Date__c, Broker_Priority__c) are granted by the deployed
+ * Acquisition permission sets (P3 custom-field FLS gap = 0).
+ * ⚠ `Extraction_Score_Pct__c` joined that list on 2026-08-17; its grant was verified in
+ * all three named sets BEFORE the field entered the SELECT — the evidence is recorded at
+ * selectRecent itself.
+ *
+ * 🔴 THAT LIST IS A PRE-CONDITION, NOT A DESCRIPTION. `WITH USER_MODE` throws on the
+ * WHOLE ROW for ONE inaccessible field, so adding a custom field to selectRecent —
+ * the Lead Funnel homepage's read — means verifying its grant in DPEG_Acquisition_Edit,
+ * DPEG_Acquisition_View and Broker_Protection_Access FIRST, per field. A missing grant
+ * does not hide a column; it throws the whole homepage query.
+ *
+ * ⚠ AMENDED 2026-08-17 — Property_Package__c briefly appeared in that list (plus the
+ * spanning Property_Package__r.Name) for recentLeads' 'Package' column, and was removed
+ * with the column the same day; c/recentPackages now owns that fact and reads the object
+ * directly. selectRecent no longer touches the field, so the homepage no longer depends on
+ * its grant.
+ *
+ * ⚠ selectPackageAnchorById (2026-08-17) is therefore the ONLY USER_MODE consumer of
+ * Property_Package__c here — it was the second until the narrowing above. It backs the
+ * c/packageSiblings card on the Lead record page and is the LEAD-rooted half of that
+ * feature's reads — the PACKAGE-rooted half lives in PropertyPackageSelector, because SOQL
+ * follows the object it queries. It is what keeps the field's FLS grants load-bearing in the
+ * three Acquisition permission sets, so those grants must not be retired.
  *
  * selectByIdsSystem uses `WITH SYSTEM_MODE` (API 67), justified: it is called only
  * from BrokerPortalNotifier in the guest/automation context of the public Broker
@@ -179,20 +201,76 @@ public with sharing class LeadSelector {
      * actual Lead record. The funnel's "Converted" outcome metric is computed
      * separately by countConvertedInLastNDays(...) and is unaffected by this filter.
      *
+     * ═══ ⚠ WIDENED AND THEN NARROWED AGAIN, BOTH ON 2026-08-17 — READ THIS BEFORE RE-ADDING ═══
+     * `Property_Package__c` and the SPANNING `Property_Package__r.Name` were added to this SELECT so
+     * `recentLeads` could show which multi-property email a Lead arrived on, and were REMOVED the
+     * same day when that 'Package' column was retired in favour of the dedicated `c/recentPackages`
+     * card (which reads `Property_Package__c` directly, so it escapes this method's priority
+     * partitioning and 5-row client cutoff). `LeadFunnelController.LeadRow` lost `packageId` /
+     * `packageName` in the same change, so the two fields had no consumer left.
+     *
+     * RETRACTED, verbatim, from the widening note that stood here: *"The spanning field rides this
+     * same query, so the widening costs ZERO extra SOQL."* True as far as it went, and beside the
+     * point — the cost was never SOQL:
+     *
+     * 🔴 THE REAL CURRENCY IS FLS, AND THAT IS WHY THE NARROWING IS A WIN RATHER THAN TIDYING. This
+     * method is `WITH USER_MODE`, which THROWS on the WHOLE ROW for ONE inaccessible field, so a
+     * persona without FLS on `Lead.Property_Package__c` did not lose one column — THEY LOST THE
+     * ENTIRE LEAD FUNNEL HOMEPAGE (`LeadFunnelController.getFunnel` catches and shows its generic
+     * failure message). Removing the pair takes the homepage's FLS surface back down to the fields it
+     * actually displays. That is the trap ARCHITECTURE.md records for
+     * `InboundEmailStagingSelector.selectById`, which is why `Routing_Attempt_Count__c` was
+     * deliberately kept OUT of it.
+     *
+     * ⚠ THE PERMISSION SETS WERE NOT TOUCHED, AND MUST NOT BE "CLEANED UP" ON THE STRENGTH OF THIS.
+     * `Lead.Property_Package__c` stays granted readable in `DPEG_Acquisition_Edit`,
+     * `DPEG_Acquisition_View` and `Broker_Protection_Access` because `selectPackageAnchorById` below
+     * still reads it for the `c/packageSiblings` card. This method simply no longer DEPENDS on those
+     * grants.
+     * 🔴 A future field added here needs per-field grant verification in all three sets FIRST. Do not
+     * add one on the assumption that the sibling fields' grants cover it, and do not re-add these two
+     * without also restoring their DTO members and their client-side reader.
+     *
+     * ═══ WIDENED 2026-08-17 — `Extraction_Score_Pct__c`, AND THE RULE ABOVE WAS FOLLOWED ═══
+     * Added so `c/recentLeads`' renamed 'Score' column can show extraction COMPLETENESS beside the
+     * `Parse_Confidence__c` band it already showed. Per the pre-condition immediately above, the grant
+     * was verified PER SET BEFORE the field was added, not after:
+     *   • `DPEG_Acquisition_Edit`   — `Lead.Extraction_Score_Pct__c` readable=true, editable=true
+     *   • `DPEG_Acquisition_View`   — readable=true, editable=false
+     *   • `Broker_Protection_Access` — readable=true, editable=true
+     *   • (`DPEG_Admin_Access` also grants it — the §7 profile-restoration set)
+     * All four are declared IN-FILE, so they survive the REPLACE-not-merge behaviour of a permission
+     * set deploy. The three named sets are the ones that matter: a persona missing any one of them
+     * would not lose the Score column, it would lose the ENTIRE Lead Funnel homepage, because
+     * `WITH USER_MODE` throws on the WHOLE ROW for one inaccessible field and
+     * `LeadFunnelController.getFunnel` catches it into its generic failure message.
+     *
+     * ⚠ IT IS A DIFFERENT FACT FROM `Parse_Confidence__c` AND THE TWO MUST NOT BE CONFLATED — the
+     * field's own metadata comment is explicit. Confidence is the model's certainty about ONE
+     * question (`is_acquisition_related`, which the D2 hard relevance gate consumes); the score is
+     * what proportion of the nine signed-off deal-process keys were actually captured. A confident,
+     * correctly-classified email can be almost empty of deal facts. Both are selected, both are sent,
+     * and the client renders them as two distinct visual elements in one cell.
+     *
+     * ⚠ NULL IS MEANINGFUL HERE, NOT MISSING DATA. Scoring is fail-soft by mandate (the inbound email
+     * pipeline must never be made to throw), so a null reads "not scored" and is NOT zero. Do not
+     * coalesce it in this query, in the controller, or on the client.
+     *
      * @param maxRows Row cap (LIMIT); null / non-positive returns an empty list.
      * @return Open (non-converted) Leads with the funnel display + partition fields
      *         populated (Id, Name, Status, LeadSource, Parse_Confidence__c,
-     *         Guidance_Price__c, Broker_First__c, Property_Address__c, Asset_Type__c,
-     *         First_Seen_Date__c, CreatedDate, Broker_Priority__c) ordered
-     *         First_Seen_Date__c DESC NULLS LAST, CreatedDate DESC; empty when there
-     *         are no open Leads.
+     *         Extraction_Score_Pct__c, Guidance_Price__c, Broker_First__c,
+     *         Property_Address__c, Asset_Type__c, First_Seen_Date__c, CreatedDate,
+     *         Broker_Priority__c) ordered First_Seen_Date__c DESC NULLS LAST,
+     *         CreatedDate DESC; empty when there are no open Leads.
      */
     public static List<Lead> selectRecent(Integer maxRows) {
         if (maxRows == null || maxRows <= 0) {
             return new List<Lead>();
         }
         return [
-            SELECT Id, Name, Status, LeadSource, Parse_Confidence__c, Guidance_Price__c,
+            SELECT Id, Name, Status, LeadSource, Parse_Confidence__c,
+                   Extraction_Score_Pct__c, Guidance_Price__c,
                    Broker_First__c, Property_Address__c, Asset_Type__c,
                    First_Seen_Date__c, CreatedDate, Broker_Priority__c
             FROM Lead
@@ -200,6 +278,66 @@ public with sharing class LeadSelector {
             WITH USER_MODE
             ORDER BY First_Seen_Date__c DESC NULLS LAST, CreatedDate DESC
             LIMIT :maxRows
+        ];
+    }
+
+    /**
+     * The `Property_Package__c` one Lead belongs to — the ANCHOR read behind the
+     * `c/packageSiblings` card on the Lead record page.
+     *
+     * 🔴 IT LIVES HERE, NOT IN `PropertyPackageSelector`, AND THAT IS THE LAYERING RULE
+     * RATHER THAN A PREFERENCE. This is a query against LEAD, and
+     * .claude/rules/apex-layering-rule.md is explicit that all SOQL for an object lives in
+     * that object's selector and "nothing else queries it". `PropertyPackageSelector` owns
+     * the package-rooted read (which returns both member collections through relationship
+     * subqueries); this owns the Lead-rooted one. `OpportunitySelector
+     * .selectPackageAnchorById` is its exact twin — change both or neither.
+     *
+     * USER_MODE, per the §2 default: this backs a card on a record page the human already
+     * opened. It is NOT an automation path and must not be moved to SYSTEM_MODE; the FLS
+     * grants are declared in the three Acquisition permission sets.
+     *
+     * NOT-FOUND CONTRACT — an empty list, never null and never a throw. The controller
+     * treats "no row" and "no package" identically and renders nothing, so a stale Id on a
+     * record page is an ordinary answer rather than an error.
+     *
+     * ═══ ⚠ THE PACKAGE'S `Name` IS DELIBERATELY NOT SELECTED HERE (2026-08-17, review W2) ═══
+     * The spanning `Property_Package__r.Name` was in this SELECT and was REMOVED, because the only
+     * consumer — `PropertyPackageController.resolvePackageId` — reads `Property_Package__c` and
+     * nothing else; the card's heading comes from `PropertyPackageSelector.selectWithMembersById`,
+     * which selects `Name` off the package itself one query later. A parent traversal under
+     * `WITH USER_MODE` needs READ on the parent OBJECT as well as FLS on the field, so carrying it
+     * here was an extra, unused way for this anchor read to THROW — buying nothing.
+     *
+     * ⚠ AMENDED 2026-08-17 — THE COMPARISON THIS NOTE DREW IS NOW OBSOLETE, THOUGH THE RULE IS NOT.
+     * RETRACTED, verbatim: *"Do not 'restore it for symmetry' with `selectRecent`, which genuinely
+     * consumes the spanning field (`LeadFunnelController` maps it onto the funnel's Package column)
+     * and correctly keeps it."* `selectRecent` no longer selects `Property_Package__c` or the spanning
+     * `Property_Package__r.Name` at all — the funnel's Package column was retired the same day in
+     * favour of `c/recentPackages` — so there is no longer a sibling to be asymmetric with. The
+     * prohibition stands on its own merits regardless: an unconsumed spanning field is an extra way
+     * for this read to THROW under `WITH USER_MODE`, and the card's heading still comes from
+     * `PropertyPackageSelector.selectWithMembersById` one query later.
+     *
+     * @param leadId The Lead whose package to resolve; null returns an empty list WITHOUT
+     *               querying.
+     * @return At most one Lead (Id, Property_Package__c — the Id only, never the package's
+     *         Name); empty when `leadId` is null or matches no row.
+     * @throws System.QueryException when the running user lacks FLS on
+     *         `Lead.Property_Package__c`.
+     * @example
+     * List<Lead> rows = LeadSelector.selectPackageAnchorById(recordId);
+     */
+    public static List<Lead> selectPackageAnchorById(Id leadId) {
+        if (leadId == null) {
+            return new List<Lead>();
+        }
+        return [
+            SELECT Id, Property_Package__c
+            FROM Lead
+            WHERE Id = :leadId
+            WITH USER_MODE
+            LIMIT 1
         ];
     }
 

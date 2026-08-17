@@ -938,12 +938,20 @@
     <!-- FSD Tranche 2 finding (2026-08-16, coordinator): Opportunity.Amount had NO FLS grant in
          any deployable permission set anywhere in this repo - only in profiles/**, which is
          .forceignore'd and never deploys. OpportunitySelector.selectTopByAmount (new,
-         topLargestDeals card) is WITH USER_MODE, and a USER_MODE query throws on the WHOLE ROW
-         for one inaccessible field - the new card would render its error banner for every
+         topLargestDeals card) was WITH USER_MODE, and a USER_MODE query throws on the WHOLE ROW
+         for one inaccessible field - the new card would have rendered its error banner for every
          persona, including a bare System Administrator. Not part of A6 (which covers only the
          fields created by this tranche); Amount is a long-standing standard field granted here
          for the first time. Reconciled against usman-dpeg before this edit: the org carried zero
-         FieldPermissions rows for Opportunity.Amount on this set, so this is a clean addition. -->
+         FieldPermissions rows for Opportunity.Amount on this set, so this is a clean addition.
+
+         ⚠ RETIRED 2026-08-17: selectTopByAmount was renamed to selectTopActiveByAskingPrice and
+         no longer selects Amount - see that method's own header comment in
+         OpportunitySelector.cls (~line 271), which carries the retirement note. This grant is no
+         longer that method's consumer. Do NOT infer the grant may now be dropped on that basis
+         alone: layouts, list views and org-side reports name Opportunity.Amount directly,
+         independent of this selector, and removing an FLS grant needs its own evidence that
+         nothing else reads the field. -->
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Amount</field>
@@ -962,11 +970,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Broker_First_Seen__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.Bundle_LOI__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <!-- ADDED 2026-08-14, Acquisition Observations Phase 4 (declarative-only field add).
@@ -1101,11 +1104,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.Is_Portfolio_Parent__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Opportunity.Lead_Approved_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1231,11 +1229,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Placer_URL__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1720,6 +1713,67 @@
         <field>Property__c.SharePoint_Folder_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        Property_Package__c (Multi-Property Email Package Grouping, 2026-08-17). New object; every
+        field grant here is FULL editable+editable, matching how this Edit set treats every sibling
+        Broker Protection pipeline-written object (Property_Registry__c above, Competing_Broker_
+        Submission__c is DPEG_Apex_Access-adjacent). The three lookups (Lead/Opportunity/Property__c
+        .Property_Package__c) are also granted editable+readable here so an analyst can hand-correct
+        a mis-grouped record. 🔴 CORRECTED 2026-08-17 (later same day): this comment originally
+        read "LeadSelector.selectRecent is WITH USER_MODE and now selects Lead.Property_Package__c
+        — a missing grant here would throw the WHOLE Lead Funnel homepage query for this persona,
+        not merely hide the new package column." That claim is retired, not merely reworded: the
+        recentLeads Package column was removed and `LeadSelector.selectRecent` no longer selects
+        `Property_Package__c` at all. The `Lead.Property_Package__c` grant below is still
+        load-bearing, but now for a DIFFERENT consumer: `LeadSelector.selectPackageAnchorById`,
+        which backs the `c/packageSiblings` "Same Email" card on the Lead record page. The grant
+        itself is unchanged.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Property_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Received_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Routed_Outcomes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property_Package__c.Source_Staging_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Property_Package__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Property_Package__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Property_Package__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Acquisition Edit</label>
     <objectPermissions>
@@ -1729,6 +1783,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Opportunity</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property_Package__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

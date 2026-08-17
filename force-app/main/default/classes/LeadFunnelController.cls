@@ -84,6 +84,12 @@ public with sharing class LeadFunnelController {
             r.status = l.Status;
             r.channel = l.LeadSource;
             r.confidence = l.Parse_Confidence__c;
+            // ⚠ NOT COALESCED, AND THAT IS THE CONTRACT. A null Extraction_Score_Pct__c means "not
+            // scored" (scoring is fail-soft by mandate — the inbound email pipeline must never be made
+            // to throw), which is NOT the same fact as a score of 0. Defaulting it here would tell an
+            // analyst that a lead captured none of the nine deal-process keys when in truth the score
+            // could not be computed. The client renders null as its own neutral state.
+            r.extractionScore = l.Extraction_Score_Pct__c;
             r.price = l.Guidance_Price__c;
             r.broker = l.Broker_First__c;
             r.assetType = l.Asset_Type__c;
@@ -142,12 +148,56 @@ public with sharing class LeadFunnelController {
         }
     }
 
+    /**
+     * One row of the funnel's recent-leads list — exactly the fields `c/recentLeads` renders.
+     *
+     * ═══ ⚠ SUPERSEDED 2026-08-17 — `packageId` / `packageName` WERE HERE AND WERE REMOVED ═══
+     * They carried the multi-property `Property_Package__c` a Lead arrived on, so `c/recentLeads`
+     * could show a 'Package' column. RETRACTED, verbatim, from their own Javadoc: *"The client builds
+     * the link from `packageId` and shows `packageName`, and MUST render an empty cell when the Id is
+     * null rather than a dead link."*
+     *
+     * That is no longer true because the COLUMN is gone. The dedicated `c/recentPackages` widget now
+     * sits on the same homepage and reads `Property_Package__c` directly — with its own sort and its
+     * own server-side cutoff — so it does not inherit the priority partitioning below, which could
+     * push a package's own Leads past this list's 5-row cutoff. With that card present the column was
+     * redundant, and these two members had no reader left.
+     *
+     * 🔴 DO NOT RE-ADD A MEMBER NO CLIENT READS. Every `@AuraEnabled` member here costs a field in
+     * `LeadSelector.selectRecent`'s `WITH USER_MODE` SELECT, and USER_MODE throws on the WHOLE ROW for
+     * ONE inaccessible field — so an unconsumed member is a live way for the entire Lead Funnel
+     * homepage to fail for a persona in exchange for nothing on screen. Removing these two also
+     * removed `Property_Package__c` and the spanning `Property_Package__r.Name` from that SELECT.
+     * `LeadFunnelControllerTest.getFunnel_leadRowCarriesNoPackageMembers` is the falsifier.
+     */
     public class LeadRow {
         @AuraEnabled public String id;
         @AuraEnabled public String name;
         @AuraEnabled public String status;
         @AuraEnabled public String channel;
+        /** `Parse_Confidence__c` — HIGH / MEDIUM / LOW certainty about `is_acquisition_related`. */
         @AuraEnabled public String confidence;
+        /**
+         * `Extraction_Score_Pct__c` — 0-100, the percent of the nine signed-off DEAL-PROCESS
+         * extraction keys captured from the broker email. Added 2026-08-17 for the renamed 'Score'
+         * column, which renders it beside `confidence` in ONE cell as TWO distinct elements.
+         *
+         * 🔴 A DIFFERENT FACT FROM `confidence`, AND THEY MUST NEVER BE CONFLATED OR BLENDED INTO ONE
+         * NUMBER. The field's own metadata comment states it: confidence measures certainty about a
+         * single classification question, the score measures how COMPLETE the extraction was. A
+         * confident, correctly-classified email can be almost empty of deal facts, and an unconfident
+         * one can be complete — so a high confidence does NOT imply a high score and a low score does
+         * NOT impeach the classification. Sharing a cell is a display decision; averaging, ranking or
+         * deriving one from the other is a defect.
+         *
+         * ⚠ NULLABLE, AND NULL IS A VALUE. It reads "not scored", never zero (scoring is fail-soft by
+         * mandate). Do not coalesce it here or on the client.
+         *
+         * ⚠ It costs `Lead.Extraction_Score_Pct__c` in `LeadSelector.selectRecent`'s `WITH USER_MODE`
+         * SELECT — the grant was verified in `DPEG_Acquisition_Edit`, `DPEG_Acquisition_View` and
+         * `Broker_Protection_Access` before it was added; see that method's header.
+         */
+        @AuraEnabled public Decimal extractionScore;
         @AuraEnabled public Decimal price;
         @AuraEnabled public String broker;
         @AuraEnabled public String assetType;

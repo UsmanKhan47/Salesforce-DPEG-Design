@@ -4,7 +4,7 @@ description: "MUST BE USED as the FINAL STEP after all development and testing i
 model: opus
 color: red
 memory: local
-tools: Read, Write, Edit, Glob, Grep
+tools: Read, Write, Edit, Glob, Grep, mcp__salesforce__deploy_metadata, mcp__salesforce__retrieve_metadata, mcp__salesforce__run_soql_query, mcp__salesforce__run_apex_test, mcp__salesforce__get_username, mcp__salesforce__list_all_orgs
 ---
 
 # Salesforce DevOps Agent

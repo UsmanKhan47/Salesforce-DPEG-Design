@@ -1,1 +1,0 @@
-- [LWC Jest scoped run](lwc-jest-scoped-run.md) — the benign "not recognized ... undefined" warning; trust the PASS summary, auto-stubbed LDS/apex modules

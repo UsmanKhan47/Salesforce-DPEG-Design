@@ -17,6 +17,20 @@
                 <identifier>recentOpportunitiesComponent</identifier>
             </componentInstance>
         </itemInstances>
+        <!--
+            recentPackages (2026-08-17 addendum). A dedicated widget reading Property_Package__c
+            directly, so it is NOT subject to LeadFunnelController's priority-partition + 5-row
+            slice that can push a package's own Leads past recentLeads' visible cutoff (proven with
+            a direct server call - not a permission/FLS/deploy defect). Placed in region2, not
+            region3, because it is a datatable card the same width/shape as recentOpportunities and
+            recentLeads, not a narrow summary card like region3's contents.
+        -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>recentPackages</componentName>
+                <identifier>recentPackagesComponent</identifier>
+            </componentInstance>
+        </itemInstances>
         <itemInstances>
             <componentInstance>
                 <componentName>recentLeads</componentName>
