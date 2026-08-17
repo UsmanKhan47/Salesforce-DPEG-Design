@@ -709,11 +709,27 @@ private class ContractExecutionServiceTest {
 
         Test.startTest();
         // Back out and re-execute — the real route a deal takes when Legal corrects a status.
-        // ⚠ 'Ready for Execution' is a real Negotiation_Status__c value (the picklist is
-        // Draft / Negotiation / Signed / Ready for Execution / Initial Draft / Revised / Executed);
-        // this must stay a value that actually exists, or the update silently fails the restricted
-        // picklist and the second 'Executed' write is not a TRANSITION at all.
-        update new Contract_Review__c(Id = cr.Id, Negotiation_Status__c = 'Ready for Execution');
+        //
+        // ═══ 🔴 CORRECTED 2026-08-17. THIS LINE WAS 'Ready for Execution' AND HAD BEEN RED SINCE
+        // AT LEAST 2026-08-12 with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. The retracted comment
+        // read, verbatim: "'Ready for Execution' is a real Negotiation_Status__c value (the
+        // picklist is Draft / Negotiation / Signed / Ready for Execution / Initial Draft /
+        // Revised / Executed); this must stay a value that actually exists."
+        // Every word of that is still true OF THE FIELD, and that is precisely the mistake: it
+        // checked the FIELD's value set and not the RECORD TYPE's. `dealAtPsa()` builds an
+        // ACQUISITION deal, so its auto-created Contract Review is on Acquisition_PSA, which after
+        // P3-D3 exposes only Draft / Negotiation / Signed / Executed. 'Ready for Execution' is a
+        // DISPOSITION_PSA value.
+        // 🔴 AND NOTE WHAT THE FAILURE ITSELF PROVES, because repo prose says the opposite in
+        // several places: 'Ready for Execution' is ACTIVE on the field (verified in the org via
+        // the describe — all seven values active, restrictedPicklist = true), so this rejection
+        // cannot be field-level restriction. APEX DML DOES ENFORCE RECORD-TYPE-SCOPED PICKLIST
+        // VALUES on a restricted picklist. Do not re-derive "record-type restriction is UI-only"
+        // from any surviving comment; see RecordStageAdvanceServiceTest.
+        // 'Signed' is the acquisition sequence's own immediate predecessor of 'Executed', so the
+        // back-out is now BOTH legal and semantically the step Legal would actually take.
+        // ═══════════════════════════════════════════════════════════════════════════════════════
+        update new Contract_Review__c(Id = cr.Id, Negotiation_Status__c = 'Signed');
         update new Contract_Review__c(Id = cr.Id, Negotiation_Status__c = 'Executed');
         Test.stopTest();
 

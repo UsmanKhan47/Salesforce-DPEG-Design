@@ -796,6 +796,18 @@ private class TaskSelectorTest {
     // code ever reached the Task read this test exists to pin — discriminating nothing, since
     // that failure is identical whether TaskSelector uses WITH USER_MODE or WITH SYSTEM_MODE.
     //
+    // ⚠ AMENDED 2026-08-17 — ROUTE A WAS RIGHT AND INCOMPLETE. Moving the fixture DML out of
+    // `runAs` removed the CRUD obstacle but silently introduced a SHARING one: the Task was then
+    // owned by the test-running admin, Activity is `sharingModel Private` here with no sharing
+    // rules, and SYSTEM_MODE bypasses FLS/CRUD but NEVER sharing — so the restricted principal saw
+    // ZERO rows and the two FLS pins below failed `Expected: 1, Actual: 0`. That reads as "the
+    // SYSTEM_MODE fix does not work" and is nothing of the kind. Both now set
+    // `OwnerId = minAccessUser.Id` on the fixture Task, which is what the two
+    // ..._systemModeDoesNotBypassSharing_... tests further down were ALREADY doing — they passed
+    // throughout for exactly that reason, and the discrepancy between the two halves of this
+    // section was the tell. Ownership is the correct isolation: it holds record visibility
+    // CONSTANT so the only variable left is the withheld FLS, which is what these two pin.
+    //
     // THE FIX (Route A). None of the four tests below perform ANY DML on Transaction__c or
     // Onboarding__c as the restricted principal. The parent record (and the Task itself) is
     // created in the DEFAULT test-running context — full access, no `runAs` — and the restricted
@@ -833,10 +845,22 @@ private class TaskSelectorTest {
 
         // Parent + Task created in the default (full-access) context — the restricted principal
         // below never performs any DML at all; it only reads.
+        //
+        // 🔴 OwnerId IS LOAD-BEARING (added 2026-08-17). Without it the Task is owned by the
+        // test-running admin, and Activity's sharing model in this org is Private
+        // (objects/Activity/Activity.object-meta.xml, no sharingRules anywhere in the repo), so
+        // minAccessUser could not see the row AT ALL and this test failed `Expected: 1, Actual: 0`
+        // — reading as a broken fix when nothing was broken. WITH SYSTEM_MODE bypasses FLS and
+        // CRUD and NEVER sharing (that is the whole point of the sibling
+        // ..._systemModeDoesNotBypassSharing_... pins below, which already set OwnerId for exactly
+        // this reason). Making the restricted principal the OWNER isolates the ONE variable this
+        // test is about — the withheld Transaction_Deal__c FLS — from record visibility, which is
+        // a different question with its own dedicated test.
         Transaction__c t = TestDataFactory.createTransaction(null, null, false);
         TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
         insert t;
-        insert new Task(Transaction_Deal__c = t.Id, Subject = 'Sign PSA', Status = 'Completed');
+        insert new Task(Transaction_Deal__c = t.Id, Subject = 'Sign PSA', Status = 'Completed',
+            OwnerId = minAccessUser.Id);
 
         Test.startTest();
         System.runAs(minAccessUser) {
@@ -866,9 +890,15 @@ private class TaskSelectorTest {
             insert minAccessUser;
         }
 
+        // 🔴 OwnerId is load-bearing for the same reason given in the sibling test above: Activity
+        // is Private in this org, WITH SYSTEM_MODE never bypasses sharing, and an admin-owned
+        // fixture Task is invisible to this persona — which failed as `Expected: 1, Actual: 0` and
+        // looked like the SYSTEM_MODE fix not working. Ownership isolates the withheld
+        // Onboarding__c / Onboarding_Status__c FLS from record visibility.
         Onboarding__c o = TestDataFactory.createOnboarding(null, false);
         insert o;
-        insert new Task(Onboarding__c = o.Id, Subject = 'Set up meters', Onboarding_Status__c = 'Not Started');
+        insert new Task(Onboarding__c = o.Id, Subject = 'Set up meters', Onboarding_Status__c = 'Not Started',
+            OwnerId = minAccessUser.Id);
 
         Test.startTest();
         System.runAs(minAccessUser) {

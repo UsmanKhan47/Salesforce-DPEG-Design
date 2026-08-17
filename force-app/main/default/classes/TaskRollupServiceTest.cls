@@ -144,82 +144,143 @@ private class TaskRollupServiceTest {
     // no permission-set grant on that field — rolling back all 82 Task inserts. See
     // TaskSelector.selectByTransactionDealIds's own Javadoc for the full incident.
     //
-    // ⚠ ROUTE B, REVISED 2026-08-05 after a failed deploy (job 0Afiw000000FALdCAO). These two
-    // tests need the restricted principal to insert the checklist Task ITSELF (to fire the
-    // trigger under their own identity, exactly as production did) — unlike TaskSelectorTest's
-    // selector-level pins, there is no read-only escape hatch here: the Task insert is plain,
-    // unenforced DML, and TaskRollupService.recalc's own `update` of Transaction__c is too. Both
-    // of those are OBJECT-level CRUD checks (Create on Task, Edit on Transaction__c) that ARE
-    // enforced by the platform for ordinary DML even without any WITH clause — this is what the
-    // first version of this test got wrong: it built a `Minimum Access - Salesforce` user with
-    // ZERO permission set assignments, and that profile grants NO object CRUD on Transaction__c
-    // at all, so the parent-record work threw `System.SecurityException: Access to entity
-    // 'Transaction__c' denied` before the Task-FLS behavior under test was ever reached.
+    // ═══ 🔴 REWRITTEN 2026-08-17. THE PREVIOUS "ROUTE B" WAS STRUCTURALLY IMPOSSIBLE ══════════
+    // These two tests had been red since at least 2026-08-12 (they were committed PARKED, see
+    // commit ebd700e "PARKED / NOT DEPLOYED"). Two separate, compounding causes, both measured
+    // against usman-dpeg on 2026-08-17 rather than reasoned about:
     //
-    // The fix mirrors the real production principal (someone who can work with Transaction__c but
-    // lacks the Task checklist FLS) by assigning exactly two permission sets, verified by reading
-    // both files' metadata directly rather than assumed:
-    //   - DPEG_Transaction_Edit    -> Transaction__c/Critical_Date__c object CRUD + FLS on their
-    //     OWN fields (needed for the rollup's own `update Transaction__c`). Declares NO Task
-    //     field permissions at all.
-    //   - Broker_Protection_Access -> Task object CRUD (Create/Read/Edit — needed for the
-    //     checklist Task insert itself). Its Task field grants are ActivityDate/Description/
-    //     WhatId (plus WhoId and RFC-threading fields granted for its own, unrelated feature) —
-    //     NONE of Transaction_Deal__c, Onboarding__c, or Onboarding_Status__c. It is a
-    //     cross-module borrow purely for this object-CRUD grant: it is the ONLY permission set in
-    //     the repo that grants Task CRUD without ALSO granting the checklist FLS this test needs
-    //     withheld (DPEG_Task_Edit and DPEG_TaskChecklist_View are the only two sets in the repo
-    //     that declare Task.Transaction_Deal__c, and neither is assigned here).
+    // CAUSE 1 — the persona could not create a Task, and no permission set could ever fix it.
+    // The old fixture ran on `Minimum Access - Salesforce` and assigned Broker_Protection_Access,
+    // claiming that set supplied "Task object CRUD (Create/Read/Edit)". That was read off the
+    // permission set FILE, which does declare <object>Task</object> with allowCreate=true. It is
+    // not what the org has:
+    //     SELECT SobjectType, COUNT(Id) FROM ObjectPermissions
+    //     WHERE SobjectType IN ('Task','Event','Transaction__c','Lead') GROUP BY SobjectType
+    //       -> Lead 53, Transaction__c 8, Task ABSENT, Event ABSENT
+    // ZERO ObjectPermissions rows exist for Task/Event anywhere in this org, on any permission set
+    // OR profile: Activity CRUD is not permission-set-grantable here, the platform accepts the
+    // block on deploy and stores nothing. It lives on the PROFILE as its own boolean —
+    //     SELECT Name, PermissionsEditTask FROM Profile
+    //       -> Minimum Access - Salesforce = false     Standard User = true
+    // — so the assignment was inert and the tests failed `System.TypeException: DML operation
+    // INSERT not allowed on Task`. The persona now runs on `Standard User`, the least-privileged
+    // profile in this org that can create a Task at all. It still grants NO FLS on any
+    // Metadata-API-deployed custom field, so it costs the test nothing (see the DISCRIMINATION
+    // section below). Broker_Protection_Access is dropped: an inert assignment carrying a comment
+    // that explains its non-existent purpose is how the next reader loses another day.
     //
-    // These two tests reproduce the EXACT trigger-fired path (no direct selector call) and assert
-    // the insert now SUCCEEDS. Deliberately no try/catch: on the OLD code, TaskRollupTrigger's
-    // uncaught QueryException surfaces at this `insert` statement as a System.DmlException, which
-    // fails the test method outright — that failure IS the regression pin.
-    // ─────────────────────────────────────────────────────────────────────────
+    // CAUSE 2 — 🔴 AND THIS IS THE ONE THAT KILLS ROUTE B OUTRIGHT. With CRUD fixed, the insert
+    // then failed `System.DmlException: Operation failed due to fields being inaccessible on
+    // Sobject Task`. Ordinary DML on Task in this org is FLS-enforced, and the ONLY custom field
+    // the bulk fixture writes is Transaction_Deal__c — so it is that field, by elimination.
+    // ⇒ INSERTING THE FIXTURE REQUIRES EDIT FLS ON EXACTLY THE FIELD THIS TEST MUST WITHHOLD, and
+    // FLS edit implies read, so there is no grant that satisfies both halves. "Have the restricted
+    // principal insert the checklist Task itself" is not a fixture that needs more permissions —
+    // it is a self-contradiction, and no amount of permission-set work reaches it.
+    //
+    // THE FIX — FIRE THE TRIGGER WITH AN UPDATE, NOT AN INSERT. The fixture (parent + checklist
+    // Tasks) is built in the DEFAULT full-access context and OWNED BY the persona; the persona
+    // then edits a STANDARD field on its own Task inside System.runAs, which re-fires
+    // TaskRollupTrigger under THEIR identity and runs the exact selector call the incident died
+    // on. Nothing about the property under test is lost:
+    //   - the recompute still runs inside a trigger, on the persona's behalf, with no FLS on
+    //     Transaction_Deal__c — that is the whole claim;
+    //   - a USER_MODE query still throws `No such column 'Transaction_Deal__c' on entity 'Task'`,
+    //     still escapes as CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, and still rolls back the
+    //     persona's own DML. Only which DML gets rolled back changed.
+    // It is also the REACHABLE form of the defect: a principal with no FLS on Transaction_Deal__c
+    // can never insert a checklist Task in the first place, so the only way they ever reach this
+    // trigger in production is by editing one — marking a checklist item complete, exactly what
+    // OnboardingService.completeTask does on the sibling module.
+    // ⚠ The fixture Tasks MUST be owned by the persona. Activity is `sharingModel Private` here
+    // with no sharing rules, so an admin-owned Task is invisible to them and the recompute would
+    // silently count zero — the identical trap that was independently costing TaskSelectorTest's
+    // two Route A pins their green (fixed in the same pass).
+    //
+    // DISCRIMINATION — the property the whole test exists for, verified rather than assumed:
+    //     SELECT Parent.Name, Parent.IsOwnedByProfile FROM FieldPermissions
+    //     WHERE Field = 'Task.Transaction_Deal__c'
+    //       -> DPEG_Transaction_Team, DPEG_Junior_Analyst_PSG, DPEG_TaskChecklist_View,
+    //          DPEG_Task_Edit, sfdc_slack  —  ALL IsOwnedByProfile = false.
+    // NO PROFILE grants it, `Standard User` included, and none of those four sets is assigned
+    // below. Restore `WITH USER_MODE` on TaskSelector.selectByTransactionDealIds and both tests go
+    // RED again at the persona's `update`. ⚠ If a future admin ever grants
+    // Task.Transaction_Deal__c at the PROFILE level, these tests silently stop discriminating —
+    // re-run the query above before trusting a green result.
+    //
+    // ⚠ RENAMED in the same pass: `..._triggerFiredInsertSucceeds_...` would now be a lie, since
+    // the trigger is fired by an update. Old -> new is
+    //   testRecalc_minimumAccessUserNoFLS_triggerFiredInsertSucceeds_pinsThe82TaskProductionIncident
+    //     -> testRecalc_noFlsUser_triggerFiredRecomputeSucceeds_pinsThe82TaskProductionIncident
+    //   testRecalc_minimumAccessUserNoFLS_bulk251_triggerFiredInsertSucceedsAcrossSecondBatchChunk
+    //     -> testRecalc_noFlsUser_bulk251_triggerFiredRecomputeSucceedsAcrossSecondBatchChunk
+    //
+    // Deliberately no try/catch in either: on the OLD code the trigger's uncaught QueryException
+    // surfaces at the persona's DML statement as a System.DmlException and fails the method
+    // outright — that failure IS the regression pin.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * 🔴 REGRESSION PIN — reproduces the production failure this session's TaskSelector change
-     * fixes, at small scale (mirroring the shape of the real incident, which happened at 82
-     * Tasks in one trigger batch chunk).
+     * 🔴 REGRESSION PIN — reproduces the production failure the TaskSelector WITH SYSTEM_MODE
+     * change fixes, at small scale (the real incident happened at 82 Tasks in one trigger batch
+     * chunk). The persona edits its own checklist Task, which re-fires TaskRollupTrigger under
+     * their identity; the rollup then reads Transaction_Deal__c — the field they have no FLS on.
      */
     @isTest
-    static void testRecalc_minimumAccessUserNoFLS_triggerFiredInsertSucceeds_pinsThe82TaskProductionIncident() {
-        User minAccessUser = buildMinimumAccessUser('rollupFlsA');
+    static void testRecalc_noFlsUser_triggerFiredRecomputeSucceeds_pinsThe82TaskProductionIncident() {
+        User noFlsUser = buildTaskCapableNoFlsUser('rollupFlsA');
         System.runAs(new User(Id = UserInfo.getUserId())) {
-            insert minAccessUser;
-            assignPermissionSets(minAccessUser.Id, new Set<String>{ 'DPEG_Transaction_Edit', 'Broker_Protection_Access' });
+            insert noFlsUser;
+            assignPermissionSets(noFlsUser.Id, new Set<String>{ 'DPEG_Transaction_Edit' });
         }
 
-        Id txnId;
-        Test.startTest();
-        System.runAs(minAccessUser) {
-            Transaction__c t = TestDataFactory.createTransaction(null, null, false);
-            TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-            insert t; // Create CRUD on Transaction__c comes from DPEG_Transaction_Edit
-            txnId = t.Id;
+        // Fixture built in the DEFAULT full-access context — writing Transaction_Deal__c needs
+        // edit FLS this persona must NOT have (see the design note above). OWNED BY the persona:
+        // Activity is Private here, so an admin-owned Task would be invisible to the recompute and
+        // the rollup would count zero, and the persona must own the Transaction__c for the
+        // rollup's own `update` to pass sharing (DPEG_Transaction_Edit grants View All, not
+        // Modify All).
+        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
+        t.OwnerId = noFlsUser.Id;
+        insert t;
+        Id txnId = t.Id;
 
-            // Mirrors TaskFanoutQueueable's Day-0 checklist shape (Transaction_Deal__c +
-            // Task_Group__c) — the exact insert that rolled back in production under WITH USER_MODE.
-            // Create CRUD on Task comes from Broker_Protection_Access; neither assigned permission
-            // set grants FLS on Transaction_Deal__c.
-            insert new List<Task>{
-                new Task(Transaction_Deal__c = txnId, Subject = 'Sign PSA', Status = 'Completed',
-                    Task_Group__c = 'A. Contract Execution & Title Opening', Task_Sequence__c = 1),
-                new Task(Transaction_Deal__c = txnId, Subject = 'Open Escrow', Status = 'Not Started',
-                    Task_Group__c = 'A. Contract Execution & Title Opening', Task_Sequence__c = 2,
-                    ActivityDate = Date.today().addDays(-1))
+        // Mirrors TaskFanoutQueueable's Day-0 checklist shape (Transaction_Deal__c + Task_Group__c).
+        List<Task> checklist = new List<Task>{
+            new Task(Transaction_Deal__c = txnId, Subject = 'Sign PSA', Status = 'Completed',
+                Task_Group__c = 'A. Contract Execution & Title Opening', Task_Sequence__c = 1,
+                OwnerId = noFlsUser.Id),
+            new Task(Transaction_Deal__c = txnId, Subject = 'Open Escrow', Status = 'Not Started',
+                Task_Group__c = 'A. Contract Execution & Title Opening', Task_Sequence__c = 2,
+                ActivityDate = Date.today().addDays(-1), OwnerId = noFlsUser.Id)
+        };
+        insert checklist;
+
+        Test.startTest();
+        System.runAs(noFlsUser) {
+            // The reachable form of the incident: the persona touches a STANDARD field on its own
+            // checklist Task (it cannot write Transaction_Deal__c, and does not). That re-fires
+            // TaskRollupTrigger -> TaskRollupService -> selectByTransactionDealIds under THEIR
+            // identity. Under the reverted WITH USER_MODE the query throws `No such column
+            // 'Transaction_Deal__c' on entity 'Task'`, escapes as
+            // CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY and rolls this update back — no try/catch, so
+            // that surfaces here as a DmlException and fails the method. That failure IS the pin.
+            update new List<Task>{
+                new Task(Id = checklist[0].Id, Status = 'Completed'),
+                new Task(Id = checklist[1].Id, Status = 'Not Started')
             };
         }
         Test.stopTest();
 
         Transaction__c reloaded = [SELECT Tasks_Complete__c, Tasks_Overdue__c FROM Transaction__c WHERE Id = :txnId];
         System.assertEquals(1, reloaded.Tasks_Complete__c,
-            'The insert (and the trigger-fired rollup recompute it caused) succeeded for a principal '
-            + 'who can work with Transaction__c but has no FLS grant on Transaction_Deal__c, and '
-            + 'counted the one completed checklist Task');
+            'The persona\'s own edit (and the trigger-fired rollup recompute it caused) succeeded '
+            + 'for a principal who can work with Transaction__c but has no FLS grant on '
+            + 'Transaction_Deal__c, and counted the one completed checklist Task');
         System.assertEquals(1, reloaded.Tasks_Overdue__c,
             'The open, past-due checklist Task is also counted, proving the rollup arithmetic — not '
-            + 'just the insert — completed correctly under this persona');
+            + 'just the DML — completed correctly under this persona');
     }
 
     /**
@@ -229,52 +290,72 @@ private class TaskRollupServiceTest {
      * across both chunks, not just the first.
      */
     @isTest
-    static void testRecalc_minimumAccessUserNoFLS_bulk251_triggerFiredInsertSucceedsAcrossSecondBatchChunk() {
-        User minAccessUser = buildMinimumAccessUser('rollupFlsB');
+    static void testRecalc_noFlsUser_bulk251_triggerFiredRecomputeSucceedsAcrossSecondBatchChunk() {
+        User noFlsUser = buildTaskCapableNoFlsUser('rollupFlsB');
         System.runAs(new User(Id = UserInfo.getUserId())) {
-            insert minAccessUser;
-            assignPermissionSets(minAccessUser.Id, new Set<String>{ 'DPEG_Transaction_Edit', 'Broker_Protection_Access' });
+            insert noFlsUser;
+            assignPermissionSets(noFlsUser.Id, new Set<String>{ 'DPEG_Transaction_Edit' });
         }
 
-        Id txnId;
-        Test.startTest();
-        System.runAs(minAccessUser) {
-            Transaction__c t = TestDataFactory.createTransaction(null, null, false);
-            TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
-            insert t;
-            txnId = t.Id;
+        // Fixture in the default full-access context, owned by the persona — see the sibling test
+        // above and the design note for why both halves of that are load-bearing.
+        Transaction__c t = TestDataFactory.createTransaction(null, null, false);
+        TestDataFactory.applyOverrides(t, new Map<String, Object>{ 'Contract_Executed_Date__c' => null });
+        t.OwnerId = noFlsUser.Id;
+        insert t;
+        Id txnId = t.Id;
 
-            List<Task> tasks = new List<Task>();
-            for (Integer i = 0; i < 150; i++) {
-                tasks.add(new Task(Transaction_Deal__c = txnId, Subject = 'Complete ' + i, Status = 'Completed'));
+        List<Task> tasks = new List<Task>();
+        for (Integer i = 0; i < 150; i++) {
+            tasks.add(new Task(Transaction_Deal__c = txnId, Subject = 'Complete ' + i, Status = 'Completed',
+                OwnerId = noFlsUser.Id));
+        }
+        for (Integer i = 0; i < 101; i++) {
+            tasks.add(new Task(Transaction_Deal__c = txnId, Subject = 'Open ' + i, Status = 'Not Started',
+                ActivityDate = Date.today().addDays(10), OwnerId = noFlsUser.Id));
+        }
+        insert tasks;
+
+        Test.startTest();
+        System.runAs(noFlsUser) {
+            // 251 Tasks re-touched in ONE DML by the persona -> TaskRollupTrigger fires across a
+            // SECOND batch chunk under their identity, which is the property this bulk companion
+            // exists for (.claude/rules/bulk-test-rule.md). Standard field only: the persona
+            // cannot write Transaction_Deal__c and must not need to.
+            List<Task> touched = new List<Task>();
+            for (Task existing : tasks) {
+                touched.add(new Task(Id = existing.Id, Status = existing.Status));
             }
-            for (Integer i = 0; i < 101; i++) {
-                tasks.add(new Task(Transaction_Deal__c = txnId, Subject = 'Open ' + i, Status = 'Not Started',
-                    ActivityDate = Date.today().addDays(10)));
-            }
-            insert tasks; // 251 Tasks, one DML -> forces a second TaskRollupTrigger batch chunk
+            update touched;
         }
         Test.stopTest();
 
         Transaction__c reloaded = [SELECT Tasks_Complete__c, Tasks_Overdue__c FROM Transaction__c WHERE Id = :txnId];
         System.assertEquals(150, reloaded.Tasks_Complete__c,
-            'All 150 completed Tasks are counted after a 251-row insert that crosses a second trigger '
-            + 'batch chunk');
+            'All 150 completed Tasks are counted after the persona\'s 251-row update, which crosses '
+            + 'a second trigger batch chunk');
         System.assertEquals(0, reloaded.Tasks_Overdue__c,
             'The 101 open Tasks have a future ActivityDate, so none are overdue');
 
         Integer totalTasks = [SELECT COUNT() FROM Task WHERE Transaction_Deal__c = :txnId];
-        System.assertEquals(251, totalTasks, 'All 251 Tasks were inserted in the single bulk DML');
+        System.assertEquals(251, totalTasks, 'All 251 Tasks are present and were re-touched in a single bulk DML');
     }
 
     /**
-     * Builds (but does not insert) a user on the 'Minimum Access - Salesforce' profile. By itself
-     * this profile grants NO object CRUD on any custom object and NO FLS on any custom field.
-     * Each test assigns exactly the permission sets it needs via assignPermissionSets below — see
-     * the design note above this section for which, and why.
+     * Builds (but does not insert) a user on the `Standard User` profile — the LEAST-privileged
+     * profile in this org that can create a Task at all (`PermissionsEditTask = true`, measured;
+     * `Minimum Access - Salesforce` is `false`, and no permission set can supply it because Task
+     * has zero ObjectPermissions rows org-wide — see the design note above this section).
+     *
+     * 🔴 What the profile does NOT give is the point: it grants NO FLS on any Metadata-API-
+     * deployed custom field, so this persona still cannot read Task.Transaction_Deal__c. That is
+     * the single fact the regression pins depend on. Each test assigns, via assignPermissionSets
+     * below, only the custom-OBJECT CRUD it needs — never a set that declares the withheld Task
+     * fields (DPEG_Task_Edit / DPEG_TaskChecklist_View / DPEG_Transaction_Team must never be
+     * assigned here).
      */
-    private static User buildMinimumAccessUser(String tag) {
-        Profile minimumAccessProfile = [SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1];
+    private static User buildTaskCapableNoFlsUser(String tag) {
+        Profile minimumAccessProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
         String unique = tag + String.valueOf(Datetime.now().getTime())
             + String.valueOf(Math.abs(Crypto.getRandomInteger()));
         return new User(

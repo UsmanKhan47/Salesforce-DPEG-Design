@@ -173,22 +173,41 @@ private class OpportunityApprovalControllerTest {
 
     @isTest
     static void submitFailureMapsToGenericMessage() {
-        // An UNEXPECTED failure (a deleted / inaccessible deal) must surface the fixed generic
+        // An UNEXPECTED failure (a deal Id that resolves to no row) must surface the fixed generic
         // message, not raw platform text: the service lets the QueryException propagate raw and
         // the controller's generic catch maps it to SUBMIT_FAILURE_MESSAGE (code-review W2). Do
         // not assert the message text (AuraHandledException.getMessage() is unreliable in tests)
-        // — only that an AuraHandledException is thrown via the generic catch. Admin context;
-        // the only record DML is the insert+delete, so no MIXED_DML_OPERATION arises.
-        Opportunity o = TestDataFactory.createOpportunity(null, false);
-        o.StageName = 'LOI';
-        insert o;
-        Id deletedId = o.Id;
-        delete o;
+        // — only that an AuraHandledException is thrown via the generic catch.
+        //
+        // ═══ 🔴 REWRITTEN 2026-08-17 — THIS TEST USED TO insert-THEN-delete AN OPPORTUNITY ══════
+        // It had been red since at least 2026-08-12 with
+        //   System.DmlException: ENTITY_IS_DELETED  at LoiPrimaryStampQueueable.execute line 52
+        // and the failure was in the FIXTURE, not in the code under test. Inserting an Opportunity
+        // at StageName = 'LOI' enters the LOI stage, so OpportunityReviewService creates the LOI
+        // child and enqueues LoiPrimaryStampQueueable to back-stamp Primary_LOI__c. Deleting the
+        // Opportunity left that job queued against a dead row; it fired at Test.stopTest() and its
+        // `Database.update(stamps, true, AccessLevel.SYSTEM_MODE)` threw. The queueable is CORRECT
+        // — allOrNone = true is deliberate so a stamp failure surfaces as a failed AsyncApexJob
+        // rather than a silently null Primary_LOI__c (ARCHITECTURE.md §2) — so it must not change.
+        //
+        // THE FIX IS TO STOP CREATING A DEAL AT ALL. What this test needs is only that
+        // Approval.process fails AND the service's in-catch stage re-read
+        // (OpportunitySelector.selectStageRequiredById, a single-row assignment documented
+        // `@throws System.QueryException when no Opportunity matches the Id`) finds no row. A
+        // never-created Opportunity Id delivers BOTH, over the byte-identical code path, and fires
+        // no trigger, creates no LOI and enqueues nothing — so there is no orphaned job to explode.
+        // "Deleted" was never the load-bearing property; "resolves to no row" was.
+        //
+        // ⚠ Nothing here is swallowed or softened: the assertion is unchanged, and if the
+        // controller ever stopped mapping an unexpected failure to an AuraHandledException the
+        // raw QueryException would escape this narrow catch and fail the method, exactly as before.
+        // ═════════════════════════════════════════════════════════════════════════════════════
+        Id noSuchDealId = Id.valueOf(Opportunity.SObjectType.getDescribe().getKeyPrefix() + '000000000001');
 
         Test.startTest();
         Boolean threw = false;
         try {
-            OpportunityApprovalController.submitForApproval(deletedId);
+            OpportunityApprovalController.submitForApproval(noSuchDealId);
         } catch (AuraHandledException e) {
             threw = true;
         }

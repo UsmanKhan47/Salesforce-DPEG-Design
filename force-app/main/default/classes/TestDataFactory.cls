@@ -937,11 +937,47 @@ public with sharing class TestDataFactory {
      * hand-off: Contract_Executed_Date__c is a DateTime (Day 0) and is set because a signed
      * contract with no execution date is a state the real service never produces.
      *
+     * ═══ 🔴 AMENDED 2026-08-17 — THIS HELPER WAS CHEATING, AND A NEW RULE CAUGHT IT ════════════
+     * FSD Tranche 1 added Opportunity.Executed_PSA_Before_Contract_Date:
+     *     ISCHANGED(Contract_Executed_Date__c) AND NOT(ISBLANK(Contract_Executed_Date__c))
+     *     AND NOT(ISBLANK(Primary_Contract__c))
+     *     AND TEXT(Primary_Contract__r.Negotiation_Status__c) <> 'Executed'
+     * This method wrote Contract_Executed_Date__c directly without ever executing a Contract
+     * Review, so the moment a deal legitimately carried a Primary_Contract__c the rule correctly
+     * refused the synthetic write with FIELD_CUSTOM_VALIDATION_EXCEPTION ("Contract Executed Date
+     * can only be set once the PSA is Executed"). THE RULE IS RIGHT AND THE HELPER WAS WRONG: a
+     * hand-typed execution date produces a Day-0 checklist whose ~75 deadlines are all silently
+     * mis-dated, which is exactly what that rule exists to prevent.
+     *
+     * The fix reaches the state HONESTLY: executePrimaryContracts() below drives each deal's own
+     * primary Contract Review to 'Executed' first — the same transition the deal driver makes via
+     * the Advance Stage action — so by the time the stamp lands the rule's premise is satisfied
+     * rather than dodged. ContractExecutionService then does the real stamping through the real
+     * trigger, and the write below becomes a confirming no-op on those deals.
+     *
+     * ⚠ BLAST RADIUS IS PROVABLY ZERO FOR EVERY PREVIOUSLY-PASSING CALLER. The new query is
+     * filtered `Primary_Contract__c != null`, and a deal with a non-null Primary_Contract__c whose
+     * PSA is not Executed is EXACTLY the population the validation rule already rejected. So the
+     * new code path is reachable only where this method was already failing: of the 9 call sites
+     * (DealFolderServiceTest x3, PropertyAssetServiceTest x2, NdaDealProgressionGateTest,
+     * StageAdvanceControllerTest x2, StageAdvanceServiceTest), only the two that enter
+     * 'Under Contract (PSA)' — and so get a Contract Review auto-created and stamped by
+     * OpportunityReviewService — have a primary contract at all. The other seven pay one extra
+     * SOQL and take no behaviour change whatsoever.
+     * ⚠ On those two, executing the PSA now also runs the real hand-off: an Offering__c shell is
+     * opened and the three GroupNotifier notifications fire. That is correct — it is what a real
+     * PSA execution does — but a future caller asserting "no Offering exists" after signContract()
+     * on a PSA-stage deal must expect one.
+     * ⚠ It does NOT create a Transaction__c: that moved to
+     * ContractExecutionService.openTransactionsOnAboutToClose (2026-08-05).
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     *
      * @param opportunities Inserted Opportunities to prepare (required, non-empty).
      * @return The same Opportunities, with both values mirrored onto the in-memory records.
      */
     public static List<Opportunity> signContract(List<Opportunity> opportunities) {
         List<Opportunity> deals = requireSavedOpportunities(opportunities, 'signContract');
+        executePrimaryContracts(deals);
         DateTime dayZero = DateTime.now();
         Map<Id, Opportunity> updates = new Map<Id, Opportunity>();
         for (Opportunity deal : deals) {
@@ -964,6 +1000,44 @@ public with sharing class TestDataFactory {
      */
     public static Opportunity signContract(Opportunity opportunity) {
         return signContract(new List<Opportunity>{ opportunity })[0];
+    }
+
+    /**
+     * Drives each deal's primary Contract Review to 'Executed', so that the
+     * Contract_Executed_Date__c stamp in signContract() is LEGITIMATE rather than a synthetic
+     * write that Executed_PSA_Before_Contract_Date correctly refuses. See that method's header
+     * for the full rationale and the blast-radius argument.
+     *
+     * Bulk-safe and conditional by design: ONE query, and ONE DML only when there is something to
+     * execute. A deal with no Primary_Contract__c (the majority of callers) is untouched, which is
+     * what keeps this change invisible to every previously-passing test.
+     *
+     * ⚠ 'Executed' is the terminal Negotiation_Status__c value on BOTH the Acquisition_PSA and
+     * Disposition_PSA record types, so this is safe on either — the only value of which that is
+     * true. Do not substitute a per-record-type value here: Apex DML DOES enforce record-type
+     * picklist scoping on this restricted field (measured 2026-08-17).
+     */
+    private static void executePrimaryContracts(List<Opportunity> deals) {
+        Set<Id> dealIds = new Set<Id>();
+        for (Opportunity deal : deals) {
+            dealIds.add(deal.Id);
+        }
+        List<Contract_Review__c> toExecute = new List<Contract_Review__c>();
+        for (Opportunity deal : [
+            SELECT Primary_Contract__c, Primary_Contract__r.Negotiation_Status__c
+            FROM Opportunity
+            WHERE Id IN :dealIds AND Primary_Contract__c != null
+        ]) {
+            if (deal.Primary_Contract__r.Negotiation_Status__c != 'Executed') {
+                toExecute.add(new Contract_Review__c(
+                    Id = deal.Primary_Contract__c,
+                    Negotiation_Status__c = 'Executed'
+                ));
+            }
+        }
+        if (!toExecute.isEmpty()) {
+            update toExecute; // fires ContractReviewTrigger -> the REAL execution hand-off
+        }
     }
 
     /**

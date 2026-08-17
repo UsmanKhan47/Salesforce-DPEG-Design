@@ -95,12 +95,31 @@
  * that happened before the refusal would red it), and that the message names the real route.
  *
  * ── 🔴 THE MOST IMPORTANT *NEW* TEST (Tranche 3A) ────────────────────────────
- * acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget. Record-type picklist restrictions are
- * enforced by the UI ONLY — Apex DML does not enforce them — so making only the NEXT-STAGE map
- * record-type-aware would leave 'Declined' writable onto an acquisition NDA through advanceTo. That
- * version of the change compiles, passes every walk test, and is a security hole. This test is the
- * falsifier, and dispositionNdaAcceptsDeclinedAsAnExplicitTarget is its complement: without the
- * pair, a refusal could pass simply because 'Declined' was configured nowhere at all.
+ * acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget. Making only the NEXT-STAGE map
+ * record-type-aware would leave 'Declined' reachable on an acquisition NDA through advanceTo. That
+ * version of the change compiles and passes every walk test. This test is the falsifier, and
+ * dispositionNdaAcceptsDeclinedAsAnExplicitTarget is its complement: without the pair, a refusal
+ * could pass simply because 'Declined' was configured nowhere at all.
+ *
+ * ⚠ CORRECTED 2026-08-17 — the sentence that used to open this paragraph is FALSE. It read:
+ * "Record-type picklist restrictions are enforced by the UI ONLY — Apex DML does not enforce them
+ * — so ... would leave 'Declined' WRITABLE onto an acquisition NDA", and called the alternative
+ * build "a security hole". Measured against usman-dpeg 2026-08-17 on Contract_Review__c:
+ * Negotiation_Status__c is restrictedPicklist = true with all seven values ACTIVE on the field,
+ * yet Apex DML refused 'Draft' on a Disposition_PSA and 'Ready for Execution' on an
+ * Acquisition_PSA with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST — a value present and active on the
+ * FIELD, rejected because it is absent from the RECORD TYPE. 🔴 APEX DML DOES ENFORCE
+ * RECORD-TYPE-SCOPED PICKLIST VALUES on a restricted picklist. NDA__c.Status__c, LOI__c.Stage__c
+ * and Ball_In_Court__c are all restricted = true, so the same holds for them.
+ * WHAT SURVIVES: the allow-list is still worth having and must not be removed — it turns a raw
+ * DmlException into the typed, user-safe RecordStageAdvanceException the LWC boundary expects,
+ * it refuses BEFORE any DML (so these tests pass unchanged), and it would become the sole
+ * guarantee again the moment any of those fields were made unrestricted. WHAT DOES NOT: calling
+ * the alternative build "a security hole". It is defence-in-depth. See
+ * psaSequencesAreSplitPerRecordType for the full measurement.
+ * ⚠ Several other files in this repo — ARCHITECTURE.md §2 among them — still assert the retracted
+ * claim. Correcting them is deliberately OUT OF SCOPE of this test-fix pass and is flagged to the
+ * coordinator rather than done silently here.
  *
  * sharedSentStatusIsTerminalOnAcquisitionAndAHopOnDisposition is the second half of the argument.
  * ⚠ REWRITTEN 2026-08-16. RETRACTED, verbatim: "sharedSentStatusAdvancesDifferentlyPerRecordType is
@@ -959,44 +978,93 @@ private class RecordStageAdvanceServiceTest {
         // sequence survived the merge). Only the pair, asserted together, is unsatisfiable by any
         // single-map build.
         //
-        // 🔴 DIRECTION 2 IS THE SECURITY HALF AND IS THE REASON THE SPLIT EXISTS RATHER THAN A
-        // WIDENED SHARED MAP. Apex DML does not enforce record-type picklist restriction, so a
-        // shared map holding both sides' values would let advance() ITSELF — the ordinary Advance
-        // Stage button, not a hand-crafted call — walk a DISPOSITION PSA onto 'Negotiation' or
-        // 'Signed', acquisition-only values it does not carry. Refusing is the whole guarantee.
+        // ═══ 🔴 REWRITTEN 2026-08-17. THE OLD DIRECTION 2 RESTED ON A PREMISE THE PLATFORM HAS
+        // NOW FALSIFIED, AND HAD BEEN RED SINCE AT LEAST 2026-08-12. Retracted, verbatim:
+        //
+        //     "🔴 DIRECTION 2 IS THE SECURITY HALF AND IS THE REASON THE SPLIT EXISTS RATHER THAN
+        //      A WIDENED SHARED MAP. Apex DML does not enforce record-type picklist restriction,
+        //      so a shared map holding both sides' values would let advance() ITSELF — the
+        //      ordinary Advance Stage button, not a hand-crafted call — walk a DISPOSITION PSA
+        //      onto 'Negotiation' or 'Signed', acquisition-only values it does not carry."
+        //
+        // It built a "cross-fed" row — a Disposition_PSA seeded on the acquisition-only status
+        // 'Draft' — and that INSERT is now refused by the database:
+        //     System.DmlException: INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST ... bad value: Draft:
+        //     [Negotiation_Status__c]
+        // 🔴 THAT REFUSAL IS ITSELF THE FINDING, AND IT IS NOT FIELD-LEVEL RESTRICTION. Measured
+        // against usman-dpeg 2026-08-17: Negotiation_Status__c is restrictedPicklist = true and
+        // its master value set carries ALL SEVEN values ACTIVE, 'Draft' included; the UI API
+        // reports Acquisition_PSA -> Draft|Negotiation|Signed|Executed and Disposition_PSA ->
+        // Initial Draft|Revised|Ready for Execution|Executed. A value present and active on the
+        // FIELD was rejected because it is absent from the RECORD TYPE.
+        // ⇒ APEX DML DOES ENFORCE RECORD-TYPE-SCOPED PICKLIST VALUES on a restricted picklist.
+        // The mirror case was measured the same day from the opposite direction in
+        // ContractExecutionServiceTest ('Ready for Execution' refused on an Acquisition_PSA).
+        //
+        // WHAT THAT COSTS THIS TEST, STATED HONESTLY RATHER THAN PAPERED OVER: the cross-fed state
+        // is now UNREACHABLE, so the behaviour the old DIRECTION 2 measured cannot occur, and a
+        // UNION map (one shared map holding all six entries) is behaviourally INDISTINGUISHABLE
+        // from the split — its acquisition entries can only ever fire on rows carrying acquisition
+        // values, and only acquisition rows can carry them. No test can separate the two builds,
+        // and inventing one that appears to would be theatre. The split is now defence-in-depth
+        // rather than the sole guarantee; the guarantee moved into the platform.
+        // ⚠ IT IS STILL NOT SAFE TO MERGE THE MAPS: a reversion to the OLD shared sell-side map
+        // (the pre-observation-7 CONTRACT_REVIEW_NEXT_STAGE) is caught by
+        // acquisitionPsaWalksDraftToExecuted, and DIRECTION 1 + DIRECTION 2 below still pin that
+        // the two record types resolve DIFFERENT sequences from their own seeds.
+        //
+        // DIRECTION 3 replaces the cross-feed with a CANARY on the platform behaviour the argument
+        // above now depends on. If Salesforce ever stops enforcing record-type scoping at DML, the
+        // old security hole becomes real again and this test goes red to say so — at which point
+        // the cross-fed DIRECTION 2 must be restored from git history.
+        // ═══════════════════════════════════════════════════════════════════════════════════════
         Id acquisitionId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Draft').Id;
         Id dispositionId =
             insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Initial Draft').Id;
 
         Test.startTest();
-        // DIRECTION 1: the acquisition seed is not a stage the disposition sequence knows.
+        // DIRECTION 1: from ITS OWN seed, the acquisition record type resolves the acquisition map.
         String acquisitionFirstHop = RecordStageAdvanceService.advance(acquisitionId);
-        // DIRECTION 2: the disposition seed must NOT be advanceable by the acquisition map, and
-        // vice versa. Driving each from the OTHER side's seed is what makes that observable.
-        String dispositionRefusal;
-        Contract_Review__c crossFed = insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Draft');
+        // DIRECTION 2: from ITS OWN seed, the disposition record type resolves a DIFFERENT map.
+        // Asserted together with DIRECTION 1, this is unsatisfiable by any build that resolves one
+        // sequence for both record types.
+        String dispositionFirstHop = RecordStageAdvanceService.advance(dispositionId);
+
+        // DIRECTION 3 — the platform canary described above.
+        String platformRefusal;
+        Contract_Review__c crossFed =
+            TestDataFactory.createContractReviews(1, null, RT_DISPOSITION_PSA, false)[0];
+        crossFed.RecordTypeId = contractReviewRecordTypeId(RT_DISPOSITION_PSA);
+        crossFed.Negotiation_Status__c = 'Draft';
         try {
-            RecordStageAdvanceService.advance(crossFed.Id);
-            Assert.fail('A DISPOSITION PSA sitting on the acquisition-only status "Draft" must be '
-                + 'REFUSED — its sequence has no entry for it. Returning normally means the two '
-                + 'maps were merged back into one, at which point advance() can write '
-                + 'acquisition-only values onto a sale.');
-        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
-            dispositionRefusal = e.getMessage();
+            insert crossFed;
+            Assert.fail('A Disposition_PSA row was successfully seeded on the acquisition-only '
+                + 'status "Draft". That means the platform has STOPPED enforcing record-type '
+                + 'picklist scoping at DML, which re-opens the exact hole the split maps were '
+                + 'built for: advance() could then walk a sale onto "Negotiation"/"Signed". '
+                + 'Restore the cross-fed DIRECTION 2 assertions from git history (they were '
+                + 'removed on 2026-08-17 only because this state had become unreachable).');
+        } catch (DmlException e) {
+            platformRefusal = e.getMessage();
         }
         Test.stopTest();
 
         Assert.areEqual('Contract Review moved to Negotiation.', acquisitionFirstHop,
             'The acquisition map must derive Negotiation from Draft');
-        Assert.areEqual('There is no next step available from the Draft stage.', dispositionRefusal,
-            'The disposition map must have NO entry for the acquisition-only status "Draft". The '
-            + 'refusal wording is the generic terminal-stage message, which is correct: from the '
-            + 'sell-side sequence\'s point of view this row is simply on an unknown status');
-        Assert.areEqual('Draft',
-            [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :crossFed.Id]
-                .Negotiation_Status__c,
-            'A refused advance must not write. Asserting the read-back rather than trusting the '
-            + 'exception is what distinguishes "refused" from "threw after writing"');
+        Assert.areEqual('Contract Review moved to Revised.', dispositionFirstHop,
+            'The disposition map must derive Revised from Initial Draft. Taken together with the '
+            + 'assertion above, the SAME service call resolves two different sequences purely on '
+            + 'record type — which no single-sequence build satisfies');
+        Assert.isTrue(platformRefusal != null
+                && platformRefusal.contains('INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST'),
+            'The database — not the service — is what refuses an acquisition-only status on a '
+            + 'disposition PSA. Expected INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST but got: '
+            + platformRefusal);
+        Assert.areEqual(0, [SELECT COUNT() FROM Contract_Review__c
+                            WHERE RecordType.DeveloperName = :RT_DISPOSITION_PSA
+                              AND Negotiation_Status__c = 'Draft'],
+            'and the refusal is a REFUSAL, not a throw-after-write: no disposition PSA exists on '
+            + 'the acquisition-only status');
     }
 
     // ═════════════════════════════════════════════════════════════════════════

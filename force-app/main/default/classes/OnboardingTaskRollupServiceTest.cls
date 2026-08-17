@@ -71,31 +71,63 @@ private class OnboardingTaskRollupServiceTest {
     // custom fields (Onboarding__c, Onboarding_Status__c) under the identical WITH USER_MODE
     // call, so it carried the same latent defect and was fixed pre-emptively in the same change.
     //
-    // ⚠ ROUTE B, REVISED 2026-08-05 after a failed deploy (job 0Afiw000000FALdCAO). recalc() both
-    // READS Task (via TaskSelector, WITH SYSTEM_MODE) and WRITES BACK to Onboarding__c
-    // (`update upd.values()`), and the checklist Task must be inserted by the restricted principal
-    // to reach recalc() at all — none of that has a read-only escape hatch. (Unlike
-    // TaskSelectorTest's selector-level pins, a zero-permission-set user cannot be used here: the
-    // Onboarding__c update and the Task insert are both plain, unenforced DML, and object-level
-    // CRUD — Edit on Onboarding__c, Create on Task — IS enforced by the platform for ordinary DML
-    // even without any WITH clause.) The first version of this test built a zero-permission-set
-    // user and threw `System.SecurityException: Access to entity 'Onboarding__c' denied` before
-    // the Task-FLS behavior under test was ever reached.
+    // ═══ 🔴 REWRITTEN 2026-08-17. THE PREVIOUS "ROUTE B" WAS STRUCTURALLY IMPOSSIBLE ══════════
+    // These two tests had been red since at least 2026-08-12 (committed PARKED, see commit
+    // ebd700e). Two compounding causes, both measured against usman-dpeg on 2026-08-17 rather
+    // than reasoned about. The full write-up is in TaskRollupServiceTest's matching note — the
+    // two classes were broken by ONE pair of causes and are fixed by ONE design; read them
+    // together and change them together.
     //
-    // The fix assigns exactly two permission sets, verified by reading both files' metadata
-    // directly rather than assumed:
-    //   - DPEG_PropertyMgmt_Edit   -> Onboarding__c (and 12 other PM objects') object CRUD + FLS
-    //     on Onboarding__c's OWN fields (needed for recalc's `update Onboarding__c`). Declares NO
-    //     Task field permissions at all.
-    //   - Broker_Protection_Access -> Task object CRUD (Create/Read/Edit — needed for the
-    //     checklist Task insert). Its Task field grants are ActivityDate/Description/WhatId —
-    //     NONE of Transaction_Deal__c, Onboarding__c, or Onboarding_Status__c. Cross-module
-    //     borrow purely for this object-CRUD grant, for the same reason given in
-    //     TaskRollupServiceTest: it is the only permission set in the repo granting Task CRUD
-    //     without ALSO granting the checklist FLS (DPEG_Task_Edit / DPEG_TaskChecklist_View, the
-    //     only two sets that declare Task.Onboarding__c / Task.Onboarding_Status__c, are
-    //     deliberately NOT assigned).
+    // CAUSE 1 — the persona could not create a Task, and no permission set could ever fix it.
+    // The old fixture ran on `Minimum Access - Salesforce` and assigned Broker_Protection_Access
+    // for "Task object CRUD (Create/Read/Edit)". That was read off the permission set FILE, which
+    // does declare <object>Task</object> with allowCreate=true. It is not what the org has:
+    // `SELECT SobjectType, COUNT(Id) FROM ObjectPermissions ... GROUP BY SobjectType` returns
+    // Lead 53, Transaction__c 8, and Task/Event ABSENT — zero rows anywhere in the org, on any
+    // permission set OR profile. Activity CRUD is not permission-set-grantable here; it lives on
+    // the PROFILE (`PermissionsEditTask`: Minimum Access = false, Standard User = true). The
+    // assignment was inert and the tests failed `System.TypeException: DML operation INSERT not
+    // allowed on Task`. The persona now runs on `Standard User`; Broker_Protection_Access is
+    // dropped rather than left in place with a comment explaining its non-existent purpose.
     //
+    // CAUSE 2 — 🔴 AND THIS IS THE ONE THAT KILLS ROUTE B OUTRIGHT. With CRUD fixed the insert
+    // then failed `System.DmlException: Operation failed due to fields being inaccessible on
+    // Sobject Task`: ordinary DML on Task is FLS-enforced in this org, and createOnboardingTasks
+    // writes Onboarding__c and Onboarding_Status__c — the exact two fields this test must
+    // WITHHOLD. FLS edit implies read, so no grant satisfies both halves. "Have the restricted
+    // principal insert the checklist Task itself" is not an under-permissioned fixture, it is a
+    // self-contradiction.
+    //
+    // THE FIX — the fixture is built in the DEFAULT full-access context and OWNED BY the persona;
+    // the persona performs ONLY the recalc() call. Nothing about the property under test is lost,
+    // and here even less than on the Transaction side: recalc() is NOT trigger-driven (it is
+    // called directly by OnboardingService.completeTask), so the persona was never required to
+    // author the Tasks — only to invoke the recompute, which is exactly what it still does. This
+    // is TaskSelectorTest's Route A applied one layer up, at the service instead of the selector.
+    // ⚠ OWNERSHIP IS LOAD-BEARING ON BOTH RECORDS. Activity is `sharingModel Private` here, so
+    // admin-owned Tasks would be invisible and every rollup would compute ZERO — passing or
+    // failing for reasons having nothing to do with FLS. And DPEG_PropertyMgmt_Edit grants
+    // Onboarding__c viewAllRecords = true but modifyAllRecords = FALSE (measured), so recalc's own
+    // `update upd.values()` only succeeds on a record the persona owns.
+    //
+    // DISCRIMINATION — the property the whole test exists for, verified rather than assumed:
+    //     SELECT Parent.Name, Parent.IsOwnedByProfile FROM FieldPermissions
+    //     WHERE Field IN ('Task.Onboarding__c','Task.Onboarding_Status__c')
+    //       -> only DPEG_Transaction_Team / DPEG_Junior_Analyst_PSG / DPEG_TaskChecklist_View /
+    //          DPEG_Task_Edit / sfdc_slack, ALL IsOwnedByProfile = false. Re-running that query
+    //          filtered to IsOwnedByProfile = true returns ZERO rows: NO PROFILE grants either
+    //          field, `Standard User` included, and none of those sets is assigned below.
+    // Restore `WITH USER_MODE` on TaskSelector.selectByOnboardingIds and the recalc() call below
+    // throws `No such column 'Onboarding__c' on entity 'Task'` again, exactly as designed — there
+    // is no try/catch, so that throw fails the method outright and IS the pin. ⚠ If a future admin
+    // grants either field at the PROFILE level these tests silently stop discriminating; re-run
+    // the query above before trusting a green result.
+    //
+    // ⚠ RENAMED in the same pass, so the names stop asserting a profile that is no longer used:
+    //   recalc_minimumAccessUserNoFLS_succeeds_pinsTheSameLatentDefectAsTransactionRollup
+    //     -> recalc_noFlsUser_succeeds_pinsTheSameLatentDefectAsTransactionRollup
+    //   recalc_minimumAccessUserNoFLS_bulk251_succeeds -> recalc_noFlsUser_bulk251_succeeds
+    // ═════════════════════════════════════════════════════════════════════════════════════════
     // Deliberately no try/catch: on the OLD code, this call throws a System.QueryException
     // directly (there is no trigger wrapping it here), which fails the test method outright —
     // that failure IS the regression pin.
@@ -106,28 +138,41 @@ private class OnboardingTaskRollupServiceTest {
      * has NO FLS grant on Onboarding__c/Onboarding_Status__c (the Task's fields) must be able to
      * call recalc() without it throwing.
      */
-    @isTest static void recalc_minimumAccessUserNoFLS_succeeds_pinsTheSameLatentDefectAsTransactionRollup() {
-        User minAccessUser = buildMinimumAccessUser('onbFlsA');
+    @isTest static void recalc_noFlsUser_succeeds_pinsTheSameLatentDefectAsTransactionRollup() {
+        User noFlsUser = buildTaskCapableNoFlsUser('onbFlsA');
         System.runAs(new User(Id = UserInfo.getUserId())) {
-            insert minAccessUser;
-            assignPermissionSets(minAccessUser.Id, new Set<String>{ 'DPEG_PropertyMgmt_Edit', 'Broker_Protection_Access' });
+            insert noFlsUser;
+            assignPermissionSets(noFlsUser.Id, new Set<String>{ 'DPEG_PropertyMgmt_Edit' });
         }
 
-        Id onboardingId;
+        // Fixture in the DEFAULT full-access context, OWNED BY the persona: writing
+        // Onboarding__c / Onboarding_Status__c onto a Task needs edit FLS this persona must NOT
+        // have, and Activity is Private here so admin-owned Tasks would be invisible and every
+        // rollup would compute zero. Ownership of the Onboarding__c matters too —
+        // DPEG_PropertyMgmt_Edit grants View All but NOT Modify All, so recalc's own update only
+        // succeeds on a record the persona owns. See the design note above.
+        Onboarding__c o = TestDataFactory.createOnboarding(null, false);
+        o.OwnerId = noFlsUser.Id;
+        insert o;
+        Id onboardingId = o.Id;
+
+        List<Task> tasks = TestDataFactory.createOnboardingTasks(4, o.Id, false);
+        tasks[0].Onboarding_Status__c = 'Complete';
+        tasks[1].Onboarding_Status__c = 'In Progress';
+        tasks[2].Onboarding_Status__c = 'Not Started';
+        tasks[3].Onboarding_Status__c = 'Blocked';
+        for (Task t : tasks) {
+            t.OwnerId = noFlsUser.Id;
+        }
+        insert tasks;
+
         Test.startTest();
-        System.runAs(minAccessUser) {
-            Onboarding__c o = TestDataFactory.createOnboarding(null, false);
-            insert o; // Create CRUD on Onboarding__c comes from DPEG_PropertyMgmt_Edit
-            onboardingId = o.Id;
-
-            List<Task> tasks = TestDataFactory.createOnboardingTasks(4, o.Id, false);
-            tasks[0].Onboarding_Status__c = 'Complete';
-            tasks[1].Onboarding_Status__c = 'In Progress';
-            tasks[2].Onboarding_Status__c = 'Not Started';
-            tasks[3].Onboarding_Status__c = 'Blocked';
-            insert tasks; // Create CRUD on Task comes from Broker_Protection_Access
-
-            OnboardingTaskRollupService.recalc(new Set<Id>{ o.Id }); // no try/catch by design
+        System.runAs(noFlsUser) {
+            // The ONLY thing the persona does — exactly what OnboardingService.completeTask does
+            // on their behalf. recalc() reads Task through the SYSTEM_MODE selector and writes
+            // back to Onboarding__c. No try/catch by design: under a reverted WITH USER_MODE the
+            // read throws `No such column 'Onboarding__c' on entity 'Task'` and fails the method.
+            OnboardingTaskRollupService.recalc(new Set<Id>{ onboardingId });
         }
         Test.stopTest();
 
@@ -147,24 +192,29 @@ private class OnboardingTaskRollupServiceTest {
      * WITH SYSTEM_MODE fix holds when the single SOQL statement reads 251 rows at once for this
      * persona, not just a handful.
      */
-    @isTest static void recalc_minimumAccessUserNoFLS_bulk251_succeeds() {
-        User minAccessUser = buildMinimumAccessUser('onbFlsB');
+    @isTest static void recalc_noFlsUser_bulk251_succeeds() {
+        User noFlsUser = buildTaskCapableNoFlsUser('onbFlsB');
         System.runAs(new User(Id = UserInfo.getUserId())) {
-            insert minAccessUser;
-            assignPermissionSets(minAccessUser.Id, new Set<String>{ 'DPEG_PropertyMgmt_Edit', 'Broker_Protection_Access' });
+            insert noFlsUser;
+            assignPermissionSets(noFlsUser.Id, new Set<String>{ 'DPEG_PropertyMgmt_Edit' });
         }
 
-        Id onboardingId;
+        // Same fixture shape and same two ownership reasons as the sibling test above.
+        Onboarding__c o = TestDataFactory.createOnboarding(null, false);
+        o.OwnerId = noFlsUser.Id;
+        insert o;
+        Id onboardingId = o.Id;
+
+        List<Task> tasks = TestDataFactory.createOnboardingTasks(251, o.Id, false);
+        for (Task t : tasks) {
+            t.OwnerId = noFlsUser.Id;
+        }
+        insert tasks;
+
         Test.startTest();
-        System.runAs(minAccessUser) {
-            Onboarding__c o = TestDataFactory.createOnboarding(null, false);
-            insert o;
-            onboardingId = o.Id;
-
-            List<Task> tasks = TestDataFactory.createOnboardingTasks(251, o.Id, false);
-            insert tasks;
-
-            OnboardingTaskRollupService.recalc(new Set<Id>{ o.Id });
+        System.runAs(noFlsUser) {
+            // 251 rows read in ONE SOQL statement by a principal with no FLS on either field.
+            OnboardingTaskRollupService.recalc(new Set<Id>{ onboardingId });
         }
         Test.stopTest();
 
@@ -174,13 +224,20 @@ private class OnboardingTaskRollupServiceTest {
     }
 
     /**
-     * Builds (but does not insert) a user on the 'Minimum Access - Salesforce' profile. By itself
-     * this profile grants NO object CRUD on any custom object and NO FLS on any custom field.
-     * Each test assigns exactly the permission sets it needs via assignPermissionSets below — see
-     * the design note above this section for which, and why.
+     * Builds (but does not insert) a user on the `Standard User` profile — the LEAST-privileged
+     * profile in this org that can create a Task at all (`PermissionsEditTask = true`, measured;
+     * `Minimum Access - Salesforce` is `false`, and no permission set can supply it because Task
+     * has zero ObjectPermissions rows org-wide — see the design note above this section).
+     *
+     * 🔴 What the profile does NOT give is the point: it grants NO FLS on any Metadata-API-
+     * deployed custom field, so this persona still cannot read Task.Onboarding__c or
+     * Task.Onboarding_Status__c. That is the single fact the regression pin depends on. Each test
+     * assigns, via assignPermissionSets below, only the custom-OBJECT CRUD it needs — never a set
+     * declaring the withheld Task fields (DPEG_Task_Edit / DPEG_TaskChecklist_View /
+     * DPEG_Transaction_Team must never be assigned here).
      */
-    private static User buildMinimumAccessUser(String tag) {
-        Profile minimumAccessProfile = [SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1];
+    private static User buildTaskCapableNoFlsUser(String tag) {
+        Profile minimumAccessProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
         String unique = tag + String.valueOf(Datetime.now().getTime())
             + String.valueOf(Math.abs(Crypto.getRandomInteger()));
         return new User(

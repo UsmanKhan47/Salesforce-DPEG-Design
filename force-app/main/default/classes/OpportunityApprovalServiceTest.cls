@@ -180,21 +180,47 @@ private class OpportunityApprovalServiceTest {
 
     @isTest
     static void unexpectedFailurePropagatesRawNotWrapped() {
-        // A deleted/inaccessible deal is an UNEXPECTED failure: Approval.process throws on the
-        // dead Id, then the in-catch stage re-read (OpportunitySelector.selectStageRequiredById)
+        // A deal Id that resolves to no row is an UNEXPECTED failure: Approval.process throws on
+        // the dead Id, then the in-catch stage re-read (OpportunitySelector.selectStageRequiredById)
         // throws System.QueryException, which must propagate RAW — the service must NOT wrap it
-        // in ApprovalException (the controller masks it with a fixed generic message, W2). Run
-        // under admin; the only record DML is the insert+delete of the Opportunity, so no
-        // MIXED_DML_OPERATION arises.
-        Opportunity o = makeOpp('LOI');
-        Id deletedId = o.Id;
-        delete o;
+        // in ApprovalException (the controller masks it with a fixed generic message, W2).
+        //
+        // ═══ 🔴 REWRITTEN 2026-08-17 — THIS TEST USED TO insert-THEN-delete AN OPPORTUNITY ══════
+        // Red since at least 2026-08-12 with
+        //   System.DmlException: ENTITY_IS_DELETED  at LoiPrimaryStampQueueable.execute line 52
+        // — a FIXTURE defect, not a defect in the code under test. `makeOpp('LOI')` enters the LOI
+        // stage, so OpportunityReviewService creates the LOI child and enqueues
+        // LoiPrimaryStampQueueable to back-stamp Primary_LOI__c; deleting the Opportunity left that
+        // job queued against a dead row, and it fired at Test.stopTest() and threw. The queueable's
+        // allOrNone = true is deliberate (ARCHITECTURE.md §2 — a stamp failure must surface as a
+        // failed AsyncApexJob, never as a silently null lookup), so the queueable is untouched.
+        //
+        // THE FIX IS TO STOP CREATING A DEAL AT ALL. This test needs exactly two things:
+        // Approval.process must fail, and the in-catch re-read must find no row (that selector is
+        // a single-row assignment, documented `@throws System.QueryException when no Opportunity
+        // matches the Id`). A never-created Opportunity Id delivers both over the identical code
+        // path — resolveDealId short-circuits on the Opportunity key prefix without querying, and
+        // ProcessInstanceSelector.selectPendingByTargetId simply returns empty — while firing no
+        // trigger and enqueueing nothing. "Deleted" was never the load-bearing property here;
+        // "resolves to no row" was, and it is preserved exactly.
+        //
+        // ⚠ Both Assert.fail guards are retained verbatim: this still goes red if the service ever
+        // starts wrapping an unexpected failure in ApprovalException, and still goes red if it
+        // stops throwing at all. Nothing was weakened to reach green.
+        // ═════════════════════════════════════════════════════════════════════════════════════
+        Id noSuchDealId = Id.valueOf(Opportunity.SObjectType.getDescribe().getKeyPrefix() + '000000000001');
 
         Test.startTest();
         Boolean threwRaw = false;
+        Boolean returnedNormally = false;
         try {
-            OpportunityApprovalService.submitForApproval(deletedId);
-            Assert.fail('A deleted deal should surface an unexpected failure');
+            OpportunityApprovalService.submitForApproval(noSuchDealId);
+            // ⚠ NOT Assert.fail() here. Assert.fail throws System.AssertException, which the
+            // `catch (Exception e)` below WOULD catch — setting threwRaw = true and turning the
+            // no-throw case into a PASS. That inversion was latent in the previous revision of
+            // this test; a flag read after the try/catch cannot be swallowed. (The Assert.fail in
+            // the ApprovalException clause is safe: nothing catches it, so it propagates.)
+            returnedNormally = true;
         } catch (OpportunityApprovalService.ApprovalException e) {
             Assert.fail('An unexpected failure must propagate raw, not as an ApprovalException');
         } catch (Exception e) {
@@ -202,6 +228,8 @@ private class OpportunityApprovalServiceTest {
         }
         Test.stopTest();
 
+        Assert.isFalse(returnedNormally,
+            'A deal Id matching no row must surface an unexpected failure, not return a success message');
         Assert.isTrue(threwRaw, 'an unexpected failure propagates a raw platform/query exception');
     }
 }
