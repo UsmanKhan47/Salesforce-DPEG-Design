@@ -4,6 +4,6 @@
     <fields>Summary__c</fields>
     <fields>Deal_Type__c</fields>
     <fields>Asset_Type__c</fields>
-    <fields>Stage__c</fields>
+    <fields>Negotiation_Status__c</fields>
     <label>Contract Highlights</label>
 </CompactLayout>
