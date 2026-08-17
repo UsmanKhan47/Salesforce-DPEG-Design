@@ -230,17 +230,74 @@ public with sharing class PropertyClaimService {
      *   • THE ORPHAN UPDATE below always targets a row whose `Winning_Lead__c` is NULL —
      *     `PropertyRegistrySelector.selectOrphanByPropertyKey` filters `Winning_Lead__c = null`
      *     by construction — and re-points it at the same freshly created Lead.
+     *   • THE EXPIRED-ADOPTION UPDATE (added 2026-08-17) always targets a row whose
+     *     `Winning_Lead__c` holds an **OPEN** Lead —
+     *     `PropertyRegistrySelector.selectExpiredByPropertyKey` filters
+     *     `Winning_Lead__r.IsConverted = false` by construction — and re-points it at the
+     *     freshly created Lead.
      *
-     * These two statements are the ONLY DML against this object in the entire codebase.
+     * These three statements are the ONLY DML against this object in the entire codebase.
      *
-     * 🔴 THE PROHIBITION: DO NOT ADD A THIRD. Any future `update` of a registry row that is
-     * merely LIVE (a "last touched" stamp, a status field, a re-key, a merge/cleanup tool) would
-     * be updating a row whose lookup may hold a converted Lead — and the platform may reject the
-     * whole DML over a lookup the update never touched. That would fail on exactly the
-     * long-running, successful properties, which is the population least likely to appear in a
-     * test fixture. If such an update is ever genuinely needed, this object needs the same split
-     * anchor the submission just received; raise it as its own change rather than discovering it
-     * in production the way the submission's twin was discovered.
+     * ═══ 🔴 THE PROHIBITION — AMENDED 2026-08-17, NOT REPEALED. READ THE WHOLE THING ═══
+     * This paragraph used to read "there are exactly TWO statements; DO NOT ADD A THIRD."
+     * There are now three, and leaving the old text standing would have been worse than
+     * deleting it: the next reader would have believed a rule the code no longer follows.
+     *
+     * (i)   The third statement is the adoption of an **EXPIRED** registration — the FSD
+     *       tranche 3 broker-protection window (see `PropertyMatchingService`'s header).
+     * (ii)  It is admissible for ONE reason and one reason only: its read is filtered to
+     *       `Winning_Lead__r.IsConverted = false`, so the row it updates provably holds an
+     *       OPEN Lead in `Winning_Lead__c`. That is why "a converted winner's claim never
+     *       expires" is a STRUCTURAL discharge of this prohibition rather than a policy
+     *       preference — under the opposite reading the registry would need the same split
+     *       anchor the submission received (a `Winning_Opportunity__c` field, a rewritten
+     *       `Winning_Lead_Required` VR, and an audit of every existing reader of
+     *       `Winning_Lead__c`), which is a tranche of work, not a leg in a catch block.
+     * (iii) 🔴 THE PROHIBITION STILL STANDS, UNCHANGED, FOR ANY UPDATE NOT CARRYING THAT
+     *       FILTER. A "last touched" stamp, a status field, a re-key, a merge/cleanup tool,
+     *       a "superseded" marker, or a sweep job that writes anything at all would be
+     *       updating a row whose lookup MAY hold a converted Lead — and the platform may
+     *       reject the whole DML over a lookup the update never touched. That fails on
+     *       exactly the long-running, successful properties, which is the population least
+     *       likely to appear in a test fixture. Raise it as its own change.
+     * (iv)  ⚠ NO APEX TEST IN THIS ORG CAN FALSIFY ANY OF THIS.
+     *       `platform_lookupToAConvertedLead_isNotEnforcedInTestContext` pins that test
+     *       context does not enforce the converted-Lead restriction, so a green suite
+     *       proves the DECISION (we refuse to adopt a converted winner's row), never that
+     *       the platform would have thrown had we tried.
+     *
+     * ═══ THE HANDOVER: WHAT MOVES AND WHAT DELIBERATELY DOES NOT (2026-08-17) ═══
+     *   • The previous winner's LEAD is untouched. Nothing deletes it. This module deletes
+     *     a Lead on exactly one path (`DUPLICATE_RACE`, a Lead created seconds earlier),
+     *     and an expiry handover is not it. That Lead keeps its address, its extraction and
+     *     its Tasks; it is simply no longer the registry winner.
+     *   • The previous winner's `Competing_Broker_Submission__c` TRAIL is untouched and
+     *     MUST stay so — ARCHITECTURE.md §1: the object is deliberately not master-detail
+     *     precisely because a cascade delete would silently wipe it.
+     *   • Two rows now carry `Is_Winning_Submission__c = true` for one property. That is
+     *     CORRECT, not a defect: they are anchored on DIFFERENT Leads, each was true when
+     *     written, and the object is append-only by definition.
+     *   • There is NO "this claim was superseded" marker, deliberately — it would be a
+     *     fourth registry write and falls squarely under (iii). The handover is
+     *     reconstructible from the moved `Winning_Lead__c` plus the two submission rows.
+     *
+     * 🔴 RESIDUAL R1 — THE SUPERSEDED BROKER'S FOLLOW-UPS DO NOT BECOME COMPETING CLAIMS,
+     * FOR UP TO `LOOKBACK_DAYS`. `ExtractAddressQueueable`'s branch (b) REPEAT runs BEFORE
+     * branch (d) COMPETING and never consults the registry. So after a handover, if the
+     * superseded broker emails again within the repeat window, `findBrokerSubmission` still
+     * matches their own prior row and the email is filed as a Repeat on their own — now
+     * claimless — Lead: no competing submission against the new winner, no error, nothing
+     * in the UI. ACCEPTED (design §1.5): the email is still captured, logged and auditable,
+     * and "fixing" it means making the highest-traffic branch in the pipeline
+     * registry-aware. Recorded here rather than in the queueable to avoid colliding with
+     * concurrent work on that class; move this note there when convenient.
+     *
+     * ⚠ OPERATIONAL ESCAPE HATCH — A CONVERTED-THEN-DEAD DEAL PROTECTS ITS PROPERTY FOR
+     * EVER. A Lead converted into an Opportunity that later went `Dead/Pass` still reads
+     * `IsConverted = true`, so its claim never expires. The remedy needs NO new code and is
+     * already tested: DELETE the registry row by hand. `Winning_Lead__c` is SetNull, so the
+     * key becomes an ORPHAN and the existing orphan-adoption leg below re-opens it to the
+     * next broker.
      *
      * The unique index on Property_Key__c remains the innermost backstop: if the exact key
      * already exists — which, under W4 serialization, means an ORPHANED row whose winner was
@@ -255,10 +312,11 @@ public with sharing class PropertyClaimService {
      * @param submittedOn     The email's original send time.
      * @param forwardedByEmail Internal user who forwarded the broker email.
      * @param emailSubject    The inbound email subject.
-     * @return WINNER when the registration (or orphan adoption) succeeded, DUPLICATE_RACE
-     *         when the key collision reconciled to an existing winner (the caller's Lead must
-     *         then be deleted — see the ClaimOutcome doc), UNCLAIMED when the key exists but
-     *         has neither a live winner nor an adoptable orphan.
+     * @return WINNER when the registration succeeded, or when an ORPHANED or EXPIRED row was
+     *         adopted; DUPLICATE_RACE when the key collision reconciled to an existing
+     *         winner (the caller's Lead must then be deleted — see the ClaimOutcome doc);
+     *         UNCLAIMED when the key exists but has no live winner, no adoptable orphan and
+     *         no expired row.
      */
     private static ClaimOutcome registerWinner(Id sourceLeadId, String normalized, Map<String, String> extracted,
                                                Datetime submittedOn, String forwardedByEmail, String emailSubject) {
@@ -301,23 +359,82 @@ public with sharing class PropertyClaimService {
             if (orphan != null) {
                 // The unique key exists but its winner was deleted (SetNull). Adopt it,
                 // else the key is unclaimable forever.
-                orphan.Winning_Lead__c = sourceLeadId;
-                orphan.Normalized_Address__c = normalized;
-                orphan.Registered_DateTime__c = Datetime.now();
-                update orphan;
-                insertSubmission(buildSubmission(
-                    sourceLeadId, sourceLeadId, sourceLeadId, extracted, submittedOn,
-                    forwardedByEmail, emailSubject, true
-                ));
+                adopt(orphan, sourceLeadId, normalized, extracted, submittedOn,
+                    forwardedByEmail, emailSubject);
                 return ClaimOutcome.WINNER;
             }
-            // Duplicate key but neither a live winner nor an orphan row — nothing safe to
+            // The unique key exists, has a LIVE winner, and that winner is not someone else
+            // racing us — so the row is one whose PROTECTION WINDOW HAS CLOSED (added
+            // 2026-08-17). findMatchingRegistry already declined it above, which is what let
+            // this claim proceed to the insert that collided.
+            //
+            // 🔴 THIS LEG IS NOT OPTIONAL AND IS NOT A REFINEMENT OF THE WHERE CLAUSE. Without
+            // it, an expired key falls through to the UNCLAIMED return below: the new broker
+            // gets a Lead with no claim, the expired row still occupies the unique key, and the
+            // property becomes unclaimable BY ANYONE, for ever, with no error anywhere.
+            //
+            // Ordering: AFTER the orphan leg. The two populations are DISJOINT (an orphan has a
+            // null winner; an expired row has a non-null, unconverted one), so this is about not
+            // disturbing tested behaviour rather than about correctness.
+            Property_Registry__c expired = PropertyMatchingService.findExpiredRegistry(normalized);
+            if (expired != null) {
+                adopt(expired, sourceLeadId, normalized, extracted, submittedOn,
+                    forwardedByEmail, emailSubject);
+                return ClaimOutcome.WINNER;
+            }
+            // Duplicate key but no live winner, no orphan and no expired row — nothing safe to
             // attach this submission to. Log and drop it.
             System.debug(LoggingLevel.WARN,
                 'PropertyClaimService.registerWinner: duplicate key "' + normalized + '" but no '
-                + 'live winner and no orphan row found; skipping. sourceLeadId=' + sourceLeadId);
+                + 'live winner, no orphan row and no expired row found; skipping. sourceLeadId='
+                + sourceLeadId);
             return ClaimOutcome.UNCLAIMED;
         }
+    }
+
+    /**
+     * ADOPT an existing registry row for `sourceLeadId`: re-point its winner, re-stamp its
+     * normalized address and RESET `Registered_DateTime__c` to now, then log the winning
+     * submission. The single implementation behind BOTH adoption legs in
+     * registerWinner — orphan (winner deleted) and expired (protection window closed).
+     *
+     * 🔴 THE TWO LEGS SHARE THIS METHOD RATHER THAN BEING "BYTE-IDENTICAL COPIES", AND THAT
+     * IS THE POINT. The design mandated byte-identical field writes; one implementation is
+     * the stronger form of the same guarantee, because copies drift and a shared method
+     * cannot. What must not drift is the meaning of `Registered_DateTime__c`: it means
+     * "when the CURRENT winner claimed this property", and BOTH the fuzzy lookback
+     * (`selectRecentWithWinner`) and the whole protection window read it that way. Two
+     * adoption paths writing two different field sets is exactly how that field would
+     * acquire two meanings — at which point a re-claimed property would silently keep its
+     * ORIGINAL expiry date and release again immediately.
+     *
+     * ⚠ RESETTING THE CLOCK IS NOT A NEW DECISION MADE FOR EXPIRY. The orphan leg has
+     * written `Registered_DateTime__c = Datetime.now()` since the module shipped; expiry
+     * inherits the already-working answer rather than inventing one.
+     *
+     * ⚠ THE WINNER ANCHOR IS THE LEAD ITSELF, WITH NO RESOLVE QUERY, on both legs: the Lead
+     * was inserted by the caller seconds ago and cannot have been converted yet. See
+     * buildSubmission.
+     *
+     * @param registry        The row to adopt (orphan or expired). Mutated and updated.
+     * @param sourceLeadId    The new winning Lead.
+     * @param normalized      Normalized property address (the unique Property_Key__c).
+     * @param extracted       LLM-extracted fields stamped onto the submission.
+     * @param submittedOn     The email's original send time.
+     * @param forwardedByEmail Internal user who forwarded the broker email.
+     * @param emailSubject    The inbound email subject.
+     */
+    private static void adopt(Property_Registry__c registry, Id sourceLeadId, String normalized,
+                              Map<String, String> extracted, Datetime submittedOn,
+                              String forwardedByEmail, String emailSubject) {
+        registry.Winning_Lead__c = sourceLeadId;
+        registry.Normalized_Address__c = normalized;
+        registry.Registered_DateTime__c = Datetime.now();
+        update registry;
+        insertSubmission(buildSubmission(
+            sourceLeadId, sourceLeadId, sourceLeadId, extracted, submittedOn,
+            forwardedByEmail, emailSubject, true
+        ));
     }
 
     /**

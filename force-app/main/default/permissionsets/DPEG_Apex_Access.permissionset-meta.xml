@@ -19,6 +19,19 @@
         <apexClass>BrokerFirmController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+        BrokerLeaderboardController (added 2026-08-17, FSD tranche 3 item 2) backs
+        c/brokerLeaderboard on the Acquisitions Broker Hub. It sits here, in the broad
+        catch-all, alongside its page-mates BrokerController and BrokerFirmController,
+        because it is a read-only ranking with no authorization gate of its own: the
+        underlying aggregates are WITH USER_MODE, so a user without
+        Competing_Broker_Submission__c access is denied by the platform rather than by
+        this grant. It needs no capability-set entry of its own.
+    -->
+    <classAccesses>
+        <apexClass>BrokerLeaderboardController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>BrokerListingController</apexClass>
         <enabled>true</enabled>
@@ -157,6 +170,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>PropertyPackageController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>PsaVersionController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -170,6 +187,14 @@
     </classAccesses>
     <classAccesses>
         <apexClass>SellMeterController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>TopBrokersController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>TopDealsController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <!--

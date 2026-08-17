@@ -399,4 +399,158 @@ private class PropertyMatchingServiceTest {
         Assert.isNull(result,
             'A submission older than LOOKBACK_DAYS is outside the recency window and must not make a new email a repeat');
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PROTECTION WINDOW (2026-08-17) — findMatchingRegistry's exact leg + findExpiredRegistry
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Backdate a registration so its claim sits `days` in the past. */
+    private static Property_Registry__c backdate(Property_Registry__c registry, Integer days) {
+        registry.Registered_DateTime__c = Datetime.now().addDays(-days);
+        update registry;
+        return registry;
+    }
+
+    /** Convert a Lead so its registration reads `IsConverted = true`. */
+    private static void convertLead(Id leadId) {
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(leadId);
+        lc.setConvertedStatus([SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel);
+        Assert.isTrue(Database.convertLead(lc).isSuccess(), 'The fixture Lead must convert');
+    }
+
+    /**
+     * 🔴 THE INVARIANT PIN. PROTECTION_WINDOW_DAYS must never exceed LOOKBACK_DAYS.
+     *
+     * If it did, a claim in the gap would be PROTECTED on the exact-key leg (still inside
+     * the protection window) and INVISIBLE on the fuzzy leg (already outside the lookback)
+     * — which is exactly the defect the protection window was added to remove, relocated
+     * rather than fixed: a re-worded resubmission would win a property that an
+     * identically-worded one loses. The two constants are held together by this assertion
+     * and by nothing else, which is why it exists as its own test rather than a comment.
+     */
+    @isTest
+    static void protectionWindow_neverExceedsTheFuzzyLookback() {
+        Assert.isTrue(
+            PropertyMatchingService.LOOKBACK_DAYS >= PropertyMatchingService.PROTECTION_WINDOW_DAYS,
+            'LOOKBACK_DAYS (' + PropertyMatchingService.LOOKBACK_DAYS + ') must be >= PROTECTION_WINDOW_DAYS ('
+            + PropertyMatchingService.PROTECTION_WINDOW_DAYS + '); otherwise a claim in the gap is protected on the '
+            + 'exact path and invisible on the fuzzy path, reintroducing the exact/fuzzy asymmetry');
+    }
+
+    @isTest
+    static void findMatchingRegistry_exactKeyInsideTheWindow_stillReportsTheWinner() {
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('900 fresh claim st', createLead(), true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS - 1);
+
+        Test.startTest();
+        Property_Registry__c result = PropertyMatchingService.findMatchingRegistry('900 fresh claim st');
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'A claim one day inside the protection window still holds the property');
+        Assert.areEqual(reg.Id, result.Id, 'The incumbent registration should be returned');
+    }
+
+    @isTest
+    static void findMatchingRegistry_exactKeyOutsideTheWindow_reportsNoWinner() {
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('901 stale claim st', createLead(), true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 1);
+
+        Test.startTest();
+        Property_Registry__c matched = PropertyMatchingService.findMatchingRegistry('901 stale claim st');
+        Property_Registry__c expired = PropertyMatchingService.findExpiredRegistry('901 stale claim st');
+        Test.stopTest();
+
+        Assert.isNull(matched,
+            'An expired claim must report NO winner — that is what releases the property to the next broker');
+        Assert.isNotNull(expired,
+            'The same row must be reachable for ADOPTION; without it the unique key becomes unclaimable by anyone');
+        Assert.areEqual(reg.Id, expired.Id, 'findExpiredRegistry should return the very row findMatchingRegistry declined');
+    }
+
+    @isTest
+    static void findMatchingRegistry_expiredClaimWithConvertedWinner_stillReportsTheWinner() {
+        Id winnerId = createLead();
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('902 live deal st', winnerId, true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 400);
+        convertLead(winnerId);
+
+        Test.startTest();
+        Property_Registry__c matched = PropertyMatchingService.findMatchingRegistry('902 live deal st');
+        Property_Registry__c expired = PropertyMatchingService.findExpiredRegistry('902 live deal st');
+        Test.stopTest();
+
+        Assert.isNotNull(matched,
+            'A converted winner is a live deal DPEG is transacting — its claim must not expire');
+        Assert.areEqual(reg.Id, matched.Id, 'The converted winner keeps the property');
+        Assert.isNull(expired,
+            'A converted winner must never be adoptable — that filter is what keeps the adoption update off a converted-Lead lookup');
+    }
+
+    /**
+     * 🔴 THE P2 FALSIFIER, AT THE DECISION LAYER. One property, TWO wordings, one clock.
+     *
+     * This is the highest-value test of the protection window, because the defect it pins
+     * was never "claims do not expire" — it was that the SAME property produced OPPOSITE
+     * answers depending only on how the second broker spelled the address: an identical
+     * wording hit the un-windowed exact read and kept the incumbent for ever, while a
+     * different wording fell through to the 90-day fuzzy scan and released it.
+     *
+     * Both wordings must now agree at BOTH ends of the boundary. A future change that
+     * re-points the exact leg at `selectByPropertyKeyWithWinner` compiles, deploys and
+     * passes every other test in this class — and turns this one red.
+     */
+    @isTest
+    static void exactAndFuzzyWordings_reachTheSameVerdictOnBothSidesOfTheWindow() {
+        // 0.8 Jaccard: {100,main,street,houston,tx} vs {100,main,street,houston}.
+        String registered = '100 main street houston tx';
+        String reworded = '100 main street houston';
+
+        Property_Registry__c inside =
+            TestDataFactory.createPropertyRegistry(registered, createLead(), true);
+        backdate(inside, PropertyMatchingService.PROTECTION_WINDOW_DAYS - 1);
+
+        Test.startTest();
+        Property_Registry__c exactInside = PropertyMatchingService.findMatchingRegistry(registered);
+        Property_Registry__c fuzzyInside = PropertyMatchingService.findMatchingRegistry(reworded);
+
+        backdate(inside, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 1);
+        Property_Registry__c exactOutside = PropertyMatchingService.findMatchingRegistry(registered);
+        Property_Registry__c fuzzyOutside = PropertyMatchingService.findMatchingRegistry(reworded);
+        Test.stopTest();
+
+        Assert.isNotNull(exactInside, 'Inside the window, an identically-worded resubmission must find the incumbent');
+        Assert.isNotNull(fuzzyInside, 'Inside the window, a re-worded resubmission must find the SAME incumbent');
+        Assert.areEqual(exactInside.Id, fuzzyInside.Id,
+            'Both wordings must resolve to one registration — two rows for one building is the second half of the defect');
+
+        Assert.isNull(exactOutside, 'Outside the window, an identically-worded resubmission must find no winner');
+        Assert.isNull(fuzzyOutside,
+            'Outside the window, a re-worded resubmission must ALSO find no winner — the two paths must never disagree');
+    }
+
+    @isTest
+    static void findExpiredRegistry_blankInput_returnsNull() {
+        Assert.isNull(PropertyMatchingService.findExpiredRegistry(null), 'Blank input should return null');
+        Assert.isNull(PropertyMatchingService.findExpiredRegistry('   '), 'Blank (whitespace) input should return null');
+    }
+
+    @isTest
+    static void findExpiredRegistry_orphanRow_returnsNull() {
+        Property_Registry__c orphan =
+            TestDataFactory.createPropertyRegistry('903 orphan not expired st', createLead(), true);
+        backdate(orphan, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 5);
+        orphan.Winning_Lead__c = null;
+        update orphan;
+
+        Test.startTest();
+        Property_Registry__c expired = PropertyMatchingService.findExpiredRegistry('903 orphan not expired st');
+        Property_Registry__c orphaned = PropertyMatchingService.findOrphanedRegistry('903 orphan not expired st');
+        Test.stopTest();
+
+        // The two adoption legs must stay disjoint: an orphan has NO winner, an expired row
+        // has an unconverted one. Overlap would mean two legs racing to adopt the same row.
+        Assert.isNull(expired, 'A winner-less row is an orphan, not an expired claim');
+        Assert.isNotNull(orphaned, 'It must still be reachable through the ORPHAN leg, which has owned this case since the module shipped');
+    }
 }

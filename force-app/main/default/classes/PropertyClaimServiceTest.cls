@@ -801,4 +801,223 @@ private class PropertyClaimServiceTest {
         Assert.areEqual(0, [SELECT COUNT() FROM Property_Registry__c WHERE Property_Key__c = '600 invalid claim st'],
             'No registry row should exist after the rethrown failure');
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // BROKER-PROTECTION EXPIRY (2026-08-17, FSD tranche 3 item 1)
+    //
+    // registerWinner gained a THIRD adoption leg — an EXPIRED registration, i.e. a
+    // row that still names a winner but whose protection window has closed and
+    // whose winner is NOT converted. The tests below are written as BOUNDARY PAIRS
+    // (one day inside / one day outside) because a window is exactly the kind of
+    // rule that a single-sided test will keep passing after the comparison is
+    // inverted.
+    //
+    // ⚠ ONE LIMIT IS STATED RATHER THAN WORKED AROUND: this suite proves the
+    // DECISION (we refuse to adopt a converted winner's row) and CANNOT prove that
+    // the platform would have rejected the update had we tried. Test context does
+    // not enforce the converted-Lead lookup restriction — see
+    // platform_lookupToAConvertedLead_isNotEnforcedInTestContext above. A green run
+    // here is therefore NOT evidence about the platform rule; only the post-deploy
+    // resubmission gate is.
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Backdate a registration so its claim sits `days` in the past. */
+    private static Property_Registry__c backdate(Property_Registry__c registry, Integer days) {
+        registry.Registered_DateTime__c = Datetime.now().addDays(-days);
+        update registry;
+        return registry;
+    }
+
+    private static Integer windowDays() {
+        return PropertyMatchingService.PROTECTION_WINDOW_DAYS;
+    }
+
+    private static Property_Registry__c registryFor(String key) {
+        List<Property_Registry__c> rows = [
+            SELECT Id, Winning_Lead__c, Registered_DateTime__c
+            FROM Property_Registry__c
+            WHERE Property_Key__c = :key
+        ];
+        Assert.areEqual(1, rows.size(),
+            'Exactly one registry row must exist for "' + key + '" — a second row means the unique key was bypassed');
+        return rows[0];
+    }
+
+    @isTest
+    static void claim_expiredClaim_adoptsTheRowAndTheNewBrokerWins() {
+        Lead incumbent = TestDataFactory.createLead(true);
+        Property_Registry__c reg =
+            TestDataFactory.createPropertyRegistry('900 expired claim st', incumbent.Id, true);
+        Datetime originalStamp = backdate(reg, windowDays() + 1).Registered_DateTime__c;
+        Lead challenger = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
+            challenger.Id, '900 expired claim st', extractedFields(), Datetime.now(),
+            'forwarder.expiry@example.invalid', 'FW: expired property'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.WINNER, outcome,
+            'An expired claim RELEASES the property, so the next broker must win it outright');
+
+        Property_Registry__c adopted = registryFor('900 expired claim st');
+        Assert.areEqual(reg.Id, adopted.Id, 'The SAME row must be adopted, never replaced — the key is unique');
+        Assert.areEqual(challenger.Id, adopted.Winning_Lead__c, 'The winner anchor must move to the new broker');
+        Assert.isTrue(adopted.Registered_DateTime__c > originalStamp,
+            'Registered_DateTime__c must RESET on adoption — it means "when the CURRENT winner claimed", and both '
+            + 'the fuzzy lookback and the protection window read it that way. Leaving it would re-expire immediately');
+
+        List<Competing_Broker_Submission__c> winning = [
+            SELECT Winning_Lead__c, Source_Lead__c FROM Competing_Broker_Submission__c
+            WHERE Source_Lead__c = :challenger.Id AND Is_Winning_Submission__c = true
+        ];
+        Assert.areEqual(1, winning.size(), 'The adopting broker must get a WINNING submission row, exactly like the orphan leg');
+        Assert.areEqual(challenger.Id, winning[0].Winning_Lead__c, 'The new winning submission must anchor on the new winner');
+    }
+
+    /**
+     * 🔴 THE P4 FALSIFIER — the test that catches a future "simplification" which keeps the
+     * date filter and drops the adoption leg.
+     *
+     * Without adoption, an expired key traces: findMatchingRegistry -> null (expired), so
+     * not a lost race -> registerWinner INSERTS -> DUPLICATE_VALUE against the expired row's
+     * still-unique Property_Key__c -> the catch re-checks (still null) -> findOrphanedRegistry
+     * filters Winning_Lead__c = null and the expired row HAS a winner, so it is not an orphan
+     * -> fall through to the logged UNCLAIMED return. The result is a Lead with no claim and
+     * a property key that can NEVER be claimed by anybody again, with no error anywhere.
+     */
+    @isTest
+    static void claim_expiredKey_mustNeverFallThroughToUnclaimed() {
+        Lead incumbent = TestDataFactory.createLead(true);
+        backdate(TestDataFactory.createPropertyRegistry('901 sink st', incumbent.Id, true), windowDays() + 30);
+        Lead challenger = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
+            challenger.Id, '901 sink st', extractedFields(), Datetime.now(),
+            'forwarder.sink@example.invalid', 'FW: sink'
+        );
+        Test.stopTest();
+
+        Assert.areNotEqual(PropertyClaimService.ClaimOutcome.UNCLAIMED, outcome,
+            'UNCLAIMED here means the property key is now unclaimable by anyone, for ever, silently — '
+            + 'if this fails, the expired-adoption leg has been removed while the date filter was kept');
+        Assert.areEqual(challenger.Id, registryFor('901 sink st').Winning_Lead__c,
+            'The expired key must end up owned by the new claimant, not stranded');
+    }
+
+    @isTest
+    static void claim_claimOneDayInsideTheWindow_leavesTheIncumbentInPlace() {
+        Lead incumbent = TestDataFactory.createLead(true);
+        Property_Registry__c reg =
+            TestDataFactory.createPropertyRegistry('902 protected st', incumbent.Id, true);
+        backdate(reg, windowDays() - 1);
+        Lead challenger = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
+            challenger.Id, '902 protected st', extractedFields(), Datetime.now(),
+            'forwarder.protected@example.invalid', 'FW: still protected'
+        );
+        Test.stopTest();
+
+        // The boundary partner of claim_expiredClaim_adoptsTheRowAndTheNewBrokerWins. Both
+        // must hold, or the window comparison has been inverted.
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.DUPLICATE_RACE, outcome,
+            'A claim inside the protection window still holds the property — the challenger loses');
+        Assert.areEqual(incumbent.Id, registryFor('902 protected st').Winning_Lead__c,
+            'The incumbent must keep the registration');
+
+        List<Competing_Broker_Submission__c> competing = [
+            SELECT Winning_Lead__c, Is_Winning_Submission__c FROM Competing_Broker_Submission__c
+            WHERE Source_Lead__c = :challenger.Id
+        ];
+        Assert.areEqual(1, competing.size(), 'The losing broker must still be recorded as a competing submission');
+        Assert.isFalse(competing[0].Is_Winning_Submission__c, 'That row must NOT be flagged as the winner');
+        Assert.areEqual(incumbent.Id, competing[0].Winning_Lead__c, 'It must be filed under the broker who actually holds the claim');
+    }
+
+    /**
+     * 🔴 A CONVERTED WINNER'S CLAIM DOES NOT EXPIRE.
+     *
+     * ⚠ THIS TEST PROVES THE DECISION, NOT THE PLATFORM RULE BEHIND IT. The reason the
+     * decision exists is that adopting such a row would `update` a record whose
+     * `Winning_Lead__c` holds a CONVERTED Lead, which the platform rejects at runtime —
+     * and `platform_lookupToAConvertedLead_isNotEnforcedInTestContext` above pins that test
+     * context does NOT enforce that restriction. So a green run here says "we refuse to
+     * adopt", and says nothing whatsoever about what would have happened if we had. Do not
+     * read it as validating the prohibition in PropertyClaimService's header.
+     */
+    @isTest
+    static void claim_expiredClaimWhoseWinnerConverted_isNotAdopted() {
+        Lead incumbent = TestDataFactory.createLead(true);
+        Property_Registry__c reg =
+            TestDataFactory.createPropertyRegistry('903 live deal st', incumbent.Id, true);
+        backdate(reg, windowDays() + 400);
+        Id opportunityId = convertAndGetOpportunity(incumbent);
+        Lead challenger = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.ClaimOutcome outcome = PropertyClaimService.claim(
+            challenger.Id, '903 live deal st', extractedFields(), Datetime.now(),
+            'forwarder.livedeal@example.invalid', 'FW: live deal'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(PropertyClaimService.ClaimOutcome.DUPLICATE_RACE, outcome,
+            'A converted winner is a live deal — 400 days past the window it must still hold the property');
+        Assert.areEqual(incumbent.Id, registryFor('903 live deal st').Winning_Lead__c,
+            'The registry row must be untouched: adopting it is the exact update the class header prohibits');
+
+        // ⚠ The competing row is queried by its OPPORTUNITY anchor, not by Source_Lead__c:
+        // on the converted path buildSubmission nulls BOTH Lead lookups, so a
+        // Source_Lead__c filter here would return nothing and the assertion would be vacuous.
+        List<Competing_Broker_Submission__c> competing = [
+            SELECT Winning_Lead__c, Source_Lead__c, Winning_Opportunity__c, Is_Winning_Submission__c
+            FROM Competing_Broker_Submission__c
+            WHERE Winning_Opportunity__c = :opportunityId
+        ];
+        Assert.areEqual(1, competing.size(), 'The challenger is still recorded as a competing submission');
+        Assert.isFalse(competing[0].Is_Winning_Submission__c, 'The challenger did not win, so their row must not be flagged as the winner');
+        Assert.isNull(competing[0].Winning_Lead__c, 'Both Lead lookups are null once the winner has converted');
+        Assert.isNull(competing[0].Source_Lead__c, 'Source_Lead__c is nulled on the converted path too — it is the same unwritable Lead');
+    }
+
+    /**
+     * The handover is a RE-POINT, not a cleanup. Nothing about the superseded broker is
+     * deleted, flagged or rewritten — ARCHITECTURE.md records that
+     * Competing_Broker_Submission__c is deliberately not master-detail precisely so a
+     * cascade can never wipe this trail, and this module deletes a Lead on exactly one path
+     * (DUPLICATE_RACE), which an expiry handover is not.
+     */
+    @isTest
+    static void expiryHandover_preservesTheSupersededBrokersLeadAndSubmissionTrail() {
+        Lead incumbent = TestDataFactory.createLead(true);
+        Property_Registry__c reg =
+            TestDataFactory.createPropertyRegistry('904 handover st', incumbent.Id, true);
+        Competing_Broker_Submission__c originalTrail =
+            TestDataFactory.createCompetingBrokerSubmission(incumbent.Id, true);
+        backdate(reg, windowDays() + 10);
+        Lead challenger = TestDataFactory.createLead(true);
+
+        Test.startTest();
+        PropertyClaimService.claim(
+            challenger.Id, '904 handover st', extractedFields(), Datetime.now(),
+            'forwarder.handover@example.invalid', 'FW: handover'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(1, [SELECT COUNT() FROM Lead WHERE Id = :incumbent.Id],
+            'The superseded broker\'s Lead must survive — it keeps its address, extraction and Tasks, it merely stops holding the claim');
+        Assert.areEqual(1, [SELECT COUNT() FROM Competing_Broker_Submission__c WHERE Id = :originalTrail.Id],
+            'The superseded broker\'s submission trail must survive intact — it is the append-only audit of their claim');
+
+        // Two rows now carry Is_Winning_Submission__c = true for one property, anchored on
+        // DIFFERENT Leads. That is correct, not a defect: each was true when written and the
+        // object is append-only by definition.
+        Assert.areEqual(2, [
+            SELECT COUNT() FROM Competing_Broker_Submission__c WHERE Is_Winning_Submission__c = true
+        ], 'Both the old and the new winning submissions are retained, each anchored on its own Lead');
+    }
 }

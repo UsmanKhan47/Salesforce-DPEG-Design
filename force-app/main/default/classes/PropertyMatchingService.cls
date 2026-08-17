@@ -21,11 +21,55 @@
  * deriveClusterKey and computeThreadKey are pure functions with no platform dependency,
  * so tests can assert them directly.
  *
- * SIGNATURE CONTRACT — the constants and the nine public static methods are the exact
+ * SIGNATURE CONTRACT — the constants and the ten public static methods are the exact
  * bindings CHUNK 3 / the claim writer wire to (SIMILARITY_THRESHOLD, LOOKBACK_DAYS,
- * normalizeAddress, calculateSimilarity, findMatchingRegistry, findOrphanedRegistry,
- * deriveClusterKey, findBrokerSubmission, computeThreadKey, findRecordByReplyHeaders,
- * resolveLiveRecord). Do not rename or change their parameters/return types.
+ * PROTECTION_WINDOW_DAYS, normalizeAddress, calculateSimilarity, findMatchingRegistry,
+ * findOrphanedRegistry, findExpiredRegistry, deriveClusterKey, findBrokerSubmission,
+ * computeThreadKey, findRecordByReplyHeaders, resolveLiveRecord). Do not rename or change
+ * their parameters/return types.
+ *
+ * ═══ 🔴 THE PROTECTION WINDOW — ONE RECENCY RULE, THREE READS (added 2026-08-17) ═══
+ * FSD tranche 3 item 1. Until this change the module answered "is this property already
+ * claimed?" with three reads and TWO different recency policies:
+ *
+ *   read                                            | before      | after
+ *   ------------------------------------------------|-------------|-----------
+ *   findMatchingRegistry, EXACT key                  | NEVER expired | windowed
+ *   findMatchingRegistry, FUZZY scan                 | 90 days     | unchanged
+ *   findBrokerSubmission, REPEAT detection           | 90 days     | unchanged
+ *
+ * The consequence was a live defect: past day 90 the SAME property produced OPPOSITE
+ * outcomes depending only on whether the second broker happened to word the address
+ * identically to the first (exact hit -> incumbent keeps it for ever) or differently
+ * (fuzzy miss -> new broker wins, and a SECOND registry row is minted for one building).
+ * This is not "an expiry feature" bolted on; it is making the third read agree with the
+ * two that already agreed with each other.
+ *
+ * 🔴 LOOKBACK_DAYS >= PROTECTION_WINDOW_DAYS IS AN INVARIANT, AND IT IS PINNED BY A TEST
+ * RATHER THAN GUARANTEED BY CONSTRUCTION. If the protection window were ever set LONGER
+ * than the fuzzy lookback, a claim in the gap would be protected on the exact path and
+ * INVISIBLE on the fuzzy path — reintroducing exactly the asymmetry above, in a new place.
+ * The two constants stay separate (they answer different questions and may legitimately
+ * diverge upward on the lookback side) and are held together by
+ * PropertyMatchingServiceTest, the same arrangement CallForOffersService uses for
+ * CRITICAL_DAYS / APPROACHING_DAYS against ALERT_INTERVALS.
+ *
+ * ⚠ "90" IS HARDCODED IN FIVE PLACES AND FORMULAS CANNOT READ APEX CONSTANTS. The register,
+ * so a future change moves all of them:
+ *   1. PropertyMatchingService.LOOKBACK_DAYS            (this class)
+ *   2. PropertyMatchingService.PROTECTION_WINDOW_DAYS   (this class)
+ *   3. LeadFunnelController.BP_WINDOW_DAYS
+ *   4. Lead.BP_Expiry__c                                (formula: First_Seen_Date + 90)
+ *   5. Property_Registry__c.Protection_Expiry_Date__c   (formula; ADMIN item A1 — see the
+ *      report note: not created by this change, and its absence does not affect behaviour,
+ *      only visibility)
+ * Sites 4 and 5 are DISPLAY ONLY. Nothing in the arbitration path reads either.
+ *
+ * ⚠ CONFIGURABILITY WAS CONSIDERED AND REFUSED (design §1.7). This is a claim-ARBITRATION
+ * constant, so lowering it in Setup retroactively re-decides who owns properties that are
+ * already claimed — every claim between the new and old value releases at once, and the
+ * next email on any of them mints a new winner, with no deploy, no review and no audit.
+ * That is a data migration wearing a checkbox. Change it by deploy.
  *
  * ✅ FUZZY DUAL-WINNER RACE — NOW CLOSED (W4). Previously race-safety was exact-string
  * only: the unique index on Property_Registry__c.Property_Key__c stopped two
@@ -76,6 +120,31 @@ public with sharing class PropertyMatchingService {
     /** Fuzzy-match recency window (days): only registrations claimed within the last
      *  LOOKBACK_DAYS are considered candidates. */
     public static final Integer LOOKBACK_DAYS = 90;
+
+    /**
+     * Broker-protection window (days): a registration older than this RELEASES the
+     * property, so a later broker can win it. Applies to the EXACT-key claim read; the
+     * fuzzy leg is already bounded by LOOKBACK_DAYS.
+     *
+     * 🔴 A CONVERTED WINNER IS EXEMPT — its claim never expires. See
+     * PropertyRegistrySelector.selectLiveByPropertyKey for why that is what makes the
+     * adoption update admissible at all, and for the stated converted-then-dead residual.
+     *
+     * 🔴 MUST BE <= LOOKBACK_DAYS. Pinned by PropertyMatchingServiceTest, not by
+     * construction; the class header explains what breaks if it is not.
+     */
+    public static final Integer PROTECTION_WINDOW_DAYS = 90;
+
+    /**
+     * The opening edge of the protection window, relative to now — the single place the
+     * cutoff Datetime is derived, so the live read and the expired read can never be
+     * computed from two different clocks or two different constants.
+     *
+     * @return `Datetime.now()` minus PROTECTION_WINDOW_DAYS.
+     */
+    private static Datetime protectionCutoff() {
+        return Datetime.now().addDays(-PROTECTION_WINDOW_DAYS);
+    }
 
     /**
      * Canonicalize a raw property address into the atomic claim key. Blank in → '' out.
@@ -200,8 +269,22 @@ public with sharing class PropertyMatchingService {
      * Find the existing WINNING registration for a normalized address, exact match
      * first then fuzzy. Blank in → null.
      *
-     * Exact: the unique Property_Key__c lookup
-     * (PropertyRegistrySelector.selectByPropertyKeyWithWinner); if any row comes back it
+     * ⚠ "EXISTING WINNING REGISTRATION" MEANS **LIVE**, NOT MERELY PRESENT (2026-08-17).
+     * Both legs are now bounded by the same recency policy: the exact leg by
+     * PROTECTION_WINDOW_DAYS and the fuzzy leg by LOOKBACK_DAYS (equal today, and pinned
+     * that way). A registration older than the window with an UNCONVERTED winner is
+     * reported here as NO WINNER, which is what releases the property — and is why
+     * PropertyClaimService.registerWinner must be able to ADOPT the expired row rather
+     * than insert over it (see findExpiredRegistry).
+     *
+     * 🔴 CHANGING THIS ONE FUNCTION FLIPS AN EXPIRED PROPERTY EVERYWHERE AT ONCE, AND THAT
+     * IS THE DESIGN GOAL. ExtractAddressQueueable's branch (d) (competing) and branch (e)
+     * (winner) both route off this call, and claim()'s in-lock authority calls it too — so
+     * the pre-read and the in-lock decision cannot disagree about whether a claim has
+     * expired. Nothing in ExtractAddressQueueable was touched to add the window.
+     *
+     * Exact: the WINDOWED unique Property_Key__c lookup
+     * (PropertyRegistrySelector.selectLiveByPropertyKey); if any row comes back it
      * is the definitive winner and is returned immediately. Fuzzy: otherwise scan the
      * winners registered within the last LOOKBACK_DAYS
      * (PropertyRegistrySelector.selectRecentWithWinner) and return the single candidate
@@ -222,8 +305,8 @@ public with sharing class PropertyMatchingService {
             return null;
         }
 
-        List<Property_Registry__c> exact =
-            PropertyRegistrySelector.selectByPropertyKeyWithWinner(new Set<String>{ normalized });
+        List<Property_Registry__c> exact = PropertyRegistrySelector.selectLiveByPropertyKey(
+            new Set<String>{ normalized }, protectionCutoff());
         if (!exact.isEmpty()) {
             return exact[0];
         }
@@ -266,6 +349,42 @@ public with sharing class PropertyMatchingService {
         List<Property_Registry__c> orphans =
             PropertyRegistrySelector.selectOrphanByPropertyKey(normalized);
         return orphans.isEmpty() ? null : orphans[0];
+    }
+
+    /**
+     * Find the EXPIRED registration for a normalized address — a registry row that still
+     * names a winner, but whose protection window closed and whose winning Lead is NOT
+     * converted. Blank in -> null. Deliberately shaped as findOrphanedRegistry's twin: one
+     * selector call, first row or null, no fuzzy fallback (the key is exact and unique).
+     *
+     * 🔴 IT IS CALLED FROM EXACTLY ONE PLACE — PropertyClaimService.registerWinner's
+     * DUPLICATE_VALUE catch — AND THAT IS WHY THE WINDOW COSTS ZERO EXTRA SOQL ON EVERY
+     * ORDINARY PATH. The cutoff on the LIVE read is a bind variable on a query that
+     * already ran; this second read only happens when a claim actually collided with an
+     * expired key, which is rare by construction.
+     *
+     * ⚠ WITHOUT THIS READ, A DATE FILTER ALONE IS A SILENT, PERMANENT CLAIM SINK. The
+     * expired row still occupies the unique Property_Key__c, so the new winner's insert
+     * throws DUPLICATE_VALUE; the re-check finds no live winner; and the row is not an
+     * ORPHAN because it has a winner — so the claim falls through to UNCLAIMED and the key
+     * becomes unclaimable by anyone, for ever, with no error anywhere. Anyone
+     * "simplifying" the expiry down to the WHERE clause reintroduces that.
+     *
+     * @param normalized The normalized property address; null/blank returns null.
+     * @return The expired, unconverted-winner Property_Registry__c for that key, or null
+     *         when there is none (unregistered, still inside the window, or the winner has
+     *         converted so the claim does not expire).
+     * @example
+     * Property_Registry__c expired =
+     *     PropertyMatchingService.findExpiredRegistry(normalized);
+     */
+    public static Property_Registry__c findExpiredRegistry(String normalized) {
+        if (String.isBlank(normalized)) {
+            return null;
+        }
+        List<Property_Registry__c> expired =
+            PropertyRegistrySelector.selectExpiredByPropertyKey(normalized, protectionCutoff());
+        return expired.isEmpty() ? null : expired[0];
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

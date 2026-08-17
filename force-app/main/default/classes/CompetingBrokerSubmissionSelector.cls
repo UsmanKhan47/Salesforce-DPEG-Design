@@ -10,16 +10,20 @@
  * are recorded as competing submissions against that same winner. Consumers land in
  * CHUNK 2/3.
  *
- * MODE — the single query uses `WITH USER_MODE` (API 67). Competing_Broker_Submission__c
- * is a custom object; P3 proved the custom-field FLS gap is 0, so USER_MODE is safe
- * and enforces the running user's sharing + FLS. No guest path — no SYSTEM_MODE here.
+ * MODE — every query uses `WITH USER_MODE` (API 67), the two 2026-08-17 aggregates
+ * included. Competing_Broker_Submission__c is a custom object; P3 proved the custom-field
+ * FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS. No
+ * guest path — no SYSTEM_MODE here, and none of ARCHITECTURE.md §2's automation-path
+ * exception applies: every read on this class backs something a human explicitly asked
+ * for.
  *
- * SIGNATURE CONTRACT — the public method is STATIC, matching the repo selector norm
+ * SIGNATURE CONTRACT — the public methods are STATIC, matching the repo selector norm
  * (BovSubmissionSelector, CounterOfferSelector, ContactSelector, LeadSelector all
- * expose `public static` query methods). It keeps the exact signature the
- * Broker-Protection chunk plan fixed; CHUNK 2/3 bind to it by name
+ * expose `public static` query methods). The original two keep the exact signatures the
+ * Broker-Protection chunk plan fixed; CHUNK 2/3 bind to them by name
  * (`CompetingBrokerSubmissionSelector.selectByWinningLead(...)`). Do not rename or
- * change its parameter/return type.
+ * change their parameters/return types — the 2026-08-17 leaderboard aggregates were
+ * ADDED alongside them, never retrofitted onto one.
  *
  * NOT-FOUND CONTRACT — read-for-display: a winning lead with no competing
  * submissions is normal, so this returns its natural empty List, never null.
@@ -170,6 +174,133 @@ public with sharing class CompetingBrokerSubmissionSelector {
             WITH USER_MODE
             ORDER BY Submitted_DateTime__c ASC
             LIMIT 200
+        ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // BROKER LEADERBOARD AGGREGATES (added 2026-08-17, FSD tranche 3 item 2 / §27.3-27.4)
+    //
+    // 🔴 NEITHER AGGREGATE READS A WINNER ANCHOR, AND THAT IS WHY THE SPLIT-ANCHOR TRAP
+    // DOES NOT BITE THE LEADERBOARD. Both GROUP BY `Broker_Email__c` and select neither
+    // `Winning_Lead__c` nor `Winning_Opportunity__c`. A converted winner's rows carry the
+    // Opportunity anchor and are STILL COUNTED, because the anchor is not in the query at
+    // all — whereas `selectByWinningLead` above, which does read one anchor, is blind to
+    // exactly those rows (its own documented gap). Read that paragraph before adding a
+    // drill-through or a deal-outcome column here: the moment either aggregate needs to
+    // reach the winning record, BOTH anchors must be read, and this comment stops being
+    // true.
+    //
+    // ⚠ THE IDENTITY KEY IS AN EMAIL ADDRESS, WITH A KNOWN COLLAPSE. ARCHITECTURE.md
+    // records the blast-platform residual as EXPECTED TRAFFIC, not an edge case: a broker
+    // submitting through RCM / Crexi / Buildout can arrive with an envelope From of the
+    // PLATFORM (`listings@buildout.com`), and intake rule U1 then keys every such broker to
+    // that one address. So a leaderboard row may be a PLATFORM, not a person. That is not
+    // fixed here and must not be: a name/domain heuristic in a reporting query would be a
+    // second, unowned copy of an arbitration rule. ARCHITECTURE's named eventual fix — a
+    // platform-sender list that stands U1 down — repairs this surface for free.
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * TOTAL submissions per broker, busiest first — aggregate A of the two-query broker
+     * leaderboard. One row per distinct `Broker_Email__c`.
+     *
+     * Aliases: `brokerEmail`, `brokerName`, `submissionCount`, `firstSubmitted`,
+     * `lastSubmitted`.
+     *
+     * ⚠ `MAX(Broker_Name__c)` IS DETERMINISTIC-ARBITRARY, NOT "THE LATEST". One address can
+     * legitimately carry several spellings across emails ("Jane Broker", "Jane R. Broker",
+     * "J Broker"), and MAX picks the lexicographic maximum — stable, but not meaningful.
+     * The row's IDENTITY is the email; the name is a display hint only. Do NOT add a third
+     * query to fetch a "better" name.
+     *
+     * ✅ `MIN(Submitted_DateTime__c)` IS FSD §27.4's "First Submission Date" IN FULL — no
+     * Contact field, no writer, no backfill, no trigger. It falls out of this aggregate for
+     * free, which is a large part of why the leaderboard is computed live rather than
+     * stored.
+     *
+     * ORDERING is `COUNT(Id) DESC, Broker_Email__c ASC`. The tie-break is not cosmetic: a
+     * leaderboard whose rows reshuffle between two identical reads is unusable, and the
+     * `LIMIT` makes an unstable sort decide WHICH brokers appear at all.
+     *
+     * MODE / SHARING — `WITH USER_MODE` on this `with sharing` class. MODE: this backs a
+     * read a human explicitly requested by opening a page, so a permission gap SHOULD throw
+     * rather than silently under-report a ranking; ARCHITECTURE.md §2's automation-path
+     * exception is for reads performed on a principal's behalf, and this is not one.
+     * SHARING (answered separately, per §2's standing warning): `Competing_Broker_Submission__c`
+     * is `sharingModel = ReadWrite` (verified in its object-meta.xml), so `with sharing`
+     * filters nothing here and a `without sharing` inner class would be an unargued
+     * widening. ⚠ If that OWD is ever narrowed to Private, this aggregate does not fail —
+     * it returns a CONFIDENT WRONG ANSWER (an under-count that looks like a real ranking),
+     * which is the `DispositionOfferSelector.TractionReads` failure shape; the remedy then
+     * is a narrow `private without sharing` inner class holding only these two queries.
+     *
+     * @param maxRows Maximum leaderboard rows to return; null or &lt; 1 returns an empty
+     *                list (a caller that cannot say how many rows it wants gets none,
+     *                rather than an unbounded aggregate).
+     * @return Up to `maxRows` AggregateResult rows, busiest broker first; empty when there
+     *         are no submissions carrying a broker email.
+     * @example
+     * List<AggregateResult> rows =
+     *     CompetingBrokerSubmissionSelector.aggregateSubmissionsByBroker(25);
+     */
+    public static List<AggregateResult> aggregateSubmissionsByBroker(Integer maxRows) {
+        if (maxRows == null || maxRows < 1) {
+            return new List<AggregateResult>();
+        }
+        return [
+            SELECT Broker_Email__c brokerEmail,
+                   MAX(Broker_Name__c) brokerName,
+                   COUNT(Id) submissionCount,
+                   MIN(Submitted_DateTime__c) firstSubmitted,
+                   MAX(Submitted_DateTime__c) lastSubmitted
+            FROM Competing_Broker_Submission__c
+            WHERE Broker_Email__c != null
+            WITH USER_MODE
+            GROUP BY Broker_Email__c
+            ORDER BY COUNT(Id) DESC, Broker_Email__c ASC
+            LIMIT :maxRows
+        ];
+    }
+
+    /**
+     * WINNING submissions per broker, for a named set of broker addresses — aggregate B of
+     * the two-query broker leaderboard. Aliases: `brokerEmail`, `wonCount`.
+     *
+     * ⚠ IT IS SCOPED TO THE ADDRESSES AGGREGATE A ALREADY RETURNED, deliberately. The
+     * caller only ever renders A's rows, so an unbounded second aggregate would compute
+     * wins for brokers nobody will see and would grow without limit as the ledger does.
+     * Binding the set keeps the pair at **2 SOQL, both bounded by the caller's `maxRows`,
+     * constant in the number of brokers in the org**.
+     *
+     * ⚠ "WON" HERE MEANS `Is_Winning_Submission__c` — THE BROKER WON THE PROPERTY CLAIM. It
+     * does NOT mean DPEG closed the deal. Deal outcome is a different question needing both
+     * winner anchors plus a conversion hop, and it is deliberately not built (design §2.3);
+     * do not relabel this column "Deals Won" without building that.
+     *
+     * MODE / SHARING — identical reasoning to `aggregateSubmissionsByBroker`; see that
+     * method.
+     *
+     * @param brokerEmails The addresses to count wins for (aggregate A's keys); null/empty
+     *                     returns an empty list.
+     * @return One AggregateResult per address that has at least one winning submission;
+     *         addresses with none are simply ABSENT (the caller must default them to 0,
+     *         never assume a row per input).
+     * @example
+     * List<AggregateResult> wins =
+     *     CompetingBrokerSubmissionSelector.aggregateWinsByBroker(brokerEmails);
+     */
+    public static List<AggregateResult> aggregateWinsByBroker(Set<String> brokerEmails) {
+        if (brokerEmails == null || brokerEmails.isEmpty()) {
+            return new List<AggregateResult>();
+        }
+        return [
+            SELECT Broker_Email__c brokerEmail, COUNT(Id) wonCount
+            FROM Competing_Broker_Submission__c
+            WHERE Broker_Email__c != null
+              AND Broker_Email__c IN :brokerEmails
+              AND Is_Winning_Submission__c = true
+            WITH USER_MODE
+            GROUP BY Broker_Email__c
         ];
     }
 }

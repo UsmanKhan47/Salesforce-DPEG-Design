@@ -176,4 +176,197 @@ private class PropertyRegistrySelectorTest {
         Assert.isTrue(nullResult.isEmpty(), 'Null key should short-circuit to an empty list');
         Assert.isTrue(blankResult.isEmpty(), 'Blank key should short-circuit to an empty list');
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PROTECTION WINDOW (2026-08-17) — selectLiveByPropertyKey / selectExpiredByPropertyKey
+    //
+    // The two methods are COMPLEMENTS on the same key, and the pairs below are
+    // written to prove that rather than to prove each in isolation: a row is
+    // either live or expired, never both and never neither. A change that made
+    // both return the same row would leave an incumbent in place AND adopt over
+    // them, and only the paired assertions catch it.
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** The cutoff the production code derives, expressed once here. */
+    private static Datetime protectionCutoff() {
+        return Datetime.now().addDays(-PropertyMatchingService.PROTECTION_WINDOW_DAYS);
+    }
+
+    /** Backdate a registration so its claim sits `days` in the past. */
+    private static Property_Registry__c backdate(Property_Registry__c registry, Integer days) {
+        registry.Registered_DateTime__c = Datetime.now().addDays(-days);
+        update registry;
+        return registry;
+    }
+
+    /**
+     * Convert `leadToConvert` so its registry row reads `IsConverted = true`.
+     * ⚠ The Opportunity cascade is deliberately NOT suppressed —
+     * `setDoNotCreateOpportunity(true)` throws UNKNOWN_EXCEPTION on this org; this
+     * mirrors PropertyClaimServiceTest's fixture exactly.
+     */
+    private static void convertLead(Lead leadToConvert) {
+        Database.LeadConvert lc = new Database.LeadConvert();
+        lc.setLeadId(leadToConvert.Id);
+        lc.setConvertedStatus([SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel);
+        Assert.isTrue(Database.convertLead(lc).isSuccess(),
+            'The fixture Lead must convert for the converted-winner rule to mean anything');
+    }
+
+    // ── selectLiveByPropertyKey ─────────────────────────────────────────────
+
+    @isTest
+    static void selectLiveByPropertyKey_claimInsideTheWindow_isStillLive() {
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('800 fresh st', winnerLeadId(), true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS - 1);
+
+        Test.startTest();
+        List<Property_Registry__c> live = PropertyRegistrySelector.selectLiveByPropertyKey(
+            new Set<String>{ '800 fresh st' }, protectionCutoff());
+        List<Property_Registry__c> expired = PropertyRegistrySelector.selectExpiredByPropertyKey(
+            '800 fresh st', protectionCutoff());
+        Test.stopTest();
+
+        Assert.areEqual(1, live.size(), 'A claim one day inside the window must still protect the property');
+        Assert.areEqual(reg.Id, live[0].Id, 'The live read should return the incumbent registration');
+        Assert.isTrue(expired.isEmpty(), 'The same row must NOT also read as expired — live and expired are complements');
+    }
+
+    @isTest
+    static void selectLiveByPropertyKey_claimOutsideTheWindow_isNoLongerLive() {
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('801 stale st', winnerLeadId(), true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 1);
+
+        Test.startTest();
+        List<Property_Registry__c> live = PropertyRegistrySelector.selectLiveByPropertyKey(
+            new Set<String>{ '801 stale st' }, protectionCutoff());
+        List<Property_Registry__c> expired = PropertyRegistrySelector.selectExpiredByPropertyKey(
+            '801 stale st', protectionCutoff());
+        Test.stopTest();
+
+        Assert.isTrue(live.isEmpty(), 'A claim one day past the window must release the property');
+        Assert.areEqual(1, expired.size(), 'The released row must be visible to the adoption read, or the key becomes unclaimable');
+        Assert.areEqual(reg.Id, expired[0].Id, 'The expired read should return the very row that was released');
+    }
+
+    @isTest
+    static void selectLiveByPropertyKey_convertedWinner_neverExpires() {
+        Lead winner = TestDataFactory.createLead(true);
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('802 converted st', winner.Id, true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 365);
+        convertLead(winner);
+
+        Test.startTest();
+        List<Property_Registry__c> live = PropertyRegistrySelector.selectLiveByPropertyKey(
+            new Set<String>{ '802 converted st' }, protectionCutoff());
+        List<Property_Registry__c> expired = PropertyRegistrySelector.selectExpiredByPropertyKey(
+            '802 converted st', protectionCutoff());
+        Test.stopTest();
+
+        Assert.areEqual(1, live.size(),
+            'A converted winner is a live deal — its claim must survive a year past the window');
+        Assert.isTrue(live[0].Winning_Lead__r.IsConverted,
+            'The spanning field the whole rule turns on must be selected and populated');
+        Assert.isTrue(expired.isEmpty(),
+            'A converted winner must NEVER be adoptable — that filter is what keeps the third registry DML admissible');
+    }
+
+    @isTest
+    static void selectLiveByPropertyKey_nullCutoff_failsSafeTowardTheIncumbent() {
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('803 nocutoff st', winnerLeadId(), true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 500);
+
+        Test.startTest();
+        List<Property_Registry__c> live =
+            PropertyRegistrySelector.selectLiveByPropertyKey(new Set<String>{ '803 nocutoff st' }, null);
+        List<Property_Registry__c> expired =
+            PropertyRegistrySelector.selectExpiredByPropertyKey('803 nocutoff st', null);
+        Test.stopTest();
+
+        // Both degrade in the SAME direction: the incumbent keeps the property. A missing
+        // cutoff must never be the thing that silently releases every claim in the org.
+        Assert.areEqual(1, live.size(), 'A null cutoff means "no window", so an ancient claim still reads as live');
+        Assert.isTrue(expired.isEmpty(), 'A null cutoff means nothing has expired, so nothing is adoptable');
+    }
+
+    @isTest
+    static void selectLiveByPropertyKey_nullOrEmptyKeys_returnsEmpty() {
+        Test.startTest();
+        List<Property_Registry__c> nullResult =
+            PropertyRegistrySelector.selectLiveByPropertyKey(null, protectionCutoff());
+        List<Property_Registry__c> emptyResult =
+            PropertyRegistrySelector.selectLiveByPropertyKey(new Set<String>(), protectionCutoff());
+        Test.stopTest();
+
+        Assert.isTrue(nullResult.isEmpty(), 'Null keys should short-circuit to an empty list');
+        Assert.isTrue(emptyResult.isEmpty(), 'Empty keys should short-circuit to an empty list');
+    }
+
+    @isTest
+    static void selectLiveByPropertyKey_excludesOrphanRows() {
+        Property_Registry__c orphan = TestDataFactory.createPropertyRegistry('804 orphan live st', winnerLeadId(), true);
+        orphan.Winning_Lead__c = null; // legal post-insert (the VR is ISNEW()-scoped)
+        update orphan;
+
+        Test.startTest();
+        List<Property_Registry__c> live = PropertyRegistrySelector.selectLiveByPropertyKey(
+            new Set<String>{ '804 orphan live st' }, protectionCutoff());
+        List<Property_Registry__c> expired = PropertyRegistrySelector.selectExpiredByPropertyKey(
+            '804 orphan live st', protectionCutoff());
+        Test.stopTest();
+
+        Assert.isTrue(live.isEmpty(), 'A winner-less row is not a live claim');
+        Assert.isTrue(expired.isEmpty(),
+            'A winner-less row is an ORPHAN, not an expired claim — the two adoption legs must stay disjoint');
+    }
+
+    // ── selectExpiredByPropertyKey ──────────────────────────────────────────
+
+    @isTest
+    static void selectExpiredByPropertyKey_nullKeyOrCutoff_returnsEmpty() {
+        Test.startTest();
+        List<Property_Registry__c> nullKey =
+            PropertyRegistrySelector.selectExpiredByPropertyKey(null, protectionCutoff());
+        List<Property_Registry__c> blankKey =
+            PropertyRegistrySelector.selectExpiredByPropertyKey('   ', protectionCutoff());
+        List<Property_Registry__c> nullCutoff =
+            PropertyRegistrySelector.selectExpiredByPropertyKey('805 anything st', null);
+        Test.stopTest();
+
+        Assert.isTrue(nullKey.isEmpty(), 'Null key should short-circuit to an empty list');
+        Assert.isTrue(blankKey.isEmpty(), 'Blank key should short-circuit to an empty list');
+        Assert.isTrue(nullCutoff.isEmpty(), 'Null cutoff should short-circuit to an empty list');
+    }
+
+    @isTest
+    static void selectExpiredByPropertyKey_unregisteredKey_returnsEmpty() {
+        Test.startTest();
+        List<Property_Registry__c> results =
+            PropertyRegistrySelector.selectExpiredByPropertyKey('806 never registered st', protectionCutoff());
+        Test.stopTest();
+
+        Assert.isTrue(results.isEmpty(), 'A key that was never registered has nothing to adopt');
+    }
+
+    // ── the un-windowed read is retained, and its difference is the point ───
+
+    @isTest
+    static void selectByPropertyKeyWithWinner_isTheUNWINDOWEDRead_andStillReturnsAnExpiredClaim() {
+        Property_Registry__c reg = TestDataFactory.createPropertyRegistry('807 legacy st', winnerLeadId(), true);
+        backdate(reg, PropertyMatchingService.PROTECTION_WINDOW_DAYS + 30);
+
+        Test.startTest();
+        List<Property_Registry__c> unwindowed =
+            PropertyRegistrySelector.selectByPropertyKeyWithWinner(new Set<String>{ '807 legacy st' });
+        List<Property_Registry__c> windowed = PropertyRegistrySelector.selectLiveByPropertyKey(
+            new Set<String>{ '807 legacy st' }, protectionCutoff());
+        Test.stopTest();
+
+        // This pair IS the defect the protection window closed, pinned so it cannot be
+        // reintroduced by quietly swapping the claim path back to the older method.
+        Assert.areEqual(1, unwindowed.size(),
+            'selectByPropertyKeyWithWinner is deliberately un-windowed and still sees an expired claim');
+        Assert.isTrue(windowed.isEmpty(),
+            'selectLiveByPropertyKey must NOT — that difference is the whole feature');
+    }
 }

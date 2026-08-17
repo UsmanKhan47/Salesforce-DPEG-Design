@@ -344,11 +344,22 @@ private class MarketDataSnapshotServiceTest {
         Assert.areEqual(1, dmlUsed,
             'ONE DML statement for the whole batch, regardless of deal count');
 
-        Integer stamped = [
-            SELECT COUNT()
+        // ⚠ THE NON-BLANK TEST IS IN APEX, NOT IN THE `WHERE` CLAUSE, AND MUST STAY THERE.
+        // `Market_Data_Snapshot__c` is a Long Text Area, and a Long Text Area cannot be
+        // FILTERED in SOQL — the platform rejects it at COMPILE time ("field
+        // 'Market_Data_Snapshot__c' can not be filtered in a query call"), so restoring the
+        // filter does not fail this test, it fails the whole deploy. SELECTING the field is
+        // legal; only WHERE / ORDER BY / GROUP BY are not.
+        Integer stamped = 0;
+        for (Opportunity o : [
+            SELECT Id, Market_Data_Snapshot__c
             FROM Opportunity
-            WHERE Id IN :deals AND Market_Data_Snapshot__c != null
-        ];
+            WHERE Id IN :deals
+        ]) {
+            if (o.Market_Data_Snapshot__c != null) {
+                stamped++;
+            }
+        }
         Assert.areEqual(BULK_N, stamped, 'Every one of the 251 deals is stamped');
     }
 
@@ -372,11 +383,23 @@ private class MarketDataSnapshotServiceTest {
 
         Assert.areEqual(1, dmlUsed, 'The failure path costs the SAME one DML as the happy path');
 
-        Integer reported = [
-            SELECT COUNT()
+        // ⚠ THE PREFIX TEST IS IN APEX, NOT A SOQL `LIKE`, AND MUST STAY THERE — a Long Text
+        // Area cannot be filtered in SOQL and the rejection is a COMPILE error, so restoring
+        // the `LIKE` breaks the deploy rather than this test. `startsWith` is the exact
+        // equivalent of the `'Market data snapshot failed:%'` pattern it replaces (stricter
+        // only in that it is case-sensitive, and the service writes a fixed literal), so this
+        // still proves every one of the 251 rows names its own reason rather than sitting blank.
+        Integer reported = 0;
+        for (Opportunity o : [
+            SELECT Id, Market_Data_Snapshot__c
             FROM Opportunity
-            WHERE Id IN :deals AND Market_Data_Snapshot__c LIKE 'Market data snapshot failed:%'
-        ];
+            WHERE Id IN :deals
+        ]) {
+            if (o.Market_Data_Snapshot__c != null
+                && o.Market_Data_Snapshot__c.startsWith('Market data snapshot failed:')) {
+                reported++;
+            }
+        }
         Assert.areEqual(BULK_N, reported,
             'Every deal in the failed batch reports the reason on its own record');
     }

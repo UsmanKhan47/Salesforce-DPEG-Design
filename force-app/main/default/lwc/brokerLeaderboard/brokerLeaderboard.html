@@ -1,0 +1,50 @@
+<template>
+    <lightning-card icon-name="standard:reward">
+        <span slot="title">Broker Leaderboard ({count})</span>
+        <span slot="actions" class="bl-sub">By submissions</span>
+
+        <!-- ERROR: inline banner. `lv-error` is the repo's shared list-view error
+             class (recentLeads / renewalList / competingBrokerSubmissions) —
+             do not rename it. -->
+        <template lwc:if={hasError}>
+            <div class="lv-error slds-text-color_error slds-p-horizontal_small slds-p-vertical_x-small" role="alert">
+                Broker leaderboard could not be loaded: {errorMessage}
+            </div>
+        </template>
+
+        <template lwc:else>
+            <template lwc:if={hasRows}>
+                <c-list-datatable
+                    key-field="brokerEmail"
+                    data={rows}
+                    columns={columns}
+                    column-widths-mode="auto"
+                    hide-checkbox-column
+                ></c-list-datatable>
+            </template>
+
+            <template lwc:else>
+                <div class="bl-empty" role="status">
+                    <lightning-icon
+                        icon-name="utility:info"
+                        size="small"
+                        class="bl-empty-icon"
+                    ></lightning-icon>
+                    <p class="bl-empty-text">
+                        No broker submissions have been recorded yet.
+                    </p>
+                </div>
+            </template>
+        </template>
+
+        <!-- Help text, deliberately always shown rather than tucked behind a
+             tooltip: the blast-platform identity collapse is EXPECTED traffic
+             (ARCHITECTURE.md), so a reader must be able to see why a row might be
+             a listing platform rather than a person. -->
+        <div slot="footer" class="bl-note">
+            Ranked by inbound broker submissions. A broker is identified by email
+            address, so a listing platform that sends on many brokers' behalf
+            (for example listings@…) appears as a single row.
+        </div>
+    </lightning-card>
+</template>

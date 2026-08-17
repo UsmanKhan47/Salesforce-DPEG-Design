@@ -315,4 +315,156 @@ private class CompetingBrokerSubmissionSelectorTest {
         Assert.isTrue(results[0].Submitted_DateTime__c <= results[199].Submitted_DateTime__c,
             'Even at the cap the 200 returned rows must still be the OLDEST-first slice, so the original submission is never truncated away');
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // LEADERBOARD AGGREGATES (2026-08-17) — aggregateSubmissionsByBroker / aggregateWinsByBroker
+    //
+    // These prove the SOQL, not the arithmetic; the merge and the win rate are
+    // covered by BrokerLeaderboardServiceTest.
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static final String BROKER_A = 'agg.a@example.invalid';
+    private static final String BROKER_B = 'agg.b@example.invalid';
+
+    /** Insert `count` rows sharing one address, the first `wins` of them flagged winning. */
+    private static void aggFixture(Id winningLeadId, String brokerEmail, String brokerName,
+                                   Integer count, Integer wins) {
+        List<Competing_Broker_Submission__c> rows =
+            TestDataFactory.createCompetingBrokerSubmissions(count, winningLeadId, false);
+        for (Integer i = 0; i < rows.size(); i++) {
+            rows[i].Broker_Email__c = brokerEmail;
+            rows[i].Broker_Name__c = brokerName;
+            rows[i].Is_Winning_Submission__c = (i < wins);
+            rows[i].Submitted_DateTime__c = Datetime.now().addDays(-50 + i);
+        }
+        insert rows;
+    }
+
+    @isTest
+    static void aggregateSubmissionsByBroker_groupsByAddressAndOrdersBusiestFirst() {
+        Id winner = [SELECT Id FROM Lead LIMIT 1].Id;
+        aggFixture(winner, BROKER_A, 'Broker A', 4, 1);
+        aggFixture(winner, BROKER_B, 'Broker B', 2, 0);
+
+        Test.startTest();
+        List<AggregateResult> results =
+            CompetingBrokerSubmissionSelector.aggregateSubmissionsByBroker(10);
+        Test.stopTest();
+
+        Assert.areEqual(2, results.size(), 'One aggregate row per distinct broker address');
+        Assert.areEqual(BROKER_A, (String) results[0].get('brokerEmail'), 'Busiest broker first');
+        Assert.areEqual(4, (Integer) results[0].get('submissionCount'), 'COUNT(Id) counts every submission, winning or not');
+        Assert.areEqual('Broker A', (String) results[0].get('brokerName'), 'The display-hint name must be aliased and returned');
+        Assert.isNotNull(results[0].get('firstSubmitted'), 'MIN(Submitted_DateTime__c) backs FSD §27.4 First Submission Date');
+        Assert.isTrue(
+            (Datetime) results[0].get('firstSubmitted') < (Datetime) results[0].get('lastSubmitted'),
+            'MIN and MAX must be distinguishable, or "first submission" is silently the same value as "last"');
+    }
+
+    @isTest
+    static void aggregateSubmissionsByBroker_excludesNullAddressesAndRespectsTheLimit() {
+        Id winner = [SELECT Id FROM Lead LIMIT 1].Id;
+        aggFixture(winner, BROKER_A, 'Broker A', 3, 0);
+        aggFixture(winner, BROKER_B, 'Broker B', 1, 0);
+        List<Competing_Broker_Submission__c> anonymous =
+            TestDataFactory.createCompetingBrokerSubmissions(2, winner, false);
+        for (Competing_Broker_Submission__c row : anonymous) {
+            row.Broker_Email__c = null;
+        }
+        insert anonymous;
+
+        Test.startTest();
+        List<AggregateResult> all = CompetingBrokerSubmissionSelector.aggregateSubmissionsByBroker(10);
+        List<AggregateResult> capped = CompetingBrokerSubmissionSelector.aggregateSubmissionsByBroker(1);
+        Test.stopTest();
+
+        Assert.areEqual(2, all.size(), 'A submission with no broker address has no identity and cannot become a row');
+        Assert.areEqual(1, capped.size(), 'maxRows must bound the aggregate');
+        Assert.areEqual(BROKER_A, (String) capped[0].get('brokerEmail'),
+            'With a LIMIT the ORDER BY decides WHICH brokers appear at all, so the busiest must survive the cut');
+    }
+
+    @isTest
+    static void aggregateSubmissionsByBroker_nullOrNonPositiveMaxRows_returnsEmpty() {
+        Test.startTest();
+        List<AggregateResult> nullRows = CompetingBrokerSubmissionSelector.aggregateSubmissionsByBroker(null);
+        List<AggregateResult> zeroRows = CompetingBrokerSubmissionSelector.aggregateSubmissionsByBroker(0);
+        Test.stopTest();
+
+        Assert.isTrue(nullRows.isEmpty(), 'A null depth must not become an unbounded aggregate');
+        Assert.isTrue(zeroRows.isEmpty(), 'Zero rows requested means zero rows returned');
+    }
+
+    @isTest
+    static void aggregateWinsByBroker_countsOnlyWinningRowsAndOmitsWinlessBrokers() {
+        Id winner = [SELECT Id FROM Lead LIMIT 1].Id;
+        aggFixture(winner, BROKER_A, 'Broker A', 5, 2);
+        aggFixture(winner, BROKER_B, 'Broker B', 3, 0);
+
+        Test.startTest();
+        List<AggregateResult> wins = CompetingBrokerSubmissionSelector.aggregateWinsByBroker(
+            new Set<String>{ BROKER_A, BROKER_B });
+        Test.stopTest();
+
+        // A winless broker is ABSENT, not zero — the caller must default. This is the shape
+        // BrokerLeaderboardService's merge is written against.
+        Assert.areEqual(1, wins.size(),
+            'Only brokers with at least one winning submission appear; a winless broker has no row at all');
+        Assert.areEqual(BROKER_A, (String) wins[0].get('brokerEmail'), 'The winning broker must be the one returned');
+        Assert.areEqual(2, (Integer) wins[0].get('wonCount'), 'Only Is_Winning_Submission__c rows are counted');
+    }
+
+    @isTest
+    static void aggregateWinsByBroker_isScopedToTheSuppliedAddresses() {
+        Id winner = [SELECT Id FROM Lead LIMIT 1].Id;
+        aggFixture(winner, BROKER_A, 'Broker A', 2, 2);
+        aggFixture(winner, BROKER_B, 'Broker B', 2, 2);
+
+        Test.startTest();
+        List<AggregateResult> scoped =
+            CompetingBrokerSubmissionSelector.aggregateWinsByBroker(new Set<String>{ BROKER_A });
+        List<AggregateResult> nullSet = CompetingBrokerSubmissionSelector.aggregateWinsByBroker(null);
+        List<AggregateResult> emptySet =
+            CompetingBrokerSubmissionSelector.aggregateWinsByBroker(new Set<String>());
+        Test.stopTest();
+
+        // Scoping is what keeps the pair at 2 SOQL bounded by the caller's maxRows rather
+        // than an aggregate that grows with the whole ledger.
+        Assert.areEqual(1, scoped.size(), 'Only the requested address may be counted');
+        Assert.areEqual(BROKER_A, (String) scoped[0].get('brokerEmail'), 'And it must be the one asked for');
+        Assert.isTrue(nullSet.isEmpty(), 'A null address set short-circuits');
+        Assert.isTrue(emptySet.isEmpty(), 'An empty address set short-circuits');
+    }
+
+    /**
+     * 🔴 THE SPLIT-ANCHOR PIN AT THE QUERY LAYER. A submission written after the winning
+     * Lead was CONVERTED carries `Winning_Opportunity__c` with BOTH Lead lookups null, and
+     * is therefore invisible to `selectByWinningLead` above (its own documented gap). The
+     * leaderboard aggregates read NEITHER anchor, so those rows must still be counted.
+     * Adding an anchor filter to either aggregate — the natural first step toward a
+     * drill-through — turns this red.
+     */
+    @isTest
+    static void leaderboardAggregates_countRowsAnchoredOnAConvertedWinnersOpportunity() {
+        Opportunity deal = TestDataFactory.createOpportunities(1, true)[0];
+        List<Competing_Broker_Submission__c> rows =
+            TestDataFactory.createCompetingBrokerSubmissions(3, null, deal.Id, false);
+        for (Integer i = 0; i < rows.size(); i++) {
+            rows[i].Broker_Email__c = BROKER_A;
+            rows[i].Is_Winning_Submission__c = (i == 0);
+        }
+        insert rows;
+
+        Test.startTest();
+        List<AggregateResult> totals = CompetingBrokerSubmissionSelector.aggregateSubmissionsByBroker(10);
+        List<AggregateResult> wins =
+            CompetingBrokerSubmissionSelector.aggregateWinsByBroker(new Set<String>{ BROKER_A });
+        Test.stopTest();
+
+        Assert.areEqual(1, totals.size(), 'Opportunity-anchored rows still group by broker address');
+        Assert.areEqual(3, (Integer) totals[0].get('submissionCount'),
+            'All three converted-winner rows must be counted — the aggregate reads no anchor at all');
+        Assert.areEqual(1, wins.size(), 'The winning row must be visible to the wins aggregate too');
+        Assert.areEqual(1, (Integer) wins[0].get('wonCount'), 'A win on a converted winner is still a win');
+    }
 }
