@@ -3,7 +3,7 @@
     <fullName>CoStar_Location_Score__c</fullName>
     <description>CoStar location quality score for this property. Manually entered today - no live CoStar connection exists (§18.4 "Integration Off" fallback). Owner: CoStar.</description>
     <externalId>false</externalId>
-    <label>CoStar Location Score</label>
+    <label>Location Score</label>
     <precision>4</precision>
     <required>false</required>
     <scale>1</scale>

@@ -2,7 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>CoStar_Asking_Rent_PSF__c</fullName>
     <description>CoStar asking rent per square foot for this property. Distinct from Market_Rent_PSF__c: asking is what the landlord wants, market is what the market clears at. Manually entered today - no live CoStar connection exists (§18.4 "Integration Off" fallback). Owner: CoStar.</description>
-    <label>CoStar Asking Rent PSF</label>
+    <label>Asking Rent PSF</label>
     <precision>18</precision>
     <required>false</required>
     <scale>2</scale>

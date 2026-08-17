@@ -2,7 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>CoStar_Pct_Leased__c</fullName>
     <description>CoStar percent-leased for this property. Deliberately separate from Occupancy_Rate_Market__c - leased and occupied are different facts in CRE (a signed-but-not-yet-occupied space is leased and not occupied). Manually entered today - no live CoStar connection exists (§18.4 "Integration Off" fallback). Owner: CoStar.</description>
-    <label>CoStar % Leased</label>
+    <label>% Leased</label>
     <precision>5</precision>
     <required>false</required>
     <scale>2</scale>

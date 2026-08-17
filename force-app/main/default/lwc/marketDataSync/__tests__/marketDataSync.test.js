@@ -61,11 +61,15 @@
  * ═════════════════════════════════════════════════════════════════════════════
  * 🔴 THERE ARE ALSO **TWO** `lightning-record-form`s (code review C2, 2026-08-17)
  * ═════════════════════════════════════════════════════════════════════════════
- * Metrics render at `mode="view"` (inline-editable — hand entry IS the data source until an ASB
- * spoke exists); the two provider CONTROL fields render at `mode="readonly"`. So `querySelector(
- * 'lightning-record-form')` no longer means "the form": it means the FIRST one. The helpers below
- * split accordingly — `formOf` (metrics), `controlFormOf`, and `formsOf` for anything that must
- * cover both.
+ * Metrics render at `mode="view"` (inline-editable — hand entry IS how these numbers get in); the
+ * provider CONTROL field, `<source>_Fetch_Status__c`, renders at `mode="readonly"`. So
+ * `querySelector('lightning-record-form')` no longer means "the form": it means the FIRST one. The
+ * helpers below split accordingly — `formOf` (metrics), `controlFormOf`, and `formsOf` for anything
+ * that must cover both.
+ *
+ * ⚠ The control form binds ONE field since 2026-08-17 — `<source>_Data_Source__c` was removed from
+ * the card by user decision. A one-field form looks like something to tidy away; it is not, because
+ * `mode` is a property of the FORM and not of a field. Its absence is pinned by its own test.
  *
  * Two consequences worth stating, because each is its own failure:
  *   - "the form is not mounted" assertions use `formsOf(...).toHaveLength(0)`. A `formOf(...)
@@ -123,8 +127,7 @@ const OLD_STAMP = '2026-07-01T09:14:00.000Z';
 const NEW_STAMP = '2026-08-16T11:30:00.000Z';
 
 /**
- * 🔴 THE EXACT FIELD LISTS, IN ORDER — FSD §18.2 plus the one INCUMBENT per card, SPLIT ACROSS THE
- * TWO FORMS (code review C2).
+ * 🔴 THE EXACT FIELD LISTS, IN ORDER, SPLIT ACROSS THE TWO FORMS (code review C2).
  *
  * Asserted as exact arrays rather than by containment: an EXTRA field on this card is a real defect,
  * because the Sync button and the Last Synced row are an assertion ABOUT the fields beside them.
@@ -132,8 +135,21 @@ const NEW_STAMP = '2026-08-16T11:30:00.000Z';
  * it is the field a prefix-based edit is most likely to drop silently.
  *
  * ⚠ `*_FIELDS` is the CONCATENATION, and the tests assert BOTH the split and the whole. The split
- * pins editability; the concatenation pins COVERAGE — that C2's remedy moved two fields between
- * forms and dropped none. Those are different failures and neither assertion catches the other.
+ * pins editability; the concatenation pins COVERAGE. Those are different failures and neither
+ * assertion catches the other.
+ *
+ * 🔴 THESE ARE API NAMES, NEVER LABELS, AND THAT MATTERS RIGHT NOW. A parallel admin change is
+ * dropping the provider prefix from eight of these fields' LABELS (`Placer_State_Rank__c` →
+ * "State Rank", `CoStar_Pct_Leased__c` → "% Leased", and six more) while leaving every API name
+ * alone. Nothing in this suite asserts a field label, so none of it moves — verified by grep, not by
+ * assumption. If a future test ever does assert a rendered label, it takes on that churn and should
+ * say so at the assertion.
+ *
+ * ⚠ `<source>_Data_Source__c` IS ABSENT FROM BOTH LISTS ON PURPOSE (user decision, 2026-08-17). It
+ * was rendered in the control form for part of that day and removed from the card; the FIELD still
+ * exists on `Property__c`, untouched. `notOnTheCard` below pins the absence directly, because an
+ * exact-array assertion would go red for the wrong reason if someone re-added it and would not
+ * SAY why.
  */
 const PLACER_METRIC_FIELDS = [
     'Placer_URL__c',
@@ -143,7 +159,7 @@ const PLACER_METRIC_FIELDS = [
     'Placer_National_Rank__c',
     'Monthly_Visits__c'
 ];
-const PLACER_CONTROL_FIELDS = ['Placer_Data_Source__c', 'Placer_Fetch_Status__c'];
+const PLACER_CONTROL_FIELDS = ['Placer_Fetch_Status__c'];
 const PLACER_FIELDS = [...PLACER_METRIC_FIELDS, ...PLACER_CONTROL_FIELDS];
 
 const COSTAR_METRIC_FIELDS = [
@@ -155,8 +171,11 @@ const COSTAR_METRIC_FIELDS = [
     'CoStar_Exit_Cap_Rate__c',
     'Market_Cap_Rate__c'
 ];
-const COSTAR_CONTROL_FIELDS = ['CoStar_Data_Source__c', 'CoStar_Fetch_Status__c'];
+const COSTAR_CONTROL_FIELDS = ['CoStar_Fetch_Status__c'];
 const COSTAR_FIELDS = [...COSTAR_METRIC_FIELDS, ...COSTAR_CONTROL_FIELDS];
+
+/** Rendered nowhere on either card since 2026-08-17 — see the note above. */
+const DATA_SOURCE_FIELDS = ['Placer_Data_Source__c', 'CoStar_Data_Source__c'];
 
 const GENERIC_ERROR =
     'The sync timestamp could not be saved. Please try again or contact your administrator.';
@@ -394,7 +413,7 @@ describe('c-market-data-sync', () => {
     // J1 / J2 — the CONFIG_BY_SOURCE parameterisation, now against Property__c
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('J1 PLACER: renders the Placer title and the 8 Property fields, and no CoStar field', async () => {
+    it('J1 PLACER: renders the Placer title and the 7 Property fields, and no CoStar field', async () => {
         const element = createComponent({ source: 'Placer' });
         await loadFully(element, PLACER_STAMP);
 
@@ -421,7 +440,7 @@ describe('c-market-data-sync', () => {
         expect(fieldApiNamesOn(element)).not.toContain(PLACER_STAMP);
     });
 
-    it('J2 COSTAR: renders the CoStar title and the 9 Property fields, and no Placer field', async () => {
+    it('J2 COSTAR: renders the CoStar title and the 8 Property fields, and no Placer field', async () => {
         const element = createComponent({ source: 'CoStar' });
         await loadFully(element, COSTAR_STAMP);
 
@@ -449,10 +468,14 @@ describe('c-market-data-sync', () => {
         expect(fields).toContain('Market_Rent_PSF__c');
 
         // 🔴 THE POINT, STATED AS AN ASSERTION: a prefix-based audit of "the CoStar block" finds
-        // only SEVEN of the nine fields on this card. The two it misses are named here, so the
+        // only SIX of the eight fields on this card. The two it misses are named here, so the
         // residual is auditable rather than merely described in a comment — and so that anyone who
         // later adds a CoStar field has to decide, deliberately, which list it belongs to.
-        expect(fields.filter((f) => f.startsWith('CoStar_'))).toHaveLength(7);
+        //
+        // ⚠ The counts moved on 2026-08-17 when CoStar_Data_Source__c left the card (7 of 9 → 6 of
+        // 8). The RATIO is not the point and neither is the arithmetic — the point is that two
+        // fields on this card are invisible to a CoStar_ grep, permanently.
+        expect(fields.filter((f) => f.startsWith('CoStar_'))).toHaveLength(6);
         expect(fields.filter((f) => !f.startsWith('CoStar_'))).toEqual([
             'Market_Rent_PSF__c',
             'Market_Cap_Rate__c'
@@ -1190,9 +1213,15 @@ describe('c-market-data-sync', () => {
         // not move when Sync is pressed. Without it a user sees "marked as synced" and a `Sync
         // Status` of `Not Synced` one row away with nothing on screen reconciling the two, which is
         // how a truthful value gets "corrected" into a false one.
-        expect(helptext.content).toContain('Sync Status and Data Source');
+        expect(helptext.content).toContain('Sync Status describes');
         expect(helptext.content).toContain('does not exist yet');
-        expect(helptext.content).toContain('Sync does not change them');
+        expect(helptext.content).toContain('Sync does not change it');
+
+        // 🔴 AND IT NAMES ONLY WHAT THE READER CAN SEE. This clause named Data Source too until that
+        // field was dropped from the card on 2026-08-17. Help text describing an invisible field is
+        // the stale-text defect this bundle has already been bitten by twice, and it is worse than
+        // no help text: it sends the reader looking for a row that is not there.
+        expect(helptext.content).not.toContain('Data Source');
     });
 
     it('STUB WARNING: the CoStar card names CoStar in its helptext, not Placer', async () => {
@@ -1204,8 +1233,9 @@ describe('c-market-data-sync', () => {
         expect(helptext.content).not.toContain('Placer');
         expect(helptext.content).toContain('Property record');
         // C2 remedy (b) is per-source config, not a Placer special case.
-        expect(helptext.content).toContain('Sync Status and Data Source');
-        expect(helptext.content).toContain('Sync does not change them');
+        expect(helptext.content).toContain('Sync Status describes');
+        expect(helptext.content).toContain('Sync does not change it');
+        expect(helptext.content).not.toContain('Data Source');
     });
 
     it('J17 🔴 STUB WARNING: there is NO spinner and NO busy state, in markup or on the class', async () => {
@@ -1299,37 +1329,70 @@ describe('c-market-data-sync', () => {
         expect(formOf(element).mode).toBe('view');
     });
 
-    it('C2 🔴 the CONTROL fields are on a READONLY form and the METRICS are not', async () => {
-        // 🔴 THE REGRESSION PIN FOR CODE REVIEW C2, AND IT GUARDS TWO SEPARATE DEFECTS.
+    it('🔴 NEITHER Data Source field is rendered on EITHER card — user decision, 2026-08-17', async () => {
+        // The user removed both `*_Data_Source__c` fields after seeing the cards ("there is no need
+        // to add datasource field"). They were on the readonly control form for part of that day.
         //
-        // (1) An inline-editable `Sync Status` CONTRADICTS the button below it: press Sync, read
-        //     "marked as synced", watch Last Synced update — and see `Not Synced` one row away,
-        //     because nothing writes it and nothing should. A user will "correct" that to `Success`
-        //     and destroy the only truthful in-record signal that no fetch ever happened. That is
-        //     the value the seed deliberately writes.
-        // (2) An inline-editable `Data Source` puts the `Integrated` flip — a documented post-deploy
-        //     gate belonging to an ASB spoke that does not exist — one edit away, on a record SHARED
-        //     by every deal on the property, with no audit.
+        // 🔴 This is its own test rather than a line inside J1/J2 because it pins an ABSENCE that a
+        // future reader has an obvious, well-meaning reason to undo: ARCHITECTURE §1 describes
+        // `*_Data_Source__c` as part of the same provider block as `*_Fetch_Status__c`, so "the card
+        // is missing one" reads like an oversight. It is not. An exact-array assertion would catch
+        // the re-add but would report it as a list mismatch; this one reports the DECISION.
+        //
+        // ⚠ It asserts the CARD only. The fields still exist on Property__c with their FLS intact —
+        // nothing in this change touched their metadata, and nothing here should be read as saying
+        // it did.
+        const placer = createComponent({ source: 'Placer' });
+        await loadFully(placer, PLACER_STAMP);
+        const costar = createComponent({ source: 'CoStar' });
+        await loadFully(costar, COSTAR_STAMP);
+
+        DATA_SOURCE_FIELDS.forEach((field) => {
+            expect(fieldApiNamesOn(placer)).not.toContain(field);
+            expect(fieldApiNamesOn(costar)).not.toContain(field);
+        });
+
+        // ...and the control form is not empty as a result — `Fetch_Status__c` STAYS, because it is
+        // the one honest in-record statement that nothing has synced, sitting beside a button that
+        // says it did. Dropping both would have removed the reason the second form exists.
+        expect(controlFieldApiNamesOn(placer)).toEqual(['Placer_Fetch_Status__c']);
+        expect(controlFieldApiNamesOn(costar)).toEqual(['CoStar_Fetch_Status__c']);
+    });
+
+    it('C2 🔴 the CONTROL field is on a READONLY form and the METRICS are not', async () => {
+        // 🔴 THE REGRESSION PIN FOR CODE REVIEW C2.
+        //
+        // An inline-editable `Sync Status` CONTRADICTS the button below it: press Sync, read
+        // "marked as synced", watch Last Synced update — and see `Not Synced` one row away, because
+        // nothing writes it and nothing should. A user will "correct" that to `Success` and destroy
+        // the only truthful in-record signal that no fetch ever happened. That is the value the seed
+        // deliberately writes.
+        //
+        // ⚠ C2 originally gave a SECOND reason — that an editable `Data Source` puts the
+        // `Integrated` flip (post-deploy gate G9) one edit away. That reason no longer applies HERE,
+        // because the field was removed from the card entirely later the same day, which is a
+        // stronger outcome than read-only rather than a weaker one. The remaining reason is
+        // sufficient on its own and always was.
         //
         // ⚠ This is NOT a permission control and the test must not be read as asserting one. FLS is
-        // still the only real gate and these fields stay editable from the Property record page.
-        // What is pinned is the removal of the INVITATION.
+        // still the only real gate and the field stays editable from the Property record page. What
+        // is pinned is the removal of the INVITATION.
         const placer = createComponent({ source: 'Placer' });
         await loadFully(placer, PLACER_STAMP);
 
         expect(formOf(placer).mode).toBe('view');
         expect(controlFormOf(placer).mode).toBe('readonly');
 
-        // The two control fields are on the readonly form...
+        // The control field is on the readonly form...
         expect(controlFieldApiNamesOn(placer)).toEqual(PLACER_CONTROL_FIELDS);
-        // ...and NOT on the editable one. Both halves are needed: a remedy that added them to the
-        // readonly form while leaving them on the view form would fix nothing and pass a
+        // ...and NOT on the editable one. Both halves are needed: a remedy that added it to the
+        // readonly form while leaving it on the view form would fix nothing and pass a
         // containment-only check.
         expect(metricFieldApiNamesOn(placer)).not.toContain('Placer_Fetch_Status__c');
-        expect(metricFieldApiNamesOn(placer)).not.toContain('Placer_Data_Source__c');
 
-        // 🔴 AND NOTHING WAS DROPPED. Decision 3 (all FSD fields shown) is settled, so the remedy
-        // had to MOVE the two fields, never remove them.
+        // 🔴 AND NOTHING WAS DROPPED BY THE SPLIT. The C2 remedy had to MOVE a field between forms,
+        // never remove one. (`Placer_Data_Source__c` left the card afterwards by a separate USER
+        // decision, pinned by its own test above — do not conflate the two changes.)
         expect(fieldApiNamesOn(placer)).toEqual(PLACER_FIELDS);
     });
 
@@ -1341,11 +1404,10 @@ describe('c-market-data-sync', () => {
         expect(controlFormOf(costar).mode).toBe('readonly');
         expect(controlFieldApiNamesOn(costar)).toEqual(COSTAR_CONTROL_FIELDS);
         expect(metricFieldApiNamesOn(costar)).not.toContain('CoStar_Fetch_Status__c');
-        expect(metricFieldApiNamesOn(costar)).not.toContain('CoStar_Data_Source__c');
         expect(fieldApiNamesOn(costar)).toEqual(COSTAR_FIELDS);
     });
 
-    it('C2 (cont): pressing Sync writes NEITHER control field — the card cannot move its own status', async () => {
+    it('C2 (cont): pressing Sync writes no control field at all — the card cannot move its own status', async () => {
         // The other half of the contradiction: the readonly form stops the HUMAN, and this asserts
         // the COMPONENT does not quietly do it either. A "helpful" future edit that stamps
         // `Fetch_Status__c = 'Success'` alongside the timestamp would make the card assert a fetch

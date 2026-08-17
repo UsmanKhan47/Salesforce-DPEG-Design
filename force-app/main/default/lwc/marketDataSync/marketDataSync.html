@@ -16,10 +16,12 @@
     5. 🔴 the record forms are bound to {propertyId} + Property__c, NOT to {recordId} + Opportunity.
        This card renders the deal's linked PROPERTY. See header section 2.
     6. 🔴 there are TWO forms and that is deliberate: metrics at mode="view" (inline-editable, since
-       hand entry IS the data source today) and the two provider CONTROL fields at mode="readonly".
-       An editable `Sync Status` contradicts the button beside it; an editable `Data Source` puts a
-       documented post-deploy gate one inline edit away. Code review C2. Every FSD field is still on
-       the card — the split changes editability, never coverage. Do not merge them.
+       hand entry IS how these numbers get in) and the provider CONTROL field — `Sync Status` — at
+       mode="readonly", because an editable `Sync Status` contradicts the button beside it. Code
+       review C2. Do not merge them, and do not "simplify away" a form that now binds one field.
+       ⚠ `Data Source` was in that readonly form for part of 2026-08-17 and was REMOVED from the
+       card by user decision. The FIELD still exists on Property__c and is untouched — only the
+       rendering is gone. Do not re-add it to "complete the block".
 
   ⚠ Do NOT apply the repo's `.lv-*` list-view chrome here. Measured: those table classes live in a
   single bundle, and this is a field section, not a list.
@@ -131,31 +133,40 @@
                             ></lightning-record-form>
 
                             <!--
-                              🔴 A SECOND FORM, `mode="readonly"`, FOR THE TWO PROVIDER CONTROL
-                              FIELDS — <source>_Data_Source__c and <source>_Fetch_Status__c. They are
-                              VISIBLE (every FSD field stays on the card; nothing was dropped) and
-                              NOT hand-editable. Code review C2, 2026-08-17. Two reasons, either
-                              sufficient on its own — the full argument is in the CONFIG_BY_SOURCE
-                              header of marketDataSync.js:
+                              🔴 A SECOND FORM, `mode="readonly"`, FOR THE PROVIDER CONTROL FIELD —
+                              <source>_Fetch_Status__c, which since 2026-08-17 is the only entry in
+                              `controlFields`. It is VISIBLE and NOT hand-editable. Code review C2.
+                              The full argument is in the CONFIG_BY_SOURCE header of
+                              marketDataSync.js; the short version:
 
-                                1. an editable `Sync Status` CONTRADICTS the button below it. Press
-                                   Sync, read "marked as synced", watch Last Synced update — and see
-                                   `Not Synced` one row away, because nothing writes it and nothing
-                                   should. A user will "correct" that to `Success`, destroying the
-                                   only truthful in-record signal that no fetch ever happened.
-                                2. an editable `Data Source` puts the `Integrated` flip — a
-                                   documented post-deploy gate belonging to an ASB spoke that does
-                                   not exist — one inline edit away, on a record SHARED by every
-                                   deal on the property, with no audit.
+                                an editable `Sync Status` CONTRADICTS the button below it. Press
+                                Sync, read "marked as synced", watch Last Synced update — and see
+                                `Not Synced` one row away, because nothing writes it and nothing
+                                should. A user will "correct" that to `Success`, destroying the only
+                                truthful in-record signal that no fetch ever happened.
+
+                              ⚠ A SECOND FORM FOR ONE FIELD LOOKS LIKE SOMETHING TO TIDY AWAY. It is
+                              not: `mode` is a property of the FORM, not of a field, so rendering one
+                              field read-only beside eight editable ones requires exactly this. The
+                              alternative — a hand-built row with lightning-output-field — loses the
+                              platform's own picklist-label rendering and duplicates markup the form
+                              already gives for free.
+
+                              ⚠ `<source>_Data_Source__c` WAS the second entry here, for part of
+                              2026-08-17, and was REMOVED FROM THE CARD by user decision ("there is
+                              no need to add datasource field"). 🔴 The FIELD is untouched — it still
+                              exists on Property__c with its FLS intact, is owned by another
+                              workstream, and its flip to `Integrated` remains post-deploy gate G9.
+                              Only the rendering went. Do not re-add it to "complete the block".
 
                               ⚠ `mode="readonly"` is NOT a permission control and must not be
-                              described as one: FLS is still the only real gate, and these fields
-                              remain editable from the Property record page. What it removes is the
+                              described as one: FLS is still the only real gate, and this field
+                              remains editable from the Property record page. What it removes is the
                               INVITATION — a pencil beside a value that contradicts the button.
 
                               ⚠ Same record-id, same object, same columns and density as the form
                               above, so the two read as ONE continuous field section in the FSD's own
-                              order (metrics, then controls). Do not merge them back together.
+                              order (metrics, then control). Do not merge them back together.
                             -->
                             <lightning-record-form
                                 class="mds-controls"

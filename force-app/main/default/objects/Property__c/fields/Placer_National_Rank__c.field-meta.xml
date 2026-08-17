@@ -3,7 +3,7 @@
     <fullName>Placer_National_Rank__c</fullName>
     <description>Placer.ai national visit-traffic rank for this property. Manually entered today - no live Placer.ai connection exists (§18.4 "Integration Off" fallback). Owner: Placer.ai.</description>
     <externalId>false</externalId>
-    <label>Placer National Rank</label>
+    <label>National Rank</label>
     <precision>6</precision>
     <required>false</required>
     <scale>0</scale>
