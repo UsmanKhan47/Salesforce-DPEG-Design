@@ -1,13 +1,25 @@
 <!--
-  marketDataSync — see marketDataSync.js for the full rationale. The four things this template must
+  marketDataSync — see marketDataSync.js for the full rationale. The SIX things this template must
   keep true, all of them argued at length in that header:
 
     1. the Last Synced row is labelled "Last Synced (manual)" and carries the helptext. Both are
-       mitigations for a Sync button that contacts nothing.
+       mitigations for a Sync button that contacts nothing — and both are MORE load-bearing since
+       2026-08-17, because the card now shows 8-9 provider-named fields and a Sync Status picklist,
+       i.e. it looks far more like a working integration than the four-field card it replaced.
     2. there is NO spinner and NO busy state anywhere in this file.
-    3. an unsupported `source` renders a VISIBLE role="alert", never an empty card.
+    3. an unsupported `source` renders a VISIBLE role="alert", never an empty card — and a deal with
+       no linked Property renders a VISIBLE role="status", never a blank card and never an alert.
+       🔴 The two roles are NOT interchangeable: alert is an administrator misconfiguration nothing
+       else would ever report; status is an ordinary state the user can fix themselves.
     4. the Sync button is `variant="neutral"`. A brand button asserts a primacy this stub has not
        earned, and it would read as the primary action of the record page.
+    5. 🔴 the record forms are bound to {propertyId} + Property__c, NOT to {recordId} + Opportunity.
+       This card renders the deal's linked PROPERTY. See header section 2.
+    6. 🔴 there are TWO forms and that is deliberate: metrics at mode="view" (inline-editable, since
+       hand entry IS the data source today) and the two provider CONTROL fields at mode="readonly".
+       An editable `Sync Status` contradicts the button beside it; an editable `Data Source` puts a
+       documented post-deploy gate one inline edit away. Code review C2. Every FSD field is still on
+       the card — the split changes editability, never coverage. Do not merge them.
 
   ⚠ Do NOT apply the repo's `.lv-*` list-view chrome here. Measured: those table classes live in a
   single bundle, and this is a field section, not a list.
@@ -83,84 +95,180 @@
                 -->
                 <template lwc:if={isOpen}>
                     <!--
+                      🔴 BOTH FORMS RENDER THE **PROPERTY**, NOT THE OPPORTUNITY. `record-id` is the
+                      Id resolved from this deal's Property__c lookup, and `object-api-name` is the
+                      Property__c schema import — see marketDataSync.js header section 2 for why
+                      lightning-record-form cannot render Property__r.* spanning fields, and why the
+                      read-only alternative (lightning-formatted-* rows) was rejected.
+
                       lightning-record-form in mode="view" renders platform-identical field rows WITH
                       the per-field inline-edit pencils. lightning-output-field would have been closer
-                      to pixel-identical but READ-ONLY, and every field here is behavior=Edit on the
-                      layout today — so that would have been a functional regression, not a styling
-                      choice.
-                    -->
-                    <div class="slds-p-horizontal_small slds-p-top_x-small">
-                        <lightning-record-form
-                            record-id={recordId}
-                            object-api-name={objectApiName}
-                            fields={formFields}
-                            columns="2"
-                            mode="view"
-                            density="comfy"
-                        ></lightning-record-form>
-                    </div>
+                      to pixel-identical but READ-ONLY — a functional regression, not a styling
+                      choice. That argument was made against FOUR fields; it applies with more force
+                      to the metrics rendered here.
 
-                    <div
-                        class="slds-grid slds-wrap slds-p-horizontal_small slds-p-top_x-small"
-                    >
-                        <div class="slds-col slds-size_1-of-2">
-                            <div
-                                class="slds-form-element slds-form-element_readonly"
-                            >
-                        <span class="slds-form-element__label">
+                      ⚠ IT APPLIES TO THE **METRICS**, AND ONLY TO THEM. The two provider control
+                      fields are deliberately read-only in the second form below — that is not the
+                      regression this argument rejected, because nobody enters a Sync Status by hand:
+                      it is a fact about a fetch, and no fetch exists. Editability follows what the
+                      field is FOR, not a blanket rule.
+
+                      🔴 THEY ARE MOUNTED ONLY WHEN A PROPERTY ID EXISTS. A lightning-record-form with
+                      a null record-id renders a broken/empty form rather than nothing, so this guard
+                      prevents a visible defect. They also stay UNMOUNTED while the Opportunity wire
+                      is in flight, which is the "say nothing until you know" rule.
+                    -->
+                    <template lwc:if={showForm}>
+                        <div class="slds-p-horizontal_small slds-p-top_x-small">
+                            <lightning-record-form
+                                class="mds-metrics"
+                                record-id={propertyId}
+                                object-api-name={objectApiName}
+                                fields={metricFields}
+                                columns="2"
+                                mode="view"
+                                density="comfy"
+                            ></lightning-record-form>
+
                             <!--
-                              "(manual)" is NOT a caption style choice. Without it the row asserts a
-                              freshness the data does not have: the figures above were typed by hand,
-                              possibly months ago. If a real integration ever lands, this label and
-                              the helptext change in the same commit as the callout.
+                              🔴 A SECOND FORM, `mode="readonly"`, FOR THE TWO PROVIDER CONTROL
+                              FIELDS — <source>_Data_Source__c and <source>_Fetch_Status__c. They are
+                              VISIBLE (every FSD field stays on the card; nothing was dropped) and
+                              NOT hand-editable. Code review C2, 2026-08-17. Two reasons, either
+                              sufficient on its own — the full argument is in the CONFIG_BY_SOURCE
+                              header of marketDataSync.js:
+
+                                1. an editable `Sync Status` CONTRADICTS the button below it. Press
+                                   Sync, read "marked as synced", watch Last Synced update — and see
+                                   `Not Synced` one row away, because nothing writes it and nothing
+                                   should. A user will "correct" that to `Success`, destroying the
+                                   only truthful in-record signal that no fetch ever happened.
+                                2. an editable `Data Source` puts the `Integrated` flip — a
+                                   documented post-deploy gate belonging to an ASB spoke that does
+                                   not exist — one inline edit away, on a record SHARED by every
+                                   deal on the property, with no audit.
+
+                              ⚠ `mode="readonly"` is NOT a permission control and must not be
+                              described as one: FLS is still the only real gate, and these fields
+                              remain editable from the Property record page. What it removes is the
+                              INVITATION — a pencil beside a value that contradicts the button.
+
+                              ⚠ Same record-id, same object, same columns and density as the form
+                              above, so the two read as ONE continuous field section in the FSD's own
+                              order (metrics, then controls). Do not merge them back together.
                             -->
-                            Last Synced (manual)
-                            <lightning-helptext
-                                content={helpText}
-                            ></lightning-helptext>
-                        </span>
-                        <div class="slds-form-element__control">
-                            <div class="slds-form-element__static">
-                                <template lwc:if={hasLastSynced}>
-                                    <!--
-                                      A plain value row via lightning-formatted-date-time — NOT a
-                                      badge and NOT a coloured pill. It is a value, not a status, and
-                                      nothing ages or expires it (residual R6), so any colour band
-                                      would be inventing a meaning the data cannot support.
-                                    -->
-                                    <lightning-formatted-date-time
-                                        value={lastSynced}
-                                        year="numeric"
-                                        month="short"
-                                        day="2-digit"
-                                        hour="2-digit"
-                                        minute="2-digit"
-                                    ></lightning-formatted-date-time>
-                                </template>
-                                <template lwc:elseif={lastSyncedPending}>
-                                    <!--
-                                      🔴 The record wire has not answered yet, so we do not know
-                                      whether this deal has ever been synced. "Never" would be an
-                                      ASSERTION made before the fact is in hand — the same
-                                      confident-wrong-answer defect the "Not available" state exists
-                                      to prevent on the error branch, and the three-state access gate
-                                      exists to prevent on the button. aria-hidden because a screen
-                                      reader should be told nothing here, not told a dash.
-                                    -->
-                                    <span
-                                        class="mds-muted"
-                                        aria-hidden="true"
-                                        >{loadingLabel}</span
-                                    >
-                                </template>
-                                <template lwc:else>
-                                    <span class="mds-muted">{emptyLastSyncedLabel}</span>
-                                </template>
+                            <lightning-record-form
+                                class="mds-controls"
+                                record-id={propertyId}
+                                object-api-name={objectApiName}
+                                fields={controlFields}
+                                columns="2"
+                                mode="readonly"
+                                density="comfy"
+                            ></lightning-record-form>
+                        </div>
+                    </template>
+                    <template lwc:elseif={showNoProperty}>
+                        <!--
+                          🔴 role="status", NOT role="alert". Only LeadConvertService links a
+                          Property, so a manually-created deal simply has none — an ordinary,
+                          expected state the user can fix by filling in the lookup. role="alert" is
+                          reserved in this bundle for an ADMINISTRATOR MISCONFIGURATION that nothing
+                          else in the org would ever report. Collapsing the two would train users to
+                          ignore the alert that actually matters.
+
+                          🔴 And it must NOT be a blank card: a hidden or empty card is
+                          indistinguishable from "this org has no market data feature", which is the
+                          same silent-absence defect the unsupported-source alert exists to prevent.
+
+                          `showNoProperty` is false while the Opportunity wire is in flight AND when
+                          that read was refused, so this note is never an assertion made before the
+                          fact is in hand.
+                        -->
+                        <div
+                            class="slds-p-horizontal_small slds-p-vertical_x-small"
+                        >
+                            <p class="mds-empty" role="status">
+                                {noPropertyMessage}
+                            </p>
+                        </div>
+                    </template>
+
+                    <!--
+                      The Last Synced row is suppressed ONLY in the no-property state, where there is
+                      no field to read and "Never" would be an assertion about a record that does not
+                      exist. It IS rendered while the wires are in flight (the em-dash) and when a
+                      read was refused ("Not available") — in both of those the row's own three-way
+                      rendering is the honest answer.
+                    -->
+                    <template lwc:if={showLastSynced}>
+                        <div
+                            class="slds-grid slds-wrap slds-p-horizontal_small slds-p-top_x-small"
+                        >
+                            <div class="slds-col slds-size_1-of-2">
+                                <div
+                                    class="slds-form-element slds-form-element_readonly"
+                                >
+                            <span class="slds-form-element__label">
+                                <!--
+                                  "(manual)" is NOT a caption style choice. Without it the row asserts
+                                  a freshness the data does not have: the figures above were typed by
+                                  hand or seeded, possibly months ago. If a real integration ever
+                                  lands, this label and the helptext change in the same commit as the
+                                  callout.
+                                -->
+                                Last Synced (manual)
+                                <lightning-helptext
+                                    content={helpText}
+                                ></lightning-helptext>
+                            </span>
+                            <div class="slds-form-element__control">
+                                <div class="slds-form-element__static">
+                                    <template lwc:if={hasLastSynced}>
+                                        <!--
+                                          A plain value row via lightning-formatted-date-time — NOT a
+                                          badge and NOT a coloured pill. It is a value, not a status,
+                                          and nothing ages or expires it (residual R6), so any colour
+                                          band would be inventing a meaning the data cannot support.
+                                        -->
+                                        <lightning-formatted-date-time
+                                            value={lastSynced}
+                                            year="numeric"
+                                            month="short"
+                                            day="2-digit"
+                                            hour="2-digit"
+                                            minute="2-digit"
+                                        ></lightning-formatted-date-time>
+                                    </template>
+                                    <template lwc:elseif={lastSyncedPending}>
+                                        <!--
+                                          🔴 A record wire has not answered yet, so we do not know
+                                          whether this property has ever been synced. "Never" would be
+                                          an ASSERTION made before the fact is in hand — the same
+                                          confident-wrong-answer defect the "Not available" state
+                                          exists to prevent on the error branch, the three-state
+                                          access gate exists to prevent on the button, and
+                                          `showNoProperty` exists to prevent on the note above.
+                                          aria-hidden because a screen reader should be told nothing
+                                          here, not told a dash.
+                                        -->
+                                        <span
+                                            class="mds-muted"
+                                            aria-hidden="true"
+                                            >{loadingLabel}</span
+                                        >
+                                    </template>
+                                    <template lwc:else>
+                                        <span class="mds-muted"
+                                            >{emptyLastSyncedLabel}</span
+                                        >
+                                    </template>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                            </div>
                         </div>
-                    </div>
+                    </template>
 
                     <div
                         class="slds-grid slds-grid_align-end slds-grid_vertical-align-center slds-wrap slds-p-around_small mds-footer"
@@ -169,6 +277,11 @@
                           The reason is rendered BESIDE the disabled button, never instead of it.
                           Hiding the button would be indistinguishable from "this feature is not for
                           me"; leaving it live would fail at click time with a raw platform error.
+
+                          Two known causes reach here — no linked property, and no FLS edit on the
+                          stamp field. An UNKNOWN cause (object info still loading, or an object-info
+                          read that failed) renders NOTHING, because naming a cause you have not
+                          established sends the user after the wrong fix.
                         -->
                         <template lwc:if={showDisabledReason}>
                             <p class="mds-reason slds-p-right_small" role="note">

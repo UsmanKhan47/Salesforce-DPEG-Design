@@ -3,17 +3,36 @@ import { getRecord, getFieldValue, updateRecord } from 'lightning/uiRecordApi';
 import { getObjectInfo } from 'lightning/uiObjectInfoApi';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
-import OPPORTUNITY_OBJECT from '@salesforce/schema/Opportunity';
-import PLACER_URL_FIELD from '@salesforce/schema/Opportunity.Placer_URL__c';
-import MONTHLY_VISITS_FIELD from '@salesforce/schema/Opportunity.Monthly_Visits__c';
-import PLACER_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.Placer_Last_Synced_DateTime__c';
-import COSTAR_URL_FIELD from '@salesforce/schema/Opportunity.CoStar_URL__c';
-import MARKET_CAP_RATE_FIELD from '@salesforce/schema/Opportunity.Market_Cap_Rate__c';
-import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last_Synced_DateTime__c';
+import PROPERTY_OBJECT from '@salesforce/schema/Property__c';
+import OPPORTUNITY_PROPERTY_FIELD from '@salesforce/schema/Opportunity.Property__c';
+
+// ── Placer block (FSD §18.2) ─────────────────────────────────────────────────
+import PLACER_URL_FIELD from '@salesforce/schema/Property__c.Placer_URL__c';
+import PLACER_STATE_RANK_FIELD from '@salesforce/schema/Property__c.Placer_State_Rank__c';
+import PLACER_STATE_PERCENTILE_FIELD from '@salesforce/schema/Property__c.Placer_State_Percentile__c';
+import PLACER_MSA_RANK_FIELD from '@salesforce/schema/Property__c.Placer_MSA_Rank__c';
+import PLACER_NATIONAL_RANK_FIELD from '@salesforce/schema/Property__c.Placer_National_Rank__c';
+import MONTHLY_VISITS_FIELD from '@salesforce/schema/Property__c.Monthly_Visits__c';
+import PLACER_DATA_SOURCE_FIELD from '@salesforce/schema/Property__c.Placer_Data_Source__c';
+import PLACER_FETCH_STATUS_FIELD from '@salesforce/schema/Property__c.Placer_Fetch_Status__c';
+import PLACER_LAST_SYNCED_FIELD from '@salesforce/schema/Property__c.Placer_Last_Synced_DateTime__c';
+
+// ── CoStar block (FSD §18.2) ─────────────────────────────────────────────────
+import COSTAR_URL_FIELD from '@salesforce/schema/Property__c.CoStar_URL__c';
+import COSTAR_PCT_LEASED_FIELD from '@salesforce/schema/Property__c.CoStar_Pct_Leased__c';
+import COSTAR_LOCATION_SCORE_FIELD from '@salesforce/schema/Property__c.CoStar_Location_Score__c';
+import COSTAR_ASKING_RENT_PSF_FIELD from '@salesforce/schema/Property__c.CoStar_Asking_Rent_PSF__c';
+import MARKET_RENT_PSF_FIELD from '@salesforce/schema/Property__c.Market_Rent_PSF__c';
+import COSTAR_EXIT_CAP_RATE_FIELD from '@salesforce/schema/Property__c.CoStar_Exit_Cap_Rate__c';
+import MARKET_CAP_RATE_FIELD from '@salesforce/schema/Property__c.Market_Cap_Rate__c';
+import COSTAR_DATA_SOURCE_FIELD from '@salesforce/schema/Property__c.CoStar_Data_Source__c';
+import COSTAR_FETCH_STATUS_FIELD from '@salesforce/schema/Property__c.CoStar_Fetch_Status__c';
+import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Property__c.CoStar_Last_Synced_DateTime__c';
 
 /**
- * marketDataSync — one record-page card rendering ONE market-data source's Opportunity fields, a
- * `Last Synced (manual)` row and a Sync button that stamps a DateTime on the record in context.
+ * marketDataSync — one record-page card rendering ONE market-data source's FSD §18.2 block from the
+ * deal's linked `Property__c`, a `Last Synced (manual)` row and a Sync button that stamps a DateTime
+ * on that same Property record.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * 🔴 1. SYNC CONTACTS NOTHING. READ THIS BEFORE CHANGING ANY LABEL IN THIS FILE.
@@ -22,8 +41,16 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last
  * CoStar connection of any kind. Pressing Sync writes ONE DateTime field and does nothing else.
  *
  * That is dangerous in a specific way: a user reading "Last Synced: today, 09:14" will reasonably
- * conclude the Monthly Visits / Market Cap Rate figures rendered immediately above it were
- * retrieved today. They were TYPED BY HAND, possibly months ago.
+ * conclude the figures rendered immediately above it were retrieved today. They were TYPED BY HAND
+ * (or seeded), possibly months ago.
+ *
+ * 🔴 THE RISK WENT UP WITH THE 2026-08-17 CHANGE, IT DID NOT GO DOWN. This card used to show four
+ * fields. It now shows EIGHT or NINE, every one of them carrying an FSD-sanctioned provider name,
+ * including a `Sync Status` picklist sitting directly beside a `Last Synced` timestamp. That is a
+ * screen which looks far more like a working integration than the one it replaced, while still
+ * contacting nothing. The three mitigations below are therefore MORE load-bearing than before, not
+ * less — a bigger, more official-looking card is exactly the thing that makes a reader stop
+ * questioning where the numbers came from.
  *
  * The button is labelled `Sync` rather than the safer `Mark Synced` by an explicit user decision
  * (design Gate-1, 2026-08-16), and that decision is CONDITIONAL on all three mitigations below.
@@ -40,31 +67,131 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last
  *       a progress indicator by another name, and the write is a last-wins single-field stamp for
  *       which a double click is harmless.
  *
+ * 🔴 A FOURTH THING NOW CARRIES THE SAME WEIGHT AND IS NOT THIS COMPONENT'S TO ENFORCE: the seed
+ * writes `Data Source = Manual` and `Sync Status = Not Synced` on every record, and leaves both
+ * `*_Last_Synced_DateTime__c` NULL so this card renders `Never`. Those are the only in-record
+ * signals that a number was never fetched. If a future change starts seeding `Success` or a
+ * timestamp, mitigations (a)-(c) stop being sufficient on their own.
+ *
  * ── FORWARD PATH, when a real integration lands ───────────────────────────────
  * Do NOT rebuild this card from scratch. Four things change together, in one change:
  *   1. the write moves SERVER-SIDE to Apex (a callout must be Apex), and the timestamp becomes
  *      `System.now()` — the server clock — which closes residual R4 (a client-composed ISO string
  *      is only as correct as the user's own system clock);
  *   2. `getRecordNotifyChange` BECOMES REQUIRED, because imperative Apex DML happens behind LDS's
- *      back. See section 3 — today it is forbidden, and the two rules are exact opposites;
- *   3. a status field modelled on `Property__c.Placer_Fetch_Status__c` ships in the same change.
- *      It is deliberately absent today because a stub that contacts nothing can only ever write
- *      `Success`, and a two-value restricted picklist with one reachable value is not a status —
- *      it is a constant with a picklist around it, and it is the single most effective way to make
- *      a stub look like a working integration;
+ *      back. See section 4 — today it is forbidden, and the two rules are exact opposites;
+ *   3. `<source>_Fetch_Status__c` starts carrying `Success` / `Error` instead of the honest
+ *      `Not Synced` it holds today. ⚠ That field ALREADY SHIPS ON THIS CARD, which is a change from
+ *      the earlier design: it was argued then that a status field must not exist while the stub
+ *      does, because a stub can only ever write `Success`. `Property__c.<source>_Fetch_Status__c`
+ *      escapes that argument for one reason only — it carries a THIRD value, `Not Synced`, which is
+ *      TRUE today. The field is honest because of that value, not because it is a status field;
  *   4. mitigations (a)-(c) above are re-read and relaxed only as far as the new truth allows.
  * Only `handleSync` and this header need to change. The rendering, the config map and the access
  * check are all independent of where the write goes.
  *
- * ── WHAT THIS WRITE CANNOT SET OFF (verified at code review, 2026-08-16) ──────
- * Putting a user-pressable write button on `Opportunity` raises one real question: does stamping a
- * field re-trigger the heavyweight Closed Won automation? It does not, and the reason is structural
- * rather than incidental — both consumers gate on stage ENTRY, not on stage VALUE.
- * `PropertyAssetService.createAssets` tests `prior == null || !CLOSED_WON.equals(prior.StageName)`,
- * and `DealFolderService` uses the identical semantics. A stamp-only update leaves `StageName`
- * unchanged, so neither fires: no second `Property_Asset__c`, and no second SharePoint folder — the
- * latter mattering most, because a duplicate folder is an EXTERNAL write no Salesforce transaction
- * can roll back. Recorded here so the next author does not have to re-derive it.
+ * ── WHAT THIS WRITE CANNOT SET OFF (re-measured 2026-08-17) ───────────────────
+ * The write no longer touches `Opportunity` at all, so the previous analysis here — that a stamp
+ * cannot re-fire `PropertyAssetService` / `DealFolderService` because both gate on stage ENTRY
+ * rather than stage VALUE — is now MOOT rather than merely still-true. It is retired, not carried
+ * forward, because a reader would otherwise verify the wrong object.
+ *
+ * The current answer is simpler and was measured against the repo on 2026-08-17: `Property__c` has
+ * NO Apex trigger (there is no `PropertyTrigger`, and the six triggers in `triggers/` are on
+ * `Contract_Review__c`, `Disposition__c`, `EmailMessage`, `Lead`, `Opportunity` and `Task`) and NO
+ * Flow references it. So a stamp on `Property__c` sets off nothing whatsoever. ⚠ That is a fact
+ * about the repo on a date, not a structural guarantee — re-check it if this card ever writes
+ * anything beyond the stamp.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════
+ * 🔴 2. THE CARD RENDERS AND WRITES THE **PROPERTY**, NOT THE OPPORTUNITY (2026-08-17)
+ * ═════════════════════════════════════════════════════════════════════════════
+ * This is the substantive change of 2026-08-17 and the thing most likely to surprise the next
+ * reader: `record-id` on the form below is NOT `this.recordId`. The component sits on an
+ * `Opportunity` record page, resolves that deal's `Property__c` lookup, and then renders and writes
+ * the PROPERTY.
+ *
+ * WHY the data lives there: FSD §18.1 puts the market layer "directly on the property record";
+ * `MarketDataSnapshotService`'s own header argues the same, because a property is shared by every
+ * deal targeting it and two deals must not see two market pictures; and ARCHITECTURE §5 already
+ * declares the `Property__c` timestamps the authoritative freshness markers for this layer.
+ *
+ * ── HOW, and the shape that was REJECTED ──────────────────────────────────────
+ * `lightning-record-form` CANNOT render `Property__r.*`: its `fields` are resolved against
+ * `object-api-name`, and LDS does not accept a spanning path there. Two shapes were available:
+ *
+ *   (a) read `Opportunity.Property__r.X` as spanning fields and hand-render them with
+ *       `lightning-formatted-*` in `slds-form-element` rows;
+ *   (b) read ONE field — `Opportunity.Property__c`, the Id — then point the form at the Property.
+ *
+ * 🔴 (b), AND (a) IS SPECIFICALLY WRONG HERE RATHER THAN MERELY INFERIOR. Shape (a) is read-only,
+ * and this bundle's own template comment already rejected `lightning-output-field` for exactly that
+ * reason — "a functional regression, not a styling choice". Taking (a) would reintroduce the
+ * regression that argument rejected, on seventeen fields instead of four, in the very change whose
+ * purpose is to put MORE data on the card. Inline edit survives; that is not negotiable by
+ * accident.
+ *
+ * (a) also loses the platform's own rendering of a Url field as a link and of a picklist as its
+ * LABEL rather than its API value — five of the nine CoStar fields are one or the other.
+ *
+ * ── 🔴 WHAT (b) COSTS. STATE IT; DO NOT DISCOVER IT IN UAT ────────────────────
+ *   1. THE CARD EDITS A SHARED RECORD FROM A PAGE THAT IS NOT ITS OWN. A user changing
+ *      `CoStar_Pct_Leased__c` on Deal A's page changes the number every other deal on that property
+ *      sees. That is CORRECT — it is the whole reason the market layer lives on `Property__c` — but
+ *      it is not obvious from an Opportunity page. The only mitigation available is words, so the
+ *      per-source `helpText` names the source record. Do not remove that sentence; it is the sole
+ *      on-screen statement of a cross-deal side effect.
+ *   2. TWO RECORD CONTEXTS ON ONE PAGE. A save in this card does not refresh Opportunity-level
+ *      components and vice versa. Accepted: nothing on the Opportunity derives from these fields
+ *      except `Market_Data_Snapshot__c`, which is written only at approval.
+ *   3. THE `targetConfigs` RESTRICTION TO `Opportunity` IS NOW A STRONGER CLAIM, NOT A WEAKER ONE.
+ *      The traversal `Opportunity.Property__c` is hard-coded here, so an instance on any other
+ *      object genuinely cannot resolve a record at all. Keep the restriction.
+ *   4. SHARING. `Property__c` OWD is Private and its one sharing rule is an OWNER rule scoped to the
+ *      `Acquisition` queue, which a `LeadConvertService`-created Property does not reach. The card
+ *      works only because all three relevant permission sets carry `viewAllRecords = true` on
+ *      `Property__c` (measured 2026-08-17). ⚠ That is ORG state, not repo state. If it is ever
+ *      removed the card shows an access error — it fails LOUDLY, which is the acceptable direction,
+ *      but no test can catch it and no deploy will warn.
+ *
+ * ── 🔴 A DEAL WITH NO PROPERTY IS AN ORDINARY STATE, NOT AN ERROR ─────────────
+ * Only `LeadConvertService` creates and links a `Property__c`, so a manually-created deal has none.
+ * This is already a named residual on three other features (`PropertyAssetService` R1,
+ * `DealFolderService` R1, `MarketDataSnapshotService` R1). The card must say so:
+ *
+ *   - a visible inline note, `role="status"` — 🔴 NOT `role="alert"`. `role="alert"` is reserved in
+ *     this bundle for `configError`, which is an ADMINISTRATOR MISCONFIGURATION nothing else in the
+ *     org would ever report. A missing Property is an expected state a user can fix by filling in a
+ *     lookup. Collapsing the two would train users to ignore the alert that actually matters;
+ *   - the form is NOT MOUNTED. A `lightning-record-form` with a null `record-id` must never render;
+ *   - the button is rendered and DISABLED WITH A REASON, never hidden. Hiding a control from a user
+ *     who is genuinely authorized is the defect that retired the `User.*_Driver__c` model;
+ *   - and NOTHING IS SAID UNTIL THE OPPORTUNITY WIRE HAS ANSWERED. `_dealLoaded` exists for that and
+ *     nothing else. "No property linked" asserted before the fact is in hand is the same
+ *     confident-wrong-answer defect that `LOADING_LABEL`, `UNAVAILABLE_LABEL` and the three-state
+ *     access gate each exist to prevent. Four instances of one rule: say nothing until you know.
+ *
+ * ── WHY TWO `getRecord` WIRES AND NOT ONE SPANNING READ ───────────────────────
+ * The stamp could in principle be read as `Opportunity.Property__r.<stamp>` on the deal wire, saving
+ * a wire. It is NOT, deliberately, and the reason is BLAST RADIUS — which is measurable and already
+ * test-pinned, not a guess about platform behaviour.
+ *
+ * Folding the stamp onto the deal wire means WIDENING `DEAL_FIELDS`, and that constant's own comment
+ * says why it must stay at one field: a `getRecord` refusal is all-or-nothing for the fields it
+ * selects, so a user lacking FLS on the stamp would lose the PROPERTY ID too — and with it the form,
+ * every metric, and the ability to tell "no property linked" from "could not read". The whole card
+ * would degrade on a permission gap in ONE non-essential field.
+ *
+ * With two wires that same refusal costs exactly one row: the form stays mounted, the metrics still
+ * render, and only the Last Synced row falls back to `Not available`. `J7 (cont)` pins precisely
+ * that — it refuses the PROPERTY read and asserts the form is still there. One extra read buys a
+ * bounded failure.
+ *
+ * ⚠ DO NOT restate this as "a spanning read might not re-emit after `updateRecord`". An earlier
+ * draft of this header did, and it was the weakest available ground: the LDS store is normalized by
+ * record Id and `updateRecord` merges into it, so a spanning read very likely WOULD re-emit. Arguing
+ * from an unknown that probably resolves against you invites the next reader to delete the second
+ * wire the moment they check. The blast-radius argument does not depend on how LDS invalidates.
  *
  * ── THE HEADER IS THE SLDS EXPANDABLE-SECTION BLUEPRINT (2026-08-17) ──────────
  * The card header reproduces a native Dynamic Forms `fieldSection` exactly: a full-width grey bar
@@ -79,15 +206,18 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last
  * config rather than left unused, so nothing invites a later reader to render it again.
  *
  * ⚠ STATED LIMITATION: the collapse state is NOT PERSISTED across page loads — see `_isOpen`.
+ * ⚠ The card is now 8-9 fields at `columns="2"`, i.e. four or five visual rows. If UAT finds that
+ * too dense, the remedy is `_isOpen = false` by default — a one-line change — NOT dropping fields.
+ * Every field on it is named in FSD §18.2's "Data Captured" table or was already rendered here.
  *
  * ── KNOWN INTERACTION, accepted (no code change available) ────────────────────
  * Pressing Sync while an inline edit is open in this card's own `lightning-record-form` may discard
  * the unsaved draft, because the write re-emits the record through the LDS cache and the form
- * re-renders from it. This is inherent to the `lightning-record-form` approach chosen in D9: the
- * form exposes no dirty state, so there is nothing for this component to gate the click on.
+ * re-renders from it. This is inherent to the `lightning-record-form` approach: the form exposes no
+ * dirty state, so there is nothing for this component to gate the click on.
  *
  * ═════════════════════════════════════════════════════════════════════════════
- * 2. ONE BUNDLE SERVES BOTH SOURCES — AND A SECOND ONE WAS BUILT AND DELETED
+ * 3. ONE BUNDLE SERVES BOTH SOURCES — AND A SECOND ONE WAS BUILT AND DELETED
  * ═════════════════════════════════════════════════════════════════════════════
  * ARCHITECTURE.md §5 records that `c/transactionAdvanceStage` was created and DELETED the same day
  * (2026-08-12, code review W3, user decision) for being byte-identical to `c/advanceRecordStage`
@@ -95,10 +225,12 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last
  * not a split — it is a second file that must now receive every fix the first one gets, with
  * nothing but review to notice when it does not."
  *
- * Placer and CoStar differ in DATA (a title, an icon, a field list, a stamp field). They do not
- * differ in BEHAVIOUR. So there is one bundle, parameterised by the `source` design property and
- * `CONFIG_BY_SOURCE` below — the same shape as `advanceRecordStage`'s server-side `CONFIG_BY_TYPE`,
- * moved to the client because here the variation is presentational rather than transactional.
+ * Placer and CoStar differ in DATA (a title, a field list, a stamp field, help text). They do not
+ * differ in BEHAVIOUR — and the 2026-08-17 change made them differ in MORE data and no more
+ * behaviour, which strengthens the case rather than weakening it. So there is one bundle,
+ * parameterised by the `source` design property and `CONFIG_BY_SOURCE` below — the same shape as
+ * `advanceRecordStage`'s server-side `CONFIG_BY_TYPE`, moved to the client because here the
+ * variation is presentational rather than transactional.
  *
  * A third vendor is ONE MAP ENTRY plus a component instance on the FlexiPage. If a future source
  * ever needs genuinely different BEHAVIOUR, split THAT one into its own bundle — and note that
@@ -107,14 +239,25 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last
  * ⚠ The field API names arrive as `@salesforce/schema/...` imports, never as free-form strings.
  * That is the load-bearing half of the decision: a renamed or deleted field becomes a BUILD-TIME
  * failure instead of a card that deploys green and renders empty. A `fieldNames` design property
- * taking comma-separated API names was considered and rejected for exactly that reason.
+ * taking comma-separated API names was considered and rejected for exactly that reason. It matters
+ * more at nineteen imports than it did at six.
+ *
+ * ⚠ `Market_Rent_PSF__c` carries NO `CoStar_` prefix while its eight siblings do. It is the FSD's
+ * CoStar "Market Rent (PSF)" and it is NOT a typo: ARCHITECTURE §1 rule 5 requires a per-unit rate
+ * to suffix the unit, and the field predates the CoStar block. It is not renamed because an in-place
+ * field rename is a Metadata-API no-op and the only mechanism is delete-and-recreate, against a
+ * field referenced by `MarketDataSnapshotService`, three permission sets and probably reports. The
+ * live cost is that a prefix-based audit of "the CoStar block" MISSES IT; rendering it inside this
+ * card's CoStar section is half the mitigation and its `<description>` is the other half. Do not
+ * drop it from the list because a grep did not find it.
  *
  * ═════════════════════════════════════════════════════════════════════════════
- * 🔴 3. THE WRITE IS LDS `updateRecord`, SO `getRecordNotifyChange` IS FORBIDDEN
+ * 🔴 4. THE WRITE IS LDS `updateRecord`, SO `getRecordNotifyChange` IS FORBIDDEN
  * ═════════════════════════════════════════════════════════════════════════════
  * `updateRecord` writes THROUGH the LDS cache, so this card, the record page and every other
  * component on it re-render on their own. Calling `getRecordNotifyChange` here would be redundant
- * at best. This is the `c/leadStatusChange` rule.
+ * at best. This is the `c/leadStatusChange` rule. ⚠ It is UNCHANGED by the move to `Property__c`:
+ * the target record moved, the MECHANISM did not.
  *
  * It is the EXACT OPPOSITE of the `c/dealActionGuard` / `c/recordStageGuard` rule, which applies
  * only to IMPERATIVE APEX DML — that happens behind LDS's back, so those bundles MUST call it.
@@ -136,29 +279,35 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Opportunity.CoStar_Last
  *
  * ⚠ It is a local copy rather than an import: `c/leadStatusChange` is Lead-bound by contract (it
  * imports `Lead.Status` schema and `LeadActionPermissionController`), so importing from it would
- * pull a Lead permission Apex dependency into an Opportunity card that has no Apex at all.
+ * pull a Lead permission Apex dependency into a card that has no Apex at all.
  *
  * ═════════════════════════════════════════════════════════════════════════════
- * 4. NO PERMISSION GATE — DELIBERATELY, AND FLS IS THE GATE
+ * 5. NO PERMISSION GATE — DELIBERATELY, AND `Property__c` FLS IS THE GATE
  * ═════════════════════════════════════════════════════════════════════════════
  * No custom permission and no FlexiPage `<visibilityRule>`. There is no privileged operation to
  * guard: the button's entire effect is writing one DateTime that any user with FLS edit can
  * already type by hand. Contrast the three stage-action gates, every one of which guards a record
  * moving through a business process under server-side logic.
  *
- * FLS edit on the stamp field IS the gate, and it is already modelled — `DPEG_Acquisition_Edit`
- * grants these fields editable, `DPEG_Acquisition_View` and `DPEG_Opportunity_View` grant them
- * read-only. So a View persona gets a read-only card and an Edit persona gets a working button, at
- * zero new metadata and with no layer-4/layer-5 placement decision to get wrong.
+ * ⚠ THE GATE MOVED OBJECTS WITH THE WRITE. It is FLS edit on `Property__c.<source>_Last_Synced_
+ * DateTime__c`, read from `getObjectInfo` for `Property__c` — NOT for `Opportunity`. A version of
+ * this class still reading `Opportunity` object info would compile, deploy, render and gate on the
+ * wrong object's field entirely. It is already modelled: `DPEG_Acquisition_Edit` grants these
+ * fields editable, `DPEG_Acquisition_View` and `DPEG_Property_View` grant them read-only. So a View
+ * persona gets a read-only card and an Edit persona a working button, at zero new metadata.
  *
- * What this class does instead: it reads the stamp field's `updateable` flag from `getObjectInfo`
- * and renders the button DISABLED WITH A REASON — never hidden silently, and never left to throw
- * on click. It FAILS CLOSED: until the object info has arrived the button is disabled.
+ * What this class does instead of a gate: it reads the stamp field's `updateable` flag and renders
+ * the button DISABLED WITH A REASON — never hidden silently, and never left to throw on click. It
+ * FAILS CLOSED: until the object info has arrived the button is disabled.
  *
  * 🔴 A `<visibilityRule>` bound to a FIELD must never be used to hide this button. ARCHITECTURE
  * records it as measured twice: such a rule evaluates FALSE for anyone lacking FLS READ on that
  * field, with no error and no log, so the control vanishes for users who are genuinely authorized.
  * That defect is why the whole `User.*_Driver__c` model was retired.
+ *
+ * ⚠ `DPEG_Admin_Access` grants none of these fields, exactly as it granted none of the Opportunity
+ * ones. A bare administrator therefore sees an access-restricted card. That is the EXPECTED result
+ * of the sibling rule, not a defect — and it is why an admin smoke test proves nothing here.
  */
 
 /** Fallback when an LDS error carries nothing readable. Never let `undefined` reach a toast. */
@@ -169,54 +318,154 @@ const GENERIC_ERROR =
 const NO_EDIT_ACCESS_MESSAGE =
     'You do not have edit access to this field, so it cannot be stamped.';
 
-/** Rendered when the Last Synced field has never been stamped on this record. */
+/**
+ * Shown IN THE CARD BODY, and again beside the disabled button, when the deal has no linked
+ * Property.
+ *
+ * 🔴 It states a FACT and a REMEDY, and it names neither a fault nor a cause. A deal without a
+ * Property is what a manually-created deal looks like — only `LeadConvertService` links one — so the
+ * user reading this has done nothing wrong and can fix it themselves.
+ */
+const NO_PROPERTY_MESSAGE =
+    'No property is linked to this deal, so there is no market data to show. Link a property to the deal to see its Placer and CoStar data.';
+
+/**
+ * The SHORT form of the same fact, rendered beside the disabled button and in its tooltip.
+ *
+ * ⚠ A DELIBERATE, MINOR DIVERGENCE FROM THE DESIGN, which asked for "the same reason text beside
+ * it". Rendering NO_PROPERTY_MESSAGE twice would print one 135-character sentence twice on a card
+ * that, in this state, contains almost nothing else — the remedy sentence in particular reads as an
+ * instruction the second time, not a reason. The requirement the design was protecting is that the
+ * button is never HIDDEN and never refuses without saying why; both hold. The two strings say the
+ * same thing at two lengths and must not drift apart.
+ */
+const NO_PROPERTY_REASON = 'There is no linked property to stamp.';
+
+/** Rendered when the Last Synced field has never been stamped on this Property. */
 const NEVER_SYNCED_LABEL = 'Never';
 
 /**
- * Rendered when the record wire failed, most plausibly because the running user has no FLS READ on
- * the stamp field.
+ * Rendered when a record wire failed, most plausibly because the running user has no FLS READ on
+ * the stamp field, or no access to the Property at all.
  *
  * ⚠ It is a SEPARATE state from `Never`, deliberately. Collapsing them would tell a user with no
- * read access that the deal has never been synced — a confident wrong answer, where "not available"
- * is a true one. That distinction is the whole reason the record wire's error branch is tracked at
- * all rather than being allowed to fall through to the empty case.
+ * read access that the property has never been synced — a confident wrong answer, where "not
+ * available" is a true one. That distinction is the whole reason both record wires' error branches
+ * are tracked at all rather than being allowed to fall through to the empty case.
+ *
+ * ⚠ It is ALSO a separate state from "no property linked" — see NO_PROPERTY_MESSAGE. A failed read
+ * means we do not know whether a property exists; a null lookup means we know one does not.
  */
 const UNAVAILABLE_LABEL = 'Not available';
 
 /**
- * Rendered in the Last Synced row while the record wire is still in flight: an em-dash, and
+ * Rendered in the Last Synced row while a record wire is still in flight: an em-dash, and
  * `aria-hidden` in the template so a screen reader is told nothing rather than told a dash.
  *
- * 🔴 IT MUST NOT BE `Never`. Before the first emit this component does not know whether the deal has
- * been synced, and `Never` is an ASSERTION — the same confident-wrong-answer defect that
- * `UNAVAILABLE_LABEL` exists to prevent on the error branch, and that the three-state access gate
- * below exists to prevent on the button. All three are the same rule: say nothing until you know.
+ * 🔴 IT MUST NOT BE `Never`. Before the first emit this component does not know whether the property
+ * has been synced, and `Never` is an ASSERTION — the same confident-wrong-answer defect that
+ * `UNAVAILABLE_LABEL` exists to prevent on the error branch, that the three-state access gate
+ * prevents on the button, and that `_dealLoaded` prevents on the no-property note. All four are the
+ * same rule: say nothing until you know.
  */
 const LOADING_LABEL = '—';
 
 /**
+ * The ONE field read from the Opportunity: the Property lookup Id.
+ *
+ * 🔴 A module-level constant, not a getter. A wire config rebuilt on every render re-invokes the
+ * adapter; a stable array reference does not. It is also deliberately ONE field — widening this
+ * list would make every deal's card depend on FLS for whatever was added, and a `WITH USER_MODE`-
+ * style refusal here disables the whole card rather than one row.
+ */
+const DEAL_FIELDS = [OPPORTUNITY_PROPERTY_FIELD];
+
+/**
  * Everything that differs between the two cards. Nothing else in this class knows a vendor name.
  *
- * `helpText` is mitigation (b) of the stub warning in section 1 of the header and is NOT optional
- * decoration — it is the only place the UI states, in words, that the figures above it are
- * hand-entered. Keep it explicit per source rather than composing it from `title`, so that a source
- * whose truth changes (a real integration for one vendor and not the other) can say so on its own.
+ * 🔴 THE FIELD ORDER IS THE FSD §18.2 ORDER — Layer 1 link, then the Layer 2 metrics, then the
+ * control fields — with the one INCUMBENT field of each card slotted in beside its own kind
+ * (`Monthly_Visits__c` after the Placer ranks, `Market_Cap_Rate__c` beside the exit cap). Both
+ * incumbents are what the DEPLOYED cards render today; dropping either inside a change whose stated
+ * purpose is to show MORE data would be a silent regression. Rendering `metricFields` then
+ * `controlFields` reproduces that one FSD order across the two forms, which is why the split below
+ * costs nothing visually.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 WHY `metricFields` AND `controlFields` ARE TWO LISTS AND NOT ONE (2026-08-17, code review C2)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * `metricFields` render in a `mode="view"` form — inline-editable, because a human typing the
+ * numbers IS the data entry mechanism until an ASB spoke exists. `controlFields` —
+ * `<source>_Data_Source__c` and `<source>_Fetch_Status__c` — render in a SECOND form at
+ * `mode="readonly"`, so they are VISIBLE and NOT hand-editable. **Every FSD field still appears on
+ * the card. Nothing was dropped, and nothing may be.**
+ *
+ * TWO INDEPENDENT REASONS, EITHER OF WHICH WOULD BE SUFFICIENT:
+ *
+ *   1. 🔴 A HAND-EDITABLE `Sync Status` CONTRADICTS THE BUTTON DIRECTLY ABOVE IT. Press Sync → the
+ *      toast says "marked as synced" → `Last Synced (manual)` updates → and `Sync Status` ONE ROW
+ *      AWAY still reads `Not Synced`, because nothing writes it and nothing should. A user will very
+ *      reasonably "correct" that to `Success` — and `Not Synced` is the ONLY truthful in-record
+ *      signal that no fetch ever happened, which is precisely why the seed writes it and refuses to
+ *      write `Success`. An editable picklist there does not merely permit the lie; it INVITES it,
+ *      and the person who types it will believe they are fixing a bug.
+ *   2. 🔴 IT PUTS A DOCUMENTED POST-DEPLOY GATE ONE INLINE EDIT AWAY. ARCHITECTURE §1 records that
+ *      `*_Data_Source__c` are PROVENANCE LABELS, not switches, and that the flip to `Integrated` is
+ *      a data change belonging to gate G9 and to an ASB spoke that does not exist. Editable, any
+ *      acquisitions user can perform that flip, on a record SHARED by every deal on the property,
+ *      with no audit and no reviewer.
+ *
+ * ⚠ `mode="readonly"` is NOT a permission control and must not be described as one. FLS is still the
+ * only real gate; a user with edit access can change these fields from the Property record page or a
+ * list view. What this removes is the INVITATION — the pencil sitting beside a value that contradicts
+ * the button — which is the actual failure mode. Do not "simplify" the two forms back into one.
+ *
+ * 🔴 THE STAMP FIELD IS IN NEITHER LIST. It is rendered by this component as the bespoke
+ * "Last Synced (manual)" row, which carries mitigation (a), mitigation (b) and the three-state
+ * Never / Not available / em-dash rendering. A `lightning-record-form` field would render a bare
+ * timestamp under the field's own label and silently delete all three.
+ *
+ * `helpText` is mitigation (b) of the stub warning in section 1 and is NOT optional decoration — it
+ * is the only place the UI states, in words, that the figures above it are hand-entered, that they
+ * live on a shared Property record (section 2's cost 1), AND — since code review C2 — that the two
+ * control fields describe an integration that does not exist and that Sync does not touch them.
+ * That last clause is the other half of remedy C2: the readonly form stops the edit, the sentence
+ * explains why the row does not move. Keep it explicit per source rather than composing it from
+ * `title`, so that a source whose truth changes (a real integration for one vendor and not the
+ * other) can say so on its own.
  */
 const CONFIG_BY_SOURCE = {
     Placer: {
         title: 'Placer',
-        fields: [PLACER_URL_FIELD, MONTHLY_VISITS_FIELD],
+        metricFields: [
+            PLACER_URL_FIELD,
+            PLACER_STATE_RANK_FIELD,
+            PLACER_STATE_PERCENTILE_FIELD,
+            PLACER_MSA_RANK_FIELD,
+            PLACER_NATIONAL_RANK_FIELD,
+            MONTHLY_VISITS_FIELD
+        ],
+        controlFields: [PLACER_DATA_SOURCE_FIELD, PLACER_FETCH_STATUS_FIELD],
         stampField: PLACER_LAST_SYNCED_FIELD,
         helpText:
-            'Recorded when a user pressed Sync. There is no connection to Placer.ai yet, so the values above are entered by hand and may be out of date.',
+            'Recorded when a user pressed Sync. There is no connection to Placer.ai yet, so the values above are entered by hand and may be out of date. They are stored on the linked Property record, so every deal on that property shares them. Sync Status and Data Source describe an integration that does not exist yet; Sync does not change them.',
         successMessage: 'Placer marked as synced.'
     },
     CoStar: {
         title: 'CoStar',
-        fields: [COSTAR_URL_FIELD, MARKET_CAP_RATE_FIELD],
+        metricFields: [
+            COSTAR_URL_FIELD,
+            COSTAR_PCT_LEASED_FIELD,
+            COSTAR_LOCATION_SCORE_FIELD,
+            COSTAR_ASKING_RENT_PSF_FIELD,
+            MARKET_RENT_PSF_FIELD,
+            COSTAR_EXIT_CAP_RATE_FIELD,
+            MARKET_CAP_RATE_FIELD
+        ],
+        controlFields: [COSTAR_DATA_SOURCE_FIELD, COSTAR_FETCH_STATUS_FIELD],
         stampField: COSTAR_LAST_SYNCED_FIELD,
         helpText:
-            'Recorded when a user pressed Sync. There is no connection to CoStar yet, so the values above are entered by hand and may be out of date.',
+            'Recorded when a user pressed Sync. There is no connection to CoStar yet, so the values above are entered by hand and may be out of date. They are stored on the linked Property record, so every deal on that property shares them. Sync Status and Data Source describe an integration that does not exist yet; Sync does not change them.',
         successMessage: 'CoStar marked as synced.'
     }
 };
@@ -267,7 +516,7 @@ function firstMessage(entries) {
  *   3. `body.message`            — the platform's generic summary line.
  *   4. the caller's fallback.
  *
- * Reading only `body.message` surfaces the generic text and DROPS the actionable one. See section 3
+ * Reading only `body.message` surfaces the generic text and DROPS the actionable one. See section 4
  * of the class header.
  *
  * This runs on an error path and MUST NOT throw: every lookup is guarded and the whole walk is
@@ -322,7 +571,12 @@ function messageFor(error, fallback) {
 }
 
 export default class MarketDataSync extends LightningElement {
-    /** Set by the record page. */
+    /**
+     * The OPPORTUNITY Id, set by the record page.
+     *
+     * ⚠ It is NOT what the form renders and NOT what the Sync button writes — both target the
+     * PROPERTY resolved from it. See header section 2.
+     */
     @api recordId;
 
     /**
@@ -332,20 +586,29 @@ export default class MarketDataSync extends LightningElement {
      */
     @api source = 'Placer';
 
-    /** The last `getRecord` payload. The Last Synced row is derived from THIS, never from a local
-     * copy written after a successful save — see `lastSynced`. */
-    _record;
+    /** The deal's `Property__c` lookup value, once the Opportunity wire has answered. */
+    _propertyId;
 
-    /** True once the record wire has reported a failure (e.g. no FLS read on the stamp field). */
-    _recordWireFailed = false;
+    /** True once the Opportunity wire has answered AT ALL — data or error. */
+    _dealLoaded = false;
+
+    /** True once the Opportunity wire has reported a failure. */
+    _dealWireFailed = false;
+
+    /** The last Property `getRecord` payload. The Last Synced row is derived from THIS, never from a
+     * local copy written after a successful save — see `lastSynced`. */
+    _propertyRecord;
+
+    /** True once the Property wire has reported a failure (e.g. no FLS read on the stamp field). */
+    _propertyWireFailed = false;
 
     /**
-     * True once the record wire has answered AT ALL — data or error.
+     * True once the Property wire has answered AT ALL — data or error.
      *
-     * Distinct from `_record` being set, because "no record yet" and "a record with a null stamp"
-     * are different facts that would otherwise render identically. See LOADING_LABEL.
+     * Distinct from `_propertyRecord` being set, because "no record yet" and "a record with a null
+     * stamp" are different facts that would otherwise render identically. See LOADING_LABEL.
      */
-    _recordLoaded = false;
+    _propertyLoaded = false;
 
     /**
      * Whether the field section is expanded. Defaults to OPEN, matching a native Dynamic Forms field
@@ -388,6 +651,9 @@ export default class MarketDataSync extends LightningElement {
      * design out — the same trap ARCHITECTURE records for a sweeper logging an all-zeros summary.
      * `targetConfig` properties cannot be constrained to an enum, so this runtime check is the only
      * mechanism available.
+     *
+     * ⚠ `role="alert"` is reserved for THIS state. The no-property note is `role="status"` — see
+     * NO_PROPERTY_MESSAGE and header section 2.
      */
     get configError() {
         const supplied =
@@ -413,28 +679,101 @@ export default class MarketDataSync extends LightningElement {
 
     /**
      * Bound to `lightning-record-form`'s `object-api-name` — the same `@salesforce/schema` import the
-     * `getObjectInfo` wire uses, rather than a `"Opportunity"` string literal in the template.
+     * `getObjectInfo` wire uses, rather than a `"Property__c"` string literal in the template.
      *
      * Consistent with this bundle's own stated reason for importing schema at all: a compile-time
      * reference cannot silently disagree with the wire beside it. `lightning-record-form` accepts an
      * object reference as well as a string.
+     *
+     * ⚠ It is `Property__c`, NOT `Opportunity` — see header section 2 and section 5.
      */
     get objectApiName() {
-        return OPPORTUNITY_OBJECT;
-    }
-
-    /** The source fields rendered by lightning-record-form. Excludes the stamp field, which this
-     * component renders itself as the Last Synced row. */
-    get formFields() {
-        return this.config ? this.config.fields : [];
+        return PROPERTY_OBJECT;
     }
 
     /**
-     * The `fields` config for the record wire. `undefined` when unconfigured, which is how an LWC
-     * wire is told not to fetch — LDS treats an incomplete config as invalid and emits nothing.
+     * The FSD Layer-1/Layer-2 metrics, rendered in the `mode="view"` form and INLINE EDITABLE — a
+     * human typing them is the data entry mechanism until an ASB spoke exists.
+     *
+     * Excludes the stamp field, which this component renders itself as the Last Synced row.
+     */
+    get metricFields() {
+        return this.config ? this.config.metricFields : [];
+    }
+
+    /**
+     * The two provider CONTROL fields, rendered in a SECOND form at `mode="readonly"` — visible, not
+     * hand-editable. See the CONFIG_BY_SOURCE header for the two reasons; the short version is that
+     * an editable `Sync Status` contradicts the button beside it, and an editable `Data Source` puts
+     * post-deploy gate G9 one inline edit away on a shared record.
+     */
+    get controlFields() {
+        return this.config ? this.config.controlFields : [];
+    }
+
+    /**
+     * The `fields` config for the Property record wire. `undefined` when unconfigured, which is how
+     * an LWC wire is told not to fetch — LDS treats an incomplete config as invalid and emits
+     * nothing.
      */
     get stampFieldList() {
         return this.config ? [this.config.stampField] : undefined;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // The linked Property (header section 2)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * The Id the form renders and the Sync button writes. `undefined` until the Opportunity wire has
+     * answered, and permanently `undefined` for a deal with no Property.
+     */
+    get propertyId() {
+        return this._propertyId;
+    }
+
+    /** True once a Property Id is in hand. Everything that reads the Property is gated on this. */
+    get hasProperty() {
+        return !!this._propertyId;
+    }
+
+    /**
+     * True ONLY when the Opportunity wire has answered SUCCESSFULLY and carried a null lookup.
+     *
+     * 🔴 THREE TERMS, ALL LOAD-BEARING. `_dealLoaded` keeps the note silent while the wire is in
+     * flight; `!_dealWireFailed` keeps it silent when the read was REFUSED (a refusal is not
+     * evidence that no property exists — that branch degrades to `Not available` instead); and
+     * `!_propertyId` is the fact itself. A `!this.propertyId` check written without the other two
+     * would flash "no property linked" on every page load of every deal, and would state it
+     * permanently for any user who cannot read the lookup.
+     */
+    get showNoProperty() {
+        return this._dealLoaded && !this._dealWireFailed && !this._propertyId;
+    }
+
+    get noPropertyMessage() {
+        return NO_PROPERTY_MESSAGE;
+    }
+
+    /**
+     * The form is mounted ONLY with a real Id. `lightning-record-form` with a null `record-id`
+     * renders a broken or empty form rather than nothing, so this is a guard against a visible
+     * defect, not a tidiness rule.
+     */
+    get showForm() {
+        return this.hasProperty;
+    }
+
+    /**
+     * The Last Synced row is suppressed only in the no-property state, where there is no field to
+     * read and `Never` would be an assertion about a record that does not exist.
+     *
+     * It IS rendered while the wires are in flight (as the em-dash) and when a read was refused (as
+     * `Not available`) — in both of those states the row's own three-way rendering is the honest
+     * answer.
+     */
+    get showLastSynced() {
+        return !this.showNoProperty;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -483,21 +822,61 @@ export default class MarketDataSync extends LightningElement {
     // Wires
     // ─────────────────────────────────────────────────────────────────────────
 
-    @wire(getRecord, { recordId: '$recordId', fields: '$stampFieldList' })
-    wiredRecord({ data, error }) {
+    /**
+     * The Opportunity read, for ONE field: the `Property__c` lookup Id.
+     *
+     * Everything else this card does hangs off the Id this produces, which is why the read is kept
+     * as narrow as it can possibly be — one field, so the smallest possible FLS surface.
+     */
+    @wire(getRecord, { recordId: '$recordId', fields: DEAL_FIELDS })
+    wiredDeal({ data, error }) {
         if (data) {
-            this._record = data;
-            this._recordWireFailed = false;
-            this._recordLoaded = true;
+            const resolved = getFieldValue(data, OPPORTUNITY_PROPERTY_FIELD);
+            // 🔴 RESET THE PROPERTY STATE WHEN THE ID MOVES. The second wire refetches on its own,
+            // but until it answers `_propertyRecord` still holds the PREVIOUS property's stamp —
+            // which would render one property's Last Synced beside another's data. Clearing here
+            // returns the row to the em-dash, i.e. to "we do not know yet", which is true.
+            if (resolved !== this._propertyId) {
+                this._propertyRecord = undefined;
+                this._propertyLoaded = false;
+                this._propertyWireFailed = false;
+            }
+            this._propertyId = resolved;
+            this._dealWireFailed = false;
+            this._dealLoaded = true;
         } else if (error) {
-            this._record = undefined;
-            this._recordWireFailed = true;
+            // 🔴 The Id is NOT cleared to `undefined` here on purpose — `_dealWireFailed` is what
+            // downstream getters read, and it keeps `showNoProperty` false. A refused read is not
+            // evidence that the deal has no property.
+            this._dealWireFailed = true;
             // Set on BOTH branches: the flag means "the wire has answered", not "the wire succeeded".
-            this._recordLoaded = true;
+            this._dealLoaded = true;
         }
     }
 
-    @wire(getObjectInfo, { objectApiName: OPPORTUNITY_OBJECT })
+    /**
+     * The PROPERTY read, for the stamp field only.
+     *
+     * ⚠ `recordId: '$propertyId'` is undefined until the deal wire answers, which LDS treats as an
+     * incomplete config — so nothing is fetched and nothing is emitted until there is an Id.
+     */
+    @wire(getRecord, { recordId: '$propertyId', fields: '$stampFieldList' })
+    wiredProperty({ data, error }) {
+        if (data) {
+            this._propertyRecord = data;
+            this._propertyWireFailed = false;
+            this._propertyLoaded = true;
+        } else if (error) {
+            this._propertyRecord = undefined;
+            this._propertyWireFailed = true;
+            this._propertyLoaded = true;
+        }
+    }
+
+    /**
+     * ⚠ `Property__c`, not `Opportunity`. The FLS gate moved with the write — header section 5.
+     */
+    @wire(getObjectInfo, { objectApiName: PROPERTY_OBJECT })
     objectInfo;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -505,7 +884,7 @@ export default class MarketDataSync extends LightningElement {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * The stamp value, read from the LDS record.
+     * The stamp value, read from the LDS Property record.
      *
      * 🔴 IT IS DERIVED FROM THE WIRE, NOT FROM LOCAL STATE, AND THAT IS THE POINT. `handleSync`
      * deliberately does not assign the value it just wrote. Because `updateRecord` writes THROUGH
@@ -514,12 +893,17 @@ export default class MarketDataSync extends LightningElement {
      * locally would make the row show a timestamp even on a write the server silently altered or a
      * cache the platform later corrected, and would hide the very failure the error toast reports.
      * Pinned by J7.
+     *
+     * ⚠ The record this reads is the PROPERTY, which is also the record `handleSync` writes — so the
+     * re-emit is the ordinary same-record one, with no spanning link in the path. The reason there
+     * are two wires at all is blast radius, not invalidation; see the "WHY TWO getRecord WIRES" note
+     * in header section 2 before deleting one.
      */
     get lastSynced() {
-        if (!this.config || !this._record) {
+        if (!this.config || !this._propertyRecord) {
             return undefined;
         }
-        return getFieldValue(this._record, this.config.stampField);
+        return getFieldValue(this._propertyRecord, this.config.stampField);
     }
 
     get hasLastSynced() {
@@ -527,21 +911,26 @@ export default class MarketDataSync extends LightningElement {
         return value !== undefined && value !== null && value !== '';
     }
 
-    /** True when the record could not be read at all — see UNAVAILABLE_LABEL. */
+    /**
+     * True when EITHER record could not be read — see UNAVAILABLE_LABEL.
+     *
+     * Both wires count: a refused Opportunity read and a refused Property read are equally "we do
+     * not know", and neither is evidence that the property has never been synced.
+     */
     get lastSyncedUnavailable() {
-        return this._recordWireFailed === true;
+        return this._dealWireFailed === true || this._propertyWireFailed === true;
     }
 
     /**
-     * True while the record wire has not answered yet — see LOADING_LABEL.
+     * True while the Property wire has not answered yet — see LOADING_LABEL. Covers the window
+     * before the deal wire answers too, since the Property wire cannot even be configured until then.
      *
-     * The `!lastSyncedUnavailable` term is redundant today (the error branch sets `_recordLoaded`
-     * too) and is kept deliberately: it states the intended precedence, so a future edit that stops
-     * setting the flag on the error branch degrades to "unknown" rather than silently back to
+     * The `!lastSyncedUnavailable` term states the intended precedence, so a future edit that stops
+     * setting a loaded flag on an error branch degrades to "unknown" rather than silently back to
      * "Never".
      */
     get lastSyncedPending() {
-        return !this._recordLoaded && !this.lastSyncedUnavailable;
+        return !this._propertyLoaded && !this.lastSyncedUnavailable;
     }
 
     get loadingLabel() {
@@ -553,7 +942,7 @@ export default class MarketDataSync extends LightningElement {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Access — FLS edit on the stamp field is the gate (header section 4)
+    // Access — FLS edit on the Property stamp field is the gate (header section 5)
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
@@ -588,17 +977,28 @@ export default class MarketDataSync extends LightningElement {
         return !!(field && field.updateable === true);
     }
 
-    /** FAIL CLOSED: anything other than a known-true `updateable` disables the button. */
+    /**
+     * FAIL CLOSED, on TWO independent grounds: anything other than a known-true `updateable`
+     * disables the button, and so does the absence of a Property to write to.
+     *
+     * The second term also covers the in-flight window, where `hasProperty` is false because the
+     * answer has not arrived — which is correct, since a click then would have nothing to write.
+     */
     get syncDisabled() {
-        return this.stampFieldUpdateable !== true;
+        return this.stampFieldUpdateable !== true || !this.hasProperty;
     }
 
+    /**
+     * A reason is rendered only for a KNOWN cause. Two exist, and no-property wins because it is the
+     * one the user can act on — an FLS grant on a stamp field is moot while there is no record to
+     * stamp.
+     */
     get showDisabledReason() {
-        return this.stampFieldUpdateable === false;
+        return this.showNoProperty || this.stampFieldUpdateable === false;
     }
 
     get disabledReason() {
-        return NO_EDIT_ACCESS_MESSAGE;
+        return this.showNoProperty ? NO_PROPERTY_REASON : NO_EDIT_ACCESS_MESSAGE;
     }
 
     /**
@@ -624,7 +1024,7 @@ export default class MarketDataSync extends LightningElement {
      * value — a getter-level assertion would have passed on both broken versions.
      */
     get syncButtonTitle() {
-        return this.showDisabledReason ? NO_EDIT_ACCESS_MESSAGE : '';
+        return this.showDisabledReason ? this.disabledReason : '';
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -632,13 +1032,21 @@ export default class MarketDataSync extends LightningElement {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Stamps the source's Last Synced field. NOTHING ELSE HAPPENS — see header section 1.
+     * Stamps the source's Last Synced field ON THE PROPERTY. NOTHING ELSE HAPPENS — see header
+     * section 1.
+     *
+     * 🔴 THE WRITE TARGET IS `this._propertyId`, NEVER `this.recordId`. Writing the Opportunity twin
+     * would put the numbers and their freshness marker on two different records: two deals on one
+     * property would then show ONE dataset under TWO different "Last Synced" values, and the card
+     * would itself become the source of the confusion ARCHITECTURE §5 already warns about. It would
+     * also permanently desynchronise the card from `MarketDataSnapshotService`, which freezes the
+     * PROPERTY timestamp into the approval evidence.
      *
      * The guard is defence in depth, not decoration: `disabled` on a button is a UI affordance, and
      * a click can still reach a handler (it does in Jest, and it can through assistive tooling), so
      * the refusal is expressed in code as well as in markup.
      *
-     * 🔴 No `getRecordNotifyChange` (header section 3). 🔴 No spinner and no busy state (section 1c).
+     * 🔴 No `getRecordNotifyChange` (header section 4). 🔴 No spinner and no busy state (section 1c).
      */
     async handleSync() {
         const config = this.config;
@@ -647,7 +1055,7 @@ export default class MarketDataSync extends LightningElement {
         }
 
         const fields = {};
-        fields.Id = this.recordId;
+        fields.Id = this._propertyId;
         // Client clock — residual R4, accepted while the value asserts nothing real. It becomes
         // System.now() when the write moves server-side.
         fields[config.stampField.fieldApiName] = new Date().toISOString();

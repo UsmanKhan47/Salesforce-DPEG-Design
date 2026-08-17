@@ -3,7 +3,21 @@
     <apiVersion>67.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Market Data Sync</masterLabel>
-    <description>One market-data source (Placer or CoStar) as an Opportunity card, with a Last Synced (manual) row and a Sync button. STUB: Sync stamps a timestamp and contacts no external system. Drop one instance per source and set the Data source property.</description>
+    <!--
+        ⚠ THE description ELEMENT IS CAPPED AT 255 CHARACTERS ON AN LWC BUNDLE, AND THE ONE BELOW
+        IS 245. The tag name is spelled out in words here on purpose: an XML comment may legally
+        contain a start tag, but it makes every naive length check and every grep match the WRONG
+        text, which is how this note was measured at 1,021 characters on its first draft.
+        COUNT any replacement with a tool - do not eyeball it. An overflow here has already cost this
+        repo a deploy cycle, and the deploy error names the bundle rather than the field.
+
+        The wording earns its length: it names the source vendor pair, the fact that the data is read
+        from the PROPERTY rather than from the Opportunity the card sits on (the single most
+        surprising thing about this component), the STUB warning, and the one setup step. The STUB
+        sentence is not optional - App Builder shows this text to the administrator placing the
+        component, and it is the only place the stub is disclosed before the card is on a page.
+    -->
+    <description>One market-data source (Placer or CoStar) read from the deal's linked Property, with a Last Synced (manual) row and a Sync button. STUB: Sync stamps a timestamp and contacts nothing. Drop one instance per source and set the Data source property.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>
@@ -11,9 +25,15 @@
         <targetConfig targets="lightning__RecordPage">
             <!--
                 The ELEMENT form. The `objects=` ATTRIBUTE form is rejected by the Metadata API.
-                Restricting to Opportunity is deliberate: every field this component renders arrives
-                as an @salesforce/schema/Opportunity.* import, so an instance on any other object
-                could never render anything.
+
+                🔴 RESTRICTING TO Opportunity IS A STRONGER CLAIM SINCE 2026-08-17, NOT A WEAKER ONE.
+                It used to hold because every rendered field arrived as an
+                @salesforce/schema/Opportunity.* import. The fields are now Property__c imports - but
+                the component resolves the record it renders by traversing Opportunity.Property__c,
+                and that traversal is HARD-CODED in the JS. So an instance on any other object cannot
+                resolve a record at all, let alone render one. Do not relax this to Property__c
+                "because the fields live there": on a Property record page the component would find no
+                Opportunity.Property__c to read and would render its no-property note forever.
             -->
             <objects>
                 <object>Opportunity</object>
@@ -31,7 +51,7 @@
                 label="Data source"
                 default="Placer"
                 required="true"
-                description="Placer or CoStar (case-sensitive). Selects the card title, icon, fields and Last Synced field."
+                description="Placer or CoStar (case-sensitive). Selects the card title, the Property fields shown and the Last Synced field stamped by Sync."
             />
         </targetConfig>
     </targetConfigs>

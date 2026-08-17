@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Placer_Last_Synced_DateTime__c</fullName>
-    <description>Stamped by the Sync button on the Placer card. STUB: no external system is contacted, so this records when a user pressed the button, not when data was refreshed.</description>
+    <description>DEPRECATED 2026-08-17. Unused by anything. c/marketDataSync now reads Property__c.Placer_Last_Synced_DateTime__c instead (FSD 18.1/18.2). Do not populate. Delete candidate pending report/list-view/dashboard check.</description>
     <externalId>false</externalId>
     <label>Placer Last Synced</label>
     <required>false</required>

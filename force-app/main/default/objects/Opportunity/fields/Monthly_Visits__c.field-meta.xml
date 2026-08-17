@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Monthly_Visits__c</fullName>
-    <description>Placer.ai monthly visit count for this deal. Manually entered - no live Placer.ai connection exists. Mirrors Property__c.Monthly_Visits__c; the two are not reconciled.</description>
+    <description>DEPRECATED 2026-08-17. Unused by anything. c/marketDataSync now reads Property__c.Monthly_Visits__c instead (FSD 18.1/18.2). Do not populate. Delete candidate pending report/list-view/dashboard check.</description>
     <externalId>false</externalId>
     <label>Monthly Visits</label>
     <precision>18</precision>

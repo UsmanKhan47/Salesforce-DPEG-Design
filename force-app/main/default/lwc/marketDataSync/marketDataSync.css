@@ -49,7 +49,21 @@
     margin: 0;
 }
 
-/* The "you do not have edit access" note beside a disabled button. */
+/*
+ * The "no property is linked to this deal" note, rendered in the card body in place of the record
+ * form.
+ *
+ * Deliberately styled like ordinary body text and NOT like `.mds-error`: this is an expected state a
+ * user can fix, not a fault. Colouring it as an error would say the opposite of what the role="status"
+ * on the element says, and colour must never carry meaning the words do not.
+ */
+.mds-empty {
+    color: var(--slds-g-color-neutral-base-30, #444444);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    margin: 0;
+}
+
+/* The "you do not have edit access" / "no linked property" note beside a disabled button. */
 .mds-reason {
     color: var(--slds-g-color-neutral-base-30, #444444);
     font-size: var(--slds-g-font-scale-base, 0.8125rem);

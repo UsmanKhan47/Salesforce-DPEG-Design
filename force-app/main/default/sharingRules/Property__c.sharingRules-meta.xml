@@ -1,5 +1,74 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        RULE 2, Property_Acquisitions_Team_RW, ADDED 2026-08-17. A code review found
+        `c/marketDataSync`'s Sync button renders ENABLED for users whose write will be
+        refused - `getObjectInfo.updateable` reports object CRUD + FLS only, with no record
+        context, so it cannot see sharing. Measured directly on usman-dpeg before writing
+        this rule:
+
+          - Property__c OWD is Private (internal AND external).
+          - The only pre-existing rule, Property_Acquisition_Queue_RW (below), is an OWNER
+            rule sharing records owned by the Acquisition QUEUE. Live Property__c ownership
+            was queried directly: ZERO of 48 records are owned by that queue (all 48 are
+            owned by two individual users - Usman Khan and Junior Dhanani - because
+            LeadConvertService stamps the converting user as owner, never the queue). So the
+            pre-existing rule currently matches NOTHING.
+          - DPEG_Acquisition_Edit grants Property__c allowEdit=true and viewAllRecords=true
+            but modifyAllRecords=false, so a Junior-Analyst-persona user can READ every
+            Property but can only EDIT the 1 of 48 they personally own without this rule.
+
+        WHY A CRITERIA RULE, NOT A SECOND OWNER RULE. An owner rule only reaches records
+        owned by its sharedFrom population. 47 of the 48 live Property__c records are owned
+        by an administrator (Usman Khan) who sits outside every acquisitions role branch, so
+        a second owner rule would repeat the existing rule's failure almost exactly. A
+        criteria-based rule shares by what the RECORD IS, never by who owns it, which is the
+        only construct that reaches all 48 regardless of owner.
+
+        WHY Name notEqual '' AS THE CRITERION. Salesforce criteria rules require at least one
+        criteriaItem and reject audit/system fields as ineligible - confirmed on this exact
+        object family in Lead.sharingRules-meta.xml's Rule 4 comment ("bad value for
+        restricted picklist field: CreatedDate" at deploy), so CreatedDate was not attempted
+        here and a real business field was used from the start, following that precedent.
+        Property__c.nameField is Text (not auto-number) and is the object's required Name
+        field, so it is always populated by construction. Measured directly, not assumed:
+        `SELECT COUNT() FROM Property__c` = 48; `SELECT COUNT() FROM Property__c WHERE Name =
+        null` = 0. So `Name notEqual ''` matches all 48 of 48 live records.
+
+        WHY DPEG_Acquisitions_Team AND NOT A SECOND PRINCIPALS RULE. Queried GroupMember for
+        DPEG_Acquisitions_Team directly: its only two members are the Role group for "DPEG
+        Principal" and the RoleAndSubordinatesInternal group for "Acquisitions Analyst" -
+        i.e. Nikhil Dhanani (DPEG Principal role) and Junior Dhanani (Acquisitions Analyst
+        role, a child role of DPEG Principal) are both already inside this one group by role
+        nesting, matching the identical finding recorded in Lead.sharingRules-meta.xml the
+        same day. It is also the same population the pre-existing
+        Property_Acquisition_Queue_RW rule already targets, so this rule widens WHICH records
+        that population can edit, not WHO the population is.
+
+        ACCESS LEVEL IS Edit, AND OBJECT CRUD IS STILL THE CEILING. DPEG_Acquisition_Edit
+        (Junior's set) grants allowEdit=true on Property__c; DPEG_Acquisition_View (Nikhil's,
+        via DPEG_Principal_PSG) grants allowRead=true / allowEdit=false. Sharing this rule at
+        Edit does not over-grant Nikhil - his own object CRUD still caps him to Read. This
+        rule DOES grant Edit on every Property__c record to every member of
+        DPEG_Acquisitions_Team whose own CRUD allows editing - stated plainly because that is
+        the explicit intent, not an incidental side effect.
+
+        🔴 DEPLOY ONE SHARING RULE AT A TIME - established in the 2026-07-22 RBAC build and
+        repeated by every sharing-rule file added since (NDA__c, LOI__c, and Lead's Rule 4
+        the same day as this one). Deploy this rule alone, separate from any other pending
+        sharing-rule change, so a rejection here cannot roll back an unrelated rule and vice
+        versa.
+
+        🔴 GROUP MEMBERSHIP IS NOT DEPLOYABLE METADATA and CRITERIA-BASED SHARING
+        RECALCULATES ASYNCHRONOUSLY - both standing cautions from the LOI__c/NDA__c/Lead
+        files apply identically here. Verify post-deploy via UserRecordAccess for both Junior
+        and Nikhil against a broad sample of Property__c records, not just the ones used to
+        author this rule, and do not expect access to appear instantly.
+
+        Do NOT remove or modify Property_Acquisition_Queue_RW below - it is dormant today
+        (matches zero records) but is the correct rule for queue-owned Property__c records,
+        and retiring it is a separate, evidenced decision this change does not make.
+    -->
     <sharingOwnerRules>
         <fullName>Property_Acquisition_Queue_RW</fullName>
         <accessLevel>Edit</accessLevel>
@@ -11,5 +80,19 @@
             <queue>Acquisition</queue>
         </sharedFrom>
     </sharingOwnerRules>
+    <sharingCriteriaRules>
+        <fullName>Property_Acquisitions_Team_RW</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>Business requirement: every Property__c record must be editable by the acquisitions team (DPEG_Acquisitions_Team), regardless of owner. Name is used as an always-true criterion (Property__c.nameField is Text, is required, and measured 0 of 48 live records with a blank Name) because owner-based sharing cannot reach the administrator who owns 47 of the 48 live records, and the pre-existing Property_Acquisition_Queue_RW rule below matches zero records since no Property__c is owned by the Acquisition queue. See the in-root comment at the top of this file for the full measurement.</description>
+        <label>Property Acquisitions Team RW</label>
+        <criteriaItems>
+            <field>Name</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
 </SharingRules>
 
