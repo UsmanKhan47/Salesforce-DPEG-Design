@@ -5,7 +5,7 @@
     <masterLabel>Market Data Sync</masterLabel>
     <!--
         ⚠ THE description ELEMENT IS CAPPED AT 255 CHARACTERS ON AN LWC BUNDLE, AND THE ONE BELOW
-        IS 245. The tag name is spelled out in words here on purpose: an XML comment may legally
+        IS 236. The tag name is spelled out in words here on purpose: an XML comment may legally
         contain a start tag, but it makes every naive length check and every grep match the WRONG
         text, which is how this note was measured at 1,021 characters on its first draft.
         COUNT any replacement with a tool - do not eyeball it. An overflow here has already cost this
@@ -17,7 +17,7 @@
         sentence is not optional - App Builder shows this text to the administrator placing the
         component, and it is the only place the stub is disclosed before the card is on a page.
     -->
-    <description>One market-data source (Placer or CoStar) read from the deal's linked Property, with a Last Synced (manual) row and a Sync button. STUB: Sync stamps a timestamp and contacts nothing. Drop one instance per source and set the Data source property.</description>
+    <description>One market-data source (Placer or CoStar) read from the deal's linked Property, with a Last Synced row and a Sync button. STUB: Sync stamps a timestamp and contacts nothing. Drop one instance per source and set the Data source property.</description>
     <targets>
         <target>lightning__RecordPage</target>
     </targets>

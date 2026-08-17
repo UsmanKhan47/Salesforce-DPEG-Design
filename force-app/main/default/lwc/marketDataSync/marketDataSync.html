@@ -1,11 +1,14 @@
 <!--
-  marketDataSync — see marketDataSync.js for the full rationale. The SIX things this template must
+  marketDataSync — see marketDataSync.js for the full rationale. The FIVE things this template must
   keep true, all of them argued at length in that header:
 
-    1. the Last Synced row is labelled "Last Synced (manual)" and carries the helptext. Both are
-       mitigations for a Sync button that contacts nothing — and both are MORE load-bearing since
-       2026-08-17, because the card now shows 8-9 provider-named fields and a Sync Status picklist,
-       i.e. it looks far more like a working integration than the four-field card it replaced.
+    1. 🔴 THE HELPTEXT ON THE Last Synced ROW IS THE ENTIRE STUB DISCLOSURE, ALONE. It is the only
+       thing on this screen that says there is no connection, that the values were typed by hand,
+       and that Sync fetches nothing. ⚠ It used to be one of three mitigations: the row was labelled
+       "Last Synced (manual)" and the card also showed a `Sync Status` picklist. BOTH WERE REMOVED
+       ON 2026-08-17 BY USER DECISION and the `Sync` button label was deliberately kept, so this
+       tooltip absorbed the whole job. Deleting or shortening it is the change that WOULD require
+       the button label to move.
     2. there is NO spinner and NO busy state anywhere in this file.
     3. an unsupported `source` renders a VISIBLE role="alert", never an empty card — and a deal with
        no linked Property renders a VISIBLE role="status", never a blank card and never an alert.
@@ -13,15 +16,13 @@
        else would ever report; status is an ordinary state the user can fix themselves.
     4. the Sync button is `variant="neutral"`. A brand button asserts a primacy this stub has not
        earned, and it would read as the primary action of the record page.
-    5. 🔴 the record forms are bound to {propertyId} + Property__c, NOT to {recordId} + Opportunity.
+    5. 🔴 the record form is bound to {propertyId} + Property__c, NOT to {recordId} + Opportunity.
        This card renders the deal's linked PROPERTY. See header section 2.
-    6. 🔴 there are TWO forms and that is deliberate: metrics at mode="view" (inline-editable, since
-       hand entry IS how these numbers get in) and the provider CONTROL field — `Sync Status` — at
-       mode="readonly", because an editable `Sync Status` contradicts the button beside it. Code
-       review C2. Do not merge them, and do not "simplify away" a form that now binds one field.
-       ⚠ `Data Source` was in that readonly form for part of 2026-08-17 and was REMOVED from the
-       card by user decision. The FIELD still exists on Property__c and is untouched — only the
-       rendering is gone. Do not re-add it to "complete the block".
+
+  ⚠ THERE IS ONE FORM. A second, mode="readonly" form held the two provider control fields for part
+  of 2026-08-17 (code review C2) and was removed WITH those fields when the user dropped them from
+  the card — it had nothing left to render. The FIELDS are untouched on Property__c. Re-adding
+  either one brings the read-only form back with it; see the CONFIG_BY_SOURCE header.
 
   ⚠ Do NOT apply the repo's `.lv-*` list-view chrome here. Measured: those table classes live in a
   single bundle, and this is a field section, not a list.
@@ -97,7 +98,7 @@
                 -->
                 <template lwc:if={isOpen}>
                     <!--
-                      🔴 BOTH FORMS RENDER THE **PROPERTY**, NOT THE OPPORTUNITY. `record-id` is the
+                      🔴 THE FORM RENDERS THE **PROPERTY**, NOT THE OPPORTUNITY. `record-id` is the
                       Id resolved from this deal's Property__c lookup, and `object-api-name` is the
                       Property__c schema import — see marketDataSync.js header section 2 for why
                       lightning-record-form cannot render Property__r.* spanning fields, and why the
@@ -109,15 +110,20 @@
                       choice. That argument was made against FOUR fields; it applies with more force
                       to the metrics rendered here.
 
-                      ⚠ IT APPLIES TO THE **METRICS**, AND ONLY TO THEM. The two provider control
-                      fields are deliberately read-only in the second form below — that is not the
-                      regression this argument rejected, because nobody enters a Sync Status by hand:
-                      it is a fact about a fetch, and no fetch exists. Editability follows what the
-                      field is FOR, not a blanket rule.
+                      ⚠ THERE WAS A SECOND, `mode="readonly"` FORM HERE FOR PART OF 2026-08-17,
+                      holding <source>_Data_Source__c and <source>_Fetch_Status__c (code review C2:
+                      an editable `Sync Status` contradicts the Sync button beside it). BOTH FIELDS
+                      WERE THEN REMOVED FROM THE CARD BY USER DECISION, so that form had nothing left
+                      to render and went with them. 🔴 THE FIELDS THEMSELVES ARE UNTOUCHED — still
+                      live on Property__c, still seeded, still reportable. Only the rendering went.
+                      Removing the field resolves C2 MORE strongly than read-only did, since it
+                      cannot be edited from this card at all. If either field ever returns, the
+                      read-only form returns with it — do not re-add one without the other. The full
+                      supersession note is in the CONFIG_BY_SOURCE header of marketDataSync.js.
 
-                      🔴 THEY ARE MOUNTED ONLY WHEN A PROPERTY ID EXISTS. A lightning-record-form with
+                      🔴 IT IS MOUNTED ONLY WHEN A PROPERTY ID EXISTS. A lightning-record-form with
                       a null record-id renders a broken/empty form rather than nothing, so this guard
-                      prevents a visible defect. They also stay UNMOUNTED while the Opportunity wire
+                      prevents a visible defect. It also stays UNMOUNTED while the Opportunity wire
                       is in flight, which is the "say nothing until you know" rule.
                     -->
                     <template lwc:if={showForm}>
@@ -129,52 +135,6 @@
                                 fields={metricFields}
                                 columns="2"
                                 mode="view"
-                                density="comfy"
-                            ></lightning-record-form>
-
-                            <!--
-                              🔴 A SECOND FORM, `mode="readonly"`, FOR THE PROVIDER CONTROL FIELD —
-                              <source>_Fetch_Status__c, which since 2026-08-17 is the only entry in
-                              `controlFields`. It is VISIBLE and NOT hand-editable. Code review C2.
-                              The full argument is in the CONFIG_BY_SOURCE header of
-                              marketDataSync.js; the short version:
-
-                                an editable `Sync Status` CONTRADICTS the button below it. Press
-                                Sync, read "marked as synced", watch Last Synced update — and see
-                                `Not Synced` one row away, because nothing writes it and nothing
-                                should. A user will "correct" that to `Success`, destroying the only
-                                truthful in-record signal that no fetch ever happened.
-
-                              ⚠ A SECOND FORM FOR ONE FIELD LOOKS LIKE SOMETHING TO TIDY AWAY. It is
-                              not: `mode` is a property of the FORM, not of a field, so rendering one
-                              field read-only beside eight editable ones requires exactly this. The
-                              alternative — a hand-built row with lightning-output-field — loses the
-                              platform's own picklist-label rendering and duplicates markup the form
-                              already gives for free.
-
-                              ⚠ `<source>_Data_Source__c` WAS the second entry here, for part of
-                              2026-08-17, and was REMOVED FROM THE CARD by user decision ("there is
-                              no need to add datasource field"). 🔴 The FIELD is untouched — it still
-                              exists on Property__c with its FLS intact, is owned by another
-                              workstream, and its flip to `Integrated` remains post-deploy gate G9.
-                              Only the rendering went. Do not re-add it to "complete the block".
-
-                              ⚠ `mode="readonly"` is NOT a permission control and must not be
-                              described as one: FLS is still the only real gate, and this field
-                              remains editable from the Property record page. What it removes is the
-                              INVITATION — a pencil beside a value that contradicts the button.
-
-                              ⚠ Same record-id, same object, same columns and density as the form
-                              above, so the two read as ONE continuous field section in the FSD's own
-                              order (metrics, then control). Do not merge them back together.
-                            -->
-                            <lightning-record-form
-                                class="mds-controls"
-                                record-id={propertyId}
-                                object-api-name={objectApiName}
-                                fields={controlFields}
-                                columns="2"
-                                mode="readonly"
                                 density="comfy"
                             ></lightning-record-form>
                         </div>
@@ -222,13 +182,26 @@
                                 >
                             <span class="slds-form-element__label">
                                 <!--
-                                  "(manual)" is NOT a caption style choice. Without it the row asserts
-                                  a freshness the data does not have: the figures above were typed by
-                                  hand or seeded, possibly months ago. If a real integration ever
-                                  lands, this label and the helptext change in the same commit as the
-                                  callout.
+                                  ⚠ THIS LABEL READ "Last Synced (manual)" UNTIL 2026-08-17. The
+                                  "(manual)" suffix was mitigation (a) of the stub contract — it put
+                                  the disclaimer in the label itself, because the row otherwise
+                                  asserts a freshness the data does not have (the figures above were
+                                  typed by hand or seeded, possibly months ago).
+
+                                  🔴 THE USER RETIRED THAT SUFFIX DELIBERATELY, having been shown the
+                                  contract, AND KEPT THE `Sync` BUTTON LABEL. Do not restore
+                                  "(manual)" as a fix, and do not change the button because it is
+                                  gone. See marketDataSync.js header section 1 — the contract was
+                                  rewritten to match, and the disclosure MOVED into the helptext
+                                  below rather than disappearing.
+
+                                  ⇒ THE HELPTEXT IS NOW THE ONLY DISCLOSURE ON THIS SCREEN. It is
+                                  not decoration and it is not a description of this row: it is the
+                                  sole statement that no connection exists, that the values were
+                                  entered by hand, and that Sync fetches nothing. Removing it is the
+                                  change that WOULD require the button label to move.
                                 -->
-                                Last Synced (manual)
+                                Last Synced
                                 <lightning-helptext
                                     content={helpText}
                                 ></lightning-helptext>

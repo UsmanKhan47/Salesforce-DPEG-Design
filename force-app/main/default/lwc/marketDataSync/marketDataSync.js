@@ -13,7 +13,6 @@ import PLACER_STATE_PERCENTILE_FIELD from '@salesforce/schema/Property__c.Placer
 import PLACER_MSA_RANK_FIELD from '@salesforce/schema/Property__c.Placer_MSA_Rank__c';
 import PLACER_NATIONAL_RANK_FIELD from '@salesforce/schema/Property__c.Placer_National_Rank__c';
 import MONTHLY_VISITS_FIELD from '@salesforce/schema/Property__c.Monthly_Visits__c';
-import PLACER_FETCH_STATUS_FIELD from '@salesforce/schema/Property__c.Placer_Fetch_Status__c';
 import PLACER_LAST_SYNCED_FIELD from '@salesforce/schema/Property__c.Placer_Last_Synced_DateTime__c';
 
 // ── CoStar block (FSD §18.2) ─────────────────────────────────────────────────
@@ -24,13 +23,12 @@ import COSTAR_ASKING_RENT_PSF_FIELD from '@salesforce/schema/Property__c.CoStar_
 import MARKET_RENT_PSF_FIELD from '@salesforce/schema/Property__c.Market_Rent_PSF__c';
 import COSTAR_EXIT_CAP_RATE_FIELD from '@salesforce/schema/Property__c.CoStar_Exit_Cap_Rate__c';
 import MARKET_CAP_RATE_FIELD from '@salesforce/schema/Property__c.Market_Cap_Rate__c';
-import COSTAR_FETCH_STATUS_FIELD from '@salesforce/schema/Property__c.CoStar_Fetch_Status__c';
 import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Property__c.CoStar_Last_Synced_DateTime__c';
 
 /**
- * marketDataSync — one record-page card rendering ONE market-data source's FSD §18.2 block from the
- * deal's linked `Property__c`, a `Last Synced (manual)` row and a Sync button that stamps a DateTime
- * on that same Property record.
+ * marketDataSync — one record-page card rendering ONE market-data source's FSD §18.2 metrics from
+ * the deal's linked `Property__c`, a bespoke `Last Synced` row and a Sync button that stamps a
+ * DateTime on that same Property record.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * 🔴 1. SYNC CONTACTS NOTHING. READ THIS BEFORE CHANGING ANY LABEL IN THIS FILE.
@@ -42,39 +40,58 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Property__c.CoStar_Last
  * conclude the figures rendered immediately above it were retrieved today. They were TYPED BY HAND
  * (or seeded), possibly months ago.
  *
- * 🔴 THE RISK WENT UP WITH THE 2026-08-17 CHANGE, IT DID NOT GO DOWN. This card used to show four
- * fields. It now shows EIGHT or NINE, every one of them carrying an FSD-sanctioned provider name,
- * including a `Sync Status` picklist sitting directly beside a `Last Synced` timestamp. That is a
- * screen which looks far more like a working integration than the one it replaced, while still
- * contacting nothing. The three mitigations below are therefore MORE load-bearing than before, not
- * less — a bigger, more official-looking card is exactly the thing that makes a reader stop
- * questioning where the numbers came from.
+ * 🔴 THE RISK WENT UP WITH THE 2026-08-17 CHANGES, IT DID NOT GO DOWN. This card used to show four
+ * fields. It now shows SEVEN or EIGHT, every one of them carrying an FSD-sanctioned provider name,
+ * beside a `Last Synced` timestamp and a button called `Sync`. That is a screen which looks far more
+ * like a working integration than the one it replaced, while still contacting nothing.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE MITIGATION CONTRACT — REWRITTEN 2026-08-17. READ IT BEFORE TOUCHING A LABEL.
+ * ═══════════════════════════════════════════════════════════════════════════
  * The button is labelled `Sync` rather than the safer `Mark Synced` by an explicit user decision
- * (design Gate-1, 2026-08-16), and that decision is CONDITIONAL on all three mitigations below.
- * They are requirements, not polish. If any of them is ever removed, the label must change with it:
+ * (design Gate-1, 2026-08-16). That decision USED TO BE conditional on THREE mitigations, with the
+ * standing rule *"if any of them is ever removed, the label must change with it"*.
  *
- *   (a) the row is labelled `Last Synced (manual)`, never a bare `Last Synced`;
- *   (b) a lightning-helptext on that row states that no connection exists yet and the values above
- *       are entered by hand;
- *   (c) 🔴 NO SPINNER, NO "Syncing..." STATE, NO PROGRESS INDICATOR, NO ARTIFICIAL DELAY. The click
- *       stamps and toasts immediately. Animating a fetch that does not happen is precisely how a
- *       stub becomes a lie, and it is the one mitigation that a well-meaning "polish" pass is most
- *       likely to undo. There is deliberately no `isBusy` / `isSyncing` tracked property in this
- *       class at all, so there is nothing for a spinner to bind to. Do not add one: a busy flag is
- *       a progress indicator by another name, and the write is a last-wins single-field stamp for
- *       which a double click is harmless.
+ * 🔴 ONE OF THE THREE HAS SINCE BEEN REMOVED AND THE LABEL WAS KEPT ANYWAY. That is not a breach of
+ * the old rule — the user was shown this exact contract, retired mitigation (a) deliberately, and
+ * chose to have the helptext carry the disclosure instead. Recording it rather than quietly
+ * rewriting history is the point: a reader who finds `Sync` beside a bare `Last Synced` and
+ * remembers the old rule would otherwise conclude the label is a bug and "fix" it.
  *
- * 🔴 A FOURTH THING NOW CARRIES THE SAME WEIGHT AND IS NOT THIS COMPONENT'S TO ENFORCE: the seed
- * writes `Data Source = Manual` and `Sync Status = Not Synced` on every record, and leaves both
- * `*_Last_Synced_DateTime__c` NULL so this card renders `Never`. Those are the only in-record
+ *   (a) 🔴 RETIRED, 2026-08-17, BY USER DECISION. The row used to be labelled `Last Synced (manual)`
+ *       — never a bare `Last Synced` — so the word `(manual)` carried the disclaimer in the label
+ *       itself. The user dropped the suffix; the row now reads plain `Last Synced`. Do NOT restore
+ *       `(manual)` as a "fix", and do NOT change the button label because this is gone. The
+ *       disclosure moved; it did not disappear.
+ *   (b) 🔴 THE HELPTEXT, AND IT NOW CARRIES THE WHOLE DISCLOSURE ALONE — so it is MORE load-bearing
+ *       than when it was one of three, not less. With (a) retired and `Sync Status` no longer on the
+ *       card, this tooltip is the ONLY place on screen that says there is no connection, that the
+ *       values were typed by hand, and that pressing Sync fetches nothing. Deleting or shortening it
+ *       past those four facts is the change that WOULD require the button label to move.
+ *   (c) 🔴 NO SPINNER, NO "Syncing..." STATE, NO PROGRESS INDICATOR, NO ARTIFICIAL DELAY —
+ *       UNCHANGED. The click stamps and toasts immediately. Animating a fetch that does not happen
+ *       is precisely how a stub becomes a lie, and it is the one mitigation that a well-meaning
+ *       "polish" pass is most likely to undo. There is deliberately no `isBusy` / `isSyncing`
+ *       tracked property in this class at all, so there is nothing for a spinner to bind to. Do not
+ *       add one: a busy flag is a progress indicator by another name, and the write is a last-wins
+ *       single-field stamp for which a double click is harmless.
+ *
+ * ⚠ The success toast — `"<source> marked as synced."` — is part of the same honesty and survives
+ * unchanged. "Marked as" is doing real work: it says a flag was set, not that data arrived.
+ *
+ * 🔴 A FOURTH THING CARRIES THE SAME WEIGHT AND IS NOT THIS COMPONENT'S TO ENFORCE: the seed writes
+ * `Data Source = Manual` and `Sync Status = Not Synced` on every record, and leaves both
+ * `*_Last_Synced_DateTime__c` NULL so this card renders `Never`. Those are the only IN-RECORD
  * signals that a number was never fetched. If a future change starts seeding `Success` or a
- * timestamp, mitigations (a)-(c) stop being sufficient on their own.
+ * timestamp, mitigations (b) and (c) stop being sufficient on their own.
  *
- * ⚠ OF THOSE THREE SEED SIGNALS, THIS CARD SHOWS TWO: `Sync Status` and (as `Never`) the timestamp.
- * `Data Source` is seeded but deliberately NOT rendered here — user decision, 2026-08-17; see the
- * CONFIG_BY_SOURCE header. So the seed still matters more than the card does: a wrongly-seeded
- * `Data Source` would be invisible from this screen entirely.
+ * ⚠ AND THIS CARD NOW DISPLAYS EXACTLY ONE OF THOSE THREE SIGNALS — the timestamp, as `Never`.
+ * `Data Source` and `Sync Status` are both still SEEDED and still live on `Property__c`, but were
+ * removed from the card by user decision on 2026-08-17 (see the CONFIG_BY_SOURCE header). So a
+ * wrongly-seeded `Data Source` or a `Sync Status` hand-edited to `Success` is now invisible from
+ * this screen entirely, and visible only in a report or on the Property record page. That makes the
+ * seed's correctness matter MORE than it did, not less — and it is the reason (b) had to absorb the
+ * disclosure rather than merely keep it.
  *
  * ── FORWARD PATH, when a real integration lands ───────────────────────────────
  * Do NOT rebuild this card from scratch. Four things change together, in one change:
@@ -84,12 +101,14 @@ import COSTAR_LAST_SYNCED_FIELD from '@salesforce/schema/Property__c.CoStar_Last
  *   2. `getRecordNotifyChange` BECOMES REQUIRED, because imperative Apex DML happens behind LDS's
  *      back. See section 4 — today it is forbidden, and the two rules are exact opposites;
  *   3. `<source>_Fetch_Status__c` starts carrying `Success` / `Error` instead of the honest
- *      `Not Synced` it holds today. ⚠ That field ALREADY SHIPS ON THIS CARD, which is a change from
- *      the earlier design: it was argued then that a status field must not exist while the stub
- *      does, because a stub can only ever write `Success`. `Property__c.<source>_Fetch_Status__c`
- *      escapes that argument for one reason only — it carries a THIRD value, `Not Synced`, which is
- *      TRUE today. The field is honest because of that value, not because it is a status field;
- *   4. mitigations (a)-(c) above are re-read and relaxed only as far as the new truth allows.
+ *      `Not Synced` it holds today — and THAT is the change that earns it a place back on this card.
+ *      ⚠ It is NOT on the card now (removed by user decision, 2026-08-17), so the field and the card
+ *      return together or not at all. The earlier design argued a status field must not exist while
+ *      the stub does, because a stub can only ever write `Success`; `Property__c.<source>_Fetch_Status__c`
+ *      escapes that only because it carries a THIRD value, `Not Synced`, which is TRUE today. The
+ *      field is honest because of that value, not because it is a status field;
+ *   4. mitigations (b) and (c) above are re-read and relaxed only as far as the new truth allows —
+ *      and (a), already retired, is NOT resurrected: `(manual)` would be false once a fetch is real.
  * Only `handleSync` and this header need to change. The rendering, the config map and the access
  * check are all independent of where the write goes.
  *
@@ -386,72 +405,73 @@ const DEAL_FIELDS = [OPPORTUNITY_PROPERTY_FIELD];
 /**
  * Everything that differs between the two cards. Nothing else in this class knows a vendor name.
  *
- * 🔴 THE FIELD ORDER IS THE FSD §18.2 ORDER — Layer 1 link, then the Layer 2 metrics, then the
- * control fields — with the one INCUMBENT field of each card slotted in beside its own kind
- * (`Monthly_Visits__c` after the Placer ranks, `Market_Cap_Rate__c` beside the exit cap). Both
- * incumbents are what the DEPLOYED cards render today; dropping either inside a change whose stated
- * purpose is to show MORE data would be a silent regression. Rendering `metricFields` then
- * `controlFields` reproduces that one FSD order across the two forms, which is why the split below
- * costs nothing visually.
+ * 🔴 THE FIELD ORDER IS THE FSD §18.2 ORDER — Layer 1 link, then the Layer 2 metrics — with the one
+ * INCUMBENT field of each card slotted in beside its own kind (`Monthly_Visits__c` after the Placer
+ * ranks, `Market_Cap_Rate__c` beside the exit cap). Both incumbents are what the deployed cards
+ * rendered before this work; dropping either would have been a silent regression.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * 🔴 WHY `metricFields` AND `controlFields` ARE TWO LISTS AND NOT ONE (2026-08-17, code review C2)
+ * 🔴 THE PROVIDER CONTROL FIELDS ARE NOT ON THESE CARDS. THIS SUPERSEDES THE C2 NOTE.
  * ═══════════════════════════════════════════════════════════════════════════
- * `metricFields` render in a `mode="view"` form — inline-editable, because a human typing the
- * numbers IS the data entry mechanism until an ASB spoke exists. `controlFields` renders in a SECOND
- * form at `mode="readonly"`, so its contents are VISIBLE and NOT hand-editable.
+ * `<source>_Data_Source__c` and `<source>_Fetch_Status__c` are NOT rendered. Both were on the card
+ * earlier on 2026-08-17 and both were removed by USER DECISION after seeing it — Data Source first
+ * (*"there is no need to add datasource field"*), Fetch Status shortly after.
  *
- * ⚠ `controlFields` HOLDS EXACTLY ONE FIELD PER SOURCE — `<source>_Fetch_Status__c`. A list of one
- * is not an accident and must not be "simplified" into a scalar or folded back into `metricFields`:
- * it is the seam the second form binds to, and the C2 argument below applies to whatever is in it.
+ * 🔴 THE FIELDS THEMSELVES ARE UNTOUCHED: no metadata change, no FLS change. They are live on
+ * `Property__c`, still queryable, still reportable, and the seed still writes `Manual` /
+ * `Not Synced` to them. ONLY THE RENDERING WENT.
  *
- * THE REASON, AND IT IS ABOUT THE FIELD THAT REMAINS:
+ * ── WHAT THIS SUPERSEDES, AND WHY IT IS RECORDED RATHER THAN DELETED ──────────
+ * Code review C2 (earlier the same day) required these two fields to sit in a SECOND
+ * `lightning-record-form` at `mode="readonly"`, because a hand-editable `Sync Status` contradicts
+ * the Sync button beside it: press Sync, read "marked as synced", and see `Not Synced` one row away
+ * — a user "corrects" it to `Success` and destroys the only truthful in-record signal that no fetch
+ * ever happened. That reasoning was right, and that second form is now GONE along with the fields.
  *
- *   🔴 A HAND-EDITABLE `Sync Status` CONTRADICTS THE BUTTON DIRECTLY BELOW IT. Press Sync → the
- *   toast says "marked as synced" → `Last Synced (manual)` updates → and `Sync Status` ONE ROW AWAY
- *   still reads `Not Synced`, because nothing writes it and nothing should. A user will very
- *   reasonably "correct" that to `Success` — and `Not Synced` is the ONLY truthful in-record signal
- *   that no fetch ever happened, which is precisely why the seed writes it and refuses to write
- *   `Success`. An editable picklist there does not merely permit the lie; it INVITES it, and the
- *   person who types it will believe they are fixing a bug.
+ * 🔴 REMOVING THE FIELD RESOLVES C2 MORE STRONGLY THAN READ-ONLY DID — it cannot be edited from this
+ * card at all, rather than merely not invited. So this is not a regression against C2; it is the
+ * same concern taken further.
  *
- * ⚠ `mode="readonly"` is NOT a permission control and must not be described as one. FLS is still the
- * only real gate; a user with edit access can change this field from the Property record page or a
- * list view. What this removes is the INVITATION — the pencil sitting beside a value that contradicts
- * the button — which is the actual failure mode. Do not "simplify" the two forms back into one.
+ * ⚠ THE PREVIOUS NOTE HERE SAID A ONE-FIELD READ-ONLY FORM "IS NOT SOMETHING TO TIDY AWAY". THAT
+ * NOTE IS OBSOLETE AND IS SUPERSEDED, NOT SILENTLY DROPPED. It was written to stop someone deleting
+ * the second form as apparent clutter; the form was then removed for a different and legitimate
+ * reason — it had nothing left to render. A reader finding that instruction in the git history and
+ * no form in the file would otherwise conclude it was tidied away by mistake.
  *
- * ── 🔴 `<source>_Data_Source__c` IS DELIBERATELY *NOT* ON THESE CARDS (user decision, 2026-08-17) ──
- * Both `*_Data_Source__c` fields WERE rendered here, in this same readonly form, for part of one day.
- * The user removed them after seeing the cards: *"there is no need to add datasource field."*
- * **The FIELDS still exist on `Property__c` and are untouched** — no metadata change, no FLS change;
- * they are owned by another workstream and ARCHITECTURE §1 describes them as PROVENANCE LABELS whose
- * flip to `Integrated` is post-deploy gate G9. Only the RENDERING is gone.
+ * ⇒ Do NOT re-add either field to "complete the provider block". Their absence is a decision, and
+ * `marketDataSyncTest` pins it on both cards for exactly that reason. If one ever comes back, the C2
+ * argument comes back with it and so does the read-only form.
  *
- * ⚠ So "every FSD §18.2 field appears on the card" — true earlier today — is NO LONGER TRUE, and the
- * exception is exactly these two. Do not re-add them to "complete the block": their absence is a
- * decision, and the second reason C2 originally gave for the readonly form (that an editable
- * `Data_Source__c` puts gate G9 one inline edit away) is now moot HERE because the field is not
- * rendered at all — a stronger outcome than read-only, not a weaker one.
+ * ⚠ CONSEQUENCE, stated because it is the real cost: "every FSD §18.2 field appears on the card" was
+ * true earlier today and is now FALSE for exactly these four fields. `Sync Status` in particular is
+ * an in-record honesty signal that is now visible only in a report or on the Property record page —
+ * which is why the helptext below had to absorb the whole disclosure (mitigation (b), section 1).
  *
- * ⚠ `<source>_Fetch_Status__c` STAYS, and the asymmetry is the point: Data Source describes where a
- * value CAME FROM, which nobody is asking this card, while Sync Status is the one honest in-record
- * statement that nothing has actually synced — sitting beside a button that says it did.
+ * ⚠ `metricFields` KEEPS ITS NAME although it is now the only field list. It is accurate — these are
+ * the metrics, as distinct from the stamp field and from the control fields that used to sit beside
+ * them — and renaming it to `fields` would churn the template and the suite for no behavioural gain.
  *
- * 🔴 THE STAMP FIELD IS IN NEITHER LIST. It is rendered by this component as the bespoke
- * "Last Synced (manual)" row, which carries mitigation (a), mitigation (b) and the three-state
- * Never / Not available / em-dash rendering. A `lightning-record-form` field would render a bare
- * timestamp under the field's own label and silently delete all three.
+ * 🔴 THE STAMP FIELD IS NOT IN THAT LIST. It is rendered by this component as the bespoke
+ * `Last Synced` row, which carries mitigation (b) and the three-state Never / Not available /
+ * em-dash rendering. A `lightning-record-form` field would render a bare timestamp under the field's
+ * own label and silently delete both.
  *
- * `helpText` is mitigation (b) of the stub warning in section 1 and is NOT optional decoration — it
- * is the only place the UI states, in words, that the figures above it are hand-entered, that they
- * live on a shared Property record (section 2's cost 1), AND — since code review C2 — that Sync
- * Status describes an integration that does not exist and that Sync does not touch it. That last
- * clause is the other half of remedy C2: the readonly form stops the edit, the sentence explains why
- * the row does not move. ⚠ IT NAMES SYNC STATUS ONLY. It named Data Source too until that field was
- * dropped from the card the same day; help text describing a field the reader cannot see is the
- * stale-text defect this bundle has already been bitten by twice. Keep it explicit per source rather
- * than composing it from `title`, so that a source whose truth changes (a real integration for one
- * vendor and not the other) can say so on its own.
+ * ── 🔴 `helpText` IS MITIGATION (b) AND IT NOW CARRIES THE ENTIRE DISCLOSURE ──
+ * It is not optional decoration and it is not a description of the row it hangs on. With the
+ * `(manual)` suffix retired and both control fields off the card, this tooltip is the ONLY place on
+ * screen that states any of it. Four facts, and all four are required:
+ *
+ *   1. there is no connection to Placer.ai / CoStar yet;
+ *   2. the values above are entered by hand and may be out of date;
+ *   3. pressing Sync records the time and fetches NOTHING;
+ *   4. the values live on the linked Property record, so every deal on that property shares them
+ *      (section 2's cost 1 — the only on-screen statement of a cross-deal side effect).
+ *
+ * ⚠ It named `Sync Status` until that field left the card, and `Data Source` before that. Help text
+ * describing a field the reader cannot see is the stale-text defect this bundle has been bitten by
+ * twice; keep it to what is actually on screen. Keep it explicit per source rather than composing it
+ * from `title`, so that a source whose truth changes (a real integration for one vendor and not the
+ * other) can say so on its own. And keep it READABLE — it is a tooltip, not this comment.
  */
 const CONFIG_BY_SOURCE = {
     Placer: {
@@ -464,10 +484,9 @@ const CONFIG_BY_SOURCE = {
             PLACER_NATIONAL_RANK_FIELD,
             MONTHLY_VISITS_FIELD
         ],
-        controlFields: [PLACER_FETCH_STATUS_FIELD],
         stampField: PLACER_LAST_SYNCED_FIELD,
         helpText:
-            'Recorded when a user pressed Sync. There is no connection to Placer.ai yet, so the values above are entered by hand and may be out of date. They are stored on the linked Property record, so every deal on that property shares them. Sync Status describes an integration that does not exist yet; Sync does not change it.',
+            'There is no connection to Placer.ai yet, so the values above are entered by hand and may be out of date. Pressing Sync only records the time on this row — it fetches nothing. The values are stored on the linked Property record, so every deal on that property shares them.',
         successMessage: 'Placer marked as synced.'
     },
     CoStar: {
@@ -481,10 +500,9 @@ const CONFIG_BY_SOURCE = {
             COSTAR_EXIT_CAP_RATE_FIELD,
             MARKET_CAP_RATE_FIELD
         ],
-        controlFields: [COSTAR_FETCH_STATUS_FIELD],
         stampField: COSTAR_LAST_SYNCED_FIELD,
         helpText:
-            'Recorded when a user pressed Sync. There is no connection to CoStar yet, so the values above are entered by hand and may be out of date. They are stored on the linked Property record, so every deal on that property shares them. Sync Status describes an integration that does not exist yet; Sync does not change it.',
+            'There is no connection to CoStar yet, so the values above are entered by hand and may be out of date. Pressing Sync only records the time on this row — it fetches nothing. The values are stored on the linked Property record, so every deal on that property shares them.',
         successMessage: 'CoStar marked as synced.'
     }
 };
@@ -720,21 +738,11 @@ export default class MarketDataSync extends LightningElement {
         return this.config ? this.config.metricFields : [];
     }
 
-    /**
-     * The provider CONTROL field — `<source>_Fetch_Status__c`, and since 2026-08-17 that is the ONLY
-     * one — rendered in a SECOND form at `mode="readonly"`: visible, not hand-editable.
-     *
-     * See the CONFIG_BY_SOURCE header for the argument; the short version is that an editable
-     * `Sync Status` contradicts the Sync button beside it, and `Not Synced` is the only truthful
-     * in-record signal that no fetch has ever happened.
-     *
-     * ⚠ It stays a LIST although it holds one entry. The form binds `fields`, so a scalar would need
-     * the template to wrap it; and `<source>_Data_Source__c` was in here earlier today, so a future
-     * change adding or removing a control field is a one-line edit to config rather than a reshape.
-     */
-    get controlFields() {
-        return this.config ? this.config.controlFields : [];
-    }
+    // ⚠ There is deliberately NO `controlFields` getter and no second form. `<source>_Data_Source__c`
+    // and `<source>_Fetch_Status__c` were both rendered here — read-only, per code review C2 — earlier
+    // on 2026-08-17 and both were removed from the card by user decision. The FIELDS are untouched and
+    // still live on `Property__c`. See the CONFIG_BY_SOURCE header for the full supersession note
+    // before adding either back: the C2 read-only argument returns with the field, not without it.
 
     /**
      * The `fields` config for the Property record wire. `undefined` when unconfigured, which is how

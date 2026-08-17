@@ -61,22 +61,21 @@
  * ═════════════════════════════════════════════════════════════════════════════
  * 🔴 THERE ARE ALSO **TWO** `lightning-record-form`s (code review C2, 2026-08-17)
  * ═════════════════════════════════════════════════════════════════════════════
- * Metrics render at `mode="view"` (inline-editable — hand entry IS how these numbers get in); the
- * provider CONTROL field, `<source>_Fetch_Status__c`, renders at `mode="readonly"`. So
- * `querySelector('lightning-record-form')` no longer means "the form": it means the FIRST one. The
- * helpers below split accordingly — `formOf` (metrics), `controlFormOf`, and `formsOf` for anything
- * that must cover both.
+ * ⚠ THAT IS HISTORY, NOT CURRENT STATE — READ ON. A second `mode="readonly"` form held the two
+ * provider CONTROL fields for part of 2026-08-17 (code review C2). The user then removed all four
+ * control fields from the cards, so that form had nothing left to render and went with them.
  *
- * ⚠ The control form binds ONE field since 2026-08-17 — `<source>_Data_Source__c` was removed from
- * the card by user decision. A one-field form looks like something to tidy away; it is not, because
- * `mode` is a property of the FORM and not of a field. Its absence is pinned by its own test.
+ * ⇒ THERE IS **ONE** `lightning-record-form` PER CARD TODAY, at `mode="view"`. `formOf` is it.
+ * `formsOf` survives deliberately: the "is a form mounted?" assertions must count ALL forms (a
+ * `formOf(...).toBeNull()` would pass while a second one rendered), and it is the assertion that
+ * catches a control field being restored. `controlFormOf` is gone with the form itself.
  *
  * Two consequences worth stating, because each is its own failure:
  *   - "the form is not mounted" assertions use `formsOf(...).toHaveLength(0)`. A `formOf(...)
  *     .toBeNull()` would pass while the control form was still rendering with a null record-id.
  *   - the field-list tests assert BOTH `fieldApiNamesOn` (the concatenation — COVERAGE, i.e. that
- *     C2 moved two fields and dropped none) and the per-form lists (EDITABILITY). Neither catches
- *     the other's regression.
+ *     nothing was silently dropped) and the per-form lists. Neither catches the other's
+ *     regression.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * ⚠ THE 251-RECORD BULK MANDATE DOES NOT APPLY HERE
@@ -159,8 +158,7 @@ const PLACER_METRIC_FIELDS = [
     'Placer_National_Rank__c',
     'Monthly_Visits__c'
 ];
-const PLACER_CONTROL_FIELDS = ['Placer_Fetch_Status__c'];
-const PLACER_FIELDS = [...PLACER_METRIC_FIELDS, ...PLACER_CONTROL_FIELDS];
+const PLACER_FIELDS = [...PLACER_METRIC_FIELDS];
 
 const COSTAR_METRIC_FIELDS = [
     'CoStar_URL__c',
@@ -171,11 +169,19 @@ const COSTAR_METRIC_FIELDS = [
     'CoStar_Exit_Cap_Rate__c',
     'Market_Cap_Rate__c'
 ];
-const COSTAR_CONTROL_FIELDS = ['CoStar_Fetch_Status__c'];
-const COSTAR_FIELDS = [...COSTAR_METRIC_FIELDS, ...COSTAR_CONTROL_FIELDS];
+const COSTAR_FIELDS = [...COSTAR_METRIC_FIELDS];
 
-/** Rendered nowhere on either card since 2026-08-17 — see the note above. */
-const DATA_SOURCE_FIELDS = ['Placer_Data_Source__c', 'CoStar_Data_Source__c'];
+/**
+ * The four PROVIDER CONTROL fields, rendered nowhere on either card since 2026-08-17 — see the note
+ * above. `notRenderedAnywhere` pins all four together, because they were removed for one reason in
+ * two steps and a partial re-add is as much a reversal as a full one.
+ */
+const CONTROL_FIELDS_NOT_ON_CARD = [
+    'Placer_Data_Source__c',
+    'CoStar_Data_Source__c',
+    'Placer_Fetch_Status__c',
+    'CoStar_Fetch_Status__c'
+];
 
 const GENERIC_ERROR =
     'The sync timestamp could not be saved. Please try again or contact your administrator.';
@@ -327,12 +333,6 @@ describe('c-market-data-sync', () => {
         return element.shadowRoot.querySelector('lightning-record-form.mds-metrics');
     }
 
-    function controlFormOf(element) {
-        return element.shadowRoot.querySelector(
-            'lightning-record-form.mds-controls'
-        );
-    }
-
     function formsOf(element) {
         return Array.from(
             element.shadowRoot.querySelectorAll('lightning-record-form')
@@ -345,10 +345,6 @@ describe('c-market-data-sync', () => {
 
     function metricFieldApiNamesOn(element) {
         return namesOn(formOf(element));
-    }
-
-    function controlFieldApiNamesOn(element) {
-        return namesOn(controlFormOf(element));
     }
 
     /** Every field the card renders, in render order, across both forms. */
@@ -413,7 +409,7 @@ describe('c-market-data-sync', () => {
     // J1 / J2 — the CONFIG_BY_SOURCE parameterisation, now against Property__c
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('J1 PLACER: renders the Placer title and the 7 Property fields, and no CoStar field', async () => {
+    it('J1 PLACER: renders the Placer title and the 6 Property fields, and no CoStar field', async () => {
         const element = createComponent({ source: 'Placer' });
         await loadFully(element, PLACER_STAMP);
 
@@ -424,23 +420,24 @@ describe('c-market-data-sync', () => {
         // by user decision so the card matches the native "Broker" section, which has none.
         expect(iconNamesInHeader(element)).toEqual(['utility:switch']);
 
-        // The exact list ACROSS BOTH FORMS, in the FSD §18.2 order, with the incumbent
-        // Monthly_Visits__c in place. This is the COVERAGE assertion — it is what goes red if the
-        // C2 metric/control split ever drops a field instead of moving it.
+        // The exact list, in the FSD §18.2 order, with the incumbent Monthly_Visits__c in place.
         expect(fieldApiNamesOn(element)).toEqual(PLACER_FIELDS);
         expect(fieldApiNamesOn(element)).not.toContain('CoStar_URL__c');
         expect(fieldApiNamesOn(element)).not.toContain('Market_Cap_Rate__c');
 
-        // ...and the SPLIT, which is a different fact (see the dedicated C2 test below for the modes).
+        // ⚠ ONE form since 2026-08-17 — the readonly control form went with the fields it held — so
+        // `metricFieldApiNamesOn` and `fieldApiNamesOn` now agree. Both are asserted deliberately:
+        // if a control field ever comes back it returns in a SECOND form, and only the second of
+        // these two would notice.
         expect(metricFieldApiNamesOn(element)).toEqual(PLACER_METRIC_FIELDS);
-        expect(controlFieldApiNamesOn(element)).toEqual(PLACER_CONTROL_FIELDS);
+        expect(formsOf(element)).toHaveLength(1);
 
-        // The stamp field is in NEITHER form — this component renders it itself as the
-        // "Last Synced (manual)" row, so that it can carry the label and the helptext.
+        // The stamp field is NOT in the form — this component renders it itself as the bespoke
+        // `Last Synced` row, so that it can carry the helptext and the three-state rendering.
         expect(fieldApiNamesOn(element)).not.toContain(PLACER_STAMP);
     });
 
-    it('J2 COSTAR: renders the CoStar title and the 8 Property fields, and no Placer field', async () => {
+    it('J2 COSTAR: renders the CoStar title and the 7 Property fields, and no Placer field', async () => {
         const element = createComponent({ source: 'CoStar' });
         await loadFully(element, COSTAR_STAMP);
 
@@ -453,7 +450,7 @@ describe('c-market-data-sync', () => {
         expect(fieldApiNamesOn(element)).not.toContain(COSTAR_STAMP);
 
         expect(metricFieldApiNamesOn(element)).toEqual(COSTAR_METRIC_FIELDS);
-        expect(controlFieldApiNamesOn(element)).toEqual(COSTAR_CONTROL_FIELDS);
+        expect(formsOf(element)).toHaveLength(1);
     });
 
     it('J2 (cont): Market_Rent_PSF__c is on the CoStar card DESPITE having no CoStar_ prefix', async () => {
@@ -468,14 +465,15 @@ describe('c-market-data-sync', () => {
         expect(fields).toContain('Market_Rent_PSF__c');
 
         // 🔴 THE POINT, STATED AS AN ASSERTION: a prefix-based audit of "the CoStar block" finds
-        // only SIX of the eight fields on this card. The two it misses are named here, so the
+        // only FIVE of the seven fields on this card. The two it misses are named here, so the
         // residual is auditable rather than merely described in a comment — and so that anyone who
         // later adds a CoStar field has to decide, deliberately, which list it belongs to.
         //
-        // ⚠ The counts moved on 2026-08-17 when CoStar_Data_Source__c left the card (7 of 9 → 6 of
-        // 8). The RATIO is not the point and neither is the arithmetic — the point is that two
-        // fields on this card are invisible to a CoStar_ grep, permanently.
-        expect(fields.filter((f) => f.startsWith('CoStar_'))).toHaveLength(6);
+        // ⚠ The counts moved twice on 2026-08-17 as the control fields left the card (7 of 9 → 6 of
+        // 8 → 5 of 7). Neither the ratio nor the arithmetic is the point: the point is that exactly
+        // two fields on this card are invisible to a `CoStar_` grep, permanently, and that the
+        // number of them has never changed.
+        expect(fields.filter((f) => f.startsWith('CoStar_'))).toHaveLength(5);
         expect(fields.filter((f) => !f.startsWith('CoStar_'))).toEqual([
             'Market_Rent_PSF__c',
             'Market_Cap_Rate__c'
@@ -834,7 +832,8 @@ describe('c-market-data-sync', () => {
         // all-or-nothing across the fields it selects, so the same FLS gap would take the Property
         // Id with it and the whole card would collapse — including the ability to tell this state
         // apart from "no property linked", which the assertion above depends on.
-        expect(formsOf(element)).toHaveLength(2);
+        expect(formsOf(element)).toHaveLength(1);
+        expect(formOf(element)).not.toBeNull();
         expect(metricFieldApiNamesOn(element)).toEqual(PLACER_METRIC_FIELDS);
     });
 
@@ -1182,46 +1181,53 @@ describe('c-market-data-sync', () => {
     });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // The stub warning — mitigations (a), (b) and (c) of the header. These are the
-    // conditions on which the user's choice of the label `Sync` depends, and they
-    // are MORE load-bearing since the card grew from 4 fields to 8-9.
+    // The stub warning. 🔴 THE CONTRACT CHANGED ON 2026-08-17: mitigation (a) — the
+    // `Last Synced (manual)` label — was RETIRED by user decision and the `Sync`
+    // button label was deliberately KEPT, so (b) the helptext now carries the whole
+    // disclosure alone and (c) the no-spinner rule is unchanged. These tests pin the
+    // NEW contract; do not "restore" (manual) on the strength of the old one.
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('STUB WARNING: the row is labelled "Last Synced (manual)" and carries the hand-entered helptext', async () => {
+    it('STUB WARNING: the row is labelled `Last Synced` — bare, and (manual) is NOT restored', async () => {
         const element = createComponent({ source: 'Placer' });
         await loadFully(element, PLACER_STAMP);
 
         const label = element.shadowRoot.querySelector(
             '.slds-form-element__label'
         );
-        // 🔴 "(manual)" is a REQUIREMENT, not wording. Without it the row asserts a freshness the
-        // data does not have. The button label `Sync` was accepted by the user only WITH this
-        // mitigation, the helptext below, and the absence of any spinner.
-        expect(label.textContent).toContain('Last Synced (manual)');
+
+        // 🔴 ASSERT THE LABEL IS PRESENT, NOT MERELY THAT "(manual)" IS ABSENT. A card that rendered
+        // nothing at all would satisfy a bare `not.toContain` and this test would go green on a
+        // completely broken component — the vacuous-assertion trap. The positive assertion first,
+        // then the negative.
+        expect(label).not.toBeNull();
+        expect(label.textContent).toContain('Last Synced');
+        expect(label.textContent).not.toContain('(manual)');
+        expect(label.textContent).not.toContain('manual');
 
         const helptext = element.shadowRoot.querySelector('lightning-helptext');
         expect(helptext).not.toBeNull();
-        expect(helptext.content).toContain('no connection to Placer.ai');
-        expect(helptext.content).toContain('entered by hand');
-        // 🔴 And it names the SOURCE RECORD. Editing here mutates a SHARED Property, so a change on
-        // deal A is visible on deal B — the stated cost of rendering the parent record, and words
-        // are the only mitigation available for it.
+
+        // 🔴 MITIGATION (b), AND IT IS NOW THE ENTIRE DISCLOSURE. With `(manual)` retired and both
+        // provider control fields off the card, this tooltip is the ONLY place on screen that says
+        // any of this. Asserted as SUBSTANCE — four required facts — rather than as an exact string,
+        // so the wording can be improved without the test becoming a spelling checker, while
+        // deleting a fact still goes red.
+        expect(helptext.content).toContain('no connection to Placer.ai'); // 1. no integration
+        expect(helptext.content).toContain('entered by hand'); // 2. hand-entered
+        expect(helptext.content).toContain('fetches nothing'); // 3. Sync fetches nothing
+        // 4. the values live on a SHARED Property record — editing here changes what every other
+        // deal on that property sees. The stated cost of rendering the parent record, and words are
+        // the only mitigation available for it.
         expect(helptext.content).toContain('Property record');
         expect(helptext.content).toContain('every deal on that property');
 
-        // 🔴 C2 REMEDY (b). The readonly form stops the edit; this sentence explains why the row does
-        // not move when Sync is pressed. Without it a user sees "marked as synced" and a `Sync
-        // Status` of `Not Synced` one row away with nothing on screen reconciling the two, which is
-        // how a truthful value gets "corrected" into a false one.
-        expect(helptext.content).toContain('Sync Status describes');
-        expect(helptext.content).toContain('does not exist yet');
-        expect(helptext.content).toContain('Sync does not change it');
-
-        // 🔴 AND IT NAMES ONLY WHAT THE READER CAN SEE. This clause named Data Source too until that
-        // field was dropped from the card on 2026-08-17. Help text describing an invisible field is
-        // the stale-text defect this bundle has already been bitten by twice, and it is worse than
-        // no help text: it sends the reader looking for a row that is not there.
+        // 🔴 AND IT NAMES ONLY WHAT THE READER CAN SEE. It named `Sync Status` until that field left
+        // the card, and `Data Source` before that. Help text describing an invisible field is the
+        // stale-text defect this bundle has been bitten by twice, and it is worse than no help text:
+        // it sends the reader looking for a row that is not there.
         expect(helptext.content).not.toContain('Data Source');
+        expect(helptext.content).not.toContain('Sync Status');
     });
 
     it('STUB WARNING: the CoStar card names CoStar in its helptext, not Placer', async () => {
@@ -1231,11 +1237,17 @@ describe('c-market-data-sync', () => {
         const helptext = element.shadowRoot.querySelector('lightning-helptext');
         expect(helptext.content).toContain('no connection to CoStar');
         expect(helptext.content).not.toContain('Placer');
+        expect(helptext.content).toContain('entered by hand');
+        expect(helptext.content).toContain('fetches nothing');
         expect(helptext.content).toContain('Property record');
-        // C2 remedy (b) is per-source config, not a Placer special case.
-        expect(helptext.content).toContain('Sync Status describes');
-        expect(helptext.content).toContain('Sync does not change it');
         expect(helptext.content).not.toContain('Data Source');
+        expect(helptext.content).not.toContain('Sync Status');
+
+        // The bare label is per-source config too, not a Placer special case.
+        expect(
+            element.shadowRoot.querySelector('.slds-form-element__label')
+                .textContent
+        ).toContain('Last Synced');
     });
 
     it('J17 🔴 STUB WARNING: there is NO spinner and NO busy state, in markup or on the class', async () => {
@@ -1296,17 +1308,17 @@ describe('c-market-data-sync', () => {
         expect(button.variant).toBe('neutral');
     });
 
-    it('🔴 BOTH record forms render the PROPERTY: two columns, Property__c, propertyId', async () => {
+    it('🔴 the record form renders the PROPERTY: two columns, Property__c, propertyId', async () => {
         const element = createComponent({ source: 'Placer' });
         await loadFully(element, PLACER_STAMP);
 
         const forms = formsOf(element);
-        expect(forms).toHaveLength(2);
+        // ONE form since 2026-08-17 (the readonly control form went with the fields it held). The
+        // assertions below still iterate rather than reaching for `formOf` directly: if a second
+        // form is ever reintroduced, its bindings get checked automatically instead of silently
+        // escaping a `querySelector` that only ever returns the first.
+        expect(forms).toHaveLength(1);
 
-        // 🔴 EVERY form, not just the first. `querySelector` returns the metrics form, so a
-        // `record-id` or `object-api-name` regression on the SECOND one would be invisible to a
-        // single-form assertion — and the control form is the newer of the two, so it is the one a
-        // future edit is likelier to get wrong.
         forms.forEach((form) => {
             expect(form.columns).toBe('2');
 
@@ -1321,98 +1333,70 @@ describe('c-market-data-sync', () => {
             expect(form.objectApiName.objectApiName).toBe('Property__c');
         });
 
-        // mode="view" on the METRICS preserves the per-field inline-edit pencils. A read-only card
+        // mode="view" preserves the per-field inline-edit pencils. A read-only card
         // (lightning-output-field, or spanning Property__r.* fields rendered with
         // lightning-formatted-*) would be a FUNCTIONAL regression — the argument this bundle already
-        // made against four fields. ⚠ It is an argument about METRICS: see the C2 test below for why
-        // the control fields are deliberately the opposite.
+        // made against four fields.
         expect(formOf(element).mode).toBe('view');
     });
 
-    it('🔴 NEITHER Data Source field is rendered on EITHER card — user decision, 2026-08-17', async () => {
-        // The user removed both `*_Data_Source__c` fields after seeing the cards ("there is no need
-        // to add datasource field"). They were on the readonly control form for part of that day.
+    it('🔴 NO provider CONTROL field is rendered on EITHER card, and there is ONE form', async () => {
+        // 🔴 THE ABSENCE PIN. All four control fields — both `*_Data_Source__c` and both
+        // `*_Fetch_Status__c` — were on these cards earlier on 2026-08-17, in a second
+        // `mode="readonly"` form added by code review C2, and the user removed them after seeing the
+        // rendered result. Data Source first ("there is no need to add datasource field"), Fetch
+        // Status shortly after.
+        //
+        // 🔴 They are pinned TOGETHER, in one test, because they left for one reason in two steps: a
+        // partial re-add is as much a reversal as a full one, and a reader who restores just Fetch
+        // Status "because it is the honest one" has undone the same decision.
         //
         // 🔴 This is its own test rather than a line inside J1/J2 because it pins an ABSENCE that a
-        // future reader has an obvious, well-meaning reason to undo: ARCHITECTURE §1 describes
-        // `*_Data_Source__c` as part of the same provider block as `*_Fetch_Status__c`, so "the card
-        // is missing one" reads like an oversight. It is not. An exact-array assertion would catch
-        // the re-add but would report it as a list mismatch; this one reports the DECISION.
+        // future reader has an obvious, well-meaning reason to undo: ARCHITECTURE §1 describes these
+        // as part of the same provider block as the metrics, so "the card is missing the control
+        // fields" reads like an oversight. It is not. An exact-array assertion would catch the
+        // re-add but would report it as a list mismatch; this one reports the DECISION.
         //
-        // ⚠ It asserts the CARD only. The fields still exist on Property__c with their FLS intact —
-        // nothing in this change touched their metadata, and nothing here should be read as saying
-        // it did.
+        // ⚠ IT ASSERTS THE CARD ONLY. All four fields still exist on Property__c with their FLS
+        // intact and are still seeded — nothing in this change touched their metadata, and nothing
+        // here should be read as saying it did.
         const placer = createComponent({ source: 'Placer' });
         await loadFully(placer, PLACER_STAMP);
         const costar = createComponent({ source: 'CoStar' });
         await loadFully(costar, COSTAR_STAMP);
 
-        DATA_SOURCE_FIELDS.forEach((field) => {
+        CONTROL_FIELDS_NOT_ON_CARD.forEach((field) => {
             expect(fieldApiNamesOn(placer)).not.toContain(field);
             expect(fieldApiNamesOn(costar)).not.toContain(field);
         });
 
-        // ...and the control form is not empty as a result — `Fetch_Status__c` STAYS, because it is
-        // the one honest in-record statement that nothing has synced, sitting beside a button that
-        // says it did. Dropping both would have removed the reason the second form exists.
-        expect(controlFieldApiNamesOn(placer)).toEqual(['Placer_Fetch_Status__c']);
-        expect(controlFieldApiNamesOn(costar)).toEqual(['CoStar_Fetch_Status__c']);
-    });
+        // 🔴 AND THE READ-ONLY FORM WENT WITH THEM. Exactly ONE `lightning-record-form` per card.
+        // This is the half that catches a re-add done "properly" — someone restoring a control field
+        // AND its readonly form would still trip the field assertions above, but someone restoring
+        // the form alone (or a future control field slipped into `metricFields`) is caught here.
+        expect(formsOf(placer)).toHaveLength(1);
+        expect(formsOf(costar)).toHaveLength(1);
+        expect(
+            placer.shadowRoot.querySelector('lightning-record-form.mds-controls')
+        ).toBeNull();
+        expect(
+            costar.shadowRoot.querySelector('lightning-record-form.mds-controls')
+        ).toBeNull();
 
-    it('C2 🔴 the CONTROL field is on a READONLY form and the METRICS are not', async () => {
-        // 🔴 THE REGRESSION PIN FOR CODE REVIEW C2.
-        //
-        // An inline-editable `Sync Status` CONTRADICTS the button below it: press Sync, read
-        // "marked as synced", watch Last Synced update — and see `Not Synced` one row away, because
-        // nothing writes it and nothing should. A user will "correct" that to `Success` and destroy
-        // the only truthful in-record signal that no fetch ever happened. That is the value the seed
-        // deliberately writes.
-        //
-        // ⚠ C2 originally gave a SECOND reason — that an editable `Data Source` puts the
-        // `Integrated` flip (post-deploy gate G9) one edit away. That reason no longer applies HERE,
-        // because the field was removed from the card entirely later the same day, which is a
-        // stronger outcome than read-only rather than a weaker one. The remaining reason is
-        // sufficient on its own and always was.
-        //
-        // ⚠ This is NOT a permission control and the test must not be read as asserting one. FLS is
-        // still the only real gate and the field stays editable from the Property record page. What
-        // is pinned is the removal of the INVITATION.
-        const placer = createComponent({ source: 'Placer' });
-        await loadFully(placer, PLACER_STAMP);
-
+        // ⚠ And the surviving form is the EDITABLE one — the metrics keep their inline-edit pencils.
+        // Removing the control fields must not have quietly turned the whole card read-only.
         expect(formOf(placer).mode).toBe('view');
-        expect(controlFormOf(placer).mode).toBe('readonly');
-
-        // The control field is on the readonly form...
-        expect(controlFieldApiNamesOn(placer)).toEqual(PLACER_CONTROL_FIELDS);
-        // ...and NOT on the editable one. Both halves are needed: a remedy that added it to the
-        // readonly form while leaving it on the view form would fix nothing and pass a
-        // containment-only check.
-        expect(metricFieldApiNamesOn(placer)).not.toContain('Placer_Fetch_Status__c');
-
-        // 🔴 AND NOTHING WAS DROPPED BY THE SPLIT. The C2 remedy had to MOVE a field between forms,
-        // never remove one. (`Placer_Data_Source__c` left the card afterwards by a separate USER
-        // decision, pinned by its own test above — do not conflate the two changes.)
-        expect(fieldApiNamesOn(placer)).toEqual(PLACER_FIELDS);
-    });
-
-    it('C2 (cont): the same split holds for CoStar — it is config, not a Placer special case', async () => {
-        const costar = createComponent({ source: 'CoStar' });
-        await loadFully(costar, COSTAR_STAMP);
-
         expect(formOf(costar).mode).toBe('view');
-        expect(controlFormOf(costar).mode).toBe('readonly');
-        expect(controlFieldApiNamesOn(costar)).toEqual(COSTAR_CONTROL_FIELDS);
-        expect(metricFieldApiNamesOn(costar)).not.toContain('CoStar_Fetch_Status__c');
-        expect(fieldApiNamesOn(costar)).toEqual(COSTAR_FIELDS);
     });
 
-    it('C2 (cont): pressing Sync writes no control field at all — the card cannot move its own status', async () => {
-        // The other half of the contradiction: the readonly form stops the HUMAN, and this asserts
-        // the COMPONENT does not quietly do it either. A "helpful" future edit that stamps
-        // `Fetch_Status__c = 'Success'` alongside the timestamp would make the card assert a fetch
-        // that never happened — the exact lie the whole mitigation set exists to prevent, and it
-        // would look like a bug fix in review.
+    it('🔴 pressing Sync writes no control field — the card cannot move its own status', async () => {
+        // The component must not quietly do what the removed read-only form stopped a human doing.
+        // A "helpful" future edit that stamps `Fetch_Status__c = 'Success'` alongside the timestamp
+        // would make the card assert a fetch that never happened — the exact lie the whole mitigation
+        // set exists to prevent — and it would look like a bug fix in review.
+        //
+        // ⚠ This survives the field's removal from the CARD and is if anything more necessary now:
+        // with `Sync Status` no longer displayed, a component that wrote it would do so invisibly.
         const element = createComponent({ source: 'Placer' });
         await loadFully(element, PLACER_STAMP, null);
 
