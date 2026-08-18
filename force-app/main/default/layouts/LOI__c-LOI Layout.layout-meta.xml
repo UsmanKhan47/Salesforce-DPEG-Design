@@ -1,41 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE <Layout>
-         breaks `sf` deploy at source conversion with the misleading "unable to find matching
-         parent xml file" error.
-
-         2026-08-10 (code review 3B/3C, C1 half 1) - Disposition__c ADDED. ONE layoutItem. No
-         field was moved, removed or re-ordered, and no section, button or related list changed.
-
-         🔴 WHY THIS IS NOT COSMETIC. 3B gave LOI__c a Disposition_LOI record type, a
-         Disposition__c lookup, its own Path, its own stage value set, two quick actions, a
-         record-type-scoped Apex gate and two sharing rules - and the lookup that DEFINES which
-         side a row belongs to appeared on NO layout and in NO related list. LOI_Record_Page
-         renders force:detailPanel, which IS this layout, so before this edit a user holding full
-         CRUD, both record types and modifyAllRecords still had NO FIELD TO SET. Every sell-side
-         artifact in 3B is downstream of a row whose parent could not be populated by hand.
-
-         ⚠ THIS FILE ALONE DOES NOT MAKE A DISPOSITION LOI CREATABLE. It makes the parent
-         SETTABLE and VISIBLE once a row exists. Creation is D15/Q3 + D16.2 auto-create on entry
-         to the Disposition_Stage__c = 'LOI' stage, which is Apex (DispositionStageEntryService)
-         and is owned by the developer half of this fix. Related lists on
-         Disposition_Record_Page are the second half and are in this same change.
-
-         ⚠ ONE LAYOUT SERVES BOTH RECORD TYPES, so this lookup is also visible on an ACQUISITION
-         LOI, where it is correctly blank. That is the accepted state, not an oversight: design
-         S3 / gate T-A3 call for a separate disposition layout that also omits the
-         acquisition-directional fields (Submitted_Date__c, Approved_By__c, Approved_Date__c,
-         Approval_Comments__c, LOI_Status__c), and per-record-type layout ASSIGNMENT is
-         profile-only - profiles/** is .forceignore'd here, so that half is a post-deploy gate
-         and cannot be closed by any file in this repo (D15 finding #5). Until then the correct
-         reading of Disposition_LOI's own header is "a separate disposition layout omits them" =
-         PLANNED, not shipped.
-
-         PLACED IMMEDIATELY AFTER Opportunity__c ON PURPOSE. The two parent lookups are mutually
-         exclusive by construction - exactly one is populated on any row - so a reader comparing
-         them side by side can tell at a glance which side a record belongs to. Splitting them
-         across columns would hide that.
-    -->
     <excludeButtons>OpenSlackRecordChannel</excludeButtons>
     <excludeButtons>SmartFillEnrich</excludeButtons>
     <layoutSections>
@@ -55,10 +19,6 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Disposition__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Property__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
@@ -101,6 +61,10 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Counter_Received_Date__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Property__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>

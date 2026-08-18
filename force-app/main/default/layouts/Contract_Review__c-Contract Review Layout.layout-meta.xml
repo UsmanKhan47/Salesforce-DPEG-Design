@@ -1,47 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE <Layout>
-         breaks `sf` deploy at source conversion with the misleading "unable to find matching
-         parent xml file" error.
-
-         2026-08-10 (code review 3B/3C, C1 half 1) - Disposition__c ADDED. ONE layoutItem. No
-         field was moved, removed or re-ordered, and no section, button or related list changed.
-
-         🔴 WHY THIS IS NOT COSMETIC. 3C gave Contract_Review__c an Acquisition_PSA /
-         Disposition_PSA record-type pair, a Disposition__c lookup, two Paths, a record-type
-         gate split in RecordStageAdvanceService, two sharing rules and an entire
-         ContractExecutionService disposition arm - and the lookup that DECIDES which arm runs
-         appeared on NO layout. Contract_Review_Record_Page renders force:detailPanel, which IS
-         this layout, so before this edit nobody - administrator included - had a field to set.
-
-         🔴 THIS LOOKUP IS THE ROUTING SWITCH, NOT A LABEL. ContractExecutionService.handleExecution
-         runs BOTH arms unconditionally through two independent ifs: Opportunity__c drives the
-         acquisition handoff, Disposition__c moves the sale to Closing. A row with neither
-         populated executes and does nothing at all, silently - which is exactly the state every
-         hand-created disposition PSA was in before this edit.
-
-         ⚠ THIS FILE ALONE DOES NOT MAKE A DISPOSITION PSA CREATABLE. It makes the parent
-         SETTABLE and VISIBLE once a row exists. Creation is D15/Q3 + D16.2 auto-create on entry
-         to the Disposition_Stage__c = 'PSA' stage, which is Apex (DispositionStageEntryService)
-         and is owned by the developer half of this fix. The Contract Review related list on
-         Disposition_Record_Page is the second half and is in this same change.
-
-         ⚠ Opportunity__c IS ALSO ON THIS LAYOUT AS Edit, AND THAT MATTERS MORE HERE THAN IT
-         LOOKS. D23 grants the disposition personas Opportunity__c as READ-ONLY at the FLS level
-         precisely because its blank is load-bearing - an editable grant would let a disposition
-         persona populate it and mint a phantom acquisition Transaction__c. Layout behavior is
-         not a permission: FLS wins, so the field renders read-only for those personas
-         regardless of the Edit behavior recorded here. Do not "fix" the layout behavior to match
-         - one layout serves both record types and the acquisition persona legitimately edits it.
-
-         ⚠ ONE LAYOUT SERVES BOTH RECORD TYPES (design S3 / gate T-A3 asks for a separate
-         disposition layout; per-record-type layout ASSIGNMENT is profile-only and profiles/** is
-         .forceignore'd here, so that half is a post-deploy gate - D15 finding #5). The lookup is
-         therefore also visible on an acquisition PSA, where it is correctly blank.
-
-         PLACED IMMEDIATELY AFTER Opportunity__c ON PURPOSE - the two parent lookups are mutually
-         exclusive by construction, and a reader must be able to see which one is populated.
-    -->
     <layoutSections>
         <customLabel>false</customLabel>
         <detailHeading>false</detailHeading>
@@ -84,6 +42,10 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
+                <field>Property__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
                 <field>Contract_Value__c</field>
             </layoutItems>
             <layoutItems>
@@ -121,9 +83,10 @@
         <style>TwoColumnsTopToBottom</style>
     </layoutSections>
     <layoutSections>
-        <customLabel>false</customLabel>
+        <customLabel>true</customLabel>
         <detailHeading>false</detailHeading>
         <editHeading>true</editHeading>
+        <label>Custom Links</label>
         <layoutColumns/>
         <layoutColumns/>
         <layoutColumns/>
@@ -186,4 +149,10 @@
     <showInteractionLogPanel>false</showInteractionLogPanel>
     <showRunAssignmentRulesCheckbox>false</showRunAssignmentRulesCheckbox>
     <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
+    <summaryLayout>
+        <masterLabel>00hiw000000BN9S</masterLabel>
+        <sizeX>4</sizeX>
+        <sizeY>0</sizeY>
+        <summaryLayoutStyle>Default</summaryLayoutStyle>
+    </summaryLayout>
 </Layout>

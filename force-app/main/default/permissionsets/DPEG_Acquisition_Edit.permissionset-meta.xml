@@ -1,37 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!--
-      RECONCILED ORG -> REPO ON 2026-08-14 BEFORE EDITING. A retrieve from usman-dpeg was
-      diffed against this file: 290 fieldPermissions on both sides, identical sets, and the six
-      recordTypeVisibilities identical. Zero org-only grants, so nothing was at risk of being
-      wiped by this deploy. (The org retrieve also emits <viewAllFields>false</viewAllFields> on
-      every objectPermissions block where this file omits it - that is a default-valued element
-      the API adds on retrieve, NOT drift, and it was deliberately not "fixed" into this file.)
-      Reconcile again next time; a past clean reconciliation is a snapshot, not a guarantee.
-
-      ADDED 2026-08-14, Acquisition Observations Phase 1 (deploy step P1-A): EIGHT grants -
-      Listing_Status__c, Extraction_Score_Pct__c, Fields_Captured_Count__c and
-      Fields_Missing_Count__c, on BOTH Lead and Opportunity. All editable, matching how this set
-      already carries their siblings (Parse_Confidence__c, Property_Address__c, Deal_Type__c,
-      Sale_Process__c, Offer_Due_Date__c are all editable=true here).
-
-      🔴 THESE GRANTS ARE THE WHOLE POINT OF STEP P1-A AND A GREEN FIELD DEPLOY DOES NOT IMPLY
-      THEM. A Metadata-API-deployed custom field arrives with NO field permissions for ANY
-      profile, System Administrator included, and profiles/** is .forceignore'd so there is no
-      profile-level fallback. Verify in the ORG, not in the deploy log:
-          SELECT Field FROM FieldPermissions
-          WHERE Parent.Name = 'DPEG_Acquisition_Edit'
-            AND Field IN ('Lead.Listing_Status__c','Lead.Extraction_Score_Pct__c',
-                          'Lead.Fields_Captured_Count__c','Lead.Fields_Missing_Count__c',
-                          'Opportunity.Listing_Status__c','Opportunity.Extraction_Score_Pct__c',
-                          'Opportunity.Fields_Captured_Count__c',
-                          'Opportunity.Fields_Missing_Count__c')
-      must return 8 rows. Total fieldPermissions on this set moves 290 -> 298.
-
-      Opportunity.Retail record-type visibility is added to this set at step P1-D1 and
-      Opportunity.Commercial is removed at P1-D4 - see
-      agent-output/runbook-acquisition-observations-phase1.md.
-    -->
     <description>Least-privilege Acquisitions module access for the Acquisitions Analyst persona: Create/Read/Edit (no Delete) on the 13 ACQ objects, View All for read, full FLS. Edit on rows not owned comes from sharing rules (queue + team), never Modify All.</description>
     <fieldPermissions>
         <editable>true</editable>
@@ -193,12 +161,6 @@
         <field>Construction_Feasibility_Review__c.Upgrades_Required__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <!--
-        Required by LeadConvertMatchService — without read on Contact.Email, its USER_MODE
-        duplicate-contact matching during Lead conversion silently degrades and can mint duplicate
-        Contacts (Gate-2 W1, 2026-08-03). Row created directly in the org 2026-08-03 (user-approved).
-        Lead.Email is already declared below (existing grant, unchanged).
-    -->
     <fieldPermissions>
         <editable>false</editable>
         <field>Contact.Email</field>
@@ -252,6 +214,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Contract_Review__c.PSA_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contract_Review__c.Property__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -436,6 +403,156 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>LOI__c.ARC__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Approval_Comments__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Approved_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Approved_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Ball_In_Court__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Closing_Period_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Counter_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Counter_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Counter_Received_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Counter_Response_Due__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Counter_Response__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Due_Diligence_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Earnest_Money__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Final_Agreed_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>LOI__c.Is_Advance_Allowed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.LOI_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.LOI_Signed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.LOI_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.NOI__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Offer_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Offer_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.OneDrive_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Opportunity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Property__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Square_Footage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Stage__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Submitted_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>LOI__c.Title_Company__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.ADR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.Asset_Type__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -456,7 +573,17 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Lead.Building_SF__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.CoStar_Link__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.DPEG_First__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -471,17 +598,17 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Lead.Deal_Room_Link__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.Deal_Type__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Disqualification_Reason__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.DPEG_First__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -521,62 +648,22 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lead.Guidance_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.LeadSource</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.My_Cap_Rate__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.My_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.Parse_Confidence__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.Placer_AI_Link__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.Property_Address__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.ADR__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.Building_SF__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.Deal_Room_Link__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Lead.Guidance_Price_High__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Guidance_Price_Low__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Guidance_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.LeadSource</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -601,6 +688,16 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Lead.My_Cap_Rate__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.My_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Lead.NOI__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -612,6 +709,26 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Lead.Offer_Due_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Parse_Confidence__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Placer_AI_Link__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Portfolio_Deal__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Lead.Property_Address__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -656,147 +773,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>LOI__c.Approval_Comments__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Approved_By__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Approved_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.ARC__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Ball_In_Court__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Closing_Period_Days__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Counter_Cap_Rate__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Counter_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Counter_Received_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Counter_Response__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Counter_Response_Due__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Disposition__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Due_Diligence_Days__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Earnest_Money__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Final_Agreed_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.LOI_Signed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.LOI_Signed_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.LOI_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.NOI__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Offer_Cap_Rate__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Offer_Price__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.OneDrive_URL__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Opportunity__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Property__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Square_Footage__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>LOI__c.Is_Advance_Allowed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Stage__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Submitted_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LOI__c.Title_Company__c</field>
+        <field>NDA__c.Counter_Signed_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -804,15 +781,6 @@
         <field>NDA__c.Counterparty_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <!--
-        Post-reversal follow-up (2026-08-16), closing FSD §27.6. Date_Received__c is the sibling
-        grant of the two below it (Date_Sent__c, Date_Signed__c) - same object, same shape, same
-        manual-Path-stamp usage, same EDITABLE scope on this Edit set. Reconciled against
-        usman-dpeg via sf project retrieve (2026-08-16) before this edit: the only delta found
-        between the live set and this file was the repo being AHEAD by the two NDA_Alert_* grants
-        further down this file (FSD Gap Tranche 1, Item 2, not yet deployed) - no org-side-only
-        grant on this set was at risk of being replaced by this edit.
-    -->
     <fieldPermissions>
         <editable>true</editable>
         <field>NDA__c.Date_Received__c</field>
@@ -850,6 +818,16 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>NDA__c.NDA_Alert_Expiry_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.NDA_Alert_Last_Interval__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>NDA__c.NDA_Expiry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -875,39 +853,17 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>NDA__c.Counter_Signed_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>NDA__c.Party_Role__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>NDA__c.Property__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>NDA__c.Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <!--
-        FSD Gap Tranche 1, Item 2 (2026-08-16). NDA_Alert_Last_Interval__c and
-        NDA_Alert_Expiry_Date__c are the NDA expiry-reminder ladder's system-maintained marker
-        fields, read and stamped by NdaExpiryAlertBatch WITH SYSTEM_MODE - so this grant is for
-        the human editors of this record (an acquisitions persona correcting a mis-set marker,
-        the same convenience shape DPEG_Acquisition_Edit already extends to
-        Offer_Alert_Last_Interval__c / Offer_Alert_Due_Date__c on Opportunity), not a
-        prerequisite for the batch job itself. EDITABLE, matching the sibling NDA__c fields on
-        this set. Reconciled against usman-dpeg via sf project retrieve (2026-08-16) before this
-        edit - the live NDA__c/Offering__c fieldPermissions and objectPermissions on this set
-        matched the repo file exactly, so no org-side-only grant was at risk of being replaced.
-    -->
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>NDA__c.NDA_Alert_Last_Interval__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>NDA__c.NDA_Alert_Expiry_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -935,23 +891,6 @@
         <field>Opportunity.Acres__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <!-- FSD Tranche 2 finding (2026-08-16, coordinator): Opportunity.Amount had NO FLS grant in
-         any deployable permission set anywhere in this repo - only in profiles/**, which is
-         .forceignore'd and never deploys. OpportunitySelector.selectTopByAmount (new,
-         topLargestDeals card) was WITH USER_MODE, and a USER_MODE query throws on the WHOLE ROW
-         for one inaccessible field - the new card would have rendered its error banner for every
-         persona, including a bare System Administrator. Not part of A6 (which covers only the
-         fields created by this tranche); Amount is a long-standing standard field granted here
-         for the first time. Reconciled against usman-dpeg before this edit: the org carried zero
-         FieldPermissions rows for Opportunity.Amount on this set, so this is a clean addition.
-
-         ⚠ RETIRED 2026-08-17: selectTopByAmount was renamed to selectTopActiveByAskingPrice and
-         no longer selects Amount - see that method's own header comment in
-         OpportunitySelector.cls (~line 271), which carries the retirement note. This grant is no
-         longer that method's consumer. Do NOT infer the grant may now be dropped on that basis
-         alone: layouts, list views and org-side reports name Opportunity.Amount directly,
-         independent of this selector, and removing an FLS grant needs its own evidence that
-         nothing else reads the field. -->
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Amount</field>
@@ -972,11 +911,11 @@
         <field>Opportunity.Broker_First_Seen__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <!-- ADDED 2026-08-14, Acquisition Observations Phase 4 (declarative-only field add).
-         Call_For_Offers_Received_Date__c is stamped by CallForOffersStampService; grant follows
-         its neighbours Offer_Due_Date__c / Sale_Process__c on this same set - editable=true so an
-         analyst can hand-correct a mis-stamped date, matching how those two are already granted
-         here. -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Call_For_Offers_Received_Date__c</field>
@@ -985,6 +924,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Cash_On_Cash_Return__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.CoStar_Last_Synced_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.CoStar_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1000,16 +949,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Contract_Signed__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.CoStar_Last_Synced_DateTime__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.CoStar_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1104,17 +1043,32 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Opportunity.LOI_Approved__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.LOI_Prep_Approval_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.LOI_Prep_Approved_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.LOI_Prep_Approved__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Opportunity.Lead_Approved_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Listing_Broker_Email__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1130,26 +1084,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Loan_Required__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.LOI_Approved__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.LOI_Prep_Approval_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.LOI_Prep_Approved__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.LOI_Prep_Approved_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1182,20 +1116,6 @@
         <field>Opportunity.My_Price__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <!-- Phase 4 (call-for-offers alerts, 2026-08-14). The two alert MARKER fields.
-         They are alert bookkeeping, not deal data: CallForOffersAlertBatch reads them WITH
-         SYSTEM_MODE and writes them with AccessLevel.SYSTEM_MODE, so the job works with or without
-         this grant. They are granted anyway for two reasons, and EDITABLE for the second:
-           (1) diagnosis — "why did I not get an alert for this deal?" is answerable only by looking
-               at Offer_Alert_Last_Interval__c and Offer_Alert_Due_Date__c;
-           (2) RECOVERY — blanking Offer_Alert_Last_Interval__c is the supported way to re-arm the
-               alerts for a deal, exactly as SETTING Property__c.SharePoint_Folder_Status__c back to
-               'Pending' is that feature's recovery action (see the comment on those fields).
-         🔴 They are deliberately NOT selected by either USER_MODE call-for-offers read
-         (OpportunitySelector, see the block comment there): WITH USER_MODE throws on the WHOLE ROW
-         for ONE inaccessible field, so putting a brand-new field in a user-facing read makes the
-         table and the panel depend on FLS that nobody needs. This grant is a convenience; nothing
-         breaks without it. -->
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Offer_Alert_Due_Date__c</field>
@@ -1229,6 +1149,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Placer_URL__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1267,13 +1192,13 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.Property__c</field>
+        <editable>false</editable>
+        <field>Opportunity.Property_Address__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
-        <field>Opportunity.Property_Address__c</field>
+        <editable>true</editable>
+        <field>Opportunity.Property__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1289,6 +1214,21 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Target_Return__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.UW_Approval_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.UW_Approved_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.UW_Approved__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1318,27 +1258,62 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.UW_Approval_Date__c</field>
+        <field>PSA_Version__c.Direction__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.UW_Approved__c</field>
+        <field>PSA_Version__c.Document_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.UW_Approved_By__c</field>
+        <field>PSA_Version__c.Summary__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property__c.Address__c</field>
+        <field>PSA_Version__c.Version_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Portfolio_Deal__c.Broker_Email__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Portfolio_Deal__c.Broker_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Portfolio_Deal__c.Property_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Portfolio_Deal__c.Received_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Portfolio_Deal__c.Routed_Outcomes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Portfolio_Deal__c.Source_Staging_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.ADR__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Address__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1364,16 +1339,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Property__c.City__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Property__c.Comp_Monthly_Visits__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Property__c.Comp_Sales__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1418,6 +1383,16 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Comp_Monthly_Visits__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.Comp_Sales__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.County__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1428,12 +1403,12 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property__c.Lot_Size__c</field>
+        <field>Property__c.Lot_Size_Acres__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property__c.Lot_Size_Acres__c</field>
+        <field>Property__c.Lot_Size__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1513,7 +1488,32 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Property__c.Portfolio_Deal__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Property__c.Seller_Entity__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.SharePoint_Folder_Error__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.SharePoint_Folder_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Property__c.SharePoint_Folder_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Property__c.SharePoint_Folder_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1573,26 +1573,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>PSA_Version__c.Direction__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>PSA_Version__c.Document_URL__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>PSA_Version__c.Summary__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>PSA_Version__c.Version_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Underwriting__c.Cash_On_Cash_Return__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1648,6 +1628,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Underwriting__c.Property__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Underwriting__c.Stage__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1681,112 +1666,6 @@
         <field>Underwriting__c.Year_5_IRR__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <fieldPermissions>
-    <!--
-        W4 (code review, design residual R5): SharePoint_Folder_ID__c / SharePoint_Folder_URL__c are
-        editable=false on purpose — hand-blanking Folder ID causes the next sweep to create a
-        DUPLICATE SharePoint folder that succeeds silently (Graph conflictBehavior=rename → "<Name> 1").
-        SharePoint_Folder_Status__c / SharePoint_Folder_Error__c stay editable=true on purpose —
-        clearing Status does NOT recover the row: the sweep locator is
-        SharePoint_Folder_Status__c IN ('Pending','Failed') (PropertySelector.folderSweepLocator),
-        so a null/cleared status falls permanently outside its reach. The recovery action is SETTING
-        Status to 'Pending', which is what puts the row back on DealFolderSweepBatch's work queue —
-        that is the reason these two fields must stay editable. DealFolderService writes all four via
-        AccessLevel.SYSTEM_MODE, so none of this FLS affects the automation.
-    -->
-        <editable>true</editable>
-        <field>Property__c.SharePoint_Folder_Error__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Property__c.SharePoint_Folder_ID__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Property__c.SharePoint_Folder_Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>Property__c.SharePoint_Folder_URL__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <!--
-        Portfolio_Deal__c (Property Package to Portfolio Deal rename; grants added Phase B1/B2,
-        2026-08-18; the Property_Package__c twin block REMOVED here in Phase B5, same day).
-
-        Every field grant here is FULL editable+readable, matching how this Edit set treats every
-        sibling Broker Protection pipeline-written object (Property_Registry__c above,
-        Competing_Broker_Submission__c is DPEG_Apex_Access-adjacent). All three lookups
-        (Lead/Opportunity/Property__c.Portfolio_Deal__c) are granted editable+readable so an analyst
-        can hand-correct a mis-grouped record.
-
-        WHAT PHASE B5 REMOVED FROM THIS SET: six Property_Package__c.<field> grants, three
-        <object>.Property_Package__c lookup grants, and one Property_Package__c <objectPermissions>
-        block. The org drops those entries by itself when the object is deleted, but this FILE would
-        not - and a permission set whose XML names a field or object that no longer exists fails the
-        deploy of the whole set the next time anyone touches it. So the removal ships in the same
-        wave as the deletion, in the constructive half, which lands BEFORE the post-destructive half.
-        SCOPE IS UNCHANGED BY THE RENAME: the removed block granted six fields plus three lookups;
-        the surviving block grants six fields plus three lookups. One grant for one grant.
-
-        Load-bearing consumer of the Lead lookup grant, carried forward from the block this replaces:
-        `LeadSelector.selectPackageAnchorById` is WITH USER_MODE and backs the record-page card named
-        `c/portfolioDealSiblings` ("Portfolio Deal", renamed from `c/packageSiblings`/"Same Email" in
-        phase B4). A USER_MODE query throws on the whole row for one inaccessible field, so do not
-        remove Lead.Portfolio_Deal__c here. (`LeadSelector.selectRecent` is NOT a consumer - the
-        recentLeads Package column was removed on 2026-08-17 and that selector no longer reads either
-        lookup. That correction was recorded on the old block and is preserved here so it is not
-        rediscovered the hard way.)
-        Portfolio_Deal__c.Name needs no grant: custom object Name fields are permissionable=false.
-    -->
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Portfolio_Deal__c.Broker_Email__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Portfolio_Deal__c.Broker_Name__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Portfolio_Deal__c.Property_Count__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Portfolio_Deal__c.Received_DateTime__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Portfolio_Deal__c.Routed_Outcomes__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Portfolio_Deal__c.Source_Staging_Id__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Lead.Portfolio_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.Portfolio_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Property__c.Portfolio_Deal__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Acquisition Edit</label>
     <objectPermissions>
@@ -1795,79 +1674,8 @@
         <allowEdit>true</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>Opportunity</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>Portfolio_Deal__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>Lead</object>
-        <viewAllRecords>false</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>Property__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>LOI__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>Counter_Offer__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>Underwriting__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
-        <object>Development_Feasibility_Review__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
         <object>Construction_Feasibility_Review__c</object>
+        <viewAllFields>false</viewAllFields>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -1877,6 +1685,7 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Contract_Review__c</object>
+        <viewAllFields>false</viewAllFields>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -1885,7 +1694,8 @@
         <allowEdit>true</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>PSA_Version__c</object>
+        <object>Counter_Offer__c</object>
+        <viewAllFields>false</viewAllFields>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -1895,6 +1705,47 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Deal_Message__c</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Development_Feasibility_Review__c</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>LOI__c</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Lead</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>NDA__c</object>
+        <viewAllFields>false</viewAllFields>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -1904,6 +1755,7 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>Offering__c</object>
+        <viewAllFields>false</viewAllFields>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -1912,7 +1764,48 @@
         <allowEdit>true</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>NDA__c</object>
+        <object>Opportunity</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>PSA_Version__c</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Portfolio_Deal__c</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Property__c</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Underwriting__c</object>
+        <viewAllFields>false</viewAllFields>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <recordTypeVisibilities>
@@ -1931,19 +1824,6 @@
         <recordType>NDA__c.Acquisition_NDA</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
-    <!--
-      P1-D4 IS DONE: Opportunity.Commercial has been removed from this set and the record type
-      itself is retired. Opportunity.Retail replaced it. The two coexisted from P1-D1 until P1-D4
-      on purpose - visibility is what lets a user SELECT a record type, so granting Retail only
-      after the migration would have left every user on this set unable to create a commercial
-      deal for the whole window. Do not re-add Commercial; the record type no longer exists and
-      the deploy would fail.
-      ⚠ PermissionSet.recordTypeVisibilities has NO <default> element - only a Profile can name
-      the default record type, and profiles/** is .forceignore'd. Setting Retail as the default
-      is an IN-ORG post-deploy step (gate G5); if it is missed, new Opportunities keep defaulting
-      to the retired Commercial type and nothing errors.
-      Sequence: agent-output/runbook-acquisition-observations-phase1.md
-    -->
     <recordTypeVisibilities>
         <recordType>Opportunity.Land</recordType>
         <visible>true</visible>
