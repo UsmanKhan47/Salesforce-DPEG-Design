@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlowDefinition xmlns="http://soap.sforce.com/2006/04/metadata">
-    <activeVersionNumber>1</activeVersionNumber>
+    <!--
+        DEACTIVATED 2026-08-18. activeVersionNumber deliberately removed - this is the mechanism
+        that actually deactivates an already-active flow via Metadata API deploy: the FlowDefinition
+        with no activeVersionNumber tells the org "no active version" regardless of what any
+        individual Flow version's own <status> says. (Redeploying the paired flow-meta.xml with
+        <status>Draft</status> alone does NOT deactivate an already-active version already in the
+        org - a Draft redeploy only adds a new, separate inactive version and leaves whichever
+        version was previously active still active. Both files were changed together here so
+        neither one alone tells a misleading story - see LOI_Signed_Notify.flow-meta.xml's in-root
+        comment for the full reason.)
+
+        REVERSIBLE: restore <activeVersionNumber>1</activeVersionNumber> (or the current latest
+        version number) and set force-app/main/default/flows/LOI_Signed_Notify.flow-meta.xml's
+        <status> back to Active to resume this flow. Re-review the reason it was paused (see that
+        file's comment, and force-app/main/default/flows/LOI_Signed_Status_Sync.flow-meta.xml)
+        before doing so - reactivating without change will resume automatic Legal_Team / Investor_
+        Relations notifications on every ordinary Acquisition LOI stage advance to 'Signed'.
+    -->
 </FlowDefinition>

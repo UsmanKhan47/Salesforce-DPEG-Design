@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT MUST STAY INSIDE THE ROOT <Flow> ELEMENT. A comment placed ABOVE <Flow>
+        breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        PAUSED (Draft) 2026-08-18 - deliberate, reversible, logic unchanged. Reason: a new
+        before-save flow, force-app/main/default/flows/LOI_Signed_Status_Sync.flow-meta.xml, now
+        sets LOI_Signed__c = true automatically the moment an Acquisition LOI's Stage__c reaches
+        'Signed' via the ordinary Advance Stage button / Path. This flow triggers on exactly that
+        field (LOI_Signed__c EqualTo true, CreateAndUpdate), so left active it would start firing
+        Notify_Legal / Notify_IR - Legal_Team and Investor_Relations GroupNotifier calls -
+        automatically on every routine stage advance, which was explicitly not wanted (2026-08-18
+        design decision D3). Nothing in this flow's own logic changed; only its activation state.
+
+        <status> below is set to Draft, and the paired FlowDefinition
+        (force-app/main/default/flowDefinitions/LOI_Signed_Notify.flowDefinition-meta.xml) has had
+        its <activeVersionNumber> removed - that FlowDefinition change is the one that actually
+        deactivates an already-active flow in the target org; the Draft status here keeps this file
+        internally consistent with that fact for anyone who reads only this file.
+
+        TO REACTIVATE: set <status> back to Active here AND restore <activeVersionNumber> in the
+        paired FlowDefinition - re-review the reason above first, since reactivating without further
+        change resumes the automatic Legal/IR notifications this pause exists to prevent.
+    -->
     <actionCalls>
         <name>Notify_IR</name>
         <label>Notify IR</label>
@@ -95,5 +119,5 @@
         <recordTriggerType>CreateAndUpdate</recordTriggerType>
         <triggerType>RecordAfterSave</triggerType>
     </start>
-    <status>Active</status>
+    <status>Draft</status>
 </Flow>

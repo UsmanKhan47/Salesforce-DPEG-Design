@@ -1,77 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
-    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
-         <FlexiPage> breaks `sf` deploy at source conversion with a misleading
-         "unable to find matching parent xml file" error.
-
-         ACTION BAR REBUILT 2026-08-09 UNDER DECISION D20/C1. Before this change the list held
-         ONE entry, NDA__c.Advance_Stage, gated on {!$User.Deal_Driver__c} EQUAL true. Because
-         enableActionsConfiguration is true, THAT LIST IS THE ENTIRE ACTION BAR - nothing is
-         inherited - and a DISPOSITION driver holds Disposition_Deal_Driver, which grants no FLS
-         on User.Deal_Driver__c, so the criterion could never evaluate true for them. A
-         disposition NDA showed NO BUTTONS AT ALL to the only persona meant to work it, and
-         Mark Declined appeared nowhere, leaving the quick action, lwc/ndaMarkDeclined,
-         NDA_DISPOSITION_EXPLICIT_TARGETS and the Declined Path step all dead.
-
-         🔬 PHASE 1 UPDATE (2026-08-12) — the mechanism described above is HISTORICAL, not
-         live. Every criterion on this page now reads {!$Permission.CustomPermission.
-         Acquisition_Deal_Actions} / {!$Permission.CustomPermission.Disposition_Deal_Actions}
-         instead of a User field, so the "grants no FLS on User.Deal_Driver__c" failure mode
-         this page's duplicate-entry shape exists to work around cannot recur here - a custom
-         permission has no FLS to be missing. The THREE-ENTRY DUPLICATE SHAPE ITSELF IS
-         UNCHANGED and still required (booleanFilter has no OR): each persona still needs its
-         own entry, now gated by its own custom permission rather than its own flag. See
-         agent-output/design-requirements-custom-permissions.md.
-
-         ⚠ DYNAMIC ACTIONS WAS ALREADY ON HERE AND WAS NOT ENABLED ANYWHERE NEW. Turning it on
-         a page where it is off SILENTLY EMPTIES that page's action bar - it discards every
-         inherited action - which cost three pages their buttons in this repo. This edit only
-         adds entries to a list that already existed.
-
-         THREE ENTRIES, EVERY RULE A PURE CHAIN OF ANDs. A flexipage booleanFilter has NO
-         negation operator, and this repo has MEASURED that a parenthesised OR
-         (`1 AND 2 AND (3 OR 4)`) deploys, survives a retrieve, and is STILL NOT HONOURED BY THE
-         RENDERER - the button stayed visible. See LOI__c.Is_Advance_Allowed__c's header. So the
-         two personas are expressed as TWO SEPARATE ENTRIES for the same action rather than as
-         one entry with an OR. Do not merge them.
-
-         🔴 THE DUPLICATE-ENTRY SHAPE HAS NO IN-REPO PRECEDENT. A sweep of every flexipage found
-         NO other file listing the same action twice (the duplicate values that sweep does turn
-         up are all parentFieldApiName, not actions). So this is the FIRST use of the shape here
-         and it is a DEPLOY-AND-RENDER GATE, not a settled pattern: confirm at check-only that
-         two valueListItems carrying the same <value> are accepted, and confirm in the org that
-         a user holding BOTH driver flags does not see Advance Stage rendered twice on a
-         disposition NDA. If duplicates are rejected outright, the fallback is to give the
-         disposition persona its own quick action rather than to reintroduce an OR.
-
-         WHY ENTRY 1 DELIBERATELY DOES NOT REFERENCE Is_Decline_Allowed__c.
-         Adding `Is_Decline_Allowed__c EQUAL false` to the acquisition entry would make the two
-         Advance Stage entries provably mutually exclusive and would stop an acquisition driver
-         seeing a button that always refuses on a disposition NDA. It was REJECTED because it
-         would make a CURRENTLY WORKING button depend on a BRAND-NEW field's FLS, across every
-         acquisition permission set plus any profile-provisioned persona this repo cannot see
-         (profiles are .forceignore'd) - i.e. the change made to fix a no-buttons defect would
-         become its own newest cause of one. ARCHITECTURE.md records the same reasoning for
-         keeping Routing_Attempt_Count__c out of selectById. The new field's FLS therefore gates
-         only the DISPOSITION entries, where today's state is "no buttons at all" and the worst
-         case of a missing grant is NO WORSE THAN TODAY, never a regression.
-
-         TWO RESIDUALS THAT BUYS, BOTH COSMETIC AND BOTH DELIBERATE:
-           (a) an acquisition driver opening a DISPOSITION NDA sees Advance Stage and gets a
-               refusal from RecordStageAdvanceService, whose gate for RT_DISPOSITION_NDA is
-               DISPOSITION_DRIVER. They can reach those rows because the acquisition sets keep
-               viewAllRecords on NDA__c.
-           (b) a user holding BOTH driver flags may see Advance Stage twice on a disposition NDA.
-         Neither can write anything the server would not already accept - the server-side gate is
-         asserted in RecordStageAdvanceController regardless of what this page shows.
-
-         WHY NE 'Declined' HAD TO BE ADDED EXPLICITLY: the previous rule's NE 'Signed' does NOT
-         exclude Declined, so Advance Stage showed on a declined NDA and then reported
-         "There is no next step available from the Declined stage."
-
-         ⚠ ENTRY 2 NEEDS NO SEPARATE NE 'Declined': Is_Decline_Allowed__c is already false on a
-         Declined NDA, so `EQUAL true` carries that exclusion. Entry 3 needs no status test at
-         all for the same reason - that is the whole point of the field. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -81,16 +9,11 @@
                         <valueListItems>
                             <value>NDA__c.Advance_Stage</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <booleanFilter>1 AND 2</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>true</rightValue>
-                                </criteria>
-                                <criteria>
-                                    <leftValue>{!Record.Status__c}</leftValue>
-                                    <operator>NE</operator>
-                                    <rightValue>Signed</rightValue>
                                 </criteria>
                                 <criteria>
                                     <leftValue>{!Record.Status__c}</leftValue>
@@ -181,9 +104,163 @@
     </flexiPageRegions>
     <flexiPageRegions>
         <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Name</fieldItem>
+                <identifier>RecordNameField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Property__c</fieldItem>
+                <identifier>RecordProperty_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Status__c</fieldItem>
+                <identifier>RecordStatus_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Date_Sent__c</fieldItem>
+                <identifier>RecordDate_Sent_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Date_Signed__c</fieldItem>
+                <identifier>RecordDate_Signed_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.OwnerId</fieldItem>
+                <identifier>RecordOwnerIdField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-cc123a3b-4c48-47c8-9076-8403409f09a1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.NDA_Expiry_Date__c</fieldItem>
+                <identifier>RecordNDA_Expiry_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Opportunity__c</fieldItem>
+                <identifier>RecordOpportunity_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.NDA_Signed__c</fieldItem>
+                <identifier>RecordNDA_Signed_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Method__c</fieldItem>
+                <identifier>RecordMethod_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.OneDrive_URL__c</fieldItem>
+                <identifier>RecordOneDrive_URL_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-01f7b75f-cac4-40d3-afc9-3891e010cd72</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
             <componentInstance>
-                <componentName>force:detailPanel</componentName>
-                <identifier>recordDetail</identifier>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-cc123a3b-4c48-47c8-9076-8403409f09a1</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-01f7b75f-cac4-40d3-afc9-3891e010cd72</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column2</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>Facet-a75f84c8-598f-4bca-b574-bb3fb84f7cdc</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-a75f84c8-598f-4bca-b574-bb3fb84f7cdc</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>NDA Information</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection</identifier>
             </componentInstance>
         </itemInstances>
         <name>main</name>
