@@ -162,9 +162,9 @@ private class LeadConvertServiceTest {
      * live trigger path is unaffected because Trigger.new in an after-update trigger already
      * carries every field.
      *
-     * ⚠ Property_Package__c was ADDED here 2026-08-17 (multi-property email package) FOR THE SAME
+     * ⚠ Portfolio_Deal__c was ADDED here 2026-08-17 (multi-property email package) FOR THE SAME
      * REASON, and it is worth stating that this trap recurs on EVERY field the service starts
-     * reading: `applyDealFields` and `buildProperty` both now read `l.Property_Package__c`, so
+     * reading: `applyDealFields` and `buildProperty` both now read `l.Portfolio_Deal__c`, so
      * omitting it here would throw the identical `SObjectException` for every test in this class
      * that drives the service off this helper — while the live trigger path stayed perfectly green,
      * because Trigger.new carries every field. ⇒ ADDING A FIELD TO THE SERVICE MEANS ADDING IT
@@ -172,7 +172,7 @@ private class LeadConvertServiceTest {
      */
     private static List<Lead> reReadForReRun(Set<Id> leadIds) {
         return [
-            SELECT Id, Name, Company, Street, City, State, PostalCode, Property_Package__c,
+            SELECT Id, Name, Company, Street, City, State, PostalCode, Portfolio_Deal__c,
                    IsConverted, ConvertedOpportunityId, ConvertedContactId, ConvertedAccountId,
                    Deal_Type__c, Asset_Type__c, Property_Name__c, Property_Address__c,
                    Guidance_Price__c, Guidance_Price_Low__c, Guidance_Price_High__c,
@@ -709,28 +709,28 @@ private class LeadConvertServiceTest {
     // 5b. THE MULTI-PROPERTY EMAIL PACKAGE, CARRIED FORWARD (2026-08-17)
     //
     // One inbound broker email naming several properties produces several Leads, all stamped
-    // with ONE Property_Package__c at insert. Conversion must carry that grouping onto BOTH
+    // with ONE Portfolio_Deal__c at insert. Conversion must carry that grouping onto BOTH
     // records it creates, or the package silently loses its members the moment the deals are
     // worked — which is precisely when an analyst needs to see them together.
     // ═════════════════════════════════════════════════════════════════════════
 
     /** A package to hang the fixture Leads off. Inserted directly — nothing in this class routes
-     *  an email, and PropertyPackageService's own creation path is tested in its own class. */
-    private static Property_Package__c insertPackage(String name) {
-        Property_Package__c pkg = new Property_Package__c(Name = name, Property_Count__c = 3);
+     *  an email, and PortfolioDealService's own creation path is tested in its own class. */
+    private static Portfolio_Deal__c insertPackage(String name) {
+        Portfolio_Deal__c pkg = new Portfolio_Deal__c(Name = name, Property_Count__c = 3);
         insert pkg;
         return pkg;
     }
 
     @isTest
     static void packageIsCarriedToBothTheOpportunityAndTheProperty() {
-        Property_Package__c pkg = insertPackage('FW: Three-property portfolio');
+        Portfolio_Deal__c pkg = insertPackage('FW: Three-property portfolio');
 
         Lead l = TestDataFactory.createLead(false);
         l.Company = 'Package Brokerage LLC';
         l.Deal_Type__c = 'Retail';
         l.Property_Address__c = GATE_ADDRESS;
-        l.Property_Package__c = pkg.Id;
+        l.Portfolio_Deal__c = pkg.Id;
         insert l;
 
         Test.startTest();
@@ -738,15 +738,15 @@ private class LeadConvertServiceTest {
         Test.stopTest();
 
         Opportunity o = [
-            SELECT Property_Package__c, Property__c, Property__r.Property_Package__c
+            SELECT Portfolio_Deal__c, Property__c, Property__r.Portfolio_Deal__c
             FROM Opportunity WHERE Id = :res.getOpportunityId()
         ];
-        Assert.areEqual(pkg.Id, o.Property_Package__c,
+        Assert.areEqual(pkg.Id, o.Portfolio_Deal__c,
             'BOTH HALVES MATTER, AND THIS IS THE FIRST: the deal must stay in its package after '
             + 'conversion. Without it the grouping dies at exactly the moment the deals become '
             + 'workable, which is when a human needs to see that three of them came off one email');
         Assert.isNotNull(o.Property__c, 'Precondition: conversion created the Property');
-        Assert.areEqual(pkg.Id, o.Property__r.Property_Package__c,
+        Assert.areEqual(pkg.Id, o.Property__r.Portfolio_Deal__c,
             'AND THE SECOND: the Property__c is the third member of the package one-to-many, and it '
             + 'is the member that makes the grouping legible on the package\'s own record page');
     }
@@ -769,11 +769,11 @@ private class LeadConvertServiceTest {
         Test.stopTest();
 
         Opportunity o = [
-            SELECT Property_Package__c, Property__r.Property_Package__c
+            SELECT Portfolio_Deal__c, Property__r.Portfolio_Deal__c
             FROM Opportunity WHERE Id = :res.getOpportunityId()
         ];
-        Assert.isNull(o.Property_Package__c, 'No package on the Lead means none on the deal');
-        Assert.isNull(o.Property__r.Property_Package__c, 'and none on the Property');
+        Assert.isNull(o.Portfolio_Deal__c, 'No package on the Lead means none on the deal');
+        Assert.isNull(o.Property__r.Portfolio_Deal__c, 'and none on the Property');
     }
 
     /**
@@ -792,13 +792,13 @@ private class LeadConvertServiceTest {
      */
     @isTest
     static void packageCarryForwardAddsNoQueryAndNoDml() {
-        Property_Package__c pkg = insertPackage('FW: budget check');
+        Portfolio_Deal__c pkg = insertPackage('FW: budget check');
 
         // ONE factory call for both Leads, deliberately: the factory's per-record suffix makes each
         // Company and Email unique WITHIN a call, so a single call is the shape least likely to
         // collide with a live Lead duplicate rule.
         List<Lead> pair = TestDataFactory.createLeads(2, false);
-        pair[0].Property_Package__c = pkg.Id;   // index 0 carries the package
+        pair[0].Portfolio_Deal__c = pkg.Id;   // index 0 carries the package
         insert pair;
         List<Lead> withPackage = new List<Lead>{ pair[0] };
         List<Lead> withoutPackage = new List<Lead>{ pair[1] };
@@ -809,9 +809,9 @@ private class LeadConvertServiceTest {
 
         List<Lead> packagedReRun = reReadForReRun(idsOf(withPackage));
         List<Lead> plainReRun = reReadForReRun(idsOf(withoutPackage));
-        Assert.areEqual(pkg.Id, packagedReRun[0].Property_Package__c,
+        Assert.areEqual(pkg.Id, packagedReRun[0].Portfolio_Deal__c,
             'Precondition: the re-read must actually carry the package, or this test is vacuous — '
-            + 'and it only does because Property_Package__c was added to reReadForReRun');
+            + 'and it only does because Portfolio_Deal__c was added to reReadForReRun');
 
         Test.startTest();
         Integer q0 = Limits.getQueries();

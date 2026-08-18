@@ -170,7 +170,7 @@ private class LeadFunnelControllerTest {
         LeadFunnelController.LeadRow highConf = byName.get('Hwy 290 Retail');
         Assert.isNotNull(highConf, 'Precondition: the HIGH-confidence seeded lead is in the funnel');
         Assert.areEqual('HIGH', highConf.confidence, 'Confidence is carried unchanged');
-        // ⚠ `.intValue()` ON A DECIMAL DTO MEMBER, matching PropertyPackageControllerTest's
+        // ⚠ `.intValue()` ON A DECIMAL DTO MEMBER, matching PortfolioDealControllerTest's
         // `row.propertyCount.intValue()` precedent: `Assert.areEqual` compares boxed objects, so an
         // Integer literal against a Decimal is a contested comparison in this codebase. Converting
         // sidesteps it, and the field is Number(3,0) so nothing is lost.
@@ -199,8 +199,8 @@ private class LeadFunnelControllerTest {
     // getFunnel_leadWithNoPackage_leavesPackageFieldsNull — pinning that a Lead WITH a package
     // carried both values and that the single-property majority carried neither, so recentLeads
     // could render an empty cell rather than a dead link. Both members are gone: recentLeads'
-    // 'Package' column was retired in favour of the c/recentPackages card, which reads
-    // Property_Package__c directly instead of inheriting getFunnel's priority partitioning and the
+    // 'Package' column was retired in favour of the c/recentPortfolioDeals card, which reads
+    // Portfolio_Deal__c directly instead of inheriting getFunnel's priority partitioning and the
     // client's 5-row cutoff. Those two tests could not survive the removal — they reference fields
     // that no longer compile — so the one below replaces them.
     //
@@ -215,7 +215,7 @@ private class LeadFunnelControllerTest {
     static void getFunnel_leadRowCarriesNoPackageMembers() {
         // A Lead that genuinely HAS a package, so this cannot pass merely because the fixture has
         // nothing to report. Under the retired design this row would have carried both values.
-        Property_Package__c pkg = new Property_Package__c(
+        Portfolio_Deal__c pkg = new Portfolio_Deal__c(
             Name = 'FW: funnel package', Property_Count__c = 2);
         insert pkg;
 
@@ -226,7 +226,7 @@ private class LeadFunnelControllerTest {
         l.LeadSource = 'Email-to-Lead';
         l.Parse_Confidence__c = 'HIGH';
         l.Property_Address__c = addr;
-        l.Property_Package__c = pkg.Id;
+        l.Portfolio_Deal__c = pkg.Id;
         insert l;
 
         Test.startTest();
@@ -254,10 +254,10 @@ private class LeadFunnelControllerTest {
 
         Assert.isFalse(wire.containsKey('packageId'),
             'LeadRow must not carry packageId — recentLeads has no Package column to read it, and '
-            + 'the member would put Lead.Property_Package__c back in selectRecent\'s USER_MODE '
+            + 'the member would put Lead.Portfolio_Deal__c back in selectRecent\'s USER_MODE '
             + 'SELECT, where one missing FLS grant throws the whole Lead Funnel homepage');
         Assert.isFalse(wire.containsKey('packageName'),
             'LeadRow must not carry packageName — it arrived via the spanning '
-            + 'Property_Package__r.Name, which selectRecent no longer selects');
+            + 'Portfolio_Deal__r.Name, which selectRecent no longer selects');
     }
 }

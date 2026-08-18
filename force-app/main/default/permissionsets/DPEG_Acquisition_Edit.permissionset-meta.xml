@@ -1714,64 +1714,77 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
-        Property_Package__c (Multi-Property Email Package Grouping, 2026-08-17). New object; every
-        field grant here is FULL editable+editable, matching how this Edit set treats every sibling
-        Broker Protection pipeline-written object (Property_Registry__c above, Competing_Broker_
-        Submission__c is DPEG_Apex_Access-adjacent). The three lookups (Lead/Opportunity/Property__c
-        .Property_Package__c) are also granted editable+readable here so an analyst can hand-correct
-        a mis-grouped record. 🔴 CORRECTED 2026-08-17 (later same day): this comment originally
-        read "LeadSelector.selectRecent is WITH USER_MODE and now selects Lead.Property_Package__c
-        — a missing grant here would throw the WHOLE Lead Funnel homepage query for this persona,
-        not merely hide the new package column." That claim is retired, not merely reworded: the
-        recentLeads Package column was removed and `LeadSelector.selectRecent` no longer selects
-        `Property_Package__c` at all. The `Lead.Property_Package__c` grant below is still
-        load-bearing, but now for a DIFFERENT consumer: `LeadSelector.selectPackageAnchorById`,
-        which backs the `c/packageSiblings` "Same Email" card on the Lead record page. The grant
-        itself is unchanged.
+        Portfolio_Deal__c (Property Package to Portfolio Deal rename; grants added Phase B1/B2,
+        2026-08-18; the Property_Package__c twin block REMOVED here in Phase B5, same day).
+
+        Every field grant here is FULL editable+readable, matching how this Edit set treats every
+        sibling Broker Protection pipeline-written object (Property_Registry__c above,
+        Competing_Broker_Submission__c is DPEG_Apex_Access-adjacent). All three lookups
+        (Lead/Opportunity/Property__c.Portfolio_Deal__c) are granted editable+readable so an analyst
+        can hand-correct a mis-grouped record.
+
+        WHAT PHASE B5 REMOVED FROM THIS SET: six Property_Package__c.<field> grants, three
+        <object>.Property_Package__c lookup grants, and one Property_Package__c <objectPermissions>
+        block. The org drops those entries by itself when the object is deleted, but this FILE would
+        not - and a permission set whose XML names a field or object that no longer exists fails the
+        deploy of the whole set the next time anyone touches it. So the removal ships in the same
+        wave as the deletion, in the constructive half, which lands BEFORE the post-destructive half.
+        SCOPE IS UNCHANGED BY THE RENAME: the removed block granted six fields plus three lookups;
+        the surviving block grants six fields plus three lookups. One grant for one grant.
+
+        Load-bearing consumer of the Lead lookup grant, carried forward from the block this replaces:
+        `LeadSelector.selectPackageAnchorById` is WITH USER_MODE and backs the record-page card named
+        `c/portfolioDealSiblings` ("Portfolio Deal", renamed from `c/packageSiblings`/"Same Email" in
+        phase B4). A USER_MODE query throws on the whole row for one inaccessible field, so do not
+        remove Lead.Portfolio_Deal__c here. (`LeadSelector.selectRecent` is NOT a consumer - the
+        recentLeads Package column was removed on 2026-08-17 and that selector no longer reads either
+        lookup. That correction was recorded on the old block and is preserved here so it is not
+        rediscovered the hard way.)
+        Portfolio_Deal__c.Name needs no grant: custom object Name fields are permissionable=false.
     -->
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Broker_Email__c</field>
+        <field>Portfolio_Deal__c.Broker_Email__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Broker_Name__c</field>
+        <field>Portfolio_Deal__c.Broker_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Property_Count__c</field>
+        <field>Portfolio_Deal__c.Property_Count__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Received_DateTime__c</field>
+        <field>Portfolio_Deal__c.Received_DateTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Routed_Outcomes__c</field>
+        <field>Portfolio_Deal__c.Routed_Outcomes__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Source_Staging_Id__c</field>
+        <field>Portfolio_Deal__c.Source_Staging_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lead.Property_Package__c</field>
+        <field>Lead.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.Property_Package__c</field>
+        <field>Opportunity.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property__c.Property_Package__c</field>
+        <field>Property__c.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
@@ -1791,7 +1804,7 @@
         <allowEdit>true</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>Property_Package__c</object>
+        <object>Portfolio_Deal__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

@@ -859,16 +859,22 @@
             </componentInstance>
         </itemInstances>
         <!--
-            Multi-Property Email Package Grouping (2026-08-17). c-packageSiblings is object-agnostic
+            Multi-Property Email Grouping (2026-08-17; bundle renamed from packageSiblings in phase B4
+            of the Portfolio Deal rename, 2026-08-18). c-portfolioDealSiblings is object-agnostic
             (recordId + objectApiName only, no schema import) and is placed identically on
             Opportunity_Record_Page.flexipage-meta.xml per ARCHITECTURE.md section 5's
             "one bundle, not one per object" precedent. It renders nothing when the Lead has no
-            Property_Package__c (the common single-property case) - never an empty card.
+            Portfolio_Deal__c (the common single-property case) - never an empty card.
+
+            An LWC bundle rename is a delete-and-create, so componentName had to move with it: a page
+            still naming `packageSiblings` renders NOTHING and reports no error - which on THIS
+            component is indistinguishable from its correct, common "no deal" state. Read this page
+            back after deploying, and confirm the card on a Lead that HAS a portfolio deal.
         -->
         <itemInstances>
             <componentInstance>
-                <componentName>packageSiblings</componentName>
-                <identifier>packageSiblings</identifier>
+                <componentName>portfolioDealSiblings</componentName>
+                <identifier>portfolioDealSiblings</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Companion manifest for manifest/portfolio-deal-b4/destructiveChangesPost.xml.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead.
+
+    Phase B4 of the "Property Package -> Portfolio Deal" rename program renames
+    6 Apex classes and 2 LWC bundles (an Apex/LWC rename is delete-and-create,
+    there is no in-place rename at the Metadata API level) and repoints every
+    caller at the new names. This org (usman-dpeg, live, no source tracking) has
+    no mechanism to delete the old components on its own -- a plain
+    `--source-dir` deploy only adds/updates what's present locally -- so the old
+    components must be removed via the companion destructiveChangesPost.xml in
+    the SAME transaction as this package.xml. See that file for the deletion
+    list and rationale.
+
+    Verified fresh for B4 via `git status`/`git diff` against the working tree
+    (2026-08-18), not assumed from the original task brief -- the brief's guess
+    at which permission sets carry "comment-only touch-ups" undercounted both the
+    number of sets touched and the substance of the touch: all 5 permission sets
+    below currently carry real, uncommitted Portfolio_Deal__c grants (additive
+    field/object permissions from Phases B1/B2, not yet deployed to the org) in
+    addition to whatever B4 itself changed on them. All 5 are included here so
+    the whole Portfolio_Deal__c permission surface lands atomically with the
+    Apex/LWC rename rather than in a partial, inconsistent state:
+      - DPEG_Apex_Access: HARD DEPENDENCY. Its classAccesses entry is repointed
+        from PropertyPackageController to PortfolioDealController. A
+        classAccesses entry naming a class that no longer exists fails the
+        deploy of the whole permission set, so this MUST land in the same
+        transaction as the class rename and the destructive deletion below.
+      - DPEG_Admin_Access, DPEG_Acquisition_Edit, DPEG_Acquisition_View,
+        Broker_Protection_Access: each carries real (non-comment-only)
+        Portfolio_Deal__c field/object permission grants dated Phase B1/B2
+        2026-08-18, plus comment updates naming the renamed B4 widgets
+        (c/recentPortfolioDeals, c/portfolioDealSiblings). None of these has a
+        hard technical dependency on the destructive deletion the way
+        DPEG_Apex_Access does, but bundling them keeps one coherent,
+        atomically-landed permission story for Portfolio_Deal__c rather than
+        splitting an already-multi-phase rename across still more separate
+        deploys.
+
+    Also carries the comment-only rewrite to c/recentLeads (js + its Jest test),
+    which references the renamed c/recentPackages -> c/recentPortfolioDeals
+    widget in explanatory comments only -- confirmed via diff that every added
+    line in both files is a comment or blank line, no functional or test-
+    behaviour change. Bundled here for the same reason A3 bundled its 6
+    comment-only components: deploy-time no-op, included so the transaction is
+    atomic, not because anything below depends on it.
+
+    ApexClass (17):
+      6 NEW (the B4 rename targets):
+        - PortfolioDealController      (was PropertyPackageController)
+        - PortfolioDealControllerTest  (was PropertyPackageControllerTest)
+        - PortfolioDealSelector        (was PropertyPackageSelector)
+        - PortfolioDealSelectorTest    (was PropertyPackageSelectorTest)
+        - PortfolioDealService         (was PropertyPackageService)
+        - PortfolioDealServiceTest     (was PropertyPackageServiceTest)
+      11 REPOINTED (unchanged names, updated to call the new classes / select
+      the new object):
+        - LeadSelector, LeadSelectorTest
+        - OpportunitySelector
+        - LeadFunnelController, LeadFunnelControllerTest
+        - EmailToLeadService, EmailToLeadServiceTest
+        - ExtractAddressQueueable, ExtractAddressQueueableTest
+        - LeadConvertService, LeadConvertServiceTest
+
+    LightningComponentBundle (3):
+      - recentPortfolioDeals   (new, was recentPackages)
+      - portfolioDealSiblings  (new, was packageSiblings)
+      - recentLeads            (comment-only touch-up, see above)
+
+    Flexipage (3): repointed to the renamed LWC bundles
+      - Lead_Funnel
+      - Lead_Record_Page
+      - Opportunity_Record_Page
+
+    PermissionSet (5): see the verification note above
+      - DPEG_Apex_Access
+      - DPEG_Admin_Access
+      - DPEG_Acquisition_Edit
+      - DPEG_Acquisition_View
+      - Broker_Protection_Access
+
+    Deploy (only once authorised by the user; devops runs a validation-only
+    dry-run first per standing project practice):
+      sf project deploy start \
+        --manifest manifest/portfolio-deal-b4/package.xml \
+        --post-destructive-changes manifest/portfolio-deal-b4/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    Do NOT pass --purge-on-delete -- documented as non-functional on production
+    orgs and fails silently rather than erroring (see manifest/portfolio-deal-a3).
+    -->
+    <types>
+        <members>PortfolioDealController</members>
+        <members>PortfolioDealControllerTest</members>
+        <members>PortfolioDealSelector</members>
+        <members>PortfolioDealSelectorTest</members>
+        <members>PortfolioDealService</members>
+        <members>PortfolioDealServiceTest</members>
+        <members>LeadSelector</members>
+        <members>LeadSelectorTest</members>
+        <members>OpportunitySelector</members>
+        <members>LeadFunnelController</members>
+        <members>LeadFunnelControllerTest</members>
+        <members>EmailToLeadService</members>
+        <members>EmailToLeadServiceTest</members>
+        <members>ExtractAddressQueueable</members>
+        <members>ExtractAddressQueueableTest</members>
+        <members>LeadConvertService</members>
+        <members>LeadConvertServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>recentPortfolioDeals</members>
+        <members>portfolioDealSiblings</members>
+        <members>recentLeads</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <types>
+        <members>Lead_Funnel</members>
+        <members>Lead_Record_Page</members>
+        <members>Opportunity_Record_Page</members>
+        <name>Flexipage</name>
+    </types>
+    <types>
+        <members>DPEG_Apex_Access</members>
+        <members>DPEG_Admin_Access</members>
+        <members>DPEG_Acquisition_Edit</members>
+        <members>DPEG_Acquisition_View</members>
+        <members>Broker_Protection_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

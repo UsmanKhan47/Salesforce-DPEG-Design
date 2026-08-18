@@ -214,17 +214,24 @@ public with sharing class EmailToLeadService {
          *  RESTRICTED picklist — only HIGH / MEDIUM / LOW may be passed. */
         public String parseConfidence;
 
-        // ── the multi-property PACKAGE (2026-08-17) ───────────────────────────
+        // ── the multi-property PORTFOLIO DEAL (2026-08-17) ────────────────────
 
         /**
-         * `Property_Package__c` — the package grouping every Lead this ONE email produced,
+         * `Portfolio_Deal__c` — the grouping that holds every Lead this ONE email produced,
          * when the email named two or more addressable properties. NULL on the ordinary
          * single-property email, which is the overwhelmingly common case.
          *
+         * ⚠ THIS DTO MEMBER'S NAME STILL SAYS "propertyPackage" AFTER THE 2026-08-18 RENAME
+         * (Portfolio Deal rename, phase B4), WHICH REPOINTED THE FIELD IT FEEDS WITHOUT
+         * ALTERING THIS CLASS'S PUBLIC SURFACE. `ExtractAddressQueueable` sets it and
+         * `EmailToLeadServiceTest` asserts on it; nothing else — no LWC, no Flow, no
+         * metadata — so renaming it is a safe follow-up, just one that was out of B4's
+         * scope. The assignment below is the authority on what it lands in.
+         *
          * 🔴 STAMPED AT INSERT, AND THAT IS THE WHOLE DESIGN (Decision C1). The caller
-         * creates the package ONCE, before its per-property loop, so every Lead is born
-         * carrying the link and NO LEAD IS EVER RE-UPDATED for it — which is what keeps the
-         * package's cost to the package's own DML rather than one extra statement per
+         * creates the portfolio deal ONCE, before its per-property loop, so every Lead is
+         * born carrying the link and NO LEAD IS EVER RE-UPDATED for it — which keeps the
+         * grouping's cost to its own single DML rather than one extra statement per
          * property. A `LeadRequest` field is therefore the correct home for it: anything
          * else would mean a second write to a record this method already wrote.
          *
@@ -354,12 +361,12 @@ public with sharing class EmailToLeadService {
         applyPropertyBlock(lead, request.property);
 
         lead.Parse_Confidence__c = request.parseConfidence;
-        // The multi-property package (2026-08-17, Decision C1) — stamped AT INSERT so no Lead is
+        // The multi-property portfolio deal (2026-08-17, Decision C1) — stamped AT INSERT so no Lead is
         // ever re-updated for it. Null on every single-property email, and assigning null is a
         // no-op on a brand-new Lead, so no guard is needed or wanted here (the same reasoning
         // Parse_Confidence__c above and LeadConvertService.applyDealFields both rely on: every
         // field on a record about to be inserted is already empty).
-        lead.Property_Package__c = request.propertyPackageId;
+        lead.Portfolio_Deal__c = request.propertyPackageId;
         String scoreNote = applyExtractionScore(lead, request);
         String dealNotes = buildDealNotes(request, scoreNote);
         if (String.isNotBlank(dealNotes)) {

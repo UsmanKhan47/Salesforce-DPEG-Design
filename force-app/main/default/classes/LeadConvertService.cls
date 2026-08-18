@@ -34,14 +34,17 @@
  *      picklist adds only a describe (not a query). A future change here that needs a
  *      SECOND read or a SECOND statement is a contract change and must say so.
  *
- *      ⚠ EXTENDED AGAIN 2026-08-17 (multi-property email package) by ONE field carried to
- *      BOTH sides — `Property_Package__c` onto the Opportunity (applyDealFields) AND onto
+ *      ⚠ EXTENDED AGAIN 2026-08-17 (multi-property email grouping) by ONE field carried to
+ *      BOTH sides — `Portfolio_Deal__c` onto the Opportunity (applyDealFields) AND onto
  *      the Property__c (buildProperty). It is the one enrichment field that is NOT split by
- *      meaning, because the package is a fact about the EMAIL rather than about the deal or
+ *      meaning, because the grouping is a fact about the EMAIL rather than about the deal or
  *      the building: all three record types are members of the same one-to-many, so all
  *      three carry it. 🔴 THE GOVERNOR CONTRACT BELOW IS AGAIN UNCHANGED — two in-memory
  *      assignments on records already being written, zero queries, zero statements, and no
  *      picklist so not even a describe.
+ *      ⚠ RENAMED 2026-08-18 (phase B4): this field was `Property_Package__c` when the note
+ *      above was written. Both assignments were repointed; the old field still exists and is
+ *      still populated until phase B5, and nothing here writes it any more.
  *      🔴 IT ANSWERS ONE QUESTION — "WHICH INBOUND BROKER EMAIL ROUTED THIS RECORD?" — AND
  *      MUST NEVER BE MADE TO ANSWER A SECOND. See the long warning at the assignment in
  *      applyDealFields: the deal-bundling question a human used to answer by hand ("which
@@ -375,9 +378,9 @@ public with sharing class LeadConvertService {
         o.Fields_Captured_Count__c = l.Fields_Captured_Count__c;
         o.Fields_Missing_Count__c = l.Fields_Missing_Count__c;
 
-        // ── The multi-property PACKAGE, carried forward (2026-08-17) ─────────────────────────
+        // ── The multi-property PORTFOLIO DEAL, carried forward (2026-08-17) ──────────────────
         // One inbound broker email that named several properties produced several Leads, all
-        // stamped with one Property_Package__c at insert (Decision C1). Carrying it here is what
+        // stamped with one Portfolio_Deal__c at insert (Decision C1). Carrying it here is what
         // keeps the grouping alive AFTER conversion, so the Acquisitions team can still see that
         // three deals came off one email.
         //
@@ -385,7 +388,7 @@ public with sharing class LeadConvertService {
         // `o` is already in the `updates` list this method's caller writes with ONE statement — so
         // the class's 2 SOQL / ≤5 DML contract in the header is UNCHANGED. It is a lookup, not a
         // picklist, so there is nothing to describe-guard; a SetNull delete constraint means a
-        // deleted package blanks this field rather than cascading into the deal.
+        // deleted portfolio deal blanks this field rather than cascading into the deal.
         //
         // 🔴 THIS LOOKUP ANSWERS EXACTLY ONE QUESTION, AND MUST NEVER BE MADE TO ANSWER A SECOND:
         // "WHICH INBOUND BROKER EMAIL ROUTED THIS RECORD?" It is PIPELINE-DERIVED — one broker email
@@ -407,7 +410,18 @@ public with sharing class LeadConvertService {
         // widening, overloading or cross-populating THIS one, whatever this one happens to be called
         // by then. NO AUTOMATED TEST CAN DETECT THAT REPURPOSING: this comment and ARCHITECTURE.md
         // §1/§2 (residual R1) are the only control. Decision A2, user-directed.
-        o.Property_Package__c = l.Property_Package__c;
+        //
+        // 🔴 "WHATEVER THIS ONE HAPPENS TO BE CALLED BY THEN" HAS NOW CASHED IN, AND THE RESULT IS
+        // THE MOST DANGEROUS STATE THIS COMMENT HAS EVER GUARDED. On 2026-08-18, phase B4 renamed
+        // this field from `Property_Package__c` to `Portfolio_Deal__c` — i.e. the SURVIVING field now
+        // carries the very words the RETIRED seller-bundle concept was known by (its stage value was
+        // literally "Portfolio Deal"). Anyone reading only the API name will conclude the two were
+        // merged. THEY WERE NOT. The retired concept was deleted in A1-A3, and its name was reused
+        // for this one precisely because it had become free. So the name is now ACTIVE EVIDENCE FOR
+        // THE WRONG CONCLUSION rather than neutral, and this paragraph — not the name, and not any
+        // test — is the only thing standing between a future reader and a repurposing that would look
+        // like a natural fit. A seller-bundle requirement still gets its own new field.
+        o.Portfolio_Deal__c = l.Portfolio_Deal__c;
 
         // D-f (approved at Gate 1, 2026-08-03) — NAME THE DEAL AFTER THE PROPERTY.
         // The platform derives Opportunity.Name from Lead.Company, which for an email-born deal
@@ -479,14 +493,16 @@ public with sharing class LeadConvertService {
         p.ADR__c = l.ADR__c;
         p.Zoning__c = l.Zoning__c;
         p.Seller_Entity__c = l.Seller_Entity__c;
-        // The multi-property PACKAGE, carried forward (2026-08-17). The Property is the third and
-        // last member of the package's one-to-many, and it is the member that makes the grouping
-        // legible on the package's own record page: three Properties from one email, side by side.
+        // The multi-property PORTFOLIO DEAL, carried forward (2026-08-17; field renamed from
+        // Property_Package__c in phase B4, 2026-08-18). The Property is the third and last member of
+        // the grouping's one-to-many, and it is the member that makes the grouping legible on the
+        // Portfolio_Deal__c record page: three Properties from one email, side by side.
         // ZERO SOQL and ZERO DML — this record is already in the list `createProperties` inserts
         // with ONE statement, so the class's 2 SOQL / ≤5 DML contract is UNCHANGED. See
         // applyDealFields above for the ONE question this lookup answers ("which inbound broker email
-        // routed this record?") and why a seller-bundle meaning must never be poured into it.
-        p.Property_Package__c = l.Property_Package__c;
+        // routed this record?"), why a seller-bundle meaning must never be poured into it, and why
+        // the field's NEW name makes that mistake MORE tempting rather than less.
+        p.Portfolio_Deal__c = l.Portfolio_Deal__c;
         // ⚠ NEVER WRITE Property__c.Lot_Size__c HERE. It is SQUARE FEET, entered from the
         // Offering Memorandum; we hold ACRES only (LLMExtractionParser canonicalizes lot_size_sf
         // into acres and stores nothing else). Computing SF = acres x 43,560 would derive one

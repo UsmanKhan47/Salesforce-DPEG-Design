@@ -18,17 +18,23 @@
             </componentInstance>
         </itemInstances>
         <!--
-            recentPackages (2026-08-17 addendum). A dedicated widget reading Property_Package__c
+            recentPortfolioDeals (2026-08-17 addendum; renamed from recentPackages in phase B4 of the
+            Portfolio Deal rename, 2026-08-18). A dedicated widget reading Portfolio_Deal__c
             directly, so it is NOT subject to LeadFunnelController's priority-partition + 5-row
-            slice that can push a package's own Leads past recentLeads' visible cutoff (proven with
+            slice that can push a deal's own Leads past recentLeads' visible cutoff (proven with
             a direct server call - not a permission/FLS/deploy defect). Placed in region2, not
             region3, because it is a datatable card the same width/shape as recentOpportunities and
             recentLeads, not a narrow summary card like region3's contents.
+
+            An LWC bundle rename is a delete-and-create, so componentName had to move with it: a page
+            still naming `recentPackages` renders NOTHING and reports no error. Read this page back
+            after deploying - a FlexiPage deploy can roll back on a design-time error and still report
+            success (repo precedent).
         -->
         <itemInstances>
             <componentInstance>
-                <componentName>recentPackages</componentName>
-                <identifier>recentPackagesComponent</identifier>
+                <componentName>recentPortfolioDeals</componentName>
+                <identifier>recentPortfolioDealsComponent</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

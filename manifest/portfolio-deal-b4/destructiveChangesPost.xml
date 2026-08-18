@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Phase B4 of the "Property Package -> Portfolio Deal" rename program.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+
+    An Apex class rename and an LWC bundle rename are both a delete-and-create at
+    the Metadata API level -- there is no "rename" operation. Phase B4 created the
+    6 new classes and 2 new LWC bundles listed in this manifest's companion
+    package.xml under their new names (PropertyPackage* -> PortfolioDeal*,
+    recentPackages -> recentPortfolioDeals, packageSiblings -> portfolioDealSiblings)
+    and repointed every caller to the new names. This file deletes the 6 old
+    classes and 2 old LWC bundles left behind by that rename.
+
+    POST-destructive (not pre-): the FlexiPages (Lead_Funnel, Lead_Record_Page,
+    Opportunity_Record_Page) and DPEG_Apex_Access's classAccesses already stop
+    referencing the old names in the companion package.xml, so by the time this
+    file's deletions run, nothing in the constructive payload still points at the
+    components being deleted. Deleting PRE would risk a dangling reference window
+    mid-transaction if ordering assumptions ever changed; POST leaves no such
+    window because the repoint has already landed.
+
+    Without this manifest, this org (usman-dpeg, live, no source tracking) has no
+    mechanism to remove the old components: a plain `--source-dir` deploy only
+    adds/updates what's present locally, it never deletes what's absent. Left
+    undeleted, PropertyPackageController/Selector/Service (+ their 3 test classes)
+    and the recentPackages/packageSiblings LWC bundles would stay live and
+    orphaned in the org -- their permission grant already moved to
+    PortfolioDealController in this same wave (DPEG_Apex_Access), so the old
+    classes would be unreachable dead code and the old LWC bundles would be
+    unreferenced by any FlexiPage, while still consuming class/bundle name space
+    and still showing up in metadata retrieves and coverage reports.
+
+    DELETES EXACTLY 6 APEX CLASSES AND 2 LWC BUNDLES:
+      ApexClass:
+        - PropertyPackageController      -> PortfolioDealController
+        - PropertyPackageControllerTest  -> PortfolioDealControllerTest
+        - PropertyPackageSelector        -> PortfolioDealSelector
+        - PropertyPackageSelectorTest    -> PortfolioDealSelectorTest
+        - PropertyPackageService         -> PortfolioDealService
+        - PropertyPackageServiceTest     -> PortfolioDealServiceTest
+      LightningComponentBundle:
+        - recentPackages    -> recentPortfolioDeals
+        - packageSiblings   -> portfolioDealSiblings
+
+    NOTE ON PropertyPackageController/ControllerTest: these two class names also
+    appear as members of manifest/portfolio-deal-a3/package.xml (deploy
+    0Afiw000000LgNdCAK, executed 2026-08-17), where they received a COMMENT-ONLY
+    rewrite alongside that phase's Opportunity field deletion. That earlier wave
+    did not rename or delete them -- it left them live under their original names.
+    This phase (B4) is the one that actually renames them; A3's already-executed
+    manifest is being annotated (not modified in substance) to record that 4 of
+    its 6 members no longer exist under these names as of this deploy. See
+    manifest/portfolio-deal-a3/package.xml's updated STATUS line.
+
+    NOT included here, and deliberately so: Property_Package__c (the object),
+    its fields, and the Opportunity/Lead/Property__c Property_Package__c lookup
+    fields all stay live. Phase B4 is Apex/LWC only. Object and field retirement
+    is Phase B5's scope, not this one's -- see the ADDITIVE ONLY comments on the
+    Portfolio_Deal__c grants added to the permission sets in this same wave's
+    package.xml, which explicitly defer that retirement.
+
+    Deploy (only once authorised by the user; devops runs a validation-only
+    dry-run first per standing project practice):
+      sf project deploy start \
+        --manifest manifest/portfolio-deal-b4/package.xml \
+        --post-destructive-changes manifest/portfolio-deal-b4/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    Do NOT pass --purge-on-delete -- documented as non-functional on production
+    orgs and fails silently rather than erroring (see manifest/portfolio-deal-a3).
+
+    Rollback: deleted Apex classes and LWC bundles are recoverable from git
+    history (this same commit removes them from force-app/main/default), but are
+    NOT recoverable from any org-side recycle bin the way custom fields are --
+    Apex/LWC deletions are not soft-deleted by the platform. Re-deploying the old
+    source and reverting DPEG_Apex_Access's classAccesses entry would restore
+    function, but any org data or usage that accrued against the NEW class Ids in
+    the interim would not follow.
+    -->
+    <types>
+        <members>PropertyPackageController</members>
+        <members>PropertyPackageControllerTest</members>
+        <members>PropertyPackageSelector</members>
+        <members>PropertyPackageSelectorTest</members>
+        <members>PropertyPackageService</members>
+        <members>PropertyPackageServiceTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>recentPackages</members>
+        <members>packageSiblings</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <version>67.0</version>
+</Package>

@@ -220,7 +220,7 @@ private class LeadSelectorTest {
         Map<Id, Lead> byId = new Map<Id, Lead>(recent);
         Assert.areEqual(2, byId.size(), 'Both open leads are returned');
         // `.intValue()` per the `Property_Count__c.intValue()` precedent in
-        // PropertyPackageSelectorTest — an Integer literal against a Decimal-typed Number field is a
+        // PortfolioDealSelectorTest — an Integer literal against a Decimal-typed Number field is a
         // contested `Assert.areEqual` comparison in this codebase, and the field is Number(3,0).
         Assert.areEqual(78, byId.get(leads[0].Id).Extraction_Score_Pct__c.intValue(),
             'Extraction_Score_Pct__c is in the SELECT and its stored value round-trips — reading it '

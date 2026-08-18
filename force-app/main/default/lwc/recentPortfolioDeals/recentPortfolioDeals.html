@@ -1,0 +1,93 @@
+<template>
+    <!--
+        Card chrome copied from recentLeads / recentOpportunities (the two list cards this one joins in
+        Lead_Funnel's region2), with callForOffersList's explicit empty state — that component is on the
+        same page and is the precedent for a list card that can legitimately have nothing to show.
+
+        icon-name reuses c/portfolioDealSiblings' 'standard:related_list' rather than guessing at an
+        SLDS name: no standard:package / standard:groups icon is used anywhere in this repo, and an
+        unverified icon name renders as a blank square with no error.
+    -->
+    <lightning-card icon-name="standard:related_list">
+        <!--
+            ⚠ DISPLAY LABEL. The user-facing name is "Portfolio Deals" — the plural of the underlying
+            object's own label (`Portfolio_Deal__c` = "Portfolio Deal" / "Portfolio Deals"), matching
+            the singular that `c/portfolioDealSiblings` uses: plural here because this card LISTS
+            deals, singular there because that card shows ONE record's deal.
+
+            This is the FIFTH name; see the JS header for the full chain and for why the identical
+            wording was RETRACTED at (3) and is correct now — the `Opportunity` stage value it once
+            collided with was retired in phases A1-A3 of this rename program, and phase B renamed the
+            object itself, so the title, the API names and the schema finally say one thing.
+        -->
+        <span slot="title">Portfolio Deals ({count})</span>
+
+        <!--
+            🔴 THE SPINNER IS THE THIRD STATE, AND ITS ABSENCE WAS A DEFECT, NOT A SIMPLIFICATION.
+            Loading, empty and populated are THREE states, not two. With only the last two expressible,
+            the pre-wire window fell into "empty" and the card asserted "no multi-property broker emails
+            have arrived yet" — a claim about the org's inbox — on every single page load, correcting
+            itself once the wire resolved. Copied from c/callForOffersList, the same-page precedent this
+            card's chrome and empty state already come from.
+        -->
+        <template if:true={isLoading}>
+            <div class="slds-p-around_medium">
+                <!--
+                    ⚠ "portfolio deals", matching the card title above — this string IS user-facing,
+                    just only to a screen reader, which is the one user who cannot see the title it
+                    has to agree with. Renamed with the title for that reason, not for tidiness, and
+                    re-renamed with it on every one of the title changes for the same reason.
+                -->
+                <lightning-spinner
+                    alternative-text="Loading portfolio deals"
+                    size="small"
+                    variant="brand">
+                </lightning-spinner>
+            </div>
+        </template>
+
+        <template if:true={hasError}>
+            <div class="lv-error slds-p-around_medium slds-text-color_error" role="alert">{errorMessage}</div>
+        </template>
+
+        <template if:false={hasError}>
+            <!--
+                ⚠ THREE STATES, THREE INDEPENDENT CONDITIONS — AND THE TABLE'S IS `if:true={hasRows}`,
+                NOT `if:false={isEmpty}`. Both are deliberate departures from c/callForOffersList, which
+                pairs `if:true={isEmpty}` / `if:false={isEmpty}` and therefore renders its datatable with
+                `data=[]` UNDER its own spinner while loading (a bare header row beside a spinner).
+
+                🔴 A `if:false={isLoading}` WRAPPER AROUND BOTH BRANCHES WAS TRIED FIRST AND REVERTED.
+                It produced the same three exclusive states on screen, but it made the JS untestable: the
+                whole Jest suite passed with the OLD, BROKEN `isEmpty` put back, because the wrapper hid
+                the empty message during loading regardless of what the getter returned. Deriving each
+                branch from its own getter is what keeps the state machine falsifiable — see `hasRows` in
+                the JS. Do not "simplify" these two conditions back into one negated pair; two conditions
+                cannot express three states, and the one that gets lost is loading.
+
+                Empty and table remain mutually exclusive: an empty datatable renders a bare header row,
+                which on a homepage reads as a broken component rather than as "no multi-property emails
+                yet" — and until the org receives one, that is the correct and permanent state.
+            -->
+            <template if:true={isEmpty}>
+                <div class="lv-empty slds-p-around_medium slds-text-color_weak">
+                    No multi-property broker emails have arrived yet.
+                </div>
+            </template>
+
+            <template if:true={hasRows}>
+                <c-list-datatable
+                    key-field="id"
+                    data={rows}
+                    columns={columns}
+                    column-widths-mode="auto"
+                    hide-checkbox-column>
+                </c-list-datatable>
+            </template>
+        </template>
+
+        <div slot="footer" class="view-all-footer">
+            <a href={listUrl} onclick={viewAll}>View All</a>
+        </div>
+    </lightning-card>
+</template>

@@ -1,0 +1,55 @@
+/*
+ * SLDS 2 design tokens only (--slds-g-*), with a plain fallback for each so the card still reads
+ * correctly if a token is unavailable. No hardcoded brand colours.
+ *
+ * ⚠ The `.pds-*` prefix replaced `.ps-*` when this bundle was renamed from `packageSiblings` in
+ * phase B4 of the Portfolio Deal rename. These classes are bundle-local (LWC style scoping), so the
+ * only places that must agree are this file, the template and the Jest suite's selectors — the one
+ * shared class in this bundle is `.lv-error`, which belongs to the repo-wide list-view chrome and
+ * was deliberately left alone.
+ */
+
+.pds-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.pds-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    padding: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-4, 1rem);
+    /*
+     * min-width: 0 plus overflow-wrap is what keeps a long property name from forcing the whole
+     * record-page region to scroll horizontally. A flex item defaults to min-width: auto, which
+     * refuses to shrink below its content — so without this the card, not the text, gives way.
+     * ⚠ jsdom performs no layout, so a Jest test CANNOT observe overflow (scrollWidth and
+     * clientWidth are both 0 there). This rule is verified by eye in the org, not by the suite.
+     */
+    min-width: 0;
+}
+
+.pds-link,
+.pds-line a {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    text-decoration: none;
+    /* anywhere, not break-word: an unbroken 60-character address must be allowed to wrap mid-token. */
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.pds-link:hover,
+.pds-line a:hover {
+    text-decoration: underline;
+}
+
+.pds-meta {
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.pds-line {
+    overflow-wrap: anywhere;
+}

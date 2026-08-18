@@ -338,64 +338,84 @@
         <field>NDA__c.NDA_Alert_Last_Interval__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <!-- Property_Package__c provisioning gap, closed 2026-08-17 (code review finding). This set is
-         the ONLY one of the seven layers that restores Admin-profile FLS/tabs/apps/record types
-         .forceignore'd out of profiles/**, and Property_Package__c FLS was granted in exactly
-         three places when it shipped the same day - DPEG_Acquisition_Edit, DPEG_Acquisition_View,
-         Broker_Protection_Access - and NOT here. Consequence: a System Administrator holding none
-         of those three (this repo's own admin user is one - see the applicationVisibilities
-         comment above, "the administrator usman.khan.dpeg is in NO permission set group") gets a
-         PERMANENT RED ERROR BANNER on the Lead Funnel homepage instead of the graceful "nothing to
-         show" a missing grant produces elsewhere, because BOTH homepage reads are `WITH USER_MODE`
-         and a USER_MODE query THROWS on the whole row for one inaccessible field:
-           • `PropertyPackageSelector.selectRecent` (the new c/recentPackages widget) selects
+    <!-- Portfolio_Deal__c (Property Package to Portfolio Deal rename; grants added Phase B1/B2,
+         2026-08-18; the Property_Package__c twin block REMOVED here in Phase B5, same day).
+
+         WHY THIS SET CARRIES THESE GRANTS AT ALL (original 2026-08-17 code review finding, still
+         the live reason, only the object name changed): this set is the ONLY one of the seven
+         layers that restores Admin profile FLS/tabs/apps/record types .forceignore'd out of
+         profiles/**. When Property_Package__c shipped, its FLS was granted in exactly three places
+         (DPEG_Acquisition_Edit, DPEG_Acquisition_View, Broker_Protection_Access) and NOT here.
+         Consequence: a System Administrator holding none of those three (this repo's own admin user
+         is one; see the applicationVisibilities comment above, "the administrator usman.khan.dpeg
+         is in NO permission set group") got a PERMANENT RED ERROR BANNER on the Lead Funnel
+         homepage instead of the graceful "nothing to show" a missing grant produces elsewhere,
+         because the homepage read is `WITH USER_MODE` and a USER_MODE query THROWS on the whole row
+         for one inaccessible field. That is still true of the Portfolio_Deal__c grants below.
+
+         LOAD-BEARING CONSUMERS (both live as of Phase B4, deployed 2026-08-18):
+           • `PortfolioDealSelector.selectRecent` (renamed from `PropertyPackageSelector`) selects
              Property_Count__c / Broker_Name__c / Broker_Email__c / Received_DateTime__c directly
-             off Property_Package__c.
-           • `LeadSelector.selectRecent` (the pre-existing recentLeads Package column, widened
-             2026-08-17) selected Lead.Property_Package__c and spanned Property_Package__r.Name off
-             it - same query the whole Lead Funnel homepage already depended on. 🔴 CORRECTED
-             2026-08-17 (later same day): the recentLeads Package column was removed and
-             `LeadSelector.selectRecent` no longer selects `Property_Package__c` at all - this
-             bullet's claim is retired, not merely reworded. The `Lead.Property_Package__c` FLS
-             grant below (line ~377) is still load-bearing, but now for a DIFFERENT consumer:
-             `LeadSelector.selectPackageAnchorById`, which backs the `c/packageSiblings` "Same
-             Email" card on the Lead record page. The grant itself is unchanged - only the reason
-             it must not be removed has changed.
-         `Property_Package__c.Name` needs no grant - custom-object Name fields are
-         `permissionable=false` (verified for this object earlier the same day) - and neither does
-         the `Property_Package__r.Name` traversal's OBJECT-level read, which `Modify All Data`
-         (the System Administrator profile's own system permission) already confers on every
-         object; that is also why this set carries no `<objectPermissions>` block for
-         Property_Package__c, matching every other object restored here.
-         SCOPED NARROWLY TO THE REPORTED GAP: the Opportunity.Property_Package__c and
-         Property__c.Property_Package__c lookups are NOT granted here - neither
-         `PropertyPackageSelector.selectRecent` nor `LeadSelector.selectRecent` reads them; they
-         back the separate c/packageSiblings card on the Opportunity/Property record pages, which
-         is not the homepage this finding is about. Add them here only if a future admin-visibility
-         gap is measured against THAT feature. -->
+             off Portfolio_Deal__c, for `c/recentPortfolioDeals` (renamed from `c/recentPackages`)
+             on the Lead Funnel homepage. The four field grants below are the only thing standing
+             between a group-less admin and that red banner.
+           • `LeadSelector.selectPackageAnchorById` reads the Lead lookup, backing the record page
+             card `c/portfolioDealSiblings` ("Portfolio Deal", renamed from `c/packageSiblings` /
+             "Same Email"). This is a CORRECTION carried forward from the block this replaces:
+             `LeadSelector.selectRecent` is NOT a consumer. The recentLeads Package column was
+             removed on 2026-08-17 and that selector no longer reads either lookup. The claim that
+             it did is retired, not merely reworded, and is repeated here so it is not rediscovered
+             the hard way.
+
+         SCOPE IS UNCHANGED BY THE RENAME, AND IS DELIBERATELY NARROWER THAN THE OTHER SETS: four
+         fields, not six, and the Lead lookup only. Four fields plus one lookup out, four fields
+         plus one lookup in. One grant for one grant. The original scoping decision was that the
+         Opportunity.Property_Package__c and Property__c.Property_Package__c lookups are NOT granted
+         here because they back the siblings card on the Opportunity/Property record pages, not the
+         homepage the finding was about, and that they be added "only if a future admin visibility
+         gap is measured against THAT feature". No such gap has been measured, so the equivalent
+         Portfolio_Deal__c lookups are likewise absent. Widening the scope now would silently
+         overturn a documented code review decision under cover of a rename. The two fields absent
+         on both twins are Routed_Outcomes__c and Source_Staging_Id__c.
+
+         Portfolio_Deal__c.Name needs no grant: custom object Name fields are permissionable=false.
+         No `<objectPermissions>` block for Portfolio_Deal__c, matching the twin it replaces and
+         every other object restored on this set: `Modify All Data` on the System Administrator
+         profile already confers object level access, which also covers the `Portfolio_Deal__r.Name`
+         traversal's OBJECT level read.
+
+         WHAT PHASE B5 REMOVED FROM THIS SET: four Property_Package__c.<field> grants and one
+         Lead.Property_Package__c lookup grant. (No Property_Package__c `<objectPermissions>` block
+         existed here to remove, unlike on DPEG_Acquisition_Edit / DPEG_Acquisition_View /
+         Broker_Protection_Access, for the `Modify All Data` reason above.) The org drops those
+         entries by itself when the object is deleted, but this FILE would not, and a permission set
+         whose XML names a field that no longer exists fails the deploy of the whole set the next
+         time anyone touches it. So the removal ships in the same wave as the deletion, in the
+         constructive half, which lands BEFORE the post-destructive half. -->
+
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Broker_Email__c</field>
+        <field>Portfolio_Deal__c.Broker_Email__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Broker_Name__c</field>
+        <field>Portfolio_Deal__c.Broker_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Property_Count__c</field>
+        <field>Portfolio_Deal__c.Property_Count__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Received_DateTime__c</field>
+        <field>Portfolio_Deal__c.Received_DateTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Lead.Property_Package__c</field>
+        <field>Lead.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>

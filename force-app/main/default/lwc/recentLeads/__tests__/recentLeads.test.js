@@ -56,9 +56,10 @@ jest.mock(
 //
 // ⚠ SUPERSEDED 2026-08-17 — the fixture used to carry a package on row 1 and none on the others, to
 // exercise the 'Package' column's null guard. That column was removed from this card (the dedicated
-// `c/recentPackages` widget on the same homepage now owns the fact), so `packageId`/`packageName`
-// are gone from the rows here as well as from `LeadFunnelController.LeadRow`. A row shape carrying
-// members no getter reads would suggest the column still exists.
+// `c/recentPortfolioDeals` widget on the same homepage — then named `c/recentPackages` — now owns the
+// fact), so `packageId`/`packageName` are gone from the rows here as well as from
+// `LeadFunnelController.LeadRow`. A row shape carrying members no getter reads would suggest the
+// column still exists.
 //
 // ⚠ EXTENDED 2026-08-17 — every row now carries `extractionScore`, because the renamed 'Score' column
 // renders it in one cell. The FIRST FIVE values (the only ones this card displays — it slices to 5)
@@ -382,8 +383,14 @@ describe('c-recent-leads', () => {
     it('NO PACKAGE COLUMN: the retired column is absent and no row carries package members', async () => {
         // 🔴 AN ABSENCE ASSERTION, REPLACING THREE PRESENCE ASSERTIONS (2026-08-17). The three
         // 'PACKAGE COLUMN' tests that stood here (link rendering, the empty-cell null guard, and
-        // the `type: 'url'` column shape) were removed with the column itself — `c/recentPackages`
-        // on this same homepage now owns "which multi-property email did this arrive on?".
+        // the `type: 'url'` column shape) were removed with the column itself —
+        // `c/recentPortfolioDeals` (named `c/recentPackages` when this was written) on this same
+        // homepage now owns "which multi-property email did this arrive on?".
+        //
+        // ⚠ THE ASSERTIONS BELOW DELIBERATELY STILL SAY 'Package' / `packageUrl` / `packageName`:
+        // they name the RETIRED column and the RETIRED row members, which is what must stay absent.
+        // Renaming them to 'Deal' / `dealUrl` would make this test assert the absence of something
+        // that never existed, and the actual pasted-back regression would go green.
         //
         // Deleting them outright would have left NOTHING red if the column were pasted back, so the
         // one test kept in their place asserts the removal in both places it has to hold: the column

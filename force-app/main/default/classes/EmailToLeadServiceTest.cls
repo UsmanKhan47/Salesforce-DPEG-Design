@@ -513,7 +513,7 @@ private class EmailToLeadServiceTest {
      */
     @isTest
     static void createLeadFromExtracted_propertyPackageId_isStampedOntoTheLeadAtInsert() {
-        Property_Package__c pkg = new Property_Package__c(Name = 'FW: direct stamp check', Property_Count__c = 2);
+        Portfolio_Deal__c pkg = new Portfolio_Deal__c(Name = 'FW: direct stamp check', Property_Count__c = 2);
         insert pkg;
         EmailToLeadService.LeadRequest request = enrichedRequest();
         request.propertyPackageId = pkg.Id;
@@ -522,8 +522,8 @@ private class EmailToLeadServiceTest {
         Id leadId = EmailToLeadService.createLeadFromExtracted(request);
         Test.stopTest();
 
-        Assert.areEqual(pkg.Id, [SELECT Property_Package__c FROM Lead WHERE Id = :leadId].Property_Package__c,
-            'propertyPackageId must land on Property_Package__c in the SAME insert as every other field '
+        Assert.areEqual(pkg.Id, [SELECT Portfolio_Deal__c FROM Lead WHERE Id = :leadId].Portfolio_Deal__c,
+            'propertyPackageId must land on Portfolio_Deal__c in the SAME insert as every other field '
             + 'on this Lead — no second DML statement exists to carry it');
     }
 
@@ -537,8 +537,8 @@ private class EmailToLeadServiceTest {
         Id leadId = EmailToLeadService.createLeadFromExtracted(enrichedRequest());
         Test.stopTest();
 
-        Assert.isNull([SELECT Property_Package__c FROM Lead WHERE Id = :leadId].Property_Package__c,
-            'An ordinary request with no package must leave the Lead\'s Property_Package__c blank');
+        Assert.isNull([SELECT Portfolio_Deal__c FROM Lead WHERE Id = :leadId].Portfolio_Deal__c,
+            'An ordinary request with no package must leave the Lead\'s Portfolio_Deal__c blank');
     }
 
     @isTest

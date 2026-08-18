@@ -1,0 +1,81 @@
+<template>
+    <!--
+        Nothing renders at all unless there is a real portfolio deal or a real failure. Most records
+        in the org came from a single-property email, and an always-present empty card on every Lead
+        and every deal is worse than no feature — see the component's class header.
+    -->
+    <template if:true={isVisible}>
+        <lightning-card icon-name="standard:related_list">
+            <!--
+                ⚠ DISPLAY LABEL — "Portfolio Deal", singular, because this card shows the ONE deal the
+                record in front of you belongs to. `c/recentPortfolioDeals` uses the plural because it
+                LISTS deals. Both are `Portfolio_Deal__c`'s own label; see the JS header for the four
+                names this title has carried and why the identical wording was retracted in August
+                2026 and is correct now.
+            -->
+            <span slot="title">Portfolio Deal ({count})</span>
+
+            <template if:true={hasError}>
+                <div class="lv-error slds-p-around_medium slds-text-color_error" role="alert">
+                    {errorMessage}
+                </div>
+            </template>
+
+            <template if:false={hasError}>
+                <div class="slds-p-horizontal_medium slds-p-bottom_small">
+                    <!--
+                        The deal heading. A real <a href> so the row is middle-clickable and
+                        copyable; the click handler navigates in-app. The URL is SERVER-BUILT —
+                        composing it here would need the object API name, the one thing this
+                        component deliberately never learns.
+                    -->
+                    <p class="slds-text-body_small slds-text-color_weak pds-line">
+                        From one broker email:
+                        <a
+                            href={dealUrl}
+                            onclick={handleDealClick}
+                            title={dealName}
+                        >{dealName}</a>
+                    </p>
+                </div>
+
+                <template if:true={hasSiblings}>
+                    <!--
+                        A <ul> of links rather than a datatable: jsdom does no layout, so an
+                        overflow-prone table cannot be tested for horizontal scroll, and a
+                        semantic list is what a screen reader announces usefully here.
+                    -->
+                    <ul class="slds-has-dividers_bottom-space pds-list">
+                        <template for:each={siblings} for:item="row">
+                            <li key={row.id} class="slds-item pds-item">
+                                <a
+                                    href={row.recordUrl}
+                                    data-id={row.id}
+                                    onclick={handleSiblingClick}
+                                    class="pds-link"
+                                >{row.name}</a>
+                                <span class="slds-text-body_small slds-text-color_weak pds-meta">
+                                    {row.objectLabel} &middot; {row.status}
+                                </span>
+                            </li>
+                        </template>
+                    </ul>
+                </template>
+
+                <template if:false={hasSiblings}>
+                    <!--
+                        A portfolio deal with no OTHER members. Not the common "no deal" case (that
+                        renders nothing at all) — this is design residual R6: a multi-property email
+                        whose other properties failed to route. The deal link above is how a human
+                        reaches the routing audit that says where they went.
+                    -->
+                    <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+                        <p class="slds-text-body_small slds-text-color_weak">
+                            No other records were created from this email.
+                        </p>
+                    </div>
+                </template>
+            </template>
+        </lightning-card>
+    </template>
+</template>

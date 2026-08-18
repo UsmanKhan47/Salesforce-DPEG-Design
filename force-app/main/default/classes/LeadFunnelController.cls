@@ -152,22 +152,31 @@ public with sharing class LeadFunnelController {
      * One row of the funnel's recent-leads list — exactly the fields `c/recentLeads` renders.
      *
      * ═══ ⚠ SUPERSEDED 2026-08-17 — `packageId` / `packageName` WERE HERE AND WERE REMOVED ═══
-     * They carried the multi-property `Property_Package__c` a Lead arrived on, so `c/recentLeads`
+     * They carried the multi-property `Portfolio_Deal__c` a Lead arrived on, so `c/recentLeads`
      * could show a 'Package' column. RETRACTED, verbatim, from their own Javadoc: *"The client builds
      * the link from `packageId` and shows `packageName`, and MUST render an empty cell when the Id is
      * null rather than a dead link."*
      *
-     * That is no longer true because the COLUMN is gone. The dedicated `c/recentPackages` widget now
-     * sits on the same homepage and reads `Property_Package__c` directly — with its own sort and its
+     * That is no longer true because the COLUMN is gone. The dedicated `c/recentPortfolioDeals` widget now
+     * sits on the same homepage and reads `Portfolio_Deal__c` directly — with its own sort and its
      * own server-side cutoff — so it does not inherit the priority partitioning below, which could
-     * push a package's own Leads past this list's 5-row cutoff. With that card present the column was
-     * redundant, and these two members had no reader left.
+     * push a portfolio deal's own Leads past this list's 5-row cutoff. With that card present the
+     * column was redundant, and these two members had no reader left.
+     *
+     * ⚠ THE OBJECT WAS RENAMED ON 2026-08-18 (Portfolio Deal rename, phase B4): what this note calls
+     * the 'Package' column carried `Property_Package__c`, which is now `Portfolio_Deal__c`. The two
+     * removed member names (`packageId` / `packageName`) and the column title are quoted VERBATIM as
+     * they existed — do not "correct" them to the new vocabulary, or the retraction stops matching
+     * what a reader would find in git history. The LWC BUNDLE NAME above is the opposite case and
+     * WAS updated (`recentPackages` -> `c/recentPortfolioDeals`, renamed by the LWC half of B4):
+     * it names a component that still EXISTS, so it has to resolve for a reader today rather than
+     * preserve how it read at the time.
      *
      * 🔴 DO NOT RE-ADD A MEMBER NO CLIENT READS. Every `@AuraEnabled` member here costs a field in
      * `LeadSelector.selectRecent`'s `WITH USER_MODE` SELECT, and USER_MODE throws on the WHOLE ROW for
      * ONE inaccessible field — so an unconsumed member is a live way for the entire Lead Funnel
      * homepage to fail for a persona in exchange for nothing on screen. Removing these two also
-     * removed `Property_Package__c` and the spanning `Property_Package__r.Name` from that SELECT.
+     * removed `Portfolio_Deal__c` and the spanning `Portfolio_Deal__r.Name` from that SELECT.
      * `LeadFunnelControllerTest.getFunnel_leadRowCarriesNoPackageMembers` is the falsifier.
      */
     public class LeadRow {

@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    
+    <flexiPageRegions>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Name</fieldItem>
+                <identifier>RecordNamePrimaryField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <name>Facet-PrimaryFields</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    
+    
+    <flexiPageRegions>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Property_Count__c</fieldItem>
+                <identifier>RecordProperty_Count__cSecondaryField0</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Broker_Name__c</fieldItem>
+                <identifier>RecordBroker_Name__cSecondaryField1</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Broker_Email__c</fieldItem>
+                <identifier>RecordBroker_Email__cSecondaryField2</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Received_DateTime__c</fieldItem>
+                <identifier>RecordReceived_DateTime__cSecondaryField3</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <name>Facet-SecondaryFields</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>actionNames</name>
+                    <valueList>
+                        <valueListItems>
+                            <value>Edit</value>
+                        </valueListItems>
+                    </valueList>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>numVisibleActions</name>
+                    <value>1</value>
+                </componentInstanceProperties>
+                
+                <componentInstanceProperties>
+                    <name>primaryField</name>
+                    <value>Facet-PrimaryFields</value>
+                </componentInstanceProperties>
+                
+                
+                <componentInstanceProperties>
+                    <name>secondaryFields</name>
+                    <value>Facet-SecondaryFields</value>
+                </componentInstanceProperties>
+                
+                <componentName>record_flexipage:dynamicHighlights</componentName>
+                <identifier>record_flexipage_dynamicHighlights</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>header</name>
+        <type>Region</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>relatedListComponentOverride</name>
+                    <value>NONE</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>rowsToDisplay</name>
+                    <value>10</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>showActionBar</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListContainer</componentName>
+                <identifier>force_relatedListContainer</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>relatedTabContent</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <!-- Field Section: Detail Fields -->
+    
+    <!-- Column 1 Fields -->
+    <flexiPageRegions>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Name</fieldItem>
+                <identifier>RecordNameColumn1Field0</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Property_Count__c</fieldItem>
+                <identifier>RecordProperty_Count__cColumn1Field1</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Broker_Name__c</fieldItem>
+                <identifier>RecordBroker_Name__cColumn1Field2</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Broker_Email__c</fieldItem>
+                <identifier>RecordBroker_Email__cColumn1Field3</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <name>Facet-FieldSection-Column1</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <!-- Column 2 Fields -->
+    
+    <flexiPageRegions>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Source_Staging_Id__c</fieldItem>
+                <identifier>RecordSource_Staging_Id__cColumn2Field0</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Received_DateTime__c</fieldItem>
+                <identifier>RecordReceived_DateTime__cColumn2Field1</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Routed_Outcomes__c</fieldItem>
+                <identifier>RecordRouted_Outcomes__cColumn2Field2</identifier>
+            </fieldInstance>
+        </itemInstances>
+        
+        <name>Facet-FieldSection-Column2</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    
+    <!-- Field Section: Column Facets -->
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-FieldSection-Column1</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column1</identifier>
+            </componentInstance>
+        </itemInstances>
+        
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>Facet-FieldSection-Column2</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:column</componentName>
+                <identifier>flexipage_column2</identifier>
+            </componentInstance>
+        </itemInstances>
+        
+        <name>Facet-FieldSection-Columns</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <!-- Field Section Component -->
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>columns</name>
+                    <value>Facet-FieldSection-Columns</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>horizontalAlignment</name>
+                    <value>false</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Information</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:fieldSection</componentName>
+                <identifier>flexipage_fieldSection</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>detailTabContent</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>relatedTabContent</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Standard.Tab.relatedLists</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>relatedListsTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>active</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>body</name>
+                    <value>detailTabContent</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>title</name>
+                    <value>Standard.Tab.detail</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tab</componentName>
+                <identifier>detailTab</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>maintabs</name>
+        <type>Facet</type>
+    </flexiPageRegions>
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>tabs</name>
+                    <value>maintabs</value>
+                </componentInstanceProperties>
+                <componentName>flexipage:tabset</componentName>
+                <identifier>flexipage_tabset</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>main</name>
+        <type>Region</type>
+    </flexiPageRegions>
+    <!--
+        Phase B5 of the "Property Package -> Portfolio Deal" rename program (2026-08-18).
+
+        Structural clone of flexipages/Property_Package_Record_Page.flexipage-meta.xml, which is
+        deleted in this same wave (manifest/portfolio-deal-b5/destructiveChangesPost.xml). A
+        FlexiPage's sobjectType is not editable in place, so retiring the object forces a new page
+        rather than a repoint - that is why this file exists at all. Every region, facet, identifier,
+        component and field reference is carried over unchanged; only <sobjectType> and <masterLabel>
+        differ. The six data fields did NOT rename in this program, only the object did.
+
+        VERIFIED DELIBERATE, NOT A TRANSCRIPTION GAP: this page was diffed against a freshly
+        CLI-generated `sf template generate flexipage` run with the RecordPage template for
+        Portfolio_Deal__c on 2026-08-18. (The CLI flag name is spelled out in prose here rather than
+        quoted verbatim, deliberately: a literal double hyphen is ILLEGAL inside an XML comment body,
+        and quoting the flag is what made an earlier revision of this file fail to parse at all. Do
+        not "restore" the flag syntax. Same rule applies to every other CLI flag mentioned in any
+        comment in this repo's metadata.) The generator emits three things this file intentionally
+        does not have, all three inherited from the old page's own deliberate edits:
+          1. a `Delete` entry in dynamicHighlights actionNames (and numVisibleActions 3, not 1);
+          2. the sidebar region / activityTab / runtime_sales_activities:activityPanel block;
+          3. a comment block ABOVE the root <FlexiPage> element - which on this project is a known
+             deploy-breaker (`sf` fails at source conversion with a misleading "unable to find
+             matching parent xml file" error), so it is stripped, and this comment lives INSIDE the
+             root instead.
+
+        No sidebar / Activity tab: Portfolio_Deal__c, like the Property_Package__c it replaces, is
+        created only by the Broker Protection pipeline and carries enableActivities=false on the
+        object, so a runtime_sales_activities:activityPanel here would be a permanently-empty,
+        non-functional tab. Omitted deliberately rather than shipped broken.
+
+        This page has no CustomTab and is not assigned via a FlexiPage <flexiPageRegions> app
+        assignment: it is reached solely through the Acquisition app's `View` actionOverride for
+        pageOrSobjectType=Portfolio_Deal__c, added in this same wave. Removing that override is what
+        makes a record page unreachable - which is exactly how the old page is being retired.
+    -->
+    <description></description>
+    <masterLabel>Portfolio Deal Record Page</masterLabel>
+    <sobjectType>Portfolio_Deal__c</sobjectType>
+    <template>
+        <name>flexipage:recordHomeTemplateDesktop</name>
+    </template>
+    <type>RecordPage</type>
+</FlexiPage>

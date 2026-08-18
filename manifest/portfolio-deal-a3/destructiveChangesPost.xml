@@ -3,8 +3,14 @@
     <!--
     Phase A3 of the "Property Package -> Portfolio Deal" rename program.
 
-    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
-    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+    STATUS: EXECUTED 2026-08-17 (deploy 0Afiw000000LgNdCAK) -- DO NOT RE-RUN. The
+    three Opportunity fields below are already deleted from the org. Re-running
+    this file would fail (or no-op at best) against fields that no longer exist.
+    Its companion package.xml (manifest/portfolio-deal-a3/package.xml) carries
+    the fuller status note, including that 4 of its 6 bundled components were
+    subsequently renamed in Phase B4 (2026-08-18, see
+    manifest/portfolio-deal-b4/) -- unrelated to the field deletion below, which
+    stands on its own and is unaffected by that later rename.
 
     Phases A1/A2 (2026-08-17, see docs/2026-08-17-portfolio-deal-rename-phase-a1.md
     and -phase-a2.md) removed every functional reference to the legacy, dormant

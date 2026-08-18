@@ -22,10 +22,10 @@
  *     selectMarketSnapshotSourceByIds; `WITH SYSTEM_MODE`, see MODE below)
  *   - TopDealsController (the "Top 5 Largest Deals" home-page card —
  *     selectTopActiveByAskingPrice, `WITH USER_MODE`)
- *   - PropertyPackageController (the c/packageSiblings card on the Opportunity record
+ *   - PortfolioDealController (the c/portfolioDealSiblings card on the Opportunity record
  *     page — selectPackageAnchorById, `WITH USER_MODE`; the OPPORTUNITY-rooted half of
- *     that feature's two reads, the package-rooted half being
- *     PropertyPackageSelector.selectWithMembersById)
+ *     that feature's two reads, the portfolio-deal-rooted half being
+ *     PortfolioDealSelector.selectWithMembersById)
  *
  * MODE — most queries are `WITH USER_MODE` (API 67). **THREE are `WITH SYSTEM_MODE`:**
  * `selectCallForOffersTargetsByIds`, `queryCallForOffersAlerts` and
@@ -453,23 +453,35 @@ public with sharing class OpportunitySelector {
     }
 
     /**
-     * The `Property_Package__c` one deal belongs to — the ANCHOR read behind the
-     * `c/packageSiblings` card on the Opportunity record page.
+     * The `Portfolio_Deal__c` one deal belongs to — the ANCHOR read behind the
+     * `c/portfolioDealSiblings` card on the Opportunity record page.
      *
-     * 🔴 IT LIVES HERE, NOT IN `PropertyPackageSelector`, BECAUSE THIS IS A QUERY AGAINST
+     * 🔴 IT LIVES HERE, NOT IN `PortfolioDealSelector`, BECAUSE THIS IS A QUERY AGAINST
      * OPPORTUNITY. .claude/rules/apex-layering-rule.md is explicit that all SOQL for an
      * object lives in that object's selector and "nothing else queries it".
-     * `PropertyPackageSelector.selectWithMembersById` owns the PACKAGE-rooted read (which
+     * `PortfolioDealSelector.selectWithMembersById` owns the PORTFOLIO-DEAL-rooted read (which
      * returns both member collections via relationship subqueries, so the feature costs two
      * queries in total rather than three). `LeadSelector.selectPackageAnchorById` is this
      * method's exact twin — change both or neither.
+     *
+     * ⚠ THE METHOD NAME STILL SAYS "Package" AFTER THE 2026-08-18 PORTFOLIO DEAL RENAME
+     * (phase B4), AND THAT WAS A DECISION RATHER THAN AN OVERSIGHT. B4 was scoped to repoint
+     * this class's REFERENCES — the query below reads `Opportunity.Portfolio_Deal__c` — and
+     * deliberately left its public surface alone, because permission-set headers cite this
+     * method BY NAME as the standing justification for an FLS grant and those files belong to
+     * a parallel task. Read the query, not the name. Renaming is a clean follow-up that must
+     * move all four sites at once: here, `LeadSelector`,
+     * `PortfolioDealController.resolvePortfolioDealId`, and the permission-set headers.
+     *
+     * 🔴 THE OLD `Opportunity.Property_Package__c` STILL EXISTS AND IS STILL POPULATED until
+     * phase B5 retires it. Nothing in this class reads it any more.
      *
      * USER_MODE, per the §2 default and the class header above: this backs a card on a
      * record page the human already opened, at their request. It is NOT one of this class's
      * three automation-path SYSTEM_MODE methods and must not become a fourth — the
      * arguments for those three (a trigger that would roll back a stage change, a batch
      * locator reading a field with no FLS for any profile, an approval-triggered flow) do
-     * not apply to a user-requested page read. `Opportunity.Property_Package__c` is granted
+     * not apply to a user-requested page read. `Opportunity.Portfolio_Deal__c` is granted
      * in DPEG_Acquisition_Edit and DPEG_Acquisition_View, declared in-file.
      *
      * NOT-FOUND CONTRACT — an empty list, never null and never a throw, DELIBERATELY unlike
@@ -478,21 +490,21 @@ public with sharing class OpportunitySelector {
      * miss is a defect; this one backs a card whose job is to render nothing when there is
      * nothing to render.
      *
-     * ═══ ⚠ THE PACKAGE'S `Name` IS DELIBERATELY NOT SELECTED HERE (2026-08-17, review W2) ═══
-     * The spanning `Property_Package__r.Name` was in this SELECT and was REMOVED. The only consumer
-     * — `PropertyPackageController.resolvePackageId` — reads `Property_Package__c` and nothing else;
-     * the card's heading comes from `PropertyPackageSelector.selectWithMembersById`, which selects
-     * `Name` off the package itself one query later. A parent traversal under `WITH USER_MODE` needs
+     * ═══ ⚠ THE PORTFOLIO DEAL'S `Name` IS DELIBERATELY NOT SELECTED HERE (2026-08-17, review W2) ═══
+     * The spanning `Portfolio_Deal__r.Name` was in this SELECT and was REMOVED. The only consumer
+     * — `PortfolioDealController.resolvePortfolioDealId` — reads `Portfolio_Deal__c` and nothing else;
+     * the card's heading comes from `PortfolioDealSelector.selectWithMembersById`, which selects
+     * `Name` off the portfolio deal itself one query later. A parent traversal under `WITH USER_MODE` needs
      * READ on the parent OBJECT as well as FLS on the field, so carrying it here was an extra,
      * unused way for this anchor read to THROW. `LeadSelector.selectPackageAnchorById` was changed
      * identically — change both or neither.
      *
-     * @param opportunityId The deal whose package to resolve; null returns an empty list
+     * @param opportunityId The Opportunity whose portfolio deal to resolve; null returns an empty list
      *                      WITHOUT querying.
-     * @return At most one Opportunity (Id, Property_Package__c — the Id only, never the
-     *         package's Name); empty when the Id is null or matches no row.
+     * @return At most one Opportunity (Id, Portfolio_Deal__c — the Id only, never the
+     *         portfolio deal's Name); empty when the Id is null or matches no row.
      * @throws System.QueryException when the running user lacks FLS on
-     *         `Opportunity.Property_Package__c`.
+     *         `Opportunity.Portfolio_Deal__c`.
      * @example
      * List<Opportunity> rows = OpportunitySelector.selectPackageAnchorById(recordId);
      */
@@ -501,7 +513,7 @@ public with sharing class OpportunitySelector {
             return new List<Opportunity>();
         }
         return [
-            SELECT Id, Property_Package__c
+            SELECT Id, Portfolio_Deal__c
             FROM Opportunity
             WHERE Id = :opportunityId
             WITH USER_MODE

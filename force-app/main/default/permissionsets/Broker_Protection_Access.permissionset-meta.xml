@@ -547,47 +547,64 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
-        Property_Package__c (Multi-Property Email Package Grouping, 2026-08-17). This is the
-        permission set the pipeline runs under, so it needs full editable+readable on every field
-        of the new object plus the write target Lead.Property_Package__c (stamped by
-        EmailToLeadService.createLeadFromExtracted at Lead insert). The insert itself is
+        Portfolio_Deal__c (Property Package to Portfolio Deal rename; grants added Phase B1/B2,
+        2026-08-18; the Property_Package__c twin block REMOVED here in Phase B5, same day).
+
+        This is the permission set the Broker Protection pipeline runs under, so it holds full
+        editable+readable on every field of the object plus the write target Lead.Portfolio_Deal__c
+        (stamped by EmailToLeadService.createLeadFromExtracted at Lead insert). The insert itself is
         AccessLevel.SYSTEM_MODE (metadata-API-deployed fields arrive with no FLS for anybody, System
-        Administrator included), so this grant is for human visibility/correction on this persona,
+        Administrator included), so these grants are for human visibility/correction on this persona,
         not a prerequisite for the pipeline write.
+
+        WHAT PHASE B5 REMOVED FROM THIS SET, AND WHY IT HAD TO BE REMOVED HERE RATHER THAN LEFT TO
+        THE PLATFORM: six Property_Package__c.<field> grants, one Lead.Property_Package__c grant, and
+        one Property_Package__c <objectPermissions> block. The org drops those entries by itself when
+        the object is deleted, but this FILE would not - and a permission set whose XML names a field
+        or object that no longer exists fails the deploy of the whole set the next time anyone
+        touches it. So the removal ships in the same wave as the deletion, in the constructive half,
+        which lands BEFORE the post-destructive half.
+
+        SCOPE IS UNCHANGED BY THE RENAME, DELIBERATELY. The removed block granted the same six fields
+        and Lead only; the surviving block below grants the same six fields and Lead only. The
+        Opportunity/Property__c lookups were not granted here before and are not granted here now. A
+        rename must not smuggle in a privilege change; if this persona needs the other two lookups,
+        that is a separate, separately justified decision.
+        Portfolio_Deal__c.Name needs no grant: custom object Name fields are permissionable=false.
     -->
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Broker_Email__c</field>
+        <field>Portfolio_Deal__c.Broker_Email__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Broker_Name__c</field>
+        <field>Portfolio_Deal__c.Broker_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Property_Count__c</field>
+        <field>Portfolio_Deal__c.Property_Count__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Received_DateTime__c</field>
+        <field>Portfolio_Deal__c.Received_DateTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Routed_Outcomes__c</field>
+        <field>Portfolio_Deal__c.Routed_Outcomes__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Property_Package__c.Source_Staging_Id__c</field>
+        <field>Portfolio_Deal__c.Source_Staging_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Lead.Property_Package__c</field>
+        <field>Lead.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
@@ -634,7 +651,7 @@
         <allowEdit>true</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>Property_Package__c</object>
+        <object>Portfolio_Deal__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

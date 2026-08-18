@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Phase B5 of the "Property Package -> Portfolio Deal" rename program (2026-08-18).
+
+        Structural clone of layouts/Property_Package__c-Property Package Layout.layout-meta.xml,
+        which is deleted in this same wave (it cascades with Property_Package__c via
+        manifest/portfolio-deal-b5/destructiveChangesPost.xml). Same three sections, same field
+        order, same behaviors, same four related lists - only the object context and the three
+        related-list lookups move to the new object. The six data fields did NOT rename in this
+        program, only the object did, so every <field> entry carries over byte-identical.
+
+        THE LAYOUT NAME IS NOT ARBITRARY AND MUST NOT BE "PORTFOLIO DEAL LAYOUT (B5)" OR ANYTHING
+        ELSE. Salesforce auto-created a stock layout named exactly "Portfolio Deal Layout" when
+        Portfolio_Deal__c was deployed in Phase B1 - confirmed by retrieving it from usman-dpeg on
+        2026-08-18 (it holds only Name / OwnerId / CreatedById / LastModifiedById, none of the six
+        custom fields). Matching that name makes this file an UPDATE of the auto-created layout.
+        Any other name would leave that stock layout live alongside this one and hand the object two
+        layouts, one of which nobody maintains.
+
+        Section label change: "Package Information" -> "Deal Information". This is the only label
+        edit; "Routing Detail" and "Custom Links" carry over unchanged. The object's own label
+        ("Portfolio Deal") and Name-field label ("Deal Name") were already settled in Phase B1.
+    -->
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Deal Information</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Required</behavior>
+                <field>Name</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Property_Count__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Received_DateTime__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Broker_Name__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Broker_Email__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Source_Staging_Id__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Routing Detail</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Routed_Outcomes__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>OwnerId</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>OneColumn</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>false</detailHeading>
+        <editHeading>false</editHeading>
+        <label>Custom Links</label>
+        <layoutColumns/>
+        <layoutColumns/>
+        <layoutColumns/>
+        <style>CustomLinks</style>
+    </layoutSections>
+    <relatedLists>
+        <relatedList>Lead.Portfolio_Deal__c</relatedList>
+    </relatedLists>
+    <relatedLists>
+        <relatedList>Opportunity.Portfolio_Deal__c</relatedList>
+    </relatedLists>
+    <relatedLists>
+        <relatedList>Property__c.Portfolio_Deal__c</relatedList>
+    </relatedLists>
+    <relatedLists>
+        <relatedList>RelatedNoteList</relatedList>
+    </relatedLists>
+    <showEmailCheckbox>false</showEmailCheckbox>
+    <showHighlightsPanel>false</showHighlightsPanel>
+    <showInteractionLogPanel>false</showInteractionLogPanel>
+    <showRunAssignmentRulesCheckbox>false</showRunAssignmentRulesCheckbox>
+    <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
+</Layout>

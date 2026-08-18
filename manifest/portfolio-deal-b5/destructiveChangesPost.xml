@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Phase B5 (FINAL) of the "Property Package -> Portfolio Deal" rename program.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES a deletion; it performs nothing on its own.
+    Nothing in Phase B5 has been deployed to any org.
+
+    WHAT THIS RETIRES: the legacy Property_Package__c object, the three lookups to
+    it that live on OTHER objects, and the record page bound to it. Phases B1/B2
+    created the Portfolio_Deal__c twin (object + 6 fields, live in usman-dpeg),
+    B3 migrated the data, B4 renamed the Apex/LWC layer (deployed 2026-08-18,
+    DeployRequest 0Afiw000000LpYzCAK, 36/36 components, 2077/2077 tests). B5 is
+    the last step: nothing functional points at the old object any more.
+
+    WHY THE 3 LOOKUPS ARE LISTED EXPLICITLY AND SEPARATELY FROM THE OBJECT:
+    Lead.Property_Package__c, Opportunity.Property_Package__c and
+    Property__c.Property_Package__c are CustomFields whose PARENT object is Lead /
+    Opportunity / Property__c, not Property_Package__c. Deleting a CustomObject
+    only cascades that object's OWN fields. These three are named here so their
+    removal is explicit and reviewable rather than implied.
+
+    ORDERING WITHIN THIS FILE: CustomField first, then Flexipage, then
+    CustomObject. The dependents are listed before the thing they depend on, so
+    that reading the file top-to-bottom matches the intended teardown order.
+    The SetNull hazard the design doc warned about ("deleting the object first
+    nulls the old lookups via SetNull and destroys the mapping") is MOOT here:
+    B3's data migration completed and was verified (all Lead backfills correct,
+    zero remaining un-migrated rows), so the old lookup values no longer need to
+    survive this deploy. Ordering is now a clarity concern, not a data-safety one.
+
+    KNOWN RESIDUAL RISK, AND ITS EXACT REMEDY (read before the real deploy):
+    if the platform tears the 3 lookups down as part of the CustomObject deletion
+    BEFORE it reaches this file's explicit CustomField members, those members
+    resolve to nothing and the deploy emits
+      problem: "No CustomField named: Lead.Property_Package__c found"
+      problemType: "Warning"
+    Because `ignoreWarnings` defaults to false and `rollbackOnError` is true, a
+    Warning of that shape FAILS THE WHOLE ATOMIC TRANSACTION -- measured on this
+    exact org during Phase B4 (see
+    .claude/agent-memory-local/salesforce-admin/idempotent-post-destructive-redeploy-fails-safely.md).
+    This is precisely what the standing validation-only dry-run is for: it will
+    surface that warning with zero side effects. If it appears, the fix is to drop
+    the three CustomField members and let the CustomObject member carry them, NOT
+    to reach for --ignore-warnings, which would also mask real problems.
+
+    NOT LISTED HERE, DELIBERATELY -- the old Layout
+    (Property_Package__c-Property Package Layout):
+    it belongs to Property_Package__c and goes with it. It is the ONLY component
+    the org reports as depending on the object's fields: a live
+    MetadataComponentDependency query on 2026-08-18 against all 9 field Ids
+    (6 own fields + 3 lookups) returned exactly 9 rows, every one of them
+    "Layout / Property Package Layout". Listing it explicitly would create the
+    same "not found" Warning trap described above with no compensating benefit.
+
+    ALSO NOT LISTED: any Profile. 41 profiles still carry stale fieldPermissions
+    for previously-deleted fields (see manifest/portfolio-deal-a3/), and this org
+    does not follow field deletion with a profile cleanup pass. profiles/** is
+    .forceignore'd here, so those entries are neither deployed nor reconciled.
+    Consistent with established practice, not a new gap.
+
+    SWEEP EVIDENCE (fresh for B5, 2026-08-18, not inherited from B4's brief):
+      - Repo: a comment-stripped scan of force-app + scripts found ZERO live
+        (non-comment) references to Property_Package__c outside the components
+        being deleted here. The four permission sets that granted it were cleaned
+        in this same wave's package.xml. Remaining mentions are comment/doc text,
+        one historical Apex test METHOD NAME
+        (EmailToLeadServiceTest.createLeadFromExtracted_noPropertyPackageId_leavesTheLookupBlank,
+        cosmetic, no object reference, left alone), and scripts/migrate-portfolio-deal-b3.apex
+        (the already-executed B3 migration script, a historical record).
+      - Org: MetadataComponentDependency returned 0 rows for the OBJECT and 9 rows
+        for the 9 fields, all of them the doomed Layout (above). The 0-row object
+        result is trustworthy because the same query shape returned rows for the
+        fields in the same session -- an empty result here is a real absence, not
+        a misfiring query.
+      - Org: zero ListViews on Property_Package__c. No CustomTab exists for either
+        the old or the new object.
+
+    Deploy (only once authorised by the user; devops runs a validation-only
+    dry-run first per standing project practice):
+      sf project deploy start \
+        --manifest manifest/portfolio-deal-b5/package.xml \
+        --post-destructive-changes manifest/portfolio-deal-b5/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    POST-destructive (not pre-): the constructive half must land FIRST. The
+    Acquisition app's actionOverride is repointed off Property_Package_Record_Page,
+    and four permission sets drop their Property_Package__c grants, in
+    package.xml. Deleting PRE would leave the app and the permission sets naming
+    components that no longer exist mid-transaction, which fails the whole deploy.
+
+    Do NOT pass --purge-on-delete -- documented as non-functional on production
+    orgs and fails silently rather than erroring (see manifest/portfolio-deal-a3).
+
+    Rollback: a deleted custom object and its custom fields are recoverable from
+    the org's recycle bin for 15 days, and all metadata is recoverable from git
+    history. The FlexiPage is NOT soft-deleted by the platform; it is recoverable
+    only by redeploying it from git, and only while Property_Package__c still
+    exists to bind it to. Record data in Property_Package__c is superseded by the
+    B3 migration into Portfolio_Deal__c and is not needed for rollback.
+    -->
+    <types>
+        <members>Lead.Property_Package__c</members>
+        <members>Opportunity.Property_Package__c</members>
+        <members>Property__c.Property_Package__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>Property_Package_Record_Page</members>
+        <name>Flexipage</name>
+    </types>
+    <types>
+        <members>Property_Package__c</members>
+        <name>CustomObject</name>
+    </types>
+    <version>67.0</version>
+</Package>

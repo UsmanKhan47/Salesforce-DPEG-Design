@@ -169,8 +169,14 @@
         <apexClass>OpportunityFunnelController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!-- Renamed from PropertyPackageController in phase B4 of the Portfolio Deal rename
+         (2026-08-18). An Apex class rename is a delete-and-create, so this entry had to move in the
+         same deploy: a classAccesses entry naming a class that no longer exists FAILS the deploy of
+         this whole permission set, and leaving the grant off entirely would make both
+         c/recentPortfolioDeals and c/portfolioDealSiblings fail for every user in this set. Only the
+         entry-point controller needs a grant - the selector and service it calls do not. -->
     <classAccesses>
-        <apexClass>PropertyPackageController</apexClass>
+        <apexClass>PortfolioDealController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>

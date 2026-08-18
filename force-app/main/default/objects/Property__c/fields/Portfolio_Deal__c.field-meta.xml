@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Portfolio_Deal__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The Portfolio Deal this Property belongs to, carried forward from the converting Lead. Blank on every ordinary single-property deal. Phase B2 replacement for Property__c.Property_Package__c; both coexist and only the old one is populated until Phase B3.</description>
+    <inlineHelpText>Do not edit directly. Set by LeadConvertService at conversion, from the converting Lead's Portfolio Deal.</inlineHelpText>
+    <label>Portfolio Deal</label>
+    <referenceTo>Portfolio_Deal__c</referenceTo>
+    <relationshipLabel>Properties</relationshipLabel>
+    <relationshipName>Properties</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

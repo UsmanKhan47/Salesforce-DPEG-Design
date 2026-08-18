@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Companion manifest for manifest/portfolio-deal-b5/destructiveChangesPost.xml.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. Nothing in Phase B5 has been deployed to any org.
+
+    Phase B5 (FINAL) of the "Property Package -> Portfolio Deal" rename program
+    retires the legacy Property_Package__c object. This half carries everything
+    that must STOP REFERENCING the old object, plus the new object's own UI
+    surface. It lands FIRST; the destructive half runs POST. See that file for
+    the deletion list, the sweep evidence and the ordering rationale.
+
+    CustomApplication (1): Acquisition
+      Its `View` actionOverride is REPOINTED, not supplemented:
+        was  Property_Package_Record_Page / pageOrSobjectType Property_Package__c
+        now  Portfolio_Deal_Record_Page   / pageOrSobjectType Portfolio_Deal__c
+      Both halves of that swap are one file edit and cannot be split across two
+      waves: an actionOverride naming a FlexiPage or object that the destructive
+      half deletes would fail the whole CustomApplication deploy. There is no
+      CustomTab for either object (verified against the repo's tabs/ directory
+      and the org), so this override is the ONLY route to a Portfolio_Deal__c
+      record page, and removing the old one is what actually makes the old page
+      unreachable.
+
+    Flexipage (1): Portfolio_Deal_Record_Page
+      NEW. A FlexiPage's <sobjectType> is not editable in place, so retiring the
+      object forces a new page rather than a repoint. Structural clone of
+      Property_Package_Record_Page, which the destructive half deletes.
+
+    Layout (1): Portfolio_Deal__c-Portfolio Deal Layout
+      This is an UPDATE, not a create. Salesforce auto-created a stock layout
+      named exactly "Portfolio Deal Layout" when Portfolio_Deal__c was deployed
+      in Phase B1 -- re-confirmed for B5 by a live Tooling query on 2026-08-18,
+      which returned exactly one Layout per object ("Portfolio Deal Layout" on
+      Portfolio_Deal__c, "Property Package Layout" on Property_Package__c).
+      Matching that name is what makes this file update the stock layout instead
+      of leaving the object with two layouts. The old layout is NOT in the
+      destructive file; it cascades with its object.
+
+    PermissionSet (4): every set that still named Property_Package__c
+      Each drops its Property_Package__c grants in this wave. The org would drop
+      those entries by itself when the object is deleted, but these FILES would
+      not, and a permission set whose XML names a field or object that no longer
+      exists fails the deploy of the whole set the next time anyone touches it.
+      Scope is unchanged by the rename -- one grant for one grant on all four:
+        - DPEG_Acquisition_Edit      6 fields + 3 lookups + objectPermissions, all editable
+        - DPEG_Acquisition_View      6 fields + 3 lookups + objectPermissions, read-only
+        - Broker_Protection_Access   6 fields + 1 Lead lookup + objectPermissions, editable
+        - DPEG_Admin_Access          4 fields + 1 Lead lookup, NO objectPermissions
+      DPEG_Admin_Access is deliberately the narrowest of the four and must stay
+      that way: its scope was set by a 2026-08-17 code review against a MEASURED
+      admin visibility gap on the Lead Funnel homepage, and it carries no
+      objectPermissions because `Modify All Data` on the System Administrator
+      profile already confers object level access. Do not "harmonise" it with the
+      other three; that would overturn a documented decision under cover of a
+      rename.
+
+    NOT INCLUDED, deliberately:
+      - DPEG_Apex_Access: its only Portfolio Deal change (classAccesses repointed
+        to PortfolioDealController) belongs to Phase B4 and is already live in
+        usman-dpeg. It names neither the old object nor the old fields, so B5
+        does not touch it and does not need to redeploy it.
+      - Portfolio_Deal__c (the object) and its 6 fields: created and deployed in
+        Phases B1/B2, confirmed present in usman-dpeg by an EntityDefinition
+        query on 2026-08-18. Unchanged by B5.
+      - Apex and LWC: renamed and deployed in Phase B4 (DeployRequest
+        0Afiw000000LpYzCAK). Re-verified clean of live Property_Package__c
+        references for B5; the only remaining mentions are comments and one
+        cosmetic test method name.
+
+    A PERMISSION SET DEPLOY REPLACES ITS ENTIRE fieldPermissions SET rather than
+    merging into it. That is exactly the behaviour this wave wants (it is how the
+    old grants get removed), but it also means these 4 files must be the complete
+    intended state for their objects at deploy time, not a delta. Retrieve and
+    diff them against the org before the real deploy if any time has passed.
+
+    Deploy (only once authorised by the user; devops runs a validation-only
+    dry-run first per standing project practice):
+      sf project deploy start \
+        --manifest manifest/portfolio-deal-b5/package.xml \
+        --post-destructive-changes manifest/portfolio-deal-b5/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    Do NOT pass --purge-on-delete -- documented as non-functional on production
+    orgs and fails silently rather than erroring (see manifest/portfolio-deal-a3).
+
+    FOLLOW-UP THIS MANIFEST DOES NOT DO: the legacy source files still exist on
+    disk (objects/Property_Package__c/**, the 3 lookup .field-meta.xml files under
+    Lead / Opportunity / Property__c, flexipages/Property_Package_Record_Page,
+    layouts/Property_Package__c-Property Package Layout). A --manifest deploy
+    ignores them, so they cannot break THIS wave -- but any later
+    `--source-dir force-app` deploy would recreate the object this wave deletes.
+    They must be removed from the repo in the same commit that lands B5.
+    -->
+    <types>
+        <members>Acquisition</members>
+        <name>CustomApplication</name>
+    </types>
+    <types>
+        <members>Portfolio_Deal_Record_Page</members>
+        <name>Flexipage</name>
+    </types>
+    <types>
+        <members>Portfolio_Deal__c-Portfolio Deal Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>DPEG_Acquisition_Edit</members>
+        <members>DPEG_Acquisition_View</members>
+        <members>Broker_Protection_Access</members>
+        <members>DPEG_Admin_Access</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

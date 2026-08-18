@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Portfolio_Deal__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The Portfolio Deal this Lead belongs to, when the source email named two or more properties. Blank on every ordinary single-property Lead. Phase B2 replacement for Lead.Property_Package__c; both coexist and only the old one is populated until Phase B3.</description>
+    <inlineHelpText>Do not edit directly. Set by the Broker Protection pipeline at Lead creation when the source email named more than one property.</inlineHelpText>
+    <label>Portfolio Deal</label>
+    <referenceTo>Portfolio_Deal__c</referenceTo>
+    <relationshipLabel>Leads</relationshipLabel>
+    <relationshipName>Leads</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <type>Lookup</type>
+</CustomField>

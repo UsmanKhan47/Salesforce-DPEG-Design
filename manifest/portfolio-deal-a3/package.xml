@@ -3,8 +3,14 @@
     <!--
     Companion manifest for manifest/portfolio-deal-a3/destructiveChangesPost.xml.
 
-    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
-    go-ahead.
+    STATUS: EXECUTED 2026-08-17 (deploy 0Afiw000000LgNdCAK) -- DO NOT RE-RUN.
+    4 of its 6 members (PropertyPackageController, PropertyPackageControllerTest,
+    recentPackages, packageSiblings) were renamed in Phase B4 of the Portfolio
+    Deal rename (2026-08-18, see manifest/portfolio-deal-b4/) and no longer exist
+    under these names -- re-running this manifest would now fail outright trying
+    to deploy components that were deleted-and-recreated under new names by a
+    later phase. The other 2 members (LeadConvertService, LeadConvertServiceTest)
+    were repointed, not renamed, and still exist under these names.
 
     Unlike the manifest/destructive/ precedent (which shipped its field deletion
     alone against an empty companion package.xml), this wave is NOT empty: it

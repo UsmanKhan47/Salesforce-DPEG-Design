@@ -203,20 +203,23 @@ const COLUMNS = [
     { label: 'Broker', fieldName: 'broker', type: 'text' },
     // ⚠ SUPERSEDED 2026-08-17 — THE 'Package' COLUMN WAS REMOVED FROM THIS ARRAY THE SAME DAY IT
     // WAS ADDED, AND IT MUST NOT BE RESTORED HERE. It was a `type: 'url'` column linking to the
-    // multi-property `Property_Package__c` a Lead arrived on, with a null guard in `get rows()` so
-    // the single-property majority rendered an empty cell instead of a dead link.
+    // multi-property grouping record a Lead arrived on — the object then called
+    // `Property_Package__c` and since renamed `Portfolio_Deal__c` (phase B of the Portfolio Deal
+    // rename) — with a null guard in `get rows()` so the single-property majority rendered an empty
+    // cell instead of a dead link.
     //
     // WHY THE PREMISE DIED: the column was only ever a partial answer, because it is downstream of
     // `LeadFunnelController.getFunnel()`, which priority-partitions `LeadSelector.selectRecent(50)`
-    // and then shows the first 5 rows — so a package's own Leads can fall silently past the cutoff
-    // (observed with a direct server call). `c/recentPackages` reads `Property_Package__c` directly,
-    // with its own sort and its own server-side cutoff, and now sits as its own card on this same
-    // homepage. With that card present the column is redundant, so it was retired rather than kept
-    // as a second, weaker view of the same fact.
+    // and then shows the first 5 rows — so a deal's own Leads can fall silently past the cutoff
+    // (observed with a direct server call). `c/recentPortfolioDeals` (renamed from
+    // `c/recentPackages` in phase B4) reads `Portfolio_Deal__c` directly, with its own sort and its
+    // own server-side cutoff, and now sits as its own card on this same homepage. With that card
+    // present the column is redundant, so it was retired rather than kept as a second, weaker view
+    // of the same fact.
     //
-    // ⚠ Restoring it is not a client-only change: it would also mean re-adding `packageId` /
-    // `packageName` to `LeadFunnelController.LeadRow` and `Property_Package__c` +
-    // `Property_Package__r.Name` to `LeadSelector.selectRecent`, whose `WITH USER_MODE` SELECT is
+    // ⚠ Restoring it is not a client-only change: it would also mean re-adding the deal Id and Name
+    // to `LeadFunnelController.LeadRow` and `Portfolio_Deal__c` + the spanning
+    // `Portfolio_Deal__r.Name` to `LeadSelector.selectRecent`, whose `WITH USER_MODE` SELECT is
     // the whole Lead Funnel homepage's single point of FLS failure. See that method's header.
     { label: 'Age', fieldName: 'days', type: 'text' }
 ];
@@ -288,7 +291,7 @@ export default class RecentLeads extends NavigationMixin(LightningElement) {
                 channel: r.channel,
                 channelIcon: CHANNEL_ICON[r.channel] || 'utility:record',
                 // The 'Score' cell: the score's own word, then the score — one string, one colour, one
-                // source. `·` is this repo's cell separator idiom (c/recentPackages joins its broker
+                // source. `·` is this repo's cell separator idiom (c/recentPortfolioDeals joins its broker
                 // name and address the same way).
                 //
                 // 🔴 BOTH FRAGMENTS COME OFF THE SAME `band`, so `Low · 29%` cannot become `High · 29%`

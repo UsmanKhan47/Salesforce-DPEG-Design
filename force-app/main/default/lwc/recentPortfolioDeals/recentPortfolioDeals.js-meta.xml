@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <!--
+        DISPLAY LABELS. masterLabel and description are what an admin reads in the Lightning App
+        Builder palette, so they track the card title, which has now carried five names: "Recent
+        Packages" to "Recent Portfolios" to "Portfolio Deals" (retracted) to "Property Packages" and
+        now back to "Portfolio Deals" - the plural of the underlying object's own label.
+
+        Entry 3 was RETRACTED at the time because it collided with an Opportunity stage value named
+        "Portfolio Deal" that was then live. That stage value, its path step and finally the three
+        Opportunity fields behind it were retired in phases A1-A3 of the Portfolio Deal rename, so the
+        collision no longer exists and the same wording is now correct rather than forbidden.
+
+        THE BUNDLE'S API NAME IS `recentPortfolioDeals`, RENAMED FROM `recentPackages` IN PHASE B4 OF
+        THAT SAME PROGRAM. The predecessor's note here read that the API name "stays `recentPackages`"
+        and that re-pointing the API names was "the rename program's job, done wholesale in one
+        authorised phase - not a passing edit's". This IS that phase (design
+        agent-output/design-requirements-portfolio-deal-rename.md, section 5 phase B4 and section 6),
+        so the bundle, its Apex (PortfolioDealController.getRecentPortfolioDeals), the object
+        (Portfolio_Deal__c) and the labels all moved together. An LWC bundle rename is a delete and
+        create and it DOES break any page that binds the old API name, so Lead_Funnel.flexipage-meta.xml
+        was updated in the same wave; a page still naming `recentPackages` renders nothing.
+    -->
+    <masterLabel>Portfolio Deals</masterLabel>
+    <description>Multi-property broker emails that arrived most recently, newest first, with each deal's broker and property count. Intended for the Acquisition app's Lead Funnel tab.</description>
+    <targets>
+        <target>lightning__AppPage</target>
+        <target>lightning__HomePage</target>
+    </targets>
+</LightningComponentBundle>

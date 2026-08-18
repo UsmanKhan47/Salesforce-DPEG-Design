@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <!--
+        DISPLAY LABEL. masterLabel is what an admin reads in the Lightning App Builder palette, so it
+        tracks the card title, which has carried four names: "Same Email" to "Portfolio Deal"
+        (retracted) to "Property Package" and now back to "Portfolio Deal" - the underlying object's
+        own label. Entry 2 was retracted at the time because it collided with a live Opportunity stage
+        value of that name; that value and the three Opportunity fields behind it were retired in
+        phases A1-A3 of the Portfolio Deal rename, so the wording is now correct rather than banned.
+
+        THE BUNDLE'S API NAME IS `portfolioDealSiblings`, RENAMED FROM `packageSiblings` IN PHASE B4
+        of that same program. An LWC bundle rename is a delete and create and it DOES break any page
+        that binds the old API name, so Lead_Record_Page and Opportunity_Record_Page were re-pointed
+        in the same wave; a page still naming `packageSiblings` renders nothing, silently.
+    -->
+    <masterLabel>Portfolio Deal</masterLabel>
+    <description>Other Leads and Opportunities created from the same multi-property broker email. One object-agnostic bundle for both the Lead and Opportunity record pages; renders nothing when the record has no Portfolio Deal.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+</LightningComponentBundle>

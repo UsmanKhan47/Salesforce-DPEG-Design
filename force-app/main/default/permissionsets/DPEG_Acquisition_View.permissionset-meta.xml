@@ -1668,54 +1668,68 @@
         <readable>true</readable>
     </fieldPermissions>
     <!--
-        Property_Package__c (Multi-Property Email Package Grouping, 2026-08-17). Read-only twin of
-        the grant on DPEG_Acquisition_Edit - see that set's comment for the full rationale. All
-        seven fields plus the three lookups (Lead/Opportunity/Property__c.Property_Package__c) are
-        readable=true, editable=false, matching this set's read-only contract.
+        Portfolio_Deal__c (Property Package to Portfolio Deal rename; grants added Phase B1/B2,
+        2026-08-18; the Property_Package__c twin block REMOVED here in Phase B5, same day).
+
+        Read-only twin of the grant on DPEG_Acquisition_Edit - see that set's comment for the full
+        rationale, including which consumer makes the Lead lookup grant load-bearing. All six fields
+        plus all three lookups (Lead/Opportunity/Property__c.Portfolio_Deal__c) are readable=true,
+        editable=false, matching this set's read-only contract.
+
+        WHAT PHASE B5 REMOVED FROM THIS SET: six Property_Package__c.<field> grants, three
+        <object>.Property_Package__c lookup grants, and one Property_Package__c <objectPermissions>
+        block. The org drops those entries by itself when the object is deleted, but this FILE would
+        not - and a permission set whose XML names a field or object that no longer exists fails the
+        deploy of the whole set the next time anyone touches it. So the removal ships in the same
+        wave as the deletion, in the constructive half, which lands BEFORE the post-destructive half.
+        SCOPE IS UNCHANGED BY THE RENAME: six fields plus three lookups out, six fields plus three
+        lookups in. (The removed block's own header miscounted them as "seven fields"; it listed and
+        granted six. Corrected here rather than copied forward.)
+        Portfolio_Deal__c.Name needs no grant: custom object Name fields are permissionable=false.
     -->
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Broker_Email__c</field>
+        <field>Portfolio_Deal__c.Broker_Email__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Broker_Name__c</field>
+        <field>Portfolio_Deal__c.Broker_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Property_Count__c</field>
+        <field>Portfolio_Deal__c.Property_Count__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Received_DateTime__c</field>
+        <field>Portfolio_Deal__c.Received_DateTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Routed_Outcomes__c</field>
+        <field>Portfolio_Deal__c.Routed_Outcomes__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property_Package__c.Source_Staging_Id__c</field>
+        <field>Portfolio_Deal__c.Source_Staging_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Lead.Property_Package__c</field>
+        <field>Lead.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Opportunity.Property_Package__c</field>
+        <field>Opportunity.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Property__c.Property_Package__c</field>
+        <field>Property__c.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
@@ -1735,7 +1749,7 @@
         <allowEdit>false</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>Property_Package__c</object>
+        <object>Portfolio_Deal__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

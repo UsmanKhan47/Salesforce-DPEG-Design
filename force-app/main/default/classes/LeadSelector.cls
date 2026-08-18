@@ -60,18 +60,26 @@
  * DPEG_Acquisition_View and Broker_Protection_Access FIRST, per field. A missing grant
  * does not hide a column; it throws the whole homepage query.
  *
- * ⚠ AMENDED 2026-08-17 — Property_Package__c briefly appeared in that list (plus the
- * spanning Property_Package__r.Name) for recentLeads' 'Package' column, and was removed
- * with the column the same day; c/recentPackages now owns that fact and reads the object
- * directly. selectRecent no longer touches the field, so the homepage no longer depends on
- * its grant.
+ * ⚠ AMENDED 2026-08-17 — the multi-property grouping lookup briefly appeared in that list
+ * (plus its spanning `.Name`) for recentLeads' 'Package' column, and was removed with the
+ * column the same day; c/recentPortfolioDeals now owns that fact and reads the object directly.
+ * selectRecent no longer touches the field, so the homepage no longer depends on its grant.
+ *
+ * ⚠ RENAMED 2026-08-18 (Portfolio Deal rename, phase B4) — that lookup is now
+ * `Lead.Portfolio_Deal__c`, pointing at `Portfolio_Deal__c`, and every reference below was
+ * repointed. 🔴 THE OLD `Lead.Property_Package__c` STILL EXISTS AND IS STILL POPULATED until
+ * phase B5 retires it; nothing in this class reads it any more, so a row created before the
+ * B3 migration and never re-migrated will read as having NO grouping here rather than as an
+ * error. The word "Package" survives in the METHOD name and in the historical notes about
+ * the retired funnel column below — deliberately, see selectPackageAnchorById.
  *
  * ⚠ selectPackageAnchorById (2026-08-17) is therefore the ONLY USER_MODE consumer of
- * Property_Package__c here — it was the second until the narrowing above. It backs the
- * c/packageSiblings card on the Lead record page and is the LEAD-rooted half of that
- * feature's reads — the PACKAGE-rooted half lives in PropertyPackageSelector, because SOQL
- * follows the object it queries. It is what keeps the field's FLS grants load-bearing in the
- * three Acquisition permission sets, so those grants must not be retired.
+ * Portfolio_Deal__c here — it was the second until the narrowing above. It backs the
+ * c/portfolioDealSiblings card on the Lead record page and is the LEAD-rooted half of that
+ * feature's reads — the PORTFOLIO-DEAL-rooted half lives in PortfolioDealSelector, because
+ * SOQL follows the object it queries. It is what keeps the field's FLS grants load-bearing in
+ * the three Acquisition permission sets, so those grants must not be retired — and they must
+ * now name the NEW field, since the old one is no longer read from here.
  *
  * selectByIdsSystem uses `WITH SYSTEM_MODE` (API 67), justified: it is called only
  * from BrokerPortalNotifier in the guest/automation context of the public Broker
@@ -202,11 +210,11 @@ public with sharing class LeadSelector {
      * separately by countConvertedInLastNDays(...) and is unaffected by this filter.
      *
      * ═══ ⚠ WIDENED AND THEN NARROWED AGAIN, BOTH ON 2026-08-17 — READ THIS BEFORE RE-ADDING ═══
-     * `Property_Package__c` and the SPANNING `Property_Package__r.Name` were added to this SELECT so
+     * `Portfolio_Deal__c` and the SPANNING `Portfolio_Deal__r.Name` were added to this SELECT so
      * `recentLeads` could show which multi-property email a Lead arrived on, and were REMOVED the
-     * same day when that 'Package' column was retired in favour of the dedicated `c/recentPackages`
-     * card (which reads `Property_Package__c` directly, so it escapes this method's priority
-     * partitioning and 5-row client cutoff). `LeadFunnelController.LeadRow` lost `packageId` /
+     * same day when that 'Package' column was retired in favour of the dedicated
+     * `c/recentPortfolioDeals` card (which reads `Portfolio_Deal__c` directly, so it escapes this
+     * method's priority partitioning and 5-row client cutoff). `LeadFunnelController.LeadRow` lost `packageId` /
      * `packageName` in the same change, so the two fields had no consumer left.
      *
      * RETRACTED, verbatim, from the widening note that stood here: *"The spanning field rides this
@@ -215,7 +223,7 @@ public with sharing class LeadSelector {
      *
      * 🔴 THE REAL CURRENCY IS FLS, AND THAT IS WHY THE NARROWING IS A WIN RATHER THAN TIDYING. This
      * method is `WITH USER_MODE`, which THROWS on the WHOLE ROW for ONE inaccessible field, so a
-     * persona without FLS on `Lead.Property_Package__c` did not lose one column — THEY LOST THE
+     * persona without FLS on `Lead.Portfolio_Deal__c` did not lose one column — THEY LOST THE
      * ENTIRE LEAD FUNNEL HOMEPAGE (`LeadFunnelController.getFunnel` catches and shows its generic
      * failure message). Removing the pair takes the homepage's FLS surface back down to the fields it
      * actually displays. That is the trap ARCHITECTURE.md records for
@@ -223,10 +231,10 @@ public with sharing class LeadSelector {
      * deliberately kept OUT of it.
      *
      * ⚠ THE PERMISSION SETS WERE NOT TOUCHED, AND MUST NOT BE "CLEANED UP" ON THE STRENGTH OF THIS.
-     * `Lead.Property_Package__c` stays granted readable in `DPEG_Acquisition_Edit`,
+     * `Lead.Portfolio_Deal__c` stays granted readable in `DPEG_Acquisition_Edit`,
      * `DPEG_Acquisition_View` and `Broker_Protection_Access` because `selectPackageAnchorById` below
-     * still reads it for the `c/packageSiblings` card. This method simply no longer DEPENDS on those
-     * grants.
+     * still reads it for the `c/portfolioDealSiblings` card. This method simply no longer DEPENDS on
+     * those grants.
      * 🔴 A future field added here needs per-field grant verification in all three sets FIRST. Do not
      * add one on the assumption that the sibling fields' grants cover it, and do not re-add these two
      * without also restoring their DTO members and their client-side reader.
@@ -282,49 +290,59 @@ public with sharing class LeadSelector {
     }
 
     /**
-     * The `Property_Package__c` one Lead belongs to — the ANCHOR read behind the
-     * `c/packageSiblings` card on the Lead record page.
+     * The `Portfolio_Deal__c` one Lead belongs to — the ANCHOR read behind the
+     * `c/portfolioDealSiblings` card on the Lead record page.
      *
-     * 🔴 IT LIVES HERE, NOT IN `PropertyPackageSelector`, AND THAT IS THE LAYERING RULE
+     * 🔴 IT LIVES HERE, NOT IN `PortfolioDealSelector`, AND THAT IS THE LAYERING RULE
      * RATHER THAN A PREFERENCE. This is a query against LEAD, and
      * .claude/rules/apex-layering-rule.md is explicit that all SOQL for an object lives in
-     * that object's selector and "nothing else queries it". `PropertyPackageSelector` owns
-     * the package-rooted read (which returns both member collections through relationship
-     * subqueries); this owns the Lead-rooted one. `OpportunitySelector
+     * that object's selector and "nothing else queries it". `PortfolioDealSelector` owns
+     * the portfolio-deal-rooted read (which returns both member collections through
+     * relationship subqueries); this owns the Lead-rooted one. `OpportunitySelector
      * .selectPackageAnchorById` is its exact twin — change both or neither.
+     *
+     * ⚠ THE METHOD NAME STILL SAYS "Package" AFTER THE 2026-08-18 RENAME, AND THAT WAS A
+     * DECISION RATHER THAN AN OVERSIGHT. Phase B4 was scoped to repoint this class's
+     * REFERENCES, not to alter its public surface: `DPEG_Admin_Access` and
+     * `DPEG_Acquisition_Edit` both cite `LeadSelector.selectPackageAnchorById` BY NAME as the
+     * standing justification for an FLS grant, and those files belong to a parallel task. The
+     * query below is the authority on what this reads — `Portfolio_Deal__c`. Renaming it is a
+     * clean follow-up once the permission sets land, and must move all four sites together
+     * (here, `OpportunitySelector`, `PortfolioDealController.resolvePortfolioDealId`, and the
+     * permission-set headers).
      *
      * USER_MODE, per the §2 default: this backs a card on a record page the human already
      * opened. It is NOT an automation path and must not be moved to SYSTEM_MODE; the FLS
      * grants are declared in the three Acquisition permission sets.
      *
      * NOT-FOUND CONTRACT — an empty list, never null and never a throw. The controller
-     * treats "no row" and "no package" identically and renders nothing, so a stale Id on a
+     * treats "no row" and "no portfolio deal" identically and renders nothing, so a stale Id on a
      * record page is an ordinary answer rather than an error.
      *
-     * ═══ ⚠ THE PACKAGE'S `Name` IS DELIBERATELY NOT SELECTED HERE (2026-08-17, review W2) ═══
-     * The spanning `Property_Package__r.Name` was in this SELECT and was REMOVED, because the only
-     * consumer — `PropertyPackageController.resolvePackageId` — reads `Property_Package__c` and
-     * nothing else; the card's heading comes from `PropertyPackageSelector.selectWithMembersById`,
-     * which selects `Name` off the package itself one query later. A parent traversal under
+     * ═══ ⚠ THE PORTFOLIO DEAL'S `Name` IS DELIBERATELY NOT SELECTED HERE (2026-08-17, review W2) ═══
+     * The spanning `Portfolio_Deal__r.Name` was in this SELECT and was REMOVED, because the only
+     * consumer — `PortfolioDealController.resolvePortfolioDealId` — reads `Portfolio_Deal__c` and
+     * nothing else; the card's heading comes from `PortfolioDealSelector.selectWithMembersById`,
+     * which selects `Name` off the portfolio deal itself one query later. A parent traversal under
      * `WITH USER_MODE` needs READ on the parent OBJECT as well as FLS on the field, so carrying it
      * here was an extra, unused way for this anchor read to THROW — buying nothing.
      *
      * ⚠ AMENDED 2026-08-17 — THE COMPARISON THIS NOTE DREW IS NOW OBSOLETE, THOUGH THE RULE IS NOT.
      * RETRACTED, verbatim: *"Do not 'restore it for symmetry' with `selectRecent`, which genuinely
      * consumes the spanning field (`LeadFunnelController` maps it onto the funnel's Package column)
-     * and correctly keeps it."* `selectRecent` no longer selects `Property_Package__c` or the spanning
-     * `Property_Package__r.Name` at all — the funnel's Package column was retired the same day in
-     * favour of `c/recentPackages` — so there is no longer a sibling to be asymmetric with. The
+     * and correctly keeps it."* `selectRecent` no longer selects `Portfolio_Deal__c` or the spanning
+     * `Portfolio_Deal__r.Name` at all — the funnel's Package column was retired the same day in
+     * favour of `c/recentPortfolioDeals` — so there is no longer a sibling to be asymmetric with. The
      * prohibition stands on its own merits regardless: an unconsumed spanning field is an extra way
      * for this read to THROW under `WITH USER_MODE`, and the card's heading still comes from
-     * `PropertyPackageSelector.selectWithMembersById` one query later.
+     * `PortfolioDealSelector.selectWithMembersById` one query later.
      *
-     * @param leadId The Lead whose package to resolve; null returns an empty list WITHOUT
+     * @param leadId The Lead whose portfolio deal to resolve; null returns an empty list WITHOUT
      *               querying.
-     * @return At most one Lead (Id, Property_Package__c — the Id only, never the package's
+     * @return At most one Lead (Id, Portfolio_Deal__c — the Id only, never the portfolio deal's
      *         Name); empty when `leadId` is null or matches no row.
      * @throws System.QueryException when the running user lacks FLS on
-     *         `Lead.Property_Package__c`.
+     *         `Lead.Portfolio_Deal__c`.
      * @example
      * List<Lead> rows = LeadSelector.selectPackageAnchorById(recordId);
      */
@@ -333,7 +351,7 @@ public with sharing class LeadSelector {
             return new List<Lead>();
         }
         return [
-            SELECT Id, Property_Package__c
+            SELECT Id, Portfolio_Deal__c
             FROM Lead
             WHERE Id = :leadId
             WITH USER_MODE

@@ -64,14 +64,14 @@
  *           ⚠ STILL NO CLAIM — see routeNoProperty's residual note: these Leads have no
  *           first-broker-wins protection, and a later broker submitting the same property WITH
  *           an address wins it outright.
- *    8b. PROPERTY PACKAGE (2026-08-17, Decision C1) — when the work-list holds TWO OR MORE
- *           properties, ONE Property_Package__c is created HERE, before the loop and outside its
+ *    8b. PORTFOLIO DEAL (2026-08-17, Decision C1) — when the work-list holds TWO OR MORE
+ *           properties, ONE Portfolio_Deal__c is created HERE, before the loop and outside its
  *           per-property try/catch, and every Lead the loop creates is stamped with it AT INSERT.
  *           Single-property emails create NOTHING (Decision E, and the single-property DML budgets
  *           in the test class are its permanent falsifier). It exists because the grouping was
  *           already derived correctly and recorded only as TEXT on this backend staging row, which
  *           the Acquisitions team cannot see — so this is a visibility surface over an existing
- *           derivation, not a new derivation. FAIL-SOFT: a package failure degrades to "no
+ *           derivation, not a new derivation. FAIL-SOFT: a portfolio deal failure degrades to "no
  *           grouping" and is recorded on Error__c; it must never cost the email its claim. See
  *           createPackageIfMultiProperty.
  *
@@ -110,10 +110,10 @@
  *        what makes it, and finish() is now the load-bearing method of that whole branch.
  *    10. Stamp staging: Outcome__c (summary), Result_Record_Id__c (primary),
  *        Routed_Record_Ids__c (all N), Property_Count__c, Processed_DateTime__c.
- *    10b. Copy that same routed audit onto the package's Routed_Outcomes__c (Decision B2), so the
- *        package itself records the properties that went to ANOTHER broker. A no-op — zero DML —
- *        whenever there is no package. 🔴 THIS IS THE SECOND DML ON Property_Package__c AND IT IS
- *        UNAVOIDABLE, NOT AN OVERSIGHT: the audit exists only after the loop while the package Id
+ *    10b. Copy that same routed audit onto the portfolio deal's Routed_Outcomes__c (Decision B2), so the
+ *        portfolio deal itself records the properties that went to ANOTHER broker. A no-op — zero DML —
+ *        whenever there is no portfolio deal. 🔴 THIS IS THE SECOND DML ON Portfolio_Deal__c AND IT IS
+ *        UNAVOIDABLE, NOT AN OVERSIGHT: the audit exists only after the loop while the portfolio deal Id
  *        is needed before it, so no one statement can do both. The alternatives (mixed-type DML,
  *        post-loop insert plus N Lead updates, dropping B2) are enumerated at the call site in
  *        finish().
@@ -265,26 +265,26 @@
  *     A failing query budget still means someone reintroduced a re-read.
  *
  * ═══ 🔴 BUDGET AMENDED 2026-08-17 — MULTI-PROPERTY ONLY: N=10 DML 43 -> 45, N=1 UNCHANGED ═══
- * The property package (step 8b / 10b above) adds TWO DML statements to a MULTI-property email and
+ * The portfolio deal (step 8b / 10b above) adds TWO DML statements to a MULTI-property email and
  * ZERO to every other shape:
  *
- *       N = 10   DML_BUDGET (EQUALITY)          43 -> 45   +1 package insert, +1 audit stamp
+ *       N = 10   DML_BUDGET (EQUALITY)          43 -> 45   +1 portfolio deal insert, +1 audit stamp
  *       N = 10   QUERY_BUDGET (ceiling, 120)    UNCHANGED  the insert is BLIND — zero SOQL
  *       N = 1    singlePropertyDmlBudget (<=20) UNCHANGED  ┐ 🔴 THE PERMANENT FALSIFIER FOR
  *       N = 1    singlePropertyDmlBudget (==7)  UNCHANGED  ┘ DECISION E — DO NOT TOUCH THESE
  *       N = 1    singlePropertyQueryBudget (30) UNCHANGED
  *       call-for-offers CFO_DML_BUDGET (8)      UNCHANGED  the U2 branch creates no Lead, so it
- *                                                          never reaches routeProperties' package
+ *                                                          never reaches routeProperties' portfolio deal
  *
  * ⚠ THE +2 IS A DELIBERATE DEVIATION FROM THE DESIGN'S OWN ARITHMETIC, WHICH PREDICTED 44. That
- * estimate counted the package insert and treated Decision B2's audit copy as free; it is not, for
+ * estimate counted the portfolio deal insert and treated Decision B2's audit copy as free; it is not, for
  * the reason spelled out at the `stampRoutedOutcomes` call in finish() — the audit does not exist
- * until after the loop and the package Id is needed before it, and Apex cannot write two SObject
+ * until after the loop and the portfolio deal Id is needed before it, and Apex cannot write two SObject
  * types in one statement. It is recorded here rather than quietly absorbed, and the ONE-LINE way
  * to get back to 44 (drop the audit stamp, i.e. drop B2) is named at that call site.
  *
  * ⚠ AND THE TWO NEW STATEMENTS ARE CONSTANT IN PROPERTY COUNT — that is the property worth
- * protecting. 2 at N=2 and 2 at N=10. A future change that creates or stamps the package inside
+ * protecting. 2 at N=2 and 2 at N=10. A future change that creates or stamps the portfolio deal inside
  * the loop would make it 2N and would show up HERE, as an equality failure at N=10, which is the
  * whole reason that assertion is an equality rather than a ceiling.
  *
@@ -308,8 +308,8 @@
  * registry/submissions, InboundEmailActivityService for the Task, InboundEmailStagingService
  * for the staging row, InboundEmailAttachmentService for the carrier release,
  * CallForOffersStampService for the Opportunity stamp on the U2 branch — the module's ONLY
- * Opportunity writer; and since 2026-08-17 PropertyPackageService for the multi-property package,
- * the ONLY writer of Property_Package__c). The only external call is via
+ * Opportunity writer; and since 2026-08-17 PortfolioDealService for the multi-property portfolio deal,
+ * the ONLY writer of Portfolio_Deal__c). The only external call is via
  * LLMExtractionCalloutService, the dedicated callout wrapper — this class implements
  * Database.AllowsCallouts so that boundary can run here and be mocked via HttpCalloutMock.
  *
@@ -787,13 +787,13 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     /** Addressable, de-duplicated candidates — the denominator of the truncation suffix. */
     private Integer candidateCount = 0;
     /**
-     * The `Property_Package__c` grouping every record THIS email produces, or null when the email
+     * The `Portfolio_Deal__c` grouping every record THIS email produces, or null when the email
      * named fewer than two routable properties (Decision E — the overwhelmingly common case).
      *
      * ⚠ HELD AS A MEMBER for the same reason `outcomes` and `senderName` are: it is set by
      * routeProperties, read by createLead inside the loop, and read AGAIN by finish() — which is
      * called out of four different branches and cannot be handed a local. It is set ONCE per
-     * execution and never reassigned; a second assignment would mean a second package.
+     * execution and never reassigned; a second assignment would mean a second portfolio deal.
      */
     private Id propertyPackageId;
 
@@ -1270,14 +1270,14 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
 
         Datetime submittedOn = parseSentDatetime(extraction.sentDatetime);
 
-        // 🔴 THE PACKAGE IS CREATED HERE: ONCE, PRE-LOOP, AND OUTSIDE THE PER-PROPERTY
+        // 🔴 THE PORTFOLIO DEAL IS CREATED HERE: ONCE, PRE-LOOP, AND OUTSIDE THE PER-PROPERTY
         // try/catch. All three of those are the design (Decision C1), not incidental placement:
-        //   • ONCE — so N properties share ONE package rather than minting one each.
-        //   • PRE-LOOP — so every Lead the loop creates is stamped with the package AT INSERT.
+        //   • ONCE — so N properties share ONE portfolio deal rather than minting one each.
+        //   • PRE-LOOP — so every Lead the loop creates is stamped with the portfolio deal AT INSERT.
         //     Creating it afterwards would mean re-updating N Leads, i.e. one extra DML per
         //     property instead of one for the whole email.
         //   • OUTSIDE THE ISOLATION CATCH — a per-property failure must not be able to create a
-        //     SECOND package, and it must not orphan the first. The catch below runs per
+        //     SECOND portfolio deal, and it must not orphan the first. The catch below runs per
         //     iteration; anything inside it runs up to N times.
         // It reuses the SAME `submittedOn` the claim path uses (see routeCallForOffers for the
         // identical "one parse, never two independently-derived instants" reasoning) — a second
@@ -1306,7 +1306,7 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
     }
 
     /**
-     * Create the `Property_Package__c` for a MULTI-property email, or return null.
+     * Create the `Portfolio_Deal__c` for a MULTI-property email, or return null.
      *
      * ═══ 🔴 THE GATE IS `workList.size() > 1`, AND THE THREE CANDIDATES ARE NOT INTERCHANGEABLE ═══
      * Decision E. The work-list count is the DE-DUPLICATED, ADDRESSABLE, CAPPED count — i.e. the
@@ -1314,23 +1314,23 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * right beside it in this class are both WRONG for this purpose, and each fails differently:
      *   • `propertyCount` is what the extraction FOUND, pre-de-duplication and pre-truncation. An
      *     email naming one property twice ("1400 Royal Ln" and "1400 Royal Lane") has
-     *     propertyCount 2 and produces ONE Lead — so gating on it would create a package with a
+     *     propertyCount 2 and produces ONE Lead — so gating on it would create a portfolio deal with a
      *     single member on an ordinary single-property email.
      *   • `candidateCount` is de-duplicated but NOT capped. It is the right value to STORE (it is
      *     what the email named, and it is the truncation denominator), which is why it is passed
      *     to the service — but gating on it is gating on properties that may never be routed.
-     * A package must group records that EXIST. That is the whole gate.
+     * A portfolio deal must group records that EXIST. That is the whole gate.
      *
-     * ⚠ SINGLE-PROPERTY EMAILS THEREFORE CREATE ZERO PACKAGES, AND THAT IS PINNED BY A TEST
+     * ⚠ SINGLE-PROPERTY EMAILS THEREFORE CREATE ZERO PORTFOLIO DEALS, AND THAT IS PINNED BY A TEST
      * RATHER THAN BY THIS COMMENT. `ExtractAddressQueueableTest`'s single-property DML budgets
      * (the `<= 20` ceilings and, decisively, the `== 7` EQUALITY assertion) go RED the moment this
      * gate is loosened, which is why those numbers were deliberately left untouched by this
      * change. They are the permanent falsifier for Decision E.
      *
      * ═══ FAIL-SOFT, AND THIS IS THE MOST IMPORTANT LINE IN THE METHOD ═══
-     * 🔴 THIS TRANSACTION OWNS THE LEAD AND THE REGISTRY CLAIM. `PropertyPackageService
+     * 🔴 THIS TRANSACTION OWNS THE LEAD AND THE REGISTRY CLAIM. `PortfolioDealService
      * .createForEmail` is `allOrNone = true` and THROWS — correctly, because a half-existing
-     * package is worse than none — so this method catches, degrades to null, and lets routing
+     * portfolio deal is worse than none — so this method catches, degrades to null, and lets routing
      * continue. Without that catch a failure to create a VISIBILITY AID would destroy a broker's
      * first-come-first-served claim, which is recoverable only by manual registry surgery. That is
      * the 2026-08-06 `ContentPublication` lesson stated in the general form: *a write must never
@@ -1344,15 +1344,15 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
      * looking clean. That is this class's standing partial-success contract (outcomes AND errors
      * are both recorded), and it is the right side to err on: the remedy is a human linking the
      * records by hand, and they cannot do that if nothing tells them to. ⚠ It deliberately does
-     * NOT add a per-property `OUTCOME_ERROR` — the package is an email-level concern, and
+     * NOT add a per-property `OUTCOME_ERROR` — the portfolio deal is an email-level concern, and
      * polluting the per-property outcome labels would corrupt the routed audit and the
      * Outcome__c summary that list views filter on.
      *
      * @param extraction   The email-level extraction; supplies the RESOLVED (post-U1) broker
-     *                     identity, so the package names the same broker the module arbitrated on.
+     *                     identity, so the portfolio deal names the same broker the module arbitrated on.
      * @param routableCount The work-list size — the gate AND the proof that records will exist.
      * @param receivedOn   The parsed send time, shared with the claim path.
-     * @return The new package's Id, or null when the email is single-property or the insert failed.
+     * @return The new portfolio deal's Id, or null when the email is single-property or the insert failed.
      */
     private Id createPackageIfMultiProperty(LLMExtractionResult extraction, Integer routableCount,
                                             Datetime receivedOn) {
@@ -1360,7 +1360,7 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             return null;   // Decision E. The common case, and it costs nothing.
         }
         try {
-            return PropertyPackageService.createForEmail(
+            return PortfolioDealService.createForEmail(
                 staging.Subject__c,
                 candidateCount,          // what the email NAMED (de-duplicated), not what it routed
                 extraction.brokerEmail,  // post-U1: the envelope sender, when U1 applied
@@ -1370,9 +1370,9 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
             );
         } catch (Exception e) {
             String errorText = describeFailure(e);
-            routingErrors.add('property package: ' + errorText);
+            routingErrors.add('portfolio deal: ' + errorText);
             System.debug(LoggingLevel.ERROR,
-                'ExtractAddressQueueable: could not create the Property_Package__c for staging '
+                'ExtractAddressQueueable: could not create the Portfolio_Deal__c for staging '
                 + stagingId + '; routing continues WITHOUT grouping. ' + errorText);
             return null;
         }
@@ -2046,7 +2046,7 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         request.dealSummary = extraction.dealSummary;
         request.extractionNotes = extraction.notes;
         request.parseConfidence = extraction.confidenceBand;
-        // Decision C1 — stamped AT INSERT, so no Lead is ever re-updated for the package. Null on
+        // Decision C1 — stamped AT INSERT, so no Lead is ever re-updated for the portfolio deal. Null on
         // a single-property email and on every branch that reaches createLead without a work-list
         // (branch (c), including the LLM-down path), where assigning null is a no-op.
         request.propertyPackageId = propertyPackageId;
@@ -2174,11 +2174,11 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         // status change is correct rather than incidental.
         InboundEmailStagingService.markRouted(stagingId, buildResult(routingErrorText()));
 
-        // 🔴 THE PACKAGE'S ROUTING AUDIT (Decision B2) — AND THE ONE BUDGET COST THIS FEATURE
+        // 🔴 THE PORTFOLIO DEAL'S ROUTING AUDIT (Decision B2) — AND THE ONE BUDGET COST THIS FEATURE
         // COULD NOT AVOID. FLAGGED, NOT HIDDEN.
         //
         // buildRoutedAudit() is only meaningful AFTER the loop (it is a function of the outcomes),
-        // while the package Id must exist BEFORE it (Decision C1, so each Lead is stamped at
+        // while the portfolio deal Id must exist BEFORE it (Decision C1, so each Lead is stamped at
         // insert). Those two requirements sit on opposite sides of the loop, so no single DML
         // statement can satisfy both, and a multi-property email therefore costs TWO statements
         // on this object — the pre-loop insert and this stamp — not one.
@@ -2187,21 +2187,21 @@ public with sharing class ExtractAddressQueueable implements Queueable, Database
         //   • folding it into markRouted's update — that statement writes
         //     Inbound_Email_Staging__c, and Apex DML cannot operate on two SObject types in one
         //     statement (the reason fflib's Unit of Work issues one statement per type);
-        //   • inserting the package AFTER the loop with the audit already set — one statement, but
+        //   • inserting the portfolio deal AFTER the loop with the audit already set — one statement, but
         //     then the Leads do not exist yet to be stamped, so it costs N Lead updates instead;
         //   • dropping the audit — that is Decision B2, the reason the mixed-outcome case is
-        //     visible at all: `Routed_Outcomes__c` is the only place on the package that records
+        //     visible at all: `Routed_Outcomes__c` is the only place on the portfolio deal that records
         //     the properties which went to ANOTHER broker.
         // Deleting this one line is all it takes to trade B2 back for the lower budget; the
         // N=10 DML budget in ExtractAddressQueueableTest names that trade explicitly.
         //
         // ⚠ IT RUNS AFTER markRouted, AND IT IS FAIL-SOFT INSIDE THE SERVICE — same posture, same
         // reasoning, as the enqueue below it: by this point the email's routing record is durable,
-        // the package exists and every Lead is already linked to it, so the text written here is a
+        // the portfolio deal exists and every Lead is already linked to it, so the text written here is a
         // CONVENIENCE COPY of data that is already permanent on the staging row's
         // Routed_Record_Ids__c. Nothing this line does may cost the email its routing.
-        // Null packageId (every single-property and gated path) is a no-op: zero DML.
-        PropertyPackageService.stampRoutedOutcomes(propertyPackageId, buildRoutedAudit());
+        // Null portfolioDealId (every single-property and gated path) is a no-op: zero DML.
+        PortfolioDealService.stampRoutedOutcomes(propertyPackageId, buildRoutedAudit());
 
         enqueueAttachmentPersist(targets);
     }

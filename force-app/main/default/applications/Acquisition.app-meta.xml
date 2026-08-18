@@ -72,14 +72,30 @@
         <type>Flexipage</type>
         <pageOrSobjectType>NDA__c</pageOrSobjectType>
     </actionOverrides>
+    <!--
+        Phase B5 of the "Property Package -> Portfolio Deal" rename program (2026-08-18).
+        REPLACES, does not supplement, the former override:
+            <comment>Property Package Page</comment>
+            <content>Property_Package_Record_Page</content>
+            <pageOrSobjectType>Property_Package__c</pageOrSobjectType>
+        Both halves of that swap are load-bearing and belong in this one file edit:
+          - the ADD points the new object at its new record page (there is no CustomTab for either
+            object, so this override is the ONLY route to a Portfolio_Deal__c record page);
+          - the REMOVE is what actually makes the old page unreachable, and it is mandatory here
+            rather than optional cleanup: both Property_Package_Record_Page and Property_Package__c
+            are deleted by manifest/portfolio-deal-b5/destructiveChangesPost.xml. An actionOverride
+            naming either one would fail the whole CustomApplication deploy.
+        Ordering is safe because the destructive half runs POST: this app lands first with the
+        reference already gone, then the page and object are deleted.
+    -->
     <actionOverrides>
         <actionName>View</actionName>
-        <comment>Property Package Page</comment>
-        <content>Property_Package_Record_Page</content>
+        <comment>Portfolio Deal Page</comment>
+        <content>Portfolio_Deal_Record_Page</content>
         <formFactor>Large</formFactor>
         <skipRecordTypeSelect>false</skipRecordTypeSelect>
         <type>Flexipage</type>
-        <pageOrSobjectType>Property_Package__c</pageOrSobjectType>
+        <pageOrSobjectType>Portfolio_Deal__c</pageOrSobjectType>
     </actionOverrides>
     <brand>
         <headerColor>#0B5394</headerColor>
