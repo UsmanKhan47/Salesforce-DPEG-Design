@@ -23,10 +23,21 @@
  * break that: the status `lightning-badge` is content this card did not carry before. Four
  * declarations do that work and all four are load-bearing:
  *   1. `min-width: 0` on every flex item that holds text (`.pds-item`, `.pds-body`, `.pds-link`,
- *      `.pds-meta`). A flex item defaults to `min-width: auto` and then REFUSES to shrink below its
- *      longest unbreakable token, so one long property name forces the card wider than its region —
- *      the card gives way, not the text. The load-bearing one is `.pds-body`, the flex child that
- *      holds both the name and the badge row.
+ *      `.pds-meta`, `.pds-object`, `.pds-badge`, `.pds-address`). A flex item defaults to
+ *      `min-width: auto` and then REFUSES to shrink below its longest unbreakable token, so one long
+ *      property name forces the card wider than its region — the card gives way, not the text. The
+ *      load-bearing one is `.pds-body`, the flex child that holds the name, the address and the
+ *      badge row.
+ *      ⚠ THE RULE IS APPLIED UNIFORMLY, BUT IT IS NOT LOAD-BEARING ON EVERY ITEM IN THAT LIST, and
+ *      the difference is worth knowing before anyone "cleans up" a declaration that looks redundant.
+ *      `min-width: auto` is the automatic minimum size of the MAIN axis only. `.pds-body` is a
+ *      COLUMN flex container, so for its children (`.pds-link`, `.pds-address`, `.pds-meta`) the
+ *      main axis is vertical and the automatic minimum is `min-height`, not `min-width` — those
+ *      three are protected instead by `.pds-body`'s OWN `min-width: 0` (it is a row-flex child of
+ *      `.pds-item`) plus rule 2. The declaration is kept on them anyway, deliberately: it is
+ *      harmless, it is what every text-bearing class in this file carries, and a selectively-absent
+ *      `min-width` reads as an oversight to the next editor and invites the opposite mistake — a
+ *      fixed width — which rule 4 forbids.
  *   2. `overflow-wrap: anywhere` on `:host`. `anywhere`, not `break-word`, because only `anywhere`
  *      affects min-content sizing, which is what lets (1) actually take effect. It sits on `:host`
  *      SPECIFICALLY so that — `overflow-wrap` being inherited — it crosses the shadow boundary into
@@ -106,6 +117,22 @@
 .pds-link:hover,
 .pds-line a:hover {
     text-decoration: underline;
+}
+
+/* The property address line (2026-08-19), between the name link and the meta row. Sizing, spacing
+   and colour come entirely from what is already here — `.pds-body`'s column `gap` supplies the
+   spacing, the SLDS utility classes on the element supply the small weak-colour type, and
+   `overflow-wrap: anywhere` is INHERITED from `:host` (rule 2), which is what lets a 255-character
+   Lead address wrap mid-token instead of bursting the ~360px sidebar.
+
+   ⚠ ONE DECLARATION, AND NOTHING MORE BELONGS HERE. No fixed width, no `white-space: nowrap`, no
+   `overflow-x`, no media query (rule 4 forbids all four), no second `overflow-wrap` (rule 2 already
+   covers it by inheritance, and a local copy would invite someone to "move" the :host one), and no
+   truncation / `-webkit-line-clamp` — this bundle's documented discipline is that the card gives
+   way, not the text. See rule 1's note above for why this particular `min-width` is uniformity
+   rather than load-bearing. */
+.pds-address {
+    min-width: 0;
 }
 
 /* The meta row: object label then the neutral status badge, wrapping onto a second line before it

@@ -18,8 +18,8 @@
  * no matter how many members there are.
  *
  * ⚠ TWO METHODS UNDER TEST, AND THEY ARE NOT VARIANTS OF ONE ANOTHER — see the selector's header.
- *   • `selectWithMembersById` — ONE portfolio deal by Id, with member ROWS (name + status) for a list a human
- *     clicks. Backs `c/portfolioDealSiblings`.
+ *   • `selectWithMembersById` — ONE portfolio deal by Id, with member ROWS (name + status + property
+ *     address) for a list a human clicks. Backs `c/portfolioDealSiblings`.
  *   • `selectRecent` — the N NEWEST portfolio deals, with member ID's ONLY, for counts. Backs
  *     `c/recentPortfolioDeals` (added 2026-08-17, design §8).
  * The `selectRecent` methods live in their own section at the foot of this class. Two of them
@@ -121,6 +121,132 @@ private class PortfolioDealSelectorTest {
             Assert.isNotNull(o.StageName,
                 'StageName is the Opportunity\'s state column — the counterpart to Lead.Status');
         }
+    }
+
+    // ── Property_Address__c on both member types (2026-08-19) ───────────────
+
+    /**
+     * A `Property__c` carrying a known `Address__c`, which is the ONLY way to give an Opportunity a
+     * `Property_Address__c`.
+     *
+     * 🔴 `Opportunity.Property_Address__c` IS A READ-ONLY FORMULA (`Property__r.Address__c`), NOT A
+     * STORED FIELD, and that changes the shape of every test that touches it. `opp
+     * .Property_Address__c = '...'` DOES NOT COMPILE — a formula field is not writable — so the
+     * value has to be produced the way production produces it: a real `Property__c` with a real
+     * `Address__c`, and the Opportunity's `Property__c` lookup pointed at it.
+     *
+     * ⚠ `TestDataFactory.createProperties` already sets `Address__c` (`'<i> Test Street'`), but the
+     * address is set EXPLICITLY here anyway: an assertion against a factory default proves the
+     * factory and the selector agree, while an explicit distinctive value proves THIS Property's
+     * address reached THIS Opportunity's row rather than some other one's.
+     *
+     * @param address The address to give the Property.
+     * @return The inserted Property.
+     */
+    private static Property__c insertPropertyWithAddress(String address) {
+        Property__c prop = TestDataFactory.createProperties(1, false)[0];
+        prop.Address__c = address;
+        insert prop;
+        return prop;
+    }
+
+    @isTest
+    static void selectWithMembersById_selectsPropertyAddressOnBothMemberTypes() {
+        // Added 2026-08-19 with the address line on `c/portfolioDealSiblings`'s tiles. Both
+        // subqueries had to grow the field; dropping it from EITHER one does not fail — the tile
+        // silently loses its address line for that member type only, which is precisely the kind of
+        // half-broken state a Lead-only smoke test never notices.
+        Portfolio_Deal__c deal = insertPortfolioDeal('FW: addresses on both sides');
+
+        List<Lead> memberLeads = TestDataFactory.createLeads(1, false);
+        memberLeads[0].Portfolio_Deal__c = deal.Id;
+        memberLeads[0].Property_Address__c = '1002 Multi St, Houston, TX';
+        insert memberLeads;
+
+        Property__c prop = insertPropertyWithAddress('1003 Multi St, Houston, TX');
+        List<Opportunity> memberOpps = TestDataFactory.createOpportunities(1, null, false);
+        memberOpps[0].Portfolio_Deal__c = deal.Id;
+        memberOpps[0].Property__c = prop.Id;
+        insert memberOpps;
+
+        // 🔴 THE TRAP THIS PRECONDITION EXISTS TO DOCUMENT, stated as a measurement rather than a
+        // comment. A formula is computed AT QUERY TIME, so it is absent from the in-memory sObject
+        // even AFTER a successful insert — DML does not return formula fields. An assertion written
+        // against `memberOpps[0].Property_Address__c` would therefore read null and "prove" the
+        // field is broken, or (worse, in the null test below) read null and pass vacuously while
+        // proving nothing at all. The re-query in the selector is what makes the value exist.
+        Assert.isNull(memberOpps[0].Property_Address__c,
+            'Precondition on the PLATFORM, not on this selector: a formula field is not populated on '
+            + 'the in-memory sObject by DML — it is computed when the row is QUERIED. Every '
+            + 'assertion about an Opportunity address must therefore run against a re-queried row. '
+            + 'If this line ever reds, the trap has gone away and the note above can be relaxed');
+
+        Test.startTest();
+        Portfolio_Deal__c loaded = PortfolioDealSelector.selectWithMembersById(deal.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, loaded.Leads__r.size(), 'Precondition: one Lead member');
+        Assert.areEqual(1, loaded.Opportunities__r.size(), 'and one Opportunity member');
+
+        Assert.areEqual('1002 Multi St, Houston, TX', loaded.Leads__r[0].Property_Address__c,
+            'THE LEAD SIDE — a stored, nullable Text field written by the Broker Protection LLM '
+            + 'extraction step. Dropped from the Leads subquery, the tile loses its address line on '
+            + 'every unconverted member');
+        Assert.areEqual('1003 Multi St, Houston, TX', loaded.Opportunities__r[0].Property_Address__c,
+            'THE OPPORTUNITY SIDE — the SAME API name but a completely different kind of field: a '
+            + 'read-only formula resolving Property__r.Address__c. That it arrives through a '
+            + 'relationship subquery, on a formula that itself spans a second relationship, is the '
+            + 'non-obvious part and the reason this is asserted rather than assumed');
+    }
+
+    @isTest
+    static void selectWithMembersById_aBlankPropertyAddressComesBackNullOnBothMemberTypes() {
+        // 🔴 BLANK IS THE NORMAL CASE ON BOTH SIDES, FOR TWO UNRELATED REASONS — and the client
+        // renders no element at all for it, so this is not an error path being tolerated, it is the
+        // path most rows take. The two reasons are worth keeping apart because only one of them is
+        // free to set up:
+        //   • LEAD — `Property_Address__c` is stored Text and is blank whenever the LLM extraction
+        //     found no address. ⚠ IT MUST BE NULLED EXPLICITLY HERE: `TestDataFactory.createLeads`
+        //     ALWAYS populates it, so a fixture that just calls the factory tests the populated
+        //     path while claiming to test the blank one.
+        //   • OPPORTUNITY — the formula is `BlankAsBlank` over `Property__r.Address__c`, so it is
+        //     blank for as long as `Property__c` is unset. That needs no setup at all; simply not
+        //     linking a Property IS the blank case.
+        Portfolio_Deal__c deal = insertPortfolioDeal('FW: no addresses known');
+
+        List<Lead> memberLeads = TestDataFactory.createLeads(1, false);
+        memberLeads[0].Portfolio_Deal__c = deal.Id;
+        memberLeads[0].Property_Address__c = null;
+        insert memberLeads;
+
+        List<Opportunity> memberOpps = TestDataFactory.createOpportunities(1, null, false);
+        memberOpps[0].Portfolio_Deal__c = deal.Id;
+        insert memberOpps;
+
+        Test.startTest();
+        Portfolio_Deal__c loaded = PortfolioDealSelector.selectWithMembersById(deal.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, loaded.Leads__r.size(), 'Precondition: one Lead member');
+        Assert.areEqual(1, loaded.Opportunities__r.size(), 'and one Opportunity member');
+
+        Assert.isNull(loaded.Leads__r[0].Property_Address__c,
+            'A Lead whose extraction found no address comes back with a NULL address — not an empty '
+            + 'string and not a placeholder. The client gates on this value, so anything non-null '
+            + 'here would render an address line containing nothing');
+        Assert.isNull(loaded.Opportunities__r[0].Property_Address__c,
+            'and an Opportunity with no Property__c likewise. `formulaTreatBlanksAs = BlankAsBlank` '
+            + 'is what keeps this null rather than an empty string — if that setting were ever '
+            + 'flipped to BlankAsZero the card would start rendering a blank address line on every '
+            + 'unlinked deal, and this assertion is where that shows up');
+
+        // ⚠ AND THE ROW ITSELF IS OTHERWISE INTACT. A blank address is an absent LINE on the tile,
+        // never an absent ROW — stated here because the two failure modes look identical in a
+        // screenshot and completely different to a user hunting for a sibling record.
+        Assert.isNotNull(loaded.Leads__r[0].Name, 'the Lead member still carries its Name');
+        Assert.isNotNull(loaded.Leads__r[0].Status, 'and its Status');
+        Assert.isNotNull(loaded.Opportunities__r[0].StageName,
+            'and the Opportunity member still carries its StageName');
     }
 
     /**

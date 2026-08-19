@@ -21,11 +21,12 @@
  *
  * ⚠ BOTH METHODS ARE `WITH USER_MODE` AND BOTH ARE PORTFOLIO-DEAL-ROOTED READS WITH CHILD
  * SUBQUERIES, but they are NOT variants of one another and must not be merged into a filtered
- * general method: one fetches ONE portfolio deal BY ID with its member ROWS (name + status, for a
- * list a human clicks), the other fetches the N MOST RECENT portfolio deals with member ID's ONLY,
- * for counts. Collapsing them means the homepage read starts selecting `Lead.Name` /
- * `Lead.Status` / `Opportunity.StageName` it never displays — widening the FLS surface of a read
- * that already governs whether the whole homepage renders (see `selectRecent`'s own note).
+ * general method: one fetches ONE portfolio deal BY ID with its member ROWS (name + status +
+ * property address, for a list a human clicks), the other fetches the N MOST RECENT portfolio
+ * deals with member ID's ONLY, for counts. Collapsing them means the homepage read starts selecting
+ * `Lead.Name` / `Lead.Status` / `Opportunity.StageName` it never displays — widening the FLS
+ * surface of a read that already governs whether the whole homepage renders (see `selectRecent`'s
+ * own note).
  *
  * ═══ 🔴 MODE — `WITH USER_MODE`, DELIBERATELY. DO NOT "CORRECT" THIS TOWARD SYSTEM_MODE. ═══
  * ARCHITECTURE.md §2 carries a long automation-path table of `WITH SYSTEM_MODE` selector methods,
@@ -126,6 +127,46 @@ public with sharing class PortfolioDealSelector {
      *      runs a REAL `Database.convertLead`, because a fixture that builds the Lead and the
      *      Opportunity independently cannot produce this state and so cannot catch a regression)
      *
+     * ═══ 🔴 `Property_Address__c` ON BOTH SUBQUERIES (2026-08-19) — AN FLS CHANGE, NOT A COST ONE ═══
+     * Added so each sibling tile can show the property address under the record-name link. It costs
+     * no extra query, no extra row and no meaningful heap — and that is NOT the risk this addition
+     * carried. `selectRecent` below states the real one in general terms and it applies here in
+     * full: **every field added to a `WITH USER_MODE` SELECT is a field whose FLS can throw and
+     * blank the whole card.** `PortfolioDealController.getSiblingRecords` catches everything and
+     * rethrows a fixed message, so one missing grant renders the red `.lv-error` banner on EVERY
+     * Lead and Opportunity record page that has a portfolio deal.
+     *
+     * ⚠ THE SURFACE WAS ONE FIELD BEFORE THIS AND IS THREE NOW, and the arithmetic is worth keeping
+     * because it is not obvious: `Lead.Name` / `Lead.Status` / `Opportunity.Name` /
+     * `Opportunity.StageName` are STANDARD fields that are always readable, and `Portfolio_Deal__c
+     * .Name` needs no grant either (a custom object's Name field is `permissionable=false`). So
+     * `Portfolio_Deal__c.Property_Count__c` was the ONLY permissionable field in this query, and the
+     * set of permission sets granting it IS the set that can run it — which is how to re-derive the
+     * list below rather than trust it:
+     *   `DPEG_Acquisition_View`, `DPEG_Acquisition_Edit`, `Broker_Protection_Access`,
+     *   `DPEG_Admin_Access`.
+     * Two of the four were missing a new field and were granted it in this same change
+     * (`Broker_Protection_Access` gained `Opportunity.Property_Address__c`; `DPEG_Admin_Access`
+     * gained both). The two real personas were already covered via `DPEG_Principal_PSG` /
+     * `DPEG_Junior_Analyst_PSG`; the gap was in the two directly-assigned sets, and the
+     * `DPEG_Admin_Access` half is the one this repo has paid for before — a Metadata-API-deployed
+     * field arrives with NO FLS for ANY profile, System Administrator included, and `profiles/**`
+     * is force-ignored, so that set is the only thing standing in for the Admin profile.
+     *
+     * ⚠ FLS TRUTH LIVES IN THE ORG, NOT IN THAT LIST. The acceptance check is to open a Lead **as an
+     * administrator** and see the card render — never a green deploy, and never this comment.
+     *
+     * 🔴 AND THE ONE WRONG TURN, NAMED IN ADVANCE: hitting `System.QueryException: No such column
+     * 'Property_Address__c'` is NOT licence to switch this method to `WITH SYSTEM_MODE`. The class
+     * header is an argued ban that pre-rebuts both usual justifications. The fix is a permission
+     * set. Every time.
+     *
+     * ⚠ THE TWO `Property_Address__c` FIELDS ARE NOT THE SAME KIND OF FIELD — `Lead`'s is stored
+     * Text (written by LLM extraction), `Opportunity`'s is a read-only FORMULA on
+     * `Property__r.Address__c` that is blank until `Property__c` is set. Both are legitimately null,
+     * for different reasons, so the client gates on the value rather than assuming presence. The
+     * consequence for tests is recorded on `PortfolioDealController.SiblingRow.propertyAddress`.
+     *
      * NOT-FOUND CONTRACT — returns null rather than throwing, unlike the `selectStageRequiredById`
      * fetch-for-use family. This backs a read-only card whose entire job is to render nothing when
      * there is nothing to render, so "no such portfolio deal" is an ordinary answer, not an error.
@@ -146,10 +187,11 @@ public with sharing class PortfolioDealSelector {
         }
         List<Portfolio_Deal__c> rows = [
             SELECT Id, Name, Property_Count__c,
-                   (SELECT Id, Name, Status FROM Leads__r
+                   (SELECT Id, Name, Status, Property_Address__c FROM Leads__r
                     WHERE IsConverted = false
                     ORDER BY CreatedDate ASC, Id ASC),
-                   (SELECT Id, Name, StageName FROM Opportunities__r ORDER BY CreatedDate ASC, Id ASC)
+                   (SELECT Id, Name, StageName, Property_Address__c FROM Opportunities__r
+                    ORDER BY CreatedDate ASC, Id ASC)
             FROM Portfolio_Deal__c
             WHERE Id = :portfolioDealId
             WITH USER_MODE

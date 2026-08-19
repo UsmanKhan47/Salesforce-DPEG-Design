@@ -112,6 +112,46 @@
                                         onclick={handleSiblingClick}
                                         class="pds-link"
                                     >{row.name}</a>
+                                    <!--
+                                        THE PROPERTY ADDRESS (2026-08-19). Purely ADDITIVE — the
+                                        name link above is untouched and stays the primary
+                                        clickable text; this is a second line so an analyst can
+                                        read the address without opening each sibling.
+
+                                        🔴 THE `if:true` GATE IS THE WHOLE FEATURE, NOT A TIDY-UP.
+                                        `propertyAddress` is legitimately blank on BOTH object
+                                        types for two different reasons (Lead's is nullable
+                                        extraction Text; Opportunity's is a formula through
+                                        `Property__c` that is blank until the lookup is set — see
+                                        `PortfolioDealController.SiblingRow.propertyAddress`). The
+                                        gate means a blank address renders NO ELEMENT AT ALL —
+                                        not an empty line, and not the literal text "null". An
+                                        ungated `{row.propertyAddress}` would leave a ragged blank
+                                        row on every tile whose address is unset, which on this
+                                        card is a large share of them.
+
+                                        ⚠ `if:true` rather than `lwc:if` for consistency with the
+                                        other four directives in this file. `lwc:if` is the modern
+                                        form; converting the whole bundle is a separate change.
+
+                                        🔴 AND NO `title={row.propertyAddress}` HERE OR ON `.pds-item`
+                                        — NOT EVEN "for a tooltip on a long address". A getter or
+                                        member bound to an attribute is written UNCONDITIONALLY, so
+                                        a null address renders a literal `title="undefined"` into
+                                        the DOM. This element is gated, so it is safe; an ungated
+                                        ancestor would not be.
+
+                                        ORDER: name (primary, clickable) -> address (the new
+                                        at-a-glance datum, subordinate to the name) -> object label
+                                        + status badge (metadata). Top-down by importance, and it
+                                        leaves the badge row last, where the existing wrap handling
+                                        already lives.
+                                    -->
+                                    <template if:true={row.propertyAddress}>
+                                        <span
+                                            class="slds-text-body_small slds-text-color_weak pds-address"
+                                        >{row.propertyAddress}</span>
+                                    </template>
                                     <span class="slds-text-body_small slds-text-color_weak pds-meta">
                                         <span class="pds-object">{row.objectLabel}</span>
                                         <!--

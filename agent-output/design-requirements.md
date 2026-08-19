@@ -1,145 +1,310 @@
-# DESIGN REQUIREMENTS — portfolioDealSiblings card-tile redesign
+# DESIGN REQUIREMENTS — `Property_Address__c` on the `portfolioDealSiblings` tiles
 
 Date: 2026-08-19
-Scope: visual redesign of `c/portfolioDealSiblings` only. LWC-only, no Apex.
+Scope: additive display field on `c/portfolioDealSiblings`. Touches Apex (selector + controller DTO),
+LWC markup/CSS, Apex tests, Jest.
+
+> Supersedes the previous contents of this file (the 2026-08-19 card-tile redesign, now deployed).
+> That design's binding decisions — D1-a "`objectLabel` stays as visible text" and D2-a "icon maps
+> from `objectLabel` with a generic default" — are permanently recorded in
+> `portfolioDealSiblings.js` (header lines 117-162) and are treated as constraints below, not as
+> history to re-open.
 
 ---
 
 ## 0. PREMISES CHECKED AGAINST THE REPO
 
-Verified before designing (the brief's detail is treated as hypothesis, not findings).
+The brief's five verified facts were re-measured. **All five are correct as stated.**
 
-### Confirmed as stated
-
-| Premise | Evidence |
+| Brief's claim | Verified |
 |---|---|
-| Card is `<lightning-card icon-name="standard:related_list">` with a "From one broker email: `<a>`" line, then a `<ul>` of rows | `portfolioDealSiblings.html` lines 8, 32-39, 48-62 |
-| Classes `.pds-list` / `.pds-item` / `.pds-link` / `.pds-meta` / `.pds-line` | all five in `portfolioDealSiblings.css`; **17 occurrences across exactly 3 files** (html, css, test) — bundle-local, zero external consumers |
-| Row meta text is `{row.objectLabel} · {row.status}` | `.html` line 57-59 |
-| Placed on both `Lead_Record_Page` and `Opportunity_Record_Page` | `Lead_Record_Page` line 814, `Opportunity_Record_Page` line 1823 |
-| Region is `sidebar` on both | Lead: region block 805-844, `<name>sidebar</name>` at 842. Opportunity: `<name>sidebar</name>` at 1841 |
-| One bundle serves both pages; never split | `.js` header lines 9-21 |
-| `SiblingRow.status` is raw `Lead.Status` / `Opportunity.StageName` | `PortfolioDealController.buildSiblings` lines 335-345; DTO comment line 415 |
-| Empty / loading / error behaviour is deliberate | `.js` header lines 45-59; `.html` lines 2-6 |
+| `Lead.Property_Address__c` is plain Text, nullable | ✅ `Lead/fields/Property_Address__c.field-meta.xml` — `<type>Text</type>`, `<length>255</length>`, `<required>false</required>` |
+| `Opportunity.Property_Address__c` is a read-only formula on `Property__r.Address__c`, blank when `Property__c` is empty | ✅ `Opportunity/fields/Property_Address__c.field-meta.xml` — `<formula>Property__r.Address__c</formula>`, `<formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>`. `Opportunity.Property__c` exists. |
+| Data flow selector → `buildSiblings()` → `SiblingRow` → `rows` getter → HTML | ✅ `PortfolioDealSelector.selectWithMembersById` (lines 143-159) → `PortfolioDealController.buildSiblings` (329-349) → `SiblingRow` (410-425) → `portfolioDealSiblings.js` `rows` (271-276) → `.html` (89-134) |
+| `Property_Address__c` is in neither subquery nor the DTO | ✅ Subqueries select `Id, Name, Status` and `Id, Name, StageName` only (lines 149-152); `SiblingRow` has `id / name / objectLabel / recordUrl / status` only |
+| Requires extending SOQL and DTO, not just the LWC | ✅ Confirmed — with one refinement below (F3: **no `.js` change is needed**) |
 
-### Contradicted or materially incomplete — read these before approving
+### Findings the brief did not have — read F1 before approving
 
-**C1 — "The redesign will change the DOM structure (no more `<ul>/<li>`)." It should not, and does not need to.**
-There is an in-repo precedent for this exact request: `c/competingBrokerSubmissions` sits in the **same `sidebar` region of the same `Lead_Record_Page`, one item above this component** (line 808 vs 814). It renders bordered card-tiles with a head row of heading + `lightning-badge` — and it **keeps `<ul>`/`<li>`**, styling the `<li>` as the tile (`.cbs-list` / `.cbs-tile`, css lines 45-60). Its own header records that it moved *to* `<ul>/<li>` *from* a `<table>` precisely to keep list semantics and stop sidebar overflow. Our component's markup carries the matching note: *"a semantic list is what a screen reader announces usefully here"* (`.html` lines 43-47).
-**Consequence:** card-tile appearance is a CSS concern. Dropping `<ul>/<li>` would be an unforced accessibility regression against two documented decisions, and would churn the Jest suite far more than necessary. Recommendation below keeps the list and keeps `.pds-link`, so most existing test selectors survive.
+**F1 — 🔴 THIS IS AN FLS CHANGE, NOT A GOVERNOR-LIMIT QUESTION, AND IT BREAKS THE CARD FOR TWO PERSONAS AS WRITTEN.**
 
-**C2 — "no hardcoded colors" is not quite the house convention; the convention is token *with* a literal fallback.**
-Both this bundle (`var(--slds-g-color-brand-base-50, #0176d3)`, css line 36) and `competingBrokerSubmissions` (`var(--slds-g-color-border-base-1, #e5e5e5)`, css line 57) deliberately pair every `--slds-g-*` token with a hex fallback, and this bundle's css header states why: *"with a plain fallback for each so the card still reads correctly if a token is unavailable."* The rule is "no hardcoded **brand** colours as the value", not "no hex anywhere". The developer must follow the existing pattern; a reviewer should not strip the fallbacks.
+The brief asks to "confirm this doesn't push the query over any documented governor concern." It does
+not: one extra Text field per child row adds no query, no row and no meaningful heap. **But the
+concern this selector actually documents is a different one, and this change walks straight into it.**
+`PortfolioDealSelector` warns at `selectRecent` (lines 198-201):
 
-**C3 — `objectLabel` is not a stable literal. It is a describe-derived, admin-renameable, translated label.**
-`PortfolioDealController` lines 355-356:
-```apex
-private static final String LEAD_LABEL = Lead.SObjectType.getDescribe().getLabel();
-private static final String OPPORTUNITY_LABEL = Opportunity.SObjectType.getDescribe().getLabel();
-```
-with the stated intent *"so the card says whatever the org calls them rather than a hardcoded English string"* (line 353-354).
-Two consequences the brief does not account for:
-- a client-side `objectLabel === 'Lead'` comparison **silently stops matching** if an admin renames the Lead tab label or a user runs a translated locale;
-- the Jest fixtures hardcode `objectLabel: 'Lead'` / `'Opportunity'` (test lines 85, 93), so **the suite stays green while the icon is wrong in the org** — the exact failure mode this bundle's headers warn about three separate times (`.js` lines 140-148, test lines 68-74).
-This does not veto the user's approved approach, but it makes a **generic default icon mandatory** rather than optional (see D2).
+> *"MEMBER `Id` ONLY, NEVER `Name` / `Status` / `StageName`. The widget shows COUNTS, not rows, and
+> this query is `WITH USER_MODE`: **every field added here becomes a field whose FLS can throw and
+> blank the whole card.** Selecting a name 'in case the widget wants it later' is how a homepage
+> acquires a new single point of failure for free."*
 
-**C4 — Replacing the "objectLabel · status" text with icon + badge deletes `objectLabel` from the accessible name and from plain reading.**
-An icon conveys object type to a sighted user who knows the iconography, and to nobody else. There is an existing test whose stated purpose is exactly this: *"A Lead row and an Opportunity row must be distinguishable to a human WITHOUT the client knowing either object exists"*, asserting `.pds-meta` contains `Lead` / `Opportunity` (test lines 193-208). Losing that text also wastes the server-side describe in C3. **This needs a decision (D1) — it is the one part of the request that is not purely cosmetic.**
+`selectWithMembersById` is `WITH USER_MODE` (line 155) and its own `@throws` says so (lines 137-139).
+`USER_MODE` throws; it does not degrade. `PortfolioDealController.getSiblingRecords` catches
+everything (line 228) and rethrows `READ_FAILURE_MESSAGE`, so the LWC renders its **red `.lv-error`
+banner** — on every Lead and Opportunity record page that has a portfolio deal.
 
-**C5 — The `sidebar` region is ~360px, and the status badge is new unbreakable content.**
-`competingBrokerSubmissions.css` lines 41-43 record the constraint: *"the same viewport yields a ~360px record-page sidebar or a ~900px main region"*, so container width — not viewport — is the constraint and media queries are the wrong tool. Our current CSS already fights this with `min-width: 0`, `overflow-wrap: anywhere`, `flex-wrap: wrap` (css lines 18-51). A status pill carrying a long stage value is a new overflow risk that today's plain text does not have.
-Also noted in that CSS: *"jsdom performs no layout, so a Jest test CANNOT observe overflow... verified by eye in the org, not by the suite."* This redesign therefore needs a **manual visual check in the org** as an explicit acceptance step.
+Today the query's only permissionable custom field is `Portfolio_Deal__c.Property_Count__c`
+(`Portfolio_Deal__c.Name` needs no grant — custom Name fields are `permissionable=false`, stated in
+three permission-set headers). `Lead.Status`, `Opportunity.StageName` and `Lead.Name` are standard
+fields that are always readable. So **four** permission sets can run this query today. Cross-referencing
+that against who holds the two new fields:
 
-**C6 — `<ul class="slds-has-dividers_bottom-space pds-list">` must lose the divider class.**
-Bordered tiles plus SLDS bottom dividers renders a double rule between rows.
+| Permission set | `Portfolio_Deal__c.Property_Count__c` (runs the query today) | `Lead.Property_Address__c` | `Opportunity.Property_Address__c` | Result after this change |
+|---|---|---|---|---|
+| `DPEG_Acquisition_View` | ✅ (1702) | ✅ (546) | ✅ (1242) | ✅ safe |
+| `DPEG_Acquisition_Edit` | ✅ (1291) | ✅ (731) | ✅ (1196) | ✅ safe |
+| `Broker_Protection_Access` | ✅ (587) | ✅ (398) | ❌ **absent** | 🔴 **breaks** |
+| `DPEG_Admin_Access` | ✅ (408) | ❌ **absent** | ❌ **absent** | 🔴 **breaks** |
+
+Both real personas are covered — `DPEG_Principal_PSG` includes `DPEG_Acquisition_View` (line 21) and
+`DPEG_Junior_Analyst_PSG` includes `DPEG_Acquisition_Edit` (line 39). Neither `DPEG_Admin_Access` nor
+`Broker_Protection_Access` belongs to any permission set group; both are assigned directly.
+
+The `DPEG_Admin_Access` case is the one this repo has paid for before — its own header (lines 10-14)
+says it outright: *"Metadata-API-deployed custom fields arrive with NO field permissions for ANY
+profile, System Administrator included — a trap this repo has already paid for … where a bare admin
+threw on the very field they had just deployed."* `profiles/**` is `.forceignore`d, so `DPEG_Admin_Access`
+is the only thing standing in for the Admin profile. **A System Administrator would open a Lead and see
+a red error where a working card used to be.** This is a decision the user has to make (D1) because it
+is admin work and a privilege change, neither of which was requested.
+
+**F2 — the Opportunity field is a FORMULA, which changes how the Apex tests must be written.** Three
+consequences the test brief has to carry, or the unit-testing agent will hit them one at a time:
+1. `opp.Property_Address__c = '...'` **does not compile** — a formula field is not writable. The test
+   must create a `Property__c` (`TestDataFactory.createProperties` already sets `Address__c`, line 1158)
+   and set `Opportunity.Property__c` to it. `TestDataFactory.createOpportunities` has no `Property__c`
+   overload (lines 649, 671), so the lookup is set inline in the test.
+2. **The value only exists after a re-query.** Formula fields are computed at query time, so the
+   in-memory `Opportunity` returned by the factory has `Property_Address__c == null` no matter what.
+   An assertion against the pre-insert sObject is vacuously wrong.
+3. **The Opportunity null case is free and the Lead null case is not.** An Opportunity with no
+   `Property__c` yields a blank formula automatically; `TestDataFactory.createLeads` *always* populates
+   `Property_Address__c` (line 616), so a Lead null case must null it explicitly.
+
+**F3 — no `portfolioDealSiblings.js` change is required, and that is by design.** The brief lists the
+LWC as one change; it is really two files, not three. The `rows` getter already spreads the row
+(lines 271-276) and its own comment states the reason (269-270): *"The spread keeps this
+forward-compatible: a field added to the Apex DTO reaches the template without an edit here."* This
+change is the first exercise of that property. Adding a `propertyAddress` passthrough to the getter
+would be redundant code that the header explicitly anticipated not needing.
+
+**F4 — this is genuinely additive, so unlike the last round there is no accessibility decision hiding
+in it.** The previous design's C4/D1 problem was that icon+badge *deleted* `objectLabel` from the
+accessible name. Nothing is removed here: the name link, `objectLabel` and the status badge all stay
+exactly as they are. The existing test asserting Lead/Opportunity rows stay distinguishable is
+unaffected. Flagged so review does not go looking for a deletion that is not there.
+
+**F5 — pre-existing, explicitly OUT OF SCOPE: `DPEG_Opportunity_View` grants
+`Opportunity.Property_Address__c` (line 355) but not `Portfolio_Deal__c.Property_Count__c`,** so a
+holder of only that set already cannot run this query and already sees the error banner. That is not
+caused by this change and must not be "fixed" inside it. Noted only so nobody attributes it to this work.
+
+**F6 — no new data disclosure.** `Opportunity.Property_Address__c` is a cross-object formula, and
+cross-object formulas are evaluated without the running user's sharing on `Property__c` (which is
+Private OWD). That sounds like a new leak but is not: the address is already on the Opportunity's own
+compact layout (`Deal_Highlights`) and record page, and this card only ever shows rows for
+Opportunities the user can already see and click into. The tile surfaces nothing a single click did
+not already surface.
 
 ---
 
-## 1. BLOCKING DECISIONS
+## 1. BLOCKING DECISION
 
-These change the deliverable. Please answer D1 and D2; D3/D4 default to "not included."
+One question. Everything else in the brief is specified.
 
-**D1 — What happens to `objectLabel`?** (see C4)
-- **D1-a (recommended):** keep `objectLabel` as short visible text in the tile, move only `status` into the neutral badge. Icon is decorative. Every existing tested fact stays true; the change is genuinely "visual polish only."
-- **D1-b (as literally briefed):** icon replaces the `objectLabel` text entirely. Requires giving the icon `alternative-text={row.objectLabel}` so screen readers still get it, and accepts that sighted users read object type from iconography alone. The existing `.pds-meta` label test must be rewritten to assert the icon's alt text instead.
+**D1 — Do the two FLS gaps in F1 get closed, and is `Broker_Protection_Access` allowed to read an
+Opportunity field?**
 
-**D2 — How is the icon chosen?** (see C3)
-- **D2-a (recommended):** map `objectLabel` → icon with a **generic default** for any unrecognised label (`standard:lead`, `standard:opportunity`, else `standard:record`). The default is what preserves the documented "a third object can be added with **zero** client changes" property — the `Transaction__c` precedent in `.js` lines 16-18 and `PortfolioDealController` lines 76-81. Without a default, adding a third object or renaming a label yields a broken/blank icon.
-- **D2-b (simplest):** one generic icon on every row, no branching at all. Fully object-agnostic, zero fragility, but rows are visually undifferentiated.
+- **D1-a (recommended): grant both fields in `DPEG_Admin_Access`, and grant
+  `Opportunity.Property_Address__c` in `Broker_Protection_Access`.** Four `<fieldPermissions>` blocks
+  total, all `readable=true` / `editable=false` (both fields are read-only in this context, and the
+  Opportunity one is a formula and *cannot* be editable). Restores parity: every persona that can see
+  the card today still sees it.
+- **D1-b: grant in `DPEG_Admin_Access` only.** Accepts that `Broker_Protection_Access`-only holders
+  lose the card entirely. Choose this only if that set is deliberately Lead-scoped and no human is
+  assigned it alone.
+- **D1-c: ship no permission-set change.** The card breaks for administrators. Not recommended, and
+  it would land as a production defect rather than a known trade-off.
 
-**D3 — `role="list"` + `aria-label` on the `<ul>`?** NOT included by default (not requested). Flagged because the neighbouring card documents that `list-style: none` makes WebKit drop the implicit `list` role, and *"axe has no rule for it, so the toBeAccessible() test passing is not evidence against it"* (`competingBrokerSubmissions.html` lines 26-33). Our `.pds-list` already sets `list-style: none` today, so omitting this is parity with current behaviour, not a regression.
+⚠ **Whichever is chosen, two constraints are non-negotiable on the permission-set edit** (both are
+written into `DPEG_Admin_Access`'s own header, lines 38-48):
+- **A `PermissionSet` deploy REPLACES that file's entire `<fieldPermissions>` set.** The edit must be a
+  surgical insertion diffed against `HEAD`, never a regeneration, or unrelated org-side grants are
+  silently wiped.
+- **FLS truth lives in the org, not this repo** (`profiles/**` is force-ignored). The post-deploy check
+  is to open a Lead *as an administrator* and confirm the card renders — not to trust a green deploy.
 
-**D4 — CSS source-text anti-regression test?** NOT included by default (not requested). Flagged because `competingBrokerSubmissions.test.js` (lines 33-47, T2) reads its own `.css` with comments stripped and asserts no `nowrap` / `overflow-x` / fixed widths — the established answer to "jsdom cannot measure layout" (C5).
+🔴 **And one trap to name up front, because it is the likely wrong turn:** a developer or test author
+who hits `System.QueryException: No such column 'Property_Address__c'` will be tempted to switch
+`selectWithMembersById` to `WITH SYSTEM_MODE`. **That is forbidden here.** The selector's class header
+(lines 30-47) is an explicit, argued ban — *"MODE — `WITH USER_MODE`, DELIBERATELY. DO NOT 'CORRECT'
+THIS TOWARD SYSTEM_MODE"* — and it pre-rebuts both of the usual justifications for this exact path.
+The correct fix for that exception is a permission set. Every time.
 
 ---
 
 ## 2. WHAT THE USER REQUESTED
 
-Convert each sibling row in `c/portfolioDealSiblings` from a plain text line into a compact bordered card-tile containing an icon, the record name link, and a **neutral** status badge replacing the current plain `objectLabel · status` text. Visual only — no data or behaviour change, no Apex change.
+Show `Property_Address__c` as additional visible text on each sibling tile in
+`c/portfolioDealSiblings`, alongside the existing record-name link. Purely additive — the name link is
+unchanged and stays the primary clickable text — so an analyst can read the property address without
+opening each sibling record. Requires extending the SOQL subqueries and the `SiblingRow` DTO, plus
+Apex test and Jest coverage including the null case.
 
 ---
 
 ## 3. ADMIN WORK (salesforce-admin)
 
-No admin work required for this request. No metadata objects, fields, permission sets, or flexipage changes — placement and region are unchanged on both record pages.
+**Conditional on D1.** No new fields, objects, layouts or flexipages — both fields already exist.
+
+- **If D1-a:** add to `DPEG_Admin_Access` — `Lead.Property_Address__c` and
+  `Opportunity.Property_Address__c`, both `readable=true` / `editable=false`. Add to
+  `Broker_Protection_Access` — `Opportunity.Property_Address__c`, `readable=true` / `editable=false`.
+  Record the reason in each file's in-root XML comment (the established pattern in both files), citing
+  `PortfolioDealSelector.selectWithMembersById` as the consumer — five permission-set headers already
+  cite selector methods by name for exactly this purpose.
+- **If D1-b:** the `DPEG_Admin_Access` half only.
+- **If D1-c:** no admin work.
+
+⚠ Surgical insertion, diffed against `HEAD`. See the two constraints under D1.
 
 ---
 
 ## 4. DEVELOPMENT WORK (salesforce-developer)
 
-Standard LWC work. Not integration, not performance-critical → `salesforce-developer`, not `salesforce-technical-architect`.
+Small, well-bounded change across four files. Not integration, not LDV, not architectural →
+`salesforce-developer`, not `salesforce-technical-architect`.
 
-- **`portfolioDealSiblings.html`** — restructure the sibling row into a tile: decorative `lightning-icon`, the existing `.pds-link` anchor, and a `lightning-badge` carrying `row.status`. Keep `<ul>`/`<li>` (C1). Drop `slds-has-dividers_bottom-space` (C6). Preserve unchanged: the `if:true={isVisible}` gate, the card title `Portfolio Deal ({count})`, the `hasError` branch with `.lv-error` + `role="alert"`, the "From one broker email:" `.pds-line` heading with the server-built `dealUrl`, and the R6 "No other records were created from this email." branch.
-- **`portfolioDealSiblings.css`** — tile styling on `.pds-item` (border, radius, padding) using `var(--slds-g-*, fallback)` per C2, mirroring `.cbs-tile`. Keep `min-width: 0` and `overflow-wrap: anywhere`; keep `flex-wrap: wrap` so the badge wraps below the name rather than widening the tile; add wrap handling for the badge (C5). No `nowrap`, no `overflow-x`, no fixed pixel widths, no media queries.
-- **`portfolioDealSiblings.js`** — add only the per-row display derivation needed for D1/D2 (a mapped getter over `siblings`; the wire handler's assignments stay as they are). **Do not** add a schema import, do not branch on `objectApiName`, do not compose a URL, do not add a spinner or an `isLoaded` gate.
-- **Header comments** — record this redesign and the D1/D2 rationale in the `.js` class header and the `.css` header. This codebase treats headers as authoritative decision history, and the icon-mapping fragility in C3 is exactly the kind of fact that must be written down where the next editor will hit it.
-- **`__tests__/portfolioDealSiblings.test.js`** — update in the same change (not a separate step): the `.pds-meta` label/status assertions become badge (and, per D1, icon) assertions; add a case proving an **unrecognised `objectLabel` falls back to the generic icon** (this is the C3 falsifier and the one new test that earns its place); keep both `toBeAccessible()` tests; keep the "renders nothing" test first and untouched — its own header calls it the most important test in the file.
+- **`PortfolioDealSelector.cls`** — add `Property_Address__c` to both subquery SELECT lists in
+  `selectWithMembersById` (lines 149-152). `WITH USER_MODE` stays (see the ban above). `selectRecent`
+  is **not** touched — its header forbids selecting member display fields, and this feature has no use
+  for them there. Extend the method's Javadoc to record that the FLS surface of this query grew by two
+  fields and which permission sets carry them.
+- **`PortfolioDealController.cls`** — add `@AuraEnabled public String propertyAddress;` to `SiblingRow`,
+  add the constructor parameter, and pass `l.Property_Address__c` / `o.Property_Address__c` from
+  `buildSiblings` (lines 335-336, 343-344). Document on the DTO member that the two sides are **not the
+  same kind of field** — Lead's is stored Text from LLM extraction, Opportunity's is a formula through
+  `Property__c` that is blank until the lookup is set — because that asymmetry is what makes "null is
+  normal" true on both objects for different reasons.
+- **`portfolioDealSiblings.html`** — insert one gated element inside `.pds-body`, **between** the
+  `.pds-link` anchor and the `.pds-meta` span:
 
-**Explicitly out of scope:** `PortfolioDealController.cls`, `PortfolioDealSelector.cls`, any Apex or Apex test; the `c/recentPortfolioDeals` bundle; `Lead_Record_Page` / `Opportunity_Record_Page`; the bundle's `masterLabel` and `<description>` in `.js-meta.xml`.
+  ```html
+  <template if:true={row.propertyAddress}>
+      <span class="slds-text-body_small slds-text-color_weak pds-address">{row.propertyAddress}</span>
+  </template>
+  ```
 
-**Two traps worth naming to the developer:**
-1. Do not edit the `.js-meta.xml` `<description>` — it is ~210 chars against a **255-char cap that only a deploy catches** (Jest, the SLDS linter and code review all pass a 258-char one).
-2. `.pds-*` classes are bundle-local (css header lines 4-9). `.lv-error` is the one genuinely cross-bundle class in this file — do not rename or restyle it.
+  The `if:true` gate is what satisfies "no empty line, no `null` text" — a null, undefined or empty
+  address renders no element at all, not an empty one. Use `if:true` for consistency with the rest of
+  this file (`lwc:if` is the modern form, but converting the bundle's other four directives is out of
+  scope). **Order rationale:** name (primary, clickable) → address (the new at-a-glance datum,
+  subordinate to the name) → `objectLabel` + status badge (metadata). Top-down by importance, and it
+  leaves the badge row last, which is where the existing wrap handling already lives.
+- **`portfolioDealSiblings.css`** — `.pds-address { min-width: 0; }` and nothing more. `.pds-body` is
+  already `flex-direction: column` with a `gap` (lines 89-95), so a third child stacks with correct
+  spacing for free, and `overflow-wrap: anywhere` is inherited from `:host` (rule 2, lines 30-35). **Do
+  not add** a fixed width, `nowrap`, `overflow-x`, a media query, or a new `overflow-wrap` declaration —
+  all four are named as forbidden in that file's header, and `min-width: 0` on the new flex text child
+  is precisely rule 1. Add the new class to the header's rule-1 list of flex items that hold text.
+- **`portfolioDealSiblings.js`** — **no change.** See F3.
+- **Headers** — record the addition and the F1 FLS consequence in the `.js` class header and the
+  selector's method Javadoc. This repo treats headers as authoritative decision history, and "adding a
+  field to this query can break the card for a persona" is exactly the fact the next editor needs.
+
+**Two traps to name to the developer:**
+1. **Do not add `title={row.propertyAddress}`** (or any getter-bound attribute) to an ungated element.
+   A getter bound to a custom element's attribute is written *unconditionally*, so a null address
+   renders a literal `title="undefined"` in the DOM. Gating with `if:true` as specified avoids it; a
+   "helpful" tooltip added later on `.pds-item` would reintroduce it.
+2. **Do not edit `.js-meta.xml`** — its `<description>` is ~210 chars against a **255-char cap that
+   only a deploy catches** (Jest, the SLDS linter and code review all pass a 258-char one).
+
+**Explicitly out of scope:** the name/link text (`row.name` stays the primary clickable text,
+untouched); the fallback chain to `Property_Name__c` / `Property__r.Name` (the user simplified the ask
+to this one field); `Lead_Record_Page.flexipage-meta.xml`; `Opportunity_Record_Page.flexipage-meta.xml`;
+`c/recentPortfolioDeals`; `PortfolioDealSelector.selectRecent`; the `RecentPortfolioDealRow` DTO; the
+`.js-meta.xml` `masterLabel` and `<description>`.
 
 ---
 
-## 5. EXECUTION ORDER
+## 5. TEST WORK (salesforce-unit-testing, after the developer)
 
-1. **D1 + D2 answered** — the markup and the test list both depend on them.
-2. `salesforce-developer` — HTML + CSS + JS + Jest, one change.
-3. `salesforce-code-review` — required for LWC per the routing table.
-4. `salesforce-devops` + `salesforce-documentation` in parallel, after review passes.
-
-No unit-testing agent step: no Apex is created or changed, and the Jest updates are in the developer's scope.
-
-**Acceptance beyond a green suite:** open a Lead and an Opportunity that belong to a multi-property portfolio deal and confirm no horizontal scroll in the ~360px sidebar with a long property name and a long stage value. jsdom cannot observe this (C5).
-
----
-
-## 6. PROMPT FOR salesforce-developer
-
-> Redesign the sibling rows in `force-app/main/default/lwc/portfolioDealSiblings/` from plain text lines into compact bordered card-tiles. Visual polish only — no data or behaviour change, and **no Apex change**.
->
-> Read first, and treat their header comments as binding: the bundle's four files, its `__tests__/portfolioDealSiblings.test.js`, `force-app/main/default/classes/PortfolioDealController.cls`, and `force-app/main/default/lwc/competingBrokerSubmissions/` (html + css + test) — that last one is the in-repo precedent for this exact pattern and sits in the same `sidebar` region of the same Lead record page.
->
-> Each row becomes a tile with: a decorative `lightning-icon`, the existing `.pds-link` record-name anchor, and a `lightning-badge` carrying `row.status`.
->
-> - **Badge is ONE neutral treatment for every row.** No colour-coding by outcome. `status` is raw `Lead.Status` / `Opportunity.StageName` (`PortfolioDealController` DTO line 415), the values are admin-editable, and the client is deliberately blind to which object a row is — any string-keyed colour map would be both fragile and a breach of that design.
-> - **Icon:** [D2 answer inserted here]. If a mapping is used it must key off `row.objectLabel` only, with a generic default for any unrecognised value. Never import object schema, never branch on `objectApiName`.
-> - **`objectLabel` handling:** [D1 answer inserted here].
-> - **Keep `<ul>`/`<li>`** — style the `<li>` as the tile, as `.cbs-tile` does. Remove `slds-has-dividers_bottom-space` from the `<ul>` (borders + dividers double up).
-> - **CSS:** `var(--slds-g-*, <fallback>)` throughout, matching the existing file and `.cbs-tile`. Keep `min-width: 0`, `overflow-wrap: anywhere`, `flex-wrap: wrap`; make sure a long status value in the badge cannot burst the ~360px sidebar. No `nowrap`, no `overflow-x`, no fixed pixel widths, no media queries (the constraint is container width, not viewport).
-> - **Unchanged:** the `isVisible` gate (no card at all when there is no portfolio deal), no spinner and no `isLoaded` gate, the `Portfolio Deal ({count})` title, the `.lv-error` + `role="alert"` error branch, the `.pds-line` deal heading with the server-built `dealUrl`, and the R6 "No other records were created from this email." branch. All are deliberate and documented in the bundle's headers.
-> - **Do not** touch `PortfolioDealController.cls`, `PortfolioDealSelector.cls`, any Apex test, the `c/recentPortfolioDeals` bundle, either flexipage, or the `.js-meta.xml` `masterLabel` / `<description>` (that description is ~210 chars against a 255-char cap that only a deploy catches).
-> - Record the redesign and the icon-fallback rationale in the `.js` and `.css` header comments — this repo's headers are the authoritative decision history.
->
-> **Update the Jest suite in this same change.** Rework the `.pds-meta` assertions into badge (and icon, per D1) assertions; add a test proving an **unrecognised `objectLabel` falls back to the generic icon** — the fixtures hardcode `'Lead'`/`'Opportunity'`, but Apex supplies `getDescribe().getLabel()`, which is admin-renameable and translated, so without that test a renamed org breaks the icons while the suite stays green. Keep both `toBeAccessible()` tests and leave the "renders nothing" test first and untouched. Run the SLDS linter and Jest before handing off. Do not deploy.
+- **`PortfolioDealSelectorTest`** — assert `Property_Address__c` comes back populated on a Lead member
+  and on an Opportunity member, and blank on each when unset. **Per F2**, the Opportunity case needs a
+  real `Property__c` with `Address__c` set (`TestDataFactory.createProperties`), `Opportunity.Property__c`
+  pointed at it, and **the assertion made against the re-queried record** — the formula does not exist
+  on the in-memory sObject. The Opportunity null case is an Opportunity with no `Property__c`; the Lead
+  null case must null `Property_Address__c` explicitly, because the factory always populates it.
+- **`PortfolioDealControllerTest`** — assert `SiblingRow.propertyAddress` is carried through for both
+  member types and is null-safe when the source field is blank, from both a Lead anchor and an
+  Opportunity anchor (the existing exclusion tests already run both directions).
+- **Bulk volume:** `.claude/rules/bulk-test-rule.md`'s 251-record mandate **does not apply** — these are
+  selector reads and a pure mapping method, with no trigger batch to force a second firing and no DML
+  in the method under test. Match the existing tests' volume; do not inflate.
+- Do **not** add FLS/`runAs` permission-set tests unless the user asks — the F1 gaps are closed by
+  metadata and verified in the org (see D1's post-deploy check), not by a test.
 
 ---
 
-## 7. NOT INCLUDED (would be scope creep — say the word if you want any of them)
+## 6. JEST WORK (in the developer's change, per the previous round's precedent)
 
-- `role="list"` / `aria-label` on the `<ul>` (D3)
-- CSS source-text anti-regression test (D4)
-- Any change to the card's own `standard:related_list` icon, its title, or its wording
-- Hover/focus states, animation, density toggles, or empty-state restyling
+- Add `propertyAddress` to the `WITH_SIBLINGS` fixture's two rows (test lines 96-109) with realistic
+  values, and to the `Prospecto` (144-150) and `constructor` (173-179) fixtures so all fixtures stay
+  shaped like the real payload.
+- Add a **null-address case** — a fixture row with `propertyAddress: null` — asserting that **no
+  `.pds-address` element is rendered** for that row (not that it renders empty). Assert on the rendered
+  DOM, not on a getter.
+- Assert the address text renders for a populated row, and that the `.pds-link` name text is
+  **unchanged** — that is the "purely additive" claim, and it is the one thing the suite can actually
+  falsify.
+- Keep both `toBeAccessible()` tests, keep the "renders nothing" test first and untouched, and leave
+  the unrecognised-label / generic-icon test alone (its header calls it the only falsifier for a
+  failure a green run otherwise hides).
+
+⚠ **jsdom performs no layout**, so no Jest test can prove the address does not burst the ~360px
+sidebar. `scrollWidth` and `clientWidth` are both `0` there, which makes the obvious assertion `0 <= 0`
+and vacuously green. That check is by eye, in the org — see §8.
+
+---
+
+## 7. EXECUTION ORDER
+
+1. **D1 answered** — it determines whether there is admin work at all.
+2. `salesforce-admin` — the permission-set grants (if D1-a or D1-b). **Before** the Apex deploys, so
+   the widened query never runs against an org that cannot satisfy it.
+3. `salesforce-developer` — selector + controller + HTML + CSS + Jest, one change.
+4. `salesforce-unit-testing` — the two Apex test classes.
+5. `salesforce-code-review` — mandatory; both Apex and LWC changed.
+6. `salesforce-devops` + `salesforce-documentation` in parallel, after review passes.
+
+⚠ **Steps 2 and 3 must deploy together or 2 first.** The Apex and the FLS are one atomic change in
+effect: deploying the widened `SELECT` to an org whose permission sets have not caught up turns the
+card into a red error banner for the affected personas.
+
+---
+
+## 8. ACCEPTANCE BEYOND A GREEN SUITE
+
+1. Open a Lead **and** an Opportunity on a multi-property portfolio deal; confirm the address renders
+   under the name on each tile, with the name link, object label and status badge all unchanged.
+2. Confirm a sibling with **no** address renders no blank line and no `null` text.
+3. Confirm **no horizontal scroll** in the ~360px sidebar with a long address and a long stage value.
+   jsdom cannot observe this; it is the standing acceptance step for this bundle.
+4. **Do step 1 as a System Administrator specifically** — that is the F1 case, and the one an
+   analyst-only smoke test will never catch.
+
+---
+
+## 9. NOT INCLUDED (would be scope creep — say the word if you want any of them)
+
+- Any fallback when `propertyAddress` is null (`Property_Name__c`, `Property__r.Name`, an em dash, an
+  "Address not set" placeholder). The gate renders nothing, as requested.
+- A label or `slds-assistive-text` prefix on the address line.
+- Truncation or `-webkit-line-clamp` on a long address. Current behaviour is to wrap, matching this
+  bundle's documented discipline that the card gives way, not the text. Realistic values
+  (`"1002 Multi St, Houston, TX"`) wrap to one or two lines; flagged only because the Lead field
+  allows 255 characters. Verify by eye in step 3 above and raise it then if it reads badly.
+- A `title` tooltip on the address (see the trap in §4).
+- Adding the address to `c/recentPortfolioDeals` or to `selectRecent`.
+- Closing the pre-existing `DPEG_Opportunity_View` gap in F5.

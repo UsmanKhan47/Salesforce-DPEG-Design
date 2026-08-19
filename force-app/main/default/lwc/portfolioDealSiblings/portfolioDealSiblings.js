@@ -160,6 +160,35 @@
  * user declined the accessibility-annotation items this round (design D3), and the pre-redesign
  * markup carried no such prefix either — so adding one would be new behaviour, not parity. It is a
  * reasonable future addition, not an oversight.
+ *
+ * ═══ PROPERTY ADDRESS ON EACH TILE (2026-08-19) — AND WHY THIS FILE DID NOT CHANGE ═══
+ * Each tile gained a second line under the name link showing `row.propertyAddress`, so an analyst
+ * can read the address without opening each sibling. Purely ADDITIVE: the name link, the object
+ * label and the status badge are all untouched, and the name remains the primary clickable text.
+ *
+ * 🔴 THE CHANGE TOUCHED `.html` AND `.css` ONLY — NO EDIT WAS NEEDED HERE, AND THAT IS THE DESIGN
+ * WORKING RATHER THAN AN OMISSION. `rows` below spreads each server row (`...row`), and the note on
+ * that getter already claimed the property this change is the first exercise of: *"a field added to
+ * the Apex DTO reaches the template without an edit here."* Adding a `propertyAddress` passthrough
+ * would be redundant code. ⚠ The corollary is the thing to remember: a field that stops arriving
+ * from Apex ALSO needs no edit here — it simply becomes `undefined`, the gate hides the line, and
+ * nothing anywhere goes red. Verify a DTO rename against the Apex source, never against this file.
+ *
+ * ⚠ IT IS AN FLS CHANGE ON THE SERVER, WHICH IS WHERE ITS ONLY REAL RISK LIVES. Both
+ * `Property_Address__c` fields joined a `WITH USER_MODE` SELECT
+ * (`PortfolioDealSelector.selectWithMembersById`), and `USER_MODE` THROWS rather than degrading —
+ * so a persona missing either grant gets the red `.lv-error` banner instead of this whole card, not
+ * a card with one line missing. Two permission sets were granted the missing fields in the same
+ * change; the selector's method Javadoc carries the reasoning and the re-derivation. The acceptance
+ * check is to open a Lead AS AN ADMINISTRATOR — the persona that historically has no FLS on a
+ * freshly deployed field, and the one an analyst-only smoke test never covers.
+ *
+ * ⚠ `propertyAddress` IS LEGITIMATELY BLANK ON BOTH OBJECT TYPES, for two different reasons (Lead's
+ * is nullable extraction Text; Opportunity's is a formula through `Property__c`). The template gates
+ * on it so a blank address renders NO element — not an empty line, not "null". Do NOT add a
+ * placeholder, an em dash, a fallback to another field, or a `title` tooltip: the first three were
+ * explicitly excluded from the design, and the fourth is an attribute-stringification trap (a bound
+ * attribute is written unconditionally, so a null value renders `title="undefined"`).
  */
 import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';

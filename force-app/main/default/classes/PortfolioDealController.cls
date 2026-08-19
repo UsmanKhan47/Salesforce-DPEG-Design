@@ -333,7 +333,7 @@ public with sharing class PortfolioDealController {
             for (Lead l : deal.Leads__r) {
                 if (l.Id != recordId) {
                     siblings.add(new SiblingRow(l.Id, l.Name, LEAD_LABEL,
-                        recordUrl(SOBJECT_LEAD, l.Id), l.Status));
+                        recordUrl(SOBJECT_LEAD, l.Id), l.Status, l.Property_Address__c));
                 }
             }
         }
@@ -341,7 +341,7 @@ public with sharing class PortfolioDealController {
             for (Opportunity o : deal.Opportunities__r) {
                 if (o.Id != recordId) {
                     siblings.add(new SiblingRow(o.Id, o.Name, OPPORTUNITY_LABEL,
-                        recordUrl(SOBJECT_OPPORTUNITY, o.Id), o.StageName));
+                        recordUrl(SOBJECT_OPPORTUNITY, o.Id), o.StageName, o.Property_Address__c));
                 }
             }
         }
@@ -414,13 +414,44 @@ public with sharing class PortfolioDealController {
         @AuraEnabled public String recordUrl;
         /** `Lead.Status` or `Opportunity.StageName` — whichever this row is. */
         @AuraEnabled public String status;
+        /**
+         * The property address, shown as a second line under the name link (added 2026-08-19).
+         *
+         * 🔴 NULL IS NORMAL ON BOTH OBJECT TYPES — AND FOR TWO COMPLETELY DIFFERENT REASONS. The two
+         * sides are NOT the same kind of field, and every consumer of this member has to survive
+         * both:
+         *   • `Lead.Property_Address__c` is a plain, nullable Text(255), WRITTEN by the Broker
+         *     Protection LLM extraction step. It is blank whenever the extraction found no address
+         *     — an ordinary outcome, not a failure.
+         *   • `Opportunity.Property_Address__c` is a READ-ONLY FORMULA (`Property__r.Address__c`,
+         *     `formulaTreatBlanksAs = BlankAsBlank`). It is blank for as long as the Opportunity's
+         *     `Property__c` lookup is empty, and it self-corrects if the Property is re-addressed
+         *     later.
+         *
+         * ⚠ THE FORMULA HALF CHANGES HOW THIS IS TESTED, which is the practical cost of the
+         * asymmetry and the reason it is written down here rather than left to be rediscovered:
+         * `opp.Property_Address__c = '...'` DOES NOT COMPILE (a formula field is not writable), and
+         * the value does not exist on an in-memory sObject at all — formulas are computed at query
+         * time. A test must create a `Property__c` with `Address__c`, point `Opportunity.Property__c`
+         * at it, and assert against the RE-QUERIED row. An assertion against the pre-insert sObject
+         * is vacuously wrong. Conversely the Opportunity NULL case is free (just do not link a
+         * Property), while the LEAD null case must null the field explicitly — `TestDataFactory
+         * .createLeads` always populates it.
+         *
+         * ⚠ The client renders NO ELEMENT AT ALL when this is blank (a gated template, not an empty
+         * line and not the string "null"). Do not "help" by substituting a placeholder or a fallback
+         * to another field here — that was explicitly excluded from the design.
+         */
+        @AuraEnabled public String propertyAddress;
 
-        private SiblingRow(Id id, String name, String objectLabel, String recordUrl, String status) {
+        private SiblingRow(Id id, String name, String objectLabel, String recordUrl, String status,
+                String propertyAddress) {
             this.id = id;
             this.name = name;
             this.objectLabel = objectLabel;
             this.recordUrl = recordUrl;
             this.status = status;
+            this.propertyAddress = propertyAddress;
         }
     }
 

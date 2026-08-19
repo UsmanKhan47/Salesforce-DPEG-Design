@@ -607,6 +607,18 @@
         <field>Lead.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Opportunity.Property_Address__c ADDED 2026-08-19. Lead.Property_Address__c is already
+         granted above (line ~398) - this closes the Opportunity side of the same gap.
+         PortfolioDealSelector.selectWithMembersById (via PortfolioDealController.getSiblingRecords)
+         is about to add Property_Address__c to its SELECT list under WITH USER_MODE; a missing FLS
+         grant on a USER_MODE query THROWS on the whole row, not a soft degrade, blanking the
+         portfolioDealSiblings card with a red error banner. Read-only: display-only card, no write
+         path through this selector. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Property_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>Broker Protection Access</label>
     <objectPermissions>

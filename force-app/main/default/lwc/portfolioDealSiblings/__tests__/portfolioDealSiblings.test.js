@@ -32,8 +32,26 @@
  *   • the icon tests include a deliberate UNRECOGNISED-LABEL case. It is not padding — see its own
  *     comment; it is the only test here that can fail in a renamed or translated org.
  *
+ * ⚠ PROPERTY ADDRESS LINE (2026-08-19). Each tile gained a gated second line between the name link
+ * and the meta row. Two things follow for this suite:
+ *   • EVERY fixture below now carries `propertyAddress`, so all of them stay shaped like the real
+ *     Apex payload — a fixture missing the key would exercise the BLANK path while claiming to test
+ *     the populated one;
+ *   • the blank case is tested on the ABSENCE of the `.pds-address` element, never on its text being
+ *     empty, because an empty `<span>` is precisely the defect the gate exists to prevent.
+ *
+ * 🔴 AND THE ONE THING THIS SUITE STILL CANNOT SEE, unchanged by that addition: `propertyAddress` is
+ * a WIRE name copied from `PortfolioDealController.SiblingRow`, not chosen here. These fixtures
+ * DEFINE the payload locally, so a key that disagrees with the Apex DTO makes the component read
+ * `undefined`, the gate hides the line, and every test here still passes while the address never
+ * appears in the org. Check it against the Apex source. (This is the same trap the three
+ * `portfolioDeal*` keys carry — see the note on WITH_SIBLINGS — and the address line is strictly
+ * WORSE for it, because a missing address is an invisible, entirely valid state rather than a
+ * visibly dead card.)
+ *
  * ⚠ jsdom does no layout, so nothing in this file can prove the tiles do not burst the ~360px
- * sidebar. That is checked by eye in the org; see the .css header.
+ * sidebar. That is checked by eye in the org; see the .css header. A 255-character Lead address is
+ * the new worst case for that check.
  */
 import { createElement } from 'lwc';
 import PortfolioDealSiblings from 'c/portfolioDealSiblings';
@@ -75,6 +93,7 @@ jest.mock(
 
 const LEAD_ID = '00Q000000000001';
 const SIBLING_LEAD_ID = '00Q000000000002';
+const SIBLING_LEAD_2_ID = '00Q000000000003';
 const SIBLING_OPP_ID = '006000000000001';
 const DEAL_ID = 'a0Z000000000001';
 
@@ -98,14 +117,61 @@ const WITH_SIBLINGS = {
             name: '1002 Multi St',
             objectLabel: 'Lead',
             recordUrl: `/lightning/r/Lead/${SIBLING_LEAD_ID}/view`,
-            status: 'New'
+            status: 'New',
+            propertyAddress: '1002 Multi St, Houston, TX 77001'
         },
         {
             id: SIBLING_OPP_ID,
             name: '1003 Multi St',
             objectLabel: 'Opportunity',
             recordUrl: `/lightning/r/Opportunity/${SIBLING_OPP_ID}/view`,
-            status: 'Underwriting'
+            status: 'Underwriting',
+            propertyAddress: '1003 Multi St, Houston, TX 77001'
+        }
+    ]
+};
+
+// 🔴 THE BLANK-ADDRESS FIXTURE, AND ALL THREE ROWS ARE DELIBERATE. `propertyAddress` is blank on a
+// large share of real rows, for two unrelated server-side reasons the CLIENT CANNOT AND MUST NOT
+// DISTINGUISH: `Lead.Property_Address__c` is nullable extraction Text (the LLM found no address),
+// while `Opportunity.Property_Address__c` is a formula through `Property__c` that is blank until
+// that lookup is set. The component's contract is the same either way — gate on the VALUE, never on
+// the object — so this fixture carries both blank shapes plus a populated control:
+//   • `null`  — how Apex serializes an unset String, and the overwhelmingly common blank case;
+//   • `''`    — a distinct shape the `if:true` gate must ALSO suppress. An empty string is falsy in
+//               LWC's gate, so it renders nothing today; the row exists so that a future change to
+//               `lwc:if`, to a getter, or to `!== null` cannot quietly start emitting an empty
+//               `<span>` (a ragged blank line on the tile) while every other test stays green;
+//   • a real address on the third row, so the assertions prove the gate SUPPRESSES rather than that
+//     the address line is simply broken for everyone.
+const MIXED_ADDRESSES = {
+    portfolioDealId: DEAL_ID,
+    portfolioDealName: 'FW: two addresses unknown, one known',
+    portfolioDealUrl: `/lightning/r/Portfolio_Deal__c/${DEAL_ID}/view`,
+    siblings: [
+        {
+            id: SIBLING_LEAD_ID,
+            name: '1002 Multi St',
+            objectLabel: 'Lead',
+            recordUrl: `/lightning/r/Lead/${SIBLING_LEAD_ID}/view`,
+            status: 'New',
+            propertyAddress: null
+        },
+        {
+            id: SIBLING_LEAD_2_ID,
+            name: '1004 Multi St',
+            objectLabel: 'Lead',
+            recordUrl: `/lightning/r/Lead/${SIBLING_LEAD_2_ID}/view`,
+            status: 'Under Review',
+            propertyAddress: ''
+        },
+        {
+            id: SIBLING_OPP_ID,
+            name: '1003 Multi St',
+            objectLabel: 'Opportunity',
+            recordUrl: `/lightning/r/Opportunity/${SIBLING_OPP_ID}/view`,
+            status: 'Underwriting',
+            propertyAddress: '1003 Multi St, Houston, TX 77001'
         }
     ]
 };
@@ -147,7 +213,8 @@ const UNRECOGNISED_LABEL = {
             name: '1002 Multi St',
             objectLabel: 'Prospecto',
             recordUrl: `/lightning/r/Lead/${SIBLING_LEAD_ID}/view`,
-            status: 'Nuevo'
+            status: 'Nuevo',
+            propertyAddress: '1002 Multi St, Houston, TX 77001'
         }
     ]
 };
@@ -176,7 +243,8 @@ const PROTOTYPE_KEY_LABEL = {
             name: '1002 Multi St',
             objectLabel: 'constructor',
             recordUrl: `/lightning/r/Lead/${SIBLING_LEAD_ID}/view`,
-            status: 'New'
+            status: 'New',
+            propertyAddress: '1002 Multi St, Houston, TX 77001'
         }
     ]
 };
@@ -203,6 +271,27 @@ function iconNames(element) {
     return [...element.shadowRoot.querySelectorAll('lightning-icon')].map(
         (i) => i.iconName
     );
+}
+
+function tiles(element) {
+    return [...element.shadowRoot.querySelectorAll('li.pds-item')];
+}
+
+/**
+ * The address text of each tile, IN TILE ORDER, with `null` for a tile that rendered no address
+ * element at all.
+ *
+ * 🔴 READ PER-TILE, NEVER AS A FLAT `querySelectorAll('.pds-address')`. The gate means a blank
+ * address emits NO element, so a flat list is SHORTER than the row list and every index after the
+ * first blank row silently shifts — an assertion written that way would attribute row 3's address to
+ * row 2 and still pass on a fixture where the shift happens to cancel out. Mapping over the tiles
+ * keeps row and address bound together, which is the thing actually under test.
+ */
+function addressTextByTile(element) {
+    return tiles(element).map((tile) => {
+        const el = tile.querySelector('.pds-address');
+        return el ? el.textContent : null;
+    });
 }
 
 describe('c-portfolio-deal-siblings', () => {
@@ -300,6 +389,107 @@ describe('c-portfolio-deal-siblings', () => {
         // component does not know which one it is looking at, so any colour-by-outcome map would be
         // both fragile and a breach of the object-agnostic design.
         expect(badgeLabels(element)).toEqual(['New', 'Underwriting']);
+    });
+
+    it('ADDRESS: each row shows its property address, and the name link is UNCHANGED', async () => {
+        // The address line was added 2026-08-19 as a purely ADDITIVE second line. "Purely additive"
+        // is a claim about what did NOT change, so the second half of this test is the load-bearing
+        // half: the name link must still carry exactly `row.name` and nothing else. A "helpful"
+        // future edit that appended the address to the link text, or swapped the link to show the
+        // address, would satisfy every address assertion here and be caught only by the `toBe` on
+        // the link.
+        const element = createComponent();
+
+        getSiblingRecords.emit(WITH_SIBLINGS);
+        await Promise.resolve();
+
+        expect(addressTextByTile(element)).toEqual([
+            '1002 Multi St, Houston, TX 77001',
+            '1003 Multi St, Houston, TX 77001'
+        ]);
+
+        const links = siblingLinks(element);
+        expect(links[0].textContent).toBe('1002 Multi St');
+        expect(links[1].textContent).toBe('1003 Multi St');
+    });
+
+    it('ADDRESS: sits BETWEEN the name link and the meta row, in that order', async () => {
+        // The design fixed the order as name (primary, clickable) -> address (the new at-a-glance
+        // datum) -> object label + status badge (metadata), top-down by importance. Nothing else in
+        // this suite can see order: every other assertion here queries by class, so the three lines
+        // could be emitted in any sequence and stay green while the tile read backwards.
+        const element = createComponent();
+
+        getSiblingRecords.emit(WITH_SIBLINGS);
+        await Promise.resolve();
+
+        const order = [
+            ...tiles(element)[0].querySelectorAll(
+                '.pds-link, .pds-address, .pds-meta'
+            )
+        ].map((el) => {
+            if (el.classList.contains('pds-link')) {
+                return 'link';
+            }
+            return el.classList.contains('pds-address') ? 'address' : 'meta';
+        });
+
+        expect(order).toEqual(['link', 'address', 'meta']);
+    });
+
+    it('ADDRESS: a blank address renders NO ELEMENT AT ALL — not an empty line', async () => {
+        // 🔴 THE REQUIREMENT THIS FEATURE WOULD MOST PLAUSIBLY GET WRONG, and the reason the markup
+        // is gated with `if:true` rather than just interpolated. A blank address is COMMON, not an
+        // edge case (see MIXED_ADDRESSES for the two unrelated server-side reasons), so an ungated
+        // `{row.propertyAddress}` would leave a ragged empty line — or the literal text "null" — on a
+        // large share of tiles.
+        //
+        // ⚠ THE ASSERTION IS ON THE ABSENCE OF THE ELEMENT, NOT ON ITS TEXT BEING EMPTY. `expect(
+        // el.textContent).toBe('')` would pass against an empty `<span>` that is exactly the defect,
+        // so it cannot fail for the risk this test names.
+        const element = createComponent();
+
+        getSiblingRecords.emit(MIXED_ADDRESSES);
+        await Promise.resolve();
+
+        expect(tiles(element).length).toBe(3);
+        expect(addressTextByTile(element)).toEqual([
+            null, // null from the server — no element
+            null, // '' from the server — also no element
+            '1003 Multi St, Houston, TX 77001'
+        ]);
+
+        // Stated separately and deliberately: the count is what fails loudly if the gate is removed
+        // (it would read 3), while the per-tile map above is what proves the RIGHT two were
+        // suppressed rather than merely the right number of them.
+        expect(element.shadowRoot.querySelectorAll('.pds-address').length).toBe(
+            1
+        );
+
+        // ...and the blank-address rows are otherwise completely intact. The address is an addition
+        // to the tile, never a precondition for it: a row with no address must still show its name
+        // link, its object label and its status badge.
+        const links = siblingLinks(element);
+        expect(links.length).toBe(3);
+        expect(links[0].textContent).toBe('1002 Multi St');
+        expect(links[1].textContent).toBe('1004 Multi St');
+        expect(badgeLabels(element)).toEqual([
+            'New',
+            'Under Review',
+            'Underwriting'
+        ]);
+    });
+
+    it('ADDRESS: the blank-address state is still accessible', async () => {
+        // The gate removes elements from the DOM per row, so the tiles in this state are not the
+        // same tree the main accessibility test checks. Cheap to cover, and it is the state most
+        // rows in the org are actually in.
+        const element = createComponent();
+
+        getSiblingRecords.emit(MIXED_ADDRESSES);
+        await Promise.resolve();
+
+        await expect(element).toBeAccessible();
     });
 
     it('CARD TILES: one tile per row, and no SLDS dividers doubling up with the borders', async () => {

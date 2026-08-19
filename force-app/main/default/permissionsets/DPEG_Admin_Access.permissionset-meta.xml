@@ -418,6 +418,23 @@
         <field>Lead.Portfolio_Deal__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- Lead.Property_Address__c / Opportunity.Property_Address__c ADDED 2026-08-19. Same class of
+         gap as the Portfolio_Deal__c block above: PortfolioDealSelector.selectWithMembersById (via
+         PortfolioDealController.getSiblingRecords) is about to add Property_Address__c to its
+         SELECT list under WITH USER_MODE, and a missing FLS grant on a USER_MODE query THROWS on
+         the whole row, not just the one field - it does not degrade gracefully, it blanks the
+         portfolioDealSiblings card with a red error banner. Read-only: this is a display-only card
+         with no write path through this selector. -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Lead.Property_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Opportunity.Property_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Admin Access</label>
     <!--

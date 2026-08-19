@@ -276,6 +276,123 @@ private class PortfolioDealControllerTest {
             'and it is the member that has not been worked yet — the row a human would actually click');
     }
 
+    // ── Property_Address__c carried onto SiblingRow (2026-08-19) ────────────
+
+    @isTest
+    static void getSiblingRecords_carriesPropertyAddressForBothMemberTypes() {
+        // Added with the address line on `c/portfolioDealSiblings`'s tiles. The DTO reads a
+        // DIFFERENTLY-NAMED source on each branch of `buildSiblings` — `l.Property_Address__c` and
+        // `o.Property_Address__c` — so wiring only one of them is a real and easy mistake, and its
+        // symptom is a tile that shows the address for Leads but not for Opportunities. Nothing
+        // fails; the line is just quietly absent for half the rows, which is indistinguishable from
+        // the entirely normal "this record has no address" state.
+        //
+        // 🔴 THE OPPORTUNITY VALUE CANNOT BE ASSIGNED — `Opportunity.Property_Address__c` is a
+        // read-only FORMULA over `Property__r.Address__c`, so it is produced the way production
+        // produces it (a real Property__c, linked) and only exists once the row is re-queried, which
+        // the selector inside this call does. See `SiblingRow.propertyAddress`.
+        Portfolio_Deal__c deal = insertPortfolioDeal('FW: addresses on both sides');
+
+        List<Lead> leads = TestDataFactory.createLeads(2, false);
+        for (Lead l : leads) {
+            l.Portfolio_Deal__c = deal.Id;
+        }
+        leads[1].Property_Address__c = '1002 Multi St, Houston, TX';
+        insert leads;
+
+        Property__c prop = TestDataFactory.createProperties(1, false)[0];
+        prop.Address__c = '1003 Multi St, Houston, TX';
+        insert prop;
+        List<Opportunity> opps = TestDataFactory.createOpportunities(1, null, false);
+        opps[0].Portfolio_Deal__c = deal.Id;
+        opps[0].Property__c = prop.Id;
+        insert opps;
+
+        Lead anchor = leads[0];
+
+        Test.startTest();
+        PortfolioDealController.PortfolioDealSiblings result =
+            PortfolioDealController.getSiblingRecords(anchor.Id);
+        Test.stopTest();
+
+        Assert.areEqual(2, result.siblings.size(),
+            'Precondition: the other Lead and the Opportunity');
+        Map<String, PortfolioDealController.SiblingRow> rows = byId(result.siblings);
+
+        Assert.areEqual('1002 Multi St, Houston, TX',
+            rows.get(String.valueOf(leads[1].Id)).propertyAddress,
+            'THE LEAD BRANCH of buildSiblings carries Lead.Property_Address__c onto the row — stored '
+            + 'Text, written by the Broker Protection LLM extraction step');
+        Assert.areEqual('1003 Multi St, Houston, TX',
+            rows.get(String.valueOf(opps[0].Id)).propertyAddress,
+            '🔴 AND THE OPPORTUNITY BRANCH carries its own, which is the half a Lead-anchored smoke '
+            + 'test would never exercise. Same API name, different KIND of field: a formula through '
+            + 'Property__c. Wiring one branch and not the other is the likely defect here, and it '
+            + 'produces no error anywhere — just a missing line on half the tiles');
+
+        // ⚠ ADDITIVE, so the assertions that mattered before must still hold. The address is an
+        // EXTRA member on the row, never a replacement for the name — a change that moved the
+        // address into `name` (or appended it) would satisfy every assertion above.
+        Assert.isNotNull(rows.get(String.valueOf(leads[1].Id)).name,
+            'the row still carries its own name');
+        Assert.areNotEqual(rows.get(String.valueOf(leads[1].Id)).propertyAddress,
+            rows.get(String.valueOf(leads[1].Id)).name,
+            'and the name is NOT the address — they are two separate members feeding two separate '
+            + 'lines on the tile, with the name link deliberately unchanged by this addition');
+        Assert.areEqual('New', rows.get(String.valueOf(leads[1].Id)).status,
+            'and its status is untouched');
+    }
+
+    @isTest
+    static void getSiblingRecords_aBlankPropertyAddressArrivesAsNullOnBothMemberTypes() {
+        // 🔴 BLANK IS THE NORMAL CASE, NOT AN EDGE CASE, and the client renders NO element for it.
+        // The two member types are blank for two unrelated reasons, and only one needs setting up:
+        //   • LEAD — stored Text, blank when the extraction found no address. ⚠ MUST BE NULLED
+        //     EXPLICITLY: `TestDataFactory.createLeads` always populates it, so a fixture that just
+        //     calls the factory silently tests the POPULATED path here.
+        //   • OPPORTUNITY — a `BlankAsBlank` formula over `Property__r.Address__c`, blank while
+        //     `Property__c` is unset. Not linking a Property IS the blank case.
+        //
+        // ⚠ ANCHORED ON AN OPPORTUNITY DELIBERATELY, so this method and the one above cover BOTH
+        // dispatch directions between them — the same reason the exclusion tests are a matched pair.
+        Portfolio_Deal__c deal = insertPortfolioDeal('FW: no addresses known');
+
+        List<Lead> leads = TestDataFactory.createLeads(1, false);
+        leads[0].Portfolio_Deal__c = deal.Id;
+        leads[0].Property_Address__c = null;
+        insert leads;
+
+        List<Opportunity> opps = insertMemberOpportunities(2, deal.Id);
+        Opportunity anchor = opps[0];
+
+        Test.startTest();
+        PortfolioDealController.PortfolioDealSiblings result =
+            PortfolioDealController.getSiblingRecords(anchor.Id);
+        Test.stopTest();
+
+        Assert.areEqual(2, result.siblings.size(),
+            'Precondition: the Lead and the other Opportunity, with the anchor excluded');
+        Map<String, PortfolioDealController.SiblingRow> rows = byId(result.siblings);
+
+        Assert.isNull(rows.get(String.valueOf(leads[0].Id)).propertyAddress,
+            'A Lead with no extracted address arrives as NULL — not an empty string, and not a '
+            + 'placeholder. The client gates on this value, so a non-null blank would render an '
+            + 'address line containing nothing on a large share of tiles');
+        Assert.isNull(rows.get(String.valueOf(opps[1].Id)).propertyAddress,
+            'and an Opportunity with no Property__c likewise, via BlankAsBlank on the formula');
+
+        // 🔴 AND THE ROWS ARE OTHERWISE COMPLETE. A missing address must cost the tile a LINE, never
+        // a ROW — the two look identical in a screenshot and entirely different to someone hunting
+        // for a sibling record. This is the assertion that fails if a future "skip rows with no
+        // address" optimisation is ever mistaken for a tidy-up.
+        Assert.isNotNull(rows.get(String.valueOf(leads[0].Id)).name,
+            'the addressless Lead is still listed, with its name');
+        Assert.isNotNull(rows.get(String.valueOf(leads[0].Id)).recordUrl, 'and its link');
+        Assert.isNotNull(rows.get(String.valueOf(leads[0].Id)).objectLabel, 'and its object label');
+        Assert.areEqual('New', rows.get(String.valueOf(opps[1].Id)).status,
+            'and the addressless Opportunity still reports its stage');
+    }
+
     // ── "nothing to show" is an ANSWER, never an error ──────────────────────
 
     @isTest
