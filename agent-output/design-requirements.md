@@ -1,263 +1,145 @@
-# DESIGN REQUIREMENTS
+# DESIGN REQUIREMENTS — portfolioDealSiblings card-tile redesign
 
-Date: 2026-08-18
-Scope: two declarative-only fixes on `usman-dpeg` (Item 1 NDA Advance Stage visibility, Item 2 LOI Signed latch).
-Excluded by the requester: LOI Offer Price / Offer Cap Rate numeric-entry issue (under separate live investigation).
+Date: 2026-08-19
+Scope: visual redesign of `c/portfolioDealSiblings` only. LWC-only, no Apex.
 
 ---
 
-## 0. VERIFICATION OF BRIEF PREMISES (read before anything else)
+## 0. PREMISES CHECKED AGAINST THE REPO
 
-The brief was measured against the repo rather than restated. **Item 1 is confirmed and ready.
-Item 2 has one BLOCKING contradiction** — it names a field that no automation ever sets to
-`'Signed'`, so the fix as written would deploy clean and do nothing.
+Verified before designing (the brief's detail is treated as hypothesis, not findings).
 
-### CONFIRMED
+### Confirmed as stated
 
 | Premise | Evidence |
 |---|---|
-| Acquisition NDA reordered to Pending -> Received -> Signed -> Sent, 'Sent' terminal | `RecordStageAdvanceService.cls:550-554` — `NDA_ACQUISITION_NEXT_STAGE` = `{'Pending'=>'Received','Received'=>'Signed','Signed'=>'Sent'}`. Class header lines 40-45 record the 2026-08-16 user decision. |
-| 'Signed' IS terminal on Disposition NDA | `RecordStageAdvanceService.cls:573-576` — `NDA_DISPOSITION_NEXT_STAGE` = `{'Not Sent'=>'Sent','Sent'=>'Signed'}`. No `'Signed'` key. Header lines 564-571 explicitly forbid harmonising the two maps. |
-| FlexiPage entry 1 (Acquisition) has the stale `NE 'Signed'` | `NDA_Record_Page.flexipage-meta.xml:11-28` — `booleanFilter` `1 AND 2 AND 3`; criteria 2 is `{!Record.Status__c} NE 'Signed'`. |
-| No triggers and no validation rules on `LOI__c` | `force-app/main/default/triggers/*LOI*` and `objects/LOI__c/validationRules/` are both empty — the before-save path for Item 2 is otherwise clean. |
-| `LOI_Signed__c` (Checkbox) and `LOI_Signed_Date__c` (Date) exist and are manual on `Edit_LOI` | `quickActions/LOI__c.Edit_LOI.quickAction-meta.xml:50-59`. |
+| Card is `<lightning-card icon-name="standard:related_list">` with a "From one broker email: `<a>`" line, then a `<ul>` of rows | `portfolioDealSiblings.html` lines 8, 32-39, 48-62 |
+| Classes `.pds-list` / `.pds-item` / `.pds-link` / `.pds-meta` / `.pds-line` | all five in `portfolioDealSiblings.css`; **17 occurrences across exactly 3 files** (html, css, test) — bundle-local, zero external consumers |
+| Row meta text is `{row.objectLabel} · {row.status}` | `.html` line 57-59 |
+| Placed on both `Lead_Record_Page` and `Opportunity_Record_Page` | `Lead_Record_Page` line 814, `Opportunity_Record_Page` line 1823 |
+| Region is `sidebar` on both | Lead: region block 805-844, `<name>sidebar</name>` at 842. Opportunity: `<name>sidebar</name>` at 1841 |
+| One bundle serves both pages; never split | `.js` header lines 9-21 |
+| `SiblingRow.status` is raw `Lead.Status` / `Opportunity.StageName` | `PortfolioDealController.buildSiblings` lines 335-345; DTO comment line 415 |
+| Empty / loading / error behaviour is deliberate | `.js` header lines 45-59; `.html` lines 2-6 |
 
-### 🔴 C1 — BLOCKING: Item 2 names the wrong field. `LOI_Status__c` is never set to 'Signed'.
+### Contradicted or materially incomplete — read these before approving
 
-`LOI__c` carries **two** picklists that both contain a `Signed` value, and they are deliberately
-separate concerns. `LoiSelector.cls:121-123` states the rule outright:
+**C1 — "The redesign will change the DOM structure (no more `<ul>/<li>`)." It should not, and does not need to.**
+There is an in-repo precedent for this exact request: `c/competingBrokerSubmissions` sits in the **same `sidebar` region of the same `Lead_Record_Page`, one item above this component** (line 808 vs 814). It renders bordered card-tiles with a head row of heading + `lightning-badge` — and it **keeps `<ul>`/`<li>`**, styling the `<li>` as the tile (`.cbs-list` / `.cbs-tile`, css lines 45-60). Its own header records that it moved *to* `<ul>/<li>` *from* a `<table>` precisely to keep list semantics and stop sidebar overflow. Our component's markup carries the matching note: *"a semantic list is what a screen reader announces usefully here"* (`.html` lines 43-47).
+**Consequence:** card-tile appearance is a CSS concern. Dropping `<ul>/<li>` would be an unforced accessibility regression against two documented decisions, and would churn the Jest suite far more than necessary. Recommendation below keeps the list and keeps `.pds-link`, so most existing test selectors survive.
 
-> `Stage__c` is the Path field and is NOT `LOI_Status__c` — the approval audit writes the latter,
-> this action writes the former. Widening this method to select or write `LOI_Status__c` would
-> silently couple the quick action to the approval's field.
+**C2 — "no hardcoded colors" is not quite the house convention; the convention is token *with* a literal fallback.**
+Both this bundle (`var(--slds-g-color-brand-base-50, #0176d3)`, css line 36) and `competingBrokerSubmissions` (`var(--slds-g-color-border-base-1, #e5e5e5)`, css line 57) deliberately pair every `--slds-g-*` token with a hex fallback, and this bundle's css header states why: *"with a plain fallback for each so the card still reads correctly if a token is unavailable."* The rule is "no hardcoded **brand** colours as the value", not "no hex anywhere". The developer must follow the existing pattern; a reviewer should not strip the fallbacks.
 
-- **`Stage__c`** — the lifecycle field. Drives `LOI_Path_Acquisition` / `LOI_Path_Disposition` and
-  `RecordStageAdvanceService`. Acquisition_LOI runs Draft -> Under Review -> Submitted ->
-  Negotiation -> **Signed** (terminal). This is the field the **Advance Stage button writes**.
-- **`LOI_Status__c`** — approval//deal vocabulary. Every writer in the repo sets something other
-  than 'Signed': `ApprovalAuditService.cls:92` -> `'Approved'`; `CounterOfferService.cls:188` ->
-  `'Countered'`; `OpportunityReviewService.cls:541` -> `'Draft'` at creation.
-  **No automation anywhere writes `LOI_Status__c = 'Signed'`.** The value is exposed on the record
-  type (`Acquisition_LOI.recordType-meta.xml:250-253`) and the field sits on the `Edit_LOI` quick
-  action, so the only way it is ever reached is a human manually picking it.
-
-**Consequence if built as briefed:** the flow fires only when someone manually selects
-`LOI_Status__c = 'Signed'` in the Edit LOI modal, and does **not** fire when the LOI is actually
-advanced to Signed via the Advance Stage button / Path. The stated goal — the item's own title says
-"auto-populate on Signed **stage**" — would not be met, and nothing would error.
-
-**The NDA analog confirms the intent.** `NDA_Signed_Status_Sync` keys on `NDA__c.Status__c`, which
-IS the NDA's Advance-Stage field in `RecordStageAdvanceService`. Mirroring that analog on `LOI__c`
-means keying on **`Stage__c`**, not `LOI_Status__c`.
-
-➡ **DECISION REQUIRED (D1)** — see §3. This is the one thing that must be answered before Item 2
-can be built.
-
-### C2 — Item 2 will start firing Legal + IR notifications automatically
-
-`flows/LOI_Signed_Notify.flow-meta.xml` is an **after-save** flow on `LOI__c` whose entry filter is
-`LOI_Signed__c EqualTo true`, `doesRequireRecordChangedToMeetCriteria = true`,
-`recordTriggerType = CreateAndUpdate` (lines 85-96). It calls `GroupNotifier` twice — `Legal_Team`
-("LOI fully executed... PSA negotiation begins") and `Investor_Relations` ("prepare Offering
-Memorandum").
-
-The brief said the existing flows do not *write* these fields. That is true — but this one
-**triggers on** `LOI_Signed__c`. Today the checkbox is manual, so those notifications fire when a
-human ticks it. After this change they fire **automatically on stage advance**. That is a real
-behaviour change crossing a module boundary into Legal and Investor Relations, so it is flagged for
-explicit acknowledgement rather than assumed acceptable. The one-way latch means it fires once, not
-repeatedly.
-
-### C3 — The NDA analog does more than the brief describes; mirror the extra part
-
-`NDA_Signed_Status_Sync` does not simply set a checkbox. It also stamps the date **through a null
-guard**: decision `Needs_Signed_Date` stamps `Date_Signed__c = $Flow.CurrentDate` only when the date
-`IsNull` (lines 102-123). It never overwrites an existing date and never clears it. The LOI
-equivalent should carry the same guard so a manually entered `LOI_Signed_Date__c` is preserved.
-
-Also note: the flow's `Set_Signed_False` assignment **exists in metadata but is unconnected**, and
-the flow's in-root XML comment (lines 8-35) is an explicit "DO NOT finish it" banner — connecting it
-would un-sign NDAs and lock deals out of the pipeline. **Recommendation: do NOT reproduce that dead
-assignment in the new LOI flow.** Copying a documented trap is not consistency. The latch should be
-achieved by simply having no false branch at all.
-
-### C4 — Flow inventory correction
-
-Only **one** flow in the repo is on `LOI__c`: `LOI_Signed_Notify`. `Counter_Offer_Notify` is on
-`Counter_Offer__c` (`Create` / `RecordAfterSave`), not `LOI__c`. So the count is one, not two — and
-that one is **not** unrelated, per C2.
-
-### C5 — Item 1 introduces one instance of an already-documented residual
-
-The two `Advance_Stage` entries on `NDA_Record_Page` are discriminated by **custom permission**, not
-record type — a FlexiPage visibility rule cannot express a record-type test (documented in
-`NDA__c.Is_Decline_Allowed__c`'s header, cited again in `Acquisition_LOI.recordType-meta.xml:74-77`).
-`Acquisition_Deal_Actions` is granted by exactly one set (`Acquisition_Deal_Driver`) and
-`Disposition_Deal_Actions` by exactly one (`Disposition_Deal_Driver`) — disjoint in the repo, but
-nothing prevents assigning both to one user.
-
-After removing `NE 'Signed'` from entry 1, a user holding **both** sets who opens a **Disposition
-NDA at Status = 'Signed'** will now see the Advance Stage button (entry 1 evaluates: has
-`Acquisition_Deal_Actions` ✓, Status `NE 'Declined'` ✓). Clicking it is refused server-side —
-`NDA_DISPOSITION_NEXT_STAGE` has no `'Signed'` key — so this is a cosmetic/UX residual, not a data
-risk. `DPEG_Disposition_Edit.permissionset-meta.xml:265-267` already records this exact residual
-class: *"A user holding BOTH sets does see it; runbook 1.6 and gate G7 own that residual."* Recorded
-here so it is a known consequence rather than a surprise.
-
-### C6 — Item 1: do not "normalise" the second entry
-
-The brief describes entry 2 as the Disposition entry with an `NE 'Signed'` exclusion. Accurate, but
-incomplete: entry 2 has **three** criteria — `Disposition_Deal_Actions`, `Is_Decline_Allowed__c
-EQUAL true`, and `Status__c NE 'Signed'` (lines 32-49). It must be left **byte-identical**. The two
-entries are asymmetric by design; an admin tidying them into a matching shape would break the
-disposition action bar.
-
----
-
-## 1. WHAT WAS REQUESTED
-
-**Item 1** — Remove the now-incorrect `Status__c NE 'Signed'` criterion from the **first
-(Acquisition)** `NDA__c.Advance_Stage` entry on `NDA_Record_Page`, so the button is available for the
-`Signed -> Sent` hop. Leave the second (Disposition) entry untouched. FlexiPage visibility rule only —
-**no data cleanup** of acquisition NDAs currently parked on `Status = 'Sent'` under the old meaning
-(explicitly deferred as a separate data-remediation item).
-
-**Item 2** — Create a before-save flow on `LOI__c` mirroring `NDA_Signed_Status_Sync`: when the LOI
-reaches Signed, set `LOI_Signed__c = true` and `LOI_Signed_Date__c = TODAY()`, as a **one-way latch**
-that is never reset if the status later moves away. Suggested name `LOI_Signed_Status_Sync`.
-
----
-
-## 2. 🔵 ADMIN WORK (salesforce-admin)
-
-Both items are single-object declarative changes. No development work is required for either.
-
-### A1 — Edit `flexipages/NDA_Record_Page.flexipage-meta.xml` (Item 1)
-
-- In the **first** `<valueListItems>` whose `<value>` is `NDA__c.Advance_Stage` (lines 9-29):
-  - Delete the second `<criteria>` block — `{!Record.Status__c}` / `NE` / `Signed` (lines 18-22).
-  - Change `<booleanFilter>` from `1 AND 2 AND 3` to `1 AND 2`.
-  - Retain criterion 1 (`{!$Permission.CustomPermission.Acquisition_Deal_Actions} EQUAL true`) and
-    the `NE 'Declined'` criterion, which becomes criterion 2.
-- **Do not touch** the second `<valueListItems>` (Disposition, lines 30-50) or the `Mark_Declined`
-  entry (lines 51-66). See C6.
-- No other file changes. No data changes.
-
-### A2 — New Flow `LOI_Signed_Status_Sync` (Item 2) — **blocked on D1**
-
-- Type: **Record-Triggered, before-save** (`triggerType = RecordBeforeSave`), object `LOI__c`,
-  `recordTriggerType = CreateAndUpdate`. Matches the NDA analog exactly.
-- `apiVersion` **67.0**, `status` Active, `processType` AutoLaunchedFlow (project convention per
-  ARCHITECTURE.md).
-- Entry/decision: when **[field per D1]** equals `Signed`:
-  - Assign `LOI_Signed__c = true`.
-  - Then a second decision mirroring `Needs_Signed_Date`: if `LOI_Signed_Date__c` `IsNull`, assign
-    `LOI_Signed_Date__c = $Flow.CurrentDate`. Never overwrite an existing date. (C3)
-- **One-way latch:** no false/default branch, and **no dead `Set_Signed_False` assignment** — the
-  default connector is simply absent so the checkbox can only ever be set true. (C3)
-- Record an in-root XML comment (inside `<Flow>`, never above it — a comment above the root breaks
-  `sf` at source conversion) stating that the latch is deliberate and the false branch must not be
-  added, and cross-referencing `NDA_Signed_Status_Sync`.
-- Note in the same comment that `LOI_Signed_Notify` fires off this write (C2).
-
-**No validation rules, no permission sets, no page-layout changes, no test classes** are included —
-none were requested.
-
----
-
-## 3. 🚦 BLOCKING DECISION BEFORE A2
-
-**D1 — Which field triggers the LOI latch?**
-
-- **Option A (recommended): `Stage__c = 'Signed'`.** This is the field the Advance Stage button and
-  the Path actually write, and it is the true mirror of the NDA analog. Self-limiting to
-  Acquisition_LOI with no record-type criterion needed, because the terminals stay distinct —
-  acquisition ends at `Signed`, disposition at `Executed` (confirmed in
-  `Stage__c.field-meta.xml:115-118`; the overlap is only mid-sequence at 'Under Review').
-- **Option B (as briefed): `LOI_Status__c = 'Signed'`.** Fires only on a manual Edit LOI pick; will
-  never fire on a stage advance. Choose this only if the intent really is a manual approval-side
-  marker.
-- **Option C:** both fields. Not recommended — `LoiSelector.cls:121-123` explicitly warns against
-  coupling the two.
-
-**D2 — Disposition LOIs (raised, not assumed).** Under Option A a disposition LOI reaching its
-terminal `Executed` would **not** set `LOI_Signed__c`. Not requested, so it is out of scope — but the
-asymmetry is flagged rather than silently introduced. Confirm "acquisition only" is intended.
-
-**D3 — Acknowledge C2.** Confirm that Legal and Investor Relations receiving automatic notifications
-on LOI stage advance is intended.
-
----
-
-## 4. 🟢 DEVELOPMENT WORK (salesforce-developer)
-
-**None.** Both items are declarative. No Apex, LWC, or test classes are in scope.
-
-Note: `RecordStageAdvanceService.cls` already carries the correct maps for both items and needs **no
-change** — Item 1 is purely the FlexiPage catching up to Apex. Likewise `NDA_Signed_Status_Sync`
-needs no change; its latch is what makes the 2026-08-16 NDA reorder safe (class header lines 535-548).
-
----
-
-## 5. 🔗 EXECUTION ORDER
-
-1. **A1 (Item 1)** — independent, unblocked, deployable now.
-2. **D1/D2/D3 answered** — blocks A2.
-3. **A2 (Item 2)** — after D1.
-
-The two items share no metadata and can deploy separately. ⚠ Per project memory, diff
-`NDA_Record_Page.flexipage-meta.xml` against HEAD immediately before deploying — this tree has been
-edited by concurrent sessions before, and FlexiPages are a known silent-union hazard.
-
----
-
-## 6. PROMPTS FOR SPECIALIST AGENTS
-
-### 🔵 PROMPT FOR salesforce-admin — Item 1 (ready now)
-
+**C3 — `objectLabel` is not a stable literal. It is a describe-derived, admin-renameable, translated label.**
+`PortfolioDealController` lines 355-356:
+```apex
+private static final String LEAD_LABEL = Lead.SObjectType.getDescribe().getLabel();
+private static final String OPPORTUNITY_LABEL = Opportunity.SObjectType.getDescribe().getLabel();
 ```
-Edit force-app/main/default/flexipages/NDA_Record_Page.flexipage-meta.xml only. Do not deploy.
+with the stated intent *"so the card says whatever the org calls them rather than a hardcoded English string"* (line 353-354).
+Two consequences the brief does not account for:
+- a client-side `objectLabel === 'Lead'` comparison **silently stops matching** if an admin renames the Lead tab label or a user runs a translated locale;
+- the Jest fixtures hardcode `objectLabel: 'Lead'` / `'Opportunity'` (test lines 85, 93), so **the suite stays green while the icon is wrong in the org** — the exact failure mode this bundle's headers warn about three separate times (`.js` lines 140-148, test lines 68-74).
+This does not veto the user's approved approach, but it makes a **generic default icon mandatory** rather than optional (see D2).
 
-In the FIRST <valueListItems> whose <value> is NDA__c.Advance_Stage (currently lines 9-29):
-- Remove the <criteria> block for {!Record.Status__c} NE 'Signed'.
-- Change <booleanFilter> from "1 AND 2 AND 3" to "1 AND 2".
-- Keep the {!$Permission.CustomPermission.Acquisition_Deal_Actions} EQUAL true criterion and the
-  {!Record.Status__c} NE 'Declined' criterion.
+**C4 — Replacing the "objectLabel · status" text with icon + badge deletes `objectLabel` from the accessible name and from plain reading.**
+An icon conveys object type to a sighted user who knows the iconography, and to nobody else. There is an existing test whose stated purpose is exactly this: *"A Lead row and an Opportunity row must be distinguishable to a human WITHOUT the client knowing either object exists"*, asserting `.pds-meta` contains `Lead` / `Opportunity` (test lines 193-208). Losing that text also wastes the server-side describe in C3. **This needs a decision (D1) — it is the one part of the request that is not purely cosmetic.**
 
-Reason: RecordStageAdvanceService.NDA_ACQUISITION_NEXT_STAGE now maps 'Signed' => 'Sent'
-(2026-08-16 reorder), so hiding the button at Signed hides it exactly when it is actionable.
+**C5 — The `sidebar` region is ~360px, and the status badge is new unbreakable content.**
+`competingBrokerSubmissions.css` lines 41-43 record the constraint: *"the same viewport yields a ~360px record-page sidebar or a ~900px main region"*, so container width — not viewport — is the constraint and media queries are the wrong tool. Our current CSS already fights this with `min-width: 0`, `overflow-wrap: anywhere`, `flex-wrap: wrap` (css lines 18-51). A status pill carrying a long stage value is a new overflow risk that today's plain text does not have.
+Also noted in that CSS: *"jsdom performs no layout, so a Jest test CANNOT observe overflow... verified by eye in the org, not by the suite."* This redesign therefore needs a **manual visual check in the org** as an explicit acceptance step.
 
-DO NOT modify the SECOND NDA__c.Advance_Stage entry (Disposition). It has THREE criteria —
-Disposition_Deal_Actions, Is_Decline_Allowed__c EQUAL true, and Status__c NE 'Signed' — and all
-three are correct: 'Signed' is genuinely terminal for Disposition_NDA. Do not make the two entries
-symmetrical. Do not modify the Mark_Declined entry. Do not touch any other file. No data changes.
-```
+**C6 — `<ul class="slds-has-dividers_bottom-space pds-list">` must lose the divider class.**
+Bordered tiles plus SLDS bottom dividers renders a double rule between rows.
 
-### 🔵 PROMPT FOR salesforce-admin — Item 2 (hold until D1 is answered)
+---
 
-```
-Create force-app/main/default/flows/LOI_Signed_Status_Sync.flow-meta.xml. Do not deploy.
+## 1. BLOCKING DECISIONS
 
-Model it on force-app/main/default/flows/NDA_Signed_Status_Sync.flow-meta.xml — read that file's
-actual XML first and follow its structure.
+These change the deliverable. Please answer D1 and D2; D3/D4 default to "not included."
 
-- Record-triggered, object LOI__c, triggerType RecordBeforeSave, recordTriggerType CreateAndUpdate.
-- apiVersion 67.0, processType AutoLaunchedFlow, status Active.
-- Decision: when <FIELD FROM D1> equals 'Signed' -> assign LOI_Signed__c = true.
-- Then a second decision mirroring the analog's Needs_Signed_Date: if LOI_Signed_Date__c IsNull,
-  assign LOI_Signed_Date__c = $Flow.CurrentDate. Never overwrite an existing date.
-- ONE-WAY LATCH: no default/false connector and NO Set_Signed_False assignment at all. The NDA
-  analog has an unconnected Set_Signed_False that its own XML comment marks as a hazard — do not
-  reproduce it.
-- Add an XML comment INSIDE the root <Flow> element (never above it) recording: the latch is
-  deliberate; the false branch must never be added; and that the after-save flow LOI_Signed_Notify
-  triggers on LOI_Signed__c = true and will now notify Legal_Team and Investor_Relations
-  automatically as a result of this write.
+**D1 — What happens to `objectLabel`?** (see C4)
+- **D1-a (recommended):** keep `objectLabel` as short visible text in the tile, move only `status` into the neutral badge. Icon is decorative. Every existing tested fact stays true; the change is genuinely "visual polish only."
+- **D1-b (as literally briefed):** icon replaces the `objectLabel` text entirely. Requires giving the icon `alternative-text={row.objectLabel}` so screen readers still get it, and accepts that sighted users read object type from iconography alone. The existing `.pds-meta` label test must be rewritten to assert the icon's alt text instead.
 
-Do not create validation rules, permission sets, layout changes or test classes. Do not modify
-LOI_Signed_Notify or RecordStageAdvanceService.
-```
+**D2 — How is the icon chosen?** (see C3)
+- **D2-a (recommended):** map `objectLabel` → icon with a **generic default** for any unrecognised label (`standard:lead`, `standard:opportunity`, else `standard:record`). The default is what preserves the documented "a third object can be added with **zero** client changes" property — the `Transaction__c` precedent in `.js` lines 16-18 and `PortfolioDealController` lines 76-81. Without a default, adding a third object or renaming a label yields a broken/blank icon.
+- **D2-b (simplest):** one generic icon on every row, no branching at all. Fully object-agnostic, zero fragility, but rows are visually undifferentiated.
 
-### 🟢 PROMPT FOR salesforce-developer
+**D3 — `role="list"` + `aria-label` on the `<ul>`?** NOT included by default (not requested). Flagged because the neighbouring card documents that `list-style: none` makes WebKit drop the implicit `list` role, and *"axe has no rule for it, so the toBeAccessible() test passing is not evidence against it"* (`competingBrokerSubmissions.html` lines 26-33). Our `.pds-list` already sets `list-style: none` today, so omitting this is parity with current behaviour, not a regression.
 
-None — no development work in scope.
+**D4 — CSS source-text anti-regression test?** NOT included by default (not requested). Flagged because `competingBrokerSubmissions.test.js` (lines 33-47, T2) reads its own `.css` with comments stripped and asserts no `nowrap` / `overflow-x` / fixed widths — the established answer to "jsdom cannot measure layout" (C5).
+
+---
+
+## 2. WHAT THE USER REQUESTED
+
+Convert each sibling row in `c/portfolioDealSiblings` from a plain text line into a compact bordered card-tile containing an icon, the record name link, and a **neutral** status badge replacing the current plain `objectLabel · status` text. Visual only — no data or behaviour change, no Apex change.
+
+---
+
+## 3. ADMIN WORK (salesforce-admin)
+
+No admin work required for this request. No metadata objects, fields, permission sets, or flexipage changes — placement and region are unchanged on both record pages.
+
+---
+
+## 4. DEVELOPMENT WORK (salesforce-developer)
+
+Standard LWC work. Not integration, not performance-critical → `salesforce-developer`, not `salesforce-technical-architect`.
+
+- **`portfolioDealSiblings.html`** — restructure the sibling row into a tile: decorative `lightning-icon`, the existing `.pds-link` anchor, and a `lightning-badge` carrying `row.status`. Keep `<ul>`/`<li>` (C1). Drop `slds-has-dividers_bottom-space` (C6). Preserve unchanged: the `if:true={isVisible}` gate, the card title `Portfolio Deal ({count})`, the `hasError` branch with `.lv-error` + `role="alert"`, the "From one broker email:" `.pds-line` heading with the server-built `dealUrl`, and the R6 "No other records were created from this email." branch.
+- **`portfolioDealSiblings.css`** — tile styling on `.pds-item` (border, radius, padding) using `var(--slds-g-*, fallback)` per C2, mirroring `.cbs-tile`. Keep `min-width: 0` and `overflow-wrap: anywhere`; keep `flex-wrap: wrap` so the badge wraps below the name rather than widening the tile; add wrap handling for the badge (C5). No `nowrap`, no `overflow-x`, no fixed pixel widths, no media queries.
+- **`portfolioDealSiblings.js`** — add only the per-row display derivation needed for D1/D2 (a mapped getter over `siblings`; the wire handler's assignments stay as they are). **Do not** add a schema import, do not branch on `objectApiName`, do not compose a URL, do not add a spinner or an `isLoaded` gate.
+- **Header comments** — record this redesign and the D1/D2 rationale in the `.js` class header and the `.css` header. This codebase treats headers as authoritative decision history, and the icon-mapping fragility in C3 is exactly the kind of fact that must be written down where the next editor will hit it.
+- **`__tests__/portfolioDealSiblings.test.js`** — update in the same change (not a separate step): the `.pds-meta` label/status assertions become badge (and, per D1, icon) assertions; add a case proving an **unrecognised `objectLabel` falls back to the generic icon** (this is the C3 falsifier and the one new test that earns its place); keep both `toBeAccessible()` tests; keep the "renders nothing" test first and untouched — its own header calls it the most important test in the file.
+
+**Explicitly out of scope:** `PortfolioDealController.cls`, `PortfolioDealSelector.cls`, any Apex or Apex test; the `c/recentPortfolioDeals` bundle; `Lead_Record_Page` / `Opportunity_Record_Page`; the bundle's `masterLabel` and `<description>` in `.js-meta.xml`.
+
+**Two traps worth naming to the developer:**
+1. Do not edit the `.js-meta.xml` `<description>` — it is ~210 chars against a **255-char cap that only a deploy catches** (Jest, the SLDS linter and code review all pass a 258-char one).
+2. `.pds-*` classes are bundle-local (css header lines 4-9). `.lv-error` is the one genuinely cross-bundle class in this file — do not rename or restyle it.
+
+---
+
+## 5. EXECUTION ORDER
+
+1. **D1 + D2 answered** — the markup and the test list both depend on them.
+2. `salesforce-developer` — HTML + CSS + JS + Jest, one change.
+3. `salesforce-code-review` — required for LWC per the routing table.
+4. `salesforce-devops` + `salesforce-documentation` in parallel, after review passes.
+
+No unit-testing agent step: no Apex is created or changed, and the Jest updates are in the developer's scope.
+
+**Acceptance beyond a green suite:** open a Lead and an Opportunity that belong to a multi-property portfolio deal and confirm no horizontal scroll in the ~360px sidebar with a long property name and a long stage value. jsdom cannot observe this (C5).
+
+---
+
+## 6. PROMPT FOR salesforce-developer
+
+> Redesign the sibling rows in `force-app/main/default/lwc/portfolioDealSiblings/` from plain text lines into compact bordered card-tiles. Visual polish only — no data or behaviour change, and **no Apex change**.
+>
+> Read first, and treat their header comments as binding: the bundle's four files, its `__tests__/portfolioDealSiblings.test.js`, `force-app/main/default/classes/PortfolioDealController.cls`, and `force-app/main/default/lwc/competingBrokerSubmissions/` (html + css + test) — that last one is the in-repo precedent for this exact pattern and sits in the same `sidebar` region of the same Lead record page.
+>
+> Each row becomes a tile with: a decorative `lightning-icon`, the existing `.pds-link` record-name anchor, and a `lightning-badge` carrying `row.status`.
+>
+> - **Badge is ONE neutral treatment for every row.** No colour-coding by outcome. `status` is raw `Lead.Status` / `Opportunity.StageName` (`PortfolioDealController` DTO line 415), the values are admin-editable, and the client is deliberately blind to which object a row is — any string-keyed colour map would be both fragile and a breach of that design.
+> - **Icon:** [D2 answer inserted here]. If a mapping is used it must key off `row.objectLabel` only, with a generic default for any unrecognised value. Never import object schema, never branch on `objectApiName`.
+> - **`objectLabel` handling:** [D1 answer inserted here].
+> - **Keep `<ul>`/`<li>`** — style the `<li>` as the tile, as `.cbs-tile` does. Remove `slds-has-dividers_bottom-space` from the `<ul>` (borders + dividers double up).
+> - **CSS:** `var(--slds-g-*, <fallback>)` throughout, matching the existing file and `.cbs-tile`. Keep `min-width: 0`, `overflow-wrap: anywhere`, `flex-wrap: wrap`; make sure a long status value in the badge cannot burst the ~360px sidebar. No `nowrap`, no `overflow-x`, no fixed pixel widths, no media queries (the constraint is container width, not viewport).
+> - **Unchanged:** the `isVisible` gate (no card at all when there is no portfolio deal), no spinner and no `isLoaded` gate, the `Portfolio Deal ({count})` title, the `.lv-error` + `role="alert"` error branch, the `.pds-line` deal heading with the server-built `dealUrl`, and the R6 "No other records were created from this email." branch. All are deliberate and documented in the bundle's headers.
+> - **Do not** touch `PortfolioDealController.cls`, `PortfolioDealSelector.cls`, any Apex test, the `c/recentPortfolioDeals` bundle, either flexipage, or the `.js-meta.xml` `masterLabel` / `<description>` (that description is ~210 chars against a 255-char cap that only a deploy catches).
+> - Record the redesign and the icon-fallback rationale in the `.js` and `.css` header comments — this repo's headers are the authoritative decision history.
+>
+> **Update the Jest suite in this same change.** Rework the `.pds-meta` assertions into badge (and icon, per D1) assertions; add a test proving an **unrecognised `objectLabel` falls back to the generic icon** — the fixtures hardcode `'Lead'`/`'Opportunity'`, but Apex supplies `getDescribe().getLabel()`, which is admin-renameable and translated, so without that test a renamed org breaks the icons while the suite stays green. Keep both `toBeAccessible()` tests and leave the "renders nothing" test first and untouched. Run the SLDS linter and Jest before handing off. Do not deploy.
+
+---
+
+## 7. NOT INCLUDED (would be scope creep — say the word if you want any of them)
+
+- `role="list"` / `aria-label` on the `<ul>` (D3)
+- CSS source-text anti-regression test (D4)
+- Any change to the card's own `standard:related_list` icon, its title, or its wording
+- Hover/focus states, animation, density toggles, or empty-state restyling

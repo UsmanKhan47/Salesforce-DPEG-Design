@@ -44,19 +44,91 @@
                         A <ul> of links rather than a datatable: jsdom does no layout, so an
                         overflow-prone table cannot be tested for horizontal scroll, and a
                         semantic list is what a screen reader announces usefully here.
+
+                        ⚠ THE CARD-TILE REDESIGN (2026-08-19) KEPT THIS <ul>/<li>. Each <li> is
+                        STYLED as the tile — it is not wrapped in one, and it was not replaced by
+                        <div>s. `c/competingBrokerSubmissions`, one item above this card in the
+                        SAME sidebar region of Lead_Record_Page, reached the identical shape for
+                        the identical reason (its `.cbs-tile` is an <li>), and its header records
+                        that it moved TO a list FROM a <table> to keep exactly these semantics.
+                        Tile appearance is a CSS concern; dropping the list would be an
+                        accessibility regression against two documented decisions.
+
+                        ⚠ `slds-has-dividers_bottom-space` (on the <ul>) AND its companion
+                        `slds-item` (on the <li>) BOTH went in that redesign, together and on
+                        purpose. Bordered tiles plus SLDS bottom dividers draw a double rule
+                        between rows, so the divider class had to go — and `slds-item` carries
+                        meaning ONLY as a child of `slds-has-dividers_*`. With the companion
+                        class gone it is dead markup, and dead markup still SHAPED like a
+                        divider list is a standing invitation to a future editor to "restore"
+                        the dividers this redesign deliberately removed.
+
+                        Dropping it is safe because it was purely PRESENTATIONAL. The list
+                        semantics a screen reader announces belong to the <ul>/<li> elements
+                        themselves — both retained above, for the reasons in the paragraph
+                        before this one — and nothing accessibility-related was ever attached
+                        to `slds-item`. Nor does anything else in the app lean on it: no other
+                        bundle under `force-app/` uses the class at all (checked 2026-08-19;
+                        the repo's only other hits are scaffold templates under
+                        `.claude/skills/`, which ship nowhere). And the removal is PINNED — the
+                        Jest suite asserts `tiles[0].className` does not contain `slds-item`,
+                        so it cannot quietly return.
+
+                        ⚠ THIS IS NOT A CSS-SPECIFICITY OR LOAD-ORDER ARGUMENT. An earlier
+                        version of this comment claimed the leftover class would strand a
+                        global SLDS rule in a cascade fight against `.pds-item`'s own
+                        `display: flex`, decided by stylesheet load order. That was WRONG — do
+                        not re-derive it. LWC's style compiler scopes every selector in this
+                        bundle with a scoping attribute, so `.pds-item` compiles to roughly
+                        `.pds-item[c-portfolioDealSiblings_portfolioDealSiblings]`: specificity
+                        (0,2,0), which beats a global `.slds-item` rule's (0,1,0) whichever
+                        sheet loads first. Under native shadow DOM the global rule would not
+                        cross the boundary to begin with. There was never a fight to lose; the
+                        two reasons above are the whole case.
                     -->
-                    <ul class="slds-has-dividers_bottom-space pds-list">
-                        <template for:each={siblings} for:item="row">
-                            <li key={row.id} class="slds-item pds-item">
-                                <a
-                                    href={row.recordUrl}
-                                    data-id={row.id}
-                                    onclick={handleSiblingClick}
-                                    class="pds-link"
-                                >{row.name}</a>
-                                <span class="slds-text-body_small slds-text-color_weak pds-meta">
-                                    {row.objectLabel} &middot; {row.status}
-                                </span>
+                    <ul class="pds-list">
+                        <template for:each={rows} for:item="row">
+                            <li key={row.id} class="pds-item">
+                                <!--
+                                    DECORATIVE ONLY. No `alternative-text`, so lightning-icon
+                                    marks its own svg aria-hidden and a screen reader hears
+                                    nothing extra — the object type is carried by the
+                                    `{row.objectLabel}` TEXT below, which is the whole reason
+                                    that text stayed (design D1-a). Do not promote this icon
+                                    into the only object-type indicator: `row.iconName` is
+                                    mapped from an admin-renameable, translated label and falls
+                                    back to a generic icon, so on some orgs it says nothing at
+                                    all. See the JS header.
+                                -->
+                                <lightning-icon
+                                    icon-name={row.iconName}
+                                    size="x-small"
+                                    class="pds-icon"
+                                ></lightning-icon>
+                                <div class="pds-body">
+                                    <a
+                                        href={row.recordUrl}
+                                        data-id={row.id}
+                                        onclick={handleSiblingClick}
+                                        class="pds-link"
+                                    >{row.name}</a>
+                                    <span class="slds-text-body_small slds-text-color_weak pds-meta">
+                                        <span class="pds-object">{row.objectLabel}</span>
+                                        <!--
+                                            ONE NEUTRAL BADGE FOR EVERY ROW — no variant, no
+                                            class, no colour by outcome. `row.status` is raw
+                                            `Lead.Status` / `Opportunity.StageName`, both
+                                            admin-editable picklists, and this component is
+                                            deliberately blind to which object a row is: a
+                                            string-keyed colour map would be fragile AND a
+                                            breach of that design. Do not add one.
+                                        -->
+                                        <lightning-badge
+                                            label={row.status}
+                                            class="pds-badge"
+                                        ></lightning-badge>
+                                    </span>
+                                </div>
                             </li>
                         </template>
                     </ul>

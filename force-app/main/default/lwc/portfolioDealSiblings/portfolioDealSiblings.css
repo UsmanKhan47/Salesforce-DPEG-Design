@@ -2,32 +2,95 @@
  * SLDS 2 design tokens only (--slds-g-*), with a plain fallback for each so the card still reads
  * correctly if a token is unavailable. No hardcoded brand colours.
  *
+ * ⚠ TOKEN-WITH-FALLBACK IS THE HOUSE CONVENTION HERE, NOT AN OVERSIGHT — `var(--slds-g-*, <hex>)`
+ * throughout, matching `c/competingBrokerSubmissions`. The rule is "no hardcoded brand colour as
+ * the VALUE", not "no hex anywhere". Do not strip the fallbacks in review.
+ *
  * ⚠ The `.pds-*` prefix replaced `.ps-*` when this bundle was renamed from `packageSiblings` in
  * phase B4 of the Portfolio Deal rename. These classes are bundle-local (LWC style scoping), so the
  * only places that must agree are this file, the template and the Jest suite's selectors — the one
  * shared class in this bundle is `.lv-error`, which belongs to the repo-wide list-view chrome and
  * was deliberately left alone.
+ *
+ * ═══ CARD-TILE REDESIGN (2026-08-19) ═══
+ * The sibling rows became bordered tiles: `.pds-item` (still an <li> — see the template) carries
+ * the border, radius and padding, mirroring `.cbs-tile` in `c/competingBrokerSubmissions`, which
+ * sits in the same ~360px sidebar region of the same record page and already solved this layout.
+ * The SLDS divider classes went at the same time; borders plus `slds-has-dividers_bottom-space`
+ * draw a double rule between rows.
+ *
+ * 🔴 NOTHING HERE MAY SCROLL SIDEWAYS AT ANY CONTAINER WIDTH, and the redesign added a NEW way to
+ * break that: the status `lightning-badge` is content this card did not carry before. Four
+ * declarations do that work and all four are load-bearing:
+ *   1. `min-width: 0` on every flex item that holds text (`.pds-item`, `.pds-body`, `.pds-link`,
+ *      `.pds-meta`). A flex item defaults to `min-width: auto` and then REFUSES to shrink below its
+ *      longest unbreakable token, so one long property name forces the card wider than its region —
+ *      the card gives way, not the text. The load-bearing one is `.pds-body`, the flex child that
+ *      holds both the name and the badge row.
+ *   2. `overflow-wrap: anywhere` on `:host`. `anywhere`, not `break-word`, because only `anywhere`
+ *      affects min-content sizing, which is what lets (1) actually take effect. It sits on `:host`
+ *      SPECIFICALLY so that — `overflow-wrap` being inherited — it crosses the shadow boundary into
+ *      `lightning-badge`'s own shadow root, which this stylesheet cannot otherwise reach. That is
+ *      the only lever this bundle has over the badge's internals; moving this declaration down onto
+ *      `.pds-item` would silently give it up.
+ *   3. `flex-wrap: wrap` on `.pds-item` and `.pds-meta`, so a long status wraps BELOW the object
+ *      label rather than widening the tile.
+ *   4. no fixed pixel widths, no `overflow-x`, no `nowrap`, and NO MEDIA QUERIES — a media query
+ *      measures the VIEWPORT, but the constraint here is CONTAINER width: the same viewport yields
+ *      a ~360px record-page sidebar or a ~900px main region.
+ *
+ * ⚠ jsdom performs NO LAYOUT, so a Jest test CANNOT observe overflow — `scrollWidth` and
+ * `clientWidth` are both 0 there, which makes the obvious assertion `0 <= 0` and vacuously green.
+ * These four rules are verified BY EYE IN THE ORG (a Lead and an Opportunity on a multi-property
+ * deal, long property name, long stage value, no horizontal scroll in the sidebar), never by the
+ * suite.
  */
+
+/*
+ * Rule 2 above. Also the reason this is `:host` and not `.pds-item`: it must cover the .lv-error
+ * banner (whose message is server-supplied and cannot be pre-wrapped here) as well as the tiles.
+ */
+:host {
+    overflow-wrap: anywhere;
+}
 
 .pds-list {
     list-style: none;
     margin: 0;
-    padding: 0;
+    /* One tile per row, with the gap doing the separating the dividers used to do. A single-column
+       grid on purpose: an auto-fill/minmax track would reintroduce a minimum tile width, which is
+       the exact thing that bursts a ~360px sidebar. */
+    display: grid;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    padding: 0 var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-2, 0.5rem);
 }
 
+/* The tile. Border + radius + padding mirror `.cbs-tile`, deliberately — two cards in the same
+   sidebar region should not read as two different design systems. */
 .pds-item {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
     gap: var(--slds-g-spacing-2, 0.5rem);
-    padding: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-4, 1rem);
-    /*
-     * min-width: 0 plus overflow-wrap is what keeps a long property name from forcing the whole
-     * record-page region to scroll horizontally. A flex item defaults to min-width: auto, which
-     * refuses to shrink below its content — so without this the card, not the text, gives way.
-     * ⚠ jsdom performs no layout, so a Jest test CANNOT observe overflow (scrollWidth and
-     * clientWidth are both 0 there). This rule is verified by eye in the org, not by the suite.
-     */
+    min-width: 0;
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-2, 8px);
+    padding: var(--slds-g-spacing-3, 0.75rem);
+}
+
+/* Decorative — see the template. `flex: none` keeps it from being squeezed by a long name. */
+.pds-icon {
+    flex: none;
+}
+
+/* Name above, object label + status badge below. `flex: 1 1 0` with `min-width: 0` is what lets the
+   text column shrink inside the tile instead of pushing the tile wider. */
+.pds-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    gap: var(--slds-g-spacing-1, 0.25rem);
     min-width: 0;
 }
 
@@ -45,8 +108,24 @@
     text-decoration: underline;
 }
 
+/* The meta row: object label then the neutral status badge, wrapping onto a second line before it
+   widens the tile. */
 .pds-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--slds-g-spacing-1, 0.25rem);
     overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.pds-object {
+    min-width: 0;
+}
+
+/* The badge's own chrome comes from lightning-badge; this only guarantees it may shrink and wrap.
+   Its interior is reachable ONLY through the inherited `overflow-wrap` on :host — see rule 2. */
+.pds-badge {
     min-width: 0;
 }
 

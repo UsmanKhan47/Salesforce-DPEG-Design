@@ -113,12 +113,78 @@
  * ⚠ Do NOT "deduplicate" the two titles into one wording, and do NOT rename either back. They remain
  * two separate features — that card lists the deals, this one shows the deal-mates of the record in
  * front of you — so read the bundle name before editing either title.
+ *
+ * ═══ CARD-TILE REDESIGN (2026-08-19) — WHAT CHANGED AND WHAT DELIBERATELY DID NOT ═══
+ * Each sibling row went from a plain text line ("{objectLabel} · {status}" under the name) to a
+ * compact bordered tile: decorative icon, the record-name link, then the object label followed by a
+ * NEUTRAL `lightning-badge` carrying the status. Visual only — the payload, the wire, the URLs, the
+ * navigation and every visibility gate are byte-for-byte the same.
+ *
+ * Two design answers are load-bearing and are the reason this is not a free-hand restyle:
+ *
+ * • D1-a — `objectLabel` STAYED AS VISIBLE TEXT; only `status` moved into the badge. The literal
+ *   brief was "icon + name + badge replaces the meta line", which would have deleted the object
+ *   label from the tile entirely. That label is the ONLY thing telling a human whether a row is a
+ *   Lead or an Opportunity in words, it is the payoff of a server-side describe done expressly so
+ *   this client never derives an object name (see above), and there is a test in this bundle whose
+ *   stated purpose is that "a Lead row and an Opportunity row must be distinguishable to a human
+ *   WITHOUT the client knowing either object exists". An icon conveys object type to a sighted
+ *   reader who already knows the iconography, and to nobody else. So the change is ADDITIVE:
+ *   nothing that rendered before stopped rendering.
+ *
+ * • D2-a — THE ICON IS MAPPED FROM `objectLabel`, AND THE GENERIC DEFAULT IS THE POINT, NOT A
+ *   TIDY-UP. 🔴 `objectLabel` IS NOT A STABLE LITERAL. Apex supplies it as
+ *   `Lead.SObjectType.getDescribe().getLabel()` (`PortfolioDealController`, right above
+ *   `recordUrl`), chosen "so the card says whatever the org calls them rather than a hardcoded
+ *   English string". It therefore changes when an admin renames the tab and when a user runs a
+ *   translated locale — so `'Lead'` is a value this map may simply never see. Three consequences:
+ *     1. an unmatched label MUST still produce a sensible icon, hence GENERIC_ICON. Without it a
+ *        renamed or translated org renders a blank/broken icon on every row;
+ *     2. this preserves the property the whole feature is built on — a THIRD object can be added
+ *        server-side (the `Transaction__c` precedent quoted above) with ZERO client changes. It
+ *        gets the generic icon instead of no icon;
+ *     3. the Jest fixtures hardcode `'Lead'` / `'Opportunity'`, so THE SUITE CANNOT NOTICE ANY OF
+ *        THIS. That is exactly why `__tests__` carries a dedicated "unrecognised label falls back
+ *        to the generic icon" test — it is the only falsifier for a failure mode a green run
+ *        otherwise hides. Do not delete it as redundant.
+ *   The map keys off `row.objectLabel` and NOTHING ELSE. Never import object schema and never
+ *   branch on `objectApiName` to pick an icon — that reintroduces precisely the client-side object
+ *   knowledge the server dispatch exists to remove.
+ *
+ * ⚠ The badge is ONE neutral treatment on every row — no variant, no colour by outcome. Reasoning
+ * lives at the badge in the template; the short version is that `status` is two different
+ * admin-editable picklists and this component does not know which one it is looking at.
+ *
+ * ⚠ The neighbouring `c/competingBrokerSubmissions` precedes its badge with a
+ * `<span class="slds-assistive-text">Status:</span>`. That was CONSIDERED AND NOT COPIED here: the
+ * user declined the accessibility-annotation items this round (design D3), and the pre-redesign
+ * markup carried no such prefix either — so adding one would be new behaviour, not parity. It is a
+ * reasonable future addition, not an oversight.
  */
 import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
 import getSiblingRecords from '@salesforce/apex/PortfolioDealController.getSiblingRecords';
 
 const GENERIC_ERROR = 'Unable to load the related properties.';
+
+/**
+ * Decorative row icon, keyed by the server-supplied object LABEL — see D2-a in the class header
+ * for why the label is an unreliable key and why that is acceptable.
+ *
+ * ⚠ A `Map`, not an object literal, on purpose: `{}[label]` would resolve inherited
+ * `Object.prototype` keys, so a label of "constructor" or "toString" — both reachable, since an
+ * admin picks this string — would yield a function instead of falling through to the default.
+ */
+const ICON_BY_OBJECT_LABEL = new Map([
+    ['Lead', 'standard:lead'],
+    ['Opportunity', 'standard:opportunity']
+]);
+
+/**
+ * The fallback for ANY label the map does not know: a renamed tab, a translated locale, or a third
+ * object added server-side. Load-bearing — see D2-a.
+ */
+const GENERIC_ICON = 'standard:record';
 
 export default class PortfolioDealSiblings extends NavigationMixin(LightningElement) {
     /** Injected by the record page. The ONLY thing sent to the server. */
@@ -190,6 +256,23 @@ export default class PortfolioDealSiblings extends NavigationMixin(LightningElem
 
     get hasSiblings() {
         return this.siblings.length > 0;
+    }
+
+    /**
+     * The rows the template iterates: every server field passed through untouched, plus the one
+     * derived display value the tile needs (`iconName`).
+     *
+     * ⚠ DERIVED HERE RATHER THAN IN THE WIRE HANDLER so the wire handler stays a pure
+     * server-payload-to-field mapping — the note above it explains why that mapping is the one
+     * place a rename can go wrong silently, and interleaving presentation into it would hide that.
+     * The spread keeps this forward-compatible: a field added to the Apex DTO reaches the template
+     * without an edit here.
+     */
+    get rows() {
+        return this.siblings.map((row) => ({
+            ...row,
+            iconName: ICON_BY_OBJECT_LABEL.get(row.objectLabel) || GENERIC_ICON
+        }));
     }
 
     get count() {

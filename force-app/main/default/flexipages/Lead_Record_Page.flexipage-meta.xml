@@ -136,6 +136,26 @@
                 <identifier>RecordEmailField</identifier>
             </fieldInstance>
         </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.First_Seen_Date__c</fieldItem>
+                <identifier>RecordFirst_Seen_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.BP_Expiry__c</fieldItem>
+                <identifier>RecordBP_Expiry_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
         <name>Facet-leadInfoCol1</name>
         <type>Facet</type>
     </flexiPageRegions>
@@ -168,6 +188,43 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Deal_Type__c</fieldItem>
                 <identifier>RecordDeal_Type_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Listing_Broker_Name__c</fieldItem>
+                <identifier>RecordListing_Broker_Name_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Listing_Broker_Email__c</fieldItem>
+                <identifier>RecordListing_Broker_Email_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Disqualification_Reason__c</fieldItem>
+                <identifier>RecordDisqualification_Reason_cField</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Status}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>Qualified</rightValue>
+                    </criteria>
+                </visibilityRule>
             </fieldInstance>
         </itemInstances>
         <name>Facet-leadInfoCol2</name>
@@ -206,6 +263,36 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Property_Address__c</fieldItem>
                 <identifier>RecordProperty_Address_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Building_SF__c</fieldItem>
+                <identifier>RecordBuilding_SF_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Year_Built__c</fieldItem>
+                <identifier>RecordYear_Built_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Lot_Size_Acres__c</fieldItem>
+                <identifier>RecordLot_Size_Acres_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -264,8 +351,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Broker_First__c</fieldItem>
-                <identifier>RecordBroker_First_cField</identifier>
+                <fieldItem>Record.Guidance_Price_Low__c</fieldItem>
+                <identifier>RecordGuidance_Price_Low_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -274,8 +361,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.DPEG_First__c</fieldItem>
-                <identifier>RecordDPEG_First_cField</identifier>
+                <fieldItem>Record.NOI__c</fieldItem>
+                <identifier>RecordNOI_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -284,8 +371,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Disqualification_Reason__c</fieldItem>
-                <identifier>RecordDisqualification_Reason_cField</identifier>
+                <fieldItem>Record.ADR__c</fieldItem>
+                <identifier>RecordADR_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-dealIntakeCol1</name>
@@ -298,38 +385,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Parse_Confidence__c</fieldItem>
-                <identifier>RecordParse_Confidence_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Extraction_Score_Pct__c</fieldItem>
-                <identifier>RecordExtraction_Score_Pct_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Fields_Captured_Count__c</fieldItem>
-                <identifier>RecordFields_Captured_Count_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>readonly</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Fields_Missing_Count__c</fieldItem>
-                <identifier>RecordFields_Missing_Count_cField</identifier>
+                <fieldItem>Record.Property_Name__c</fieldItem>
+                <identifier>RecordProperty_Name_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -338,8 +395,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.First_Seen_Date__c</fieldItem>
-                <identifier>RecordFirst_Seen_Date_cField</identifier>
+                <fieldItem>Record.Unit_Count__c</fieldItem>
+                <identifier>RecordUnit_Count_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -348,8 +405,18 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.BP_Expiry__c</fieldItem>
-                <identifier>RecordBP_Expiry_cField</identifier>
+                <fieldItem>Record.Year_Renovated__c</fieldItem>
+                <identifier>RecordYear_Renovated_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Zoning__c</fieldItem>
+                <identifier>RecordZoning_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -368,8 +435,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.CoStar_Link__c</fieldItem>
-                <identifier>RecordCoStar_Link_cField</identifier>
+                <fieldItem>Record.Guidance_Price_High__c</fieldItem>
+                <identifier>RecordGuidance_Price_High_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -378,8 +445,28 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Placer_AI_Link__c</fieldItem>
-                <identifier>RecordPlacer_AI_Link_cField</identifier>
+                <fieldItem>Record.Offer_Due_Date__c</fieldItem>
+                <identifier>RecordOffer_Due_Date_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Occupancy_Pct__c</fieldItem>
+                <identifier>RecordOccupancy_Pct_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.WALT_Years__c</fieldItem>
+                <identifier>RecordWALT_Years_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -426,68 +513,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Property_Name__c</fieldItem>
-                <identifier>RecordProperty_Name_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Building_SF__c</fieldItem>
-                <identifier>RecordBuilding_SF_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Unit_Count__c</fieldItem>
-                <identifier>RecordUnit_Count_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Year_Built__c</fieldItem>
-                <identifier>RecordYear_Built_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Year_Renovated__c</fieldItem>
-                <identifier>RecordYear_Renovated_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Lot_Size_Acres__c</fieldItem>
-                <identifier>RecordLot_Size_Acres_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Zoning__c</fieldItem>
-                <identifier>RecordZoning_cField</identifier>
+                <fieldItem>Record.CoStar_Link__c</fieldItem>
+                <identifier>RecordCoStar_Link_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -506,8 +533,18 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.ADR__c</fieldItem>
-                <identifier>RecordADR_cField</identifier>
+                <fieldItem>Record.Listing_Status__c</fieldItem>
+                <identifier>RecordListing_Status_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Sale_Process__c</fieldItem>
+                <identifier>RecordSale_Process_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-dealScreeningCol1</name>
@@ -520,8 +557,38 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Sale_Process__c</fieldItem>
-                <identifier>RecordSale_Process_cField</identifier>
+                <fieldItem>Record.Placer_AI_Link__c</fieldItem>
+                <identifier>RecordPlacer_AI_Link_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Fields_Missing_Count__c</fieldItem>
+                <identifier>RecordFields_Missing_Count_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Fields_Captured_Count__c</fieldItem>
+                <identifier>RecordFields_Captured_Count_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Extraction_Score_Pct__c</fieldItem>
+                <identifier>RecordExtraction_Score_Pct_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <itemInstances>
@@ -530,88 +597,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Listing_Status__c</fieldItem>
-                <identifier>RecordListing_Status_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Offer_Due_Date__c</fieldItem>
-                <identifier>RecordOffer_Due_Date_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Guidance_Price_Low__c</fieldItem>
-                <identifier>RecordGuidance_Price_Low_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Guidance_Price_High__c</fieldItem>
-                <identifier>RecordGuidance_Price_High_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.NOI__c</fieldItem>
-                <identifier>RecordNOI_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Occupancy_Pct__c</fieldItem>
-                <identifier>RecordOccupancy_Pct_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.WALT_Years__c</fieldItem>
-                <identifier>RecordWALT_Years_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Listing_Broker_Name__c</fieldItem>
-                <identifier>RecordListing_Broker_Name_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
-                <fieldItem>Record.Listing_Broker_Email__c</fieldItem>
-                <identifier>RecordListing_Broker_Email_cField</identifier>
+                <fieldItem>Record.Parse_Confidence__c</fieldItem>
+                <identifier>RecordParse_Confidence_cField</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-dealScreeningCol2</name>
@@ -672,7 +659,7 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>label</name>
-                    <value>Deal Intake</value>
+                    <value>Property &amp; Deal Terms</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>dealIntakeSection</identifier>
@@ -690,35 +677,13 @@
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>label</name>
-                    <value>Deal Screening</value>
+                    <value>Process &amp; Tracking</value>
                 </componentInstanceProperties>
                 <componentName>flexipage:fieldSection</componentName>
                 <identifier>dealScreeningSection</identifier>
             </componentInstance>
         </itemInstances>
         <name>Facet-detailsTabContent</name>
-        <type>Facet</type>
-    </flexiPageRegions>
-    <flexiPageRegions>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>relatedListComponentOverride</name>
-                    <value>ADVGRID</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>rowsToDisplay</name>
-                    <value>10</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>showActionBar</name>
-                    <value>false</value>
-                </componentInstanceProperties>
-                <componentName>force:relatedListContainer</componentName>
-                <identifier>force_relatedListContainer</identifier>
-            </componentInstance>
-        </itemInstances>
-        <name>Facet-9f7de90e-1278-4fcd-8087-9168cef2b2e8</name>
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
@@ -734,20 +699,6 @@
                 </componentInstanceProperties>
                 <componentName>flexipage:tab</componentName>
                 <identifier>detailsTab</identifier>
-            </componentInstance>
-        </itemInstances>
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>body</name>
-                    <value>Facet-9f7de90e-1278-4fcd-8087-9168cef2b2e8</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>title</name>
-                    <value>Broker</value>
-                </componentInstanceProperties>
-                <componentName>flexipage:tab</componentName>
-                <identifier>flexipage_tab</identifier>
             </componentInstance>
         </itemInstances>
         <name>tabs</name>
