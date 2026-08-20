@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        THE CHILD-SIDE HALF OF THE APPROVAL AUTO-ADVANCE SEMAPHORE (design decision D-1), for
+        the ON-MARKET broker approval only.
+
+        WHAT WRITES IT: the workflow field updates Set_BOV_Approval_Approved and
+        Set_BOV_Approval_Rejected in workflows/BOV_Submission__c.workflow-meta.xml, fired as
+        finalApprovalActions / finalRejectionActions of Broker_Finalize_Approval on THIS object.
+        Nothing else writes it. A human should not.
+
+        WHAT READS IT: BovSubmissionTriggerHandler. On Approved, where Submission_Status__c is
+        'Selected', it sets the PARENT Disposition's stage from BOV Outreach to Broker Selection
+        and stamps Selected_Broker__c. The parent update is synchronous because the PARENT is
+        not the locked record - Broker_Finalize_Approval's recordEditability = AdminOnly locks
+        this SUBMISSION, which is precisely why a synchronous parent write is safe here and a
+        Queueable is required for the three Disposition-target approvals.
+
+        🔴 BLANK IS A REAL, MEANINGFUL STATE: UNSUBMITTED. There is deliberately no default and
+        no 'Pending' value. A submission that has never been through the approval is blank; one
+        whose approval was recalled stays on its last value until it is resubmitted, and
+        BovSubmissionService.replaceSelectedBroker CLEARS this field on the demoted submission
+        so a replaced broker cannot look approved. Do not add a default value - it would make
+        every historical row claim an approval outcome it never had.
+
+        ⚠ THIS IS A SECOND, DISTINCT PICKLIST FROM Submission_Status__c ON THIS SAME OBJECT.
+        Submission_Status__c (Backup / Selected) records which broker the team PICKED.
+        Approval_Status__c records whether the principals SIGNED OFF on that pick. Both are
+        load-bearing and the trigger tests BOTH: Approved alone is not enough, the row must also
+        be the Selected one. Do not conflate or merge them.
+
+        FLS: READ ONLY, in both DPEG_Disposition_View and DPEG_Disposition_Edit. The only writer
+        is a workflow field update, which runs in system context and does not consult FLS.
+        Granting edit would let a user hand-set Approved and drive the parent's stage without an
+        approval ever running.
+    -->
+    <fullName>Approval_Status__c</fullName>
+    <description>Outcome of Broker_Finalize_Approval on this submission. Written ONLY by the Set_BOV_Approval_Approved / Set_BOV_Approval_Rejected workflow field updates. BLANK means never submitted. Read by BovSubmissionTriggerHandler, which advances the parent Disposition from BOV Outreach to Broker Selection when this reads Approved on the Selected submission.</description>
+    <inlineHelpText>Set automatically when the principals approve or reject this broker submission. Blank means it has not been submitted for approval yet.</inlineHelpText>
+    <label>Approval Status</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Approved</fullName>
+                <default>false</default>
+                <label>Approved</label>
+            </value>
+            <value>
+                <fullName>Rejected</fullName>
+                <default>false</default>
+                <label>Rejected</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

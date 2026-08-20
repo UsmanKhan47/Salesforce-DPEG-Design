@@ -3,15 +3,29 @@
     <!--
         This comment is INSIDE the root element deliberately - a comment above the root
         breaks `sf` at source conversion with "unable to find matching parent xml file".
-        Approved_LOI_Before_PSA / Disposition_Deal_Driver are the precedents for this
-        pattern.
+        Approved_LOI_Before_PSA is a precedent for this pattern (Disposition_Deal_Driver was
+        too, at the time this note was written - it was retired 2026-08-19; see the retraction
+        below).
 
         WHY THIS SET EXISTS, AND WHY IT IS MEMBERSHIP-ONLY (added 2026-08-12, live UI
         testing fix set). This is a LAYER-4 CAPABILITY set in the seven-layer permission
         set model (ARCHITECTURE.md SS2), the Transaction twin of Lead_Stage_Actions_Access
-        - NOT of Acquisition_Deal_Driver / Disposition_Deal_Driver. Those two are
-        LAYER-5 AUTHORIZATION-FLAG sets: a two-factor gate combining set membership with a
-        User.*_Driver__c checkbox read WITH USER_MODE. A design pass (see
+        - NOT of Acquisition_Deal_Driver, and, AS OF 2026-08-12 WHEN THIS WAS WRITTEN, not of
+        Disposition_Deal_Driver either. At that time those two were both LAYER-5
+        AUTHORIZATION-FLAG sets: a two-factor gate combining set membership with a
+        User.*_Driver__c checkbox read WITH USER_MODE.
+
+        🔴 RETRACTED IN PART, 2026-08-19, EXPLICIT USER DECISION - DISPOSITION ONLY, NOT
+        ACQUISITION OR TRANSACTION. Disposition_Deal_Driver was retired; its payload (the
+        Disposition_Deal_Actions custom permission) now rides
+        permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml, a module DATA set, not a
+        dedicated layer-5 authorization set. Disposition is now an explicit, user-chosen
+        EXCEPTION to the layer-4/layer-5 separation this comparison relies on - see that file's
+        own header for the full rationale and consequence. THE COMPARISON POINT THIS PARAGRAPH
+        MAKES ABOUT ACQUISITION AND TRANSACTION IS UNCHANGED: Acquisition_Deal_Driver is still
+        a separate, directly-assigned layer-5 set, and this set's own membership-only design
+        (the user's explicit rejection of a TRANSACTION_DRIVER equivalent, described next) is
+        unaffected by the disposition retirement. A design pass (see
         agent-output/design-requirements-flow-ui-fixes.md SS2.3) recommended building a
         third such gate, TRANSACTION_DRIVER, for exactly that reason. THE USER EXPLICITLY
         REJECTED THAT RECOMMENDATION: "why do we need driver when we can assign a

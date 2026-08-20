@@ -2,6 +2,14 @@
  * Backs the Disposition closing workspace LWCs. Reads the closing-summary tile and
  * find-or-creates the Disposition a Property Asset's closing workflow hangs off.
  *
+ * ⚠ TWO CREATE ENTRY POINTS SINCE 2026-08-19 AND THEY ARE NOT THE SAME BUTTON.
+ * `findOrCreate` is the ORIGINAL Sell Meter row action (record type fixed to On_Market, no
+ * approval); `initiateAndSubmit` is the flow-redesign modal (`c/sellMeterInitiateModal`) where the
+ * user CHOOSES the record type and the create is auto-submitted into `Sale_Decision_Approval`.
+ * Both are live — `findOrCreate` has other callers and is explicitly out of the redesign's scope —
+ * so do not "consolidate" them; their RETURN CONTRACTS differ (an Id vs. a three-field outcome)
+ * and that difference is the feature.
+ *
  * All SOQL is delegated to DispositionSelector per ARCHITECTURE.md §2 — this controller
  * holds no inline SOQL.
  *
@@ -69,6 +77,54 @@ public with sharing class DispositionController {
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'DispositionController.findOrCreate on ' + assetId
                 + ': ' + e.getMessage() + ' | ' + e.getStackTraceString());
+            throw ahe(WRITE_FAILURE_MESSAGE);
+        }
+    }
+
+    /**
+     * Create a Disposition at the caller's chosen record type and submit it into
+     * `Sale_Decision_Approval` — the server half of the Sell Meter "Initiate" modal
+     * (`c/sellMeterInitiateModal`, DEV-11).
+     *
+     * ⚠ THE TWO CATCHES ARE THE SAME TWO `findOrCreate` HAS, IN THE SAME ORDER, FOR THE SAME
+     * REASON — read that method's header for the full argument. SellMeterGateException is a
+     * DESIGNED REFUSAL with an authored message and is rethrown VERBATIM; everything else is a
+     * platform failure whose text leaks field API names and validation-rule internals and is masked
+     * behind the fixed generic message.
+     *
+     * 🔴 A FAILED APPROVAL SUBMISSION IS NOT AN EXCEPTION AND MUST NOT BECOME ONE HERE. It arrives
+     * as `outcome.submitted = false` with `outcome.dispositionId` populated, and the client's
+     * contract is to toast `outcome.message` as a WARNING and STILL NAVIGATE. Turning that into a
+     * thrown error would tell the user nothing was created about a record that exists — see
+     * `DispositionService.submitSaleDecision`.
+     *
+     * ⚠ `InvalidRecordTypeException` DELIBERATELY FALLS INTO THE GENERIC CATCH. It is a caller
+     * defect (the modal's radio group is mandatory and offers exactly the two allowed values), not
+     * something the user can act on, so it is masked rather than surfaced. The service's own
+     * declaration carries the argument.
+     *
+     * @param assetId the Property_Asset__c to initiate against
+     * @param recordTypeDeveloperName `On_Market` or `Off_Market`, chosen in the modal
+     * @return the outcome: Disposition Id, whether it was submitted, and an authored message
+     * @throws AuraHandledException carrying the RED-band refusal verbatim, or the fixed generic
+     *         write-failure message for anything else
+     */
+    @AuraEnabled(cacheable=false)
+    public static DispositionService.InitiateOutcome initiateAndSubmit(
+        Id assetId,
+        String recordTypeDeveloperName
+    ) {
+        try {
+            return DispositionService.initiateAndSubmit(assetId, recordTypeDeveloperName);
+        } catch (DispositionService.SellMeterGateException e) {
+            // Designed refusal: INFO, not ERROR — nothing failed, the answer is "no".
+            System.debug(LoggingLevel.INFO, 'DispositionController.initiateAndSubmit refused on '
+                + assetId + ': ' + e.getMessage());
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'DispositionController.initiateAndSubmit on ' + assetId
+                + ' (' + recordTypeDeveloperName + '): ' + e.getMessage() + ' | '
+                + e.getStackTraceString());
             throw ahe(WRITE_FAILURE_MESSAGE);
         }
     }

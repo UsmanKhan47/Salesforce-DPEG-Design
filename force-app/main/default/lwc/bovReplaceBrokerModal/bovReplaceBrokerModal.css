@@ -1,0 +1,33 @@
+/* SLDS 2 design tokens only. */
+
+.brb-body {
+    min-height: 110px;
+    overflow-wrap: anywhere;
+}
+
+/* Warning note — the replace clears the incoming broker's approval, so this is
+   deliberately the warning surface token, not the neutral container used by the
+   informational note in c/dispositionOfferSelect. */
+.brb-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--slds-g-spacing-2, 8px);
+    background: var(--slds-g-color-warning-container-1, #fef8f1);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-warning-1, #fcc003);
+    border-radius: var(--slds-g-radius-border-1, 0.25rem);
+    padding: var(--slds-g-spacing-2, 8px) var(--slds-g-spacing-3, 12px);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-neutral-base-30, #444444);
+}
+
+.brb-empty {
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+}
+
+/* Cross-bundle error-banner class — do not rename. */
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}

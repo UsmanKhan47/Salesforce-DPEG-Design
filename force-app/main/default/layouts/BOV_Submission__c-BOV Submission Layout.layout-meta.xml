@@ -1,5 +1,104 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE <Layout>
+         breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+         xml file" error.
+
+         BUSINESS FIELDS ADDED 2026-08-20 (UAT gap). Until now this layout was a STUB: it carried
+         exactly four fields, Name, OwnerId, CreatedById and LastModifiedById, and not one business
+         field. Clicking "Add Broker Response" on the BOV Outreach stage therefore opened a "New BOV
+         Submission" modal offering only a blank auto number and an Owner picker, so the analyst had
+         nowhere to type the broker, the amount, or the terms.
+
+         WHY IT SURVIVED TO UAT: every read path bypasses layouts. BovSubmissionSelector names its
+         columns in SOQL and bovComparisonMatrix renders them itself, so the matrix looked complete
+         while the create and detail screens were empty. A layout is only exercised by the standard
+         create and detail UI, and nothing in the Jest or Apex suites touches it.
+
+         🔴 A SECOND EXPOSURE THIS CLOSES, AND ONE UAT STEP IT NEEDS.
+         lwc/bovComparisonMatrix/bovComparisonMatrix.js handleAddResponse navigates to
+         standard__objectPage actionName 'new' with encodeDefaultFieldValues({ Disposition__c }) -
+         and Disposition__c WAS NOT ON THIS LAYOUT. The create screen renders its inputs from this
+         layout, so there was no input for that default to land in, and the analyst could not have
+         set the parent by hand either.
+         ⚠ WHETHER THE PLATFORM STILL APPLIES A DEFAULT TO A FIELD WITH NO RENDERED INPUT IS NOT
+         STATED IN THE defaultFieldValues DOCUMENTATION, AND WAS NOT TESTED HERE. So this is
+         recorded as an open risk, not as a finding: if the value was being dropped, every
+         submission created through that button is orphaned from its Disposition and existing UAT
+         data needs checking. Placing Disposition__c here removes the question either way.
+         CONFIRM IN UAT: create one submission through "Add Broker Response" and check the parent
+         is populated. Do not assume it was, and do not assume it was not.
+
+         BEHAVIOUR RULES APPLIED, and each Readonly below is deliberate:
+         1. FORMULA FIELDS CANNOT BE EDITABLE. Broker_Display__c, Property_Name__c and
+            Selected_Broker__c are formulas (verified in objects/BOV_Submission__c/fields/); a
+            formula carrying behavior=Edit fails the deploy outright.
+         2. MACHINE WRITTEN FIELDS ARE Readonly. Approval_Status__c is written ONLY by
+            workflows/BOV_Submission__c.workflow_meta Set_Broker_Approval_Approved and
+            Set_Broker_Approval_Rejected, fired as the final actions of
+            approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval. A hand edit would make the
+            field disagree with the approval that owns it, and BovSubmissionTriggerHandler reads
+            exactly that value to advance the parent Disposition from BOV Outreach to Broker
+            Selection. Editing it by hand would move a deal without an approval. This is the same
+            reasoning that set Selected_Broker__c to readonly on the Disposition FlexiPage
+            yesterday under code review W1, and it is applied consistently here.
+            It also MATCHES THE FLS ALREADY IN THE ORG: permissionsets/DPEG_Disposition_Edit grants
+            Approval_Status__c readable=true editable=false, so an Edit behaviour here would have
+            advertised a write the persona does not have.
+         3. Name stays Readonly. It is an AutoNumber, displayFormat BOV-{0000}.
+         4. Submission_Status__c IS LEFT EDITABLE ON PURPOSE. It is the team's own pick, set by
+            hand or by BovSubmissionService.replaceSelectedBroker, and it is a different field from
+            Approval_Status__c: the trigger requires BOTH. BOV_Score__c is likewise left editable,
+            because nothing in Apex or Flow writes it, only reads it for the ORDER BY.
+
+         THE relatedLists BLOCK BELOW IS UNTOUCHED. It carries RelatedProcessHistoryList, which is
+         the only route to Recall Approval Request on this object.
+
+         =================================================================================
+         REVISED 2026-08-20. THE BROKER PICK BECOMES A LOOKUP, AND SIX FIELDS LEAVE THIS PAGE.
+         =================================================================================
+         🔴 EVERY REMOVAL BELOW IS DISPLAY ONLY. NOT ONE FIELD IS RETIRED FROM THE SCHEMA, NOT
+         ONE IS RENAMED, AND NO FLS IS REVOKED. A field absent from a layout is still queried,
+         still written by Apex, still readable in reports and list views, and still granted by
+         permissionsets/DPEG_Disposition_Edit and DPEG_Disposition_View. Everything that read
+         these fields yesterday reads them unchanged today.
+
+         1. ADDED TO Information: Broker__c, labelled "Broker Contact", a Lookup to Contact with
+            an ACTIVE non-optional filter on Is_Broker__c. behavior=Edit is legal because it is a
+            Lookup. It is now THE ONLY BROKER ENTRY POINT ON THIS PAGE.
+            ⚠ It renders as a type ahead search box, not a fixed list combobox. That is the
+            confirmed decision, so do not raise it in UAT as a defect.
+
+         2. REMOVED FROM Information: Broker_Firm__c and Contact_Name__c.
+            WHY: they are no longer typed. BovSubmissionBrokerStampService stamps both in before context
+            from the Contact chosen in Broker__c, so an editable input for either would offer
+            the analyst a value the next save overwrites. The user asked not to see or enter
+            them. They REMAIN STORED Text fields and REMAIN POPULATED, which is what keeps
+            BovSubmissionTriggerHandler's approval stamp onto Disposition__c.Selected_Broker__c,
+            BovSubmissionService.replaceSelectedBroker, the Broker_Display__c formula,
+            BovController.BovRow and the bovComparisonMatrix and backupBrokers columns working
+            with zero code change.
+
+         3. DELETED ENTIRELY: the "Broker Selection and Approval" section, carrying
+            Broker_Display__c, Property_Name__c, Selected_Broker__c and Approval_Status__c.
+            WHY THIS CHANGES NO BEHAVIOUR: all four were Readonly here and none is human
+            written. Broker_Display__c, Property_Name__c and Selected_Broker__c are FORMULAS
+            (they recompute regardless of any layout), and Approval_Status__c is written only by
+            the Set_Broker_Approval_Approved and Set_Broker_Approval_Rejected workflow field
+            updates fired by Broker_Finalize_Approval. Hiding a formula does not stop it
+            evaluating and hiding a workflow written field does not stop the workflow.
+            ⚠ Approval_Status__c REMAINS the field BovSubmissionTriggerHandler reads to advance
+            the parent Disposition from BOV Outreach to Broker Selection. That path is untouched
+            and must still be regression tested after this deploy.
+            ⚠ Disposition_Dashboard_Access still grants Broker_Display__c, Property_Name__c and
+            Selected_Broker__c read; that set is deliberately NOT edited by this change.
+
+         4. UNCHANGED: BOV Terms, System Information, the CustomLinks section, and the
+            relatedLists block. 🔴 THE relatedLists BLOCK IS LOAD BEARING, SEE ITS OWN COMMENT
+            BELOW: it carries RelatedProcessHistoryList, which is Approval History, and this
+            object has no FlexiPage, so deleting it would strand every submitted BOV with no
+            route to Recall Approval Request. It survived this edit verbatim. -->
+
     <layoutSections>
         <customLabel>false</customLabel>
         <detailHeading>false</detailHeading>
@@ -10,11 +109,58 @@
                 <behavior>Readonly</behavior>
                 <field>Name</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Disposition__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Broker__c</field>
+            </layoutItems>
         </layoutColumns>
         <layoutColumns>
             <layoutItems>
                 <behavior>Edit</behavior>
+                <field>Submission_Status__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
                 <field>OwnerId</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>BOV Terms</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>BOV_Amount__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Cap_Rate__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Commission_Rate__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Days_To_Market__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Hist_Success_Rate__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>BOV_Score__c</field>
             </layoutItems>
         </layoutColumns>
         <style>TwoColumnsTopToBottom</style>
@@ -47,6 +193,25 @@
         <layoutColumns/>
         <style>CustomLinks</style>
     </layoutSections>
+    <!-- APPROVAL HISTORY, ADDED 2026-08-19 (code review C-3, child object half). BOV_Submission__c
+         gained Broker_Finalize_Approval in this change, which sets allowRecall=true and
+         recordEditability=AdminOnly, so a submitted BOV locks and Recall Approval Request exists
+         ONLY on this list. This file previously had NO relatedLists block at all, so the same gap
+         C-3 found on Disposition existed here too.
+         UNLIKE Disposition, THIS OBJECT NEEDS NO SECOND FILE. There is no custom FlexiPage for
+         BOV_Submission__c anywhere in force-app, so it renders on the org default record page,
+         which is layout driven. Adding the list here is sufficient and is the only route.
+         RelatedProcessHistoryList IS Approval History: the live describeLayout for Opportunity
+         returns this list as name "ProcessSteps", label "Approval History". The five columns are
+         the standard set copied from layouts/Opportunity-Opportunity Layout.layout-meta.xml. -->
+    <relatedLists>
+        <fields>CreatedDate</fields>
+        <fields>StepStatus</fields>
+        <fields>OriginalActor</fields>
+        <fields>Actor</fields>
+        <fields>Comments</fields>
+        <relatedList>RelatedProcessHistoryList</relatedList>
+    </relatedLists>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>

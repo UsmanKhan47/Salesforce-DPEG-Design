@@ -374,9 +374,17 @@ private class ContractExecutionServiceTest {
         // this through the real production route (RecordStageAdvanceService.advanceTo) because it
         // is a single-record fixture, but that route is one DML statement PER CALL — looping it
         // 251 times here would blow the 150-DML-statement transaction limit before Test.startTest()
-        // is even reached. LOI__c has no validation rules (confirmed: no
-        // objects/LOI__c/validationRules folder), so a direct bulk write is a safe, ONE-statement
-        // substitute for the same precondition at this volume.
+        // is even reached.
+        // 🔴 RETRACTED 2026-08-20 (Tranche 2 code review W1): "LOI__c has no validation rules
+        // (confirmed: no objects/LOI__c/validationRules folder)" is NO LONGER TRUE. LOI__c gained
+        // four (Workstream A4): Final_Price_Required_Before_Executed, Counter_Price_Is_Positive,
+        // Closing_Period_Days_Not_Negative, Due_Diligence_Days_Not_Negative. The bulk write below
+        // still passes ALL four — it only writes Stage__c = 'Signed' (not 'Executed', and it never
+        // touches Counter_Price__c / Closing_Period_Days__c / Due_Diligence_Days__c, which the other
+        // three rules key on) — so the fixture itself needs no change. But the SAFETY ARGUMENT that
+        // justified skipping the real service route is gone: the next LOI validation rule added to
+        // this object could silently break this 251-row bulk write with no warning here. Re-check
+        // this block against objects/LOI__c/validationRules/ before trusting it again.
         List<LOI__c> completedLois = new List<LOI__c>();
         for (LOI__c primaryLoi : primaryLois) {
             completedLois.add(new LOI__c(Id = primaryLoi.Id, Stage__c = 'Signed'));
@@ -441,6 +449,7 @@ private class ContractExecutionServiceTest {
             TestDataFactory.createDisposition(TestDataFactory.defaultPropertyAsset().Id, true);
         Assert.areEqual(READINESS, stageOf(sale.Id),
             'PRECONDITION: the fixture must start at Disposition Readiness');
+        TestDataFactory.signBuyerNdaOn(sale.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         Contract_Review__c psa = salePsa(sale.Id);
 
         Test.startTest();
@@ -515,6 +524,7 @@ private class ContractExecutionServiceTest {
     static void mixedChunkRunsBothArmsIndependently() {
         Disposition__c sale =
             TestDataFactory.createDisposition(TestDataFactory.defaultPropertyAsset().Id, true);
+        TestDataFactory.signBuyerNdaOn(sale.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         Contract_Review__c salesidePsa = salePsa(sale.Id);
         Contract_Review__c buysidePsa = dealAtPsa();
 
@@ -556,6 +566,11 @@ private class ContractExecutionServiceTest {
     static void dispositionAlreadyAtClosingIsSkippedByTheNoChangeFilter() {
         Id assetId = TestDataFactory.defaultPropertyAsset().Id;
         List<Disposition__c> sales = TestDataFactory.createDispositions(2, assetId, true);
+        // All_NDAs_Signed_Before_Progression now gates On_Market too — both the update below and
+        // execute(psas) inside Test.startTest change Disposition_Stage__c, so both sales need a
+        // signed buyer NDA. One bulk insert, before Test.startTest, so it never touches the
+        // rowsWritten measurement this test is built around.
+        TestDataFactory.signBuyerNdasOn(sales);
         Disposition__c moving = sales[0];
         Disposition__c alreadyClosing = sales[1];
         update new Disposition__c(Id = alreadyClosing.Id, Disposition_Stage__c = 'Closing');
@@ -597,6 +612,7 @@ private class ContractExecutionServiceTest {
     static void reExecutingADispositionPsaIsANoOp() {
         Disposition__c sale =
             TestDataFactory.createDisposition(TestDataFactory.defaultPropertyAsset().Id, true);
+        TestDataFactory.signBuyerNdaOn(sale.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         Contract_Review__c psa = salePsa(sale.Id);
         execute(new List<Contract_Review__c>{ psa });
         Assert.areEqual('Closing', stageOf(sale.Id), 'PRECONDITION: the first execution advanced it');
@@ -635,6 +651,10 @@ private class ContractExecutionServiceTest {
     static void bulkExecution251DispositionPsasMoveEverySale() {
         Id assetId = TestDataFactory.defaultPropertyAsset().Id;
         List<Disposition__c> sales = TestDataFactory.createDispositions(251, assetId, true);
+        // All_NDAs_Signed_Before_Progression now gates On_Market too (2026-08-19 flow redesign) —
+        // one bulk insert for the whole 251, same O(1)-in-DML convention as the rest of this
+        // fixture, so this test keeps measuring the execution cascade rather than its own setup.
+        TestDataFactory.signBuyerNdasOn(sales);
 
         // Built with doInsert = false so the 251 parents can be assigned in memory and committed in
         // ONE statement — the factory's own convention, and it keeps the fixture O(1) in DML so
@@ -767,6 +787,7 @@ private class ContractExecutionServiceTest {
         Contract_Review__c buy = dealAtPsa();
         Disposition__c sale = TestDataFactory.createDisposition(
             TestDataFactory.defaultPropertyAsset().Id, true);
+        TestDataFactory.signBuyerNdaOn(sale.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         Contract_Review__c sell = salePsa(sale.Id);
 
         Test.startTest();

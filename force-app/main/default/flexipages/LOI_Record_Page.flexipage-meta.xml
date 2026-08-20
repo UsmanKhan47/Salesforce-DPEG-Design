@@ -55,6 +55,16 @@
          still needs its own entry, now gated by its own custom permission rather than its own
          flag. See agent-output/design-requirements-custom-permissions.md.
 
+         ⚠ SECOND CORRECTION, 2026-08-19, TO THE SAME HISTORICAL PARAGRAPH. It also says "a
+         disposition driver holds Disposition_Deal_Driver". THAT SET NO LONGER EXISTS - it was
+         retired at user request, and Disposition_Deal_Actions is now granted by
+         DPEG_Disposition_Edit. Read the sentence as history twice over: neither the flag
+         mechanism nor the set it names is live. NOTHING ON THIS PAGE CHANGED - all three
+         disposition criteria below still read
+         {!$Permission.CustomPermission.Disposition_Deal_Actions}, which is untouched. What
+         changed is only WHO holds that permission, and it is now everyone with disposition edit
+         access. See permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml.
+
          🔴 IT WAS CORRECT NOT TO GUESS IT IN 3B - THE FORMULA REALLY WAS BROKEN.
          The entry's second criterion is {!Record.Is_Advance_Allowed__c}, and 3B flagged that
          formula as ACQUISITION-SHAPED without knowing which way it failed. Analysed term by

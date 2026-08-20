@@ -2168,7 +2168,12 @@
         <members>DPEG_Disposition_Edit</members>
         <members>DPEG_Disposition_View</members>
         <members>Disposition_Dashboard_Access</members>
-        <members>Disposition_Deal_Driver</members>
+        <!-- Disposition_Deal_Driver REMOVED 2026-08-19. The set is retired (deleted from the
+             tree; queued in manifest/retire-disposition-deal-driver/destructiveChangesPost.xml)
+             and its Disposition_Deal_Actions grant moved to DPEG_Disposition_Edit. It is removed
+             from this RETRIEVE manifest ahead of the destructive deploy on purpose: until that
+             deploy runs the set still EXISTS in the org, so a retrieve driven by this file would
+             pull it straight back into force app and resurrect the deleted source file. -->
         <members>sfdcInternalInt__sfdc_nc_constraints_engine_deploy</members>
         <members>sfdcInternalInt__sfdc_scrt2</members>
         <name>PermissionSet</name>

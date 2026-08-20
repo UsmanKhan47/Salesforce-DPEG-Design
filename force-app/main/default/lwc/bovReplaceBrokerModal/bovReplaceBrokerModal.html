@@ -1,0 +1,73 @@
+<template>
+    <lightning-modal-header label="Replace Selected Broker"></lightning-modal-header>
+
+    <lightning-modal-body>
+        <div class="brb-body slds-is-relative">
+            <template lwc:if={isSaving}>
+                <lightning-spinner
+                    alternative-text="Replacing the broker"
+                    size="small"
+                ></lightning-spinner>
+            </template>
+
+            <template lwc:if={hasOptions}>
+                <div class="brb-note">
+                    <lightning-icon
+                        icon-name="utility:warning"
+                        size="xx-small"
+                        class="slds-m-right_x-small"
+                    ></lightning-icon>
+                    <span>
+                        <strong>{incumbentLabel}</strong> moves back to Backup and
+                        the broker you choose becomes Selected. The broker
+                        approval is cleared by this change.
+                    </span>
+                </div>
+
+                <lightning-radio-group
+                    class="brb-options slds-m-top_small"
+                    name="backupSubmission"
+                    label="Incoming broker"
+                    options={options}
+                    value={newSubmissionId}
+                    onchange={handleSelection}
+                    type="radio"
+                    required
+                ></lightning-radio-group>
+
+                <template lwc:if={error}>
+                    <div
+                        class="lv-error slds-text-color_error slds-m-top_small"
+                        role="alert"
+                    >
+                        {error}
+                    </div>
+                </template>
+            </template>
+
+            <template lwc:else>
+                <p class="brb-empty">
+                    There are no backup submissions to promote. Log another BOV
+                    response first, then replace the selected broker.
+                </p>
+            </template>
+        </div>
+    </lightning-modal-body>
+
+    <lightning-modal-footer>
+        <lightning-button
+            class="brb-cancel"
+            label="Cancel"
+            onclick={handleCancel}
+        ></lightning-button>
+        <template lwc:if={hasOptions}>
+            <lightning-button
+                class="brb-confirm slds-m-left_x-small"
+                variant="brand"
+                label="Replace broker"
+                onclick={handleConfirm}
+                disabled={confirmDisabled}
+            ></lightning-button>
+        </template>
+    </lightning-modal-footer>
+</template>

@@ -21,6 +21,13 @@
  *     Contact.Email, so it is the first that can throw on FLS for a legitimate
  *     internal user — its caller owns the fail-soft. **Scoped to Contact.Broker
  *     (2026-08-10, IR segregation) — see that method's ApexDoc.**
+ *   • DispositionBrokerStampService.stampSelectedBrokerLabel -> selectBrokerLabelsByIds
+ *     (off-market broker lookup, 2026-08-20 — derives the denormalised
+ *     `Disposition__c.Selected_Broker__c` display string from the chosen broker Contact;
+ *     AUTOMATION path, SYSTEM_MODE, see that method's ApexDoc). ⚠ This is the FIRST
+ *     SYSTEM_MODE method on the OUTER class — every earlier SYSTEM_MODE read here lived
+ *     inside `GuestReads`, so "outer = USER_MODE, inner = SYSTEM_MODE" is no longer a
+ *     rule you can read off the class shape. Read the method.
  *
  * MODE — mixed, per method (each method's ApexDoc restates its own mode):
  *   • selectBrokersOrderedByName uses `WITH USER_MODE` (API 67). Design §5
@@ -41,6 +48,12 @@
  *     and filter Is_Broker__c / Active_Listings__c. Those custom fields are covered by
  *     the P3 blanket "custom-field FLS gap = 0" verdict (design §5) but are NOT
  *     itemised in design §5's Contact FLS table — see the ⚠ DESIGN NOTE below.
+ *   • selectByEmails uses `WITH USER_MODE` and is the first OUTER method that reads the
+ *     FLS-permissionable Contact.Email; its caller owns the fail-soft (see its ApexDoc).
+ *   • selectBrokerLabelsByIds uses `WITH SYSTEM_MODE` (API 67) on the OUTER class —
+ *     ARCHITECTURE.md §2's automation-path exception, argued in full at the method. It
+ *     stays `with sharing`: SYSTEM_MODE lifts CRUD/FLS and never sharing, and an
+ *     unreadable Contact is the correct failure direction here.
  *   • GuestReads.selectBrokerPriorityByEmailSystem uses `WITH SYSTEM_MODE` (API 67)
  *     inside a `without sharing` inner class — the guest Broker-Portal intake path
  *     (see that class's ApexDoc).
@@ -249,6 +262,82 @@ public with sharing class ContactSelector {
               AND RecordType.DeveloperName = 'Broker'
             WITH USER_MODE
             ORDER BY CreatedDate ASC, Id ASC
+        ];
+    }
+
+    /**
+     * Name + firm for a set of broker Contacts — backs
+     * `DispositionBrokerStampService.stampSelectedBrokerLabel`, which composes the denormalised
+     * `Disposition__c.Selected_Broker__c` display string from them so the off-market lookup and the
+     * text a human reads on the approval page and the Path step cannot disagree AS A RESULT OF A
+     * SAVE THAT CHANGES `Broker__c` (off-market broker lookup, 2026-08-20).
+     *
+     * ⚠ NOT "can never disagree" (code review W5) — the stamp is keyed on `Broker__c` changing, so a
+     * Contact RENAME (editing the broker's own `FirstName`/`LastName`/`Broker_Firm__c` without
+     * changing which Contact is selected) never fires the Disposition trigger and leaves
+     * `Selected_Broker__c` stale. See `DispositionBrokerStampService`'s class header.
+     *
+     * ── 🔴 WITH SYSTEM_MODE — automation path, and the failure USER_MODE would cause is not this
+     *      feature's failure ──────────────────────────────────────────────────
+     * ARCHITECTURE.md §2's exception applies on its own terms rather than by inheritance. This read
+     * happens INSIDE A BEFORE-TRIGGER ON `Disposition__c`, on behalf of whoever saved that record.
+     * Nobody asked for it, and NOTHING it returns is displayed — the caller derives a string from it
+     * and assigns that string in memory.
+     *
+     * `USER_MODE` THROWS RATHER THAN DEGRADES. A principal without FLS read on
+     * `Contact.Broker_Firm__c` would raise `System.QueryException: No such column` — an FLS denial
+     * wearing a schema error — which escapes the trigger as CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY and
+     * ROLLS BACK THE USER'S OWN DISPOSITION SAVE. A read added to keep two fields in agreement must
+     * not be able to destroy the transaction it was added to. Same argument, same shape, as
+     * `DispositionSelector.selectStagesByIds`.
+     *
+     * ⚠ IT IS NOT MERELY THEORETICAL EVEN THOUGH TODAY'S PERSONAS ARE PROVISIONED. `DPEG_Contact_Edit`
+     * and `DPEG_Contact_View` both grant `Broker_Firm__c` today, and the analyst who picks holds one
+     * of them — but this trigger fires on EVERY `Disposition__c` write in the org, including writes
+     * made by principals who have no Contact grants at all and no business reading brokers. For those
+     * principals `Broker__c` has not changed, so this method is never called; SYSTEM_MODE is what
+     * makes that "never called" the only thing standing between them and a rolled-back save, instead
+     * of also depending on a grant they legitimately lack.
+     *
+     * ⚠ SHARING IS A SEPARATE QUESTION AND IS DELIBERATELY LEFT ALONE. `SYSTEM_MODE` lifts CRUD and
+     * FLS, NEVER sharing, and this outer class stays `with sharing`. The `GuestReads` inner class
+     * below is NOT the pattern to copy here: there, a filtered-out row silently defaulted every
+     * broker to 'Standard' priority with nothing to notice. Here, a Contact the running user cannot
+     * SEE is simply absent from the result, and the caller then leaves `Selected_Broker__c`
+     * UNCHANGED rather than blanking it — a visible, self-healing residual on a record whose lookup
+     * the user could not have set in the first place. **Do not add a `without sharing` inner class
+     * for this.**
+     *
+     * ⚠ `Name` IS THE COMPOUND FIELD AND IS `permissionable = false`, so it is always readable and is
+     * not what SYSTEM_MODE is here for. `Broker_Firm__c` is. Do not "simplify" this to FirstName +
+     * LastName: `Name` already applies the org's name format, and the caller's 244-character length
+     * proof is written against `Name`'s own ≤ 121 ceiling.
+     *
+     * NO `Is_Broker__c` FILTER, AND THAT IS DELIBERATE. The active, non-optional lookup filter on
+     * `Disposition__c.Broker__c` already guarantees every Id reaching here is a broker Contact, and
+     * re-testing it in the query would turn a Contact that was later un-flagged into a SILENT
+     * "leave the text unchanged" instead of a re-stamp. This method answers "what is this Contact
+     * called", not "is this Contact eligible".
+     *
+     * Bulk-safe: ONE query for the whole set, never one per record.
+     *
+     * @param contactIds Contact Ids to label; null or empty returns an empty list WITHOUT querying
+     *                   (the same contract as `DispositionSelector.selectStagesByIds`).
+     * @return Contacts with Id, Name and Broker_Firm__c populated; an empty list when the input is
+     *         null/empty or no row is visible to the running user (never null). A row the user
+     *         cannot SEE is simply absent — see the sharing note above.
+     * @example
+     * List&lt;Contact&gt; brokers = ContactSelector.selectBrokerLabelsByIds(brokerIds);
+     */
+    public static List<Contact> selectBrokerLabelsByIds(Set<Id> contactIds) {
+        if (contactIds == null || contactIds.isEmpty()) {
+            return new List<Contact>();
+        }
+        return [
+            SELECT Id, Name, Broker_Firm__c
+            FROM Contact
+            WHERE Id IN :contactIds
+            WITH SYSTEM_MODE
         ];
     }
 

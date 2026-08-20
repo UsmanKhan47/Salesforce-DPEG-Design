@@ -20,9 +20,30 @@
         Long Text Area, which is not a supported Path key field.
 
         MOVING A SIGNED NDA TO DECLINED IS SAFE AND IS THE INTENDED RECOVERY: the before-save
-        flow NDA_Signed_Status_Sync defaults everything that is not Signed to
-        NDA_Signed__c = FALSE, and it never clears Date_Signed__c - so the historical signature
-        date is retained while the record stops counting as signed.
+        flow NDA_Signed_Status_Sync clears NDA_Signed__c when the NDA is marked DECLINED, and it
+        never clears Date_Signed__c - so the historical signature date is retained while the
+        record stops counting as signed.
+
+        🔴 CORRECTED 2026-08-20 (Tranche 2, A3). THE SENTENCE ABOVE USED TO READ, VERBATIM:
+        "the before-save flow NDA_Signed_Status_Sync DEFAULTS EVERYTHING THAT IS NOT SIGNED to
+        NDA_Signed__c = FALSE". 🔴 THAT WAS FALSE ON TWO COUNTS AND MUST NOT BE RESTORED.
+
+          1. IT WAS FALSE WHEN WRITTEN. NDA_Signed_Status_Sync's Set_Signed_False assignment
+             existed but had NO INBOUND CONNECTOR: Is_Signed carried a defaultConnectorLabel with
+             no defaultConnector. Nothing ever routed to it, so the flow only ever SET the
+             checkbox true and never cleared it for any status. The recovery this path step
+             describes did not actually clear anything between 2026-08-16 and 2026-08-20.
+          2. THE "EVERYTHING THAT IS NOT SIGNED" SHAPE IS FORBIDDEN, NOT MERELY INACCURATE.
+             The acquisition NDA sequence is Pending, Received, Signed, Sent, with 'Sent' as the
+             TERMINAL reached AFTER 'Signed'. A blanket rule would un-sign an acquisition NDA on
+             its final Advance Stage click and lock the deal out of every Opportunity stage past
+             NDA_Signed_Before_Deal_Progression. NDA_Signed_Status_Sync's own in-root comment
+             carries that hazard banner and it is still live.
+
+        WHAT IS TRUE FROM 2026-08-20: the flow clears NDA_Signed__c on 'Declined' ONLY, through a
+        new Is_Declined decision. Every other status, including acquisition's terminal 'Sent',
+        falls through untouched. The recovery this path step describes now genuinely works, and
+        it works because 'Declined' is exposed only on THIS record type.
 
         THE RELEASE GATE LIVES ON THE PARENT, NOT HERE. Nothing is shared with a prospective
         buyer until EVERY NDA on the disposition that was not DECLINED reads Signed; that is

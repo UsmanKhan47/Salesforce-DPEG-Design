@@ -121,6 +121,29 @@
             <quickActionName>FeedItem.ContentNote</quickActionName>
         </quickActionListItems>
     </quickActionList>
+    <!-- APPROVAL HISTORY, ADDED 2026-08-19 (code review C-3). RelatedProcessHistoryList IS the
+         Approval History list: the live describeLayout for Opportunity's Commercial record type
+         returns this list as name "ProcessSteps", label "Approval History", and Opportunity's
+         layout is one of twenty three files in this repo already carrying the token.
+         🔴 THIS BLOCK IS ONE HALF OF A TWO FILE FIX AND IS USELESS ALONE. Disposition__c renders
+         through flexipages/Disposition_Record_Page.flexipage-meta.xml, which gained a
+         force:relatedListContainer in the same change; that component is what surfaces this list
+         in Lightning. Adding the list here without the component shows nothing, and adding the
+         component without this list shows only the two activity lists below.
+         WHY IT IS NEEDED AT ALL: all five Disposition approval processes set allowRecall=true and
+         recordEditability=AdminOnly, and Recall Approval Request exists ONLY on this list. Without
+         it a submitted Disposition locks with no visible pending approval and no recall route.
+         FIRST IN THE FILE ON PURPOSE, so it renders above the activity lists in the container.
+         The five columns are the standard Approval History set, copied from
+         layouts/Opportunity-Opportunity Layout.layout-meta.xml rather than invented. -->
+    <relatedLists>
+        <fields>CreatedDate</fields>
+        <fields>StepStatus</fields>
+        <fields>OriginalActor</fields>
+        <fields>Actor</fields>
+        <fields>Comments</fields>
+        <relatedList>RelatedProcessHistoryList</relatedList>
+    </relatedLists>
     <relatedLists>
         <fields>TASK.SUBJECT</fields>
         <fields>TASK.WHO_NAME</fields>

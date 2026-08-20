@@ -1,5 +1,91 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        2026-08-19 - DISPOSITION FLOW REDESIGN. FOUR VALUES ADDED, THE MASTER ORDER REWRITTEN,
+        THREE VALUES PARKED FOR DELETION.
+        =====================================================================================
+
+        ADDED: Broker Selection, Release Materials, Offer Selection, Sale Closes.
+        DOOMED (still present, deliberately): Call for Offers, Disposition Offer, Completed.
+
+        🔴 WHY THE THREE DOOMED VALUES ARE STILL HERE. A METADATA DEPLOY CANNOT DELETE A
+        PICKLIST VALUE. Removing them from this file removes them from the SOURCE only; the org
+        keeps them, and the next `sf project retrieve` UNIONS local and remote values and puts
+        them straight back, which reads exactly like a failed deploy. Deletion is a MANUAL step
+        in Setup (Object Manager > Disposition Stage > Del next to each value), and it is
+        scheduled as a separate cleanup wave AFTER this deploy is verified. Until that wave
+        runs, do not trim this list.
+        ⚠ An org sweep on 2026-08-19 returned ZERO Disposition__c rows on all three doomed
+        values and zero pending approval instances, so there is no data migration to protect and
+        no window in which a row can be stranded. That is the ONLY reason the validation rules
+        and path assistants ship in the SAME deploy as this change rather than a later one.
+
+        =====================================================================================
+        THE ORDERING ARITHMETIC - THIS IS A PER-FIELD CALCULATION AND IT WAS NOT AN APPEND.
+        =====================================================================================
+        Runtime Path order comes from THIS list's order (sorted = false), filtered by the record
+        type. A record type can only INCLUDE or EXCLUDE a value; it can NEVER RE-ORDER one. So
+        the master position of every value decides what BOTH paths render, and appending the
+        four new values to the end would have rendered the on-market Path as
+        "... Closing, Completed, Broker Selection, Release Materials, Offer Selection,
+        Sale Closes" - the finish line in the middle and four steps trailing behind it.
+        It would have deployed green and no Apex or Jest test could see it.
+
+        Required final sequences:
+          On-Market  (11): Readiness, BOV Outreach, Broker Selection, NDA, Release Materials,
+                           Active Listing, Offer Selection, LOI, PSA, Closing, Sale Closes
+          Off-Market  (9): Readiness, Broker Selection, NDA, Release Materials,
+                           Offer Selection, LOI, PSA, Closing, Sale Closes
+
+        Master positions written below, and each path's filtered walk:
+          1 Disposition Readiness   On: 1  Off: 1
+          2 BOV Outreach            On: 2
+          3 Broker Selection        On: 3  Off: 2
+          4 NDA                     On: 4  Off: 3
+          5 Release Materials       On: 5  Off: 4
+          6 Active Listing          On: 6
+          7 Offer Selection         On: 7  Off: 5
+          8 LOI                     On: 8  Off: 6
+          9 PSA                     On: 9  Off: 7
+         10 Closing                 On:10  Off: 8
+         11 Sale Closes             On:11  Off: 9
+        Both walks are monotonic. THE INSERTION WAS AN INTERLEAVE, NOT AN APPEND: NDA (was
+        position 5) had to move AHEAD of Active Listing (was position 3), because NDA is now an
+        ON-MARKET stage that precedes listing, and Release Materials had to land between them.
+
+        The three doomed values are PARKED AT THE END (positions 12 to 14) rather than left
+        where they were. They carry no records, so their position is cosmetic - but the record
+        types keep them during the transition window, so they DO still render as Path steps.
+        Parking them past Sale Closes keeps the three orphan steps behind the real terminal
+        instead of scattered through the middle of both paths.
+
+        ⚠ VERIFY THE ORDER IN SETUP AFTER DEPLOY. A picklist REORDER (as opposed to an ADD) is
+        the one part of this file that is worth reading back: if the org keeps the old ordering,
+        both Paths render wrong while every test still passes.
+
+        =====================================================================================
+        THE DOCTRINE THAT DIED WITH THIS CHANGE - READ THIS BEFORE "RESTORING" ANYTHING.
+        =====================================================================================
+        🔴 RETRACTED: "NDA and Disposition Offer are OFF-MARKET stage values ONLY." That
+        sentence stood in On_Market.recordType-meta.xml, in Off_Market.recordType-meta.xml, in
+        All_NDAs_Signed_Before_Progression's comment and in lwc/dispositionSidebar.js, and it is
+        now FALSE. NDA is a stage on BOTH paths. So are Broker Selection, Release Materials,
+        Offer Selection and Sale Closes.
+        🔴 RETRACTED: "the two record types' stage value sets are DISJOINT" - they never were
+        fully, and after this change they overlap on NINE of eleven values. The stage value
+        alone NO LONGER IDENTIFIES THE PATH. Anything that needs to know which path a record is
+        on must test the record type (see Disposition__c.Is_On_Market__c), not the stage.
+        The one on-market-only survivors are BOV Outreach and Active Listing.
+
+        RESTRICTED STAYS RESTRICTED. This is the field every stage gate, path, LWC router and
+        approval entry criterion keys off; an ad-hoc value typed in by a user would route to
+        nothing.
+    -->
     <fullName>Disposition_Stage__c</fullName>
     <label>Disposition Stage</label>
     <required>false</required>
@@ -21,14 +107,9 @@
                 <label>BOV Outreach</label>
             </value>
             <value>
-                <fullName>Active Listing</fullName>
+                <fullName>Broker Selection</fullName>
                 <default>false</default>
-                <label>Active Listing</label>
-            </value>
-            <value>
-                <fullName>Call for Offers</fullName>
-                <default>false</default>
-                <label>Call for Offers</label>
+                <label>Broker Selection</label>
             </value>
             <value>
                 <fullName>NDA</fullName>
@@ -36,9 +117,19 @@
                 <label>NDA</label>
             </value>
             <value>
-                <fullName>Disposition Offer</fullName>
+                <fullName>Release Materials</fullName>
                 <default>false</default>
-                <label>Disposition Offer</label>
+                <label>Release Materials</label>
+            </value>
+            <value>
+                <fullName>Active Listing</fullName>
+                <default>false</default>
+                <label>Active Listing</label>
+            </value>
+            <value>
+                <fullName>Offer Selection</fullName>
+                <default>false</default>
+                <label>Offer Selection</label>
             </value>
             <value>
                 <fullName>LOI</fullName>
@@ -54,6 +145,24 @@
                 <fullName>Closing</fullName>
                 <default>false</default>
                 <label>Closing</label>
+            </value>
+            <value>
+                <fullName>Sale Closes</fullName>
+                <default>false</default>
+                <label>Sale Closes</label>
+            </value>
+            <!-- Positions 12 to 14: RETIRED, awaiting the manual Setup deletion wave.
+                 Zero rows hold any of them. Do not remove them from this file before that
+                 wave runs - a retrieve would restore them and mimic a failed deploy. -->
+            <value>
+                <fullName>Call for Offers</fullName>
+                <default>false</default>
+                <label>Call for Offers</label>
+            </value>
+            <value>
+                <fullName>Disposition Offer</fullName>
+                <default>false</default>
+                <label>Disposition Offer</label>
             </value>
             <value>
                 <fullName>Completed</fullName>

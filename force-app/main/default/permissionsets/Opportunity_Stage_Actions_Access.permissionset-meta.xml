@@ -3,9 +3,10 @@
     <!--
         This comment sits INSIDE the root element deliberately. A comment placed ABOVE
         <PermissionSet> breaks `sf` at source conversion with the misleading error "unable to
-        find matching parent xml file". Disposition_Deal_Driver, Broker_Protection_Access and
-        DPEG_Admin_Access are the precedents for this pattern; it is used here because the
-        rationale below is far longer than the 255-character cap on <description>.
+        find matching parent xml file". Broker_Protection_Access and DPEG_Admin_Access are
+        precedents for this pattern (Disposition_Deal_Driver was too, until it was retired
+        2026-08-19 - see section 1 below); it is used here because the rationale below is far
+        longer than the 255-character cap on <description>.
 
         WHAT THIS SET IS (added 2026-08-10). It is the Opportunity twin of
         Lead_Stage_Actions_Access: a LAYER-4 CAPABILITY set, carrying Apex invoke access for the
@@ -47,9 +48,29 @@
         are RETIRED - they govern nothing and are kept only as a rollback lever pending
         deletion in a separate, later phase.
 
-        The identical rule governs Disposition_Deal_Actions / Disposition_Deal_Driver, which
+        The identical rule governed Disposition_Deal_Actions / Disposition_Deal_Driver, which
         RecordStageAdvanceController reaches through the Disposition_NDA record type's gate.
-        Neither authorization grant belongs in this file.
+        Neither authorization grant belongs in this file - that has not changed.
+
+        🔴 RETRACTED IN PART, 2026-08-19, EXPLICIT USER DECISION - DISPOSITION ONLY, NOT
+        ACQUISITION. Disposition_Deal_Driver, the dedicated authorization set named above, was
+        retired. Its payload (the Disposition_Deal_Actions custom permission) did not go with
+        it: it now rides permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml, a MODULE
+        DATA set, not a dedicated authorization set. Disposition is now an explicit, user-chosen
+        EXCEPTION to the two-factor separation this section argues for - see that file's own
+        header, and permissionsetgroups/DPEG_Junior_Analyst_PSG.permissionsetgroup-meta.xml,
+        for the full rationale and consequence (every DPEG_Disposition_Edit holder, and so the
+        whole DPEG_Junior_Analyst_PSG population, is now a disposition deal driver with no
+        separate assignment step).
+
+        THE REASONING IN THIS SECTION IS UNCHANGED AND STILL GOVERNS ACQUISITION. Nothing above
+        this note was altered: Acquisition_Deal_Driver still carries Acquisition_Deal_Actions as
+        a separate, directly-assigned layer-5 set, and that separation must not be weakened. Do
+        not read the disposition exception as license to fold Acquisition_Deal_Actions into
+        DPEG_Acquisition_Edit or into this capability set to "match" the disposition side - the
+        two modules are now deliberately asymmetric, not inconsistent, and DPEG_Junior_Analyst_PSG's
+        own header warns against "fixing" that asymmetry in either direction without a further
+        decision.
 
         ─────────────────────────────────────────────────────────────────────────────
         2. WHY THERE ARE NO objectPermissions - AND WHY THIS DIFFERS FROM THE LEAD TWIN

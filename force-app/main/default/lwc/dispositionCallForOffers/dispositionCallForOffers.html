@@ -1,0 +1,30 @@
+<template>
+    <lightning-card icon-name="standard:event">
+        <span slot="title">Call for Offers</span>
+
+        <div slot="actions">
+            <lightning-button
+                class="cfo-log"
+                variant="brand"
+                label="+ Log Offer"
+                onclick={handleLogOffer}
+            ></lightning-button>
+        </div>
+
+        <template lwc:if={hasError}>
+            <div class="lv-error slds-p-around_medium slds-text-color_error" role="alert">
+                The call-for-offers details could not be loaded: {errorMessage}
+            </div>
+        </template>
+
+        <!-- dt/dd ONLY, in order and with no wrapper divs — axe's
+             `definition-list` rule is strict, so the two-up layout is CSS. -->
+        <dl class="cfo-stats">
+            <dt class="cfo-label">Call For Offers Date</dt>
+            <dd class="cfo-value">{cfoDateLabel}</dd>
+
+            <dt class="cfo-label">Offers Received</dt>
+            <dd class="cfo-value">{offerCountLabel}</dd>
+        </dl>
+    </lightning-card>
+</template>

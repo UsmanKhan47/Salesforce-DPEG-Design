@@ -10,6 +10,14 @@
     </template>
     <template if:true={isActiveListing}>
         <c-broker-listing record-id={recordId}></c-broker-listing>
+        <!--
+          ⚠ NOT c-call-for-offers-list / c-call-for-offers-panel. Those two are
+          OPPORTUNITY-scoped (the acquisitions buy-side call for offers) and are
+          explicitly out of scope for the disposition redesign. The name collision
+          is real: "call for offers" means one thing when DPEG is buying and
+          another when DPEG is selling. Do not consolidate them.
+        -->
+        <c-disposition-call-for-offers record-id={recordId}></c-disposition-call-for-offers>
         <div class="listing-row">
             <!--
               ⚠ record-id ADDED 2026-08-10 (Tranche 5B). It was the ONLY child on this page

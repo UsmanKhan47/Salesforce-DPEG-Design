@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is
+        capped at 255 characters; a comment is repo-only and is never sent to the Metadata
+        API. It must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A4). THE FIRST VALIDATION RULE ON THIS OBJECT.
+        =====================================================================================
+        Execution_Date__c is a RECORD OF FACT: the day the PSA was signed by both parties. A
+        future date is therefore not a plan, it is a typo, and it is a load bearing one.
+        OpportunityDocStatusController reads it as the contract date (falling back to
+        PSA_Date__c only when it is null), and Opportunity_Record_Page surfaces it through
+        Primary_Contract__r. A future execution date reports a deal as contracted on a day
+        that has not happened.
+
+        =====================================================================================
+        🔴 THIS RULE FIRES ON ACQUISITION PSAs AS WELL AS DISPOSITION PSAs, AND THAT IS
+        INTENDED (requirements doc open item O-6).
+        =====================================================================================
+        Contract_Review__c is dual record type (Acquisition_PSA and Disposition_PSA). This
+        rule carries no record type criterion because a future execution date is wrong on
+        BOTH paths for the same reason: the field records something that has already happened.
+        There is no reading of either workflow in which a PSA is executed next week.
+        🔴 DO NOT ADD A RecordType.DeveloperName TEST "FOR SAFETY". It would also block Master
+        record type rows, which TestDataFactory deliberately produces when a record type is
+        absent from or unavailable in a scratch org, and the repo has the argument written out
+        in Broker_Lookup_Is_Off_Market_Only's header.
+
+        =====================================================================================
+        ⚠ THIS RULE DELIBERATELY TOUCHES NEITHER Stage__c NOR Negotiation_Status__c. CHECKED,
+        NOT ASSUMED, BECAUSE ONE OF THEM IS A TRAP.
+        =====================================================================================
+        Contract_Review__c.Stage__c is DERIVED: the before save flow Contract_Review_Stage_Sync
+        recomputes it on EVERY save from Negotiation_Status__c. A rule keyed on Stage__c would
+        be testing a value the platform is rewriting in the same transaction, and this repo has
+        already measured a write to that field being silently discarded with a success toast.
+        Negotiation_Status__c is the authored field and would have been the correct key IF this
+        rule needed a status at all. It does not: "not in the future" is true at every status,
+        so the simplest correct rule names no status.
+
+        🔴 AND THE SAME FLOW IS WHY THIS RULE CANNOT FIGHT THE AUTOMATION. Its
+        Is_Executed_Needs_Date branch stamps Execution_Date__c = $Flow.CurrentDate, i.e.
+        TODAY, and only when the field is blank. Before save flow assignments run BEFORE
+        validation rules in the save order, so the value this rule evaluates is today's date,
+        and TODAY() is not greater than TODAY(). The stamp can never trip this rule.
+        ⚠ IF THAT ASSIGNMENT IS EVER CHANGED TO AN OFFSET DATE, this rule breaks the flow.
+        Re-read this paragraph before editing Set_Stage_Executed.
+
+        =====================================================================================
+        NO ISCHANGED / ISNEW GUARD. An INVARIANT, not a transition, so a pre existing bad row
+        stays visible to the rule rather than being grandfathered. SELF CLEARING: the remedy,
+        correcting the date, is itself a permitted save, so the rule cannot trap a record.
+        ⚠ SYSTEM_MODE DML does not bypass validation rules, so a bad row would refuse machine
+        writes too until corrected. Intended.
+        ⚠ ONE EXCEPTION WORTH KNOWING, the same one Broker_Lookup_Is_Off_Market_Only records:
+        a row locked by a pending approval cannot be edited by a non admin, so on such a row
+        the recall has to come first.
+        =====================================================================================
+        MEASURED IMPACT AT CREATION: ZERO ROWS. Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM Contract_Review__c                              -> 9
+          SELECT COUNT(Id) FROM Contract_Review__c WHERE Execution_Date__c &gt; TODAY -> 0
+        Nine PSAs exist, none dated in the future, so this rule refuses nothing that exists.
+        🔴 That measurement ages; re-run at deploy time. A non zero result freezes a live PSA
+        until someone corrects its date, which is an escalation, not a deploy.
+    -->
+    <fullName>Execution_Date_Not_In_Future</fullName>
+    <active>true</active>
+    <description>Execution Date records the day the PSA was actually signed, so it cannot be in the future. Fires on both record types by design: a future execution date is wrong on an acquisition PSA and a disposition PSA alike. Blank is untouched.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Execution_Date__c)),
+    Execution_Date__c &gt; TODAY()
+)</errorConditionFormula>
+    <errorMessage>Execution Date cannot be in the future. It records the day the PSA was actually executed by both parties. Leave it blank until execution happens; it is stamped automatically when the status is set to Executed.</errorMessage>
+    <errorDisplayField>Execution_Date__c</errorDisplayField>
+</ValidationRule>

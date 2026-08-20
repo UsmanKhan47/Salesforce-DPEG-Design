@@ -19,14 +19,69 @@
         TRIM DPEG_Apex_Access. Reversing those two deploys breaks every deal-driver stage button
         in the window between them.
 
-        ⚠ THIS MEMBERSHIP IS NOT THE WHOLE GATE. Driving a stage also requires factor (a),
-        Acquisition_Deal_Driver's FLS read on User.Deal_Driver__c, AND factor (b),
-        Deal_Driver__c = true on the driver's own User record. Acquisition_Deal_Driver is
-        assigned DIRECTLY rather than through this group on purpose: adding it here would hand
-        factor (a) to the group's ENTIRE population in one move, collapsing the gate to the
-        single remaining factor for everyone in it. Note that (b) is a field VALUE on a User
-        record - no permission set can grant it, which is exactly why the two factors are
-        independent and why only (a) is at risk from a membership change.
+        ⚠ THIS MEMBERSHIP IS NOT THE WHOLE GATE.
+        🔴 THE PARAGRAPH IN BRACKETS BELOW IS FALSE AS OF 2026-08-12 AND IS KEPT ONLY AS THE
+        RETRACTED TEXT. DO NOT ACT ON IT. THE MECHANISM IT DESCRIBES NO LONGER EXISTS; THE
+        CORRECTION FOLLOWS IT IMMEDIATELY.
+        [FALSE] "Driving a stage also requires factor (a), Acquisition_Deal_Driver's FLS read on
+        User.Deal_Driver__c, AND factor (b), Deal_Driver__c = true on the driver's own User
+        record. Acquisition_Deal_Driver is assigned DIRECTLY rather than through this group on
+        purpose: adding it here would hand factor (a) to the group's ENTIRE population in one
+        move, collapsing the gate to the single remaining factor for everyone in it. Note that
+        (b) is a field VALUE on a User record - no permission set can grant it, which is exactly
+        why the two factors are independent and why only (a) is at risk from a membership
+        change." [END FALSE]
+
+        WHAT IS ACTUALLY TRUE, MEASURED FROM THE FILES RATHER THAN RECALLED. The two-factor
+        FLS-on-a-checkbox gate was retired on 2026-08-12. Acquisition_Deal_Driver's own
+        description records it: its User.Deal_Driver__c fieldPermissions grant was REMOVED, and
+        the set now grants the Acquisition_Deal_Actions CUSTOM PERMISSION, which is the sole
+        server-side authorization check. There is no factor (b) any more: nothing reads a field
+        value on the User record, so the gate is now ONE factor, a token, and a permission set
+        CAN grant all of it.
+
+        THE DIRECT-ASSIGNMENT RATIONALE SURVIVES THE MECHANISM CHANGE, RESTATED CORRECTLY:
+        Acquisition_Deal_Driver is still assigned DIRECTLY rather than through this group, and
+        still must not be added here. Adding it would hand Acquisition_Deal_Actions to this
+        group's ENTIRE population in one move. Under the old mechanism that left a one-factor
+        gate; under the new one it leaves NO gate at all beyond group membership. The reason to
+        keep it out got stronger, not weaker. Acquisition_Deal_Driver is UNCHANGED by the
+        2026-08-19 change described below.
+
+        =====================================================================
+        🔴 2026-08-19 - THE DISPOSITION HALF OF THIS RATIONALE NO LONGER HOLDS. USER DECISION.
+        THIS GROUP'S ENTIRE POPULATION IS NOW A DISPOSITION DEAL DRIVER.
+        =====================================================================
+
+        Disposition_Deal_Driver, the disposition twin of Acquisition_Deal_Driver and the only
+        holder of the Disposition_Deal_Actions custom permission, was RETIRED at the user's
+        request. That permission did NOT go with it: it moved onto DPEG_Disposition_Edit, which
+        is a MEMBER OF THIS GROUP (see the list below, unchanged by this edit).
+
+        THE CONSEQUENCE, STATED PLAINLY BECAUSE IT IS THE EXACT OUTCOME THE PARAGRAPHS ABOVE
+        ARGUE AGAINST FOR THE ACQUISITION SIDE: every user in this group acquires
+        Disposition_Deal_Actions at the next group recalculation, with no separate assignment
+        step and no further gate. The nine disposition quick actions on Disposition_Record_Page,
+        plus the disposition entries on LOI_Record_Page, NDA_Record_Page and
+        Contract_Review_Record_Page, become visible and clickable for the whole population. That
+        was accepted deliberately as a user decision; it is recorded here rather than left to be
+        inferred from a member list that did not change.
+
+        🔴 THE TWO SIDES ARE NOW ASYMMETRIC ON PURPOSE, AND MUST NOT BE "MADE CONSISTENT" IN
+        EITHER DIRECTION WITHOUT A DECISION. Acquisitions keeps the separate directly-assigned
+        driver set; dispositions no longer has one. Do not add Acquisition_Deal_Driver to this
+        group to match the disposition side, and do not recreate a disposition driver set to
+        match the acquisition side. See
+        customPermissions/Disposition_Deal_Actions.customPermission-meta.xml, where the argument
+        against this widening is corrected in place rather than deleted, and
+        permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml for the grant itself.
+
+        ⚠ NO MEMBER OF THIS GROUP CHANGED ON 2026-08-19. The permissionSets list below is
+        byte-identical to its previous state; this edit is comment-only. That matters because a
+        PermissionSetGroup deploy REPLACES its member list wholesale, so an accidental edit here
+        silently revokes access. The widening above arrives through an existing member's new
+        grant, which is precisely why it is invisible in a diff of this file and has to be
+        written down in it.
 
         SharePoint_Integration_Access joined this group on 2026-08-11 (SharePoint deal-folder
         feature, design D1-A/scoped-persona user decision) and THIS GROUP ONLY. The user

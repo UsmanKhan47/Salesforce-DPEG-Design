@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is
+        capped at 255 characters; a comment is repo-only and is never sent to the Metadata
+        API. It must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A4). THE ONE PATH SPECIFIC RULE ON THIS
+        OBJECT. The other three A4 rules here are arithmetic invariants; this one is a
+        TRANSITION GATE, and it is shaped differently on purpose.
+        Shared object level rationale: Counter_Price_Is_Positive.validationRule-meta.xml.
+        =====================================================================================
+        An LOI that has been EXECUTED without a final agreed price is a signed deal with no
+        number in it. Final_Agreed_Price__c is what feeds the Opportunity Amount and the
+        Transaction purchase price downstream, so a blank one at the terminal stage silently
+        propagates a null into the money columns of everything after it.
+
+        =====================================================================================
+        🔴 'Executed', NOT 'Signed'. NAMING THE VALUE IS WHAT SCOPES THIS RULE TO THE
+        DISPOSITION PATH, AND IT IS STRONGER THAN A RECORD TYPE TEST.
+        =====================================================================================
+        LOI__c is dual record type. 'Executed' is the DISPOSITION terminal; 'Signed' is the
+        ACQUISITION terminal. An acquisition LOI can never carry 'Executed', so this rule is
+        structurally unreachable from the acquisition path without any record type criterion
+        at all. That is the same technique Tranche 2's NDA latch fix uses (branching on
+        'Declined', which only Disposition_NDA exposes) and it is preferred here for the two
+        reasons recorded in Broker_Lookup_Is_Off_Market_Only and NdaSelector.queryExpiryAlerts:
+        a value named rule survives a record type rename, and it does not depend on rows
+        having been migrated off the Master record type.
+        🔴 DO NOT "HARMONISE" THIS WITH THE ACQUISITION TERMINAL BY ADDING 'Signed' TO THE
+        TEST. Acquisition LOIs reach 'Signed' through an approval process that this rule has
+        never gated, and adding it would block a live acquisition workflow. If the acquisition
+        side ever needs the same guarantee it needs its OWN rule, argued on its own facts.
+        ⚠ ONE OVERLAP EXISTS ON THIS FIELD AND IT IS NOT THIS VALUE: 'Under Review' is carried
+        by BOTH record types as of 2026-08-14 (see Stage__c's own header, which retracts the
+        old "fully disjoint" claim). The TERMINALS did not move and remain distinct, which is
+        exactly what this rule relies on. Anyone re-reading Stage__c's retraction should not
+        conclude this rule is now unscoped: check which value is shared before assuming.
+
+        =====================================================================================
+        TEXT(Stage__c), NEVER ISPICKVAL. RecordStageAdvanceService's class header is the
+        standing repo rule for this field and the retired value 'Prepare/Review' is the
+        reason: its literal slash is stored ENCODED inside a RecordType and LITERALLY
+        everywhere else, so picklist comparisons on this field are done as text throughout.
+        =====================================================================================
+
+        =====================================================================================
+        🔴 THE GUARD IS OR(ISNEW(), ISCHANGED(Stage__c)) AND THE ISNEW HALF IS A DELIBERATE
+        ADDITION TO WHAT THE REQUIREMENTS DOC SPECIFIED.
+        =====================================================================================
+        §2 A4 prescribes ISCHANGED alone, matching All_NDAs_Signed_Before_Progression.
+        ISCHANGED IS ALWAYS FALSE ON INSERT, so ISCHANGED alone leaves a row that is CREATED
+        directly at 'Executed' with no price completely unguarded. That is not a theoretical
+        path: a data load, a seed script or an API caller sets Stage__c explicitly, and
+        Disposition_LOI's own default is 'Received' precisely because rows are normally
+        created before they are executed. Wire_Complete_Before_Sale_Closes on Disposition__c
+        already uses OR(ISNEW(), ISCHANGED(...)) for the same reason, so this shape has in
+        repo precedent on the sibling gate.
+        WHY A TRANSITION GUARD AT ALL, RATHER THAN THE UNGUARDED INVARIANT USED BY THE OTHER
+        THREE RULES HERE: an unguarded form would freeze any PRE EXISTING Executed row that
+        has no price, because every later save of it, including machine writes, would fail and
+        the remedy (entering the price) would be the only permitted save. Measured today that
+        population is zero, but a transition guard costs nothing and removes the freeze risk
+        entirely. With the guard, an already Executed row saved for an unrelated reason is
+        never blocked.
+
+        =====================================================================================
+        MEASURED IMPACT AT CREATION: ZERO ROWS. Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM LOI__c WHERE Stage__c = 'Executed'
+                                         AND Final_Agreed_Price__c = null   -> 0
+        (11 LOIs exist in total.) 🔴 That measurement ages; re-run at deploy time.
+        ⚠ THE MOST LIKELY WAY A USER MEETS THIS RULE is clicking Advance Stage on a
+        disposition LOI, since RecordStageAdvanceService is what moves the value. The message
+        is written to be actionable from there, where the offending field may not even be on
+        screen.
+    -->
+    <fullName>Final_Price_Required_Before_Executed</fullName>
+    <active>true</active>
+    <description>Blocks an LOI moving to Executed with a blank Final Agreed Price, which would propagate a null into the Opportunity Amount and the Transaction price. Names the value Executed, so it is disposition-only by construction; acquisition ends at Signed.</description>
+    <errorConditionFormula>AND(
+    OR(ISNEW(), ISCHANGED(Stage__c)),
+    TEXT(Stage__c) = &quot;Executed&quot;,
+    ISBLANK(Final_Agreed_Price__c)
+)</errorConditionFormula>
+    <errorMessage>Enter the Final Agreed Price before marking this LOI Executed. The executed price is what feeds the Opportunity amount and the transaction, so it cannot be left blank at execution.</errorMessage>
+    <errorDisplayField>Final_Agreed_Price__c</errorDisplayField>
+</ValidationRule>

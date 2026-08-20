@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <!-- isExposed=false: opened from JS by c/bovComparisonMatrix only. -->
+    <isExposed>false</isExposed>
+    <masterLabel>Replace Selected Broker</masterLabel>
+    <description>Promotes a backup BOV submission to Selected and demotes the incumbent. The broker approval is cleared, so a fresh approval is required.</description>
+</LightningComponentBundle>

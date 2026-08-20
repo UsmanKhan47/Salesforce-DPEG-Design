@@ -125,9 +125,17 @@ private class ContractReviewTriggerHandlerTest {
         // production route (RecordStageAdvanceService.advanceTo) because it is a single-record
         // fixture, but that route is one DML statement PER CALL — looping it 251 times here would
         // blow the 150-DML-statement transaction limit before Test.startTest() is even reached.
-        // LOI__c has no validation rules (confirmed: no objects/LOI__c/validationRules folder), so
-        // a direct bulk write is a safe, ONE-statement substitute for the same precondition at this
-        // volume — same reasoning as ContractExecutionServiceTest.bulkExecution251ContractsHandsOffToTransactions.
+        // 🔴 RETRACTED 2026-08-20 (Tranche 2 code review W1): "LOI__c has no validation rules
+        // (confirmed: no objects/LOI__c/validationRules folder)" is NO LONGER TRUE. LOI__c gained
+        // four (Workstream A4): Final_Price_Required_Before_Executed, Counter_Price_Is_Positive,
+        // Closing_Period_Days_Not_Negative, Due_Diligence_Days_Not_Negative. The bulk write below
+        // still passes ALL four — it only writes Stage__c = 'Signed' (not 'Executed', and it never
+        // touches Counter_Price__c / Closing_Period_Days__c / Due_Diligence_Days__c, which the other
+        // three rules key on) — so the fixture itself needs no change. But the SAFETY ARGUMENT that
+        // justified skipping the real service route is gone: the next LOI validation rule added to
+        // this object could silently break this 251-row bulk write with no warning here. Re-check
+        // this block against objects/LOI__c/validationRules/ before trusting it again — same
+        // retraction as ContractExecutionServiceTest.bulkExecution251ContractsHandsOffToTransactions.
         List<LOI__c> completedLois = new List<LOI__c>();
         for (LOI__c primaryLoi : primaryLois) {
             completedLois.add(new LOI__c(Id = primaryLoi.Id, Stage__c = 'Signed'));

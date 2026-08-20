@@ -1,0 +1,57 @@
+/* SLDS 2 design tokens only.
+
+   ⚠ AN `auto-fill` MULTI-COLUMN GRID IS WRONG FOR A <dl> AND WAS REJECTED HERE.
+   dt and dd are SEPARATE grid items, so an auto-fill track list flows them into
+   whatever column comes next and the pairs come apart at wide widths — label,
+   label, value, value. The explicit two-track layout below with pinned columns
+   keeps every value beside its own label at ANY container width, which is the
+   property that actually matters when the same component renders in a ~900px
+   main region and a ~360px sidebar. No media queries, for the same reason
+   c/competingBrokerSubmissions documents: a media query measures the VIEWPORT,
+   but the constraint here is CONTAINER width. */
+
+:host {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.cfo-stats {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-5, 20px);
+    align-items: center;
+    margin: 0;
+    padding: var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-4, 16px);
+}
+
+.cfo-label {
+    grid-column: 1;
+}
+
+.cfo-value {
+    grid-column: 2;
+}
+
+.cfo-label {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+}
+
+.cfo-value {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-3, 1.125rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-neutral-base-10, #181818);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Cross-bundle error-banner class — do not rename. */
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}

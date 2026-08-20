@@ -34,8 +34,11 @@
  *  2. D13 RESIDUAL 1. During Gate-2 check-only validation, isAvailable() was observed
  *     returning FALSE for an assigned System Administrator even though
  *     getRecordTypeInfosByDeveloperName() resolved a REAL Id for On_Market. Both
- *     TestDataFactory.dispositionRecordTypeId and DispositionService.onMarketRecordTypeId
- *     guard their stamp on `info.isAvailable()`, so under that condition the stamp
+ *     TestDataFactory.dispositionRecordTypeId and DispositionService.recordTypeIdFor
+ *     (renamed from onMarketRecordTypeId 2026-08-19, when the flow redesign generalised it to
+ *     take a developer-name parameter for initiateAndSubmit — findOrCreate's call is
+ *     byte-identical, unaffected by the rename) guard their stamp on `info.isAvailable()`, so
+ *     under that condition the stamp
  *     SILENTLY NO-OPS and every Disposition lands on the running user's profile default
  *     instead of On_Market. createDisposition_defaultOverload_stampsOnMarketRecordType
  *     below asserts the stamp UNCONDITIONALLY (no isAvailable() guard around the
@@ -56,8 +59,9 @@
  * triggers, batches, and DML-performing services - not a single describe lookup.
  *
  * @see force-app/main/default/classes/TestDataFactory.cls (dispositionRecordTypeId, S2 fix)
- * @see force-app/main/default/classes/DispositionService.cls (onMarketRecordTypeId - the
- *      SAME isAvailable() guard shape, on the production create path)
+ * @see force-app/main/default/classes/DispositionService.cls (recordTypeIdFor, renamed from
+ *      onMarketRecordTypeId 2026-08-19 - the SAME isAvailable() guard shape, on the production
+ *      create path)
  * @see agent-output/code-review-disposition-foundations.md (PASS 2, suggestion S3)
  * @see agent-output/stage-by-stage-decisions.md (D13, residual 1 and residual 2)
  */
@@ -67,8 +71,9 @@ private class TestDataFactoryTest {
     /**
      * 🔴 UNCONDITIONAL BY DESIGN - DO NOT WRAP IN `if (isAvailable()) { ... }`.
      *
-     * TestDataFactoryTest.dispositionRecordTypeId (and DispositionService.onMarketRecordTypeId,
-     * the identical shape on the production path) already soft-guard the STAMP on
+     * TestDataFactoryTest.dispositionRecordTypeId (and DispositionService.recordTypeIdFor,
+     * renamed from onMarketRecordTypeId 2026-08-19 - the identical shape on the production path)
+     * already soft-guard the STAMP on
      * isAvailable() - that guard is deliberate and stays, so the rest of the suite keeps
      * running in an org where the On_Market record type has not deployed yet. This TEST is
      * where the softness ends: it exists specifically to make a false isAvailable() reading

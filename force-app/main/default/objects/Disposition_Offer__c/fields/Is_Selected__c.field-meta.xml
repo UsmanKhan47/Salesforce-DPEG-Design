@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        THE ENTRY CRITERION FOR Offer_Selection_Approval, and the record of which offer the team
+        picked out of the ones logged against this disposition.
+
+        WHAT WRITES IT: DispositionApprovalService.selectOffer, behind the Select Offer screen
+        action (lwc/dispositionOfferSelect). That method is EXCLUSIVE: it clears the flag on any
+        other offer on the same disposition in the same transaction, so at most one offer per
+        disposition is ever selected. The whole operation runs under a savepoint - if the
+        approval submission fails, the flip is rolled back and no offer is left marked selected
+        with no approval behind it.
+
+        WHAT READS IT: (a) Offer_Selection_Approval's entry criteria; (b)
+        DispositionOfferTriggerHandler, which requires BOTH Is_Selected__c = true AND
+        Approval_Status__c = Approved before it accepts the offer and advances the parent to
+        LOI. Neither alone is sufficient.
+
+        ⚠ SELECTING IS NOT ACCEPTING. This flag says "this is the offer we are taking to the
+        principals". Offer_Status__c = 'Accepted' is written LATER, by the trigger, only after
+        the approval returns Approved. Do not collapse the two: a selected-but-rejected offer
+        must remain visibly selected-and-rejected so the team can see what was tried.
+
+        FLS: READ ONLY, in both DPEG_Disposition_View and DPEG_Disposition_Edit, even though
+        almost every other Disposition_Offer__c field is editable in the Edit set. The writer is
+        Apex running in SYSTEM mode behind an authored, permission-gated service method; the
+        exclusivity guarantee above is a property of THAT METHOD and a hand-edit through inline
+        edit or the Details section would break it, leaving two selected offers on one
+        disposition and two competing approvals.
+        🔴 THE DEVELOPER-SIDE CONSEQUENCE: selectOffer's DML MUST be SYSTEM mode. A USER_MODE
+        write of this field will be refused for every persona in this repo.
+    -->
+    <fullName>Is_Selected__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Marks the one offer the team chose to take to the principals. Written exclusively (at most one per disposition) by DispositionApprovalService.selectOffer under a savepoint, and used as the entry criterion for Offer_Selection_Approval. Selecting is not accepting: Offer_Status__c becomes Accepted only after that approval returns Approved. Read-only FLS by design.</description>
+    <inlineHelpText>Ticked by the Select Offer action on the Disposition. Only one offer per disposition can be selected; use Select Offer again to change the choice rather than editing this by hand.</inlineHelpText>
+    <label>Is Selected</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

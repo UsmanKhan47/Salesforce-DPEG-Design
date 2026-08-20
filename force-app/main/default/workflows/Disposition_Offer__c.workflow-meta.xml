@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <Workflow> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW FILE, 2026-08-19. Disposition_Offer__c had no workflow metadata before this change.
+
+        🔴 TWO FIELD UPDATES, NO WORKFLOW RULE. Both are fired ONLY by
+        approvalProcesses/Disposition_Offer__c.Offer_Selection_Approval - Approved as its
+        finalApprovalActions, Rejected as its finalRejectionActions. Do not add a <rules>
+        element: an active rule writing Approval_Status__c would accept an offer and advance the
+        parent Disposition on an ordinary edit.
+
+        THE CHILD-OBJECT HALF OF D-1, exact twin of the BOV_Submission__c file. No Queueable is
+        needed because Offer_Selection_Approval locks THIS OFFER, not the parent Disposition, so
+        DispositionOfferTriggerHandler can update the parent synchronously with allOrNone = false
+        in SYSTEM mode.
+
+        ⚠ THE TRIGGER REQUIRES BOTH Approval_Status__c = Approved AND Is_Selected__c = true, and
+        it requires the parent to be CURRENTLY on Offer Selection. Those are three distinct
+        guards and none is redundant.
+
+        🔴 REJECTION LEAVES THE DEAL AT Offer Selection, NOT AT Active Listing - AND THAT IS THE
+        WHOLE POINT OF THE TWO-STEP DESIGN (D-3). Selecting the offer already advanced the
+        Disposition by explicit service DML, before this approval ever ran. A rejected offer
+        therefore parks the deal at Offer Selection for a re-pick instead of silently pretending
+        no selection happened. The stage always tells the truth.
+
+        ⚠ NAMING. agent-output/design-requirements.md section 6, open naming item 2, left the
+        spelling open. Set_Offer_Approval_Approved / Set_Offer_Approval_Rejected is the chosen
+        spelling and is used consistently here and in Offer_Selection_Approval. Nothing in Apex
+        references a field update by name.
+
+        DEPLOY ORDER - LOAD-BEARING. This file must land BEFORE
+        approvalProcesses/Disposition_Offer__c.Offer_Selection_Approval, and both field updates
+        require objects/Disposition_Offer__c/fields/Approval_Status__c.field-meta.xml.
+    -->
+    <fieldUpdates>
+        <fullName>Set_Offer_Approval_Approved</fullName>
+        <description>Final approval action of Offer_Selection_Approval. Sets Approval Status to Approved, which DispositionOfferTriggerHandler reads to accept the offer and move the parent Disposition from Offer Selection to LOI.</description>
+        <field>Approval_Status__c</field>
+        <literalValue>Approved</literalValue>
+        <name>Set Offer Approval Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>Set_Offer_Approval_Rejected</fullName>
+        <description>Final rejection action of Offer_Selection_Approval. Sets Approval Status to Rejected. No stage moves: the Disposition stays parked at Offer Selection so a different offer can be selected and submitted.</description>
+        <field>Approval_Status__c</field>
+        <literalValue>Rejected</literalValue>
+        <name>Set Offer Approval Rejected</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+</Workflow>

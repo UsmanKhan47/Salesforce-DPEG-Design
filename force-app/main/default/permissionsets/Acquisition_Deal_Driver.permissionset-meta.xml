@@ -3,7 +3,9 @@
     <!--
         This comment sits INSIDE the root element deliberately - a comment above the root breaks
         `sf` at source conversion with "unable to find matching parent xml file".
-        Disposition_Deal_Driver / Broker_Protection_Access / DPEG_Admin_Access are the precedents.
+        Broker_Protection_Access / DPEG_Admin_Access are precedents for this pattern
+        (Disposition_Deal_Driver was too, until it was retired 2026-08-19 - see the retraction
+        below).
         Added 2026-08-10 by the permission set cleanup (KEEP item K4): this set already carried the
         full rationale in its disposition TWIN and only a one-line description here, which made the
         acquisitions half look like the trivial one-field set it is safe to fold away. It is not.
@@ -13,8 +15,24 @@
         permission - the live authorization grant, read via FeatureManagement.checkPermission.
         The retired User.Deal_Driver__c fieldPermissions entry that used to sit alongside it as
         a rollback lever was REMOVED 2026-08-12 (Phase 2 Step 1 of retiring the driver-flag
-        concept - see the PHASE 2 note below). It is the twin of Disposition_Deal_Driver, whose
-        own comment argues the same case for the sell side.
+        concept - see the PHASE 2 note below). It was the twin of Disposition_Deal_Driver, whose
+        own comment argued the same case for the sell side.
+
+        🔴 RETRACTED IN PART, 2026-08-19, EXPLICIT USER DECISION - DISPOSITION ONLY, NOT
+        ACQUISITION. Disposition_Deal_Driver was retired at the user's request. The
+        Disposition_Deal_Actions custom permission it used to grant did not go with it: it now
+        rides permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml, a module DATA set
+        assigned via DPEG_Junior_Analyst_PSG membership, not a dedicated, directly-assigned
+        layer-5 authorization set. Disposition is now an explicit, user-chosen EXCEPTION to the
+        "driver sets are direct-assigned, never put in a group" pattern this file argues for -
+        see DPEG_Disposition_Edit's and permissionsetgroups/DPEG_Junior_Analyst_PSG
+        .permissionsetgroup-meta.xml's own headers for the full rationale and consequence.
+
+        THIS FILE'S OWN REASONING IS UNCHANGED AND STILL GOVERNS ACQUISITION. This set is still
+        assigned DIRECTLY rather than through DPEG_Junior_Analyst_PSG, deliberately, because its
+        population is narrower than any group's - that argument does not weaken because
+        disposition chose differently. Do not fold this set into a group, and do not treat the
+        disposition exception as precedent for doing so here.
 
         THE GATE IS TWO-FACTOR (ARCHITECTURE.md section 2, "Opportunity deal-action gate is
         TWO-FACTOR"). OpportunityActionPermissionService.hasDealActionAccess() requires BOTH:

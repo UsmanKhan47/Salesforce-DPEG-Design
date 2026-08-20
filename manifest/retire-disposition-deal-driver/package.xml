@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Companion EMPTY manifest for the Disposition_Deal_Driver retirement.
+    A post destructive changes deploy still requires a manifest flag, and this one must be
+    empty: the replacement grant ships in the main disposition redesign payload
+    (DPEG_Disposition_Edit), and this deploy exists only to remove the one component listed
+    in destructiveChangesPost.xml alongside it.
+    Same shape and same reason as manifest/disposition-redesign-destructive/package.xml.
+    -->
+    <version>67.0</version>
+</Package>

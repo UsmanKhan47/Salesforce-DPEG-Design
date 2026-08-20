@@ -30,8 +30,18 @@
              advanceTo() imposes NO from-stage precondition, so Declined is reachable from ANY
              disposition status. The button should not claim otherwise.
            - NDA_Path_Disposition's header states that MOVING A SIGNED NDA TO DECLINED IS SAFE
-             AND IS THE INTENDED RECOVERY (NDA_Signed_Status_Sync re-derives NDA_Signed__c and
-             never clears Date_Signed__c). Under D20 that route matters MORE than it used to:
+             AND IS THE INTENDED RECOVERY (NDA_Signed_Status_Sync clears NDA_Signed__c on
+             'Declined' specifically, and never clears Date_Signed__c).
+             🔴 CORRECTED 2026-08-20 (Tranche 2, A3). THE PARENTHESIS ABOVE USED TO READ
+             "NDA_Signed_Status_Sync RE-DERIVES NDA_Signed__c", which overstated it in both
+             directions. When written, the flow re-derived NOTHING on this path: its
+             Set_Signed_False assignment had no inbound connector and the checkbox latched true
+             forever, so this bullet's premise was false. As of 2026-08-20 the flow clears the
+             checkbox on 'Declined' ONLY, via a new Is_Declined decision. It is still NOT a
+             general re-derivation, and it must never become one: a blanket
+             "not Signed implies false" rule would un-sign acquisition NDAs at their terminal
+             'Sent' status. Do not restore the shorter wording.
+             Under D20 that route matters MORE than it used to:
              allowDelete stays FALSE, so re-declining is now the ONLY way to take a party back
              out of the all-signed gate's arithmetic.
            - 'Not Sent' -> 'Declined' is a real refusal (a party who says no before it goes out).

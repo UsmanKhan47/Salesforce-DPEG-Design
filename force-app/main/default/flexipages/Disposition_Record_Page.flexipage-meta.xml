@@ -87,26 +87,346 @@
          in applications/Disposition.app-meta.xml pointing at LOI_Record_Page and
          Contract_Review_Record_Page. Without them the record opens on whichever page the org
          assigns - which is where the Advance Stage buttons are NOT, making the C3 fix on
-         Contract_Review_Record_Page unreachable from here. -->
+         Contract_Review_Record_Page unreachable from here.
+
+         =====================================================================
+         2026-08-19 - DISPOSITION FLOW REDESIGN: DYNAMIC ACTIONS TURNED ON HERE.
+         =====================================================================
+         enableActionsConfiguration went FALSE to TRUE and an actionNames valueList was added.
+
+         🔴 TURNING DYNAMIC ACTIONS ON DISCARDS THE PAGE'S INHERITED ACTION BAR. The panel no
+         longer reads layouts/Disposition__c-Disposition Layout's platformActionList; it renders
+         EXACTLY the list below and nothing else. That is a measured behaviour on this org, and
+         it is silent - the deploy succeeds and the buttons simply vanish. So the list below is
+         not "the nine new actions", it is THE WHOLE ACTION BAR, and Edit, Clone and Delete are
+         carried forward explicitly for that reason.
+         ⚠ WHAT WAS DELIBERATELY DROPPED, AND WHERE IT WENT:
+           - Submit (the platform's generic Submit for Approval button). Dropped ON PURPOSE. The
+             four Submit_* actions below route through DispositionApprovalService, which carries
+             the authored pre-checks - notably the wire pre-check that replaced the platform's
+             "no applicable approval process was found" message when Closing_Approval gained its
+             Wire_Verification_Completed__c entry criterion. Restoring the generic Submit button
+             would put a route around that pre-check back on the page.
+           - LogACall, NewEvent, NewTask, SendEmail. They remain reachable from the Activity
+             panel in the sidebar tabset, which is fed by a DIFFERENT actionListContext and is
+             unaffected by this change.
+         ⚠ Edit / Clone / Delete are written in the BARE form (no object prefix), which is how
+         standard buttons are addressed in an actionNames valueList; custom quick actions take
+         the Object.Action form. In-repo precedent for the bare form:
+         flexipages/Portfolio_Deal_Record_Page.flexipage-meta.xml.
+
+         EVERY RULE IS AND-ED WITH {!$Permission.CustomPermission.Disposition_Deal_Actions}.
+         ⚠ THREE-SEGMENT FORM ONLY. {!$Permission.<Name>} and {!$CustomPermission.<Name>} are
+         both REJECTED by the Metadata API (measured 2026-08-12).
+         ⚠ NEVER {!$User.<field>} in a visibility rule - it evaluates FALSE for a user without
+         FLS on the field and hides the action silently.
+
+         🔴 THE RULES READ TWO NEW FIELDS, AND FLS IS LOAD-BEARING. Is_On_Market__c (new) and
+         Wire_Verification_Completed__c (pre-existing, read already granted) must both be
+         readable by the running user. A visibility rule on an unreadable field evaluates FALSE
+         and hides the action with NO error anywhere. DPEG_Disposition_View and
+         DPEG_Disposition_Edit gain read on Is_On_Market__c in the same deploy; those two files
+         MUST NOT LAG THIS ONE.
+
+         WHY Select_Offer's FILTER IS "(1 OR 2) AND (3 OR 4) AND 5" AND NOT THE OBVIOUS
+         "(1 AND 2) OR (3 AND 4) AND 5". The requirement is: show at Active Listing (on-market),
+         or at Release Materials (off-market). Written directly that needs an AND nested inside
+         an OR, and whether this renderer honours that nesting is NOT something this repo has
+         ever confirmed - LOI__c.Is_Advance_Allowed__c exists precisely because a nested
+         disjunction here once deployed green and then behaved wrongly. So the expression is
+         De Morgan'd into a conjunction of parenthesised ORs, which IS proven on this org
+         (Opportunity_Record_Page ships "(1 OR 2) AND 3"):
+             (AL OR RM) AND (AL OR NOT-on-market) AND permission
+         Criterion 1 and criterion 3 are the SAME test (stage = Active Listing) written twice.
+         That duplication is deliberate: each index is referenced exactly once by the filter, so
+         nothing depends on whether repeating an index is legal here either.
+         ⚠ 'Active Listing' is on the On_Market value set ONLY, which is why the on-market half
+         needs no record-type test at all.
+
+         TWO PRE-EXISTING RULES WERE REPOINTED, NOT ADDED: the c_dispositionMain
+         "1 OR 2 OR 3 OR 4" rule and the flexipage_fieldSection "Details" "1 AND 2 AND 3 AND 4"
+         rule each named the retired stage 'Completed'. Both now name 'Sale Closes'. No other
+         criterion in either rule changed.
+
+         ⚠ A FLEXIPAGE DEPLOY CAN ROLL BACK AND STILL REPORT SUCCESS. Read this page back in the
+         org after deploying and confirm the twelve-item action list is present. That readback is
+         verification step 1 and it is not optional.
+
+         =====================================================================
+         2026-08-19 (code review, C-3) - APPROVAL HISTORY ADDED (identifier relatedLists).
+         =====================================================================
+         🔴 THE PAGE HAD NO APPROVAL COMPONENT OF ANY KIND. That gap is PRE-EXISTING, but the
+         redesign above is what made it load bearing: Disposition went from three dormant approval
+         processes to five that own seven of eleven stage transitions. All five set
+         allowRecall=true and recordEditability=AdminOnly, so a submitted record LOCKS, and the
+         Recall button lives ONLY in the Approval History related list. With no such list on the
+         page, allowRecall=true was unreachable from the UI: a driver whose approver went on leave
+         saw a Path, fields they could no longer edit, and no indication that an approval was
+         pending or who held it. The deploy plan's own risk item requires recalling pending
+         Disposition approvals before deploying, and Offer_Selection_Approval's comment says
+         records "must therefore be recalled first" - both assumed a route that did not exist.
+
+         🔴 THIS COMPONENT IS force:relatedListContainer, NOT force:relatedListSingleContainer,
+         AND THAT IS NOT A STYLE CHOICE. The three lists below (ndasList, loisList,
+         contractReviewsList) use the Single container because their targets are ordinary child
+         relationships. Approval History is not one, and the Single container CANNOT render it.
+         Measured on usman dpeg at 67.0, the UI API that backs the Single container answers:
+             GET /ui-api/related-list-info/Disposition__c/NDAs__r      -> 200, full list info
+             GET /ui-api/related-list-info/Disposition__c/ProcessSteps -> INVALID_TYPE,
+                 "The related lists UI API does not currently support this entity"
+         Same INVALID_TYPE for RelatedProcessHistoryList and ApprovalHistory as relatedListApiName.
+         So a Single container pointed at approval history deploys green and renders nothing.
+         force:relatedListContainer is the layout driven "Related Lists" component and is the
+         supported route. In repo precedent for the component name: Opportunity_Record_Page,
+         Portfolio_Deal_Record_Page, Property_Asset_Record_Page.
+
+         🔴 THIS COMPONENT IS EMPTY WITHOUT A SECOND FILE. force:relatedListContainer renders the
+         related lists declared on the object's PAGE LAYOUT, so the fix is two halves and neither
+         half works alone: layouts/Disposition__c-Disposition Layout.layout-meta.xml gains a
+         relatedLists block whose relatedList is RelatedProcessHistoryList, added in the same
+         change. If that layout edit is dropped from the deploy, this component still deploys and
+         still renders, but it shows only the two activity lists and the approval gap survives.
+         RelatedProcessHistoryList IS the Approval History list, verified rather than recalled:
+         the live describeLayout for Opportunity's Commercial record type returns the related list
+         named ProcessSteps with label "Approval History", and Opportunity's layout file is exactly
+         the file carrying RelatedProcessHistoryList. Twenty three layouts in this repo already
+         use that token; Opportunity_Record_Page is the working precedent for the pairing.
+
+         PLACED IN main, FIRST AMONG THE LISTS (above ndasList), NOT IN THE SIDEBAR TABSET. The
+         defect being fixed is that a pending approval is INVISIBLE, so a component that needs a
+         tab click to find would barely improve on absent. Above the three sibling lists because
+         those are empty for most of the lifecycle and the recall route must not sit under three
+         empty cards. It sits BELOW c_dispositionMain and the Details section so the primary work
+         surface is not displaced.
+
+         ⚠ ACCEPTED COST: this component renders EVERY related list on the layout, and it cannot
+         be filtered to one. Today that means Approval History plus Open Activities plus Activity
+         History, and those last two duplicate the Activity panel already in the sidebar tabset.
+         The alternative was to DELETE RelatedActivityList and RelatedHistoryList from the layout
+         so only Approval History remained. That was rejected here: it is a subtractive change to
+         a shared file, it would also strip those lists from Classic and from anything else the
+         layout feeds, and no measurement in this change proves it inert. Additive is the safe
+         half. If the duplication proves annoying in UAT, removing those two layout lists is the
+         follow up, and it is reversible.
+
+         ⚠ THIS ADDS NO ACTIONS. The actionNames valueList above is untouched and still holds
+         TWELVE entries. The twelve item readback in verification step 1 is unchanged. -->
 
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
+                <componentInstanceProperties>
+                    <name>actionNames</name>
+                        <valueList>
+                            <valueListItems>
+                                <value>Disposition__c.Submit_Sale_Decision</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Disposition Readiness</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Submit_Selected_Broker</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>BOV Outreach</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Submit_Broker_Selection</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Broker Selection</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>false</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Advance_to_NDA</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Broker Selection</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Advance_to_Release_Materials</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>NDA</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Advance_to_Active_Listing</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Release Materials</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Select_Offer</value>
+                                <visibilityRule>
+                                    <booleanFilter>(1 OR 2) AND (3 OR 4) AND 5</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Active Listing</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Release Materials</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Active Listing</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>false</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Advance_to_PSA</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>LOI</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Disposition__c.Submit_Closing_Approval</value>
+                                <visibilityRule>
+                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                    <criteria>
+                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>Closing</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Wire_Verification_Completed__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>true</rightValue>
+                                    </criteria>
+                                </visibilityRule>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Edit</value>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Clone</value>
+                            </valueListItems>
+                            <valueListItems>
+                                <value>Delete</value>
+                            </valueListItems>
+                        </valueList>
+                </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>collapsed</name>
                     <value>false</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>enableActionsConfiguration</name>
-                    <value>false</value>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>enableActionsInNative</name>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideChatterActions</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>hideSlackAction</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentName>force:highlightsPanel</componentName>
                 <identifier>highlightsPanel</identifier>
@@ -194,11 +514,72 @@
                 <identifier>FieldDispositionStage</identifier>
             </fieldInstance>
         </itemInstances>
+        <!-- BROKER LOOKUP (added 2026-08-20). The off-market broker pick becomes a validated
+             Contact lookup; Selected_Broker__c below stays as the read back of the string
+             stamped from it, so the two are DECISION and DISPLAY, not duplicates.
+
+             🔴 THE FIELD LEVEL visibilityRule IS REQUIRED, NOT DEFENSIVE. The enclosing Details
+             fieldSection's own rule (further down this file) is STAGE scoped, not record type
+             scoped: it hides the section at BOV Outreach, Active Listing, Closing and Sale
+             Closes, which means the section IS visible at Broker Selection FOR BOTH RECORD
+             TYPES. Dropping this lookup in unguarded would expose an empty, editable Broker
+             field on ON MARKET dispositions, where the broker comes from the BOV chain and this
+             field must stay null. An on-market analyst filling it in would create a record whose
+             lookup and BOV stamped text disagree with nothing reconciling them.
+
+             Is_On_Market__c is the same formula checkbox the four Dynamic Actions on this page
+             already test, and read on it is granted in both DPEG_Disposition_View and
+             DPEG_Disposition_Edit. ⚠ A visibility rule reading a field the running user cannot
+             see evaluates FALSE and hides the element with no error anywhere. That direction is
+             safe here (the off market only field disappears), but it is why the two permission
+             sets must land WITH OR BEFORE this file, never after.
+
+             XML SHAPE VERIFIED AGAINST DEPLOYED IN REPO PRECEDENT, NOT GUESSED: this is the
+             first fieldInstance level visibilityRule in THIS file, but not in this repo.
+             Lead_Record_Page.flexipage-meta.xml carries one on Record.Disqualification_Reason__c
+             with the same child order (fieldInstanceProperties, fieldItem, identifier,
+             visibilityRule) and a single criteria block with no booleanFilter. The lowercase
+             boolean rightValue matches the Is_On_Market__c criteria already in this file. -->
         <itemInstances>
             <fieldInstance>
                 <fieldInstanceProperties>
                     <name>uiBehavior</name>
                     <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Broker__c</fieldItem>
+                <identifier>FieldBroker</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>false</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </fieldInstance>
+        </itemInstances>
+        <!-- FieldSelectedBroker IS READ ONLY AS OF 2026-08-20, AND uiBehavior IS THE ONLY
+             CORRECT PLACE TO DO IT. Off-market, Selected_Broker__c is DERIVED: it is stamped
+             from Record.Broker__c by DispositionBrokerStampService in before-context, and that
+             stamp is keyed on Broker__c CHANGING. A hand edit of this field therefore leaves
+             Broker__c untouched, the stamp skips the record, and the save SUCCEEDS with the
+             lookup naming one broker and the text naming another - visible side by side on the
+             Broker_Selection_Approval page. Nothing reconciles the two until Broker__c next
+             changes. Disposition_Path_Off_Market refuses to put this field on the Broker
+             Selection step for exactly this reason; leaving it editable here reopened the hole
+             the path step closed.
+             🔴 DO NOT "FIX" THIS BY DEMOTING THE FLS INSTEAD. BovSubmissionService
+             .replaceSelectedBroker writes this field with a plain `update` in USER context, so
+             removing editable=true from DPEG_Disposition_Edit would start failing the on-market
+             broker replacement for every user. uiBehavior scopes the block to THIS PAGE, which
+             is where the hand edit happens, and leaves Apex untouched.
+             ⚠ readonly, lowercase. Copied from Lead_Record_Page (Extraction_Score_Pct__c,
+             OwnerId); the same spelling is used in Opportunity_Record_Page, NDA_Record_Page and
+             Underwriting_Record_Page. -->
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>readonly</value>
                 </fieldInstanceProperties>
                 <fieldItem>Record.Selected_Broker__c</fieldItem>
                 <identifier>FieldSelectedBroker</identifier>
@@ -289,7 +670,7 @@
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>EQUAL</operator>
-                        <rightValue>Completed</rightValue>
+                        <rightValue>Sale Closes</rightValue>
                     </criteria>
                 </visibilityRule>
             </componentInstance>
@@ -330,9 +711,33 @@
                     <criteria>
                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                         <operator>NE</operator>
-                        <rightValue>Completed</rightValue>
+                        <rightValue>Sale Closes</rightValue>
                     </criteria>
                 </visibilityRule>
+            </componentInstance>
+        </itemInstances>
+        <!-- APPROVAL HISTORY (C-3). Renders the layout's related lists, one of which is
+             RelatedProcessHistoryList. The three property values below are copied verbatim from
+             the Opportunity_Record_Page and Portfolio_Deal_Record_Page instances of this same
+             component, so none of them is a guess. showActionBar matters most: Recall Approval
+             Request is a LIST LEVEL button on Approval History, so suppressing the action bar
+             would put the page back in the exact state C-3 describes. -->
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>relatedListComponentOverride</name>
+                    <value>NONE</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>rowsToDisplay</name>
+                    <value>10</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>showActionBar</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListContainer</componentName>
+                <identifier>relatedLists</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

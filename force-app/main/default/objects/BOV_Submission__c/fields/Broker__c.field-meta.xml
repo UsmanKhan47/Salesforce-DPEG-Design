@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20. THE BROKER RESPONSE'S CONTACT BECOMES A VALIDATED LOOKUP.
+        =====================================================================================
+        Until now an analyst recording a BOV response typed the firm into Broker_Firm__c and
+        the person into Contact_Name__c, both free Text, both unvalidated, both able to name a
+        broker who does not exist as a Contact. THIS FIELD IS NOW THE ANALYST'S ONLY BROKER
+        ENTRY POINT ON THIS OBJECT: Broker_Firm__c and Contact_Name__c are removed from
+        layouts/BOV_Submission__c-BOV Submission Layout in the same change, so the picker below
+        is the only place a broker can be named.
+
+        XML SHAPE IS COPIED FROM Broker_Assignment__c.Broker__c, DELIBERATELY AND EXACTLY.
+        Same referenceTo, same ACTIVE non-optional lookupFilter, same errorMessage string, same
+        deleteConstraint. Disposition__c.Broker__c, Lease_Inquiry__c.Broker__c and
+        Opportunity.Broker__c are the other three precedents and carry the same filter. There is
+        no Broker__c OBJECT in this org; every "broker" in this application is a Contact flagged
+        Is_Broker__c.
+
+        =====================================================================================
+        🔴 THE LABEL IS "Broker Contact", NOT "Contact" AND NOT "Broker". BOTH ARE TAKEN.
+        =====================================================================================
+        MEASURED, not assumed, in objects/BOV_Submission__c/fields/ on this branch:
+            Contact_Name__c    carries <label>Contact</label>
+            Broker_Display__c  carries <label>Broker</label>
+            Broker_Firm__c     carries <label>Broker Firm</label>
+        All three STAY IN THE SCHEMA (see the next block), so either alternative would put two
+        identically labelled entries in the report field picker, the Setup field list, the
+        Dynamic Forms palette and every list view column chooser, with nothing to tell them
+        apart. Salesforce permits it; a human cannot use it. "Broker Contact" is unique on this
+        object and sits unambiguously beside "Broker Firm".
+
+        =====================================================================================
+        🔴 Broker_Firm__c AND Contact_Name__c ARE NOW DERIVED. THEY ARE NOT RETIRED.
+        =====================================================================================
+        A before-save Apex stamp (BovSubmissionBrokerStampService, delivered alongside this field by the
+        development half of this change) writes both Text fields from the Contact chosen here,
+        keyed on this lookup CHANGING. The writer changes from a human to the stamp; the fields
+        themselves keep being populated exactly as before.
+
+        THEY SURVIVE BECAUSE FIVE LIVE CONSUMERS READ THEM, and none is being repointed:
+            BovSubmissionTriggerHandler        copies Broker_Firm__c onto the parent
+                                               Disposition__c.Selected_Broker__c on approval
+            BovSubmissionService.replaceSelectedBroker   reads challenger.Broker_Firm__c
+            Broker_Display__c (formula)        Broker_Firm__c and Contact_Name__c
+            BovController.BovRow               brokerFirm / contactName
+            lwc/bovComparisonMatrix,
+            lwc/backupBrokers                  render those two DTO members as the
+                                               "Broker Firm" and "Contact" columns
+
+        ⚠ THIS FIELD IS DELIBERATELY NOT ADDED TO BovSubmissionSelector OR TO BovController.
+        Nothing reads it. Adding it to either WITH USER_MODE selector method would make an
+        FLS denial throw QueryException "No such column" and red banner the comparison matrix
+        for every persona until the permission sets below deploy, in exchange for a column no
+        consumer consumes.
+
+        =====================================================================================
+        🔴 SEED HAZARD. scripts/seed-broker-contacts.apex CAN SILENTLY NULL THIS FIELD.
+        =====================================================================================
+        That script opens with a mass delete of every broker Contact:
+
+            delete [SELECT Id FROM Contact WHERE Is_Broker__c = true];
+
+        With deleteConstraint SetNull, re-running it NULLS Broker__c on every BOV Submission
+        holding it, with no error and no warning. WORSE HERE THAN ON Disposition__c: the two
+        stamped Text fields are STORED Text, not formulas, so they are left behind still naming
+        the vanished broker, and Broker_Display__c is a formula over both of them. The comparison
+        matrix therefore keeps rendering a deleted broker's firm and name with nothing to notice.
+        That is corruption that reads as health.
+
+        MITIGATION IS IN THE SCRIPT, NOT HERE. seed-broker-contacts.apex carries a BROKER_LOOKUPS
+        map and a banner reading "IF A FIFTH Contact LOOKUP IS EVER ADDED, ADD IT HERE"; this
+        field is that fifth lookup, and the development half of this change is extending that
+        guard and correcting the script's "four lookups" header prose. 🔴 DO NOT "FIX" THIS BY
+        SWITCHING TO deleteConstraint Restrict. That would make the seed fail loudly but would
+        also block legitimate Contact deletion for the whole org, and it would diverge from all
+        four sibling lookups.
+
+        =====================================================================================
+        RELATIONSHIP NAME: Brokered_BOV_Submissions. COLLISION CHECKED, NOT ASSUMED.
+        =====================================================================================
+        Exactly four fields in this repo carry referenceTo Contact, and their relationshipNames
+        are Broker_Assignments, Brokered_Dispositions, Lease_Inquiries and Brokered_Opportunities.
+        Nothing on Contact uses BOV_Submissions or Brokered_BOV_Submissions, so both were free.
+        The BOV_Submissions that DOES exist in this repo is the child relationship of
+        BOV_Submission__c.Disposition__c, whose parent is Disposition__c; relationship names are
+        unique PER PARENT OBJECT, so it never contended for the Contact namespace.
+
+        WHY THE Brokered_ PREFIX. Under Contact, a bare "BOV Submissions" reads as "this
+        Contact's submissions" when what the list means is "submissions this Contact BROKERS".
+        Disposition__c and Opportunity, the two other deal objects carrying a role named Contact
+        lookup, both take the Brokered_ form for that reason. Broker_Assignment__c and
+        Lease_Inquiry__c take the bare plural only because those objects exist solely to be about
+        a broker, so the role is already in the object name.
+        ⚠ A relationshipName is disruptive to change after deploy. Settled here, before the
+        first deploy, while it costs nothing.
+
+        =====================================================================================
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        =====================================================================================
+        A Metadata API deployed custom field arrives with NO field permissions for any profile,
+        System Administrator included. Read and edit are granted in DPEG_Disposition_Edit and
+        read only in DPEG_Disposition_View in the same change. MEASURED: those two are the
+        complete set of permission sets in this repo granting any BOV_Submission__c business
+        field. Disposition_Dashboard_Access grants only Broker_Display__c, Property_Name__c and
+        Selected_Broker__c, all read only formulas that keep evaluating, so it is NOT touched.
+        DPEG_Admin_Access grants no BOV_Submission__c field today, so a bare administrator
+        already cannot read this object's business fields; this change creates no new admin
+        regression and that set must NOT be widened to fix a problem it does not have.
+        This file, the layout and the two permission sets must deploy TOGETHER, and never Apex
+        first: Apex referencing Broker__c will not compile until the field exists, and the layout
+        will not deploy referencing a field that does not exist.
+
+        ⚠ TESTS MUST USE TestDataFactory.createBrokerContact / createBrokerContacts. The lookup
+        filter below is ACTIVE and NOT optional, so a plain createContacts() Contact is refused.
+    -->
+    <fullName>Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The broker Contact who gave this BOV response, and the analyst's only broker entry point on this object. Broker Firm and Contact are stamped from this pick before save; both stay in the schema because Apex, Broker Display and the matrix read them.</description>
+    <inlineHelpText>Pick the broker who gave this BOV. Only Contacts flagged as brokers appear. Broker Firm and Contact fill in automatically from your pick, which is why they are no longer on this page. Do not try to type them.</inlineHelpText>
+    <label>Broker Contact</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>The selected Contact is not flagged as a broker (Is_Broker__c).</errorMessage>
+        <filterItems>
+            <field>Contact.Is_Broker__c</field>
+            <operation>equals</operation>
+            <value>True</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Brokered BOV Submissions</relationshipLabel>
+    <relationshipName>Brokered_BOV_Submissions</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

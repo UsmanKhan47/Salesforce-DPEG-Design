@@ -2,7 +2,29 @@
     <lightning-card icon-name="standard:contract">
         <span slot="title">BOV Comparison Matrix ({count})</span>
 
-        <template if:true={loadError}>
+        <!-- Top-right actions. `slot="actions"` is lightning-card's own header
+             action region, so the buttons sit on the card header line rather
+             than pushing the table down. -->
+        <div slot="actions">
+            <lightning-button-group>
+                <lightning-button
+                    class="matrix-add"
+                    label="Add Broker Response"
+                    onclick={handleAddResponse}
+                ></lightning-button>
+                <!-- Only rendered once a broker is Selected — there is nothing
+                     to replace before that. -->
+                <template lwc:if={canReplaceBroker}>
+                    <lightning-button
+                        class="matrix-replace"
+                        label="Replace Broker"
+                        onclick={handleReplaceBroker}
+                    ></lightning-button>
+                </template>
+            </lightning-button-group>
+        </div>
+
+        <template lwc:if={loadError}>
             <div class="matrix-error" role="alert">{loadError}</div>
         </template>
 

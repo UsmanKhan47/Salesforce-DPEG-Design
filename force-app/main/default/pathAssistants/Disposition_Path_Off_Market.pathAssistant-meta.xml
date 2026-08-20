@@ -2,56 +2,93 @@
 <PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
     <!--
         The DIRECT, UNLISTED disposition path, for the Off_Market record type.
-        Seven steps: Disposition Readiness, NDA, Disposition Offer, LOI, PSA, Closing,
-        Completed. No broker is engaged, so there is no BOV Outreach, no Active Listing and
-        no Call for Offers - those three are restricted out of the Off_Market value set.
+        REBUILT 2026-08-19 to the redesigned NINE steps: Disposition Readiness, Broker Selection,
+        NDA, Release Materials, Offer Selection, LOI, PSA, Closing, Sale Closes.
 
-        Completed is copied BYTE-IDENTICAL - fieldNames AND info text - from the
-        now-deactivated Disposition_Path. Closing was too until 2026-08-09, when the code
-        review's C1 finding added a third sentence to it (fieldNames unchanged, the original
-        two sentences unchanged): complete the wire verification BEFORE submitting the Closing
-        approval. That ordering is not a preference - Closing_Approval sets recordEditability
-        AdminOnly, so while it is pending the Disposition is locked and
-        Wire_Verification_Rollup cannot write the flag (it now fails soft rather than rolling
-        the Wire save back). The IDENTICAL sentence is on Disposition_Path_On_Market's Closing
-        step - these two must stay in step with each other.
+        =====================================================================================
+        WHAT CHANGED AND WHY, STEP BY STEP.
+        =====================================================================================
+        REMOVED: the Disposition Offer step (retired value, replaced by Offer Selection) and the
+        Completed step (renamed by replacement to Sale Closes).
+        ADDED: Broker Selection, Release Materials, Offer Selection, Sale Closes.
+        🔴 A BROKER IS NAMED ON THIS PATH TOO. The narrative that "no broker is engaged, so there
+        is no BOV Outreach, no Active Listing and no Call for Offers" is retracted in
+        Off_Market.recordType-meta.xml. What survives of it is only the narrow truth: there is no
+        BOV beauty parade and no public listing, so BOV Outreach and Active Listing remain
+        restricted out. The broker is a DIRECT PICK, and the pick is approved.
 
-        Disposition Readiness is the ONE deliberate exception to that carry-over, corrected on
-        request 2026-08-09. The original text ended "before advancing to BOV Outreach", which
-        is on-market wording: BOV Outreach does not exist on this path at all, which goes
-        Readiness -> NDA. The trailing clause now names NDA. Its fieldNames (Property_Asset__c)
-        and the rest of the sentence are unchanged, and the On_Market copy of this step still
-        carries the original wording, which is correct there.
+        ⚠ TWO ORPHAN STEPS WILL RENDER AFTER Sale Closes UNTIL THE PICKLIST CLEANUP WAVE RUNS.
+        Disposition Offer and Completed still exist as values and are still listed on the
+        Off_Market record type (a record type cannot reference a deleted value, and a metadata
+        deploy cannot delete one - Setup can). They have NO step here, so they render with no
+        guidance. Deliberate: stale guidance on a stage nothing should reach is worse than none.
+        Zero records sit on either value, and there are zero Off_Market rows at all today.
 
-        🔴 THE "NOT CORRECTED, DELIBERATELY" NOTE THAT STOOD HERE IS RETRACTED - 2026-08-10,
-        BY D27.1 / D28-Q2. It is quoted rather than deleted because this file's copy was one of
-        three that told the next reader to leave a known-wrong clock alone, and three copies of
-        that instruction are what made this a review blocker rather than a one-line fix:
+        WHAT EACH STEP'S EXIT IS OWNED BY - and note that TWO of these differ from the on-market
+        path, which is the whole reason the two files exist separately:
+            Disposition Readiness -> Broker Selection  Sale Decision approval (auto-advance)
+            Broker Selection -> NDA                    🔴 Broker Selection APPROVAL, not a button
+            NDA -> Release Materials                   MANUAL: Advance to Release Materials
+            Release Materials -> Offer Selection       🔴 Select Offer, with NO Active Listing hop
+            Offer Selection -> LOI                     Offer Selection approval on the offer
+            LOI -> PSA                                 MANUAL: Advance to PSA
+            PSA -> Closing                             ContractExecutionService, on PSA execution
+            Closing -> Sale Closes                     Closing approval (auto-advance)
+        RecordStageAdvanceService's Off_Market map therefore holds only TWO manual hops
+        (NDA -> Release Materials and LOI -> PSA) against the on-market four, so the Advance
+        button structurally cannot skip the two approval-owned hops above.
 
-            RETRACTED: "NOT corrected, deliberately: the Active Listing step text on the
-            On_Market path ("6-week marketing clock ... Week 4 YELLOW ... Week 6 Hard Stop") is
-            under an OPEN user question about a 2-month vs 6-week clock. That step does not
-            exist on this path, but do not "fix" it on the other one either."
+        THE CLOSING STEP'S THIRD SENTENCE WAS REWRITTEN, AND IT IS IDENTICAL TO THE ONE ON
+        Disposition_Path_On_Market. These two must stay in step with each other - they always
+        have. The old sentence told the user to verify the wire FIRST because the AdminOnly
+        approval lock would otherwise silently stop Wire_Verification_Rollup. Closing_Approval
+        now carries Wire_Verification_Completed__c as an ENTRY CRITERION, so the ordering is
+        enforced rather than signposted and the Submit Closing Approval button is hidden until
+        the flag is true.
 
-        (Those milestone names survive above ONLY as a verbatim quotation of retracted text.)
+        THE LOI AND PSA STEPS' "arrives in a later change" TEXT IS GONE, BECAUSE IT IS NO LONGER
+        TRUE. DispositionStageEntryService auto-creates the sell-side LOI on entry to LOI, and
+        Contract_Review__c has a Disposition_PSA record type; both surface in related lists
+        already on Disposition_Record_Page.
 
-        WHAT ANSWERED IT: D27.1 - THE DOCUMENT WON. The marketing period is 60 days with a
-        30-day traction checkpoint, and traction is logged offers and NOTHING else (D28-Q1).
-        The Active Listing text on Disposition_Path_On_Market and on the deactivated
-        Disposition_Path was rewritten to that model in this change, and the bands both now
-        name are DispositionTractionService's.
+        🔴 THE ACTIVE-LISTING-CLOCK RETRACTION THAT LIVED IN THIS FILE IS NOT REPEATED HERE. It
+        was a note telling the reader not to "fix" the on-market clock text; that text has been
+        correct since 2026-08-10 and the full record lives in Disposition_Path_On_Market's own
+        comment. Nothing is lost by dropping a pointer to a resolved question, and carrying a
+        retraction of a retraction into a rebuilt file would only obscure what actually changed.
 
-        NOTHING IN THIS FILE CHANGED BUT THIS COMMENT, for the reason the retracted note gave
-        and the opening paragraph still gives: Active Listing is restricted out of the
-        Off_Market value set, so this path has no Active Listing step to correct. The paragraph
-        is kept only so a reader of this file is not left holding the retracted instruction.
+        Step ORDER in this file is the design's path order for readability. Runtime display order
+        comes from the Disposition_Stage__c picklist value order (sorted = false) filtered by the
+        record type, NOT from this file. The master value order was deliberately INTERLEAVED (not
+        appended) in the same change so both record types' filtered sequences stay monotonic; the
+        arithmetic is in objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml.
 
-        NDA, Disposition Offer, LOI and PSA are new, text-only steps: none has a
-        Disposition__c field to surface. Nothing about NDA__c itself changes in this tranche -
-        no new values, no rename, no Party_Role__c.
+        =====================================================================================
+        AMENDED 2026-08-20. THE Broker Selection STEP'S KEY FIELD IS NOW THE LOOKUP.
+        =====================================================================================
+        fieldNames moved from Selected_Broker__c (Text 255) to Broker__c, the new
+        Lookup(Contact) filtered on Is_Broker__c. The info text was rewritten in the same change
+        because it said "name the broker directly in Selected Broker", which after this change
+        is a WRONG INSTRUCTION rather than merely a stale one: the approval gate in
+        DispositionApprovalService no longer reads that text field at all, so a user following
+        the old sentence would type a name, see it saved, and then be refused at submit with no
+        explanation on screen.
 
-        Step ORDER in this file is the design's path order for readability. Runtime display
-        order comes from the Disposition_Stage__c picklist value order (sorted=false).
+        🔴 THE STEP SHOWS THE LOOKUP ONLY. A path step accepts multiple fieldNames, and listing
+        Selected_Broker__c alongside it was considered and REJECTED. Off-market that field is now
+        DERIVED, stamped from Broker__c in before-context, so displaying it next to its own
+        source would sit as a dead interlock on a user's screen and invite a hand edit that
+        immediately disagrees with the lookup. This is the same argument both DPEG_Disposition_*
+        set headers make for withholding Approval_Advance_Pending__c. Selected_Broker__c is still
+        readable on the record page underneath, which is where a read back belongs.
+
+        🔴 Disposition_Path_On_Market IS DELIBERATELY UNCHANGED. Its two Selected_Broker__c
+        references stay: on-market the text field is still the real, hand and BOV written value,
+        and Broker__c is null and not even rendered on an on-market record. The two paths
+        diverge here ON PURPOSE and must not be "made consistent".
+        ⚠ CONSEQUENCE FOR A FUTURE RETIREMENT WAVE: an ACTIVE path step referencing a field
+        blocks that field's deletion. This change removes the off-market pin on
+        Selected_Broker__c, but the on-market path still pins it twice.
     -->
     <active>true</active>
     <entityName>Disposition__c</entityName>
@@ -59,36 +96,49 @@
     <masterLabel>Disposition Path Off Market</masterLabel>
     <pathAssistantSteps>
         <fieldNames>Property_Asset__c</fieldNames>
-        <info>Confirm the asset metrics and Argus signal support the sell decision before advancing to NDA.</info>
+        <info>Confirm the asset metrics and Argus signal support the sell decision. Use Submit Sale Decision to send it to the principals; approval moves this deal to Broker Selection on its own, so there is no Advance button here.</info>
         <picklistValueName>Disposition Readiness</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Send an NDA to each interested party. Create one NDA record per party using the NDA lookup to this Disposition. The expanded NDA model - the Declined state, the Pending to Not Sent rename, party roles, counter-signature and the all-signed gate - arrives in a later change; until then track each NDA Status by hand.</info>
+        <fieldNames>Broker__c</fieldNames>
+        <info>No BOV round runs on this path: choose the broker in the Broker field, then use Submit Broker Selection. Only Contacts flagged as brokers can be picked, and Selected Broker fills in automatically from your pick. Approval moves this deal to NDA on its own - there is no Advance button on this step.</info>
+        <picklistValueName>Broker Selection</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>NDA_Count__c</fieldNames>
+        <fieldNames>Signed_NDA_Count__c</fieldNames>
+        <info>Send an NDA to each interested party - one NDA record per party, using the NDAs related list below. Nothing is released until every NDA that was not Declined reads Signed; Advance to Release Materials is refused until then.</info>
         <picklistValueName>NDA</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Offers are captured on Disposition Offer records against this Disposition. Log the buyer name, offer amount, financing type, due-diligence and closing periods, then work the counter fields until an offer is accepted.</info>
-        <picklistValueName>Disposition Offer</picklistValueName>
+        <fieldNames>Package_Sent__c</fieldNames>
+        <info>The NDAs are signed, so the offering materials can go out. Send the package to the cleared parties and log the offers that come back. There is no listing step on this path: use Select Offer once an offer is worth taking to the principals.</info>
+        <picklistValueName>Release Materials</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>LOI is a phase of this disposition, not a separate record - the disposition-side LOI record arrives in a later change. Until then the negotiation stays on the Disposition Offer record: drive it through Offer Status and the DPEG Counter Price, DPEG Counter Date, Buyer Counter Price and Final Agreed Price fields.</info>
+        <fieldNames>Accepted_Offer_Price__c</fieldNames>
+        <info>Use Select Offer to pick one of the logged offers. Selecting it moves the deal here and sends that offer to the principals in one step. If they reject it the deal stays on this step so another offer can be selected; approval moves it to LOI.</info>
+        <picklistValueName>Offer Selection</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <info>The sell-side LOI record is created automatically on entry to this step and appears in the LOIs related list below. Negotiate it there, then use Advance to PSA once terms are agreed.</info>
         <picklistValueName>LOI</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>PSA is a phase of this disposition, not a separate record - the disposition-side contract has no record yet and arrives in a later change. PSA Executed on this Disposition is the only marker; tick it on the Closing step once the purchase and sale agreement is signed.</info>
+        <info>The sell-side contract is tracked on a Contract Review record of the Disposition PSA type, in the Contract Reviews related list below. When it reaches Executed, this deal moves to Closing on its own.</info>
         <picklistValueName>PSA</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>PSA_Executed__c</fieldNames>
         <fieldNames>Title_Company__c</fieldNames>
-        <info>PSA Executed = TRUE spawns closing tasks. Wire fraud prevention gate (6 fields) must be complete before wiring. Complete the wire verification BEFORE submitting the Closing approval - the approval locks this Disposition, so a Wire saved while it is pending will not update the Wire Verification Completed flag until the approval resolves.</info>
+        <info>PSA Executed = TRUE spawns closing tasks. Wire fraud prevention gate (6 fields) must be complete before wiring. Complete the wire verification first: the Submit Closing Approval button stays hidden until Wire Verification Completed is true, because the approval both requires it and locks this record while it is pending.</info>
         <picklistValueName>Closing</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Closing_Date__c</fieldNames>
         <fieldNames>Net_Sale_Proceeds__c</fieldNames>
         <info>Deal closed. Confirm the closing date, net sale proceeds, and that the closing statement is on file.</info>
-        <picklistValueName>Completed</picklistValueName>
+        <picklistValueName>Sale Closes</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>Off_Market</recordTypeName>
 </PathAssistant>

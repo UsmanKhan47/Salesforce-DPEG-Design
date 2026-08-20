@@ -11,10 +11,20 @@
         PHASE 1 (2026-08-12) of retiring the driver-flag concept — see
         agent-output/design-requirements-custom-permissions.md. This IS the layer-5 AUTHORIZATION
         token for the Disposition deal-action gate, replacing the FLS-on-a-checkbox mechanism
-        (User.Disposition_Driver__c). It is granted through Disposition_Deal_Driver.permissionset-
-        meta.xml — the same layer-5 set that already carries the fieldPermissions grant on
-        User.Disposition_Driver__c, so the population is preserved by construction (same set, same
-        holders) rather than by a migration script.
+        (User.Disposition_Driver__c).
+        🔴 THE NEXT SENTENCE IS FALSE AS OF 2026-08-19 AND IS KEPT ONLY AS THE RETRACTED TEXT.
+        DO NOT ACT ON IT; THE GRANTING SET CHANGED. The correction is the last block in this
+        comment.
+        [FALSE] "It is granted through Disposition_Deal_Driver.permissionset-meta.xml — the same
+        layer-5 set that already carries the fieldPermissions grant on User.Disposition_Driver__c,
+        so the population is preserved by construction (same set, same holders) rather than by a
+        migration script." [END FALSE]
+        ⇒ Disposition_Deal_Driver WAS RETIRED ON 2026-08-19 AT USER REQUEST. THIS PERMISSION IS
+        NOW GRANTED BY DPEG_Disposition_Edit, AND THE POPULATION IS NOT PRESERVED — IT WIDENED.
+
+        ⚠ THE PARAGRAPH DIRECTLY BELOW IS A 2026-08-12 SNAPSHOT WRITTEN MID-MIGRATION. THREE OF
+        ITS STATEMENTS ARE NOW FALSE. It is kept as the phase record; the corrections are
+        immediately after it. Do not quote it as current state.
 
         THIS PHASE REPOINTS THE FLEXIPAGE HALF ONLY. The 6 disposition-gated visibility criteria
         (LOI_Record_Page x3, NDA_Record_Page x2, Contract_Review_Record_Page x1) now read
@@ -27,15 +37,74 @@
         fieldPermissions grant on Disposition_Deal_Driver are UNTOUCHED and remain the rollback
         lever; they are retired in a separate, later pass (see the design doc section 6).
 
+        CORRECTIONS TO THE SNAPSHOT ABOVE, EACH READ OUT OF THE CURRENT FILES:
+          1. "the 6 disposition-gated visibility criteria" — it is FIFTEEN now, not six. The nine
+             quick-action rules on Disposition_Record_Page were added by the 2026-08-19
+             disposition flow redesign and every one of them is AND-ed with this permission. The
+             original six (LOI x3, NDA x2, Contract Review x1) are still there and still correct.
+          2. "DispositionActionPermissionService.cls still reads the OLD flag" — it does not. The
+             parallel developer pass landed. FeatureManagement.checkPermission is now the SOLE
+             server-side authorization check, so the chrome and the assert are back IN sync.
+          3. "User.Disposition_Driver__c and its fieldPermissions grant ... are UNTOUCHED and
+             remain the rollback lever" — the grant was REMOVED on 2026-08-12 (Phase 2 Step 1),
+             and the set that carried it was RETIRED on 2026-08-19. There is no rollback lever
+             left: reverting to flag-based visibility would mean rebuilding the mechanism, not
+             re-adding a grant.
+
         🔴 DO NOT ADD THIS PERMISSION TO A LAYER-4 CAPABILITY SET (e.g. a future
-        Disposition_Stage_Actions_Access). ARCHITECTURE.md section 2's seven-layer model states
+        Disposition_Stage_Actions_Access). The seven-layer permission-set model states that
         layer 4 answers "can this code be reached at all" and layer 5 answers "is this specific
         user allowed" — a custom permission changes the TOKEN, not the QUESTION. Merging it into a
         capability set would grant deal-driving to that set's ENTIRE membership in one deploy,
         exactly the widening Acquisition_Deal_Driver's own comment already warns against for its
         sibling gate.
+        ⚠ CITATION CORRECTED 2026-08-19. This paragraph used to cite "ARCHITECTURE.md section 2's
+        seven-layer model". THAT SECTION IS NOT THERE. ARCHITECTURE.md §2 is "Apex Layering"
+        (Service / Selector / Domain / Trigger-handler) and the file contains no permission-set
+        layer model and no mention of these sets at all — checked line by line, not recalled. The
+        section really was added by commit caee504 on 2026-08-11 and was dropped by a later
+        rewrite of that file. The model survives in
+        docs/2026-08-10-permission-set-cleanup.md, under "Configuration Details — the seven-layer
+        model". Anything else in this repo citing ARCHITECTURE.md §2 for it is stale the same way;
+        DispositionActionPermissionService.cls carries the identical dead citation.
+
+        =====================================================================
+        🔴 SUPERSEDED IN PART, 2026-08-19 — USER DECISION. THE GRANT MOVED TO
+        DPEG_Disposition_Edit. READ THIS WITH THE PARAGRAPH ABOVE, NOT INSTEAD OF IT.
+        =====================================================================
+
+        WHAT HAPPENED: Disposition_Deal_Driver, the dedicated layer-5 set whose only payload was
+        this permission, was RETIRED at the user's request. This permission is UNCHANGED and is
+        NOT retired — every consumer of it is untouched: nine quick-action visibility rules on
+        Disposition_Record_Page, three on LOI_Record_Page, two on NDA_Record_Page, one on
+        Contract_Review_Record_Page, and the
+        FeatureManagement.checkPermission('Disposition_Deal_Actions') call in
+        DispositionActionPermissionService that DispositionApprovalService, BovSubmissionService
+        and RecordStageAdvanceService assert through. ONLY THE GRANTING SET CHANGED.
+
+        🔴 THE PARAGRAPH ABOVE IS NOT WRONG, IT WAS OVERRULED, AND THE COST IT NAMED IS THE COST
+        THAT WAS PAID. It warned that merging this token into a broader set "would grant
+        deal-driving to that set's ENTIRE membership in one deploy". That is exactly what now
+        happens: every holder of DPEG_Disposition_Edit is a disposition deal driver, and
+        DPEG_Junior_Analyst_PSG carries that set, so the whole group inherits the token at
+        recalculation. The warning is kept rather than deleted precisely so that whoever revisits
+        this can see the trade was made with the argument in front of it.
+
+        ⚠ ONE PRECISION, BECAUSE THE LETTER AND THE SPIRIT DIVERGE HERE. DPEG_Disposition_Edit is
+        a LAYER-3 MODULE DATA set (object, field and record-type grants for one module at one
+        access level), NOT a layer-4 capability set, so the prohibition above is not literally
+        what was breached. The retired set's own header carried the literal one: "DO NOT move this
+        customPermissions grant to DPEG_Disposition_Edit or any layer-4 capability set." Both are
+        superseded by the same decision. And the model has no slot for what now exists — a layer-5
+        authorization token riding a layer-3 data set — so if the seven-layer model is ever
+        restored to ARCHITECTURE.md, this is the case it has to account for.
+
+        🔴 DPEG_Disposition_View DOES NOT AND MUST NOT CARRY THIS PERMISSION. Principals hold the
+        View set and APPROVE dispositions; granting it there would put the submit and advance
+        buttons in front of the approvers of those submissions. The two disposition sets are
+        deliberately asymmetric on this grant.
     -->
     <label>Disposition Deal Actions</label>
-    <description>Layer-5 authorization token for the Disposition stage quick actions. Replaces User.Disposition_Driver__c. Grant ONLY via Disposition_Deal_Driver; never via a layer-4 capability set.</description>
+    <description>Layer-5 authorization token for the Disposition stage quick actions. Replaces User.Disposition_Driver__c. Granted by DPEG_Disposition_Edit from 2026-08-19, when the dedicated Disposition_Deal_Driver set was retired. See this file's XML comment.</description>
     <isLicensed>false</isLicensed>
 </CustomPermission>

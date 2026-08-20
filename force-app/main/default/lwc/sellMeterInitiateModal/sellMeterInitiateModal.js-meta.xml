@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <!-- isExposed=false: a LightningModal is opened from JS by c/sellMeterList,
+         never dropped on a page, so it needs no target and must not appear in
+         App Builder. -->
+    <isExposed>false</isExposed>
+    <masterLabel>Initiate Disposition</masterLabel>
+    <description>Sell Meter initiate popup: read-only property summary plus a required On Market / Off Market choice, then creates the Disposition and submits the Sale Decision approval.</description>
+</LightningComponentBundle>

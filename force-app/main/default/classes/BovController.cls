@@ -1,3 +1,17 @@
+/**
+ * Backs the BOV broker-outreach card on the Disposition record page (`c/bovOutreach`,
+ * `c/bovComparisonMatrix`) and, since 2026-08-19, the broker-replacement modal
+ * (`c/bovReplaceBrokerModal`).
+ *
+ * Thin controller (ARCHITECTURE.md §2 / .claude/rules/apex-layering-rule.md). All SOQL is
+ * delegated to `BovSubmissionSelector` / `DispositionSelector` / `NdaSelector`, and the only WRITE
+ * this class exposes delegates wholly to `BovSubmissionService` — the exclusivity swap, the
+ * approval-status revocation, the savepoint and the parent stamp all live there.
+ *
+ * ⚠ TWO READ METHODS AND ONE WRITE METHOD, AND THEY DO NOT SHARE A FAILURE MESSAGE. A failed read
+ * degrades a card; a failed write leaves the user unsure whether a broker changed. Their generic
+ * messages are deliberately different strings for that reason.
+ */
 public with sharing class BovController {
 
     public class BovRow {
@@ -40,6 +54,14 @@ public with sharing class BovController {
     // surfaces here as this message rather than a raw QueryException.
     private static final String READ_FAILURE_MESSAGE =
         'The BOV information could not be loaded. Refresh the page or contact your administrator.';
+
+    // Fixed, generic user-safe message for an UNEXPECTED replacement failure. Deliberately distinct
+    // from READ_FAILURE_MESSAGE: the user needs to know a WRITE did not happen, not that a card did
+    // not load. Every foreseeable refusal (not this disposition's submission, already selected,
+    // record locked, validation rule) arrives as a BovSubmissionException and is surfaced verbatim
+    // instead — this message is only for the residue.
+    private static final String REPLACE_FAILURE_MESSAGE =
+        'The broker could not be replaced. Refresh the page or contact your administrator.';
 
     private static AuraHandledException ahe(String msg) {
         AuraHandledException ex = new AuraHandledException(msg);
@@ -120,6 +142,45 @@ public with sharing class BovController {
      * @param dispositionId the disposition whose NDA to read
      * @return the latest NDA's Status__c; null when there is no NDA or the read failed
      */
+    /**
+     * Replaces the disposition's appointed broker with another BOV submission — the server half of
+     * `c/bovReplaceBrokerModal` (DEV-6).
+     *
+     * ⚠ THE THREE CATCHES AND THEIR ORDER MIRROR `DispositionApprovalController`, for the same
+     * reasons: a permission denial must not be masked as a system failure (so it is caught FIRST
+     * and surfaced verbatim); every user-actionable refusal — including a platform block's own
+     * "this record is locked" text, which is the only thing naming the pending approval — arrives
+     * as `BovSubmissionException` and is surfaced verbatim; anything else is masked.
+     *
+     * 🔴 THE RETURNED MESSAGE WARNS THAT A FRESH APPROVAL IS REQUIRED, and the client must show it.
+     * Replacing the broker CLEARS both submissions' `Approval_Status__c`, so the sale is
+     * deliberately left without an approved broker until someone re-submits. A toast that says only
+     * "saved" would hide the single most important consequence of the action.
+     *
+     * @param dispositionId   the Disposition__c whose broker is being replaced
+     * @param newSubmissionId the BOV_Submission__c to appoint
+     * @return an authored confirmation including the fresh-approval warning
+     * @throws AuraHandledException on denial (verbatim), on a user-actionable refusal (verbatim),
+     *         or — with a fixed generic message — on an unexpected failure
+     */
+    @AuraEnabled
+    public static String replaceSelectedBroker(Id dispositionId, Id newSubmissionId) {
+        try {
+            return BovSubmissionService.replaceSelectedBroker(dispositionId, newSubmissionId);
+        } catch (DispositionActionPermissionService.AccessDeniedException e) {
+            throw ahe(e.getMessage());
+        } catch (BovSubmissionService.BovSubmissionException e) {
+            System.debug(LoggingLevel.INFO, 'BovController.replaceSelectedBroker refused on '
+                + dispositionId + '/' + newSubmissionId + ': ' + e.getMessage());
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'BovController.replaceSelectedBroker on '
+                + dispositionId + '/' + newSubmissionId + ': ' + e.getMessage() + ' | '
+                + e.getStackTraceString());
+            throw ahe(REPLACE_FAILURE_MESSAGE);
+        }
+    }
+
     private static String readNdaStatusFailSoft(Id dispositionId) {
         try {
             NDA__c nda = NdaSelector.selectLatestByDispositionId(dispositionId);

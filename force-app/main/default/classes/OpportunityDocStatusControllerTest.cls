@@ -33,8 +33,16 @@ private class OpportunityDocStatusControllerTest {
         // Completed_LOI_Before_PSA (added 2026-08-12) gates PSA entry on the LOI's OWN Stage__c,
         // which placeApprovedLoi leaves at its factory-default 'Draft'. This class already writes
         // the LOI record directly (see above), so the LOI is driven to 'Signed' the same way
-        // rather than introducing RecordStageAdvanceService here. LOI__c has no validation rules
-        // (confirmed: no objects/LOI__c/validationRules folder), so the direct write is safe.
+        // rather than introducing RecordStageAdvanceService here.
+        // 🔴 RETRACTED 2026-08-20 (Tranche 2 code review W1): "LOI__c has no validation rules
+        // (confirmed: no objects/LOI__c/validationRules folder), so the direct write is safe" is NO
+        // LONGER TRUE. LOI__c gained four rules (Workstream A4): Final_Price_Required_Before_Executed,
+        // Counter_Price_Is_Positive, Closing_Period_Days_Not_Negative, Due_Diligence_Days_Not_Negative.
+        // This particular write still passes all four — it targets Stage__c = 'Signed', not
+        // 'Executed', and never touches Counter_Price__c / Closing_Period_Days__c /
+        // Due_Diligence_Days__c — so no fixture change was needed. But "the direct write is safe" is
+        // no longer a fact about the object; it is a fact about THIS write, and the next rule added
+        // to LOI__c is not guaranteed to leave it that way.
         // ⚠ 'Signed' since observation 5 (2026-08-14); it was 'Completed'.
         loi.Stage__c = 'Signed';
         update loi;

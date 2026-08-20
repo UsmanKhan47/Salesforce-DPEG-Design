@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is
+        capped at 255 characters; a comment is repo-only and is never sent to the Metadata
+        API. It must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A1).
+        =====================================================================================
+        The BOV amount is the entire point of a Broker Opinion of Value. Responses_Received__c
+        on Disposition__c counts these rows, and the comparison matrix ranks them by amount; a
+        row with no amount inflates the count and contributes nothing to the ranking.
+
+        =====================================================================================
+        🔴 A VALIDATION RULE, NOT `required=true`, AND THIS FIELD IS WHERE THAT DECISION
+        DIVERGES FROM THE TRANCHE 2 REQUIREMENTS DOC. READ THIS BEFORE "FIXING" IT.
+        =====================================================================================
+        Requirements doc §2 A1 routes the two CURRENCY fields (this one and
+        Disposition_Offer__c.Offer_Amount__c) to `required=true` on the field, reasoning that
+        a currency field has no lookup or delete constraint interaction. That reasoning is
+        correct as far as it goes and it is INCOMPLETE.
+
+        MEASURED 2026-08-20: BOV_Submission__c.BOV_Amount__c is granted, editable, in
+        DPEG_Disposition_Edit AND readable in DPEG_Disposition_View. A universally required
+        field cannot carry field level security and the Metadata API rejects a
+        fieldPermissions entry naming one, so `required=true` here forces the DELETION of
+        that grant from both permission sets to keep them deployable. This tranche is
+        simultaneously EDITING both of those files to close a live FLS gap on NDA__c, and a
+        PermissionSet deploy REPLACES the whole fieldPermissions set. Trading a documented
+        grant for an asterisk on a layout is the wrong side of that trade.
+        Same argument, same measurement, for Disposition_Offer__c.Offer_Amount__c.
+
+        SECOND, SMALLER REASON: `required=true` produces the platform's own generic
+        "Required fields are missing: [BOV Amount]" text. A rule carries an authored message
+        that says what the amount is FOR.
+
+        =====================================================================================
+        NO STATUS EXEMPTION, BECAUSE THERE IS NO STATUS TO EXEMPT. CHECKED, NOT ASSUMED.
+        =====================================================================================
+        The obvious objection to an unguarded amount rule is "a broker who never responded has
+        no amount". Submission_Status__c does not model that: its complete restricted value
+        set is {Backup, Selected}, both of which describe a broker who DID respond. There is
+        no 'No Response' or 'Declined' value to carve out, so an unguarded ISBLANK refuses
+        nothing legitimate. 🔴 IF A NON RESPONSE VALUE IS EVER ADDED TO Submission_Status__c,
+        THIS RULE MUST BE AMENDED IN THE SAME CHANGE or it will freeze every such row.
+
+        =====================================================================================
+        🔴 MEASURED IMPACT AT CREATION: ONE EXISTING ROW IS REFUSED.
+        =====================================================================================
+        Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM BOV_Submission__c                            -> 1
+          SELECT COUNT(Id) FROM BOV_Submission__c WHERE BOV_Amount__c = null -> 1
+        The one row is BOV-0014, which also violates Broker_Required_On_Submission. See that
+        file for the disposition of it. 🔴 Re-run the count at deploy time.
+        ⚠ TestDataFactory.createBovSubmissions ALREADY sets BOV_Amount__c, so this rule needs
+        no factory change. Its sibling Broker_Required_On_Submission does.
+    -->
+    <fullName>BOV_Amount_Required_On_Submission</fullName>
+    <active>true</active>
+    <description>A BOV submission must carry the opinion of value it exists to record. A blank amount inflates Responses_Received__c and cannot be ranked in the comparison matrix. A rule, not required=true, because required fields cannot hold FLS: see the XML comment.</description>
+    <errorConditionFormula>ISBLANK(BOV_Amount__c)</errorConditionFormula>
+    <errorMessage>Enter the BOV Amount this broker submitted. A Broker Opinion of Value with no value cannot be ranked against the other responses or used to appoint a broker.</errorMessage>
+    <errorDisplayField>BOV_Amount__c</errorDisplayField>
+</ValidationRule>

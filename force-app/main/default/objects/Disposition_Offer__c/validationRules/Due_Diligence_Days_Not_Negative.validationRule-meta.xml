@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+        <ValidationRule> breaks `sf` deploy at conversion with a misleading "unable to find
+        matching parent xml file" error. ValidationRule.Description is capped at 255
+        characters, which is why the rationale is here.
+
+        ADDED 2026-08-20 (Tranche 2, Workstream A4).
+        🔴 THE SHARED RATIONALE FOR ALL FOUR A4 RULES ON THIS OBJECT LIVES IN
+        Buyer_Counter_Price_Is_Positive.validationRule-meta.xml. READ IT THERE.
+
+        🔴 ZERO IS PERMITTED, DELIBERATELY. A buyer waiving due diligence entirely, which is
+        exactly what an aggressive all cash offer does, has zero DD days. Refusing zero here
+        would refuse the strongest offers on the table. Only a NEGATIVE count is blocked.
+        See the sibling Closing_Period_Days_Not_Negative for the identical argument and for
+        why the NOT(ISBLANK()) guard is written even though a blank Number cannot satisfy
+        `&lt; 0`.
+    -->
+    <fullName>Due_Diligence_Days_Not_Negative</fullName>
+    <active>true</active>
+    <description>Blocks a negative Due Diligence Days on an offer. Zero is deliberately permitted: a buyer waiving due diligence is a real, and strong, term. Blank is untouched. See Buyer_Counter_Price_Is_Positive for the shared A4 rationale on this object.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Due_Diligence_Days__c)),
+    Due_Diligence_Days__c &lt; 0
+)</errorConditionFormula>
+    <errorMessage>Due Diligence Days cannot be negative. Enter the length of the buyer&apos;s feasibility window, or zero if they are waiving due diligence. Leave it blank if no DD period has been proposed.</errorMessage>
+    <errorDisplayField>Due_Diligence_Days__c</errorDisplayField>
+</ValidationRule>

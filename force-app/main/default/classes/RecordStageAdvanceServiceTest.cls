@@ -201,7 +201,21 @@
  * OpportunityActionPermissionServiceTest (.claude/rules/bulk-test-rule.md, per-transaction-singleton
  * exemption). A 251-record test here would exercise no additional code path.
  *
- * ── 🔴 KNOWN, DELIBERATE COVERAGE GAP: setStage's DmlException catch ─────────
+ * ── ✅ RETRACTED 2026-08-20 (Tranche 2, code review W2/W9 close-out, Unit Testing Agent) ──────
+ * THE BLOCK BELOW IS KEPT VERBATIM AS THE RECORD OF WHAT WAS TRUE FROM 2026-08-04 TO 2026-08-20,
+ * BUT ITS CENTRAL CLAIM — "THERE IS NO WAY TO MAKE ONE OF THESE SIX UPDATES FAIL TODAY" — IS NOW
+ * FALSE. Two of the six now carry validation rules: LOI__c gained four (Tranche 2 Workstream A4,
+ * including Final_Price_Required_Before_Executed) and Contract_Review__c gained one
+ * (Execution_Date_Not_In_Future). The gap this block describes is CLOSED — see
+ * dispositionLoiExecutedWithBlankFinalPrice_surfacesValidationRuleMessage below, which advances a
+ * disposition LOI to 'Executed' with a blank Final_Agreed_Price__c through this exact service and
+ * asserts the rule's own errorMessage reaches the caller verbatim, exactly as the closing
+ * sentence of the retracted block anticipated. The other four of the six (NDA__c,
+ * Underwriting__c, Construction_Feasibility_Review__c, Development_Feasibility_Review__c) still
+ * carry no validationRules directory, so the reasoning below remains correct for THEM.
+ *
+ * ── 🔴 KNOWN, DELIBERATE COVERAGE GAP (HISTORICAL — READ THE RETRACTION ABOVE FIRST): setStage's
+ * DmlException catch ─────────
  * That catch exists to surface a validation rule's own message to the user, which is the entire
  * reason this program routes stage writes through Apex. It is currently UNCOVERED, and the reason is
  * a fact about the org rather than a shortcut:
@@ -225,6 +239,9 @@
  * ⇒ WHEN THE FIRST VALIDATION RULE ON ANY OF THE SIX LANDS, ADD ITS TEST HERE. Assert that the
  *   rule's own errorMessage reaches the caller verbatim — that is the behaviour the whole
  *   Apex-not-LDS write decision was made to obtain, and until then it is unproven.
+ *   ✅ DONE for LOI__c / Final_Price_Required_Before_Executed, 2026-08-20 — see the retraction note
+ *   above this block and the new test immediately after dispositionLoiWalksReceivedToExecuted.
+ *   The remaining four objects are still open; add their tests here the day each gets its first rule.
  *
  * @see force-app/main/default/classes/RecordStageAdvanceService.cls
  * @see force-app/main/default/classes/StageAdvanceServiceTest.cls (the Opportunity sibling)
@@ -855,7 +872,18 @@ private class RecordStageAdvanceServiceTest {
         // carry at all. So if record-type resolution broke and this fell back to the acquisition
         // map, the very first hop would be refused with "no next step available from the Received
         // stage" rather than producing a subtly wrong walk.
-        Id loiId = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Received').Id;
+        LOI__c loi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Received');
+        // 🔴 Final_Agreed_Price__c MUST BE SET BEFORE THE WALK REACHES 'Executed', ADDED 2026-08-20
+        // (Tranche 2 D1 validation rules). Final_Price_Required_Before_Executed fires on
+        // OR(ISNEW(), ISCHANGED(Stage__c)) AND TEXT(Stage__c) = 'Executed' AND
+        // ISBLANK(Final_Agreed_Price__c) — advanceUntilBlocked only catches
+        // RecordStageAdvanceService.RecordStageAdvanceException, so an unhandled DmlException from
+        // this rule would escape the walk uncaught rather than producing a clean assertion failure.
+        // Set here, at 'Received', where TEXT(Stage__c) <> 'Executed' so the rule cannot fire on
+        // THIS update either.
+        loi.Final_Agreed_Price__c = 1250000;
+        update loi;
+        Id loiId = loi.Id;
 
         Test.startTest();
         List<String> messages = advanceUntilBlocked(loiId);
@@ -876,6 +904,85 @@ private class RecordStageAdvanceServiceTest {
             + 'which is why there is no Draft, no Prepare/Review and no Sent');
         Assert.areEqual('Executed', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
             'The walk must leave the disposition LOI at its terminal stage');
+    }
+
+    /**
+     * 🔴 CLOSES THE "KNOWN, DELIBERATE COVERAGE GAP" RETRACTED IN THIS CLASS'S HEADER (W2, 2026-08-20).
+     * setStage's DmlException catch exists to surface a validation rule's own message through the
+     * Advance Stage LWC, and until Final_Price_Required_Before_Executed landed there was no rule on
+     * any of the six stage-controlled objects that could trip it. This LOI is walked straight to
+     * 'Counter Received from Buyer' (the last stage before the derived hop to 'Executed') WITHOUT
+     * ever setting Final_Agreed_Price__c, so advance()'s next hop is exactly the write the rule
+     * refuses.
+     *
+     * This is also the A4 regression pin the rule's own header calls for: "THE MOST LIKELY WAY A
+     * USER MEETS THIS RULE is clicking Advance Stage on a disposition LOI" — that sentence was
+     * previously unproven by any test.
+     */
+    @isTest
+    static void dispositionLoiExecutedWithBlankFinalPrice_surfacesValidationRuleMessage() {
+        LOI__c loi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Counter Received from Buyer');
+        // Final_Agreed_Price__c is deliberately left blank — that is the whole test.
+
+        Test.startTest();
+        try {
+            RecordStageAdvanceService.advance(loi.Id);
+            Assert.fail('Advancing a disposition LOI to Executed with a blank Final_Agreed_Price__c '
+                + 'must be blocked by Final_Price_Required_Before_Executed');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            Assert.isTrue(
+                e.getMessage().contains('Enter the Final Agreed Price before marking this LOI Executed'),
+                'setStage\'s DmlException catch must surface the validation rule\'s own errorMessage '
+                + 'verbatim to the Advance Stage caller — this is the entire reason stage writes route '
+                + 'through Apex instead of LDS. Got: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.areEqual('Counter Received from Buyer',
+            [SELECT Stage__c FROM LOI__c WHERE Id = :loi.Id].Stage__c,
+            'A refused advance must leave the LOI at its pre-advance stage — the DML rolled back, '
+            + 'it did not partially apply');
+    }
+
+    /**
+     * ── W3 (code review, 2026-08-20): PINS THE ACQUISITION LOI PATH AGAINST THE THREE NEW
+     * ARITHMETIC-INVARIANT A4 RULES ──
+     * Counter_Price_Is_Positive, Closing_Period_Days_Not_Negative and Due_Diligence_Days_Not_Negative
+     * are DELIBERATELY unscoped by record type (see their shared rationale on
+     * Counter_Price_Is_Positive.validationRule-meta.xml) and therefore fire on Acquisition_LOI rows
+     * too, not just the Disposition_LOI rows they were written for. Code review's sweep found no
+     * EXISTING test broken by them, but an absence of breakage is not a regression pin. This walks a
+     * COMPLIANT acquisition LOI — a positive counter price and non-negative day counts, the values a
+     * real negotiated LOI would carry — all the way to its terminal 'Signed' stage through the real
+     * advance() sequence, proving the three invariants do not block a legitimately-filled-out
+     * acquisition LOI. Acquisition is where nearly all of this org's live LOI data is.
+     */
+    @isTest
+    static void acquisitionLoiWithValidTermsWalksDraftToSigned() {
+        LOI__c loi = insertLoiOnRecordType(RT_ACQUISITION_LOI, 'Draft');
+        loi.Counter_Price__c = 1500000;
+        loi.Closing_Period_Days__c = 30;
+        loi.Due_Diligence_Days__c = 15;
+        update loi;
+
+        Test.startTest();
+        List<String> messages = advanceUntilBlocked(loi.Id);
+        Test.stopTest();
+
+        Assert.areEqual(
+            new List<String>{
+                'LOI moved to Under Review.',
+                'LOI moved to Submitted.',
+                'LOI moved to Negotiation.',
+                'LOI moved to Signed.',
+                'BLOCKED: There is no next step available from the Signed stage.'
+            },
+            messages,
+            'A compliant acquisition LOI (positive counter price, non-negative day counts) must reach '
+            + 'its terminal Signed stage unimpeded by the three A4 arithmetic-invariant rules, which '
+            + 'are deliberately unscoped by record type and therefore fire on this path too');
+        Assert.areEqual('Signed', [SELECT Stage__c FROM LOI__c WHERE Id = :loi.Id].Stage__c,
+            'The walk must leave the acquisition LOI at its terminal stage');
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -929,6 +1036,49 @@ private class RecordStageAdvanceServiceTest {
             [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :crId]
                 .Negotiation_Status__c,
             'The walk must leave the Contract Review at its terminal status');
+    }
+
+    /**
+     * ── W3 (code review, 2026-08-20): PINS THE ACQUISITION PSA PATH AGAINST
+     * Execution_Date_Not_In_Future ──
+     * That rule fires on BOTH Contract_Review__c record types by design (its own header, O-6) and
+     * cannot be tripped by the auto-stamp path: the before-save flow Contract_Review_Stage_Sync
+     * stamps Execution_Date__c = $Flow.CurrentDate only when the field is blank, before-save flow
+     * assignments run before validation rules, and TODAY() is never greater than TODAY(). Nothing
+     * previously pinned that explicitly for the ACQUISITION sequence — acquisitionPsaWalksDraftToExecuted
+     * incidentally proves it by not going red, but names nothing about the rule. This test names it:
+     * a real acquisition PSA walked Draft -> ... -> Executed must land at Executed with
+     * Execution_Date__c auto-stamped to TODAY, unblocked.
+     */
+    @isTest
+    static void acquisitionPsaWithAutoStampedExecutionDateReachesExecuted() {
+        Id crId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Draft').Id;
+
+        Test.startTest();
+        List<String> messages = advanceUntilBlocked(crId);
+        Test.stopTest();
+
+        Assert.areEqual(
+            new List<String>{
+                'Contract Review moved to Negotiation.',
+                'Contract Review moved to Signed.',
+                'Contract Review moved to Executed.',
+                'BLOCKED: There is no next step available from the Executed stage.'
+            },
+            messages,
+            'The walk must reach Executed unblocked by Execution_Date_Not_In_Future - the same '
+            + 'sequence acquisitionPsaWalksDraftToExecuted pins, restated here to name the rule '
+            + 'explicitly rather than leave the proof incidental');
+
+        Contract_Review__c stored = [
+            SELECT Negotiation_Status__c, Execution_Date__c FROM Contract_Review__c WHERE Id = :crId
+        ];
+        Assert.areEqual('Executed', stored.Negotiation_Status__c,
+            'A compliant acquisition PSA must reach its terminal Executed status unimpeded by '
+            + 'Execution_Date_Not_In_Future, which fires on this record type by design (O-6)');
+        Assert.areEqual(Date.today(), stored.Execution_Date__c,
+            'The before-save auto-stamp must have populated Execution_Date__c with TODAY, which is '
+            + 'exactly the value the rule cannot refuse — proving the stamp and the rule do not fight');
     }
 
     @isTest
@@ -1499,6 +1649,12 @@ private class RecordStageAdvanceServiceTest {
         // reach it, at any price — which the second assertion pins by walking advance() from the
         // same stage and watching it go the OTHER way.
         LOI__c loi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Counter Received from Buyer');
+        // 🔴 Final_Agreed_Price__c MUST BE SET BEFORE advance() REACHES 'Executed' BELOW, ADDED
+        // 2026-08-20 (Tranche 2 D1 validation rules) — see the identical note on
+        // dispositionLoiWalksReceivedToExecuted. Set here, before the stage moves at all, so
+        // Final_Price_Required_Before_Executed cannot fire on THIS update either.
+        loi.Final_Agreed_Price__c = 1250000;
+        update loi;
 
         Test.startTest();
         String backEdge = RecordStageAdvanceService.advanceTo(loi.Id, 'Countered by DPEG');
@@ -1574,6 +1730,316 @@ private class RecordStageAdvanceServiceTest {
         Assert.isFalse(acquisitionWhenDispositionDriverOnly,
             'An Acquisition_LOI must NOT be driveable by a disposition driver either — the leak '
             + 'runs in both directions and only asserting one of them proves nothing');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Disposition__c — MANUAL HOPS ONLY (design D-2, 2026-08-19). See CONFIG_BY_TYPE's own
+    // Disposition__c block: the maps here are a deliberate SUBSET of the object's real path —
+    // every hop NOT listed belongs to an approval or to DispositionApprovalService.selectOffer,
+    // and NO_NEXT_STEP_HINTS names the real owner for each of the seven blocked stages.
+    //
+    // ⚠ `Release Materials` AND `Active Listing` ARE GATED BY All_NDAs_Signed_Before_Progression
+    // SINCE THE SAME REDESIGN THAT ADDED THIS CONFIG — the VR dropped its Off_Market-only term, so
+    // BOTH walks below sign a buyer NDA the moment one is auto-created at the NDA hop, before
+    // advancing any further. Skipping that produces a DmlException that has nothing to do with
+    // this service.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private static Disposition__c insertDispositionOnRecordType(String recordTypeDeveloperName, String stage) {
+        Disposition__c d = TestDataFactory.createDisposition(null, recordTypeDeveloperName, false);
+        d.Disposition_Stage__c = stage;
+        insert d;
+        return d;
+    }
+
+    /** Signs the buyer NDA `DispositionStageEntryService` auto-creates on entry to `NDA`. */
+    private static void signTheAutoCreatedBuyerNda(Id dispositionId) {
+        NDA__c nda = [
+            SELECT Id FROM NDA__c WHERE Disposition__c = :dispositionId AND Party_Role__c = 'Buyer' LIMIT 1
+        ];
+        update new NDA__c(Id = nda.Id, Status__c = 'Signed');
+    }
+
+    /**
+     * A hand-created, already-Signed NDA — for fixtures inserted directly at a stage AFTER NDA
+     * (LOI, PSA), which never pass through DispositionStageEntryService's auto-create at all.
+     */
+    private static void signANda(Id dispositionId) {
+        NDA__c nda = TestDataFactory.createDispositionNda(dispositionId, false);
+        nda.Status__c = 'Signed';
+        insert nda;
+    }
+
+    @isTest
+    static void onMarketDispositionWalksBrokerSelectionThroughNdaToActiveListingThenStops() {
+        Id dispositionId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Broker Selection').Id;
+
+        Test.startTest();
+        String toNda = RecordStageAdvanceService.advance(dispositionId);
+        signTheAutoCreatedBuyerNda(dispositionId); // Release Materials / Active Listing are gated
+        String toReleaseMaterials = RecordStageAdvanceService.advance(dispositionId);
+        String toActiveListing = RecordStageAdvanceService.advance(dispositionId);
+        String blocked;
+        try {
+            RecordStageAdvanceService.advance(dispositionId);
+            Assert.fail('Active Listing has no manual hop — it advances only via Select Offer');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            blocked = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.areEqual('Disposition moved to NDA.', toNda,
+            'On_Market: Broker Selection -> NDA is a MANUAL hop (the on-market path owns it, unlike '
+            + 'off-market where it is approval-owned)');
+        Assert.areEqual('Disposition moved to Release Materials.', toReleaseMaterials);
+        Assert.areEqual('Disposition moved to Active Listing.', toActiveListing);
+        Assert.areEqual('This disposition advances when an offer is selected. Use Select Offer.', blocked,
+            'Active Listing has no next step available from the Advance button — NO_NEXT_STEP_HINTS '
+            + 'must name Select Offer, or the refusal reads like a bug rather than a rule');
+        Assert.areEqual('Active Listing',
+            [SELECT Disposition_Stage__c FROM Disposition__c WHERE Id = :dispositionId].Disposition_Stage__c,
+            'The walk must leave the disposition at Active Listing, not silently past it');
+    }
+
+    @isTest
+    static void offMarketDispositionWalksNdaToReleaseMaterialsThenStops() {
+        Id dispositionId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'NDA').Id;
+        signTheAutoCreatedBuyerNda(dispositionId); // Release Materials is gated
+
+        Test.startTest();
+        String toReleaseMaterials = RecordStageAdvanceService.advance(dispositionId);
+        String blocked;
+        try {
+            RecordStageAdvanceService.advance(dispositionId);
+            Assert.fail('Off_Market has no Active Listing at all — the next hop is Select Offer');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            blocked = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.areEqual('Disposition moved to Release Materials.', toReleaseMaterials);
+        Assert.areEqual('This disposition advances when an offer is selected. Use Select Offer.', blocked,
+            'Off-market collects offers at Release Materials itself, so the SAME hint fires one hop '
+            + 'earlier than the on-market walk');
+    }
+
+    /**
+     * 🔴 THE FALSIFIER FOR "Broker Selection -> NDA IS DELIBERATELY MISSING FROM THE OFF-MARKET
+     * MAP". Off-market reaches NDA only through `Broker_Selection_Approval`; if the Advance button
+     * could also do it, that approval would be a one-click bypass. This is the sharpest entry in
+     * the whole config: the SAME key ('Broker Selection') produces a HOP on On_Market and a
+     * REFUSAL on Off_Market — see onMarketDispositionWalksBrokerSelectionThroughNdaToActiveListing
+     * ThenStops above for the mirror image.
+     */
+    @isTest
+    static void offMarketDispositionAtBrokerSelectionRefusesTheOnMarketOnlyHop() {
+        Id dispositionId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'Broker Selection').Id;
+
+        Test.startTest();
+        Boolean refused = false;
+        String message;
+        try {
+            RecordStageAdvanceService.advance(dispositionId);
+            Assert.fail('Off_Market Broker Selection must NOT advance via this button — that would '
+                + 'bypass Broker_Selection_Approval, which is the off-market path\'s ONLY route to NDA');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            refused = true;
+            message = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The off-market map must have no Broker Selection entry at all');
+        Assert.areEqual(
+            'An off-market disposition advances when the Broker Selection approval is approved. '
+            + 'Use Submit for Approval.',
+            message,
+            'The hint must name Broker_Selection_Approval as the real owner of this hop');
+        Assert.areEqual('Broker Selection',
+            [SELECT Disposition_Stage__c FROM Disposition__c WHERE Id = :dispositionId].Disposition_Stage__c,
+            'A refused advance must not write');
+    }
+
+    @isTest
+    static void bothRecordTypesWalkLoiToPsaThenStopNamingContractExecutionService() {
+        Id onMarketId = insertDispositionOnRecordType(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'LOI').Id;
+        Id offMarketId = insertDispositionOnRecordType(TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'LOI').Id;
+        // ⚠ Inserted directly at LOI, never having passed through the NDA stage, so
+        // DispositionStageEntryService never auto-created a buyer NDA to sign — unlike the
+        // Broker-Selection walk above, which reaches NDA via a real advance() hop. Sign a
+        // hand-created one instead; PSA is gated.
+        signANda(onMarketId);
+        signANda(offMarketId);
+
+        Test.startTest();
+        String onMarketToPsa = RecordStageAdvanceService.advance(onMarketId);
+        String offMarketToPsa = RecordStageAdvanceService.advance(offMarketId);
+        String onMarketBlocked;
+        try {
+            RecordStageAdvanceService.advance(onMarketId);
+            Assert.fail('PSA -> Closing is owned by ContractExecutionService, not this button');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            onMarketBlocked = e.getMessage();
+        }
+        Test.stopTest();
+
+        Assert.areEqual('Disposition moved to PSA.', onMarketToPsa, 'On_Market LOI -> PSA is manual');
+        Assert.areEqual('Disposition moved to PSA.', offMarketToPsa, 'Off_Market LOI -> PSA is manual too');
+        Assert.areEqual(
+            'This disposition advances to Closing when the sell-side PSA is executed. '
+            + 'Advance the Contract Review to Executed.',
+            onMarketBlocked,
+            'The hint must name the Contract Review as the real route to Closing');
+    }
+
+    /**
+     * `Disposition Readiness` and `Offer Selection` are CASE (a) in NO_NEXT_STEP_HINTS: neither
+     * record type has a hop, so ONE wording is correct for both — proved here on the SAME
+     * disposition across both stages rather than on two separate fixtures, since the point is
+     * that the hint does not depend on record type at all.
+     */
+    @isTest
+    static void caseAHintsFireIdenticallyRegardlessOfRecordType() {
+        Id onMarketReadinessId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Disposition Readiness').Id;
+        Id offMarketReadinessId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'Disposition Readiness').Id;
+
+        Test.startTest();
+        String onMarketMsg = refusalMessageFor(onMarketReadinessId);
+        String offMarketMsg = refusalMessageFor(offMarketReadinessId);
+        Test.stopTest();
+
+        Assert.areEqual(
+            'This disposition advances when the Sale Decision approval is approved. '
+            + 'Use Submit for Approval.',
+            onMarketMsg);
+        Assert.areEqual(onMarketMsg, offMarketMsg,
+            'Neither record type has a manual hop from Disposition Readiness, so ONE wording must '
+            + 'be correct for both — a build that split this into two hints would still pass every '
+            + 'other test in this file');
+    }
+
+    @isTest
+    static void bovOutreachIsOnMarketOnlyAndNamesTheSubmitSelectedBrokerAction() {
+        Id dispositionId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_ON_MARKET, 'BOV Outreach').Id;
+
+        Test.startTest();
+        String message = refusalMessageFor(dispositionId);
+        Test.stopTest();
+
+        Assert.areEqual(
+            'This disposition advances when the selected broker is approved. '
+            + 'Choose a broker in the BOV matrix, then use Submit Selected Broker.',
+            message,
+            'BOV Outreach is on the On_Market value set only — the hint cannot collide with '
+            + 'Off_Market, which has no such stage at all');
+    }
+
+    @isTest
+    static void offerSelectionHasNoHopOnEitherRecordType() {
+        Id onMarketId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Offer Selection').Id;
+        Id offMarketId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'Offer Selection').Id;
+
+        Test.startTest();
+        String onMarketMsg = refusalMessageFor(onMarketId);
+        String offMarketMsg = refusalMessageFor(offMarketId);
+        Test.stopTest();
+
+        Assert.areEqual('This disposition advances when the selected offer is approved.', onMarketMsg);
+        Assert.areEqual(onMarketMsg, offMarketMsg,
+            'Neither type has a hop from Offer Selection — Offer_Selection_Approval owns it on both');
+    }
+
+    private static String refusalMessageFor(Id recordId) {
+        try {
+            RecordStageAdvanceService.advance(recordId);
+            Assert.fail('Expected a refusal for ' + recordId);
+            return null;
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            return e.getMessage();
+        }
+    }
+
+    /**
+     * 🔴 advanceTo() MUST BE STRUCTURALLY UNREACHABLE ON Disposition__c — the strongest available
+     * guarantee that no hand-crafted call can park a sale on a stage it did not earn. Every branch,
+     * loop and off-ramp in the disposition path belongs to an approval or to another service, so
+     * BOTH record types' explicit-target allow-lists are empty by construction.
+     */
+    @isTest
+    static void dispositionAdvanceToIsStructurallyUnreachableOnBothRecordTypes() {
+        Id onMarketId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Broker Selection').Id;
+        Id offMarketId = insertDispositionOnRecordType(
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'NDA').Id;
+
+        Test.startTest();
+        Boolean onMarketRefused = false;
+        try {
+            RecordStageAdvanceService.advanceTo(onMarketId, 'NDA'); // a real, valid, even DERIVABLE stage
+            Assert.fail('advanceTo must refuse every target on Disposition__c, even a derivable one');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            onMarketRefused = true;
+            Assert.areEqual('That stage is not available from this action.', e.getMessage());
+        }
+        Boolean offMarketRefused = false;
+        try {
+            RecordStageAdvanceService.advanceTo(offMarketId, 'Sale Closes');
+            Assert.fail('advanceTo must refuse every target on Off_Market too');
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            offMarketRefused = true;
+        }
+        Test.stopTest();
+
+        Assert.isTrue(onMarketRefused && offMarketRefused,
+            'Both record types must refuse EVERY explicit target — the allow-lists are empty');
+    }
+
+    /**
+     * 🔴 THE GATE IS THE DISPOSITION PERSONA ON BOTH RECORD TYPES — the first multi-record-type
+     * object in this config whose types share ONE gate (design D-2: Disposition__c is
+     * disposition-only, so the split here is about the PATH, not the PERSONA). Both polarities are
+     * asserted so a hardcoded constant cannot pass, mirroring loiGateIsResolvedPerRecordTypeNotPerObject.
+     */
+    @isTest
+    static void dispositionGateAnswersToTheDispositionPersonaOnBothRecordTypes() {
+        Id onMarketId = insertDispositionOnRecordType(TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Broker Selection').Id;
+        Id offMarketId = insertDispositionOnRecordType(TestDataFactory.DISPOSITION_RT_OFF_MARKET, 'NDA').Id;
+
+        Test.startTest();
+        OpportunityActionPermissionService.clearCache();
+        DispositionActionPermissionService.clearCache();
+        OpportunityActionPermissionService.cachedHasDealActionAccess = false;
+        DispositionActionPermissionService.cachedHasDispositionActionAccess = true;
+
+        Boolean onMarketWhenDispositionDriver = RecordStageAdvanceService.hasStageActionAccess(onMarketId);
+        Boolean offMarketWhenDispositionDriver = RecordStageAdvanceService.hasStageActionAccess(offMarketId);
+
+        OpportunityActionPermissionService.clearCache();
+        DispositionActionPermissionService.clearCache();
+        OpportunityActionPermissionService.cachedHasDealActionAccess = true;
+        DispositionActionPermissionService.cachedHasDispositionActionAccess = false;
+
+        Boolean onMarketWhenAcquisitionsDriverOnly = RecordStageAdvanceService.hasStageActionAccess(onMarketId);
+        Boolean offMarketWhenAcquisitionsDriverOnly = RecordStageAdvanceService.hasStageActionAccess(offMarketId);
+
+        OpportunityActionPermissionService.clearCache();
+        DispositionActionPermissionService.clearCache();
+        Test.stopTest();
+
+        Assert.isTrue(onMarketWhenDispositionDriver, 'A disposition driver must pass on On_Market');
+        Assert.isTrue(offMarketWhenDispositionDriver, 'A disposition driver must pass on Off_Market too — '
+            + 'BOTH types answer to the SAME gate, unlike NDA__c / LOI__c / Contract_Review__c');
+        Assert.isFalse(onMarketWhenAcquisitionsDriverOnly,
+            'An acquisitions-only deal driver must NOT be able to drive a sale — Disposition__c is '
+            + 'disposition-only regardless of which of its two record types is in play');
+        Assert.isFalse(offMarketWhenAcquisitionsDriverOnly, 'Neither record type falls back to DEAL_DRIVER');
     }
 
     // ═════════════════════════════════════════════════════════════════════════

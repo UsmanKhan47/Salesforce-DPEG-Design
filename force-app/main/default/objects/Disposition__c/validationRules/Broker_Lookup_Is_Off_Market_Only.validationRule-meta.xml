@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters and the rationale below is far
+        longer; a comment is repo-only and is never sent to the Metadata API. NOTE ALSO: the
+        comment must sit INSIDE the root element - a comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20. WHY A VALIDATION RULE EXISTS AT ALL FOR SOMETHING THE UI ALREADY
+        SCOPES.
+        =====================================================================================
+        DispositionBrokerStampService's class header calls the off-market scoping "STRUCTURAL"
+        and the on-market path "unreachable". That is true THROUGH THE UI ONLY. Broker__c is
+        hidden on an on-market row by a fieldInstance visibilityRule on Disposition_Record_Page,
+        and a visibilityRule is a rendering decision - it constrains a browser, not the API. A
+        data load, a Flow, a REST call, a seed script or anonymous Apex can all set Broker__c on
+        an On_Market row without ever consulting that page.
+
+        WHAT HAPPENS WHEN THEY DO, IN ORDER:
+          1. DispositionBrokerStampService fires (it keys on Broker__c CHANGING and carries NO
+             record-type test of its own) and overwrites Selected_Broker__c with its off-market
+             'Person - Firm' string.
+          2. That string is the FIRM value the on-market BOV chain
+             (BovSubmissionTriggerHandler / BovSubmissionService) had written there from
+             BOV_Submission__c.Broker_Firm__c. It is now gone.
+          3. DispositionStageEntryService then copies Selected_Broker__c straight into
+             Broker_Listing__c.Broker_Firm__c on listing creation. A person's name is now
+             sitting in a column whose name, meaning and every consumer say "firm".
+
+        THIS IS ENFORCEMENT, NOT A DUPLICATE OF A DISPLAY RULE. The flexipage rule decides what
+        renders; this rule decides what may be SAVED. They happen to agree on the criterion, and
+        that agreement is the point - the API surface is now closed to the same population the
+        UI already refuses, rather than being closed only by convention.
+
+        =====================================================================================
+        🔴 WHY Is_On_Market__c AND NOT AN EXPLICIT RecordType.DeveloperName TEST. THE MASTER
+        RECORD TYPE IS THE WHOLE ARGUMENT.
+        =====================================================================================
+        The two candidate formulas differ ONLY on a Master-record-type row:
+
+            AND(NOT(ISBLANK(Broker__c)), Is_On_Market__c)                  <- CHOSEN
+            AND(NOT(ISBLANK(Broker__c)), RecordType.DeveloperName <> 'Off_Market')   <- REJECTED
+
+        Is_On_Market__c is a formula checkbox reading RecordType.DeveloperName = "On_Market", and
+        a Master-record-type row reads BLANK on that merge field, so the checkbox is FALSE there.
+        Its own field header states this. The chosen form therefore blocks On_Market ONLY and
+        PERMITS Master; the rejected form would have blocked Master too.
+
+        BLOCKING MASTER WOULD HAVE BEEN A REGRESSION, NOT EXTRA SAFETY, FOR THREE REASONS:
+          1. TestDataFactory.dispositionRecordTypeId DELIBERATELY DEGRADES TO NO RECORD TYPE
+             when the record type is absent from the org or unavailable to the running user
+             (`info.isAvailable()`), leaving RecordTypeId unset. Its header states the reason in
+             terms: "an undeployed record type must not turn every disposition test in the repo
+             red". A Master row carrying Broker__c is therefore a NORMAL fixture shape in a
+             fresh scratch org, and the rejected form would have turned exactly the off-market
+             broker tests red in exactly the orgs where the feature has not deployed - undoing a
+             guarantee the factory was written to provide.
+          2. Broker__c RENDERS on a Master row. The flexipage visibilityRule shows the field when
+             Is_On_Market__c is FALSE, which includes Master. Refusing a save on a field the page
+             is actively offering is a trap; refusing one on a field the page hides is a closed
+             back door. The chosen form draws the line in the same place the UI draws it.
+          3. THE HARM CHAIN NEEDS AN ON-MARKET ROW. Step 2 above - the overwritten BOV firm
+             string - only exists where the BOV chain ran, and that chain is on-market. A Master
+             row has no BOV firm value to destroy. The population this rule protects IS the
+             On_Market population.
+
+        ⚠ THE RESIDUE IS STATED, NOT HIDDEN: a Master-record-type row may hold Broker__c and
+        this rule will not object. That is the same FAIL-OPEN posture already documented and
+        accepted in Is_On_Market__c's own header and in Broker_Selection_Approval's entry
+        criterion 2, and it is bounded the same way - DispositionService stamps a record type
+        explicitly on every row it creates, so a Master disposition is a test or import artefact,
+        not a production state.
+
+        =====================================================================================
+        WHY THERE IS NO ISCHANGED / ISNEW GUARD, DIVERGING FROM BOTH SIBLING RULES.
+        =====================================================================================
+        Wire_Complete_Before_Sale_Closes uses OR(ISNEW(), ISCHANGED(...)) and
+        All_NDAs_Signed_Before_Progression uses ISCHANGED alone, because both gate a TRANSITION.
+        This rule asserts an INVARIANT - "an on-market disposition never holds a broker Contact"
+        - and a transition guard would leave two doors open: a record-type flip from Off_Market
+        to On_Market while Broker__c stays set (Broker__c never changes, so ISCHANGED(Broker__c)
+        is false), and any pre-existing bad row, which would then be permanently invisible to
+        the rule.
+
+        🔴 AN UNGUARDED RULE CANNOT TRAP A RECORD HERE, AND THAT IS WHAT MAKES IT SAFE. If a row
+        ever does reach the forbidden state, EVERY subsequent save of it fails - including the
+        machine writes (DispositionApprovalAdvanceQueueable, ContractExecutionService,
+        RecordStageAdvanceService) which use Database.update(..., SYSTEM_MODE) and SYSTEM_MODE
+        does NOT bypass validation rules. But the remedy - saving with Broker__c cleared - is
+        itself a PERMITTED save, and the error message says so. The rule is self-clearing.
+        ⚠ ONE EXCEPTION TO THAT, WORTH KNOWING: a row locked by a pending approval
+        (recordEditability AdminOnly) cannot be edited by a non-admin, so the recall has to come
+        first. See the measured impact below for why no such row exists today.
+
+        =====================================================================================
+        MEASURED IMPACT AT CREATION: ZERO ROWS. NOT ASSUMED.
+        =====================================================================================
+        Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM Disposition__c WHERE Broker__c != null                   -> 0
+          SELECT COUNT(Id) ... WHERE Broker__c != null AND RecordType.DeveloperName =
+              'On_Market'                                                                -> 0
+          GROUP BY RecordType.DeveloperName over all Disposition__c                       ->
+              On_Market 8, and nothing else. Zero Off_Market rows, zero Master rows.
+        So this rule refuses nothing that exists. 🔴 THAT MEASUREMENT AGES. Re-run the first
+        query at deploy time rather than citing this line - a non-zero result means an existing
+        row would be frozen by the deploy until someone clears its broker, and that is an
+        escalation, not a deploy.
+
+        =====================================================================================
+        NO errorDisplayField, DELIBERATELY.
+        =====================================================================================
+        Both sibling rules on this object anchor to Disposition_Stage__c because that is the
+        field the user was editing. The offending field HERE is Broker__c, which is HIDDEN on
+        every row this rule can fire on, and a violation typically arrives from an API caller
+        with no page at all. A page-level error is therefore the honest placement.
+        Record_Type_Is_Immutable on Account and Exactly_One_Parent on Deal_Message__c are the
+        in-repo precedent for omitting the tag.
+    -->
+    <fullName>Broker_Lookup_Is_Off_Market_Only</fullName>
+    <active>true</active>
+    <description>Blocks Broker__c on an On_Market row. The off-market stamp would overwrite the BOV firm string in Selected_Broker__c, and DispositionStageEntryService copies that value into Broker_Listing__c.Broker_Firm__c, seeding a person name into a firm column.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Broker__c)),
+    Is_On_Market__c
+)</errorConditionFormula>
+    <errorMessage>Broker is the off-market path only. This disposition uses the On Market record type, where the broker comes from the approved BOV submission and Selected Broker is stamped with that firm. Clear Broker, then appoint the broker on the BOV submission.</errorMessage>
+</ValidationRule>

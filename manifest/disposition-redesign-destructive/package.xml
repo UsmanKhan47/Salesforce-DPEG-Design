@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Companion EMPTY manifest for the disposition-redesign post-destructive deploy.
+    A post destructive changes deploy still requires a manifest flag, and this one must
+    be empty: everything additive ships in the main payload, and this deploy exists only
+    to remove the two components listed in destructiveChangesPost.xml alongside it.
+    Same shape as manifest/destructive/package.xml, except that one carries additions and
+    this one intentionally carries none.
+    -->
+    <version>67.0</version>
+</Package>

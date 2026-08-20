@@ -86,15 +86,17 @@ private class DispositionStageEntryServiceTest {
     /**
      * An ON-MARKET disposition parked at Disposition Readiness.
      *
-     * 🔴 THE LOI AND PSA TESTS USE THIS ONE, AND THE CHOICE IS FORCED RATHER THAN ARBITRARY.
-     * `All_NDAs_Signed_Before_Progression` blocks an OFF-market disposition from CHANGING stage
-     * into `Disposition Offer` / `LOI` / `PSA` / `Closing` / `Completed` unless every NDA on it is
-     * signed — so an off-market fixture would fail for a reason that has nothing to do with this
-     * service. The rule is `RecordType.DeveloperName = 'Off_Market'`-scoped, so an on-market row is
-     * exempt, and `LOI` / `PSA` are exposed on BOTH record types (verified in
-     * objects/Disposition__c/recordTypes/), so this is the same code path a sell-side deal takes.
-     * The off-market half is covered separately, on the INSERT path, where the VR is
-     * ISCHANGED-gated and therefore inert.
+     * 🔴 RETRACTED 2026-08-19 (flow redesign) — `All_NDAs_Signed_Before_Progression` DROPPED its
+     * `RecordType.DeveloperName = 'Off_Market'` term and now blocks BOTH record types from
+     * CHANGING stage into Release Materials / Active Listing / Offer Selection / LOI / PSA /
+     * Closing / Sale Closes unless every non-Declined NDA on the disposition is Signed. The
+     * retracted sentence — "The rule is Off_Market-scoped, so an on-market row is exempt" — is
+     * quoted rather than deleted because it is exactly what a future reader would assume. Every
+     * caller of this helper that then performs a real `update` DML into one of those stages must
+     * call `signBuyerNdaOn(disposition.Id)` first (see that method) or the VR refuses the
+     * transition for a reason that has nothing to do with the service under test. An INSERT
+     * straight at a gated stage is still exempt — the rule is `ISCHANGED`-only, deliberately, so
+     * the off-market insert-path tests below remain inert.
      */
     private static Disposition__c onMarketAtReadiness() {
         return TestDataFactory.createDisposition(
@@ -102,6 +104,35 @@ private class DispositionStageEntryServiceTest {
             TestDataFactory.DISPOSITION_RT_ON_MARKET,
             true
         );
+    }
+
+    /**
+     * ⚠ ADDED FOR THE 2026-08-19 FLOW REDESIGN. `All_NDAs_Signed_Before_Progression` dropped its
+     * `RecordType.DeveloperName = 'Off_Market'` term and now blocks BOTH record types from moving
+     * into Release Materials, Active Listing, Offer Selection, LOI, PSA, Closing or Sale Closes
+     * unless every non-Declined NDA on the disposition is Signed (BLANKVALUE(NDA_Count__c,0) = 0
+     * still blocks a disposition with NO NDA at all). Every test in this file that jumps a FRESH
+     * on-market disposition straight from Readiness to one of those stages via a real `update`
+     * DML — as opposed to `insert`, which the rule's ISCHANGED-only guard deliberately exempts —
+     * must sign a buyer NDA first, or the validation rule refuses a transition this class exists
+     * to test for an unrelated reason. Off-market fixtures already needed this; on-market ones
+     * did not until this redesign.
+     *
+     * Inserted directly at 'Signed' rather than walked through 'Not Sent' -> 'Sent' -> 'Signed' —
+     * NDA_Signed_Rollup is `RecordAfterSave` / `CreateAndUpdate`, so it fires on the insert either
+     * way and there is nothing for this class to prove about the NDA's own walk.
+     */
+    private static void signBuyerNdaOn(Id dispositionId) {
+        // Promoted to TestDataFactory.signBuyerNdaOn (2026-08-19) so ContractExecutionServiceTest
+        // can reuse the identical fixture. Kept as a thin delegate here so every existing call
+        // site in this file needs no change.
+        TestDataFactory.signBuyerNdaOn(dispositionId);
+    }
+
+    /** Bulk twin of signBuyerNdaOn — ONE insert for the whole set, never one per record. */
+    private static void signBuyerNdasOn(List<Disposition__c> dispositions) {
+        // Promoted to TestDataFactory.signBuyerNdasOn (2026-08-19) — see signBuyerNdaOn above.
+        TestDataFactory.signBuyerNdasOn(dispositions);
     }
 
     private static List<NDA__c> ndasOn(Id dispositionId) {
@@ -184,11 +215,17 @@ private class DispositionStageEntryServiceTest {
      * The complement, and the one that keeps this trigger cheap for the whole org: an ordinary
      * save that does not touch the stage must do nothing at all.
      *
-     * ⚠ The stage used here is on the ON_MARKET path on purpose. Moving an OFF_MARKET disposition
-     * to Disposition Offer / LOI / PSA / Closing / Completed is blocked by
-     * All_NDAs_Signed_Before_Progression when no signed NDA exists, so a "some other stage"
-     * fixture built on the off-market path would fail for a reason that has nothing to do with
-     * this service.
+     * 🔴 RETRACTED 2026-08-19 (flow redesign) — "The stage used here is on the ON_MARKET path on
+     * purpose. Moving an OFF_MARKET disposition to Disposition Offer / LOI / PSA / Closing /
+     * Completed is blocked by All_NDAs_Signed_Before_Progression when no signed NDA exists, so a
+     * 'some other stage' fixture built on the off-market path would fail for a reason that has
+     * nothing to do with this service." That sentence is retracted, not deleted, because it is
+     * exactly what a future reader would assume. `All_NDAs_Signed_Before_Progression` now gates
+     * BOTH record types (see `onMarketAtReadiness`'s own header), and `Disposition Offer` /
+     * `Completed` are RETIRED values pending manual Setup deletion — neither belongs in a live
+     * fixture. `BOV Outreach` below is not gated at all, on either record type, so the on-market
+     * `update` needs no signed NDA first; `offMarket`'s own `Title_Company__c` edit never touches
+     * the stage, so it is exempt for an unrelated, still-true reason.
      */
     @isTest
     static void otherStageChangesAndPlainEditsOpenNothing() {
@@ -417,6 +454,53 @@ private class DispositionStageEntryServiceTest {
     }
 
     /**
+     * 🔴 NDA-ON-`On_Market` IS NEW TERRITORY (2026-08-19 flow redesign, design DEV-19) — NOT A
+     * COPY-PASTE OF THE OFF-MARKET BULK TEST ABOVE. Before this redesign `NDA` was an Off_Market-
+     * only stage value (the "NDA and Disposition Offer are off-market stage values ONLY" doctrine
+     * — see Disposition_Stage__c's own XML comment for the retraction), so a broker-listed sale
+     * never reached this block at all. The redesigned on-market path now reads
+     * `... Broker Selection -> NDA -> Release Materials -> Active Listing ...`, so an on-market
+     * sale collects a buyer NDA exactly as a direct one does. `openBuyerNdas` keys on the STAGE
+     * VALUE alone and has never carried a record-type criterion (see NDA_STAGE's own comment), so
+     * this test proves that claim rather than assuming it — a future change that "helpfully" added
+     * an On_Market guard would silently strip the buyer NDA from every broker-listed sale, and
+     * only a real on-market walk through the trigger would notice.
+     *
+     * Readiness -> NDA is NOT one of `All_NDAs_Signed_Before_Progression`'s gated target stages
+     * (that OR list starts at Release Materials), so this transition needs no pre-signed NDA —
+     * unlike every LOI / PSA / Active Listing fixture elsewhere in this file.
+     */
+    @isTest
+    static void bulkStageEntryAt251OpensOneNdaEachOnMarket() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            true
+        );
+        List<Disposition__c> moves = new List<Disposition__c>();
+        for (Disposition__c d : dispositions) {
+            moves.add(new Disposition__c(Id = d.Id, Disposition_Stage__c = NDA_STAGE));
+        }
+
+        Test.startTest();
+        update moves;
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N,
+            [SELECT COUNT() FROM NDA__c WHERE Disposition__c IN :dispositions],
+            'Every one of the 251 ON-MARKET dispositions must get exactly one NDA — 251 spans TWO '
+            + 'trigger chunks, so a total of 200 here would mean the second chunk was dropped');
+        Assert.areEqual(BULK_N,
+            [SELECT COUNT() FROM NDA__c WHERE Disposition__c IN :dispositions AND Party_Role__c = 'Buyer'],
+            'All 251 must be BUYER NDAs, same idempotency key as the off-market path');
+        Assert.areEqual(BULK_N,
+            [SELECT COUNT() FROM Disposition__c WHERE Id IN :dispositions AND Primary_NDA__c != NULL],
+            'The deferred stamp must reach all 251 on-market dispositions too — the Queueable does '
+            + 'not branch on record type');
+    }
+
+    /**
      * 🔴 THE GOVERNOR ASSERTION, MADE ON THE SUPPRESSION PATH ON PURPOSE (see the class header):
      * every disposition already has its buyer NDA, so the service reads once and returns without
      * inserting — which keeps NDA_Signed_Rollup out of the measurement and lets the numbers be
@@ -540,6 +624,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void enteringTheLoiStageOpensExactlyOneDispositionLoi() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = LOI_STAGE);
@@ -607,6 +692,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void autoCreatedLoiCarriesTheDispositionRecordType() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = LOI_STAGE);
@@ -635,6 +721,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void reEnteringTheLoiStageDoesNotOpenASecondLoi() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = LOI_STAGE);
@@ -660,6 +747,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void anExistingDispositionLoiSuppressesAutoCreate() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         TestDataFactory.createDispositionLoi(disposition.Id, true);
 
         Test.startTest();
@@ -680,6 +768,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void anAcquisitionLoiElsewhereDoesNotSuppressTheDispositionLoi() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         TestDataFactory.createLoi(null, true); // buy-side, no Disposition__c
 
         Test.startTest();
@@ -698,6 +787,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void enteringThePsaStageOpensExactlyOneDispositionContractReview() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = PSA_STAGE);
@@ -749,6 +839,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void autoCreatedContractReviewCarriesTheDispositionRecordType() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = PSA_STAGE);
@@ -777,6 +868,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void reEnteringThePsaStageDoesNotOpenASecondContractReview() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = PSA_STAGE);
@@ -794,6 +886,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void anExistingDispositionContractReviewSuppressesAutoCreate() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         TestDataFactory.createDispositionContractReview(disposition.Id, true);
 
         Test.startTest();
@@ -809,6 +902,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void anAcquisitionContractReviewElsewhereDoesNotSuppressTheDispositionPsa() {
         Disposition__c disposition = onMarketAtReadiness();
+        signBuyerNdaOn(disposition.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         TestDataFactory.createContractReview(null, true); // buy-side, no Disposition__c
 
         Test.startTest();
@@ -885,6 +979,7 @@ private class DispositionStageEntryServiceTest {
             TestDataFactory.DISPOSITION_RT_ON_MARKET,
             true
         );
+        signBuyerNdasOn(dispositions); // All_NDAs_Signed_Before_Progression now gates On_Market too
         List<Disposition__c> moves = new List<Disposition__c>();
         for (Disposition__c d : dispositions) {
             moves.add(new Disposition__c(Id = d.Id, Disposition_Stage__c = LOI_STAGE));
@@ -911,6 +1006,7 @@ private class DispositionStageEntryServiceTest {
             TestDataFactory.DISPOSITION_RT_ON_MARKET,
             true
         );
+        signBuyerNdasOn(dispositions); // All_NDAs_Signed_Before_Progression now gates On_Market too
         List<Disposition__c> moves = new List<Disposition__c>();
         for (Disposition__c d : dispositions) {
             moves.add(new Disposition__c(Id = d.Id, Disposition_Stage__c = PSA_STAGE));
@@ -1084,6 +1180,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void listingStageEntryOpensOneListingAndStartsTheClock() {
         Disposition__c d = onMarketWithNoListingDate();
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         Assert.isNull(listingDateOf(d.Id),
             'FIXTURE GUARD: the clock must be unstarted before the move, or this test asserts the '
             + 'factory rather than the code');
@@ -1139,6 +1236,7 @@ private class DispositionStageEntryServiceTest {
         );
         d.Listing_Date__c = realListingDate;
         insert d;
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
@@ -1157,6 +1255,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void theSelectedBrokerIsCarriedOntoTheNewListing() {
         Disposition__c d = onMarketWithNoListingDate();
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         update new Disposition__c(Id = d.Id, Selected_Broker__c = 'Cushman & Wakefield');
 
         Test.startTest();
@@ -1170,6 +1269,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void aBlankSelectedBrokerLeavesTheListingBrokerBlankRatherThanFailing() {
         Disposition__c d = onMarketWithNoListingDate();
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
 
         Test.startTest();
         update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
@@ -1187,6 +1287,8 @@ private class DispositionStageEntryServiceTest {
     static void otherStagesOpenNoListingAndStartNoClock() {
         Disposition__c loiEntrant = onMarketWithNoListingDate();
         Disposition__c psaEntrant = onMarketWithNoListingDate();
+        signBuyerNdaOn(loiEntrant.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
+        signBuyerNdaOn(psaEntrant.Id);
 
         Test.startTest();
         update new List<Disposition__c>{
@@ -1207,6 +1309,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void anEditWhileAlreadyAtActiveListingIsNotAnEntry() {
         Disposition__c d = onMarketWithNoListingDate();
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
         Date stampedAt = listingDateOf(d.Id);
         // Rewind the clock behind the service's back, then re-save WITHOUT changing the stage.
@@ -1239,6 +1342,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void anExistingListingSuppressesAutoCreate() {
         Disposition__c d = onMarketWithNoListingDate();
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         Broker_Listing__c preexisting = TestDataFactory.createBrokerListing(d.Id, true);
 
         Test.startTest();
@@ -1254,10 +1358,15 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void reEnteringActiveListingNeverOpensASecondListing() {
         Disposition__c d = onMarketWithNoListingDate();
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
 
         Test.startTest();
-        update new Disposition__c(Id = d.Id, Disposition_Stage__c = 'Call for Offers');
+        // 'Offer Selection' — a surviving On_Market stage — stands in for "somewhere else to be".
+        // 'Call for Offers' is RETIRED (pending manual Setup deletion) and must not be reintroduced
+        // here; the buyer NDA signed above already satisfies All_NDAs_Signed_Before_Progression for
+        // this stage, so the transition away and back is exercised for the same reason as before.
+        update new Disposition__c(Id = d.Id, Disposition_Stage__c = 'Offer Selection');
         update new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE);
         Test.stopTest();
 
@@ -1280,6 +1389,7 @@ private class DispositionStageEntryServiceTest {
     @isTest
     static void theListingBlockEnqueuesNothing() {
         Disposition__c d = onMarketWithNoListingDate();
+        signBuyerNdaOn(d.Id); // All_NDAs_Signed_Before_Progression now gates On_Market too
         List<Disposition__c> newList = new List<Disposition__c>{
             new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE)
         };
@@ -1321,6 +1431,7 @@ private class DispositionStageEntryServiceTest {
             d.Listing_Date__c = null;
         }
         insert dispositions;
+        signBuyerNdasOn(dispositions); // All_NDAs_Signed_Before_Progression now gates On_Market too
         List<Disposition__c> moves = new List<Disposition__c>();
         for (Disposition__c d : dispositions) {
             moves.add(new Disposition__c(Id = d.Id, Disposition_Stage__c = LISTING_STAGE));

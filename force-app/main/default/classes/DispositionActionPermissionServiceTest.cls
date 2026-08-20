@@ -3,11 +3,27 @@
  * quick actions (decision D15/Q1). The sell-side twin of OpportunityActionPermissionServiceTest,
  * and deliberately shaped after it.
  *
+ * ── 🔴 THE GRANTING SET CHANGED 2026-08-19 — THE GATE DID NOT ────────────────
+ * The user retired the dedicated `Disposition_Deal_Driver` permission set and moved the
+ * `Disposition_Deal_Actions` custom permission onto the `DPEG_Disposition_Edit` persona set. This
+ * class's fixtures assign `DPEG_Disposition_Edit` for that reason and for no other — the token, the
+ * service and every assertion's SUBJECT are unchanged.
+ *
+ * 🔴 THE FIXTURE CHANGE WAS NOT OPTIONAL AND IS NOT COSMETIC. `assignPermissionSet` resolves a set
+ * BY NAME with a bare `[SELECT Id FROM PermissionSet WHERE Name = :n LIMIT 1]`. Once the retired set
+ * is deleted from the org that query returns nothing and every fixture here dies with
+ * `List has no rows for assignment to SObject` — a failure that reads like a broken test rather than
+ * like a deleted permission set. Repo precedent for exactly this trap: `ContactSelectorTest` still
+ * resolves `DPEG_Acquisitions`, a set that no longer exists.
+ *
+ * ⚠ AND THE WIDENING, SO IT IS VISIBLE FROM THE TESTS TOO: every holder of `DPEG_Disposition_Edit`
+ * now passes this gate, including every member of `DPEG_Junior_Analyst_PSG`. Previously that took a
+ * second, hand-assigned set. See DispositionActionPermissionService's header.
+ *
  * ── 🔴 REWRITTEN 2026-08-12 FOR THE CUSTOM-PERMISSION MIGRATION ──────────────
  * The gate used to be two-factor: FLS read on `User.Disposition_Driver__c` (via `WITH USER_MODE`)
  * AND the flag itself set to true. It is now one factor: holding the `Disposition_Deal_Actions`
- * custom permission, granted by the SAME `Disposition_Deal_Driver` permission set that used to
- * carry the FLS grant. Positive-path fixtures are simpler as a direct consequence — see
+ * custom permission. Positive-path fixtures are simpler as a direct consequence — see
  * agent-output/design-requirements-custom-permissions.md §7.2, and
  * OpportunityActionPermissionServiceTest's header for the Step 0 measurement (a throwaway probe
  * confirmed FeatureManagement.checkPermission sees a same-transaction PermissionSetAssignment
@@ -28,6 +44,11 @@
  * build the same fixture against — `RecordStageAdvanceController` (the disposition entry point) sits
  * in the org-wide `DPEG_Apex_Access` catch-all, not a disposition-scoped capability set, so there is
  * no analogous "holds the capability set but not the authorization set" state to construct here.
+ * ⚠ AMENDED 2026-08-19, AND THE AMENDMENT STRENGTHENS THIS RATHER THAN WEAKENING IT: now that the
+ * token rides on `DPEG_Disposition_Edit`, the one disposition-scoped set a user would plausibly hold
+ * GRANTS the gate instead of being independent of it. There is therefore no disposition fixture
+ * left that could hold a disposition capability WITHOUT the authorization — the state the missing
+ * test would have pinned is now unreachable by construction, not merely unbuilt.
  * `anAcquisitionDealDriverIsDeniedTheDispositionGate` below is this class's boundary-separation
  * proof instead: it pins that holding a DIFFERENT layer-5 authorization set (Acquisition_Deal_Driver)
  * does not grant this gate — the disposition-shaped version of "holding some other set does not
@@ -58,7 +79,12 @@
 @isTest
 private class DispositionActionPermissionServiceTest {
 
-    private static final String DISPOSITION_DRIVER_PERM_SET = 'Disposition_Deal_Driver';
+    /**
+     * The set that GRANTS `Disposition_Deal_Actions`. Repointed from the retired
+     * `Disposition_Deal_Driver` on 2026-08-19; renamed off `DISPOSITION_DRIVER_PERM_SET` at the same
+     * time so the identifier does not keep asserting a set that no longer exists.
+     */
+    private static final String DISPOSITION_ACTIONS_PERM_SET = 'DPEG_Disposition_Edit';
     private static final String DEAL_DRIVER_PERM_SET = 'Acquisition_Deal_Driver';
     private static final String NO_PERMISSION_MESSAGE =
         'You don\'t have permission to perform this action.';
@@ -82,7 +108,8 @@ private class DispositionActionPermissionServiceTest {
         Test.stopTest();
 
         Assert.isFalse(allowed,
-            'A user with neither Modify All Data nor Disposition_Deal_Driver must be denied');
+            'A user with neither Modify All Data nor DPEG_Disposition_Edit (which carries '
+            + 'Disposition_Deal_Actions since 2026-08-19) must be denied');
     }
 
     /**
@@ -97,7 +124,7 @@ private class DispositionActionPermissionServiceTest {
         User realDispositionDriver = buildStandardUser('dap2');
         User bareUser = buildStandardUser('dap2b');
         insert new List<User>{ realDispositionDriver, bareUser };
-        assignPermissionSet(realDispositionDriver.Id, DISPOSITION_DRIVER_PERM_SET);
+        assignPermissionSet(realDispositionDriver.Id, DISPOSITION_ACTIONS_PERM_SET);
 
         Test.startTest();
         Boolean allowed;
@@ -109,7 +136,7 @@ private class DispositionActionPermissionServiceTest {
         Test.stopTest();
 
         Assert.isFalse(allowed,
-            'Another user holding Disposition_Deal_Driver must never grant access to the running user');
+            'Another user holding DPEG_Disposition_Edit must never grant access to the running user');
     }
 
     /**
@@ -187,7 +214,7 @@ private class DispositionActionPermissionServiceTest {
     static void provisionedDispositionDriverIsAllowed() {
         User dispositionDriver = buildStandardUser('dap6');
         insert dispositionDriver;
-        assignPermissionSet(dispositionDriver.Id, DISPOSITION_DRIVER_PERM_SET);
+        assignPermissionSet(dispositionDriver.Id, DISPOSITION_ACTIONS_PERM_SET);
 
         Test.startTest();
         Boolean allowed;
@@ -201,9 +228,9 @@ private class DispositionActionPermissionServiceTest {
         Test.stopTest();
 
         Assert.isTrue(allowed,
-            'Holding Disposition_Deal_Driver — which now carries the Disposition_Deal_Actions '
-            + 'custom permission — must grant. If this fails, the gate has no reachable true branch '
-            + 'for anyone and the feature is dead for every non-administrator.');
+            'Holding DPEG_Disposition_Edit — which carries the Disposition_Deal_Actions custom '
+            + 'permission since 2026-08-19 — must grant. If this fails, the gate has no reachable '
+            + 'true branch for anyone and the feature is dead for every non-administrator.');
     }
 
     /**
@@ -215,6 +242,23 @@ private class DispositionActionPermissionServiceTest {
      * bypass had to run BEFORE the field read. There is no field read left in this class, so there
      * is nothing left to lock an admin out of; the ordering is now a cost choice (see the class
      * header), not a correctness one.
+     *
+     * ── 🔴 THE PRECONDITION GOT MORE FRAGILE ON 2026-08-19, SO IT WAS TIGHTENED ──
+     * It still HOLDS: `bareAdmin` is inserted fresh with no PermissionSetAssignment beyond its
+     * profile-owned row, and this repo has no User trigger or Flow that auto-assigns permission sets
+     * — checked, not assumed. But the set being excluded is no longer an obscure hand-assigned one.
+     * `DPEG_Disposition_Edit` is a set REAL System Administrators in this org hold (measured on
+     * usman-dpeg 2026-08-19: the primary admin holds it directly), and it is a member of
+     * `DPEG_Junior_Analyst_PSG`. So the day someone "simplifies" this fixture to reuse the running
+     * user, or an org-setup step starts granting the persona set broadly, the admin would pass via
+     * the CUSTOM PERMISSION and this test would go quietly vacuous while still printing green — it
+     * would assert the bypass and prove the token.
+     *
+     * The set-name check alone cannot see that: it excludes ONE grantor, and the premise is about
+     * the TOKEN. So the token itself is now asserted directly. `FeatureManagement.checkPermission`
+     * costs zero SOQL, cannot throw, and is the exact question the gate asks — if any future route
+     * ever grants a bare admin `Disposition_Deal_Actions`, this fails HERE, loudly, instead of
+     * turning the assertion below into a tautology.
      */
     @isTest
     static void administratorPassesWithoutTheCustomPermissionOrThePermissionSet() {
@@ -223,6 +267,7 @@ private class DispositionActionPermissionServiceTest {
 
         Test.startTest();
         Boolean allowed;
+        Boolean adminHoldsTheToken;
         Set<String> heldSetNames = new Set<String>();
         DispositionActionPermissionService.clearCache();
         System.runAs(bareAdmin) {
@@ -231,14 +276,21 @@ private class DispositionActionPermissionServiceTest {
                     heldSetNames.add(row.PermissionSet.Name);
                 }
             }
+            adminHoldsTheToken = FeatureManagement.checkPermission('Disposition_Deal_Actions');
             allowed = DispositionActionPermissionService.hasDispositionActionAccess();
         }
         DispositionActionPermissionService.clearCache();
         Test.stopTest();
 
-        Assert.isFalse(heldSetNames.contains(DISPOSITION_DRIVER_PERM_SET),
-            'PRECONDITION: the admin must hold NO Disposition_Deal_Driver set, otherwise this test '
-            + 'would not isolate the Modify All Data bypass.');
+        Assert.isFalse(adminHoldsTheToken,
+            'PRECONDITION (the real one): a bare System Administrator must NOT hold the '
+            + 'Disposition_Deal_Actions custom permission by ANY route. If they do, the assertion '
+            + 'below stops isolating the Modify All Data bypass and starts re-proving the token — '
+            + 'green, and meaningless.');
+        Assert.isFalse(heldSetNames.contains(DISPOSITION_ACTIONS_PERM_SET),
+            'PRECONDITION: the admin must hold NO DPEG_Disposition_Edit set — the grantor of '
+            + 'Disposition_Deal_Actions since 2026-08-19 — otherwise this test would not isolate '
+            + 'the Modify All Data bypass.');
         Assert.isTrue(allowed,
             'Modify All Data must grant access even without the custom permission. An administrator '
             + 'can already change any stage through inline edit, the Path or the API, so denying '
@@ -259,7 +311,7 @@ private class DispositionActionPermissionServiceTest {
     static void repeatedCallsByADriverCostZeroQueries() {
         User dispositionDriver = buildStandardUser('dap8');
         insert dispositionDriver;
-        assignPermissionSet(dispositionDriver.Id, DISPOSITION_DRIVER_PERM_SET);
+        assignPermissionSet(dispositionDriver.Id, DISPOSITION_ACTIONS_PERM_SET);
 
         Test.startTest();
         Integer used;
@@ -308,7 +360,7 @@ private class DispositionActionPermissionServiceTest {
         insert denied;
         User granted = buildStandardUser('dap10');
         insert granted;
-        assignPermissionSet(granted.Id, DISPOSITION_DRIVER_PERM_SET);
+        assignPermissionSet(granted.Id, DISPOSITION_ACTIONS_PERM_SET);
 
         Test.startTest();
         Boolean first;

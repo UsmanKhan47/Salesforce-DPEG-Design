@@ -109,6 +109,50 @@
         DPEG_Acquisitions keep viewAllRecords on NDA__c; only the DISPOSITION personas are
         scoped. This is the module partition the 2026-07-22 RBAC build intended, now actually
         enforced instead of merely documented.
+
+        =====================================================================
+        2026-08-19 - DISPOSITION FLOW REDESIGN: FOUR NEW READ GRANTS.
+        =====================================================================
+        Added, READ ONLY, in BOTH this set and its sibling:
+          Disposition__c.Is_On_Market__c          (formula - cannot be editable at all)
+          BOV_Submission__c.Approval_Status__c    (written only by a workflow field update)
+          Disposition_Offer__c.Is_Selected__c     (written only by DispositionApprovalService)
+          Disposition_Offer__c.Approval_Status__c (written only by a workflow field update)
+
+        🔴 THE THREE NON-FORMULA GRANTS ARE READ-ONLY EVEN IN DPEG_Disposition_Edit, WHERE
+        NEARLY EVERY SIBLING FIELD IS EDITABLE. That is deliberate, not an omission. Each is
+        written exclusively by machine - two by approval field updates, one by
+        DispositionApprovalService.selectOffer, which is what guarantees at most ONE selected
+        offer per disposition. A hand edit through inline edit or the Details section would
+        break that guarantee (two selected offers, two competing approvals) or fabricate an
+        approval outcome that never happened.
+        ⚠ THE DEVELOPER-SIDE CONSEQUENCE: selectOffer's DML MUST run in SYSTEM mode. A
+        USER_MODE write of Is_Selected__c will be refused for every persona in this repo.
+
+        🔴 Disposition__c.Approval_Advance_Pending__c GETS NO ENTRY IN EITHER SET, ON PURPOSE.
+        It is the D-1 auto-advance semaphore, written by a workflow field update and cleared by
+        a Queueable - both system context, neither consults FLS. Granting it would put a machine
+        interlock on a user's screen and invite a hand edit that fires a spurious stage advance.
+        Do not "complete the set" by adding it.
+
+        🔴 Is_On_Market__c IS LOAD-BEARING FOR THE UI, NOT DECORATIVE. FOUR of the twelve
+        Dynamic Actions on Disposition_Record_Page test it, and they are named here so the count
+        stays checkable: Submit_Broker_Selection, Advance_to_NDA, Advance_to_Active_Listing and
+        Select_Offer. Submit_Closing_Approval is NOT one of them; it tests the stage, the wire
+        flag and the permission, never the record type. Twelve is 9 quick actions plus Edit,
+        Clone and Delete. (Corrected 2026-08-19, code review W-6: this said "Five".)
+        A visibility rule that reads a field
+        the running user cannot see evaluates FALSE and hides the action with NO error anywhere,
+        so this file must land WITH OR BEFORE that flexipage, never after.
+
+        VERIFIED IN THE SAME CHANGE, NOT ADDED: Disposition__c.Wire_Verification_Completed__c
+        read was already present in both sets (measured, not assumed). The
+        Submit_Closing_Approval visibility rule depends on it and would fail silently without it.
+
+        ⚠ A PermissionSet DEPLOY REPLACES fieldPermissions WHOLESALE. This edit was made by
+        inserting four blocks into the existing list, and the result was diffed against HEAD to
+        confirm it is purely additive - no pre-existing grant was reordered, altered or lost.
+
     -->
     <!--
         AMENDED 2026-08-09 BY DECISION D20/C2 AND D20.1. Two changes, both additive.
@@ -966,6 +1010,169 @@
         arrives with NO field permissions for ANY profile, System Administrator included, so an
         admin smoke test of the PSA surface proves nothing about this persona.
     -->
+    <!--
+        =====================================================================
+        2026-08-19 - THE Disposition_Deal_Actions CUSTOM PERMISSION NOW LIVES ON THIS SET.
+        USER DECISION. IT REVERSES A STANDING, EXPLICIT PROHIBITION - READ THE WHOLE BLOCK
+        BEFORE TREATING IT AS DRIFT AND BEFORE "TIDYING" IT BACK OUT.
+        =====================================================================
+
+        WHAT CHANGED, EXACTLY: the customPermissions element below is the ONLY thing this edit
+        adds. Not one objectPermissions, fieldPermissions or recordTypeVisibilities entry was
+        added, removed, reordered or altered. The change was diffed against HEAD and is
+        additions only, zero deletions.
+
+        WHY IT MOVED HERE. The dedicated layer-5 set Disposition_Deal_Driver was RETIRED at the
+        user's request in this same change: deleted from the source tree and queued for org
+        deletion in manifest/retire-disposition-deal-driver/destructiveChangesPost.xml. That
+        set's entire payload was this one custom permission, so retiring it without a
+        replacement grant would leave Disposition_Deal_Actions held by NOBODY. The capability
+        now rides the disposition EDIT persona.
+
+        🔴 THE CUSTOM PERMISSION ITSELF IS NOT RETIRED, AND NOTHING THAT CONSUMES IT CHANGED.
+        Fifteen flexipage visibility rules still read
+        {!$Permission.CustomPermission.Disposition_Deal_Actions} - nine on
+        Disposition_Record_Page, three on LOI_Record_Page, two on NDA_Record_Page, one on
+        Contract_Review_Record_Page (counted in the files, not recalled) - and
+        DispositionActionPermissionService still calls
+        FeatureManagement.checkPermission('Disposition_Deal_Actions') as the sole server side
+        authorization check, with DispositionApprovalService, BovSubmissionService and
+        RecordStageAdvanceService asserting through it. ONLY THE SET THAT GRANTS THE TOKEN
+        CHANGED.
+
+        🔴 THE CONSEQUENCE, STATED PLAINLY RATHER THAN LEFT TO BE DISCOVERED: EVERY HOLDER OF
+        DPEG_Disposition_Edit IS NOW A DISPOSITION DEAL DRIVER. No second, narrower assignment
+        stands between "can edit dispositions" and "can drive the nine deal actions" any more;
+        from this deploy they are one population. DPEG_Junior_Analyst_PSG carries
+        DPEG_Disposition_Edit, so that group's ENTIRE membership acquires the token at group
+        recalculation with no further assignment step - see that group's own header, corrected
+        in the same change. This is precisely the widening that the retired set's header and
+        the CustomPermission file's header both argued against. It is accepted here as an
+        explicit user decision, not overlooked. Their argument is CORRECTED IN PLACE in
+        customPermissions/Disposition_Deal_Actions.customPermission-meta.xml rather than
+        deleted, so whoever revisits this can read what was traded away.
+
+        🔴 DPEG_Disposition_View DELIBERATELY DOES NOT GET THIS GRANT, AND MUST NOT BE
+        "COMPLETED" TO MATCH THIS FILE. Principals hold the View set (DPEG_Principal_PSG) and
+        APPROVE dispositions rather than drive them. Granting the token there would put Submit
+        Broker Selection, Select Offer and the stage advance buttons in front of the same people
+        who approve those submissions. The two disposition sets are NOT symmetric on this grant
+        and are not meant to become so.
+
+        ⚠ ORDERING IS THE SAFETY, AND IT IS THE WHOLE REASON THE DELETION IS POST destructive
+        RATHER THAN PRE. This file must be LIVE BEFORE Disposition_Deal_Driver is removed from
+        the org. Land the additive payload first; the deletion runs after it. Reverse the two
+        and there is a window in which no user in the org holds Disposition_Deal_Actions, and
+        every disposition deal action vanishes silently - a flexipage visibility rule that
+        evaluates false hides its button with no error logged anywhere.
+
+        ⚠ ASSIGNMENT IS ORG STATE AND IS NOT DEPLOYABLE. Existing Disposition_Deal_Driver
+        assignees are NOT migrated by this deploy; a user gains the token only if they already
+        hold DPEG_Disposition_Edit. Verify that overlap in the org BEFORE the destructive step,
+        and acceptance test as a real disposition persona - never as an administrator, who
+        passes the gate through Modify All Data and therefore proves nothing.
+
+        🔴 A PermissionSet DEPLOY REPLACES THIS SET'S ENTIRE GRANT LIST. The reconciliation
+        recorded in the D21 block above is a 2026-08-09 measurement of this set and does NOT
+        pre clear this edit. RE RUN the retrieve into a scratch directory and re run the
+        NORMALIZED diff (grant SETS, not bytes - the org strips XML comments, reorders elements
+        and omits defaulted flags, so a textual diff fakes drift in both directions) immediately
+        before deploying. An EMPTY retrieve proves nothing either way; it is indistinguishable
+        from a wrong metadata name or a wrong org.
+    -->
+    <!--
+        AMENDED 2026-08-20. ONE GRANT ADDED: Disposition__c.Broker__c, editable + readable.
+
+        Broker__c is the new Lookup(Contact) that replaces the free-text off-market broker pick.
+        This set is the ANALYST WHO PICKS (DPEG_Junior_Analyst_PSG = DPEG_Contact_Edit +
+        DPEG_Disposition_Edit), so it gets EDIT. DPEG_Disposition_View is the approver who
+        reviews and gets READ ONLY. The two files move together on this field.
+
+        🔴 THIS GRANT IS NOT COSMETIC AND ITS BLAST RADIUS IS THE WHOLE OBJECT. Broker__c joins
+        the SELECT in DispositionSelector.selectApprovalContextById, which is WITH USER_MODE and
+        backs ALL FOUR approval branches. USER_MODE throws rather than degrades, so without this
+        grant every persona gets System.QueryException "No such column" and Submit for Approval
+        breaks on EVERY disposition at EVERY stage on BOTH record types. Same shape as the
+        Is_On_Market__c note above: this file must land WITH OR BEFORE the Apex, never after.
+        🔴 THE FIX FOR THAT EXCEPTION IS THIS FILE, NOT WITH SYSTEM_MODE, which that method's own
+        class header bans.
+
+        A fieldInstance level visibilityRule on Disposition_Record_Page hides Broker__c when
+        Is_On_Market__c is true. A visibility rule reading a field the user cannot see evaluates
+        FALSE and hides the element silently, which is the safe direction here but is a second
+        reason the FLS must land first.
+
+        NOT WIDENED, DELIBERATELY: DPEG_Admin_Access and Disposition_Dashboard_Access. Neither
+        grants Selected_Broker__c today. DPEG_Admin_Access grants only four Disposition__c fields
+        (NDA_Count__c, Primary_NDA__c, Signed_NDA_Count__c, Wire_Verification_Completed__c), so a
+        bare administrator holding no disposition persona set ALREADY cannot run that query.
+        Adding Broker__c creates no NEW admin regression and must not be used to justify widening
+        that set.
+
+        Selected_Broker__c KEEPS its existing editable grant at the alphabetical position above.
+
+        🔴 CORRECTED 2026-08-20 - RIGHT CONCLUSION, WRONG REASON. Retracted in place, because
+        the stated reason is the thing a future reader would act on:
+
+            RETRACTED: "It is now the denormalised display value stamped from Broker__c
+            off-market, but it is still hand-written by the on-market BOV chain, so it is not
+            demoted to read only here."
+
+        NOTHING HAND WRITES THIS FIELD. "hand-written by the BOV chain" conflates a human typing
+        into a field with an Apex class updating it - opposite things, and the distinction is
+        exactly what decides whether an FLS grant is needed. The BOV chain is automation:
+        BovSubmissionTriggerHandler stamps the parent inside a trigger, and BovSubmissionService
+        .replaceSelectedBroker stamps it from a controller call. No user types here on either
+        path.
+
+        THE REAL REASON THE GRANT MUST STAY IS THE DML MODE OF ONE OF THOSE WRITERS.
+        BovSubmissionService.replaceSelectedBroker writes the parent with a PLAIN `update`:
+
+            update new Disposition__c(Id = dispositionId,
+                                      Selected_Broker__c = challenger.Broker_Firm__c);
+
+        Plain DML runs in USER context, so it is subject to the running user's FLS on
+        Selected_Broker__c. Demote this grant to read only and that statement starts throwing for
+        every user who performs a broker replacement - and the method wraps it in a savepoint
+        that rolls the whole exclusivity swap back, so the feature fails closed and loudly rather
+        than degrading. That is a REAL regression bought for no benefit, which is why the grant
+        stays.
+        ⚠ NOTE THE CONTRAST TWO LINES UP IN THAT SAME METHOD: the BOV_Submission__c writes use
+        Database.update(..., AccessLevel.SYSTEM_MODE) and are therefore FLS-immune. Only the
+        parent write depends on this file. Do not generalise "the BOV chain needs the grant" -
+        read the DML mode per statement.
+
+        WHERE THE HAND EDIT WAS ACTUALLY BLOCKED: on the page, not in this file. Disposition
+        _Record_Page's FieldSelectedBroker fieldInstance carries uiBehavior = readonly as of
+        2026-08-20, which stops an analyst inline-editing the derived off-market value while
+        leaving Apex writes untouched. FLS and uiBehavior answer different questions; this was
+        the uiBehavior question.
+
+        ⚠ A PermissionSet DEPLOY REPLACES fieldPermissions WHOLESALE. This edit inserted ONE
+        block into the existing list, immediately after Disposition__c.Is_On_Market__c, following
+        this file's convention of appending later additions at the tail of the Disposition__c
+        run. Diffed against HEAD: purely additive, zero deletions, nothing reordered.
+        ⚠ CORRECTION TO THE DESIGN DOC: offmarket-broker-lookup-requirements.md section 2.2
+        states this set holds 29 Disposition__c grants and must become 30. MEASURED, it held 24
+        and now holds 25. Use 25, not 30, as the acceptance check.
+
+        ADDED 2026-08-20: BOV_Submission__c.Broker__c, readable and editable. It is the new
+        Lookup(Contact) that replaces typing the broker firm and contact name on the BOV
+        Submission layout, so this persona must be able to SET it, not merely see it. Granted at
+        the TAIL of the BOV_Submission__c run, next to Approval_Status__c, following this file's
+        convention of appending later additions rather than reflowing the alphabetical block.
+        A Metadata API deployed field carries NO FLS for anyone, System Administrator included,
+        so this grant and objects/BOV_Submission__c/fields/Broker__c.field-meta.xml must deploy
+        together. Broker_Firm__c and Contact_Name__c KEEP their editable grants above: they are
+        now stamped by BovSubmissionBrokerStampService rather than typed, and they left the LAYOUT, not the
+        schema. Revoking them would be a real regression, since BovSubmissionService
+        .replaceSelectedBroker and the trigger handler still read them. Same rule as above:
+        DPEG_Admin_Access is NOT widened, and it grants no BOV_Submission__c field today.
+    -->
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Disposition_Deal_Actions</name>
+    </customPermissions>
     <description>Disposition access for the Acquisitions Analyst persona: Create/Read/Edit (no Delete) on the 5 DISP objects and NDA__c; Read/Edit on LOI__c and Contract_Review__c; Read + View All on Counter_Offer__c, PSA_Version__c. NDA/LOI rows sharing-rule scoped.</description>
     <fieldPermissions>
         <editable>true</editable>
@@ -1030,6 +1237,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>BOV_Submission__c.Submission_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Approval_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BOV_Submission__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1278,6 +1495,16 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Is_On_Market__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Disposition__c.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>Disposition_Offer__c.Buyer_Counter_Price__c</field>
         <readable>true</readable>
@@ -1345,6 +1572,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Disposition_Offer__c.Offer_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition_Offer__c.Approval_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition_Offer__c.Is_Selected__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1460,6 +1697,21 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>NDA__c.Counter_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Counterparty_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.Date_Signed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Disposition__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

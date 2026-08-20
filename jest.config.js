@@ -19,7 +19,21 @@ module.exports = {
     setupFilesAfterEnv: [
         ...(jestConfig.setupFilesAfterEnv || []),
         '<rootDir>/jest.setup.js'
-    ]
+    ],
+    // ── 🔴 lightning/modal HAS NO STUB IN sfdx-lwc-jest ──────────────────────
+    // Verified against @salesforce/sfdx-lwc-jest 7.9.0: `src/lightning-stubs/`
+    // ships modalHeader / modalBody / modalFooter but NOT `modal`. Without this
+    // mapping, any bundle importing `lightning/modal` fails its whole suite with
+    // "Cannot find module" — a resolution error that reads like a typo, not like
+    // a missing stub. Jest applies moduleNameMapper BEFORE the resolver, so this
+    // wins. The stub itself documents the API it reproduces.
+    //
+    // `jest-mocks/` sits at the repo root, structurally outside the only package
+    // directory (`force-app/main/default`), so it can never be deployed.
+    moduleNameMapper: {
+        ...(jestConfig.moduleNameMapper || {}),
+        '^lightning/modal$': '<rootDir>/jest-mocks/lightning/modal.js'
+    }
     // NOTE: coverage is intentionally left to the sfdx-lwc-jest default, which
     // reports only the component modules a test actually exercises. Do not add a
     // broad `collectCoverageFrom` glob over all 82 bundles until most have suites

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        EXISTS SOLELY SO A FLEXIPAGE VISIBILITY RULE CAN TEST THE RECORD TYPE (design decision
+        D-4). Five of the nine Dynamic Actions on Disposition_Record_Page are record-type
+        specific, and after this redesign the stage value alone no longer identifies the path:
+        Broker Selection, Release Materials, Offer Selection and Sale Closes are all on BOTH
+        record types' Disposition_Stage__c value sets. Only BOV Outreach, Active Listing and
+        Call for Offers are still on-market-only, and only Disposition Offer is still
+        off-market-only.
+
+        ⚠ TWO ALTERNATIVES WERE REJECTED, AND NEITHER SHOULD BE REINTRODUCED.
+          1. {!$User.<field>} IN A VISIBILITY RULE. It evaluates FALSE for any user without FLS
+             on the referenced field, which silently hides the gated action rather than
+             erroring. Never use it in this repo.
+          2. A SPANNING {!Record.RecordType.DeveloperName} MERGE FIELD IN A FLEXIPAGE RULE. It
+             is unverified on this org. A formula field flattens the spanning reference into a
+             local one, which the visibility-rule engine is proven to handle here.
+
+        WHY RecordType.DeveloperName AND NOT RecordTypeId. It is a NAME comparison, not an Id,
+        so it survives an org rebuild - which this repo has been through. It breaks if the
+        On_Market record type is ever RENAMED; that is the accepted trade and it matches the
+        substitution already documented in All_NDAs_Signed_Before_Progression's comment (use the
+        RecordType merge field rather than the $RecordType global, per Salesforce's own "Tips
+        for Referencing Record Types in Formulas").
+
+        ⚠ A MASTER-RECORD-TYPE ROW READS BLANK on this merge field, so this field is FALSE
+        there, i.e. it presents as off-market. That is FAIL-CLOSED for the on-market-only
+        actions (Advance to NDA, Advance to Active Listing) and FAIL-OPEN for the
+        off-market-only ones (Submit Broker Selection). It is acceptable because
+        DispositionService stamps a record type explicitly on every row it creates and the
+        server-side gate in DispositionApprovalService refuses anything illegitimate - a hidden
+        or shown headless quick action is an affordance, never the enforcement.
+
+        🔴 THIS FIELD NEEDS READ FLS OR EVERY GATED ACTION DISAPPEARS SILENTLY. A visibility
+        rule that reads a field the running user cannot see evaluates FALSE and hides the
+        action with no error anywhere. Read is granted in DPEG_Disposition_View and
+        DPEG_Disposition_Edit in the same deploy as this field; those two files and this one
+        must land together.
+    -->
+    <fullName>Is_On_Market__c</fullName>
+    <description>TRUE when this disposition carries the On_Market record type. Exists only so the Dynamic Actions visibility rules on Disposition_Record_Page can discriminate the two paths without a spanning RecordType merge field, which is unverified in a flexipage rule on this org. Reads FALSE on a Master-record-type row. See the XML comment in this file.</description>
+    <inlineHelpText>Ticked automatically when this disposition uses the On Market record type. It is derived from the record type and cannot be edited.</inlineHelpText>
+    <label>Is On Market</label>
+    <type>Checkbox</type>
+    <formula><![CDATA[RecordType.DeveloperName = "On_Market"]]></formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>

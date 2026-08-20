@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is
+        capped at 255 characters; a comment is repo-only and is never sent to the Metadata
+        API. It must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A4). THE FIRST VALIDATION RULE ON THIS OBJECT,
+        AND IT CARRIES THE SHARED RATIONALE FOR ALL FOUR. The siblings
+        (Closing_Period_Days_Not_Negative, Due_Diligence_Days_Not_Negative,
+        Final_Price_Required_Before_Executed) point here.
+        =====================================================================================
+
+        =====================================================================================
+        🔴 LOI__c IS A DUAL RECORD TYPE OBJECT SERVING BOTH MODULES. EVERY RULE DEPLOYED HERE
+        FIRES ON ACQUISITION LOIs TOO. THAT IS ASSESSED, NOT OVERLOOKED.
+        =====================================================================================
+        Acquisition_LOI runs Draft, Under Review, Submitted, Negotiation, Signed.
+        Disposition_LOI runs Received, Under Review, Countered by DPEG, Counter Received from
+        Buyer, Executed.
+
+        THIS RULE AND THE TWO DAY COUNT RULES ARE SAFE ON BOTH PATHS BECAUSE THEY ARE
+        ARITHMETIC INVARIANTS, not workflow gates: a counter price of zero and a negative day
+        count are wrong whether DPEG is buying or selling. They need no record type scoping
+        and deliberately have none.
+        Final_Price_Required_Before_Executed is the one rule here that IS path specific, and
+        it achieves that by NAMING A VALUE ('Executed', which only Disposition_LOI reaches)
+        rather than by testing a record type. Its own header explains why that is stronger.
+
+        🔴 DO NOT ADD A RecordType.DeveloperName TEST TO ANY OF THESE FOUR "FOR SAFETY".
+        Two in repo arguments say why: Broker_Lookup_Is_Off_Market_Only's Master record type
+        argument (a record type test also blocks Master rows, which TestDataFactory produces
+        deliberately when a record type is absent from a scratch org), and
+        NdaSelector.queryExpiryAlerts's warning that a record type filter can ship a feature
+        inert. A value named rule survives a record type rename; a record type test does not.
+
+        =====================================================================================
+        🔴 NOT(ISBLANK(...)) COMES FIRST, AND IT IS LOAD BEARING, NOT PADDING.
+        =====================================================================================
+        A blank Counter_Price__c is the NORMAL state: most LOIs are never countered. On a
+        Currency field ISBLANK is the only test that distinguishes an empty field from a
+        deliberately entered 0, so without the guard this rule would refuse every uncountered
+        LOI, which is nearly all of them.
+
+        =====================================================================================
+        NO ISCHANGED / ISNEW GUARD ON THIS RULE OR THE TWO DAY COUNT RULES. Each is an
+        INVARIANT, not a transition, and each is SELF CLEARING: the remedy, correcting or
+        clearing the offending number, is itself a permitted save, so an unguarded rule cannot
+        trap a row. ⚠ SYSTEM_MODE DML does NOT bypass validation rules, so a bad row refuses
+        machine writes too until it is corrected. That is intended, and it is why the remedy
+        must stay permitted.
+        (Final_Price_Required_Before_Executed DOES carry a guard, because it gates a
+        TRANSITION rather than asserting an invariant. Different job, different shape.)
+        =====================================================================================
+        MEASURED IMPACT AT CREATION: ZERO ROWS REFUSED. Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM LOI__c                                            -> 11
+          SELECT COUNT(Id) FROM LOI__c WHERE Counter_Price__c &lt;= 0             -> 0
+          SELECT COUNT(Id) FROM LOI__c WHERE Closing_Period_Days__c &lt; 0
+                                          OR Due_Diligence_Days__c &lt; 0         -> 0
+          SELECT COUNT(Id) FROM LOI__c WHERE Stage__c = 'Executed'
+                                          AND Final_Agreed_Price__c = null        -> 0
+        Eleven LOIs exist and not one violates any of the four rules. 🔴 THAT MEASUREMENT
+        AGES. Re-run all four at deploy time rather than citing this line; a non zero result
+        freezes a live LOI until someone corrects it, which is an escalation, not a deploy.
+    -->
+    <fullName>Counter_Price_Is_Positive</fullName>
+    <active>true</active>
+    <description>Blocks a zero or negative Counter Price on an LOI. A blank counter is legitimate and is left alone; only a counter that has been entered is checked. An arithmetic invariant, so it is deliberately unscoped and fires on both record types.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Counter_Price__c)),
+    Counter_Price__c &lt;= 0
+)</errorConditionFormula>
+    <errorMessage>Counter Price must be greater than zero. Leave it blank if this LOI has not been countered; enter the countered amount if it has.</errorMessage>
+    <errorDisplayField>Counter_Price__c</errorDisplayField>
+</ValidationRule>

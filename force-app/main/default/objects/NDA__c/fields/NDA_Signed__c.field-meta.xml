@@ -1,7 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with the misleading error
+        "unable to find matching parent xml file".
+
+        DESCRIPTION ADDED 2026-08-20 (Tranche 2, A3). This file was a bare nine line stub with
+        no description at all, which is part of why the checkbox's one directional behaviour
+        went unrecorded for so long.
+
+        🔴 THIS CHECKBOX IS A GATE INPUT, NOT A DISPLAY FIELD. Opportunity's
+        NDA_Signed_Before_Deal_Progression blocks Underwriting, LOI, Under Contract (PSA),
+        About to Close and Closed Won unless Primary_NDA__r.NDA_Signed__c is true. Anything
+        that clears it can lock a live acquisition deal out of five stages.
+
+        🔴 IT IS SET BY AUTOMATION, AND EXACTLY ONE AUTOMATION MAY CLEAR IT. The before-save
+        flow NDA_Signed_Status_Sync sets it TRUE on Status = 'Signed' and, from 2026-08-20,
+        FALSE on Status = 'Declined' and on nothing else. A blanket "not Signed implies false"
+        rule is FORBIDDEN: the acquisition sequence is Pending, Received, Signed, Sent, so
+        'Sent' is the acquisition TERMINAL and a blanket rule would un-sign an NDA on the final
+        Advance Stage click. That flow's in-root comment carries the full hazard banner.
+
+        ⚠ DO NOT USE THIS FIELD TO ANSWER "DID THIS PARTY SIGN". Use Status__c. The checkbox
+        latches true across Sent, Received, Pending and Not Sent, and for any row last saved
+        before 2026-08-20 it is still true even if that party declined. Date_Signed__c is not a
+        substitute either: the flow never clears it, so a declined party retains a signature
+        date beside a false checkbox.
+
+        ⚠ NOT GRANTED TO THE DISPOSITION PERSONAS, DELIBERATELY (Tranche 2 A5). It is readable
+        in DPEG_Acquisition_Edit / DPEG_Acquisition_View only. Granting it to a disposition set
+        purely so that a reader could be told not to use it would re-open the trap above.
+    -->
     <fullName>NDA_Signed__c</fullName>
     <defaultValue>false</defaultValue>
+    <description>Derived by the before-save flow NDA_Signed_Status_Sync: TRUE on Status = &apos;Signed&apos;, FALSE on Status = &apos;Declined&apos; (from 2026-08-20), untouched by every other status, so it latches true through Sent, Received, Pending and Not Sent. Read by Opportunity.NDA_Signed_Before_Deal_Progression, which gates five deal stages. DO NOT hand-edit, and do NOT use it to test whether a party signed: use Status__c. A party who signed and then declined keeps a populated Date_Signed__c beside a false checkbox, and any row last saved before 2026-08-20 may still read true after declining. A blanket &apos;not Signed implies false&apos; rule is forbidden: it would un-sign acquisition NDAs at their terminal &apos;Sent&apos; status. See the XML comment in this file.</description>
     <label>NDA Signed</label>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>

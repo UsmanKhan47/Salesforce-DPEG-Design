@@ -2,61 +2,82 @@
 <PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
     <!--
         The BROKER-LISTED disposition path, for the On_Market record type.
-        Eight steps: Disposition Readiness, BOV Outreach, Active Listing, Call for Offers,
-        LOI, PSA, Closing, Completed.
+        REBUILT 2026-08-19 to the redesigned ELEVEN steps: Disposition Readiness, BOV Outreach,
+        Broker Selection, NDA, Release Materials, Active Listing, Offer Selection, LOI, PSA,
+        Closing, Sale Closes.
 
-        Five steps (Disposition Readiness, BOV Outreach, Active Listing, Closing, Completed)
-        were copied from the now-deactivated Disposition_Path. FOUR of them are still
-        BYTE-IDENTICAL - fieldNames AND info text - and Active Listing is STILL one of them:
-        its info was rewritten 2026-08-10 (retraction below), and the IDENTICAL rewrite was
-        applied to Disposition_Path in the same change, so the carry-over this comment
-        describes did not break.
+        =====================================================================================
+        WHAT CHANGED AND WHY, STEP BY STEP - so nobody has to diff this against git to find out.
+        =====================================================================================
+        REMOVED: the Call for Offers step and the Completed step. Call for Offers is a retired
+        stage value; Completed was renamed by replacement to Sale Closes.
+        ADDED: Broker Selection, Release Materials, Offer Selection, Sale Closes.
+        🔴 NDA IS NOW ON THIS PATH. The doctrine that "NDA and Disposition Offer are off-market
+        stage values ONLY", which stood in both record-type files, in
+        All_NDAs_Signed_Before_Progression and in lwc/dispositionSidebar.js, is DEAD. An
+        on-market deal collects NDAs from interested parties before materials are released, and
+        All_NDAs_Signed_Before_Progression dropped its record-type term in the same change - so
+        the release gate now fires on THIS path too.
 
-        🔴 THE ACTIVE LISTING CLOCK IS NO LONGER AN OPEN QUESTION - RETRACTED 2026-08-10 BY
-        D27.1 / D28-Q2. The superseded sentences are quoted and retracted rather than deleted,
-        because "leave it alone, a question is open" is the exact instruction that left this
-        Path contradicting the LWC beside it for a whole tranche:
+        ⚠ TWO ORPHAN STEPS WILL RENDER AFTER Sale Closes UNTIL THE PICKLIST CLEANUP WAVE RUNS.
+        Call for Offers and Completed still exist as values and are still listed on the
+        On_Market record type (a record type cannot reference a deleted value, and a metadata
+        deploy cannot delete one - Setup can). They have NO step here, so they render with no
+        guidance. That is deliberate: stale guidance on a stage nothing should reach is worse
+        than none. Zero records sit on either value.
 
-            RETRACTED: "The Active Listing text is under an OPEN question (the source document
-            says ~2 months with a month-1 check, this text says a 6-week clock) and was copied
-            forward UNEDITED on purpose. Editing it here would silently pre-empt that
-            question."
+        WHAT EACH STEP'S EXIT IS OWNED BY - this is the single most useful thing on this page,
+        because the Advance button is NOT available at every step:
+            Disposition Readiness -> BOV Outreach     Sale Decision approval (auto-advance)
+            BOV Outreach -> Broker Selection          Broker Finalize approval on the BOV
+            Broker Selection -> NDA                   MANUAL: Advance to NDA
+            NDA -> Release Materials                  MANUAL: Advance to Release Materials
+            Release Materials -> Active Listing       MANUAL: Advance to Active Listing
+            Active Listing -> Offer Selection         Select Offer (service DML)
+            Offer Selection -> LOI                    Offer Selection approval on the offer
+            LOI -> PSA                                MANUAL: Advance to PSA
+            PSA -> Closing                            ContractExecutionService, on PSA execution
+            Closing -> Sale Closes                    Closing approval (auto-advance)
+        RecordStageAdvanceService's CONFIG_BY_TYPE holds ONLY the four manual hops, so the
+        Advance button structurally cannot skip an approval-owned or machine-owned one.
 
-        WHAT ANSWERED IT: D27.1 - THE DOCUMENT WON. The marketing period is 60 days with a
-        30-day traction checkpoint, and traction is logged offers and NOTHING else (D28-Q1;
-        "real interest" stays a human judgement made in the internal discussion and is
-        deliberately not modelled as a field, so this text must not imply the system can see
-        it). THE RECONCILIATION HAS NOW HAPPENED: the Active Listing info below states that
-        model, and every band it names is one DispositionTractionService computes - NOT_LISTED,
+        Listing_Date__c WAS ADDED to the Active Listing step's fieldNames. Its info text has
+        told the user since 2026-08-10 that "the 60-day marketing clock ... does not start until
+        that date is set", while offering no field to set it from - the same
+        describes-a-workflow-nobody-can-perform defect that Disposition_Record_Page's ndasList
+        note records. Both permission sets already carry the field (Edit has it editable).
+
+        THE ACTIVE LISTING TEXT IS COPIED BYTE-IDENTICAL FROM THE PREVIOUS VERSION AND MUST STAY
+        THAT WAY. Every band it names is one DispositionTractionService computes - NOT_LISTED,
         ON_TRACK, CHECKPOINT_DUE at day 30, REVIEW_OVERDUE at day 40, HARD_STOP at day 60, all
-        short-circuited to ON_TRACK by a single logged offer. That service decides a band
-        nowhere else; this text must never state a threshold it does not hold.
+        short-circuited to ON_TRACK by a single logged offer. That service decides a band nowhere
+        else; this text must never state a threshold it does not hold.
+        ⚠ THE WEEK-NUMBERED MILESTONES OF THE OLD 6-WEEK CLOCK ARE BANNED STRINGS in
+        lwc/listingAlerts/__tests__/listingAlerts.test.js, which asserts the sibling traction
+        panel never renders them. Do not reintroduce them here in any wording.
+        ⚠ "Escalation to Ali" was dropped from this text in 2026-08-10 and must not come back: it
+        promised a notification nothing sends.
 
-        TWO THINGS WERE DROPPED AND MUST NOT COME BACK. "Escalation to Ali" promised a
-        notification D9 defers, so nothing sends it - the same stale-promise defect that
-        condemned the retired listingAlerts mock. And the week-numbered milestones are BANNED
-        STRINGS in lwc/listingAlerts/__tests__/listingAlerts.test.js, which asserts the sibling
-        traction panel never renders them; a Path rendering them next to that panel is exactly
-        the one-screen contradiction BrokerListingController's header exists to prevent.
+        THE CLOSING STEP'S THIRD SENTENCE WAS REWRITTEN, AND ITS TWIN ON
+        Disposition_Path_Off_Market CARRIES THE IDENTICAL NEW SENTENCE. These two must stay in
+        step with each other - they always have. What changed: the old sentence explained that
+        the AdminOnly approval lock would silently stop Wire_Verification_Rollup, so the user had
+        to remember to verify the wire FIRST. Closing_Approval now carries
+        Wire_Verification_Completed__c as an ENTRY CRITERION, so the ordering is enforced rather
+        than merely signposted, and the Submit Closing Approval button is hidden until the flag
+        is true. The sentence now says what the user will actually experience.
 
-        CLOSING IS THE ONE DEVIATION, added 2026-08-09 on the code review's C1 finding. Its
-        fieldNames are unchanged and the original two sentences are unchanged; a third
-        sentence was APPENDED telling the user to complete the wire verification BEFORE
-        submitting the Closing approval. That ordering is not a preference - Closing_Approval
-        sets recordEditability AdminOnly, so while it is pending the Disposition is locked and
-        Wire_Verification_Rollup cannot write the flag (it now fails soft rather than rolling
-        the Wire save back). Signposting the sequence is what stops the user discovering it.
-        The IDENTICAL sentence is on Disposition_Path_Off_Market's Closing step - these two
-        must stay in step with each other.
+        THE LOI AND PSA STEPS' "arrives in a later change" TEXT IS GONE, BECAUSE IT IS NO LONGER
+        TRUE. DispositionStageEntryService auto-creates the sell-side LOI on entry to LOI, and
+        Contract_Review__c has a Disposition_PSA record type; both surface in the LOIs and
+        Contract Reviews related lists already on Disposition_Record_Page.
 
-        Call for Offers, LOI and PSA are new, text-only steps: none of them has a
-        Disposition__c field to surface. PSA_Executed__c deliberately STAYS on the Closing
-        step where it is today - moving it to the new PSA step is defensible but changes
-        deployed behaviour for no requested benefit.
-
-        Step ORDER in this file is the design's path order for readability. Runtime display
-        order comes from the Disposition_Stage__c picklist value order (sorted=false), not
-        from this file, so a retrieve will re-serialise these alphabetically.
+        Step ORDER in this file is the design's path order for readability. Runtime display order
+        comes from the Disposition_Stage__c picklist value order (sorted = false) filtered by the
+        record type, NOT from this file - a retrieve will re-serialise these alphabetically. The
+        master value order was deliberately INTERLEAVED (not appended) in the same change so that
+        both record types' filtered sequences stay monotonic; the arithmetic is written out in
+        objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml.
     -->
     <active>true</active>
     <entityName>Disposition__c</entityName>
@@ -64,43 +85,61 @@
     <masterLabel>Disposition Path On Market</masterLabel>
     <pathAssistantSteps>
         <fieldNames>Property_Asset__c</fieldNames>
-        <info>Confirm the asset metrics and Argus signal support the sell decision before advancing to BOV Outreach.</info>
+        <info>Confirm the asset metrics and Argus signal support the sell decision. Use Submit Sale Decision to send it to the principals; approval moves this deal to BOV Outreach on its own, so there is no Advance button here.</info>
         <picklistValueName>Disposition Readiness</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Package_Sent__c</fieldNames>
         <fieldNames>Submission_Deadline__c</fieldNames>
-        <info>Send OM packages to 5-6 brokers. Matrix auto-generates when 3+ BOV responses are received.</info>
+        <info>Send OM packages to 5-6 brokers. The comparison matrix auto-generates when 3+ BOV responses are received. Mark the winning response Selected, then use Submit Selected Broker; approval of that submission moves this deal to Broker Selection.</info>
         <picklistValueName>BOV Outreach</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Selected_Broker__c</fieldNames>
+        <info>The approved broker is stamped here from the winning BOV submission. Once the listing agreement is in place, use Advance to NDA. Replacing the broker later requires a fresh approval and does not move the stage back.</info>
+        <picklistValueName>Broker Selection</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>NDA_Count__c</fieldNames>
+        <fieldNames>Signed_NDA_Count__c</fieldNames>
+        <info>Send an NDA to each interested party - one NDA record per party, using the NDAs related list below. Nothing is released until every NDA that was not Declined reads Signed; Advance to Release Materials is refused until then.</info>
+        <picklistValueName>NDA</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Package_Sent__c</fieldNames>
+        <info>The NDAs are signed, so the offering materials can go out. Send the package to the cleared parties, then use Advance to Active Listing to start the marketing clock.</info>
+        <picklistValueName>Release Materials</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Selected_Broker__c</fieldNames>
+        <fieldNames>Listing_Date__c</fieldNames>
         <info>The 60-day marketing clock runs from the Listing Date on this Disposition and does not start until that date is set. Traction means logged offers and nothing else. With none: day 30 is the traction checkpoint, where the team discusses internally and decides whether to change the broker; day 40 is review overdue; day 60 is Hard Stop. A single logged offer clears the checkpoint at any point.</info>
         <picklistValueName>Active Listing</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Best-and-final round. The call-for-offers date is tracked on the Broker Listing record (Call For Offers Date), not on the Disposition, so it cannot be shown as a Path field here - open the related Broker Listing to set it. Offers arriving in this round are captured as Disposition Offer records.</info>
-        <picklistValueName>Call for Offers</picklistValueName>
+        <fieldNames>Accepted_Offer_Price__c</fieldNames>
+        <info>Use Select Offer to pick one of the logged offers. Selecting it moves the deal here and sends that offer to the principals in one step. If they reject it the deal stays on this step so another offer can be selected; approval moves it to LOI.</info>
+        <picklistValueName>Offer Selection</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>LOI is a phase of this disposition, not a separate record - the disposition-side LOI record arrives in a later change. Until then the negotiation stays on the Disposition Offer record: drive it through Offer Status and the DPEG Counter Price, DPEG Counter Date, Buyer Counter Price and Final Agreed Price fields.</info>
+        <info>The sell-side LOI record is created automatically on entry to this step and appears in the LOIs related list below. Negotiate it there, then use Advance to PSA once terms are agreed.</info>
         <picklistValueName>LOI</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>PSA is a phase of this disposition, not a separate record - the disposition-side contract has no record yet and arrives in a later change. PSA Executed on this Disposition is the only marker; tick it on the Closing step once the purchase and sale agreement is signed.</info>
+        <info>The sell-side contract is tracked on a Contract Review record of the Disposition PSA type, in the Contract Reviews related list below. When it reaches Executed, this deal moves to Closing on its own.</info>
         <picklistValueName>PSA</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>PSA_Executed__c</fieldNames>
         <fieldNames>Title_Company__c</fieldNames>
-        <info>PSA Executed = TRUE spawns closing tasks. Wire fraud prevention gate (6 fields) must be complete before wiring. Complete the wire verification BEFORE submitting the Closing approval - the approval locks this Disposition, so a Wire saved while it is pending will not update the Wire Verification Completed flag until the approval resolves.</info>
+        <info>PSA Executed = TRUE spawns closing tasks. Wire fraud prevention gate (6 fields) must be complete before wiring. Complete the wire verification first: the Submit Closing Approval button stays hidden until Wire Verification Completed is true, because the approval both requires it and locks this record while it is pending.</info>
         <picklistValueName>Closing</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
         <fieldNames>Closing_Date__c</fieldNames>
         <fieldNames>Net_Sale_Proceeds__c</fieldNames>
         <info>Deal closed. Confirm the closing date, net sale proceeds, and that the closing statement is on file.</info>
-        <picklistValueName>Completed</picklistValueName>
+        <picklistValueName>Sale Closes</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>On_Market</recordTypeName>
 </PathAssistant>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <Workflow> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW FILE, 2026-08-19. Disposition__c had no workflow metadata before this change.
+
+        🔴 THIS FILE CONTAINS EXACTLY ONE FIELD UPDATE AND NO WORKFLOW RULE, AND THE ABSENCE OF
+        A RULE IS THE POINT. Set_Approval_Advance_Pending is never fired by a criteria-based
+        workflow rule. It is fired ONLY as a finalApprovalActions entry by three approval
+        processes on this object:
+            approvalProcesses/Disposition__c.Sale_Decision_Approval
+            approvalProcesses/Disposition__c.Broker_Selection_Approval
+            approvalProcesses/Disposition__c.Closing_Approval
+        Do not add a <rules> element here to "activate" it - an active workflow rule writing this
+        flag would fire a stage advance on an ordinary record edit.
+
+        WHY A FIELD UPDATE ON A FLAG RATHER THAN ON Disposition_Stage__c ITSELF (design D-1):
+        an approval FieldUpdate BYPASSES VALIDATION RULES ENTIRELY, so a direct stage write
+        would let an approval skip the all-NDAs-signed gate and the wire gate. The flag is a
+        SEMAPHORE: it re-fires DispositionTrigger, whose after-update handler detects false to
+        true and enqueues DispositionApprovalAdvanceQueueable, which writes the stage with
+        ordinary Database.update(..., false, AccessLevel.SYSTEM_MODE) - validation rules still
+        evaluate, the approver's CRUD is irrelevant, and the recordEditability = AdminOnly lock
+        has definitively released by the time the job runs. An approval-triggered FLOW was also
+        rejected: with no runInMode it executes as the APPROVER, a measured incident on this org.
+        The full reasoning lives in the XML comment on
+        objects/Disposition__c/fields/Approval_Advance_Pending__c.field-meta.xml.
+
+        ⚠ reevaluateOnChange IS false ON PURPOSE. It controls re-evaluation of WORKFLOW RULES,
+        not of triggers. Triggers re-run on a field update regardless, which is exactly the
+        mechanism D-1 depends on; turning this on would only add a workflow re-evaluation pass
+        that has nothing to evaluate.
+
+        ⚠ ONE UPDATE SERVES ALL THREE APPROVALS. It carries no information about WHICH approval
+        set it - the Queueable derives the target from (record type, current stage). Approval
+        history is where "who approved what" lives. Do not split this into three flags.
+
+        DEPLOY ORDER - LOAD-BEARING. This file must land BEFORE the three approval processes: an
+        approval process referencing a field update that does not exist fails the deploy. It
+        must also land WITH or AFTER Approval_Advance_Pending__c.field-meta.xml.
+    -->
+    <fieldUpdates>
+        <fullName>Set_Approval_Advance_Pending</fullName>
+        <description>Sets the D-1 auto-advance semaphore. Fired as a final approval action by Sale Decision, Broker Selection and Closing approvals; read and cleared by DispositionApprovalAdvanceQueueable, which writes the next stage.</description>
+        <field>Approval_Advance_Pending__c</field>
+        <literalValue>1</literalValue>
+        <name>Set Approval Advance Pending</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+</Workflow>

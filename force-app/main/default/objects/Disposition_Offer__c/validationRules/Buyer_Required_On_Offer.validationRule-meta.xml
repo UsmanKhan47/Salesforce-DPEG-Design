@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is
+        capped at 255 characters; a comment is repo-only and is never sent to the Metadata
+        API. It must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A1). THE FIRST VALIDATION RULE ON THIS OBJECT.
+        =====================================================================================
+        An offer with no offeror cannot be countered, compared or selected. Buyer identity is
+        what DispositionApprovalService.selectOffer is ultimately choosing between.
+
+        =====================================================================================
+        🔴 THIS RULE TARGETS Buyer_Name__c (TEXT) DELIBERATELY, AND WORKSTREAM D WILL
+        RE-POINT IT. DO NOT READ THE TEXT FIELD AS AN OVERSIGHT.
+        =====================================================================================
+        Today the ONLY buyer field on this object is Buyer_Name__c, a Text(255) labelled
+        "Buyer". Tranche 2 Workstream D adds Buyer__c, a Contact lookup, and makes it the
+        entry point; Buyer_Name__c then becomes the DERIVED text stamped from it by
+        DispositionOfferBuyerStampService and is NOT retired (requirements doc §5.4).
+
+        ⇒ WHEN D LANDS, AMEND THIS ONE FILE: the formula becomes ISBLANK(Buyer__c) and
+        errorDisplayField becomes Buyer__c. Amend, do not add a second rule, and do not leave
+        both clauses in an OR: once Buyer_Name__c is derived, requiring it is requiring the
+        stamp service to have run, which is not a data quality statement about anything the
+        user did.
+
+        WHY NOT DEFER THE WHOLE RULE TO D INSTEAD. Because analysts type Buyer_Name__c today
+        and a blank one is wrong today. Requiring the field that EXISTS delivers the value
+        now and costs one formula line later; the alternative delays half of A1 to the last
+        tranche.
+
+        =====================================================================================
+        🔴 WHY A RULE AND NOT `required=true`, WHICH IS THE SAME ANSWER AS ITS THREE SIBLINGS
+        BUT FOR AN ADDITIONAL REASON HERE.
+        =====================================================================================
+        The three general reasons are in Broker_Required_On_Submission's header (delete
+        constraint; a required field cannot carry FLS and both disposition permission sets
+        would lose the grant; an authored message beats the platform's generic one).
+        THE EXTRA REASON HERE IS THE FIELD SWAP ABOVE: `required=true` on Buyer_Name__c would
+        have to be un set on live data and re set on the lookup in D, which is two schema
+        changes on a field five consumers read. A rule is one file amended in place.
+
+        =====================================================================================
+        NO ISCHANGED / ISNEW GUARD. Invariant, not transition. Self clearing: the remedy,
+        naming the buyer, is itself a permitted save.
+        =====================================================================================
+        MEASURED IMPACT AT CREATION: ZERO ROWS. Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM Disposition_Offer__c                          -> 0
+          SELECT COUNT(Id) FROM Disposition_Offer__c WHERE Buyer_Name__c = null -> 0
+        This rule refuses nothing that exists. 🔴 That measurement ages; re-run at deploy time.
+        ⚠ TestDataFactory.createDispositionOffers ALREADY sets Buyer_Name__c and
+        Offer_Amount__c, so neither A1 offer rule needs a factory change TODAY. That changes
+        in D, when the required field becomes the lookup the factory does not set.
+    -->
+    <fullName>Buyer_Required_On_Offer</fullName>
+    <active>true</active>
+    <description>An offer must name who made it. Targets the Text field Buyer_Name__c because that is the only buyer field today; Workstream D adds a Buyer Contact lookup and this same rule file is amended to require the lookup instead. See the XML comment in this file.</description>
+    <errorConditionFormula>ISBLANK(Buyer_Name__c)</errorConditionFormula>
+    <errorMessage>Enter the Buyer who made this offer. An offer with no buyer cannot be countered, compared against the other offers, or selected as the winning offer.</errorMessage>
+    <errorDisplayField>Buyer_Name__c</errorDisplayField>
+</ValidationRule>

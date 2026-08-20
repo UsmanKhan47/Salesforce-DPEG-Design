@@ -65,6 +65,50 @@
         NOTE the two files still move together on viewAllRecords, as the text above requires -
         both went to false in the same change. They DIVERGE on CRUD only: D16.1 gave
         DPEG_Disposition_Edit allowEdit=true and deliberately left this set read-only.
+
+        =====================================================================
+        2026-08-19 - DISPOSITION FLOW REDESIGN: FOUR NEW READ GRANTS.
+        =====================================================================
+        Added, READ ONLY, in BOTH this set and its sibling:
+          Disposition__c.Is_On_Market__c          (formula - cannot be editable at all)
+          BOV_Submission__c.Approval_Status__c    (written only by a workflow field update)
+          Disposition_Offer__c.Is_Selected__c     (written only by DispositionApprovalService)
+          Disposition_Offer__c.Approval_Status__c (written only by a workflow field update)
+
+        🔴 THE THREE NON-FORMULA GRANTS ARE READ-ONLY EVEN IN DPEG_Disposition_Edit, WHERE
+        NEARLY EVERY SIBLING FIELD IS EDITABLE. That is deliberate, not an omission. Each is
+        written exclusively by machine - two by approval field updates, one by
+        DispositionApprovalService.selectOffer, which is what guarantees at most ONE selected
+        offer per disposition. A hand edit through inline edit or the Details section would
+        break that guarantee (two selected offers, two competing approvals) or fabricate an
+        approval outcome that never happened.
+        ⚠ THE DEVELOPER-SIDE CONSEQUENCE: selectOffer's DML MUST run in SYSTEM mode. A
+        USER_MODE write of Is_Selected__c will be refused for every persona in this repo.
+
+        🔴 Disposition__c.Approval_Advance_Pending__c GETS NO ENTRY IN EITHER SET, ON PURPOSE.
+        It is the D-1 auto-advance semaphore, written by a workflow field update and cleared by
+        a Queueable - both system context, neither consults FLS. Granting it would put a machine
+        interlock on a user's screen and invite a hand edit that fires a spurious stage advance.
+        Do not "complete the set" by adding it.
+
+        🔴 Is_On_Market__c IS LOAD-BEARING FOR THE UI, NOT DECORATIVE. FOUR of the twelve
+        Dynamic Actions on Disposition_Record_Page test it, and they are named here so the count
+        stays checkable: Submit_Broker_Selection, Advance_to_NDA, Advance_to_Active_Listing and
+        Select_Offer. Submit_Closing_Approval is NOT one of them; it tests the stage, the wire
+        flag and the permission, never the record type. Twelve is 9 quick actions plus Edit,
+        Clone and Delete. (Corrected 2026-08-19, code review W-6: this said "Five".)
+        A visibility rule that reads a field
+        the running user cannot see evaluates FALSE and hides the action with NO error anywhere,
+        so this file must land WITH OR BEFORE that flexipage, never after.
+
+        VERIFIED IN THE SAME CHANGE, NOT ADDED: Disposition__c.Wire_Verification_Completed__c
+        read was already present in both sets (measured, not assumed). The
+        Submit_Closing_Approval visibility rule depends on it and would fail silently without it.
+
+        ⚠ A PermissionSet DEPLOY REPLACES fieldPermissions WHOLESALE. This edit was made by
+        inserting four blocks into the existing list, and the result was diffed against HEAD to
+        confirm it is purely additive - no pre-existing grant was reordered, altered or lost.
+
     -->
     <!--
         AMENDED 2026-08-09 BY DECISION D20.1 - LOI__c READ ONLY, SCOPED BY SHARING RULE.
@@ -362,6 +406,63 @@
         unchanged and still deploy ONE AT A TIME. Verify AS THE PERSONA, never as an
         administrator.
     -->
+    <!--
+        AMENDED 2026-08-20. ONE GRANT ADDED: Disposition__c.Broker__c, readable, NOT editable.
+
+        Broker__c is the new Lookup(Contact) that replaces the free-text off-market broker pick.
+        This set is the APPROVER WHO REVIEWS (DPEG_Principal_PSG = DPEG_Contact_View +
+        DPEG_Disposition_View), so it gets READ ONLY, matching how this set treats every other
+        Disposition__c field. DPEG_Disposition_Edit is the analyst who picks and gets EDIT. The
+        two files move together on this field.
+
+        🔴 READ ALONE IS STILL LOAD BEARING HERE, AND ITS BLAST RADIUS IS THE WHOLE OBJECT.
+        Broker__c joins the SELECT in DispositionSelector.selectApprovalContextById, which is
+        WITH USER_MODE and backs ALL FOUR approval branches. USER_MODE throws rather than
+        degrades, so without this grant a Principal gets System.QueryException "No such column"
+        and Submit for Approval breaks on EVERY disposition at EVERY stage on BOTH record types.
+        Same shape as the Is_On_Market__c note above: this file must land WITH OR BEFORE the
+        Apex, never after. 🔴 THE FIX FOR THAT EXCEPTION IS THIS FILE, NOT WITH SYSTEM_MODE,
+        which that method's own class header bans.
+
+        The approver also reads Broker__c on the Broker_Selection_Approval approval page, where
+        it now leads approvalPageFields as the clickable Contact. Without read here that page
+        renders the decision field blank.
+
+        A fieldInstance level visibilityRule on Disposition_Record_Page hides Broker__c when
+        Is_On_Market__c is true. A visibility rule reading a field the user cannot see evaluates
+        FALSE and hides the element silently, which is the safe direction here but is a second
+        reason the FLS must land first.
+
+        NOT WIDENED, DELIBERATELY: DPEG_Admin_Access and Disposition_Dashboard_Access. Neither
+        grants Selected_Broker__c today, and DPEG_Admin_Access grants only four Disposition__c
+        fields, so a bare administrator holding no disposition persona set ALREADY cannot run
+        that query. Adding Broker__c creates no NEW admin regression.
+
+        Selected_Broker__c KEEPS its existing readable grant at the alphabetical position above.
+        It is now the denormalised display value stamped from Broker__c off-market, and the
+        approver still needs to read it: it carries the firm inline so the principal sees the
+        person AND the firm without navigating away from the approval page.
+
+        ⚠ A PermissionSet DEPLOY REPLACES fieldPermissions WHOLESALE. This edit inserted ONE
+        block into the existing list, immediately after Disposition__c.Is_On_Market__c, following
+        this file's convention of appending later additions at the tail of the Disposition__c
+        run. Diffed against HEAD: purely additive, zero deletions, nothing reordered.
+        ⚠ CORRECTION TO THE DESIGN DOC: offmarket-broker-lookup-requirements.md section 2.2
+        states this set holds 27 Disposition__c grants and must become 28. MEASURED, it held 24
+        and now holds 25. Use 25, not 28, as the acceptance check.
+
+        ADDED 2026-08-20: BOV_Submission__c.Broker__c, readable only. It is the new
+        Lookup(Contact) that replaces typing the broker firm and contact name on the BOV
+        Submission layout. editable stays FALSE here because this is the read only Principal
+        persona; every other BOV_Submission__c grant in this file is read only for the same
+        reason. Granted at the TAIL of the BOV_Submission__c run, next to Approval_Status__c,
+        following this file's convention of appending later additions rather than reflowing the
+        alphabetical block. A Metadata API deployed field carries NO FLS for anyone, System
+        Administrator included, so this grant and
+        objects/BOV_Submission__c/fields/Broker__c.field-meta.xml must deploy together.
+        Broker_Firm__c and Contact_Name__c KEEP their read grants above: they left the LAYOUT,
+        not the schema, and the comparison matrix still renders both.
+    -->
     <description>Read-only Disposition module access for the Principal persona: Read + View All on the 4 DISP objects, Counter_Offer__c and PSA_Version__c, no Create/Edit/Delete. NDA__c, LOI__c and Contract_Review__c read is sharing-rule scoped.</description>
     <fieldPermissions>
         <editable>false</editable>
@@ -426,6 +527,16 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>BOV_Submission__c.Submission_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Approval_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Submission__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -675,6 +786,16 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Disposition__c.Is_On_Market__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Disposition_Offer__c.Buyer_Counter_Price__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -741,6 +862,16 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Disposition_Offer__c.Offer_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition_Offer__c.Approval_Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition_Offer__c.Is_Selected__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -856,6 +987,21 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>NDA__c.Counter_Signed_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Counterparty_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Date_Signed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Disposition__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

@@ -45,9 +45,12 @@ private class BovControllerTest {
     @isTest
     static void testGetSubmissions_positiveScenario_ordersByScoreDescending() {
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        // 🔴 Broker_Firm__c IS PINNED VIA Broker__c, NOT A HAND-TYPED LITERAL, AS OF 2026-08-20
+        // (Tranche 2, requirements §3 D1). BovSubmissionBrokerStampService overwrites any
+        // hand-typed Broker_Firm__c the instant Broker__c is set (which is now every save) — see
+        // that service's header ("the stamp wins") and TestDataFactory.createBrokerContactWithFirm.
         BOV_Submission__c winner = TestDataFactory.createBovSubmission(d.Id, false);
-        winner.Broker_Firm__c = 'CBRE';
-        winner.Contact_Name__c = 'Mark Chen';
+        winner.Broker__c = TestDataFactory.createBrokerContactWithFirm('CBRE', true).Id;
         winner.BOV_Amount__c = 28500000;
         winner.Commission_Rate__c = 3.0;
         winner.Days_To_Market__c = 45;
@@ -55,8 +58,7 @@ private class BovControllerTest {
         winner.BOV_Score__c = 91;
         winner.Submission_Status__c = 'Selected';
         BOV_Submission__c backup = TestDataFactory.createBovSubmission(d.Id, false);
-        backup.Broker_Firm__c = 'JLL';
-        backup.Contact_Name__c = 'K. Rao';
+        backup.Broker__c = TestDataFactory.createBrokerContactWithFirm('JLL', true).Id;
         backup.BOV_Amount__c = 27900000;
         backup.Commission_Rate__c = 2.5;
         backup.Days_To_Market__c = 52;
@@ -292,5 +294,93 @@ private class BovControllerTest {
             }
             Test.stopTest();
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // replaceSelectedBroker — thin wrapper over BovSubmissionService (DEV-6)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void replaceSelectedBroker_positiveScenario_returnsTheWarningMessage() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+
+        Test.startTest();
+        String msg = BovController.replaceSelectedBroker(d.Id, challenger.Id);
+        Test.stopTest();
+
+        System.assertEquals('Selected',
+            [SELECT Submission_Status__c FROM BOV_Submission__c WHERE Id = :challenger.Id].Submission_Status__c);
+        System.assertEquals('Backup',
+            [SELECT Submission_Status__c FROM BOV_Submission__c WHERE Id = :incumbent.Id].Submission_Status__c);
+        System.assert(msg.contains('must be approved'), 'The warning must survive the controller boundary: ' + msg);
+    }
+
+    /**
+     * 🔴 THE THREE-CATCH ORDER, PROVED THE SAME WAY DispositionControllerTest proves
+     * findOrCreate's two-catch order: a user-actionable refusal must surface VERBATIM, not be
+     * masked behind the generic REPLACE_FAILURE_MESSAGE.
+     */
+    @isTest
+    static void replaceSelectedBroker_challengerNotOnDisposition_surfacesTheRefusalVerbatim() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        Disposition__c other = TestDataFactory.createDisposition(asset.Id, false);
+        other.Disposition_Stage__c = 'BOV Outreach';
+        insert other;
+        BOV_Submission__c foreign = TestDataFactory.createBovSubmission(other.Id, true);
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            BovController.replaceSelectedBroker(d.Id, foreign.Id);
+            Assert.fail('A cross-disposition submission must be refused');
+        } catch (AuraHandledException e) {
+            refused = true;
+            System.assert(e.getMessage().contains('does not belong to this disposition'),
+                'The refusal must surface verbatim, not the generic message: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        System.assert(refused, 'The controller must surface the BovSubmissionException verbatim');
+    }
+
+    /**
+     * The permission-denial leg of the three-catch order — verbatim, ordered FIRST, mirroring
+     * DispositionApprovalController's own argument for why a denial must never fall through to
+     * the generic clause.
+     */
+    @isTest
+    static void replaceSelectedBroker_bareUser_isDeniedVerbatim() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+        User u = bareUser();
+
+        DispositionActionPermissionService.clearCache();
+        System.runAs(u) {
+            Test.startTest();
+            Boolean denied = false;
+            try {
+                BovController.replaceSelectedBroker(d.Id, challenger.Id);
+                Assert.fail('A bare user with no disposition-driver grant must be denied');
+            } catch (AuraHandledException e) {
+                denied = true;
+                System.assert(e.getMessage().contains('permission'),
+                    'The denial must surface the shared permission wording verbatim: ' + e.getMessage());
+            }
+            Test.stopTest();
+            System.assert(denied);
+        }
+        DispositionActionPermissionService.clearCache();
+        System.assertEquals('Selected',
+            [SELECT Submission_Status__c FROM BOV_Submission__c WHERE Id = :incumbent.Id].Submission_Status__c,
+            'A denied call must write nothing');
     }
 }

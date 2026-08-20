@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Retire the Disposition_Deal_Driver permission set. 2026-08-19.
+
+    STATUS: AUTHORISED BY THE USER. This is the deliberate reason it is a SEPARATE folder
+    from manifest/disposition-redesign-destructive/ rather than two more lines in that
+    file. See "WHY THIS IS ITS OWN MANIFEST" below before consolidating them.
+
+    DELETES EXACTLY ONE COMPONENT.
+
+    1. PermissionSet Disposition_Deal_Driver
+       Its entire payload was the Disposition_Deal_Actions CUSTOM PERMISSION. That custom
+       permission is NOT retired and is NOT in this file: it still gates fifteen flexipage
+       visibility rules and every server side assert in
+       DispositionActionPermissionService. The grant has MOVED to DPEG_Disposition_Edit
+       (see that file's own 2026-08-19 header block). Only the SET goes.
+
+    🔴 POST destructive IS LOAD BEARING, NOT A DEFAULT. The replacement grant on
+       DPEG_Disposition_Edit must be LIVE BEFORE this set is removed. Deleting first
+       leaves a window in which NO user in the org holds Disposition_Deal_Actions, and the
+       failure is SILENT in both halves of the gate: a flexipage visibility rule that
+       evaluates false hides its button with nothing logged, and
+       FeatureManagement.checkPermission simply returns false rather than throwing. Nobody
+       gets an error; the buttons are just gone.
+
+    ================================================================================
+    WHY THIS IS ITS OWN MANIFEST
+    ================================================================================
+
+    manifest/disposition-redesign-destructive/destructiveChangesPost.xml already exists
+    and already targets the same org in the same programme, so folding this in looks
+    tidier. It is not, for one mechanical reason:
+
+      A destructiveChanges file is deployed AS A UNIT. There is no flag that selects a
+      subset of its types elements at deploy time.
+
+    That file's two components (ValidationRule Wire_Complete_Before_Completed and
+    PathAssistant Disposition_Path) are marked "PREPARED, NOT AUTHORISED - do not deploy
+    without the user's explicit go ahead". Adding an AUTHORISED deletion to it would mean
+    the only way to execute the authorised one is to execute all three, silently promoting
+    two unauthorised deletions by side effect. Separate folders keep each authorisation
+    state independently deployable, and neither file's status can be changed by acting on
+    the other. The two components in that other file are UNAFFECTED by this one and remain
+    unauthorised.
+
+    ================================================================================
+    🔴 PRE FLIGHT GATES. THIS DELETION IS NOT SAFE ON ITS OWN.
+    ================================================================================
+
+    1. APEX RESOLVES THIS SET BY NAME, AND A DELETED SET DOES NOT THROW A COMPILE ERROR -
+       it returns zero rows. At the time this manifest was written, two test classes name
+       the set in SOQL or in a constant:
+         classes/BovSubmissionServiceTest.cls
+         classes/DispositionActionPermissionServiceTest.cls
+       A RunLocalTests deploy will FAIL on those until the parallel developer pass repoints
+       them at DPEG_Disposition_Edit. Confirm that landed before running this. This repo
+       has been bitten by exactly this: test SOQL is the blind spot in a permission set
+       retirement, because nothing else in the codebase references a set by name.
+
+    2. NO PermissionSetGroup CARRIES THIS SET. Verified by reading all five files in
+       force-app/main/default/permissionsetgroups/ - it is direct assigned only, so no
+       group member list needs editing and no group recalculation is pending on it.
+
+    3. ASSIGNMENTS ARE ORG STATE AND ARE NOT MIGRATED BY ANY DEPLOY. A current
+       Disposition_Deal_Driver assignee keeps the capability ONLY if they also hold
+       DPEG_Disposition_Edit. Check that overlap in the org BEFORE running this, not after.
+
+       🔴 CORRECTED 2026-08-19, MEASURED. This gate previously ended with the sentence
+       "Deleting a permission set removes its assignments with it." THAT WAS FALSE and it
+       cost a failed deploy. The platform does NOT cascade the assignments away: it REFUSES
+       the delete outright while even one assignment exists. Dry run 0Afiw000000Mzo3CAC
+       returned, as its only error:
+
+         "This permission set is assigned to one or more users. You can only delete
+          permission sets that aren't assigned to users. : Junior Dhanani."
+
+       So retiring an ASSIGNED permission set is a TWO STEP job, and step one is not a
+       deploy at all:
+
+         a. Delete every PermissionSetAssignment row for the set. This is org DATA, not
+            metadata. No deploy performs it, nothing in this repo expresses it, and it
+            cannot be added to this file. Verify FIRST that the payload really is redundant
+            (query SetupEntityAccess, FieldPermissions and ObjectPermissions by ParentId)
+            so the assignee provably loses nothing.
+         b. Only then run the destructive deploy below.
+
+       ⚠ BOTH directions are manual. Removing the assignment is manual, and re-assigning on
+       rollback is manual. See docs/permission-set-retirement-runbook.md for the exact
+       command and for the note that an agent may be blocked from running it.
+
+    ================================================================================
+    EXECUTED 2026-08-19
+    ================================================================================
+    Assignment 0Paiw000000sIzUCAU (Junior Dhanani) removed as org data first, then deploy
+    0Afiw000000N2nZCAS deleted the set. Test level NoTestRun, deliberately: this org carries
+    three pre-existing failures unrelated to this change (ContactSelectorTest plus two in
+    LeadFirstSeenValidationTest) which would have failed the deploy on foreign defects.
+    DispositionActionPermissionServiceTest and BovSubmissionServiceTest were run separately
+    afterwards: 17 of 17 passed. Readback confirmed the set gone, the custom permission
+    Disposition_Deal_Actions still present, and its grantors down to exactly two:
+    DPEG_Disposition_Edit and the DPEG_Junior_Analyst_PSG group aggregate.
+
+    4. manifest/package.xml no longer lists this set. That was deliberate: while the set
+       still exists in the org, a retrieve driven by that manifest would pull it back into
+       force app and resurrect the file this change deletes.
+
+    HOW TO RUN IT (only after gate 1 is confirmed and the additive payload has landed):
+      run `sf project deploy start` with
+        the manifest flag           pointing at this folder's package.xml
+        the post destructive flag   pointing at this file
+        the target org flag         set to the disposition org alias
+        the test level flag         set to RunLocalTests, and a 30 minute wait.
+      Validate with the dry run flag first. The flag prefixes are spelled out in words on
+      purpose: an XML comment body cannot contain two consecutive hyphens, so writing the
+      real flags here would make this file unparseable. That has bitten this repo twice.
+
+    Rollback: the deleted file is recoverable from git history and can be redeployed, but
+    RE ASSIGNMENT IS MANUAL - the assignments do not come back with it.
+    -->
+    <types>
+        <members>Disposition_Deal_Driver</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>67.0</version>
+</Package>

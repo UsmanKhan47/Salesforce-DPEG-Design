@@ -648,9 +648,11 @@ public with sharing class OpportunityReviewService {
      * copied, for the LOI and Contract Review blocks.
      *
      * A describe, not a query — it costs no SOQL. Identical shape to
-     * DispositionService.onMarketRecordTypeId and TestDataFactory.dispositionRecordTypeId, on
+     * DispositionService.recordTypeIdFor and TestDataFactory.dispositionRecordTypeId, on
      * purpose: three creators of record-typed rows behaving three different ways is its own
-     * defect source.
+     * defect source. (⚠ The disposition one was `onMarketRecordTypeId` until 2026-08-19, when the
+     * Sell Meter modal gave the user a record-type CHOICE and it was generalised to take the
+     * developer name as a parameter. Same shape, same guard, one argument.)
      */
     private static Id acquisitionNdaRecordTypeId() {
         Schema.RecordTypeInfo info = Schema.SObjectType.NDA__c
@@ -675,7 +677,8 @@ public with sharing class OpportunityReviewService {
      * UNDETERMINED note.
      *
      * A describe, not a query — it costs no SOQL. Identical shape to acquisitionNdaRecordTypeId,
-     * DispositionService.onMarketRecordTypeId and TestDataFactory's two resolvers, on purpose:
+     * DispositionService.recordTypeIdFor (named `onMarketRecordTypeId` until 2026-08-19) and
+     * TestDataFactory's two resolvers, on purpose:
      * several creators of record-typed rows behaving several different ways is its own defect
      * source.
      */
@@ -753,7 +756,8 @@ public with sharing class OpportunityReviewService {
      * about the same principal.
      *
      * A describe, not a query — it costs no SOQL. Identical shape to acquisitionNdaRecordTypeId,
-     * acquisitionLoiRecordTypeId, DispositionService.onMarketRecordTypeId,
+     * acquisitionLoiRecordTypeId, DispositionService.recordTypeIdFor (named
+     * `onMarketRecordTypeId` until 2026-08-19),
      * DispositionStageEntryService.dispositionNdaRecordTypeId and TestDataFactory's resolvers, on
      * purpose: several creators of record-typed rows behaving several different ways is its own
      * defect source.

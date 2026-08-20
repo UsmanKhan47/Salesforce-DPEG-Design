@@ -29,9 +29,33 @@
  * restoration of access the persona already had.
  *
  * ── 🔴 IT FIRES ON A RECORD THAT THREE APPROVALS LOCK ────────────────────────
- * `Disposition__c` is the entry object of `Sale_Decision_Approval` (at Disposition Readiness),
- * `Broker_Selection_Approval` (at BOV Outreach) and `Closing_Approval` (at Closing). All three
+ * `Disposition__c` is the entry object of `Sale_Decision_Approval` (at `Disposition Readiness`),
+ * `Broker_Selection_Approval` (at `Broker Selection` AND record type Off Market) and
+ * `Closing_Approval` (at `Closing` AND `Wire_Verification_Completed__c = true`). All three
  * declare `recordEditability = AdminOnly`, so while any of them is pending the record is LOCKED.
+ *
+ * ⚠ THE ENTRY CRITERIA ABOVE CHANGED ON 2026-08-19 AND THE OLD ONES ARE QUOTED HERE BECAUSE THIS
+ * FILE ARGUED FROM THEM IN FOUR PLACES. RETRACTED, verbatim: "`Broker_Selection_Approval` (at BOV
+ * Outreach)". That process now enters at `Broker Selection` and only on the OFF-MARKET record type,
+ * and `Closing_Approval` gained the wire-verified term. Every block below that reasons "stage X is
+ * not any approval's entry stage" has been re-checked against the NEW set, not the old one; where
+ * the conclusion survived, the evidence for it was rewritten rather than left pointing at a
+ * criterion that no longer exists.
+ *
+ * ⚠ AND THERE ARE NOW **FIVE** APPROVAL PROCESSES IN THIS MODULE, NOT THREE. The two new ones —
+ * `Broker_Finalize_Approval` on `BOV_Submission__c` and `Offer_Selection_Approval` on
+ * `Disposition_Offer__c` — are deliberately NOT in the list above, because their entry object is a
+ * CHILD and they therefore lock the CHILD, never the Disposition. That is exactly why
+ * `BovSubmissionTriggerHandler` and `DispositionOfferTriggerHandler` update the parent
+ * SYNCHRONOUSLY where the three above need a Queueable. A future reader counting approvals must
+ * count entry OBJECTS, not processes.
+ *
+ * ⚠ ALL THREE DISPOSITION-TARGET APPROVALS NOW CARRY `finalApprovalActions`, WHICH THEY DID NOT
+ * BEFORE 2026-08-19. Each sets ONLY the boolean `Approval_Advance_Pending__c` (design D-1); the
+ * stage is then written by `DispositionApprovalAdvanceQueueable` using ordinary
+ * `Database.update(..., SYSTEM_MODE)`, so validation rules still evaluate and the write does not
+ * run as the approver. Two blocks below used to lean on "none of the three approvals performs a
+ * field update at all" — that premise is dead and is replaced in place.
  *
  * ⚠ THE LOCK BITES A PARENT WRITE, NOT A CHILD INSERT. `SYSTEM_MODE` lifts CRUD and FLS but does
  * NOT lift an approval lock (measured on the LOI path; see LoiPrimaryStampQueueable's header for
@@ -71,19 +95,43 @@
  */
 public with sharing class DispositionStageEntryService {
 
-    /** The stage whose ENTRY opens the buyer's NDA. Off-market only by value set (D5). */
+    /**
+     * The stage whose ENTRY opens the buyer's NDA.
+     *
+     * 🔴 IT IS ON **BOTH** RECORD TYPES SINCE 2026-08-19, AND THIS BLOCK'S PREVIOUS TEXT IS
+     * RETRACTED RATHER THAN DELETED: "Off-market only by value set (D5)." That doctrine is dead.
+     * The redesigned on-market path is
+     * `... Broker Selection -> NDA -> Release Materials -> Active Listing ...`, so a broker-listed
+     * sale now signs a buyer NDA exactly as a direct one does.
+     *
+     * ✅ AND THIS CONSTANT AND ITS BLOCK NEEDED NO CODE CHANGE FOR THAT, WHICH IS THE POINT WORTH
+     * RECORDING. `createStageEntryRecords` keys on the STAGE VALUE and has never carried a
+     * RecordType criterion — the D5 note was an OBSERVATION about the value set, never a condition
+     * this code tested. Had anyone "helpfully" added the record-type filter the comment implied,
+     * the redesign would have silently stripped the buyer NDA from every on-market sale. That is
+     * the standing argument for keying on the transition and not on the type.
+     *
+     * ⚠ WHAT DOES CHANGE IS TEST COVERAGE, NOT BEHAVIOUR: NDA-on-`On_Market` is new territory for
+     * this block and needs its own bulk case (design DEV-19).
+     */
     @TestVisible
     private static final String NDA_STAGE = 'NDA';
 
     /**
      * The stage whose ENTRY opens the sell-side LOI.
      *
-     * ⚠ UNLIKE `NDA`, THIS STAGE IS ON BOTH DISPOSITION RECORD TYPES — verified against
+     * ⚠ THIS STAGE IS ON BOTH DISPOSITION RECORD TYPES — verified against
      * objects/Disposition__c/recordTypes/: `LOI` and `PSA` are exposed on `On_Market` AND
-     * `Off_Market`, while `NDA` is off-market only. So these two blocks fire for a broker-listed
-     * sale as well as a direct one, and that is correct: an on-market disposition negotiates an LOI
-     * exactly as an off-market one does. A future change that scoped either block to a record type
-     * would silently strip the negotiation record from every broker-listed sale.
+     * `Off_Market`. So these two blocks fire for a broker-listed sale as well as a direct one, and
+     * that is correct: an on-market disposition negotiates an LOI exactly as an off-market one
+     * does. A future change that scoped either block to a record type would silently strip the
+     * negotiation record from every broker-listed sale.
+     *
+     * ⚠ THE CLAUSE THAT USED TO OPEN THAT PARAGRAPH — "UNLIKE `NDA`, ... while `NDA` is off-market
+     * only" — DIED ON 2026-08-19. `NDA` is now on both types too, so LOI and PSA are no longer the
+     * exception they are contrasted against; they are simply three of the many shared stages. The
+     * CONCLUSION about not scoping by record type is unchanged and is now the rule rather than the
+     * special case. See NDA_STAGE.
      */
     @TestVisible
     private static final String LOI_STAGE = 'LOI';
@@ -95,12 +143,19 @@ public with sharing class DispositionStageEntryService {
     /**
      * The stage whose ENTRY opens the broker listing and starts the marketing clock (D28/Q3).
      *
-     * ⚠ ON-MARKET ONLY BY VALUE SET, like `NDA` is off-market only. `Active Listing` is exposed on
-     * the `On_Market` record type and not on `Off_Market` (verified in
-     * objects/Disposition__c/recordTypes/), which is correct: a direct sale has no listing broker
-     * and no marketing period, so there is nothing to clock. No RecordType criterion is needed here
-     * and none should be added — the value set is self-limiting, exactly as
-     * `Broker_Selection_Approval`'s own description records for the same stage family.
+     * 🔴 ON-MARKET ONLY BY VALUE SET — AND SINCE 2026-08-19 IT IS THE **ONLY** STAGE IN THIS FILE
+     * FOR WHICH THAT IS STILL TRUE. `Active Listing` is exposed on the `On_Market` record type and
+     * not on `Off_Market` (verified in objects/Disposition__c/recordTypes/), which is correct: a
+     * direct sale has no listing broker and no marketing period, so there is nothing to clock. An
+     * off-market sale collects its offers at `Release Materials` instead. No RecordType criterion is
+     * needed here and none should be added — the value set is self-limiting.
+     *
+     * ⚠ THE CLAUSES THIS BLOCK USED TO CARRY ARE BOTH DEAD AND ARE RETRACTED VERBATIM: "like `NDA`
+     * is off-market only" (`NDA` is now on both types — see NDA_STAGE) and "exactly as
+     * `Broker_Selection_Approval`'s own description records for the same stage family" (that
+     * approval no longer keys on this stage family at all; it enters at `Broker Selection` AND
+     * record type Off Market). The self-limiting-value-set ARGUMENT survives both; only its two
+     * illustrations were false, and an example nobody can find teaches nothing.
      */
     @TestVisible
     private static final String LISTING_STAGE = 'Active Listing';
@@ -250,16 +305,29 @@ public with sharing class DispositionStageEntryService {
      * ═══════════════════════════════════════════════════════════════════════
      *
      * ── FIRST, A MEASURED CORRECTION TO A PREMISE THAT LOOKS TRUE AND IS NOT ──
-     * `Active Listing` is NOT `Broker_Selection_Approval`'s entry stage. Read off
+     * `Active Listing` is NOT any approval's entry stage. The three Disposition-target processes
+     * key on `Disposition Readiness` (`Sale_Decision_Approval`), on `Broker Selection` AND record
+     * type Off Market (`Broker_Selection_Approval`), and on `Closing` AND
+     * `Wire_Verification_Completed__c = true` (`Closing_Approval`). So NO approval in this org has
+     * `Active Listing` as its entry stage, and this block is not the "runs as the approver" case
+     * that `OpportunityReviewService`'s LOI block is.
+     *
+     * ⚠ THE EVIDENCE ABOVE WAS REWRITTEN ON 2026-08-19; THE CONCLUSION WAS NOT. RETRACTED,
+     * verbatim: "Read off
      * approvalProcesses/Disposition__c.Broker_Selection_Approval.approvalProcess-meta.xml, the
      * `entryCriteria` is `Disposition_Stage__c equals **BOV Outreach**`. The three disposition
-     * approvals key on `Disposition Readiness`, `BOV Outreach` and `Closing` respectively — so NO
-     * approval in this org has `Active Listing` as its entry stage, and this block is not the
-     * "runs as the approver" case that `OpportunityReviewService`'s LOI block is.
+     * approvals key on `Disposition Readiness`, `BOV Outreach` and `Closing` respectively." Two of
+     * those three criteria moved in the flow redesign. `Active Listing` is still on none of them.
      *
-     * ⚠ BUT THE ADJACENCY IS REAL AND IS WHERE THE ACTUAL HAZARD LIVES: `Active Listing` is the
-     * stage a disposition moves INTO from `BOV Outreach`, which IS the stage the broker-selection
-     * approval locks (`recordEditability = AdminOnly`). Three cases, and only one is live:
+     * ⚠ AND THE ADJACENCY ARGUMENT MOVED WITH THEM — THE HAZARD IS THE SAME SHAPE FROM A DIFFERENT
+     * NEIGHBOUR. `Active Listing` is now the stage a disposition moves INTO from `Release
+     * Materials` (it used to arrive from `BOV Outreach`), and `Release Materials` is NOT an
+     * approval's entry stage either. 🔴 SO THE ADJACENT-LOCK CASE IS GONE ON THIS PATH: the nearest
+     * locking stage upstream is `Broker Selection`, two hops away and off-market only, and an
+     * off-market sale never reaches `Active Listing` at all. What remains is the general case —
+     * `AdminOnly` lets an ADMIN edit a locked record, so an admin CAN drag a disposition from
+     * `Broker Selection`-under-approval straight to `Active Listing` in one edit. Three cases, and
+     * only one is live:
      *
      *   (a) approval already approved, then the owner advances — `finalApprovalRecordLock = false`
      *       released the lock in a PRIOR transaction, so the record is unlocked. Safe.
@@ -479,15 +547,31 @@ public with sharing class DispositionStageEntryService {
      *          writes back to the locked parent. With nothing to write back, there is nothing to
      *          defer: a Queueable here would be a job that does nothing, and a reader would take
      *          its existence as evidence of a hazard that is not present.
-     *      (b) `LOI` IS NOT ANY APPROVAL'S ENTRY STAGE. Read from the three approvalProcess files:
-     *          `Sale_Decision_Approval` keys on `Disposition Readiness`, `Broker_Selection_Approval`
-     *          on `BOV Outreach`, `Closing_Approval` on `Closing`. So entering `LOI` never coincides
+     *      (b) `LOI` IS NOT ANY APPROVAL'S ENTRY STAGE. Read from the three Disposition-target
+     *          approvalProcess files: `Sale_Decision_Approval` keys on `Disposition Readiness`,
+     *          `Broker_Selection_Approval` on `Broker Selection` AND record type Off Market,
+     *          `Closing_Approval` on `Closing` AND wire-verified. So entering `LOI` never coincides
      *          with an approval starting or finishing.
-     *      (c) NONE OF THE THREE APPROVALS PERFORMS A FIELD UPDATE AT ALL (zero FieldUpdate
-     *          elements across all three files), so `Disposition_Stage__c` is only ever moved to
-     *          `LOI` by a human edit or a data load — never by an approval process's own field
-     *          update running as a read-only APPROVER. That is the fact
-     *          `OpportunityReviewService`'s LOI block turns on, and it is absent here.
+     *          ⚠ Two of those three criteria were rewritten on 2026-08-19; the conclusion did not
+     *          move, because `LOI` was on none of the old set either.
+     *      (c) 🔴 THIS POINT'S PREMISE DIED ON 2026-08-19 AND IS REPLACED, NOT PATCHED. RETRACTED,
+     *          verbatim: "NONE OF THE THREE APPROVALS PERFORMS A FIELD UPDATE AT ALL (zero
+     *          FieldUpdate elements across all three files), so `Disposition_Stage__c` is only ever
+     *          moved to `LOI` by a human edit or a data load — never by an approval process's own
+     *          field update running as a read-only APPROVER."
+     *          ALL THREE NOW CARRY `finalApprovalActions`, and a fourth transition into `LOI` now
+     *          exists that no human performs: `Offer_Selection_Approval` on the child
+     *          `Disposition_Offer__c` moves the parent here (`DispositionOfferTriggerHandler`).
+     *          THE CONCLUSION SURVIVES ANYWAY, AND FOR A BETTER REASON THAN "IT NEVER HAPPENS":
+     *          neither writer runs as the approver's user context in a way that reaches this insert.
+     *          The three Disposition approvals write ONLY the `Approval_Advance_Pending__c` boolean;
+     *          the actual stage write is `DispositionApprovalAdvanceQueueable`'s
+     *          `Database.update(..., AccessLevel.SYSTEM_MODE)`, and the child-approval path is
+     *          likewise a SYSTEM_MODE update. This block's own insert is SYSTEM_MODE too (points 1
+     *          and 2), so it is indifferent to whose context re-fires the trigger. What WOULD have
+     *          broken it is the design that was REJECTED — a direct approval FieldUpdate on
+     *          `Disposition_Stage__c`, or an approval-triggered Flow running as the approver. See
+     *          `DispositionApprovalAdvanceService`'s header for why neither was used.
      *    ⚠ ONE HONEST CAVEAT: `recordEditability = AdminOnly` means an ADMIN can still edit — and
      *    therefore re-stage — a disposition while an approval is pending. Even on that path the
      *    conclusion holds: the child is not the record under approval so it is not locked, and
@@ -571,11 +655,19 @@ public with sharing class DispositionStageEntryService {
      *    for any profile, System Administrator included. SYSTEM_MODE required independently, and
      *    this leg survives a later `allowCreate` grant.
      * 3. APPROVAL LOCK: does not apply. `Disposition__c` has no `Primary_Contract__c` so there is
-     *    NO PARENT WRITE; `PSA` is not any approval's entry stage (`Sale_Decision` = Disposition
-     *    Readiness, `Broker_Selection` = BOV Outreach, `Closing` = Closing); and none of the three
-     *    approvals performs a field update, so the stage is only ever entered by a human edit or a
-     *    data load, never by an approval running as a read-only approver. No Queueable, and adding
-     *    one would assert a hazard that is not there.
+     *    NO PARENT WRITE; and `PSA` is not any approval's entry stage (`Sale_Decision` =
+     *    `Disposition Readiness`, `Broker_Selection` = `Broker Selection` + Off Market,
+     *    `Closing_Approval` = `Closing` + wire-verified). No Queueable, and adding one would assert
+     *    a hazard that is not there.
+     *    ⚠ TWO CLAUSES HERE WERE REWRITTEN ON 2026-08-19. The entry-criteria list moved
+     *    (`Broker_Selection` no longer keys on `BOV Outreach`), and the third clause is RETRACTED
+     *    verbatim: "none of the three approvals performs a field update, so the stage is only ever
+     *    entered by a human edit or a data load, never by an approval running as a read-only
+     *    approver." All three now carry `finalApprovalActions`. The conclusion is unaffected for
+     *    the same reason as the LOI block's point 3(c) — those actions write only a boolean, and
+     *    the stage write is a SYSTEM_MODE `Database.update` from a Queueable, not an approval
+     *    field update running as the approver. `PSA` is in any case reached from `LOI` by the
+     *    manual Advance to PSA action, which no approval owns.
      * 4. allOrNone = true: an empty `PSA` stage is silent, a refused stage change is loud.
      *
      * ── 🔴 THE INITIAL VALUE IS Negotiation_Status__c, NEVER Stage__c ─────────
@@ -694,11 +786,22 @@ public with sharing class DispositionStageEntryService {
      * next reader believing this grant restores access rather than adds it.
      *
      * ── THE APPROVAL LOCK — DOES NOT REACH THE CHILD ────────────────────────
-     * `Active Listing` is not any approval's entry stage (measured: `Disposition Readiness`,
-     * `BOV Outreach`, `Closing`), and in the one case where this code CAN run under a pending
-     * approval — an admin advancing a locked record out of `BOV Outreach`, `recordEditability =
+     * `Active Listing` is not any approval's entry stage (measured 2026-08-19 against the current
+     * files: `Disposition Readiness`; `Broker Selection` + Off Market; `Closing` + wire-verified),
+     * and in the one case where this code CAN run under a pending
+     * approval — an admin dragging a locked record forward, `recordEditability =
      * AdminOnly` — a child of a locked record is not itself locked, so the insert is safe
-     * synchronously. There is NO parent write in this method at all: `Listing_Date__c` is stamped
+     * synchronously.
+     *
+     * ⚠ THE ILLUSTRATION IN THAT SENTENCE CHANGED WITH THE REDESIGN AND IS CORRECTED RATHER THAN
+     * DELETED: it used to read "an admin advancing a locked record out of `BOV Outreach`". No
+     * approval locks `BOV Outreach` any more — the on-market broker approval moved onto the
+     * `BOV_Submission__c` child — and `Active Listing` is now reached from `Release Materials`,
+     * which nothing locks either. The remaining case is an admin jumping a record forward from
+     * `Broker Selection`-under-approval, which is off-market only and therefore cannot legitimately
+     * land on `Active Listing` at all. The conclusion is unchanged and now rests on less.
+     *
+     * There is NO parent write in this method at all: `Listing_Date__c` is stamped
      * in the BEFORE context by `stampListingDates`, precisely so that the one write that WOULD
      * have been refused never becomes a second DML. No Queueable, and adding one would assert a
      * hazard that has been designed out rather than one that is present.
@@ -728,6 +831,16 @@ public with sharing class DispositionStageEntryService {
      *   `Broker_Firm__c`    = `Disposition__c.Selected_Broker__c` — free, already on Trigger.new,
      *                         and by definition the broker just approved out of BOV Outreach. A
      *                         blank there simply leaves a blank here.
+     *                         ⚠ "BY DEFINITION" RESTS ON A RECORD-TYPE FACT, NOT ON THE FIELD HAVING
+     *                         ONE WRITER — and since 2026-08-20 it has two. `Selected_Broker__c` is
+     *                         ALSO written off-market by `DispositionBrokerStampService`, in the
+     *                         format `Person - Firm` rather than the bare firm this child field
+     *                         expects. That value cannot reach here because `Active Listing` is
+     *                         restricted OUT of the `Off_Market` value set, so only the on-market
+     *                         BOV stamp is ever in flight at this stage. 🔴 If `Active Listing` is
+     *                         ever added to the off-market value set, THIS LINE BECOMES WRONG —
+     *                         `Broker_Listing__c.Broker_Firm__c` would silently start holding a
+     *                         person's name. Re-read this before making that change.
      *   `Listing_Status__c` = LISTING_INITIAL_STATUS; see that constant.
      *   `Contact_Name__c`   — LEFT BLANK. The named contact lives on the `Selected` BOV_Submission__c
      *                         and would cost a query per chunk to fetch, for a display string.

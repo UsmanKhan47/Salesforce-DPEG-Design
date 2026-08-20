@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <Workflow> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW FILE, 2026-08-19. BOV_Submission__c had no workflow metadata before this change.
+
+        🔴 TWO FIELD UPDATES, NO WORKFLOW RULE. Both are fired ONLY by
+        approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval - Approved as its
+        finalApprovalActions, Rejected as its finalRejectionActions. Do not add a <rules>
+        element: an active rule writing Approval_Status__c would advance the parent Disposition
+        on an ordinary edit of a BOV submission.
+
+        THE CHILD-OBJECT HALF OF D-1. Unlike the three Disposition-target approvals, this one
+        does NOT need a Queueable: Broker_Finalize_Approval's recordEditability = AdminOnly locks
+        the SUBMISSION, and the record the trigger has to write is the PARENT Disposition, which
+        is not locked. BovSubmissionTriggerHandler therefore updates the parent SYNCHRONOUSLY
+        with allOrNone = false in SYSTEM mode - the same shape ContractExecutionService already
+        uses for its disposition arm.
+
+        ⚠ THE TRIGGER REQUIRES BOTH CONDITIONS, NOT JUST THIS ONE. It advances the parent from
+        BOV Outreach to Broker Selection only when Approval_Status__c reads Approved AND
+        Submission_Status__c reads 'Selected'. Those are two distinct picklists on this object
+        and they are not interchangeable: the first is the principals' sign-off, the second is
+        the team's pick. It also requires the parent to be CURRENTLY on BOV Outreach - that
+        idempotency guard is what makes a later broker replacement safe.
+
+        ⚠ NAMING. agent-output/design-requirements.md A-5 transcribed these as
+        Set_BOV_Approval_Approved / Set_BOV_Approval_Rejected and flagged the spelling as open
+        (its section 6, open naming item 1). Set_Broker_* was chosen instead, to match the
+        approval process that fires them (Broker_Finalize_Approval) and the business event
+        ("the broker is approved"), and it is used consistently here and in that approval file.
+        Nothing in Apex references a field update by name, so this is the only pair of files
+        that has to agree.
+
+        DEPLOY ORDER - LOAD-BEARING. This file must land BEFORE
+        approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval, which fails to deploy if a
+        field update it names does not exist; and both field updates require
+        objects/BOV_Submission__c/fields/Approval_Status__c.field-meta.xml.
+    -->
+    <fieldUpdates>
+        <fullName>Set_Broker_Approval_Approved</fullName>
+        <description>Final approval action of Broker_Finalize_Approval. Sets Approval Status to Approved, which BovSubmissionTriggerHandler reads to move the parent Disposition from BOV Outreach to Broker Selection and stamp Selected Broker.</description>
+        <field>Approval_Status__c</field>
+        <literalValue>Approved</literalValue>
+        <name>Set Broker Approval Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>Set_Broker_Approval_Rejected</fullName>
+        <description>Final rejection action of Broker_Finalize_Approval. Sets Approval Status to Rejected. No stage moves: the Disposition stays at BOV Outreach so the team can pick a different broker and resubmit.</description>
+        <field>Approval_Status__c</field>
+        <literalValue>Rejected</literalValue>
+        <name>Set Broker Approval Rejected</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+</Workflow>

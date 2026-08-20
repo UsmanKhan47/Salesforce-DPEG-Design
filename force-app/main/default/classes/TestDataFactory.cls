@@ -381,6 +381,7 @@ public with sharing class TestDataFactory {
     private static Contract_Review__c cachedContractReview;
     private static LOI__c cachedLoi;
     private static Underwriting__c cachedUnderwriting;
+    private static Contact cachedBrokerContact;
 
     /** Shared inserted Property__c for this transaction. */
     public static Property__c defaultProperty() {
@@ -479,6 +480,28 @@ public with sharing class TestDataFactory {
     }
 
     /**
+     * Shared inserted broker Contact (Is_Broker__c = true) for this transaction.
+     *
+     * Added 2026-08-20 (requirements §3 D1) so `createBovSubmissions`' SINGULAR convenience path
+     * can satisfy `BOV_Submission__c.Broker_Required_On_Submission` without a caller that loops
+     * over `createBovSubmission(...)` many times in one transaction (measured pattern:
+     * `BovSubmissionSelectionGuardTest.bulk251BecomingSelected...`, `BovSubmissionTriggerHandlerTest
+     * .bulk251ApprovesAtConstantCost`, both of which call the singular method 251 times) blowing the
+     * 150-DML-statement limit on 251 separate Contact inserts. A genuine BULK caller
+     * (`createBovSubmissions(251, ...)`) does NOT use this cache — see `brokerContactIdsFor` — and
+     * gets 251 distinct brokers in exactly one extra INSERT instead.
+     *
+     * ⚠ Same @TestSetup-boundary caveat as every other default*() accessor: the cache does not
+     * survive from @TestSetup into a test method. See the class header's warning #1.
+     */
+    public static Contact defaultBrokerContact() {
+        if (cachedBrokerContact == null) {
+            cachedBrokerContact = createBrokerContacts(1, null, true)[0];
+        }
+        return cachedBrokerContact;
+    }
+
+    /**
      * Clears the cached scaffold. Call when a test needs a genuinely fresh graph
      * within the same transaction.
      */
@@ -495,6 +518,7 @@ public with sharing class TestDataFactory {
         cachedContractReview = null;
         cachedLoi = null;
         cachedUnderwriting = null;
+        cachedBrokerContact = null;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -559,8 +583,24 @@ public with sharing class TestDataFactory {
                 c.RecordTypeId = brokerRt;
             }
         }
-        insertIf(doInsert, contacts);
+        // AllowSave, not insertIf: LastName is generated from the LOOP INDEX ('Test Contact 0',
+        // 'Test Contact 1', ...), which resets to 0 on every call — it is not a transaction-wide
+        // counter the way nextUnique() (used for Email) is. Two separate createContacts/
+        // createBrokerContacts/createBrokerContactWithFirm calls in the same test method routinely
+        // produce a second "Test Contact 0" with the same Phone shape as the first call's first row,
+        // which the org's active Standard_Contact_Duplicate_Rule (Alert/Allow, degraded by Apex DML
+        // into a hard DUPLICATES_DETECTED) then refuses. Test data is deliberately exempt from that
+        // rule — see insertAllowingDuplicates's header. This is NOT "making the data more unique";
+        // it states the intent that duplicate-shaped test fixtures are allowed to save.
+        insertContactsIf(doInsert, contacts);
         return contacts;
+    }
+
+    /** Contact-specific insertIf: routes through insertAllowingDuplicates (see createContacts). */
+    private static void insertContactsIf(Boolean doInsert, List<Contact> contacts) {
+        if (doInsert == true && !contacts.isEmpty()) {
+            insertAllowingDuplicates(contacts);
+        }
     }
 
     /** Single Contact. @param accountId Parent Account (nullable). @param doInsert Insert when true. @return The Contact. */
@@ -585,13 +625,49 @@ public with sharing class TestDataFactory {
             brokers[i].Broker_Firm__c = 'Test Brokerage ' + i;
             brokers[i].Broker_License__c = 'LIC-' + String.valueOf(nextUnique()).leftPad(6, '0');
         }
-        insertIf(doInsert, brokers);
+        // See createContacts's header: AllowSave, not insertIf — the same loop-index LastName
+        // collision, and this is the path most exposed to it (defaultBrokerContact,
+        // createBrokerContact, createBrokerContactWithFirm and bovBrokerContactIdsFor all funnel
+        // through here, frequently once per test method, always starting the index at 0).
+        insertContactsIf(doInsert, brokers);
         return brokers;
     }
 
     /** Single broker Contact. @param accountId Parent Account (nullable). @param doInsert Insert when true. @return The broker Contact. */
     public static Contact createBrokerContact(Id accountId, Boolean doInsert) {
         return createBrokerContacts(1, accountId, doInsert)[0];
+    }
+
+    /**
+     * A broker Contact whose `Broker_Firm__c` is exactly `firm` — added 2026-08-20 (requirements
+     * §3 D1) for tests that need a STAMPED `Broker_Firm__c` on a `BOV_Submission__c` /
+     * `Disposition__c` to equal a specific literal after insert.
+     *
+     * `BovSubmissionBrokerStampService` / `DispositionBrokerStampService` overwrite any hand-typed
+     * `Broker_Firm__c` the instant `Broker__c` is set (which, since `Broker_Required_On_Submission`
+     * / the equivalent Disposition rule, is now EVERY save) — a before-trigger sees the final field
+     * values, so the stamp always wins. The only way left to pin a firm literal into the persisted
+     * field is through the Contact that IS the stamp's source: point `Broker__c` at a Contact whose
+     * OWN `Broker_Firm__c` already reads what the test wants to assert.
+     *
+     * @param firm     The exact Broker_Firm__c the returned Contact must carry.
+     * @param doInsert Insert when true.
+     * @return The broker Contact.
+     * @example
+     * BOV_Submission__c winner = TestDataFactory.createBovSubmission(dispositionId, false);
+     * winner.Broker__c = TestDataFactory.createBrokerContactWithFirm('CBRE', true).Id;
+     * insert winner; // Broker_Firm__c stamps to 'CBRE' from the Contact, not from a hand-typed literal
+     */
+    public static Contact createBrokerContactWithFirm(String firm, Boolean doInsert) {
+        Contact broker = createBrokerContact(null, false);
+        broker.Broker_Firm__c = firm;
+        // See createContacts's header: AllowSave, not insertIf. createBrokerContact(null, false)
+        // always builds an UNsaved, un-inserted single Contact whose LastName is 'Test Contact 0'
+        // (index resets to 0 every call) — calling this method more than once per test (a common
+        // pattern: one broker per competing BOV submission) produces several same-shaped "Test
+        // Contact 0" rows in the same transaction.
+        insertContactsIf(doInsert, new List<Contact>{ broker });
+        return broker;
     }
 
     /**
@@ -1455,6 +1531,51 @@ public with sharing class TestDataFactory {
     }
 
     /**
+     * Signs a BUYER NDA on a disposition, satisfying `All_NDAs_Signed_Before_Progression`'s
+     * release gate. Promoted here 2026-08-19 from a private helper of the same name in
+     * `DispositionStageEntryServiceTest` (which now delegates to this method) so
+     * `ContractExecutionServiceTest` — a different test class — can reuse it rather than
+     * re-implementing the same fixture.
+     *
+     * ⚠ NEEDED SINCE THE 2026-08-19 FLOW REDESIGN dropped that rule's
+     * `RecordType.DeveloperName = 'Off_Market'` term, so it now blocks BOTH record types from
+     * CHANGING stage into Release Materials / Active Listing / Offer Selection / LOI / PSA /
+     * Closing / Sale Closes unless every non-Declined NDA on the disposition is Signed. Any test
+     * that performs a real `update` DML into one of those stages needs this precondition first,
+     * on-market included; an INSERT straight at a gated stage remains exempt because the rule is
+     * `ISCHANGED`-only.
+     *
+     * Inserted directly at 'Signed' rather than walked through 'Not Sent' -> 'Sent' -> 'Signed' —
+     * `NDA_Signed_Rollup` is `RecordAfterSave` / `CreateAndUpdate`, so it fires on the insert
+     * either way and there is nothing to prove about the NDA's own walk here.
+     *
+     * @param dispositionId An inserted Disposition.
+     * @return The newly signed NDA.
+     */
+    public static NDA__c signBuyerNdaOn(Id dispositionId) {
+        NDA__c nda = createDispositionNda(dispositionId, false);
+        nda.Status__c = 'Signed';
+        insert nda;
+        return nda;
+    }
+
+    /**
+     * Bulk twin of {@link #signBuyerNdaOn(Id)} — ONE insert for the whole set, never one per
+     * record, so a 251-disposition bulk fixture stays O(1) in DML statements.
+     *
+     * @param dispositions Inserted Dispositions to sign a buyer NDA on.
+     */
+    public static void signBuyerNdasOn(List<Disposition__c> dispositions) {
+        List<NDA__c> ndas = new List<NDA__c>();
+        for (Disposition__c d : dispositions) {
+            NDA__c nda = createDispositionNda(d.Id, false);
+            nda.Status__c = 'Signed';
+            ndas.add(nda);
+        }
+        insert ndas;
+    }
+
+    /**
      * Resolves an NDA__c record type developer name to its Id, or null when it does not exist in
      * this org / is not available to the running user. An UNRECOGNISED name is a caller mistake
      * and throws, so a typo fails loudly instead of silently producing a default-record-type
@@ -2251,6 +2372,15 @@ public with sharing class TestDataFactory {
     // computed from checklist Tasks, not from Wire__c.
     // ═══════════════════════════════════════════════════════════════════════════
 
+    // 🔴 THESE TWO LITERALS ARE THE ONE SANCTIONED EXCEPTION TO DispositionDomain's "every other
+    // class derives from here" rule, and that exemption is recorded in DispositionDomain's own
+    // header. DO NOT repoint them at DispositionDomain.RT_ON_MARKET / RT_OFF_MARKET. Every other
+    // holder of this pair is an alias of that class, so a mis-casing there would flow into the
+    // fixtures AND the assertions together and the suite would stay green against a describe map
+    // that matched nothing. This independent copy is what makes
+    // TestDataFactoryTest.createDisposition_caseTypoRecordTypeName_throwsAndNamesTheOffendingValue
+    // a falsifier instead of a tautology. If the pairs ever disagree, the test is working.
+
     /** Disposition__c record type developer name for the broker-listed path (the factory default). */
     public static final String DISPOSITION_RT_ON_MARKET = 'On_Market';
     /** Disposition__c record type developer name for the direct-sale path. */
@@ -2281,16 +2411,35 @@ public with sharing class TestDataFactory {
      * every disposition test in the repo red, and the guard costs one describe. It does
      * mean a green suite is NOT proof the record types deployed — post-deploy gate B4 is.
      *
-     * ⚠ On_Market and Off_Market carry DISJOINT Disposition_Stage__c value sets. This
-     * factory seeds 'Disposition Readiness', which is valid on BOTH, so either record type
-     * inserts cleanly. A caller that moves the record to a path-specific stage must pick the
-     * matching record type: 'BOV Outreach' / 'Active Listing' / 'Call for Offers' are
-     * On_Market only, and 'NDA' / 'Disposition Offer' are Off_Market only.
+     * 🔴 RETRACTED 2026-08-19 (flow redesign) — On_Market and Off_Market no longer carry
+     * disjoint Disposition_Stage__c value sets; they overlap on nine of eleven values. The
+     * retracted claim is quoted rather than deleted because it is exactly what a future reader
+     * would assume: "On_Market and Off_Market carry DISJOINT Disposition_Stage__c value sets ...
+     * 'BOV Outreach' / 'Active Listing' / 'Call for Offers' are On_Market only, and 'NDA' /
+     * 'Disposition Offer' are Off_Market only." NDA is now a stage on BOTH record types (an
+     * on-market sale collects a buyer NDA exactly as a direct one does), and so are
+     * 'Broker Selection', 'Release Materials', 'Offer Selection' and 'Sale Closes'. This factory
+     * still seeds 'Disposition Readiness', which remains valid on both. The only surviving
+     * ON_MARKET-only values are 'BOV Outreach' and 'Active Listing' ('Call for Offers' is a
+     * doomed value parked for manual deletion, not a live stage). 'Disposition Offer' is doomed
+     * too. A caller that moves the record to a path-specific stage must still pick the matching
+     * record type for those two on-market-only survivors; every other post-Readiness stage is
+     * reachable from either record type.
      *
-     * ⚠ Stage is NEVER seeded as 'Completed'. The Wire_Complete_Before_Completed validation
-     * rule fires on OR(ISNEW(), ISCHANGED(Disposition_Stage__c)) and would refuse the
-     * insert unless the derived Wire_Verification_Completed__c were already true — which no
-     * brand-new record can be.
+     * ⚠ Stage is NEVER seeded as 'Completed' or 'Sale Closes'. `Wire_Complete_Before_Sale_Closes`
+     * (renamed from Wire_Complete_Before_Completed in the same redesign — a validation-rule
+     * API-name change is a delete-plus-create, not a rename) fires on
+     * OR(ISNEW(), ISCHANGED(Disposition_Stage__c)) and would refuse the insert unless the derived
+     * Wire_Verification_Completed__c were already true — which no brand-new record can be.
+     *
+     * ⚠ AND SINCE 2026-08-19, MOVING A SAVED DISPOSITION OF EITHER RECORD TYPE PAST NDA IS ALSO
+     * GATED. `All_NDAs_Signed_Before_Progression` dropped its Off_Market-only record-type term and
+     * now blocks BOTH types from a real `update` DML into Release Materials / Active Listing /
+     * Offer Selection / LOI / PSA / Closing / Sale Closes unless every non-Declined NDA on the
+     * disposition is Signed. This factory does not sign one, so a caller advancing a fixture past
+     * NDA via `update` must do so itself (see DispositionStageEntryServiceTest.signBuyerNdaOn for
+     * the pattern) or insert directly at the target stage, where the rule's ISCHANGED-only guard
+     * is inert.
      *
      * @param count                   Number of Dispositions.
      * @param propertyAssetId         Parent Property_Asset__c (nullable).
@@ -2415,18 +2564,57 @@ public with sharing class TestDataFactory {
     }
 
     /**
+     * count == 1 reuses the shared per-transaction `defaultBrokerContact()` so a caller looping
+     * over the SINGULAR `createBovSubmission(...)` convenience method many times in one
+     * transaction — a real, measured pattern (`BovSubmissionSelectionGuardTest
+     * .bulk251BecomingSelected...`, `BovSubmissionTriggerHandlerTest.bulk251ApprovesAtConstantCost`,
+     * both call it 251 times) — does not issue 251 separate Contact-insert DML statements and blow
+     * the 150-DML-statement governor limit. count > 1 creates COUNT distinct broker Contacts in
+     * exactly ONE bulk insert, so a genuine bulk caller (`createBovSubmissions(251, ...)`) still
+     * gets 251 distinct, fully-formed brokers for one extra DML statement.
+     */
+    private static List<Id> bovBrokerContactIdsFor(Integer count) {
+        if (count == 1) {
+            return new List<Id>{ defaultBrokerContact().Id };
+        }
+        List<Contact> brokers = createBrokerContacts(count, null, true);
+        List<Id> ids = new List<Id>();
+        for (Contact broker : brokers) {
+            ids.add(broker.Id);
+        }
+        return ids;
+    }
+
+    /**
      * @param count         Number of BOV Submissions.
      * @param dispositionId Parent Disposition__c (nullable).
      * @param doInsert      Insert when true.
      * @return BOV Submissions at status 'Backup'.
+     *
+     * ── 🔴 Broker__c IS SET, ADDED 2026-08-20 (requirements §3 D1) ────────────────────────────
+     * `Broker_Required_On_Submission` (Tranche 2, Workstream A1) makes `Broker__c` a mandatory,
+     * unguarded invariant on EVERY save of this object — see that rule file's own header. This
+     * factory therefore always attaches a real broker Contact (`Is_Broker__c = true`, satisfying
+     * the field's active, non-optional lookup filter) via `bovBrokerContactIdsFor`, regardless of
+     * `doInsert`: the lookup must reference an already-persisted Contact whether or not the
+     * SUBMISSION itself is inserted here.
+     * ⚠ `Broker_Firm__c` / `Contact_Name__c` ARE STILL SET HERE, but `BovSubmissionBrokerStampService`
+     * OVERWRITES both the instant this record is actually inserted (Broker__c goes from
+     * oldMap-null to non-null, which is always "changed" on insert) — see that service's header
+     * ("the stamp wins"). Do not write a test that assumes these two literals survive a real insert
+     * without also pointing Broker__c at a Contact carrying the value it expects
+     * (`createBrokerContactWithFirm`). They still matter for the UNSAVED (`doInsert = false`) state
+     * a caller may inspect before performing its own insert.
      */
     public static List<BOV_Submission__c> createBovSubmissions(Integer count, Id dispositionId, Boolean doInsert) {
         requirePositive(count);
+        List<Id> brokerIds = bovBrokerContactIdsFor(count);
         List<BOV_Submission__c> submissions = new List<BOV_Submission__c>();
         for (Integer i = 0; i < count; i++) {
             submissions.add(new BOV_Submission__c(
                 Disposition__c = dispositionId,
                 Submission_Status__c = 'Backup',
+                Broker__c = brokerIds[i],
                 Broker_Firm__c = 'Test Brokerage ' + i,
                 Contact_Name__c = 'Test Broker ' + i,
                 BOV_Amount__c = 1200000 + (i * 1000),

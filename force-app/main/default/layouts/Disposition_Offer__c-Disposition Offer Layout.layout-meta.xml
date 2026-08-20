@@ -1,5 +1,67 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE <Layout>
+         breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+         xml file" error.
+
+         BUSINESS FIELDS ADDED 2026-08-20 (UAT gap). Until now this layout was a STUB: it carried
+         exactly four fields, Name, OwnerId, CreatedById and LastModifiedById, and not one business
+         field. Clicking "+ Log Offer" therefore opened a "New Disposition Offer" modal offering
+         only a blank auto number and an Owner picker, so the analyst had nowhere to type the buyer,
+         the price, or the terms. Same defect as BOV_Submission__c, found in the same UAT pass.
+
+         WHY IT SURVIVED TO UAT: every read path bypasses layouts. DispositionOfferSelector names
+         its columns in SOQL and dispositionCallForOffers renders them itself, so the offer table
+         looked complete while the create and detail screens were empty. Nothing in the Jest or Apex
+         suites exercises a page layout.
+
+         🔴 A SECOND EXPOSURE THIS CLOSES, AND ONE UAT STEP IT NEEDS. Both
+         lwc/dispositionOffer/dispositionOffer.js and
+         lwc/dispositionCallForOffers/dispositionCallForOffers.js navigate to standard__objectPage
+         actionName 'new' seeding Disposition__c through defaultFieldValues - and Disposition__c
+         WAS NOT ON THIS LAYOUT. The create screen renders its inputs from this layout, so there
+         was no input for that default to land in, and the analyst could not have set the parent by
+         hand either.
+         ⚠ WHETHER THE PLATFORM STILL APPLIES A DEFAULT TO A FIELD WITH NO RENDERED INPUT IS NOT
+         STATED IN THE defaultFieldValues DOCUMENTATION, AND WAS NOT TESTED HERE. So this is
+         recorded as an open risk, not as a finding: if the value was being dropped, every offer
+         logged through those buttons is orphaned from its Disposition and existing UAT data needs
+         checking. Placing Disposition__c here removes the question either way.
+         CONFIRM IN UAT: log one offer through "+ Log Offer" and check the parent is populated. Do
+         not assume it was, and do not assume it was not.
+
+         BEHAVIOUR RULES APPLIED, and each Readonly below is deliberate:
+         1. NO FORMULA FIELDS EXIST ON THIS OBJECT. All sixteen custom fields were checked in
+            objects/Disposition_Offer__c/fields/; none carries a formula element, so rule 1 has
+            nothing to bite on here. Every Readonly below is a rule 2 decision, not a type
+            constraint.
+         2. MACHINE WRITTEN FIELDS ARE Readonly:
+            Approval_Status__c is written ONLY by workflows/Disposition_Offer__c.workflow_meta
+            Set_Offer_Approval_Approved and Set_Offer_Approval_Rejected, fired as the final actions
+            of approvalProcesses/Disposition_Offer__c.Offer_Selection_Approval.
+            DispositionOfferTriggerHandler reads exactly that value to accept the offer and advance
+            the parent Disposition from Offer Selection to LOI, so a hand edit would move a deal
+            without an approval.
+            Is_Selected__c is written ONLY by DispositionApprovalService.selectOffer, whose "at most
+            one selected offer" guarantee is a property of THAT SERVICE and not of the field: it
+            flips the winner on and clears every rival in one exclusive DML. The field itself has no
+            uniqueness constraint, so a hand edit produces two selected offers and
+            Offer_Selection_Approval, whose entry criterion is Is_Selected__c = true, would then
+            match both.
+            This is the same reasoning that set Selected_Broker__c to readonly on the Disposition
+            FlexiPage yesterday under code review W1, and it is applied consistently here.
+            It also MATCHES THE FLS ALREADY IN THE ORG: permissionsets/DPEG_Disposition_Edit grants
+            both fields readable=true editable=false, so an Edit behaviour here would have
+            advertised a write the persona does not have.
+         3. Name stays Readonly. It is an AutoNumber, displayFormat OFFER-{0000}.
+         4. Offer_Status__c IS LEFT EDITABLE ON PURPOSE even though DispositionOfferTriggerHandler
+            stamps ONE of its values. The handler only writes 'Accepted', and only in the before
+            update that follows an approval. Every other transition, Received, Countered and so on,
+            is the analyst's to log, so this is not a machine owned field and locking it would
+            remove the ability to record a negotiation.
+
+         THE relatedLists BLOCK BELOW IS UNTOUCHED. It carries RelatedProcessHistoryList, which is
+         the only route to Recall Approval Request on this object. -->
     <layoutSections>
         <customLabel>false</customLabel>
         <detailHeading>false</detailHeading>
@@ -10,11 +72,108 @@
                 <behavior>Readonly</behavior>
                 <field>Name</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Disposition__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Buyer_Name__c</field>
+            </layoutItems>
         </layoutColumns>
         <layoutColumns>
             <layoutItems>
                 <behavior>Edit</behavior>
+                <field>Offer_Status__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>NDA_Status__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
                 <field>OwnerId</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Offer Terms</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Offer_Amount__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Offer_Date__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Earnest_Money_Proposed__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Offer_Financing_Type__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Due_Diligence_Days__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Closing_Period_Days__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Negotiation</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>DPEG_Counter_Price__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>DPEG_Counter_Date__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Buyer_Counter_Price__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Final_Agreed_Price__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Selection and Approval</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Is_Selected__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Approval_Status__c</field>
             </layoutItems>
         </layoutColumns>
         <style>TwoColumnsTopToBottom</style>
@@ -47,6 +206,25 @@
         <layoutColumns/>
         <style>CustomLinks</style>
     </layoutSections>
+    <!-- APPROVAL HISTORY, ADDED 2026-08-19 (code review C-3, child object half).
+         Disposition_Offer__c gained Offer_Selection_Approval in this change. That process's own
+         comment says locked records "must therefore be recalled first, which is why allowRecall
+         stays true" - and Recall Approval Request exists ONLY on this list, which this file did
+         not have. The comment described a route that did not exist. This block creates it.
+         UNLIKE Disposition, THIS OBJECT NEEDS NO SECOND FILE. There is no custom FlexiPage for
+         Disposition_Offer__c anywhere in force-app, so it renders on the org default record page,
+         which is layout driven. Adding the list here is sufficient and is the only route.
+         RelatedProcessHistoryList IS Approval History: the live describeLayout for Opportunity
+         returns this list as name "ProcessSteps", label "Approval History". The five columns are
+         the standard set copied from layouts/Opportunity-Opportunity Layout.layout-meta.xml. -->
+    <relatedLists>
+        <fields>CreatedDate</fields>
+        <fields>StepStatus</fields>
+        <fields>OriginalActor</fields>
+        <fields>Actor</fields>
+        <fields>Comments</fields>
+        <relatedList>RelatedProcessHistoryList</relatedList>
+    </relatedLists>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>

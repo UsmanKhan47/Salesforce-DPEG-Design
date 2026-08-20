@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error. The rationale below lives in this comment
+        rather than in <description> because a comment is repo-only and is never sent to the
+        Metadata API. ⚠ DO NOT ASSUME THE 255-CHARACTER CAP that binds RecordType and
+        ValidationRule descriptions applies here: the five approval files already in this repo
+        carry descriptions of 442 to 617 characters (measured against git HEAD, 2026-08-19).
+        The descriptions written in this change are nevertheless kept under 255, so the rule is
+        uniform across every metadata type in this tranche and never has to be re-measured.
+
+        NEW 2026-08-19. BOV_Submission__c had no approval process before this change.
+
+        WHAT IT REPLACES AND WHY IT MOVED OBJECT. The on-market broker sign-off used to run on
+        the DISPOSITION, as Disposition__c.Broker_Selection_Approval at stage BOV Outreach. It
+        approves the SELECTED SUBMISSION now, because the submission is what the principals are
+        actually deciding between: the approval page shows THIS broker's economics next to the
+        approval history, instead of a Disposition record that names one broker in a lookup and
+        hides the other four responses. Broker_Selection_Approval survives, repointed to the
+        OFF-MARKET direct pick.
+
+        🔴 THE RECORD-EDITABILITY ARGUMENT IS WHY THIS OBJECT PLACEMENT MATTERS, NOT JUST A
+        PREFERENCE. recordEditability = AdminOnly locks the SUBMISSION while this approval is
+        pending. The record the automation must write on approval is the PARENT Disposition,
+        which is NOT locked - so BovSubmissionTriggerHandler updates the parent SYNCHRONOUSLY,
+        allOrNone = false, SYSTEM mode, the same shape ContractExecutionService already uses.
+        The three Disposition-target approvals cannot do that (they lock the very record they
+        must advance), which is why THEY need the semaphore-plus-Queueable route and this one
+        does not.
+
+        ENTRY IS Submission_Status__c = 'Selected'. That is the team's pick, made in
+        bovComparisonMatrix. It is deliberately NOT scoped by the parent's stage: submitting is
+        driven by the Submit_Selected_Broker quick action, whose flexipage visibility rule and
+        whose server-side gate in DispositionApprovalService both already require the parent to
+        be at BOV Outreach. Duplicating that stage test here would make a cross-object entry
+        criterion out of a check two other layers already perform correctly.
+
+        ⚠ Approval_Status__c IS A SECOND, DISTINCT PICKLIST FROM Submission_Status__c on this
+        object, and the trigger requires BOTH: Approved AND Selected. It also requires the parent
+        to be CURRENTLY at BOV Outreach. That third guard is what makes a later broker
+        replacement safe - BovSubmissionService.replaceSelectedBroker demotes the old submission
+        to Backup and CLEARS its Approval_Status__c, and a replacement performed after the stage
+        already advanced does NOT re-advance it.
+
+        ⚠ REJECTION MOVES NOTHING. Set_Broker_Approval_Rejected records the outcome and the
+        Disposition stays at BOV Outreach so a different submission can be selected and
+        resubmitted.
+
+        ⚠ FIELD-UPDATE NAMING. agent-output/design-requirements.md transcribed these as
+        Set_BOV_Approval_* and flagged the spelling as open. Set_Broker_Approval_* was chosen, to
+        match this process's own name and the business event. workflows/BOV_Submission__c
+        .workflow-meta.xml uses the same spelling; those are the only two files that must agree.
+
+        approvalPageFields carry only fields that DPEG_Disposition_View already grants read on -
+        an approver who cannot read a field on the approval page sees a blank, not an error.
+
+        DEPLOY ORDER - LOAD-BEARING. workflows/BOV_Submission__c.workflow-meta.xml and
+        objects/BOV_Submission__c/fields/Approval_Status__c.field-meta.xml must both land FIRST.
+    -->
+    <active>true</active>
+    <allowRecall>true</allowRecall>
+    <allowedSubmitters>
+        <type>owner</type>
+    </allowedSubmitters>
+    <approvalPageFields>
+        <field>Name</field>
+        <field>Owner</field>
+        <field>Property_Name__c</field>
+        <field>Broker_Display__c</field>
+        <field>BOV_Amount__c</field>
+        <field>Cap_Rate__c</field>
+        <field>Commission_Rate__c</field>
+        <field>Days_To_Market__c</field>
+        <field>Hist_Success_Rate__c</field>
+        <field>Submission_Status__c</field>
+    </approvalPageFields>
+    <approvalStep>
+        <allowDelegate>false</allowDelegate>
+        <assignedApprover>
+            <approver>
+                <name>nikhil.dhanani@usmandpeg.uat</name>
+                <type>user</type>
+            </approver>
+            <approver>
+                <name>aftab.ali.dpeg.usman@avanzasolutions.com</name>
+                <type>user</type>
+            </approver>
+            <whenMultipleApprovers>FirstResponse</whenMultipleApprovers>
+        </assignedApprover>
+        <label>Principal Review</label>
+        <name>Principal_Review_Step</name>
+    </approvalStep>
+    <description>ON-MARKET broker sign-off, on the selected BOV submission rather than the Disposition. Entry: Status is Selected. Approval sets Approval Status, which advances the parent Disposition from BOV Outreach to Broker Selection. See this file&apos;s XML comment.</description>
+    <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
+    <entryCriteria>
+        <criteriaItems>
+            <field>BOV_Submission__c.Submission_Status__c</field>
+            <operation>equals</operation>
+            <value>Selected</value>
+        </criteriaItems>
+    </entryCriteria>
+    <finalApprovalActions>
+        <action>
+            <name>Set_Broker_Approval_Approved</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
+    <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionActions>
+        <action>
+            <name>Set_Broker_Approval_Rejected</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalRejectionActions>
+    <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <label>Broker Finalize Approval</label>
+    <processOrder>1</processOrder>
+    <recordEditability>AdminOnly</recordEditability>
+    <showApprovalHistory>true</showApprovalHistory>
+</ApprovalProcess>

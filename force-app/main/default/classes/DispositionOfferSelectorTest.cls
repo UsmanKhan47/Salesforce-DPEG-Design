@@ -140,4 +140,109 @@ private class DispositionOfferSelectorTest {
         Assert.areEqual(1, counts.get(dispositions[BULK_N - 1].Id),
             'Including the last one, which is in the second trigger chunk');
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // selectSelectionStateByDispositionId — backs DispositionApprovalService.selectOffer
+    // (2026-08-19 redesign, D-3). `with sharing` — the TractionReads `without sharing` argument
+    // does NOT transfer to this row read; see the selector's own header.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectSelectionStateByDispositionId_returnsEveryOfferNotJustSelected() {
+        Disposition__c d = newDisposition();
+        Disposition_Offer__c selected = TestDataFactory.createDispositionOffer(d.Id, false);
+        selected.Is_Selected__c = true;
+        Disposition_Offer__c other = TestDataFactory.createDispositionOffer(d.Id, false);
+        other.Is_Selected__c = false;
+        insert new List<Disposition_Offer__c>{ selected, other };
+
+        Test.startTest();
+        List<Disposition_Offer__c> result =
+            DispositionOfferSelector.selectSelectionStateByDispositionId(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(2, result.size(),
+            '🔴 EVERY OFFER MUST RETURN — this is simultaneously the exclusivity input and the '
+            + 'membership check that proves a caller-supplied offer Id belongs to THIS disposition');
+    }
+
+    @isTest
+    static void selectSelectionStateByDispositionId_nullInput_returnsEmptyList() {
+        Assert.areEqual(0, DispositionOfferSelector.selectSelectionStateByDispositionId(null).size());
+    }
+
+    @isTest
+    static void selectSelectionStateByDispositionId_scopedToOneDisposition() {
+        Disposition__c a = newDisposition();
+        Disposition__c b = newDisposition();
+        TestDataFactory.createDispositionOffer(a.Id, true);
+        TestDataFactory.createDispositionOffer(b.Id, true);
+
+        Test.startTest();
+        List<Disposition_Offer__c> result =
+            DispositionOfferSelector.selectSelectionStateByDispositionId(a.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'Only A\'s offer must return — B\'s must not leak in');
+        Assert.areEqual(a.Id, result[0].Disposition__c);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // selectSelectedByDispositionIds — backs DispositionOfferSelectionGuardService
+    // (2026-08-20, Tranche 2 A2). SET-keyed, WITH SYSTEM_MODE, `with sharing`.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * The SET is the point: one query must answer for MANY dispositions at once, because the caller
+     * runs inside a trigger chunk of up to 200 records.
+     *
+     * ⚠ ONE SELECTED OFFER PER DISPOSITION, NOT TWO ON ONE. Since 2026-08-20 the trigger guard this
+     * method backs makes a second selected offer on one disposition UNSAVABLE, so a fixture that
+     * built one would fail at `insert`, not at the assertion.
+     */
+    @isTest
+    static void selectSelectedByDispositionIds_spansManyParentsAndReturnsOnlySelected() {
+        Disposition__c a = newDisposition();
+        Disposition__c b = newDisposition();
+        Disposition_Offer__c aSelected = TestDataFactory.createDispositionOffer(a.Id, false);
+        aSelected.Is_Selected__c = true;
+        Disposition_Offer__c aOther = TestDataFactory.createDispositionOffer(a.Id, false);
+        aOther.Is_Selected__c = false;
+        Disposition_Offer__c bSelected = TestDataFactory.createDispositionOffer(b.Id, false);
+        bSelected.Is_Selected__c = true;
+        insert new List<Disposition_Offer__c>{ aSelected, aOther, bSelected };
+
+        Test.startTest();
+        List<Disposition_Offer__c> result =
+            DispositionOfferSelector.selectSelectedByDispositionIds(new Set<Id>{ a.Id, b.Id });
+        Test.stopTest();
+
+        Assert.areEqual(2, result.size(),
+            'ONE query must answer for BOTH dispositions — that is what keeps the guard out of a '
+            + 'per-record loop');
+        Map<Id, Disposition_Offer__c> byId = new Map<Id, Disposition_Offer__c>(result);
+        Assert.isTrue(byId.containsKey(aSelected.Id), 'A\'s selected offer');
+        Assert.isTrue(byId.containsKey(bSelected.Id), 'B\'s selected offer');
+        Assert.isFalse(byId.containsKey(aOther.Id),
+            'An unselected offer must NOT be returned — the guard counts selected siblings only');
+        Assert.areEqual(a.Id, byId.get(aSelected.Id).Disposition__c,
+            'Disposition__c must be selected — the caller groups the count by it');
+    }
+
+    /** Null/empty-safe and, on empty, issues NO query at all. */
+    @isTest
+    static void selectSelectedByDispositionIds_nullAndEmptyInput_returnEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Integer nullSize = DispositionOfferSelector.selectSelectedByDispositionIds(null).size();
+        Integer emptySize =
+            DispositionOfferSelector.selectSelectedByDispositionIds(new Set<Id>()).size();
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, nullSize, 'Null input returns an empty list');
+        Assert.areEqual(0, emptySize, 'An empty set returns an empty list');
+        Assert.areEqual(0, queriesUsed,
+            'Neither may issue a query — the guard\'s zero-query fast path depends on this');
+    }
 }

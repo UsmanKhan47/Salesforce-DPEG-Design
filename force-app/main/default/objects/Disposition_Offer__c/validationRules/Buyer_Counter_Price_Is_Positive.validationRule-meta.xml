@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is
+        capped at 255 characters; a comment is repo-only and is never sent to the Metadata
+        API. It must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A4). THIS FILE CARRIES THE SHARED RATIONALE
+        FOR ALL FOUR A4 SANITY RULES ON THIS OBJECT; THE OTHER THREE POINT HERE.
+        =====================================================================================
+        Siblings: DPEG_Counter_Price_Is_Positive, Closing_Period_Days_Not_Negative,
+        Due_Diligence_Days_Not_Negative.
+
+        WHAT A SANITY RULE IS FOR. These four refuse values that are arithmetically impossible
+        rather than commercially unwise. A counter price of zero or below is not a hard
+        negotiating position, it is a typo or a failed import; a negative day count is not a
+        term, it is a data defect. None of them expresses a policy about how DPEG negotiates.
+
+        =====================================================================================
+        🔴 WHY NOT(ISBLANK(...)) COMES FIRST, AND WHY THAT IS NOT DEFENSIVE PADDING.
+        =====================================================================================
+        A BLANK counter price is the NORMAL state: most offers are never countered. On a
+        Currency field ISBLANK distinguishes empty from a deliberately entered 0, and only the
+        blank test can make that distinction, so the guard is what separates "no counter yet"
+        from "a counter of zero". Without it this rule would refuse every offer that has not
+        been countered, which is nearly all of them.
+
+        =====================================================================================
+        🔴 WHY FOUR NARROW RULES RATHER THAN THE TWO PAIRED RULES THE TRANCHE 2 REQUIREMENTS
+        DOC ENUMERATES. THIS IS A DELIBERATE DIVERGENCE FROM §2 A4's FILE LIST.
+        =====================================================================================
+        The doc proposes one Counter_Price_Is_Positive covering BOTH counter fields and one
+        Term_Days_Are_Not_Negative covering BOTH day fields. A paired rule can carry only ONE
+        errorDisplayField, so half the time the inline error renders under the field the user
+        did NOT touch: type minus 30 into Due Diligence Days and the message appears beside
+        Closing Period Days. A user cannot act on that, and an unactionable error is the
+        failure mode an errorDisplayField exists to prevent.
+        THE COST OF SPLITTING IS TWO EXTRA FILES AND TWO EXTRA FORMULA EVALUATIONS PER SAVE
+        on an object with no other rules. That is cheaper than a misdirected error.
+        ⚠ IF THESE ARE EVER RE-MERGED, DROP errorDisplayField ENTIRELY rather than picking
+        one of the two fields. A page level error is honest; an error pointing at the wrong
+        field is not. Broker_Lookup_Is_Off_Market_Only on Disposition__c is the in repo
+        precedent for omitting the tag on purpose.
+
+        =====================================================================================
+        NO ISCHANGED / ISNEW GUARD ON ANY OF THE FOUR. Each is an INVARIANT, not a transition,
+        and each is SELF CLEARING: the remedy, correcting or clearing the offending number, is
+        itself a permitted save. An unguarded rule therefore cannot trap a row here.
+        ⚠ SYSTEM_MODE DML does NOT bypass validation rules, so a bad row would also refuse
+        machine writes until corrected. That is the intended behaviour and is why the remedy
+        must stay permitted.
+        =====================================================================================
+        MEASURED IMPACT AT CREATION: ZERO ROWS. Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM Disposition_Offer__c -> 0
+        The object is empty, so all four rules refuse nothing that exists. 🔴 That measurement
+        ages; re-run at deploy time.
+
+        ⚠ SINGLE MODULE OBJECT. Unlike LOI__c and Contract_Review__c, Disposition_Offer__c has
+        no record types and serves the disposition module only, so none of these four rules
+        can reach an acquisition record. No record type test is needed or wanted.
+    -->
+    <fullName>Buyer_Counter_Price_Is_Positive</fullName>
+    <active>true</active>
+    <description>Blocks a zero or negative Buyer Counter Price. A blank counter is legitimate and is left alone; only a counter that has been entered is checked. Split from the paired rule the design proposed so the error anchors to the field actually at fault.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Buyer_Counter_Price__c)),
+    Buyer_Counter_Price__c &lt;= 0
+)</errorConditionFormula>
+    <errorMessage>Buyer Counter Price must be greater than zero. Leave it blank if the buyer has not countered; enter the countered amount if they have.</errorMessage>
+    <errorDisplayField>Buyer_Counter_Price__c</errorDisplayField>
+</ValidationRule>

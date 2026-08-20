@@ -5,8 +5,32 @@
         breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
         xml file" error.
 
+        =====================================================================================
+        🔴 AMENDED 2026-08-20 (Tranche 2, Workstream A3). THE PARAGRAPH BELOW IS RETAINED, NOT
+        DELETED, BECAUSE THE HAZARD IT NAMES IS STILL LIVE. BUT ITS FIRST SENTENCE IS NO LONGER
+        LITERALLY TRUE AND IS RETRACTED HERE, AT THE TOP, SO IT CANNOT BE READ STANDALONE.
+        =====================================================================================
+        WHAT CHANGED. Is_Signed's default branch is now CONNECTED, to a new decision named
+        Is_Declined. That decision routes ONE value, Status__c = 'Declined', to the previously
+        orphaned Set_Signed_False assignment. Every other status, including acquisition's
+        terminal 'Sent', falls through Is_Declined's OWN default branch, which has no connector
+        and therefore reaches an end. Set_Signed_False itself is unchanged; it simply stops
+        being unreachable.
+
+        🔴 WHAT DID NOT CHANGE, AND WHAT IS STILL FORBIDDEN. The hazard the paragraph below
+        describes is a BLANKET `Status != 'Signed' => false` rule. That is still forbidden and
+        would still break acquisition exactly as described. Connecting Is_Signed's default
+        DIRECTLY to Set_Signed_False, which is the specific edit the paragraph warns against,
+        is still the wrong edit and is still an outage. The safe form is the one now built: a
+        VALUE NAMED intermediate decision. Read the whole paragraph, then read this block again.
+
+        =====================================================================================
+        RETAINED FROM 2026-08-16 (acquisition NDA sequence reversal). ⚠ ITS OPENING CLAIM, THAT
+        THE FALSE BRANCH IS UNCONNECTED, WAS TRUE FROM 2026-08-16 TO 2026-08-20 AND IS NOW
+        SUPERSEDED BY THE BLOCK ABOVE. THE REST STILL APPLIES VERBATIM.
+        =====================================================================================
         THE Is_Signed DECISION'S FALSE BRANCH IS DEFINED BUT UNCONNECTED, AND THIS IS LOAD-BEARING
-        - DO NOT "FINISH" IT (added 2026-08-16, acquisition NDA sequence reversal). The
+        - DO NOT "FINISH" IT. The
         Set_Signed_False assignment exists in this flow's metadata, but Is_Signed carries a
         <defaultConnectorLabel>Not Signed</defaultConnectorLabel> with NO <defaultConnector>, so
         nothing ever routes to Set_Signed_False. The flow therefore only ever SETS the checkbox
@@ -33,6 +57,44 @@
         is ever genuinely needed, whoever implements it MUST exempt the acquisition terminal
         'Sent' explicitly (e.g. branch on RecordType.DeveloperName, or on Status__c != 'Sent' for
         Acquisition_NDA rows) rather than restoring a blanket Status != 'Signed' => false rule.
+
+        =====================================================================================
+        🔴 WHY THE 2026-08-20 IMPLEMENTATION DOES NOT USE RecordType.DeveloperName, WHICH IS
+        WHAT THE PARAGRAPH DIRECTLY ABOVE SUGGESTED. THE NARROWER FORM IS ALSO THE SAFER ONE.
+        =====================================================================================
+        The requirement is to clear the checkbox on DECLINED ONLY, which is strictly narrower
+        than "everything that is not Signed" and needs no record type test at all:
+
+        'Declined' IS EXPOSED ONLY ON THE Disposition_NDA RECORD TYPE. NDA__c.Status__c's own
+        description states the split in terms: Acquisition_NDA exposes Pending, Sent, Received,
+        Signed; Disposition_NDA exposes Not Sent, Sent, Signed, Declined. An acquisition NDA can
+        therefore never carry the value the new branch tests for, so acquisition's terminal
+        'Sent' is STRUCTURALLY UNREACHABLE from Set_Signed_False. The exemption is achieved by
+        NAMING A VALUE rather than by TESTING A RECORD TYPE.
+
+        THAT IS MORE ROBUST THAN THE SUGGESTION ABOVE, FOR TWO REASONS THIS REPO HAS MEASURED:
+          1. A record type test breaks on rows still sitting on the MASTER record type.
+             RecordStageAdvanceService still carries a null/Master fallback, and
+             TestDataFactory deliberately degrades to NO record type when one is absent from or
+             unavailable in a scratch org. A Master row is a normal fixture shape here, and a
+             RecordType.DeveloperName = 'Disposition_NDA' branch would silently skip it.
+          2. A record type test breaks on a record type RENAME; a value named test does not.
+             NdaSelector.queryExpiryAlerts records the related failure mode, where a record type
+             filter shipped a feature inert.
+
+        ⚠ THE ONE THING THIS FORM DEPENDS ON, STATED SO IT IS NOT REDISCOVERED THE HARD WAY:
+        it relies on 'Declined' STAYING off the Acquisition_NDA record type. If 'Declined' is
+        ever added to Acquisition_NDA, this flow starts clearing NDA_Signed__c on acquisition
+        NDAs and the Opportunity gate NDA_Signed_Before_Deal_Progression locks those deals out.
+        Anyone editing objects/NDA__c/recordTypes/Acquisition_NDA.recordType-meta.xml must read
+        this block first. That is a cheaper and more visible dependency than the Master row
+        problem a record type test would have carried permanently.
+
+        BEHAVIOUR CHANGE, STATED PLAINLY: a disposition NDA moving Signed -> Declined now clears
+        NDA_Signed__c, where previously it stayed true. Date_Signed__c is STILL never cleared, by
+        design, so a declined party retains a signature date alongside a false checkbox. Any
+        consumer deciding "is this party signed" must gate on Status__c, NOT on Date_Signed__c
+        and NOT on NDA_Signed__c alone.
     -->
     <apiVersion>67.0</apiVersion>
     <assignments>
@@ -78,10 +140,35 @@
         </assignmentItems>
     </assignments>
     <decisions>
+        <name>Is_Declined</name>
+        <label>Is Declined?</label>
+        <locationX>302</locationX>
+        <locationY>180</locationY>
+        <defaultConnectorLabel>Not Declined</defaultConnectorLabel>
+        <rules>
+            <name>Status_Is_Declined</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Declined</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Set_Signed_False</targetReference>
+            </connector>
+            <label>Declined</label>
+        </rules>
+    </decisions>
+    <decisions>
         <name>Is_Signed</name>
         <label>Is Signed?</label>
         <locationX>176</locationX>
         <locationY>180</locationY>
+        <defaultConnector>
+            <targetReference>Is_Declined</targetReference>
+        </defaultConnector>
         <defaultConnectorLabel>Not Signed</defaultConnectorLabel>
         <rules>
             <name>Status_Is_Signed</name>
@@ -121,7 +208,7 @@
             <label>Stamp</label>
         </rules>
     </decisions>
-    <description>Derives NDA_Signed__c from Status__c on every save, in ONE direction only: Status = &apos;Signed&apos; sets the checkbox true. It does NOT set it false for any other Status - the false branch is defined but deliberately unconnected, so the checkbox latches true once set. Also stamps Date_Signed__c to TODAY() the first time Status reaches &apos;Signed&apos; with a blank date - never overwrites an existing date and never clears it when Status moves away. Before-save so NDA_Signed_Before_Deal_Progression and any other validation rule reading NDA_Signed__c sees the synced value in the same transaction. See NDA_Signed__c/Status__c field history for the defect this fixes (NDA-0004, a0Jiw0000002k6nEAA). See the in-root XML comment in this file (added 2026-08-16) before connecting the unreachable false branch.</description>
+    <description>Derives NDA_Signed__c from Status__c on every save. &apos;Signed&apos; sets the checkbox TRUE. From 2026-08-20, &apos;Declined&apos; sets it FALSE via the new Is_Declined decision on Is_Signed&apos;s default branch. NO other status touches it, so it still latches true through Sent, Received, Pending and Not Sent. &apos;Declined&apos; is exposed ONLY on Disposition_NDA, so acquisition&apos;s TERMINAL &apos;Sent&apos; can never reach the clearing branch and NDA_Signed_Before_Deal_Progression is unaffected; that value-named exemption is used deliberately instead of a RecordType.DeveloperName test, which would break on Master-record-type rows. Also stamps Date_Signed__c to TODAY the first time Status reaches &apos;Signed&apos; with a blank date. It NEVER clears Date_Signed__c, so a declined party keeps a signature date beside a false checkbox: gate on Status__c, not on either field alone. Before-save, so rules reading NDA_Signed__c see the synced value in the same transaction. Read the in-root XML comment before editing any branch.</description>
     <environments>Default</environments>
     <interviewLabel>NDA Signed Status Sync {!$Flow.CurrentDateTime}</interviewLabel>
     <label>NDA Signed Status Sync</label>

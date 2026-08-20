@@ -1,5 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE <Layout>
+         breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+         xml file" error.
+
+         BUSINESS FIELDS ADDED 2026-08-20 (UAT gap). Until now this layout was a STUB: it carried
+         exactly four fields, Name, OwnerId, CreatedById and LastModifiedById, and not one business
+         field. This is the third of the three disposition child layouts found empty in the same UAT
+         pass, alongside BOV_Submission__c and Disposition_Offer__c.
+
+         WHY IT SURVIVED TO UAT: every read path bypasses layouts. BrokerListingSelector names its
+         columns in SOQL and lwc/brokerListing renders them itself, so the listing card looked
+         complete while the create and detail screens were empty.
+
+         🔴 THE SYMPTOM DIFFERS FROM ITS TWO SIBLINGS, AND THAT IS WORTH KNOWING BEFORE ANYONE
+         RETESTS. Nothing navigates to a standard "new Broker Listing" modal: lwc/brokerListing has
+         no NavigationMixin create call, and the record is created in Apex by
+         DispositionStageEntryService, which stamps Listing_Status__c to its initial value. So the
+         empty layout was never blocking a CREATE here the way "+ Log Offer" was; it was blanking
+         the DETAIL and EDIT screens of a record the service had already made. Disposition__c is
+         placed below anyway, because a lookup absent from the layout is invisible on the detail
+         page and cannot be repaired by hand if the service ever links the wrong parent.
+
+         BEHAVIOUR RULES APPLIED:
+         1. NO FORMULA FIELDS EXIST ON THIS OBJECT. All nine custom fields were checked in
+            objects/Broker_Listing__c/fields/; none carries a formula element.
+         2. NO MACHINE OWNED FIELD EXISTS ON THIS OBJECT EITHER, so every business field below is
+            Edit. This was verified, not assumed: the only Apex write to any field on this object is
+            DispositionStageEntryService setting Listing_Status__c at creation, and a one time
+            initial value is not the same thing as an automation that owns the field for its
+            lifetime. Days_On_Market__c and Offers_Received__c in particular LOOK derived and are
+            NOT: no Apex, trigger or Flow writes either one, and both are only ever read, so
+            locking them would leave them permanently at their default. Offers_Received__c is a
+            plain Number with defaultValue 0, not a roll up summary.
+         3. Name stays Readonly. It is an AutoNumber, displayFormat BL-{0000}.
+
+         THIS OBJECT HAS NO APPROVAL PROCESS, so unlike its two siblings it correctly has no
+         relatedLists block and no RelatedProcessHistoryList. Nothing was removed. -->
     <layoutSections>
         <customLabel>false</customLabel>
         <detailHeading>false</detailHeading>
@@ -10,11 +47,58 @@
                 <behavior>Readonly</behavior>
                 <field>Name</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Disposition__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Broker_Firm__c</field>
+            </layoutItems>
         </layoutColumns>
         <layoutColumns>
             <layoutItems>
                 <behavior>Edit</behavior>
+                <field>Contact_Name__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Listing_Status__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
                 <field>OwnerId</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Listing Terms and Timeline</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>List_Date__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Call_For_Offers_Date__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Commission_Percent__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Days_On_Market__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Offers_Received__c</field>
             </layoutItems>
         </layoutColumns>
         <style>TwoColumnsTopToBottom</style>

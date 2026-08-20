@@ -1,6 +1,6 @@
 /**
- * WIRE-MOCK TEMPLATE — @wire to APEX (parameterised) + NavigationMixin
- * -------------------------------------------------------------------
+ * WIRE-MOCK TEMPLATE — @wire to APEX (parameterised) + NavigationMixin + MODAL
+ * ---------------------------------------------------------------------------
  * Follows the c-broker-firm-card @wire-Apex template. This component adds a
  * NavigationMixin, so it also demonstrates the project's navigation-mock
  * convention: replace lightning/navigation so Navigate DISPATCHES a 'navigate'
@@ -9,11 +9,34 @@
  *
  * Data source: @wire(getSubmissions, { dispositionId: '$recordId' }).
  *   - getSubmissions.emit(rows)  -> data branch
- *   - getSubmissions.error()     -> error branch (component ignores errors)
+ *   - getSubmissions.error()     -> error branch
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * TWO HEADER ACTIONS WERE ADDED (disposition flow redesign, DEV-15)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * "Add Broker Response" navigates to the platform's own create screen with
+ * `Disposition__c` defaulted; "Replace Broker" opens c/bovReplaceBrokerModal.
+ *
+ * 🔴 THE WIRE IS NOW HELD AS A WHOLE RESULT so `refreshApex` can re-provision it
+ * after a replace. A "tidying" edit back to `wired({ data, error })` compiles,
+ * passes every render test above, and silently turns the post-replace refresh
+ * into a no-op — leaving the matrix showing the OLD Selected broker until a page
+ * reload. `refreshApex` is NOT auto-mocked by the sfdx-lwc-jest stub — `@salesforce/apex`
+ * resolves to a real module whose `refreshApex` is a plain function, so this file carries
+ * its own `jest.mock('@salesforce/apex', ...)` below to make it a spy — and the test
+ * below asserts it is called with the SAME object the wire handed the component,
+ * which is the only assertion that actually catches that regression.
+ *
+ * 🔴 `LightningModal.open()` IS A STATIC ON A CLASS and cannot be driven like a
+ * wire adapter, so c/bovReplaceBrokerModal is mocked wholesale here. Its own
+ * behaviour is proved in lwc/bovReplaceBrokerModal/__tests__.
  */
 import { createElement } from 'lwc';
 import BovComparisonMatrix from 'c/bovComparisonMatrix';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
+import { refreshApex } from '@salesforce/apex';
+import { encodeDefaultFieldValues } from 'lightning/pageReferenceUtils';
+import BovReplaceBrokerModal from 'c/bovReplaceBrokerModal';
 
 jest.mock('lightning/navigation', () => {
     const Navigate = Symbol('Navigate');
@@ -45,6 +68,22 @@ jest.mock(
     { virtual: true }
 );
 
+jest.mock('c/bovReplaceBrokerModal', () => ({
+    __esModule: true,
+    default: { open: jest.fn() }
+}));
+
+// ⚠ `refreshApex` IS NOT AUTO-MOCKED. `@salesforce/apex` resolves to a real module whose
+// `refreshApex` is a plain function, so `expect(refreshApex).toHaveBeenCalled()` fails with
+// "received value must be a mock or spy function" — which reads like a broken assertion rather
+// than a missing mock. No other suite in this repo asserts on it, so there was no precedent to
+// copy; this is the mock the refresh assertions below need.
+jest.mock('@salesforce/apex', () => ({ refreshApex: jest.fn() }), {
+    virtual: true
+});
+
+const RECORD_ID = 'a0D5g000000DispEAG';
+
 const SUBMISSIONS = [
     {
         id: 'a0X010000000001',
@@ -68,7 +107,21 @@ const SUBMISSIONS = [
     }
 ];
 
+/** Every submission still Backup — the pre-selection state. */
+const NONE_SELECTED = SUBMISSIONS.map((s) => ({ ...s, isSelected: false }));
+
+const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 describe('c-bov-comparison-matrix', () => {
+    beforeEach(() => {
+        BovReplaceBrokerModal.open.mockResolvedValue(undefined);
+        encodeDefaultFieldValues.mockImplementation((fields) =>
+            Object.entries(fields)
+                .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+                .join(',')
+        );
+    });
+
     afterEach(() => {
         while (document.body.firstChild) {
             document.body.removeChild(document.body.firstChild);
@@ -76,7 +129,7 @@ describe('c-bov-comparison-matrix', () => {
         jest.clearAllMocks();
     });
 
-    function createComponent(props = { recordId: 'a0D5g000000DispEAG' }) {
+    function createComponent(props = { recordId: RECORD_ID }) {
         const element = createElement('c-bov-comparison-matrix', {
             is: BovComparisonMatrix
         });
@@ -84,6 +137,9 @@ describe('c-bov-comparison-matrix', () => {
         document.body.appendChild(element);
         return element;
     }
+
+    const addBtn = (el) => el.shadowRoot.querySelector('.matrix-add');
+    const replaceBtn = (el) => el.shadowRoot.querySelector('.matrix-replace');
 
     it('renders a zero count and an empty datatable before the wire emits', async () => {
         const element = createComponent();
@@ -165,6 +221,147 @@ describe('c-bov-comparison-matrix', () => {
         expect(pageRef.type).toBe('standard__objectPage');
         expect(pageRef.attributes.objectApiName).toBe('BOV_Submission__c');
         expect(pageRef.attributes.actionName).toBe('list');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Header actions
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('ADD RESPONSE: navigates to the create screen with Disposition__c defaulted', async () => {
+        const element = createComponent();
+        const navHandler = jest.fn();
+        element.addEventListener('navigate', navHandler);
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        addBtn(element).click();
+
+        expect(navHandler).toHaveBeenCalledTimes(1);
+        const pageRef = navHandler.mock.calls[0][0].detail;
+        expect(pageRef.type).toBe('standard__objectPage');
+        expect(pageRef.attributes.objectApiName).toBe('BOV_Submission__c');
+        expect(pageRef.attributes.actionName).toBe('new');
+        // Built with encodeDefaultFieldValues, not string concatenation: the util
+        // URL-encodes the values, and a hand-built string breaks the moment a
+        // defaulted value contains a reserved character.
+        expect(encodeDefaultFieldValues).toHaveBeenCalledWith({
+            Disposition__c: RECORD_ID
+        });
+        expect(pageRef.state.defaultFieldValues).toContain(RECORD_ID);
+    });
+
+    it('REPLACE BROKER is HIDDEN until a submission is Selected', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit(NONE_SELECTED);
+        await Promise.resolve();
+
+        // Nothing to replace yet — but the add button is always available.
+        expect(replaceBtn(element)).toBeNull();
+        expect(addBtn(element)).not.toBeNull();
+    });
+
+    it('REPLACE BROKER appears once a submission is Selected', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        expect(replaceBtn(element)).not.toBeNull();
+    });
+
+    it('REPLACE: opens the modal with ONLY the backups and names the incumbent', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        replaceBtn(element).click();
+        await flushPromises();
+
+        expect(BovReplaceBrokerModal.open).toHaveBeenCalledTimes(1);
+        const args = BovReplaceBrokerModal.open.mock.calls[0][0];
+        expect(args.dispositionId).toBe(RECORD_ID);
+        expect(args.currentBroker).toBe('Colliers International');
+        // The Selected row is excluded — promoting the incumbent to itself is not
+        // an operation. Options are composed here, from the SAME payload that
+        // draws the rows, so the modal cannot show a different valuation.
+        expect(args.backupOptions).toEqual([
+            { label: 'JLL — $11.0M', value: 'a0X010000000002' }
+        ]);
+    });
+
+    it('🔴 REPLACE SUCCESS: toasts the SERVER message sticky, then refreshes THIS wire', async () => {
+        const serverMessage =
+            'JLL is now the selected broker. A fresh broker approval is required.';
+        BovReplaceBrokerModal.open.mockResolvedValue({ message: serverMessage });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        replaceBtn(element).click();
+        await flushPromises();
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        const toast = toastHandler.mock.calls[0][0].detail;
+        // Verbatim: the "fresh approval is required" warning is the SERVER's sentence.
+        expect(toast.message).toBe(serverMessage);
+        expect(toast.variant).toBe('warning');
+        // Sticky, because it describes a consequence the user must act on.
+        expect(toast.mode).toBe('sticky');
+
+        // 🔴 The swap is imperative Apex DML on records this cacheable wire already
+        // holds, so LDS has no idea they changed. Asserted with the WIRE RESULT
+        // OBJECT, which is what pins the un-destructured `wiredSubmissions(result)`
+        // shape — the only thing refreshApex can actually re-provision.
+        expect(refreshApex).toHaveBeenCalledTimes(1);
+        const passed = refreshApex.mock.calls[0][0];
+        expect(passed).toBeDefined();
+        expect(passed).toHaveProperty('data');
+    });
+
+    it('REPLACE CANCELLED: no toast and no refresh', async () => {
+        BovReplaceBrokerModal.open.mockResolvedValue(undefined);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        replaceBtn(element).click();
+        await flushPromises();
+
+        expect(toastHandler).not.toHaveBeenCalled();
+        expect(refreshApex).not.toHaveBeenCalled();
+    });
+
+    it('REPLACE: a modal that fails to OPEN toasts a distinct message and does not refresh', async () => {
+        BovReplaceBrokerModal.open.mockRejectedValue(
+            new Error('modal layer unavailable')
+        );
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        replaceBtn(element).click();
+        await flushPromises();
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.title).toBe(
+            'Could not open the replace dialog'
+        );
+        expect(refreshApex).not.toHaveBeenCalled();
     });
 
     it('is accessible', async () => {

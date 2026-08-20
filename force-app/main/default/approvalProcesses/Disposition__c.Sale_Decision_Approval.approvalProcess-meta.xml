@@ -1,5 +1,60 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error. The rationale below lives in this comment
+        rather than in <description> because a comment is repo-only and is never sent to the
+        Metadata API. ⚠ DO NOT ASSUME THE 255-CHARACTER CAP that binds RecordType and
+        ValidationRule descriptions applies here: the five approval files already in this repo
+        carry descriptions of 442 to 617 characters (measured against git HEAD, 2026-08-19).
+        The descriptions written in this change are nevertheless kept under 255, so the rule is
+        uniform across every metadata type in this tranche and never has to be re-measured.
+
+        =====================================================================================
+        🔴 RETRACTED 2026-08-19 - THIS PROCESS NOW CARRIES A FINAL APPROVAL ACTION.
+        =====================================================================================
+        The superseded sentence is quoted and retracted rather than deleted, because it is the
+        claim a future reader is most likely to reason from:
+
+            RETRACTED: "No field updates fire on approval or rejection - approval history
+            records who and when, and the stage is advanced by a human afterwards."
+
+        WHAT REPLACED IT: the client's redesign makes the approval OWN the transition. Approval
+        now fires the Set_Approval_Advance_Pending field update, which is a SEMAPHORE, not a
+        stage write.
+
+        🔴 THE OBJECTION BEHIND THE RETRACTED SENTENCE IS ANSWERED, NOT IGNORED. That sentence
+        existed because an approval FieldUpdate BYPASSES VALIDATION RULES ENTIRELY - the same
+        argument Wire_Complete_Before_Completed's comment made. It is still true, which is
+        exactly why the field update writes a FLAG and not Disposition_Stage__c. The flag
+        re-fires DispositionTrigger; the after-update handler enqueues
+        DispositionApprovalAdvanceQueueable, which writes the stage with ordinary
+        Database.update(..., false, AccessLevel.SYSTEM_MODE). Validation rules DO evaluate
+        against that write. An approval-triggered FLOW was rejected separately: with no
+        runInMode it runs as the APPROVER, a measured incident on this org.
+
+        WHAT THE ADVANCE TARGETS. Readiness is the one hop whose target depends on the record
+        type: On_Market goes to BOV Outreach, Off_Market goes to Broker Selection. The Queueable
+        derives that from (record type, current stage), which is why ONE semaphore serves all
+        three Disposition-target approvals - their entry stages (Disposition Readiness,
+        Broker Selection, Closing) are mutually exclusive, so there is nothing to disambiguate.
+
+        ⚠ IF THE ADVANCE FAILS the flag is left TRUE, on purpose: the record is findable by
+        SOQL and recoverable. It is not visible on any page - Approval_Advance_Pending__c
+        deliberately has no FLS anywhere. See that field's own XML comment.
+
+        SUBMISSION IS NOW AUTOMATIC. DispositionService.initiateAndSubmit creates the record at
+        Disposition Readiness and submits it in the same transaction, from the Sell Meter
+        Initiate modal. A manual resubmit route survives as the Submit_Sale_Decision quick
+        action. allowRecall stays true and recordEditability stays AdminOnly - the AdminOnly
+        lock releases before the Queueable runs, which is why the asynchronous hop is safe.
+
+        DEPLOY ORDER - LOAD-BEARING. workflows/Disposition__c.workflow-meta.xml must land FIRST
+        or this file fails on an unknown field update. DispositionTriggerHandler's semaphore hook
+        should be live before this lands in a real org, or an approval will set a flag nothing
+        reads.
+    -->
     <active>true</active>
     <allowRecall>true</allowRecall>
     <allowedSubmitters>
@@ -28,7 +83,7 @@
         <label>Principal Review</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal sign-off on the decision to sell the asset. EITHER principal (Ali or Nikhil) decides - first response wins: the first approval approves and the first rejection rejects; the second principal is never waited for and their work item is withdrawn. Entry: the disposition is at Disposition Readiness. No field updates fire on approval or rejection - approval history records who and when, and the stage is advanced by a human afterwards.</description>
+    <description>Principal sign-off on the decision to sell. Either principal decides, first response wins. Entry: stage is Disposition Readiness. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage. See this file&apos;s XML comment.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
         <criteriaItems>
@@ -37,6 +92,12 @@
             <value>Disposition Readiness</value>
         </criteriaItems>
     </entryCriteria>
+    <finalApprovalActions>
+        <action>
+            <name>Set_Approval_Advance_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
     <label>Sale Decision Approval</label>

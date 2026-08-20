@@ -11,6 +11,10 @@
         <translation><!-- BOV Outreach --></translation>
     </picklistValues>
     <picklistValues>
+        <masterLabel>Broker Selection</masterLabel>
+        <translation><!-- Broker Selection --></translation>
+    </picklistValues>
+    <picklistValues>
         <masterLabel>Call for Offers</masterLabel>
         <translation><!-- Call for Offers --></translation>
     </picklistValues>
@@ -39,7 +43,19 @@
         <translation><!-- NDA --></translation>
     </picklistValues>
     <picklistValues>
+        <masterLabel>Offer Selection</masterLabel>
+        <translation><!-- Offer Selection --></translation>
+    </picklistValues>
+    <picklistValues>
         <masterLabel>PSA</masterLabel>
         <translation><!-- PSA --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Release Materials</masterLabel>
+        <translation><!-- Release Materials --></translation>
+    </picklistValues>
+    <picklistValues>
+        <masterLabel>Sale Closes</masterLabel>
+        <translation><!-- Sale Closes --></translation>
     </picklistValues>
 </CustomFieldTranslation>

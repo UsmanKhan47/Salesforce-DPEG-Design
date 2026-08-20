@@ -12,11 +12,28 @@
  *   attempt 3  a Queueable, post-commit     -> the lock has already been released
  *
  * `Disposition__c` is the entry object of THREE approval processes — Sale_Decision_Approval (at
- * Disposition Readiness), Broker_Selection_Approval (at BOV Outreach) and Closing_Approval (at
- * Closing) — and all three declare `recordEditability = AdminOnly`, so any write back to the
+ * `Disposition Readiness`), Broker_Selection_Approval (at `Broker Selection` AND record type Off
+ * Market) and Closing_Approval (at `Closing` AND `Wire_Verification_Completed__c = true`) — and all
+ * three declare `recordEditability = AdminOnly`, so any write back to the
  * disposition from inside a transaction running under a pending approval fails. All three also
  * set `finalApprovalRecordLock = false`, so the record unlocks when that transaction commits,
  * which is exactly when a Queueable runs.
+ *
+ * ⚠ TWO OF THOSE ENTRY CRITERIA MOVED ON 2026-08-19 (disposition flow redesign) and the old text is
+ * retracted verbatim so nobody re-derives it: "Broker_Selection_Approval (at BOV Outreach) and
+ * Closing_Approval (at Closing)". Nothing about THIS class changes — `NDA` was not an entry stage
+ * before and is not one now — but the residual below is affected, so read on.
+ *
+ * 🔴 THE D20/W1 RESIDUAL IS NOW REACHABLE FROM A NEW DIRECTION, AND IT IS WORTH KNOWING. Since the
+ * redesign, an OFF-MARKET disposition enters `NDA` as the result of `Broker_Selection_Approval`
+ * being APPROVED — through `Approval_Advance_Pending__c` and
+ * `DispositionApprovalAdvanceQueueable`. On that path the lock has ALREADY released (the approving
+ * transaction committed before that Queueable ran), so this stamp finds an unlocked record and the
+ * residual does not bite. The residual still applies where it always did: a HUMAN or a data load
+ * moving a record into `NDA` while some OTHER approval is pending on it, which `AdminOnly` permits
+ * for an administrator. See `DispositionApprovalAdvanceQueueable`'s header for why that class is
+ * the mirror image of this one — same mechanism, opposite conclusion, and the difference is WHO
+ * releases the lock.
  *
  * The NDA itself is still inserted SYNCHRONOUSLY by DispositionStageEntryService: NDA__c is not
  * the record under approval and is not locked, so the user sees it immediately. Only the

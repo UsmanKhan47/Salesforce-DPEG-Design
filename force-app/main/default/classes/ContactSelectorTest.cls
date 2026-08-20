@@ -548,6 +548,90 @@ private class ContactSelectorTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // selectBrokerLabelsByIds
+    //   (DispositionBrokerStampService — off-market broker lookup, 2026-08-20; WITH SYSTEM_MODE,
+    //   automation read inside a Disposition__c before-trigger — see that selector method's ApexDoc)
+    // ─────────────────────────────────────────────────────────────────────────
+    //
+    // No dedicated "zero-Contact-grant Standard User" SYSTEM_MODE proof here, unlike
+    // selectBrokersOrderedByName's USER_MODE proof above — that pattern needs the running user to
+    // OWN or otherwise see the Contact under sharing (SYSTEM_MODE lifts CRUD/FLS, never sharing;
+    // see the method's own "SHARING IS A SEPARATE QUESTION" note), which is a materially different
+    // proof from "no permission set is required". These three tests instead mirror this repo's
+    // standing SYSTEM_MODE selector convention (DispositionSelector.selectStageAndTypeByIds and
+    // siblings): basic field population + exclusion, the null/empty no-query contract, and the
+    // bulk-251-one-query proof — run as the privileged default test user throughout.
+
+    @isTest
+    static void selectBrokerLabelsByIds_returnsNameAndFirmForRequestedIds() {
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(2, null, true);
+        // A broker Contact NOT in the requested set must not be returned. LastName is
+        // differentiated from the 'Contact 0' / 'Contact 1' pair above — an un-differentiated
+        // third insert collides with the org's standard duplicate rule (same shape as
+        // selectBrokersRankedByClosedVolume_ranksByVolumeThenName_excludesNonBrokers above).
+        Contact other = TestDataFactory.createBrokerContact(null, false);
+        other.LastName = 'Excluded';
+        insert other;
+
+        Test.startTest();
+        List<Contact> rows = ContactSelector.selectBrokerLabelsByIds(
+            new Set<Id>{ brokers[0].Id, brokers[1].Id });
+        Test.stopTest();
+
+        Assert.areEqual(2, rows.size(), 'Only the requested Contacts are returned');
+        Map<Id, Contact> byId = new Map<Id, Contact>(rows);
+        Assert.isTrue(byId.containsKey(brokers[0].Id), 'The first requested broker is returned');
+        Assert.isTrue(byId.containsKey(brokers[1].Id), 'The second requested broker is returned');
+        Assert.isFalse(byId.containsKey(other.Id), 'A broker NOT in the requested set must be excluded');
+        Assert.isNotNull(byId.get(brokers[0].Id).Name, 'Name is selected — the caller composes the label from it');
+        Assert.areEqual(brokers[0].Broker_Firm__c, byId.get(brokers[0].Id).Broker_Firm__c,
+            'Broker_Firm__c (custom, FLS-controlled) is selected under WITH SYSTEM_MODE');
+    }
+
+    /**
+     * The null/empty-input contract matches `DispositionSelector.selectStagesByIds` per this
+     * method's own ApexDoc — asserted here rather than assumed.
+     */
+    @isTest
+    static void selectBrokerLabelsByIds_nullOrEmptyInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer before = Limits.getQueries();
+        List<Contact> forNull = ContactSelector.selectBrokerLabelsByIds(null);
+        List<Contact> forEmpty = ContactSelector.selectBrokerLabelsByIds(new Set<Id>());
+        Integer after = Limits.getQueries();
+        Test.stopTest();
+
+        Assert.areEqual(0, forNull.size(), 'A null Contact Id set short-circuits to an empty list, not null');
+        Assert.areEqual(0, forEmpty.size(), 'An empty Contact Id set short-circuits to an empty list, not null');
+        Assert.areEqual(0, after - before, 'Neither call should spend a query — the empty-set guard runs before the SOQL');
+    }
+
+    /**
+     * Bulk-safety at data volume, mirroring `DispositionSelector.selectStageAndTypeByIds_bulk251_
+     * oneQueryForTheWholeSet` — the sibling SYSTEM_MODE automation-read proof on the caller's own
+     * object. `DispositionBrokerStampService.stampSelectedBrokerLabel`'s own budget note requires
+     * exactly ONE query for the whole trigger chunk; this is the selector-level half of that proof
+     * (`DispositionBrokerStampServiceTest` proves the SERVICE issues exactly one call).
+     */
+    @isTest
+    static void selectBrokerLabelsByIds_bulk251_oneQueryForTheWholeSet() {
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(BULK_N, null, false);
+        Database.DMLOptions dml = new Database.DMLOptions();
+        dml.DuplicateRuleHeader.AllowSave = true;
+        Database.insert(brokers, dml);
+        Set<Id> ids = new Map<Id, Contact>(brokers).keySet();
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<Contact> rows = ContactSelector.selectBrokerLabelsByIds(ids);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(BULK_N, rows.size(), 'All 251 requested broker Contacts are returned');
+        Assert.areEqual(1, queriesUsed, 'ONE query for the whole 251-row set, never one per record');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

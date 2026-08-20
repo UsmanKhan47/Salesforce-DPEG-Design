@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+        <ValidationRule> breaks `sf` deploy at conversion with a misleading "unable to find
+        matching parent xml file" error. ValidationRule.Description is capped at 255
+        characters, which is why the rationale is here.
+
+        ADDED 2026-08-20 (Tranche 2, Workstream A4).
+        🔴 THE SHARED RATIONALE FOR ALL FOUR A4 RULES ON THIS OBJECT LIVES IN
+        Buyer_Counter_Price_Is_Positive.validationRule-meta.xml. READ IT THERE. It covers: why
+        NOT(ISBLANK()) comes first and is not padding; why these are four narrow rules instead
+        of the two paired rules the requirements doc enumerated; why there is no
+        ISCHANGED/ISNEW guard; the zero row impact measurement; and why no record type test is
+        needed on this single module object.
+
+        THIS FIELD SPECIFICALLY: DPEG_Counter_Price__c is DPEG's counter back to the buyer.
+        Blank is the normal state, since most offers are never countered. A zero or negative
+        counter is a typo or a failed import, never a negotiating position.
+    -->
+    <fullName>DPEG_Counter_Price_Is_Positive</fullName>
+    <active>true</active>
+    <description>Blocks a zero or negative DPEG Counter Price. A blank counter is legitimate and is left alone; only a counter that has been entered is checked. See Buyer_Counter_Price_Is_Positive for the shared A4 rationale on this object.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(DPEG_Counter_Price__c)),
+    DPEG_Counter_Price__c &lt;= 0
+)</errorConditionFormula>
+    <errorMessage>DPEG Counter Price must be greater than zero. Leave it blank if DPEG has not countered this offer; enter the countered amount if it has.</errorMessage>
+    <errorDisplayField>DPEG_Counter_Price__c</errorDisplayField>
+</ValidationRule>

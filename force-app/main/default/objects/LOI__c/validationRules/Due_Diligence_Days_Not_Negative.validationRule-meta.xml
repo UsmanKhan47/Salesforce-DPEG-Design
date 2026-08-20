@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+        <ValidationRule> breaks `sf` deploy at conversion with a misleading "unable to find
+        matching parent xml file" error. ValidationRule.Description is capped at 255
+        characters, which is why the rationale is here.
+
+        ADDED 2026-08-20 (Tranche 2, Workstream A4).
+        🔴 THE SHARED RATIONALE FOR ALL FOUR A4 RULES ON THIS OBJECT LIVES IN
+        Counter_Price_Is_Positive.validationRule-meta.xml. READ IT THERE, including why this
+        rule firing on ACQUISITION LOIs is intended and why no record type test may be added.
+
+        🔴 ZERO IS PERMITTED, DELIBERATELY. A buyer waiving due diligence has zero DD days,
+        and on the disposition side that is the strongest offer on the table, not a defect.
+        The field's own description calls this "the feasibility window where DPEG can walk
+        away" from the ACQUISITION point of view; on a disposition LOI the same number is the
+        window DPEG grants the buyer. Zero is legitimate in both readings. Only a NEGATIVE
+        count is blocked.
+    -->
+    <fullName>Due_Diligence_Days_Not_Negative</fullName>
+    <active>true</active>
+    <description>Blocks a negative Due Diligence Days on an LOI. Zero is deliberately permitted: a waived due diligence period is a real term on either side of the deal. Blank is untouched. See Counter_Price_Is_Positive for the shared A4 rationale.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Due_Diligence_Days__c)),
+    Due_Diligence_Days__c &lt; 0
+)</errorConditionFormula>
+    <errorMessage>Due Diligence Days cannot be negative. Enter the length of the feasibility window, or zero if due diligence is being waived. Leave it blank if no DD period has been proposed.</errorMessage>
+    <errorDisplayField>Due_Diligence_Days__c</errorDisplayField>
+</ValidationRule>

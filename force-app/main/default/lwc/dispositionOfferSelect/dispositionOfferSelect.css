@@ -1,0 +1,32 @@
+/* Structure mirrors c/brokerReplaceQuickAction — the repo's other ScreenAction
+   quick action — so the two panels read as one family. SLDS 2 tokens only. */
+
+.qa-body {
+    min-height: 90px;
+    overflow-wrap: anywhere;
+}
+
+.qa-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 90px;
+}
+
+.qa-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--slds-g-spacing-2, 8px);
+    background: var(--slds-g-color-surface-container-1, #f3f3f2);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-1, 0.25rem);
+    padding: var(--slds-g-spacing-2, 8px) var(--slds-g-spacing-3, 12px);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-neutral-base-30, #444444);
+}
+
+/* Cross-bundle error-banner class — do not rename. */
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}

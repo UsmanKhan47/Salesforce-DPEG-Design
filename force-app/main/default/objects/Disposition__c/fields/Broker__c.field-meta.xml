@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20. THE OFF-MARKET BROKER PICK BECOMES A VALIDATED CONTACT LOOKUP.
+        =====================================================================================
+        An off-market analyst used to type a broker's name as free text into
+        Selected_Broker__c, and the Broker Selection approval gate accepted any non-blank
+        string. This field replaces that pick with a real record.
+
+        XML SHAPE IS COPIED FROM Broker_Assignment__c.Broker__c, DELIBERATELY AND EXACTLY.
+        Same referenceTo, same ACTIVE non-optional lookupFilter, same errorMessage text, same
+        deleteConstraint. Lease_Inquiry__c.Broker__c and Opportunity.Broker__c are the other two
+        precedents and carry the same filter. There is no Broker__c OBJECT in this org; every
+        "broker" in this application is a Contact flagged Is_Broker__c.
+
+        =====================================================================================
+        🔴 WHY THIS IS ADDITIVE, AND WHY Selected_Broker__c (Text 255) SURVIVES.
+        =====================================================================================
+        Selected_Broker__c is NOT converted in place and is NOT retired. It cannot be, because
+        the ON-MARKET BOV chain writes a String into it and that chain is out of scope:
+
+            BovSubmissionTriggerHandler.cls:150   builds the map of submission to firm
+            BovSubmissionTriggerHandler.cls:163   stamps Selected_Broker__c from
+                                                  BOV_Submission__c.Broker_Firm__c, a Text(255)
+            BovSubmissionService.cls:180          stamps the same String on a broker replacement
+
+        Converting the Text field to Lookup(Contact) would leave both of those writers assigning
+        a String to an Id field. That is a compile failure in Apex, and if it somehow reached the
+        org a Broker_Firm__c value such as 'CBRE' is not an Id, so the on-market broker
+        appointment would fail outright. Those writers cannot be changed to compensate, because
+        the on-market path is explicitly out of scope this wave.
+
+        SO THE TWO FIELDS NOW HAVE DIFFERENT JOBS:
+            Broker__c            the DECISION. Off-market only. The gate in
+                                 DispositionApprovalService reads THIS field, not the text.
+            Selected_Broker__c   the DENORMALISED DISPLAY VALUE. Off-market it is STAMPED FROM
+                                 THIS LOOKUP by DispositionBrokerStampService in before-context.
+                                 On-market it keeps its existing firm-only stamp from the BOV
+                                 chain, untouched.
+
+        =====================================================================================
+        🔴 DOWNGRADED 2026-08-20. THE SYNC GUARANTEE WAS OVERSTATED. RETRACTED IN PLACE.
+        =====================================================================================
+
+            RETRACTED, from the Selected_Broker__c line above: "so the two can never disagree."
+
+        WHAT IS ACTUALLY TRUE, AND IT IS NARROWER: the two cannot disagree ACROSS A SAVE OF THE
+        DISPOSITION THAT CHANGES Broker__c. That is the only event the stamp responds to.
+        DispositionBrokerStampService's pass 1 is literally
+
+            if (d.Broker__c == priorBroker) { continue; }
+
+        so a save that leaves the lookup Id alone never reaches the stamp at all.
+
+        🔴 THE VECTOR THAT WILL ACTUALLY HAPPEN IS A CONTACT RENAME, AND IT IS NOT DEFENDED.
+        Selected_Broker__c is composed from the Contact's OWN fields - Name, and Broker_Firm__c
+        when present. Editing either of those on the Contact does not touch
+        Disposition__c.Broker__c, does not fire DispositionTrigger, and therefore never
+        re-stamps. Concretely: a broker moves from CBRE to JLL, or marries and changes surname,
+        or the firm is corrected from a typo. Every disposition already pointing at that Contact
+        keeps displaying the OLD string - on the record page, in the Broker Selection Path step,
+        on the Broker_Selection_Approval page and in every report - PERMANENTLY, because for a
+        settled disposition Broker__c never changes again. The lookup is right and the text is
+        wrong, silently, forever.
+
+        THIS IS NOT A DEFECT TO FIX HERE, AND DELIBERATELY SO. The obvious "fix" - a Contact
+        trigger fanning out to every Brokered_Disposition - is a cross-object write on a
+        high-volume standard object to keep a DISPLAY string current, and the display already
+        has a correct source: Broker__c renders the Contact as a live, clickable name. WHAT IS
+        REQUIRED IS THAT NOBODY TREAT THE TEXT AS AUTHORITATIVE. It is a convenience copy with a
+        known staleness window of "until the lookup next changes", which is the honest way to
+        describe it and the reason the NO CONSUMER MAY PARSE rule below is not merely stylistic.
+        ⚠ THE APPROVER IS THE ONE EXPOSED. Broker_Selection_Approval shows BOTH fields side by
+        side precisely so the approver sees the firm without navigating away - so a stale firm
+        string is read as current by the one person whose judgement depends on it. The
+        mitigation is the clickable lookup next to it, not the text.
+        ⚠ ONE MORE ALREADY-DOCUMENTED DISAGREEMENT, listed here so the set is complete: a
+        SetNull cascade blanks Broker__c without firing the trigger and leaves the text behind.
+        That one has a guard - see the SEED HAZARD block below.
+
+        ⚠ ONE FIELD, TWO FORMATS. Selected_Broker__c reads 'Firm' on on-market rows and
+        'Person - Firm' on off-market rows. Deliberate: on-market approves a firm's BOV response,
+        off-market approves a named individual. NO CONSUMER MAY PARSE THIS FIELD. Nothing parses
+        it today; keep it that way.
+
+        =====================================================================================
+        🔴 SEED HAZARD. scripts/seed-broker-contacts.apex CAN SILENTLY NULL THIS FIELD.
+        =====================================================================================
+        That script opens at line 4 with:
+
+            delete [SELECT Id FROM Contact WHERE Is_Broker__c = true];
+
+        With deleteConstraint SetNull, re-running that seed NULLS Broker__c on every Disposition
+        holding it, with no error and no warning. The damage is invisible, and that is what makes
+        it severe: the denormalised Selected_Broker__c text is left behind still naming the
+        vanished broker, so the record looks healthy on the page, in the Path step and on any
+        report, while the approval gate now refuses the submit. The same exposure already applies
+        to Broker_Assignment__c.Broker__c, Lease_Inquiry__c.Broker__c and Opportunity.Broker__c,
+        which point at the same Contacts with the same semantics.
+
+        MITIGATION, AS SPECIFIED IN THE REQUIREMENTS (offmarket-broker-lookup-requirements.md,
+        section 2.6 and risk R1). All three parts, not one of them:
+          1. A GUARD IN THE SCRIPT. seed-broker-contacts.apex must refuse to run when any
+             Disposition references a broker Contact, e.g. abort with a clear message when
+             [SELECT COUNT() FROM Disposition__c WHERE Broker__c != null] > 0, unless an
+             explicit FORCE = true flag is set in the script.
+          2. A LOUD HEADER COMMENT on that script naming all four dependent lookups as
+             collateral of its line 4.
+          3. TREAT THE SCRIPT AS REBUILD ONLY. Never run it against an org holding real
+             disposition data.
+        🔴 DO NOT "FIX" THIS BY SWITCHING TO deleteConstraint Restrict. That would make the seed
+        fail loudly but would also block legitimate Contact deletion for the whole org.
+        ⚠ The guard in part 1 is NOT in this deliverable. It is a separate edit to
+        scripts/seed-broker-contacts.apex and it is still OPEN as of this file's creation.
+
+        =====================================================================================
+        RELATIONSHIP NAME: Brokered_Dispositions. CHOSEN FOR MEANING, NOT FORCED BY A COLLISION.
+        =====================================================================================
+        COLLISION CHECK FIRST, MEASURED NOT ASSUMED: exactly three fields in this repo carry
+        referenceTo Contact, and they use Broker_Assignments, Lease_Inquiries and
+        Brokered_Opportunities. Nothing on Contact uses Dispositions OR Brokered_Dispositions,
+        so BOTH names were available. The Dispositions that does exist in this repo belongs to
+        Disposition__c.Property_Asset__c, whose parent is Property_Asset__c; relationship names
+        are unique PER PARENT OBJECT, so that one never contended for the Contact namespace.
+
+        WHY Brokered_Dispositions AND NOT THE BARE PLURAL. Under Contact, "Dispositions" reads as
+        "this Contact's dispositions" when what the related list actually means is "dispositions
+        this Contact BROKERS". Opportunity.Broker__c is the org's own precedent for exactly this
+        shape, a ROLE named Contact lookup on a deal object, and it is called
+        Brokered_Opportunities. Broker_Assignments and Lease_Inquiries take the bare plural
+        because those objects exist ONLY to be about a broker, so the role is already in the
+        object name; Disposition__c and Opportunity are not broker objects, so the role has to be
+        carried by the relationship name.
+        ⚠ A relationshipName is disruptive to change after deploy. It was settled here, before
+        the first deploy, while it cost nothing.
+
+        =====================================================================================
+        🔴 FLS IS LOAD BEARING FOR THIS FIELD, AND THE BLAST RADIUS IS THE WHOLE OBJECT.
+        =====================================================================================
+        A Metadata API deployed custom field arrives with NO FLS for any profile, System
+        Administrator included. This field joins the SELECT in
+        DispositionSelector.selectApprovalContextById, which is WITH USER_MODE and backs ALL FOUR
+        approval branches. USER_MODE THROWS, IT DOES NOT DEGRADE: one unreadable field raises
+        System.QueryException "No such column", an FLS denial wearing a schema error, and Submit
+        for Approval breaks on EVERY disposition at EVERY stage on BOTH record types, not just
+        the off-market broker step.
+
+        Read is granted in DPEG_Disposition_View and edit in DPEG_Disposition_Edit in the same
+        deploy as this field. Those two files and this one must land TOGETHER, and never Apex
+        first. 🔴 WHEN THAT QueryException APPEARS, THE FIX IS THE PERMISSION SET, NOT
+        WITH SYSTEM_MODE. SYSTEM_MODE is banned for that method by its own class header
+        (DispositionSelector.cls:444-456), which argues USER_MODE is the right answer there
+        rather than the default. DPEG_Admin_Access is deliberately NOT widened: it grants only
+        four Disposition__c fields today and a bare administrator holding no disposition persona
+        set already cannot run that query, so this change creates no new admin regression.
+
+        ⚠ VISIBILITY IS SCOPED IN THE FLEXIPAGE, NOT HERE. The field renders only where
+        Is_On_Market__c is false, via a fieldInstance level visibilityRule on
+        Disposition_Record_Page. There is no record-type guard on the field itself and none
+        should be added; the stamp service keys on Broker__c changing, so the scoping is
+        structural rather than duplicated.
+
+        ⚠ TESTS MUST USE TestDataFactory.createBrokerContact / createBrokerContacts. The lookup
+        filter below is ACTIVE and NOT optional, so a plain createContacts() Contact will be
+        refused.
+    -->
+    <fullName>Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>OFF-MARKET ONLY. The broker Contact directly picked for this disposition, and the field the Broker Selection approval gate tests. Selected_Broker__c is stamped from this lookup as a display string and is retained because the on-market BOV chain still writes text into it. See the XML comment in this file.</description>
+    <inlineHelpText>Pick the broker for this off-market deal. Only Contacts flagged as brokers appear. Selected Broker fills in automatically from your pick, so do not type into it.</inlineHelpText>
+    <label>Broker</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>The selected Contact is not flagged as a broker (Is_Broker__c).</errorMessage>
+        <filterItems>
+            <field>Contact.Is_Broker__c</field>
+            <operation>equals</operation>
+            <value>True</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Brokered Dispositions</relationshipLabel>
+    <relationshipName>Brokered_Dispositions</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

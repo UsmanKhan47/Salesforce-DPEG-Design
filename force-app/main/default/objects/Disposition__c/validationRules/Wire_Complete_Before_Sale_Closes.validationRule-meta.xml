@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters. The rationale below is
+        operationally important, so it was moved here rather than trimmed; a comment is
+        repo-only and is never sent to the Metadata API. Do not paste this back into
+        <description>. NOTE ALSO: the comment must sit INSIDE the root element - a comment
+        placed ABOVE <ValidationRule> breaks `sf` deploy at conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        THIS FILE REPLACES Wire_Complete_Before_Completed. IT IS NOT A RENAME.
+        =====================================================================================
+        A validation rule API-name change is a DELETE plus a CREATE - the Metadata API has no
+        rename operation for one. The old rule is retired through
+        manifest/disposition-redesign-destructive/destructiveChangesPost.xml and MUST be deleted
+        in the same deploy wave that lands this file, or the org briefly carries both: the old
+        one gates a stage value that still exists (Completed) and the new one gates its
+        replacement (Sale Closes). With zero rows on Completed that overlap is harmless, but
+        leaving the old rule behind permanently would block the manual deletion of the Completed
+        picklist value, which is the last step of this programme.
+
+        THE WIRE GATE. A disposition cannot reach Sale Closes while the wire-fraud check is
+        incomplete. Wire_Verification_Completed__c is DERIVED - the Wire_Verification_Rollup flow
+        sets it from the MOST RECENT Wire__c on the disposition (the same row
+        WireSelector.selectMostRecentByDispositionId returns), true only when all six
+        confirmation fields are populated.
+
+        WHY OR(ISNEW(), ISCHANGED(...)): ISCHANGED alone gates the transition but leaves a
+        create-at-Sale-Closes hole. ISNEW closes it. Together they still do NOT trap rows already
+        sitting at Sale Closes, whose every subsequent edit would otherwise be blocked. Same
+        shape as the deployed Property_Registry__c.Winning_Lead_Required.
+
+        =====================================================================================
+        🔴 THE Q4 ARGUMENT THIS RULE'S PREDECESSOR CARRIED IS RETRACTED, AND Closing_Approval
+        NOW DOES THE THING Q4 FORBADE. QUOTED, NOT DELETED, BECAUSE IT IS EXACTLY WHAT A FUTURE
+        READER WOULD RESTORE FROM.
+        =====================================================================================
+
+            RETRACTED: "WHY THIS SHAPE, NOT AN APPROVAL entryCriteria (design Q4): Putting the
+            flag in Closing_Approval's entryCriteria would surface an unmet gate as the
+            platform's 'no applicable approval process was found' - a misleading error the user
+            cannot act on. Instead the flag is an approvalPageFields entry on Closing_Approval so
+            the approver SEES the wire state when deciding, and the hard stop lives here where
+            its message renders natively in the Path UI."
+
+        WHY IT DIED - THE PREMISE, NOT THE PRINCIPLE. Q4 was right that an unmet gate must not
+        surface as the platform's unhelpful message. Its premise was that entry criteria are the
+        ONLY place a user would meet that gate. Submission no longer runs through the platform's
+        generic Submit button: it runs through the Submit_Closing_Approval quick action, backed
+        by DispositionApprovalService.submitForApproval, which PRE-CHECKS this same flag and
+        raises an AUTHORED message naming the six wire confirmation fields. The user never
+        reaches the platform's message. 🔴 THAT PRE-CHECK IS THE LOAD-BEARING HALF: if it is ever
+        removed, Closing_Approval's Wire_Verification_Completed__c entry criterion must be
+        removed with it, or Q4's failure mode returns.
+        And under the new flow the criterion is not optional anyway - without it the AdminOnly
+        approval lock blocks Wire_Verification_Rollup for the whole pending window, and the
+        approval would then fire a stage advance this rule refuses. Closing_Approval's own XML
+        comment carries that deadlock analysis in full.
+
+        🔴 THIS RULE IS NOT REPLACED BY THAT ENTRY CRITERION. BOTH GATES STAY AND THEY GUARD
+        DIFFERENT THINGS. The entry criterion decides who may ENTER the approval. This rule
+        blocks any write of 'Sale Closes' from any source - including a hand edit that never went
+        near an approval, and including the machine writes below. Do not delete either on the
+        grounds that the other exists.
+
+        =====================================================================================
+        FIRING SURFACE - THIS RULE NOW FIRES AGAINST A SECOND MACHINE WRITER, BY DESIGN.
+        =====================================================================================
+        Its predecessor's comment recorded ContractExecutionService as the first machine writer
+        of Disposition_Stage__c and noted that it "moves records INTO Closing and never out of
+        it ... so it cannot trip this gate". That is STILL TRUE of that service.
+        🔴 WHAT IS NEW: DispositionApprovalAdvanceQueueable (design D-1) writes 'Sale Closes'
+        itself, on final approval of Closing_Approval. So unlike its predecessor, THIS RULE CAN
+        FIRE AGAINST A WRITE NO HUMAN MADE, and that is intended. The Queueable's DML is
+        Database.update(..., false, AccessLevel.SYSTEM_MODE): SYSTEM_MODE bypasses CRUD and FLS,
+        NOT validation rules.
+        ⚠ IN PRACTICE IT SHOULD NEVER TRIP ON THAT PATH, because Closing_Approval cannot be
+        entered unless the flag is already true. The residual is narrow and fail-closed: if an
+        admin unticks a verbal verification between submission and the Queueable running, this
+        rule refuses the advance and Approval_Advance_Pending__c is LEFT TRUE - visible by SOQL
+        on that flag, recoverable, and far better than a silent skip.
+        ⚠ ALSO STILL TRUE, AND WORTH KEEPING TRUE: no FLOW and no APPROVAL FIELD UPDATE writes
+        Disposition_Stage__c. The D-1 field update writes a semaphore flag precisely so that it
+        does not have to, because an approval field update WOULD bypass this rule.
+
+        DEPLOY ORDER - LOAD-BEARING. The Wire_Verification_Rollup flow MUST already be deployed.
+        Deploying this rule against no rollup leaves Wire_Verification_Completed__c false
+        everywhere with nothing able to set it, so NO disposition could reach Sale Closes.
+
+        BLAST RADIUS OF ISNEW() - for the developer and testing agents. Any test or seed script
+        that INSERTS a Disposition__c directly at Sale Closes will fail. Sweep
+        TestDataFactory.createDispositions, DispositionSelectorTest, DispositionControllerTest,
+        BovControllerTest, WireServiceTest, WireControllerTest and the disposition seed scripts -
+        and note that any of those that were updated to say 'Completed' must now say
+        'Sale Closes', which is the SAME sweep the old rule's own blast-radius note demanded.
+    -->
+    <fullName>Wire_Complete_Before_Sale_Closes</fullName>
+    <active>true</active>
+    <description>Blocks the Closing to Sale Closes transition (and create-at-Sale-Closes) while Wire_Verification_Completed__c is false. That flag is derived by the Wire_Verification_Rollup flow. It also gates the D-1 approval auto-advance.</description>
+    <errorConditionFormula>AND(
+    ISPICKVAL(Disposition_Stage__c, &apos;Sale Closes&apos;),
+    OR(ISNEW(), ISCHANGED(Disposition_Stage__c)),
+    NOT(Wire_Verification_Completed__c)
+)</errorConditionFormula>
+    <errorDisplayField>Disposition_Stage__c</errorDisplayField>
+    <errorMessage>The wire verification is not complete. All six wire confirmation fields must be confirmed on the Wire record before this disposition can reach Sale Closes.</errorMessage>
+</ValidationRule>

@@ -235,4 +235,179 @@ private class DispositionServiceTest {
                 'With no available On_Market record type the stamp is skipped and the Disposition is still created');
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // initiateAndSubmit — the Sell Meter "Initiate" modal path (2026-08-19, DEV-1)
+    //
+    // NO 251-RECORD BULK TEST — same .claude/rules/bulk-test-rule.md per-transaction-singleton
+    // exemption as findOrCreate above, recorded in this method's own header: no trigger, no loop,
+    // one invocation per modal click.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private static Integer pendingApprovalsFor(Id targetId) {
+        return [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :targetId AND Status = 'Pending'];
+    }
+
+    @isTest
+    static void initiateAndSubmit_onMarket_createsAndSubmitsIntoSaleDecisionApproval() {
+        Property_Asset__c asset = assetWithPeak(10); // GREEN
+
+        Test.startTest();
+        DispositionService.InitiateOutcome outcome =
+            DispositionService.initiateAndSubmit(asset.Id, 'On_Market');
+        Test.stopTest();
+
+        Assert.isNotNull(outcome.dispositionId, 'A Disposition Id must always be populated');
+        Assert.isTrue(outcome.submitted, 'The submission must succeed against a fresh GREEN asset');
+        Disposition__c created = [
+            SELECT Disposition_Stage__c, RecordTypeId FROM Disposition__c WHERE Id = :outcome.dispositionId
+        ];
+        Assert.areEqual('Disposition Readiness', created.Disposition_Stage__c,
+            'The disposition must be created at Readiness');
+        Schema.RecordTypeInfo onMarket = Schema.SObjectType.Disposition__c
+            .getRecordTypeInfosByDeveloperName().get('On_Market');
+        if (onMarket != null && onMarket.isAvailable()) {
+            Assert.areEqual(onMarket.getRecordTypeId(), created.RecordTypeId,
+                'The CHOSEN record type must be stamped — On_Market here');
+        }
+        Assert.areEqual(1, pendingApprovalsFor(outcome.dispositionId),
+            'A real ProcessInstance must be pending against Sale_Decision_Approval');
+    }
+
+    @isTest
+    static void initiateAndSubmit_offMarket_stampsTheChosenRecordType() {
+        Property_Asset__c asset = assetWithPeak(10); // GREEN
+
+        Test.startTest();
+        DispositionService.InitiateOutcome outcome =
+            DispositionService.initiateAndSubmit(asset.Id, 'Off_Market');
+        Test.stopTest();
+
+        Assert.isTrue(outcome.submitted, 'Off-market must submit into Sale_Decision_Approval too');
+        Schema.RecordTypeInfo offMarket = Schema.SObjectType.Disposition__c
+            .getRecordTypeInfosByDeveloperName().get('Off_Market');
+        Disposition__c created = [SELECT RecordTypeId FROM Disposition__c WHERE Id = :outcome.dispositionId];
+        if (offMarket != null && offMarket.isAvailable()) {
+            Assert.areEqual(offMarket.getRecordTypeId(), created.RecordTypeId,
+                'initiateAndSubmit must stamp the CALLER-CHOSEN type, not the On_Market default '
+                + 'findOrCreate always uses — the whole reason this method takes a parameter');
+        }
+    }
+
+    @isTest
+    static void initiateAndSubmit_invalidRecordTypeName_throwsBeforeAnyQuery() {
+        Property_Asset__c asset = assetWithPeak(10);
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionService.initiateAndSubmit(asset.Id, 'Retail_Strip_Center');
+            Assert.fail('An off-allow-list record type name must be refused');
+        } catch (DispositionService.InvalidRecordTypeException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('On Market or Off Market'), e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'A caller-defect record type name must throw InvalidRecordTypeException');
+        Assert.areEqual(0, [SELECT COUNT() FROM Disposition__c WHERE Property_Asset__c = :asset.Id],
+            'A rejected record type must create nothing');
+    }
+
+    @isTest
+    static void initiateAndSubmit_blankRecordTypeName_throwsInvalidRecordType() {
+        Property_Asset__c asset = assetWithPeak(10);
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionService.initiateAndSubmit(asset.Id, '');
+        } catch (DispositionService.InvalidRecordTypeException e) {
+            refused = true;
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'A blank record type name must be refused, same as an unrecognised one');
+    }
+
+    /**
+     * 🔴 CASE-SENSITIVE BY DESIGN. 'on_market' is off the allow-list even though it reads
+     * identically to a human — Apex Set<String> membership is case-sensitive and so is
+     * getRecordTypeInfosByDeveloperName()'s own map, and the two must agree.
+     */
+    @isTest
+    static void initiateAndSubmit_wrongCaseRecordTypeName_isRefused() {
+        Property_Asset__c asset = assetWithPeak(10);
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionService.initiateAndSubmit(asset.Id, 'on_market');
+        } catch (DispositionService.InvalidRecordTypeException e) {
+            refused = true;
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'A mis-cased record type name must be refused, not silently resolved');
+    }
+
+    @isTest
+    static void initiateAndSubmit_redBandAsset_refusesAndCreatesNothing() {
+        Property_Asset__c asset = assetWithPeak(200); // > 90 days => RED
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionService.initiateAndSubmit(asset.Id, 'On_Market');
+            Assert.fail('A RED asset must not be able to initiate a disposition');
+        } catch (DispositionService.SellMeterGateException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('not ready to sell'), e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The RED asset should have raised SellMeterGateException');
+        Assert.areEqual(0, [SELECT COUNT() FROM Disposition__c WHERE Property_Asset__c = :asset.Id],
+            'A refused creation must leave NO Disposition behind — the gate applies to this create '
+            + 'branch exactly as it does to findOrCreate\'s');
+    }
+
+    /**
+     * 🔴 THE IDEMPOTENT-FIND BRANCH: NO RECORD-TYPE CHANGE, NO RE-SUBMIT. Re-clicking Initiate on
+     * an asset that already has a Disposition must return the SAME Id, unsubmitted, without
+     * touching the existing record's type or stage.
+     */
+    @isTest
+    static void initiateAndSubmit_existingDisposition_doesNotResubmitOrChangeRecordType() {
+        Property_Asset__c asset = assetWithPeak(10);
+        DispositionService.InitiateOutcome first =
+            DispositionService.initiateAndSubmit(asset.Id, 'Off_Market');
+        Assert.areEqual(1, pendingApprovalsFor(first.dispositionId),
+            'PRECONDITION: the first click must have submitted a pending approval, or the "must '
+            + 'not resubmit" assertion below proves nothing (a second submit would simply also '
+            + 'succeed on a never-submitted record)');
+
+        Test.startTest();
+        DispositionService.InitiateOutcome second =
+            DispositionService.initiateAndSubmit(asset.Id, 'On_Market');
+        Test.stopTest();
+
+        Assert.areEqual(first.dispositionId, second.dispositionId,
+            'A second Initiate click must return the SAME Disposition, never a duplicate');
+        Assert.isFalse(second.submitted,
+            'The existing-record branch never submits — re-submitting an already-advanced record '
+            + 'would either duplicate an approval or fail against a pending one');
+        Assert.areEqual(1, [SELECT COUNT() FROM Disposition__c WHERE Property_Asset__c = :asset.Id],
+            'Still exactly one Disposition for the asset');
+        Assert.areEqual(1, pendingApprovalsFor(first.dispositionId),
+            'Still exactly ONE pending approval — the second click must not have created a second');
+        Schema.RecordTypeInfo offMarket = Schema.SObjectType.Disposition__c
+            .getRecordTypeInfosByDeveloperName().get('Off_Market');
+        if (offMarket != null && offMarket.isAvailable()) {
+            Assert.areEqual(offMarket.getRecordTypeId(),
+                [SELECT RecordTypeId FROM Disposition__c WHERE Id = :first.dispositionId].RecordTypeId,
+                '🔴 THE RECORD TYPE MUST NOT CHANGE — re-stamping On_Market on the second click '
+                + 'would silently convert a live off-market sale mid-path');
+        }
+    }
 }

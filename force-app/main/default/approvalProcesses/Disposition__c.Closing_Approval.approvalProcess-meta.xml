@@ -1,5 +1,77 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error. The rationale below lives in this comment
+        rather than in <description> because a comment is repo-only and is never sent to the
+        Metadata API. ⚠ DO NOT ASSUME THE 255-CHARACTER CAP that binds RecordType and
+        ValidationRule descriptions applies here: the five approval files already in this repo
+        carry descriptions of 442 to 617 characters (measured against git HEAD, 2026-08-19).
+        The descriptions written in this change are nevertheless kept under 255, so the rule is
+        uniform across every metadata type in this tranche and never has to be re-measured.
+
+        =====================================================================================
+        🔴 2026-08-19: THIS FILE NOW DOES THE EXACT THING DESIGN DECISION Q4 FORBADE, AND THE
+        SUPERSEDING ARGUMENT IS RECORDED HERE SO NOBODY RESTORES Q4 FROM ITS OWN REASONING.
+        =====================================================================================
+        Q4's decision is quoted verbatim from Wire_Complete_Before_Completed's XML comment, and
+        it is RETRACTED:
+
+            RETRACTED: "WHY THIS SHAPE, NOT AN APPROVAL entryCriteria (design Q4): Putting the
+            flag in Closing_Approval's entryCriteria would surface an unmet gate as the
+            platform's 'no applicable approval process was found' - a misleading error the user
+            cannot act on. Instead the flag is an approvalPageFields entry on Closing_Approval so
+            the approver SEES the wire state when deciding, and the hard stop lives [in the
+            validation rule] where its message renders natively in the Path UI."
+
+        WHY IT DIED - THE PREMISE, NOT THE PRINCIPLE. Q4 was right that an unmet gate must not
+        surface as the platform's unhelpful message. Its premise was that entry criteria are the
+        ONLY place the user would meet that gate. Two things changed:
+          1. THE MITIGATION NOW EXISTS. Submission no longer happens through the platform's
+             generic Submit button. It happens through the Submit_Closing_Approval quick action,
+             backed by DispositionApprovalService.submitForApproval, which PRE-CHECKS
+             Wire_Verification_Completed__c and raises an AUTHORED message naming the six wire
+             confirmation fields. The user never reaches the platform's message. That authored
+             pre-check is the load-bearing half of this change; if it is ever removed, this entry
+             criterion must be removed with it or Q4's failure mode returns.
+          2. WITHOUT THE CRITERION THERE IS NOW A DEADLOCK, WHICH DID NOT EXIST UNDER Q4.
+             recordEditability = AdminOnly locks the Disposition while the approval is pending,
+             so Wire_Verification_Rollup cannot write Wire_Verification_Completed__c during that
+             window - it fails soft. Under Q4 that only cost a signposting sentence on the Path,
+             because a human moved the stage afterwards and could simply wait. Now the APPROVAL
+             owns the stage move: approve with the wire unverified and the semaphore fires, the
+             Queueable writes Sale Closes, and the wire validation rule REFUSES it - leaving the
+             deal approved, unadvanced and the flag stuck true. Requiring the wire BEFORE entry
+             removes the window entirely.
+
+        🔴 THE VALIDATION RULE IS NOT REPLACED BY THIS - BOTH GATES STAY, AND THEY GUARD
+        DIFFERENT THINGS. Wire_Complete_Before_Sale_Closes still blocks any write of
+        'Sale Closes', including the Queueable's, including a hand edit that never went near an
+        approval. This criterion only decides who may ENTER the approval. Do not delete either
+        on the grounds that the other exists.
+
+        🔴 IT NOW CARRIES A FINAL APPROVAL ACTION, AND IT IS A SEMAPHORE, NOT A STAGE WRITE.
+        Retracted from this file's own previous description: "No field updates fire on approval
+        or rejection - one would bypass that validation rule entirely." The objection is answered
+        rather than ignored: Set_Approval_Advance_Pending writes a FLAG, which re-fires
+        DispositionTrigger, which enqueues DispositionApprovalAdvanceQueueable, which writes the
+        stage with ordinary Database.update(..., false, AccessLevel.SYSTEM_MODE). Validation
+        rules DO evaluate against that write - which is exactly why the deadlock in point 2 was
+        real and had to be closed here.
+
+        ⚠ ONE RESIDUAL, ACCEPTED AND FAIL-CLOSED. If the wire flag flips back to FALSE between
+        submission and the Queueable running (an admin unticking a verbal verification after the
+        approval resolves), the validation rule refuses the advance and the semaphore is LEFT
+        TRUE. Visible by SOQL on Approval_Advance_Pending__c, recoverable, and preferable to a
+        silent skip.
+
+        Wire_Verification_Completed__c STAYS in approvalPageFields as well. Under Q4 that was
+        the whole mitigation; it is now redundant for gating but still the right thing to show
+        an approver, and removing it would cost information for no gain.
+
+        DEPLOY ORDER - LOAD-BEARING. workflows/Disposition__c.workflow-meta.xml must land FIRST.
+    -->
     <active>true</active>
     <allowRecall>true</allowRecall>
     <allowedSubmitters>
@@ -31,15 +103,27 @@
         <label>Principal Review</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal sign-off on the final sale terms and the closing wire. EITHER principal (Ali or Nikhil) decides - first response wins. Entry: the disposition is at Closing. Wire Verification Completed is on the approval page DELIBERATELY, not in entry criteria: an unmet wire gate must not surface as the platform message "no applicable approval process was found", so the approver SEES the wire state here while the hard stop lives in the Wire_Complete_Before_Completed validation rule on the Closing to Completed transition. No field updates fire on approval or rejection - one would bypass that validation rule entirely.</description>
+    <description>Principal sign-off on the final sale terms and the closing wire. Entry: stage is Closing AND Wire Verification Completed is true. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage to Sale Closes.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
+        <booleanFilter>1 AND 2</booleanFilter>
         <criteriaItems>
             <field>Disposition__c.Disposition_Stage__c</field>
             <operation>equals</operation>
             <value>Closing</value>
         </criteriaItems>
+        <criteriaItems>
+            <field>Disposition__c.Wire_Verification_Completed__c</field>
+            <operation>equals</operation>
+            <value>True</value>
+        </criteriaItems>
     </entryCriteria>
+    <finalApprovalActions>
+        <action>
+            <name>Set_Approval_Advance_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
     <label>Closing Approval</label>

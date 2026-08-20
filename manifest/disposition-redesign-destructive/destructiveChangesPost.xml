@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Disposition flow redesign, 2026-08-19. POST-destructive deletions.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit
+    go-ahead. This file only DESCRIBES deletions; it performs nothing on its own.
+
+    DELETES EXACTLY TWO COMPONENTS.
+
+    1. ValidationRule Disposition__c.Wire_Complete_Before_Completed
+       Superseded by Wire_Complete_Before_Sale_Closes, which is the SAME rule pointed
+       at the renamed terminal stage. A validation-rule API-name change is a delete
+       plus a create, not a rename, so both files exist for one deploy.
+       POST-destructive is load-bearing: the replacement must be live BEFORE the old
+       rule goes, or there is a window with no wire gate at all.
+       ⚠ IT MUST NOT BE LEFT BEHIND. It names the picklist value 'Completed', and a
+       validation rule referencing a value blocks that value's manual deletion in
+       Setup, which is the final step of this programme.
+
+    2. PathAssistant Disposition_Path
+       The legacy, INACTIVE __MASTER__ path. It was kept as the record of the guidance
+       text the two record-typed paths copied forward. That justification has expired:
+       both paths were REBUILT on 2026-08-19 and no longer carry its text, and its four
+       remaining steps name Call for Offers and Completed, two of the three retired
+       values. Like the rule above, a path assistant step referencing a picklist value
+       blocks that value's deletion in Setup.
+       ⚠ recordTypeName is NOT updateable, so this path can never be repointed; deletion
+       is the only route. Its content is recoverable from git history.
+
+    EXPLICITLY NOT IN SCOPE:
+      - Disposition_Path_On_Market / Disposition_Path_Off_Market: REBUILT, must survive.
+      - All_NDAs_Signed_Before_Progression: MODIFIED in place, no API-name change.
+      - The three retired PICKLIST VALUES (Call for Offers, Disposition Offer, Completed):
+        A DEPLOY CANNOT DELETE A PICKLIST VALUE. They are deleted BY HAND in Setup after
+        this runs. Do not try to add them here.
+
+    HOW TO RUN IT (only once authorised, and only AFTER the main payload has landed):
+      run `sf project deploy start` with
+        the manifest flag           pointing at this folder's package.xml
+        the post destructive flag   pointing at this file
+        the target org flag         set to the disposition org alias
+        the test level flag         set to RunLocalTests, and a 30 minute wait.
+      The flag prefixes are spelled out in words on purpose: an XML comment body cannot
+      contain two consecutive hyphens, so writing the real flags here would make this
+      file unparseable.
+
+    Rollback: both components are recoverable from git history and can be redeployed.
+    -->
+    <types>
+        <members>Disposition__c.Wire_Complete_Before_Completed</members>
+        <name>ValidationRule</name>
+    </types>
+    <types>
+        <members>Disposition_Path</members>
+        <name>PathAssistant</name>
+    </types>
+    <version>67.0</version>
+</Package>

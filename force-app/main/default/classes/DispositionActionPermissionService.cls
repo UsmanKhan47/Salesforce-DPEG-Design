@@ -13,12 +13,29 @@
  * one states the same decisions without re-deriving them, and any divergence between the two files
  * is a defect rather than a variation.
  *
+ * ⚠ QUALIFIED 2026-08-19, AND THE QUALIFICATION MATTERS BECAUSE THE RULE ABOVE IS OTHERWISE AN
+ * INSTRUCTION TO UNDO A DELIBERATE DECISION. The rule governs this CODE, not the org's provisioning.
+ * The two modules are no longer provisioned alike: acquisitions still grants
+ * `Acquisition_Deal_Actions` from a dedicated `Acquisition_Deal_Driver` set, while disposition's
+ * token moved onto the `DPEG_Disposition_Edit` persona set when the user retired
+ * `Disposition_Deal_Driver`. THAT DIVERGENCE IS THE DECISION, NOT A DEFECT — do not "restore
+ * symmetry" by re-splitting disposition or by folding acquisitions' set into `DPEG_Acquisition_Edit`
+ * (the latter would widen the acquisitions gate to a population nobody has agreed to). The Apex in
+ * the two files is still expected to be identical line for line.
+ *
  * Layer: Service (ARCHITECTURE.md §2 / .claude/rules/apex-layering-rule.md). It holds zero SOQL and
  * zero DML of its own, and since 2026-08-12 it orchestrates ONE selector rather than two.
  *
  * ── 🔴 THE GATE IS ONE FACTOR: THE CUSTOM PERMISSION (REWRITTEN 2026-08-12) ───
  * The running user passes when they hold the `Disposition_Deal_Actions` CUSTOM PERMISSION, granted
- * by the layer-5 `Disposition_Deal_Driver` permission set. That is the whole gate.
+ * since 2026-08-19 by the `DPEG_Disposition_Edit` persona set. That is the whole gate.
+ *
+ * ⚠ THE PERMISSION DID NOT CHANGE ON 2026-08-19 — ONLY WHICH SET CARRIES IT. The token is still
+ * `Disposition_Deal_Actions`, this class still asks `FeatureManagement.checkPermission` for it, and
+ * every flexipage criterion still reads
+ * `{!$Permission.CustomPermission.Disposition_Deal_Actions}`. What was retired is the dedicated
+ * `Disposition_Deal_Driver` set that used to be its only grantor. See "WHERE THE TOKEN NOW LIVES"
+ * below for the consequence, which is a real widening and is NOT a rename.
  *
  * ⚠ THIS SECTION USED TO READ "THE GATE IS TWO-FACTOR, AND THAT IS THE WHOLE POINT" AND IT IS NOW
  * WRONG IN EVERY PARTICULAR — it is rewritten rather than deleted so a reader who remembers the old
@@ -85,13 +102,38 @@
  * survives this change untouched). So a disposition driver's per-view cost on NDA__c / LOI__c /
  * Contract_Review__c goes 3 → 1, and a non-driver's 3 → 2.
  *
- * ── CAPABILITY AND AUTHORIZATION ARE STILL TWO SEPARATE THINGS ────────────────
- * The token changed; the seven-layer model did not (ARCHITECTURE.md §2). `Disposition_Deal_Driver`
- * is the layer-5 AUTHORIZATION set and now carries the custom permission in place of the FLS grant.
- * 🔴 The permission MUST NOT be moved into a layer-4 capability set: that would make the gate a
- * tautology (everyone able to CALL it would automatically PASS it) and would grant deal-driving to
- * that set's whole population in one deploy. Identical to the acquisitions twin; read its header for
- * the measured `DPEG_Junior_Analyst_PSG` case.
+ * ── 🔴 WHERE THE TOKEN NOW LIVES — AND WHAT THAT COST (2026-08-19) ────────────
+ * ⚠ THIS SECTION WAS TITLED "CAPABILITY AND AUTHORIZATION ARE STILL TWO SEPARATE THINGS" AND ITS
+ * CENTRAL WARNING HAS BEEN OVERTURNED BY AN EXPLICIT USER DECISION, NOT BY A DRIFT. It is quoted
+ * rather than deleted so nobody re-derives it and "restores" the retired set as a fix:
+ *   *"`Disposition_Deal_Driver` is the layer-5 AUTHORIZATION set and now carries the custom
+ *   permission in place of the FLS grant. 🔴 The permission MUST NOT be moved into a layer-4
+ *   capability set: that would make the gate a tautology (everyone able to CALL it would
+ *   automatically PASS it) and would grant deal-driving to that set's whole population in one
+ *   deploy."*
+ *
+ * ON 2026-08-19 THE USER RETIRED `Disposition_Deal_Driver` AND MOVED THE GRANT TO
+ * `DPEG_Disposition_Edit` — deliberately doing the thing the paragraph above forbade. The reason
+ * was operational: the dedicated set was in no permission set group, was assigned by hand one
+ * driver at a time, and had effectively no assignees, so the nine redesigned deal actions rendered
+ * for nobody. See docs/2026-08-19-disposition-flow-redesign.md §"Operations".
+ *
+ * 🔴 STATE THE CONSEQUENCE PLAINLY, BECAUSE IT IS A WIDENING AND NOT A RENAME: EVERY HOLDER OF
+ * `DPEG_Disposition_Edit` NOW HAS ALL NINE DISPOSITION DEAL ACTIONS. Previously a user needed a
+ * SECOND, separately hand-assigned set on top of their persona. `DPEG_Disposition_Edit` is a member
+ * of `DPEG_Junior_Analyst_PSG`, so every junior analyst gains deal-driving by group membership
+ * alone. "May edit a Disposition" and "may drive a sale's stage" are now THE SAME PERMISSION —
+ * that merge is the decision, and re-separating them is a product change, not a bug fix.
+ *
+ * WHAT SURVIVES THE MERGE, and is the whole remaining value of the token:
+ *   - `DPEG_Disposition_View` (read-only persona) still does NOT grant it — a viewer cannot drive.
+ *   - `DPEG_Apex_Access` (the CAPABILITY set that grants this class's callers) still does NOT grant
+ *     it, so the gate is still not a literal tautology: reaching the code and passing the gate
+ *     remain two different grants.
+ *   - `Acquisition_Deal_Actions` is still a SEPARATE token on a SEPARATE set. The module boundary
+ *     — the reason this class exists — is untouched. Do not "finish the simplification" by merging
+ *     the two tokens; that trap is the one thing here that has not moved (see the rejected
+ *     shortcuts above and the acquisitions twin's header).
  *
  * A flexipage visibility rule also cannot call Apex, so the declarative half of the gate binds to
  * `{!$Permission.CustomPermission.Disposition_Deal_Actions}` where it used to bind to the User
@@ -145,7 +187,9 @@
  * @see force-app/main/default/classes/OpportunityActionPermissionService.cls (the acquisitions twin)
  * @see force-app/main/default/classes/RecordStageAdvanceService.cls (the gate dispatch)
  * @see force-app/main/default/customPermissions/Disposition_Deal_Actions.customPermission-meta.xml
- * @see force-app/main/default/permissionsets/Disposition_Deal_Driver.permissionset-meta.xml
+ * @see force-app/main/default/permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml (the
+ *      grantor since 2026-08-19; `Disposition_Deal_Driver.permissionset-meta.xml` was RETIRED that
+ *      day and this `@see` pointed at it until then)
  * @see force-app/main/default/classes/PermissionSetAssignmentSelector.cls (admin bypass)
  */
 public with sharing class DispositionActionPermissionService {
@@ -171,12 +215,22 @@ public with sharing class DispositionActionPermissionService {
         OpportunityActionPermissionService.NO_PERMISSION_MESSAGE;
 
     /**
-     * The layer-5 AUTHORIZATION token. Holding it IS the gate.
+     * The AUTHORIZATION token. Holding it IS the gate.
      *
-     * 🔴 It is granted by `Disposition_Deal_Driver` and MUST NOT be added to a layer-4 capability
-     * set, nor merged with `Acquisition_Deal_Actions` — see the class header. Two permissions for
-     * two modules is what keeps a sale driver and a purchase driver separable, and that separation
-     * is the reason this class exists at all.
+     * ⚠ THE FIRST HALF OF THIS COMMENT WAS RETRACTED 2026-08-19 AND IS QUOTED, NOT DELETED, SO A
+     * READER WHO REMEMBERS IT CAN SEE WHAT REPLACED IT:
+     *   *"🔴 It is granted by `Disposition_Deal_Driver` and MUST NOT be added to a layer-4
+     *   capability set."*
+     * The user retired `Disposition_Deal_Driver` on 2026-08-19 and moved this grant onto the
+     * `DPEG_Disposition_Edit` persona set. Consequence, stated plainly: EVERY HOLDER OF
+     * `DPEG_Disposition_Edit` NOW HAS THE NINE DISPOSITION DEAL ACTIONS, where it previously took a
+     * separate hand-assigned set. Full reasoning in the class header.
+     *
+     * 🔴 THE SECOND HALF STANDS UNCHANGED AND IS NOT NEGOTIABLE BY THE SAME DECISION: it MUST NOT
+     * be merged with `Acquisition_Deal_Actions`. Two permissions for two modules is what keeps a
+     * sale driver and a purchase driver separable, and that separation is the reason this class
+     * exists at all. Folding one grantor into a persona set says nothing about folding two MODULES
+     * into one token.
      *
      * ⚠ A String, resolved at RUNTIME, so this class compiles and deploys whether or not the custom
      * permission exists yet. An absent permission returns `false` — the gate fails closed — which

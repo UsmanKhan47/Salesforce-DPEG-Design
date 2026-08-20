@@ -1,0 +1,71 @@
+<template>
+    <lightning-modal-header label="Initiate Disposition"></lightning-modal-header>
+
+    <lightning-modal-body>
+        <div class="smi-body slds-is-relative">
+            <template lwc:if={isSaving}>
+                <lightning-spinner
+                    alternative-text="Creating the disposition"
+                    size="small"
+                ></lightning-spinner>
+            </template>
+
+            <p class="smi-intro">
+                Initiating a disposition for
+                <strong>{propertyLabel}</strong> creates the record and sends it
+                straight into the Sale Decision approval.
+            </p>
+
+            <!-- Read-only property summary. dt/dd ONLY, in order and with no
+                 wrapper divs — axe's `definition-list` rule is strict, and the
+                 two-column layout is done in CSS instead of markup (the same
+                 shape c-competing-broker-submissions uses).
+
+                 ⚠ THE dt AND dd CARRY DIFFERENT KEYS. Each iteration emits TWO
+                 sibling elements into the same list, so reusing one key for both
+                 makes the pair non-unique within that list. It happens to render
+                 correctly today, which is exactly why it is worth pinning: the
+                 diagnostic for a duplicate key is a dev-mode warning, not an
+                 error, so a reconciliation bug from it would surface as a
+                 mis-ordered summary rather than as a failure. -->
+            <dl class="smi-summary">
+                <template for:each={summaryRows} for:item="row">
+                    <dt key={row.labelKey} class="smi-label">{row.label}</dt>
+                    <dd key={row.valueKey} class="smi-value">{row.value}</dd>
+                </template>
+            </dl>
+
+            <lightning-radio-group
+                class="smi-radio slds-m-top_medium"
+                name="dispositionRecordType"
+                label="How is this property going to market?"
+                options={recordTypeOptions}
+                value={recordType}
+                onchange={handleRecordTypeChange}
+                type="radio"
+                required
+            ></lightning-radio-group>
+
+            <template lwc:if={error}>
+                <div class="lv-error slds-text-color_error slds-m-top_small" role="alert">
+                    {error}
+                </div>
+            </template>
+        </div>
+    </lightning-modal-body>
+
+    <lightning-modal-footer>
+        <lightning-button
+            class="smi-cancel"
+            label="Cancel"
+            onclick={handleCancel}
+        ></lightning-button>
+        <lightning-button
+            class="smi-confirm slds-m-left_x-small"
+            variant="brand"
+            label="Send for Approval"
+            onclick={handleConfirm}
+            disabled={confirmDisabled}
+        ></lightning-button>
+    </lightning-modal-footer>
+</template>

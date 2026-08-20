@@ -1,0 +1,93 @@
+<template>
+    <div class="qa-body slds-p-around_medium slds-is-relative">
+        <template lwc:if={loadError}>
+            <div class="lv-error slds-text-color_error" role="alert">
+                The offers on this disposition could not be loaded: {loadError}
+            </div>
+        </template>
+
+        <template lwc:if={isLoading}>
+            <div class="qa-loading">
+                <lightning-spinner
+                    alternative-text="Loading offers"
+                    size="small"
+                ></lightning-spinner>
+            </div>
+        </template>
+
+        <template lwc:if={isSaving}>
+            <lightning-spinner
+                alternative-text="Selecting the offer"
+                size="small"
+            ></lightning-spinner>
+        </template>
+
+        <!-- Offers exist: pick one. -->
+        <template lwc:if={hasOffers}>
+            <div class="qa-note">
+                <lightning-icon
+                    icon-name="utility:info"
+                    size="xx-small"
+                    class="slds-m-right_x-small"
+                ></lightning-icon>
+                <span>
+                    Selecting an offer moves this disposition to
+                    <strong>Offer Selection</strong> and sends the offer for
+                    principal approval. It does not accept the offer — the
+                    approval does that.
+                </span>
+            </div>
+
+            <lightning-radio-group
+                class="qa-offers slds-m-top_small"
+                name="dispositionOffer"
+                label="Offer to put forward"
+                options={offerOptions}
+                value={selectedOfferId}
+                onchange={handleOfferChange}
+                type="radio"
+                required
+            ></lightning-radio-group>
+
+            <template lwc:if={error}>
+                <div
+                    class="lv-error slds-text-color_error slds-m-top_small"
+                    role="alert"
+                >
+                    {error}
+                </div>
+            </template>
+
+            <div class="slds-grid slds-grid_align-end slds-m-top_medium">
+                <lightning-button
+                    class="qa-cancel slds-m-right_x-small"
+                    label="Cancel"
+                    onclick={close}
+                ></lightning-button>
+                <lightning-button
+                    class="qa-confirm"
+                    variant="brand"
+                    label="Select and send for approval"
+                    onclick={confirm}
+                    disabled={confirmDisabled}
+                ></lightning-button>
+            </div>
+        </template>
+
+        <!-- No offers yet: explain rather than showing an empty radio group. -->
+        <template lwc:if={showNoOffers}>
+            <p class="slds-m-bottom_medium">
+                No offers have been logged against this disposition yet. Log an
+                offer from the <strong>Disposition Offers</strong> card first,
+                then come back to put one forward for approval.
+            </p>
+            <div class="slds-grid slds-grid_align-end">
+                <lightning-button
+                    class="qa-close"
+                    label="Close"
+                    onclick={close}
+                ></lightning-button>
+            </div>
+        </template>
+    </div>
+</template>

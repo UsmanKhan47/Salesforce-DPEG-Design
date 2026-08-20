@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        THE APPROVAL AUTO-ADVANCE SEMAPHORE (design decision D-1). SYSTEM-WRITTEN ONLY.
+
+        WHAT WRITES IT: the workflow field update Set_Approval_Advance_Pending
+        (workflows/Disposition__c.workflow-meta.xml), fired as a finalApprovalActions entry by
+        THREE approval processes on this object: Sale_Decision_Approval,
+        Broker_Selection_Approval and Closing_Approval. It only ever writes TRUE.
+
+        WHAT CLEARS IT: DispositionApprovalAdvanceQueueable, in the same DML that writes the
+        new stage. Nothing else clears it.
+
+        WHY A SEMAPHORE INSTEAD OF THE APPROVAL WRITING Disposition_Stage__c DIRECTLY. Two
+        mechanisms were rejected, and both rejections are recorded elsewhere in this repo:
+          1. A DIRECT STAGE FieldUpdate BYPASSES VALIDATION RULES ENTIRELY. That is the
+             reasoning already carried in Wire_Complete_Before_Completed's XML comment and in
+             all three approval descriptions. An approval that skipped the all-NDAs-signed gate
+             or the wire gate would be a hole in exactly the controls those rules exist for.
+          2. AN APPROVAL-TRIGGERED FLOW RUNS AS THE APPROVER. A record-triggered flow with no
+             runInMode fires in USER context, so the DML lands on the approver's CRUD, not the
+             submitter's. That is a measured incident on this org, not a theory.
+        The semaphore re-fires DispositionTrigger; the after-update handler detects false to
+        true and enqueues a Queueable that writes the stage with ordinary
+        Database.update(..., false, AccessLevel.SYSTEM_MODE). Validation rules still evaluate,
+        approver CRUD is irrelevant, and the recordEditability = AdminOnly lock has definitively
+        released by the time the job runs.
+
+        🔴 THIS FIELD DELIBERATELY HAS NO FIELD-LEVEL SECURITY IN ANY PERMISSION SET, AND THAT
+        IS NOT AN OVERSIGHT TO "FIX". A Metadata-API-deployed custom field arrives with no FLS
+        for any profile, System Administrator included, and it is left that way here: nothing in
+        the UI reads it, no layout carries it, and no flexipage visibility rule tests it. Every
+        writer and reader is either a workflow field update or Apex in SYSTEM mode, neither of
+        which consults FLS. Adding a grant would put a machine flag on a user's screen and
+        invite a hand-edit that would fire a spurious stage advance.
+        ⚠ THE COROLLARY: this field is INVISIBLE IN THE UI, including to an admin debugging a
+        stuck record. Query it (SOQL / the developer console) rather than looking for it on the
+        page. If an advance fails, the flag is LEFT TRUE on purpose so that query finds it.
+
+        ⚠ IT IS AN INTERLOCK, NOT AN AUDIT TRAIL. It records only that an advance is OWED, never
+        which approval owed it. The Queueable derives the target from (record type, current
+        stage), so the same flag serves all three processes; approval history is where "who
+        approved what" lives.
+    -->
+    <fullName>Approval_Advance_Pending__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD - DO NOT HAND-EDIT, AND DO NOT GRANT FLS. Set true by the Set_Approval_Advance_Pending field update on final approval of Sale Decision, Broker Selection or Closing. DispositionApprovalAdvanceQueueable reads it, writes the next stage and clears it. Left true on a failed advance so the stuck record is findable. See the XML comment in this file.</description>
+    <inlineHelpText>Internal interlock used by the approval auto-advance job. It is not shown on any page and must not be edited by hand.</inlineHelpText>
+    <label>Approval Advance Pending</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

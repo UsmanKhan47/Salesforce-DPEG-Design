@@ -1,5 +1,101 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ApprovalProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <ApprovalProcess> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error. The rationale below lives in this comment
+        rather than in <description> because a comment is repo-only and is never sent to the
+        Metadata API. ⚠ DO NOT ASSUME THE 255-CHARACTER CAP that binds RecordType and
+        ValidationRule descriptions applies here: the five approval files already in this repo
+        carry descriptions of 442 to 617 characters (measured against git HEAD, 2026-08-19).
+        The descriptions written in this change are nevertheless kept under 255, so the rule is
+        uniform across every metadata type in this tranche and never has to be re-measured.
+
+        =====================================================================================
+        🔴 REPOINTED 2026-08-19. THIS PROCESS CHANGED OBJECT-ROLE, NOT JUST CRITERIA.
+        =====================================================================================
+        It used to approve the listing broker chosen from BOV responses, on the ON-MARKET path,
+        at BOV Outreach. That job moved to a NEW approval on a DIFFERENT OBJECT:
+        approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval, which approves the
+        SELECTED SUBMISSION rather than the Disposition. This process now covers the OFF-MARKET
+        path only, where there is no BOV beauty parade and the broker is a direct pick.
+
+        🔴 THE SELF-LIMITING RATIONALE IS DEAD. Quoted and retracted rather than deleted,
+        because it is an explicit instruction NOT to add the criterion this file now carries:
+
+            RETRACTED: "Entry: the disposition is at BOV Outreach. This is self-limiting to the
+            On Market path because BOV Outreach exists only in the On_Market value set - no
+            RecordType criterion is needed and none should be added. No field updates fire on
+            approval or rejection."
+
+        WHY IT DIED: 'Broker Selection' is on BOTH record types' value sets (the redesign put it
+        there), so the new entry stage is NOT self-limiting the way BOV Outreach was. A record-
+        type criterion is now REQUIRED, and without it an on-market disposition sitting at
+        Broker Selection would enter this process and be advanced straight to NDA, skipping the
+        manual Advance to NDA hop that the on-market path owns.
+
+        HOW THE RECORD TYPE IS TESTED, AND WHY NOT RecordTypeId. Criterion 2 reads the formula
+        checkbox Disposition__c.Is_On_Market__c and requires False. Three reasons over a
+        RecordTypeId criteriaItem: the criteriaItems shape is unchanged from the four other
+        approval files in this repo (only the field and value are new, so nothing unproven is
+        being introduced); a RecordTypeId criterion is matched by record-type LABEL, which is
+        cosmetic org state and drifts silently on a rename; and Is_On_Market__c resolves to
+        RecordType.DeveloperName, which is the discriminator this repo already standardises on
+        in All_NDAs_Signed_Before_Progression and LOI__c.Is_Advance_Allowed__c.
+        ⚠ A MASTER-RECORD-TYPE ROW reads FALSE on Is_On_Market__c and would therefore ENTER this
+        process. That is FAIL-OPEN, and it is bounded: DispositionService stamps a record type
+        explicitly on every row it creates, and DispositionApprovalService's server-side assert
+        refuses an illegitimate submission before the platform ever evaluates entry criteria.
+        ⚠ IF A DEPLOY EVER REJECTS A CHECKBOX CRITERION HERE, the substitute is
+        <formula>AND(ISPICKVAL(Disposition_Stage__c, 'Broker Selection'),
+        RecordType.DeveloperName = 'Off_Market')</formula> replacing the whole <entryCriteria>
+        body. Do not substitute a RecordTypeId label match.
+
+        🔴 IT NOW CARRIES A FINAL APPROVAL ACTION, AND IT IS A SEMAPHORE, NOT A STAGE WRITE.
+        The retracted sentence above said no field updates fire, on the (correct) reasoning that
+        an approval FieldUpdate bypasses validation rules. That objection is answered rather than
+        ignored: Set_Approval_Advance_Pending writes a FLAG. The flag re-fires DispositionTrigger,
+        which enqueues DispositionApprovalAdvanceQueueable, which writes the stage with ordinary
+        Database.update(..., false, AccessLevel.SYSTEM_MODE) - so validation rules DO evaluate.
+        The Queueable maps Broker Selection to NDA for Off_Market ONLY, which is the same scoping
+        criterion 2 enforces here; the two must stay in step.
+
+        approvalPageFields DROPS Brokers_Contacted__c / Responses_Received__c /
+        Submission_Deadline__c, which described a BOV round that does not happen off-market.
+
+        🔴 AMENDED 2026-08-20. THE SENTENCE THAT USED TO SIT HERE IS FALSE AND IS RETRACTED IN
+        PLACE, NOT BELOW, SO IT CANNOT BE READ ON ITS OWN:
+
+            RETRACTED: "approvalPageFields now leads with Selected_Broker__c - on this path that
+            field IS the decision."
+
+        WHY IT DIED: the off-market broker pick is now a validated Lookup(Contact),
+        Disposition__c.Broker__c, and the submit gate in DispositionApprovalService reads THAT
+        field. Selected_Broker__c is no longer the decision off-market; it is a DENORMALISED
+        DISPLAY STRING stamped from the lookup in before-context.
+
+        BOTH FIELDS ARE ON THE PAGE, AND THAT IS DELIBERATE, NOT DUPLICATION. Broker__c leads and
+        renders the Contact as a CLICKABLE NAME, which is the actual record the principal is
+        approving and the only one they can open to check the person. Selected_Broker__c follows
+        and carries the person and firm string inline, so the approver sees WHICH FIRM without
+        navigating away from the approval page. Dropping either one costs the approver something
+        real. Both need read FLS on DPEG_Disposition_View or they render blank for the approver.
+
+        ⚠ ONE FIELD, TWO FORMATS, AND THIS PAGE SEES ONLY ONE OF THEM. Selected_Broker__c reads
+        'Person - Firm' off-market and 'Firm' alone on-market. Only the off-market format ever
+        reaches THIS process, because criterion 2 below restricts entry to Is_On_Market__c False.
+
+        ⚠ RECALL ANY PENDING INSTANCES BEFORE DEPLOYING. Entry criteria change under an in-flight
+        approval, and this 2026-08-20 edit changes approvalPageFields under one too. An org sweep
+        on 2026-08-19 found ZERO pending ProcessInstances on Disposition__c and zero Off_Market
+        rows. 🔴 THAT MEASUREMENT HAS NOW AGED PAST A DAY AND MUST BE RE RUN AT DEPLOY TIME, not
+        cited. The same sweep is also what the decision to drop the old blank-text fallback in
+        the submit gate rests on, so if it now returns Off_Market rows carrying hand typed
+        Selected_Broker__c text, ESCALATE rather than deploying.
+
+        DEPLOY ORDER - LOAD-BEARING. workflows/Disposition__c.workflow-meta.xml and
+        objects/Disposition__c/fields/Is_On_Market__c.field-meta.xml must both land FIRST.
+    -->
     <active>true</active>
     <allowRecall>true</allowRecall>
     <allowedSubmitters>
@@ -9,10 +105,9 @@
         <field>Name</field>
         <field>Owner</field>
         <field>Disposition_Stage__c</field>
+        <field>Broker__c</field>
         <field>Selected_Broker__c</field>
-        <field>Brokers_Contacted__c</field>
-        <field>Responses_Received__c</field>
-        <field>Submission_Deadline__c</field>
+        <field>Property_Asset__c</field>
     </approvalPageFields>
     <approvalStep>
         <allowDelegate>false</allowDelegate>
@@ -30,15 +125,27 @@
         <label>Principal Review</label>
         <name>Principal_Review_Step</name>
     </approvalStep>
-    <description>Principal sign-off on the listing broker chosen from the BOV responses. EITHER principal (Ali or Nikhil) decides - first response wins: the first approval approves and the first rejection rejects; the second principal is never waited for and their work item is withdrawn. Entry: the disposition is at BOV Outreach. This is self-limiting to the On Market path because BOV Outreach exists only in the On_Market value set - no RecordType criterion is needed and none should be added. No field updates fire on approval or rejection.</description>
+    <description>OFF-MARKET ONLY. Principal sign-off on the directly picked broker. Entry: stage is Broker Selection AND Is On Market is false. Approval fires the Set_Approval_Advance_Pending semaphore; a Queueable then advances the stage to NDA.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>
     <entryCriteria>
+        <booleanFilter>1 AND 2</booleanFilter>
         <criteriaItems>
             <field>Disposition__c.Disposition_Stage__c</field>
             <operation>equals</operation>
-            <value>BOV Outreach</value>
+            <value>Broker Selection</value>
+        </criteriaItems>
+        <criteriaItems>
+            <field>Disposition__c.Is_On_Market__c</field>
+            <operation>equals</operation>
+            <value>False</value>
         </criteriaItems>
     </entryCriteria>
+    <finalApprovalActions>
+        <action>
+            <name>Set_Approval_Advance_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
     <label>Broker Selection Approval</label>

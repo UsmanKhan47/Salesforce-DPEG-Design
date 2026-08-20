@@ -8,22 +8,36 @@
  * .error() the fallback.
  *
  * Note: unlike c-disposition-main, isClosing here is true ONLY for the 'Closing'
- * stage (not 'Completed'), so 'Completed' renders no child — asserted below.
+ * stage, so the terminal stage ('Sale Closes') renders no child — asserted below.
  * The accessibility check runs on the empty state (guaranteed axe-clean).
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * THE OFFER CARD NOW SPANS FOUR STAGES (was 'Active Listing' only)
+ * THE OFFER-CARD STAGE SET WAS REBUILT BY THE DISPOSITION FLOW REDESIGN
  * ─────────────────────────────────────────────────────────────────────────────
- * With the new stage values the sidebar was empty at exactly the stages where
- * offers are being taken. c-disposition-offer now renders at 'Active Listing',
- * 'Call for Offers', 'Disposition Offer' and 'LOI'.
+ * c-disposition-offer now renders at 'Active Listing', 'Release Materials',
+ * 'Offer Selection' and 'LOI'. 'Call for Offers' and 'Disposition Offer' were
+ * REMOVED from Disposition_Stage__c entirely and existing rows migrated off them.
  *
- * ⚠ NO RECORD-TYPE WIRE ANYWHERE, DELIBERATELY. The two record types' stage value
- * sets are DISJOINT for every path-specific stage — 'Call for Offers' is On_Market
- * only and 'Disposition Offer' is Off_Market only — so the stage alone identifies
- * the path. That is also why this suite still emits nothing but a stage: if a
- * getObjectInfo/RecordTypeId wire ever appears here, these fixtures stop being
- * sufficient, which is the signal that the disjointness assumption was broken.
+ * 🔴 THE "DISJOINT VALUE SETS" JUSTIFICATION IS DEAD — DO NOT QUOTE IT. This
+ * header used to say the two record types' stage value sets "are DISJOINT for
+ * every path-specific stage — 'Call for Offers' is On_Market only and
+ * 'Disposition Offer' is Off_Market only — so the stage alone identifies the
+ * path". Both of those values are gone, AND the premise is now false in the
+ * opposite direction: 'Broker Selection', 'Release Materials', 'Offer Selection'
+ * and 'Sale Closes' are on BOTH record types. Only 'BOV Outreach' and 'Active
+ * Listing' remain path-exclusive.
+ *
+ * ⚠ THERE IS STILL NO RECORD-TYPE WIRE, AND THAT IS STILL CORRECT — for a new
+ * reason. The four offer stages render the SAME card with the SAME meaning on
+ * both paths, so there is no per-path DIFFERENCE to express. A stage alone is
+ * therefore still all these fixtures need. Add a getObjectInfo/RecordTypeId wire
+ * only when a stage genuinely has to RENDER differently per record type.
+ *
+ * 🔴 RETIRED VALUES ARE ASSERTED TO ROUTE NOWHERE rather than simply dropped from
+ * the suite. A fixture that stops mentioning a removed value proves nothing; one
+ * that asserts the branch does NOT fire is a falsifier for anyone who re-adds it
+ * "to be safe". (Passing tests are not evidence a removal sweep was complete —
+ * an LWC fixture is the blind spot of a picklist retirement.)
  *
  * 🔴 'PSA' is asserted to render NOTHING, on purpose (Gate 1 Q5 = no placeholder).
  * At PSA the only marker is PSA_Executed__c on the Disposition itself and the
@@ -98,13 +112,13 @@ describe('c-disposition-sidebar', () => {
         expect(element.shadowRoot.querySelector('c-bov-outreach')).toBeNull();
     });
 
-    // ── The three stages added to the offer branch. Each is asserted on its own ──
-    // ── rather than in a loop, so a failure names the stage that broke.         ──
+    // ── The other offer stages. Each is asserted on its own rather than in a ──
+    // ── loop, so a failure names the stage that broke.                        ──
 
-    it('Call for Offers (on-market) renders the disposition-offer panel', async () => {
+    it('Release Materials renders the disposition-offer panel (off-market offers arrive here)', async () => {
         const element = createComponent();
 
-        getRecord.emit(recordForStage('Call for Offers'));
+        getRecord.emit(recordForStage('Release Materials'));
         await Promise.resolve();
 
         expect(
@@ -116,10 +130,10 @@ describe('c-disposition-sidebar', () => {
         ).toBeNull();
     });
 
-    it('Disposition Offer (off-market) renders the disposition-offer panel', async () => {
+    it('Offer Selection renders the disposition-offer panel — a rejected offer parks here for a RE-PICK', async () => {
         const element = createComponent();
 
-        getRecord.emit(recordForStage('Disposition Offer'));
+        getRecord.emit(recordForStage('Offer Selection'));
         await Promise.resolve();
 
         expect(
@@ -165,7 +179,11 @@ describe('c-disposition-sidebar', () => {
         expect(element.shadowRoot.querySelector('c-bov-outreach')).toBeNull();
     });
 
-    it('NDA (off-market) renders NO sidebar child — the NDA stage has no offer yet', async () => {
+    // ⚠ NDA IS NO LONGER OFF-MARKET-ONLY. The disposition flow redesign moved it
+    // into the On-Market path too, so the "NDA is off-market only" doctrine that
+    // this test title used to assert is dead. What survives is the real point: at
+    // NDA there is no offer yet, on EITHER path.
+    it('NDA (both record types) renders NO sidebar child — there is no offer yet', async () => {
         const element = createComponent();
 
         getRecord.emit(recordForStage('NDA'));
@@ -188,10 +206,10 @@ describe('c-disposition-sidebar', () => {
         ).not.toBeNull();
     });
 
-    it('Completed stage renders no sidebar child (closing gate is Closing-only)', async () => {
+    it('Sale Closes renders no sidebar child (the closing gate is Closing-only here)', async () => {
         const element = createComponent();
 
-        getRecord.emit(recordForStage('Completed'));
+        getRecord.emit(recordForStage('Sale Closes'));
         await Promise.resolve();
 
         expect(
@@ -202,6 +220,29 @@ describe('c-disposition-sidebar', () => {
             element.shadowRoot.querySelector('c-disposition-offer')
         ).toBeNull();
     });
+
+    // ── 🔴 RETIRED VALUES. These are FALSIFIERS, not leftovers: they red the ──
+    // ── moment someone re-adds a removed value to isOfferStage.             ──
+
+    it.each(['Call for Offers', 'Disposition Offer', 'Completed'])(
+        'RETIRED VALUE %p routes NOWHERE — it was removed from Disposition_Stage__c',
+        async (stage) => {
+            const element = createComponent();
+
+            getRecord.emit(recordForStage(stage));
+            await Promise.resolve();
+
+            expect(
+                element.shadowRoot.querySelector('c-disposition-offer')
+            ).toBeNull();
+            expect(
+                element.shadowRoot.querySelector('c-bov-outreach')
+            ).toBeNull();
+            expect(
+                element.shadowRoot.querySelector('c-disposition-closing')
+            ).toBeNull();
+        }
+    );
 
     it('ERROR BRANCH: renders an inline error state and no sidebar child when the record wire errors', async () => {
         const element = createComponent();

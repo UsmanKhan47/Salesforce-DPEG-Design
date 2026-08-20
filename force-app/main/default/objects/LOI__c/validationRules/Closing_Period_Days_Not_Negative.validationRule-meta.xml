@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT. A comment placed ABOVE
+        <ValidationRule> breaks `sf` deploy at conversion with a misleading "unable to find
+        matching parent xml file" error. ValidationRule.Description is capped at 255
+        characters, which is why the rationale is here.
+
+        ADDED 2026-08-20 (Tranche 2, Workstream A4).
+        🔴 THE SHARED RATIONALE FOR ALL FOUR A4 RULES ON THIS OBJECT LIVES IN
+        Counter_Price_Is_Positive.validationRule-meta.xml. READ IT THERE. It covers: that
+        LOI__c is dual record type so this rule fires on ACQUISITION LOIs too and why that is
+        safe; why no RecordType.DeveloperName test may be added; why there is no
+        ISCHANGED/ISNEW guard; and the zero row impact measurement.
+
+        🔴 ZERO IS PERMITTED AND THAT IS THE WHOLE POINT OF THE `&lt; 0` TEST. A closing
+        period of zero days is a real term on an all cash immediate close. `&lt;= 0` would
+        refuse it. Only a NEGATIVE count is a defect.
+
+        THIS RULE IS SPLIT FROM Due_Diligence_Days_Not_Negative rather than paired with it, so
+        the inline error anchors to the field the user actually got wrong. The requirements
+        doc proposed one paired Term_Days_Are_Not_Negative rule; a paired rule can carry only
+        one errorDisplayField and would point at the wrong field half the time. Same
+        divergence, same reason, on Disposition_Offer__c.
+    -->
+    <fullName>Closing_Period_Days_Not_Negative</fullName>
+    <active>true</active>
+    <description>Blocks a negative Closing Period Days on an LOI. Zero is deliberately permitted: an all-cash immediate close is a real term. Blank is untouched. Fires on both record types by design. See Counter_Price_Is_Positive for the shared A4 rationale.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Closing_Period_Days__c)),
+    Closing_Period_Days__c &lt; 0
+)</errorConditionFormula>
+    <errorMessage>Closing Period Days cannot be negative. Enter the number of days from contract execution to closing, or zero for an immediate close. Leave it blank if no closing period has been proposed.</errorMessage>
+    <errorDisplayField>Closing_Period_Days__c</errorDisplayField>
+</ValidationRule>

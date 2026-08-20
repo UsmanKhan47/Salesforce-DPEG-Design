@@ -9,32 +9,70 @@
         placed ABOVE <RecordType> breaks `sf` deploy at source conversion with a misleading
         "unable to find matching parent xml file" error.
 
-        THE BROKER-LISTED DISPOSITION PATH.
-        Disposition Readiness, BOV Outreach, Active Listing, Call for Offers, LOI, PSA,
-        Closing, Completed.
+        THE BROKER-LISTED DISPOSITION PATH. ELEVEN STAGES:
+        Disposition Readiness, BOV Outreach, Broker Selection, NDA, Release Materials,
+        Active Listing, Offer Selection, LOI, PSA, Closing, Sale Closes.
 
-        THIS IS THE DEFAULT TYPE. DispositionService.findOrCreate stamps it EXPLICITLY when
-        the Sell Meter creates a disposition (design Q1 answer (a)), rather than leaving
-        RecordTypeId null and inheriting the running user's PROFILE default - profiles are
-        .forceignore'd, so that default is org state this repo cannot see, set or verify.
-        An off-market deal is switched by changing the record type early, while the record
-        is still at Disposition Readiness.
+        THIS IS THE DEFAULT TYPE. DispositionService stamps it EXPLICITLY when the Sell Meter
+        creates a disposition, rather than leaving RecordTypeId null and inheriting the running
+        user's PROFILE default - profiles are .forceignore'd, so that default is org state this
+        repo cannot see, set or verify. From 2026-08-19 the Initiate modal makes the choice an
+        explicit, MANDATORY radio at creation time instead of a later switch.
 
-        Disposition_Stage__c is restricted here to the EIGHT on-market stages. NDA and
-        Disposition Offer are off-market stage values ONLY and are deliberately excluded -
-        the source document narrates a buyer NDA and an offer inside the on-market path too,
-        but as RECORDS surfaced during other stages, not as stages. Do not "helpfully" add
-        them here.
+        =====================================================================================
+        🔴 RETRACTED 2026-08-19 - THE OFF-MARKET-ONLY DOCTRINE THIS FILE CARRIED IS DEAD.
+        =====================================================================================
+        The superseded paragraph is quoted and retracted rather than deleted, because it is an
+        instruction that told the next reader NOT to make the exact change this redesign makes:
+
+            RETRACTED: "Disposition_Stage__c is restricted here to the EIGHT on-market stages.
+            NDA and Disposition Offer are off-market stage values ONLY and are deliberately
+            excluded - the source document narrates a buyer NDA and an offer inside the
+            on-market path too, but as RECORDS surfaced during other stages, not as stages. Do
+            not 'helpfully' add them here."
+
+        WHAT REPLACED IT: THE CLIENT REDEFINED THE FLOW. NDA IS NOW A STAGE ON BOTH PATHS - an
+        on-market deal collects NDAs from interested parties before materials are released,
+        exactly as an off-market one does, and the all-NDAs-signed gate now applies to both
+        (All_NDAs_Signed_Before_Progression dropped its record-type term in the same change).
+        Broker Selection, Release Materials, Offer Selection and Sale Closes are likewise on
+        BOTH types. NINE of the eleven values here are shared with Off_Market.
+
+        🔴 THE CONSEQUENCE THAT MATTERS MOST: THE STAGE VALUE NO LONGER IDENTIFIES THE PATH.
+        Only BOV Outreach and Active Listing are on-market-only now, and only Disposition Offer
+        (retired) was ever off-market-only. Any component that needs to know which path a record
+        is on must test the RECORD TYPE. That is what Disposition__c.Is_On_Market__c exists for;
+        lwc/dispositionSidebar's "the two value sets are DISJOINT" comment was retracted in the
+        same change.
+
+        =====================================================================================
+        THE TRANSITION-WINDOW UNION - WHY THIS LIST HAS 13 VALUES AND NOT 11.
+        =====================================================================================
+        Call for Offers and Completed are RETIRED but still listed. A metadata deploy CANNOT
+        delete a picklist value, so they still exist on Disposition_Stage__c until a manual
+        Setup deletion wave removes them; and a record type cannot reference a value that no
+        longer exists, so they must be listed here until that wave runs and Salesforce drops
+        them from this type automatically. This list is therefore old-values UNION new-values.
+        Disposition Offer is NOT here - it was never on this type and this change does not add
+        it.
+        ⚠ THEY WILL RENDER AS TWO UNGUIDED PATH STEPS after Sale Closes until the wave runs,
+        because Disposition_Path_On_Market has no step for either. That is cosmetic, it affects
+        zero records (an org sweep on 2026-08-19 found none on any retired value), and it is
+        preferable to leaving stale guidance text on a stage nothing should reach.
 
         Sell_Decision_Trigger__c is enumerated in full because a record type file must list
         EVERY picklist on the object or values are silently dropped from that type.
         Disposition__c has exactly two picklists today.
 
         No <businessProcess> - that element is for Opportunity, Case, Lead and Solution only.
+
+        ⚠ RECORD-TYPE PICKLIST RESTRICTION IS UI-ONLY. An API, seed or data-load write can put
+        an off-market value on an on-market row. The gates that MATTER are the validation rules
+        and the server-side asserts in DispositionApprovalService, not this list.
     -->
     <fullName>On_Market</fullName>
     <active>true</active>
-    <description>The broker-listed disposition path: Readiness, BOV Outreach, Active Listing, Call for Offers, LOI, PSA, Closing, Completed. The default type, stamped by DispositionService.findOrCreate. See the XML comment in this file for full rationale.</description>
+    <description>The broker-listed path, 11 stages: Readiness, BOV Outreach, Broker Selection, NDA, Release Materials, Active Listing, Offer Selection, LOI, PSA, Closing, Sale Closes. Default type. Call for Offers and Completed are retired; listed only until deleted.</description>
     <label>On Market</label>
     <picklistValues>
         <picklist>Disposition_Stage__c</picklist>
@@ -47,11 +85,23 @@
             <default>false</default>
         </values>
         <values>
+            <fullName>Broker Selection</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>NDA</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Release Materials</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>Active Listing</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Call for Offers</fullName>
+            <fullName>Offer Selection</fullName>
             <default>false</default>
         </values>
         <values>
@@ -64,6 +114,15 @@
         </values>
         <values>
             <fullName>Closing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Sale Closes</fullName>
+            <default>false</default>
+        </values>
+        <!-- RETIRED, transition window only. See the note above. -->
+        <values>
+            <fullName>Call for Offers</fullName>
             <default>false</default>
         </values>
         <values>

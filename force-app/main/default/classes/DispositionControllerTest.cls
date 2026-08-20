@@ -230,4 +230,126 @@ private class DispositionControllerTest {
         System.assertEquals(251, wireCount, 'All 251 wires should have been inserted');
         System.assertEquals(true, row.wireCreated, 'wireCreated should be true with 251 Wire__c children present');
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // initiateAndSubmit — thin wrapper over DispositionService.initiateAndSubmit (DEV-1)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void initiateAndSubmit_positiveScenario_returnsThePopulatedOutcome() {
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+
+        Test.startTest();
+        DispositionService.InitiateOutcome outcome =
+            DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+        Test.stopTest();
+
+        System.assertNotEquals(null, outcome.dispositionId, 'A Disposition Id must be populated');
+        System.assertEquals(true, outcome.submitted, 'A fresh GREEN asset must submit successfully');
+        System.assertNotEquals(null, outcome.message, 'The client needs an authored message to toast');
+    }
+
+    /**
+     * 🔴 THE SAME TWO-CATCH SHAPE AS findOrCreate, PROVED AGAIN ON THE NEW METHOD. A designed
+     * refusal (RED band) must surface VERBATIM; deleting the SellMeterGateException catch would
+     * mask it behind the generic write-failure message instead.
+     */
+    @isTest
+    static void initiateAndSubmit_redAsset_surfacesTheSellMeterWordingVerbatim() {
+        Property_Asset__c asset = [SELECT Id, Peak_Sell_Date__c FROM Property_Asset__c LIMIT 1];
+        asset.Peak_Sell_Date__c = Date.today().addDays(200); // RED
+        update asset;
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+            Assert.fail('A RED asset must be refused at the controller boundary too');
+        } catch (AuraHandledException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('not ready to sell'),
+                'The user must see the sell-meter refusal, not a generic write failure: ' + e.getMessage());
+            Assert.isFalse(e.getMessage().contains('could not be saved'),
+                'A designed refusal must NOT be masked behind the generic write-failure message: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The RED asset should have surfaced an AuraHandledException');
+        Assert.areEqual(0, [SELECT COUNT() FROM Disposition__c WHERE Property_Asset__c = :asset.Id],
+            'A refused creation must leave no Disposition behind');
+    }
+
+    /**
+     * ⚠ InvalidRecordTypeException DELIBERATELY FALLS INTO THE GENERIC CATCH — it is a caller
+     * defect (the modal offers exactly the two allowed values), not something the user can act on.
+     */
+    @isTest
+    static void initiateAndSubmit_invalidRecordType_isMaskedBehindTheGenericMessage() {
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionController.initiateAndSubmit(asset.Id, 'Not_A_Real_Type');
+            Assert.fail('An off-allow-list record type must be refused');
+        } catch (AuraHandledException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('could not be saved'),
+                'A caller defect must be masked behind the generic write-failure message, not the '
+                + 'InvalidRecordTypeException detail: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'An invalid record type must still surface an AuraHandledException');
+    }
+
+    /**
+     * 🔴 A FAILED APPROVAL SUBMISSION IS NOT AN EXCEPTION. It arrives as `submitted = false` with
+     * `dispositionId` populated, and the client's contract is to toast a warning and still
+     * navigate — this is provoked via the pending-duplicate guard rather than by disabling the
+     * approval process, which Apex cannot do.
+     */
+    @isTest
+    static void initiateAndSubmit_pendingDuplicateGuard_returnsSoftOutcomeNotAnException() {
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        Disposition__c existing = TestDataFactory.createDisposition(asset.Id, false);
+        existing.Disposition_Stage__c = 'Disposition Readiness';
+        insert existing;
+        Approval.ProcessSubmitRequest req = new Approval.ProcessSubmitRequest();
+        req.setObjectId(existing.Id);
+        Approval.process(req); // now genuinely pending
+
+        Test.startTest();
+        DispositionService.InitiateOutcome outcome =
+            DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+        Test.stopTest();
+
+        System.assertEquals(existing.Id, outcome.dispositionId,
+            'The existing-record branch must return the SAME Disposition, not throw');
+        System.assertEquals(false, outcome.submitted,
+            'The existing-record branch never submits — this is not a failure, it is idempotency');
+    }
+
+    // A bare Standard User with no DPEG perm sets, to exercise the generic-failure catch on a
+    // genuine platform error (the create branch's PropertyAssetSelector read throws under
+    // WITH USER_MODE with no object access).
+    @isTest
+    static void initiateAndSubmit_bareUser_surfacesTheGenericWriteFailureMessage() {
+        User u = bareUser();
+        Property_Asset__c asset = [SELECT Id, Peak_Sell_Date__c FROM Property_Asset__c LIMIT 1];
+        asset.Peak_Sell_Date__c = Date.today().addDays(10);
+        update asset;
+
+        System.runAs(u) {
+            Test.startTest();
+            try {
+                DispositionController.initiateAndSubmit(asset.Id, 'On_Market');
+                Assert.fail('expected AuraHandledException from initiateAndSubmit under a bare user');
+            } catch (AuraHandledException e) {
+                Assert.isTrue(e.getMessage().contains('could not be saved'),
+                    'A platform failure must map to the generic write-failure message: ' + e.getMessage());
+            }
+            Test.stopTest();
+        }
+    }
 }

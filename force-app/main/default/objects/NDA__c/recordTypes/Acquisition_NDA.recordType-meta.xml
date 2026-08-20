@@ -28,10 +28,29 @@
         NDA_Signed_Before_Deal_Progression keys on NDA_Signed__c, which the
         NDA_Signed_Status_Sync flow derives from Status__c.
 
-        WARNING - RECORD-TYPE PICKLIST RESTRICTION IS UI-ONLY. It is NOT enforced by Apex DML.
-        A hand-crafted advanceTo(acquisitionNdaId, 'Declined') would still write, which is why
+        WARNING (SUPERSEDED 2026-08-20 FOR THIS FIELD — SEE CORRECTION BELOW) - RECORD-TYPE
+        PICKLIST RESTRICTION IS UI-ONLY. It is NOT enforced by Apex DML. A hand-crafted
+        advanceTo(acquisitionNdaId, 'Declined') would still write, which is why
         RecordStageAdvanceService's explicit-target allow-list has to become record-type-aware
         in the same tranche. That is Apex work and lives in the parallel developer change.
+
+        CORRECTED 2026-08-20 - THE PARAGRAPH ABOVE IS FALSE FOR THIS FIELD, MEASURED, NOT
+        ASSUMED. `NDA__c.Status__c` is `<restricted>true</restricted>` (see
+        objects/NDA__c/fields/Status__c.field-meta.xml). A restricted picklist's record-type
+        value subset IS enforced by Apex DML, not just the UI: a test that writes
+        `Status__c = 'Declined'` directly onto an Acquisition_NDA record via plain
+        `update` fails at the DML layer with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` — see
+        `NdaSignedStatusSyncTest.acquisitionNdaDeclinedViaApiResidual_isRefusedByThePicklistRestrictionItself`,
+        measured on usman-dpeg (deploy 0Afiw000000Nb27CAC, test run 707iw000002YDY0AAO). The
+        general "UI-only" claim is still TRUE for an UNRESTRICTED picklist — Apex can write any
+        master value there regardless of record type. It is FALSE specifically because this
+        field is restricted; do not generalise this correction to an unrestricted picklist, and
+        do not assume it extends to any OTHER restricted picklist in this repo without its own
+        measurement. Whether RecordStageAdvanceService's NDA_DISPOSITION_EXPLICIT_TARGETS
+        record-type-aware split is still NECESSARY given this correction (as opposed to
+        harmless-but-redundant defensive code) is a separate, unresolved question — not decided
+        or acted on here; see that class's own header for the reasoning this correction now
+        calls into question.
 
         Party_Role__c IS ENUMERATED HERE WITH NO DEFAULT, DELIBERATELY. A record type cannot
         expose an empty picklist, so both values must be listed; but Buyer/Introducing Broker

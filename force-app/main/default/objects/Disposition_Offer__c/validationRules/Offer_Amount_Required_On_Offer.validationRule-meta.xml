@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>. ValidationRule.Description is
+        capped at 255 characters; a comment is repo-only and is never sent to the Metadata
+        API. It must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A1).
+        =====================================================================================
+        The offer amount is the offer. Everything downstream of this object, the counter
+        rounds, Final_Agreed_Price__c, the selected offer and eventually the PSA contract
+        value, starts from a number that must exist.
+
+        =====================================================================================
+        🔴 A VALIDATION RULE, NOT `required=true`. THE SAME MEASURED REASON AS
+        BOV_Amount_Required_On_Submission, AND IT DIVERGES FROM THE REQUIREMENTS DOC THE SAME
+        WAY. Read that file's header for the full argument; the short form:
+        =====================================================================================
+        Requirements doc §2 A1 routes both CURRENCY fields to `required=true`. Measured
+        2026-08-20, Disposition_Offer__c.Offer_Amount__c is granted EDITABLE in
+        DPEG_Disposition_Edit and READABLE in DPEG_Disposition_View. A universally required
+        field cannot carry field level security, and the Metadata API rejects a
+        fieldPermissions entry naming one, so `required=true` would force both grants to be
+        deleted from files this same tranche is editing for an unrelated FLS repair. A rule
+        keeps the grants and adds an authored message.
+
+        =====================================================================================
+        NO ISCHANGED / ISNEW GUARD. Invariant, not transition. Self clearing.
+        ⚠ ZERO, NOT BLANK, IS WHAT THIS RULE DOES NOT TEST. ISBLANK on a Currency field is
+        true only for an EMPTY field; a deliberately entered 0 passes here. That is correct
+        separation of concerns: "an amount is present" is this rule, "the amount is sane" is
+        Counter_Price_Is_Positive's job on the counter fields. There is no positivity rule on
+        Offer_Amount__c itself and that omission is deliberate, matching the requirements
+        doc's rule inventory. A zero dollar opening offer is unusual but it is a real
+        negotiating position, and refusing it would be this file inventing a policy nobody
+        asked for.
+        =====================================================================================
+        MEASURED IMPACT AT CREATION: ZERO ROWS. Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM Disposition_Offer__c                            -> 0
+          SELECT COUNT(Id) FROM Disposition_Offer__c WHERE Offer_Amount__c = null -> 0
+        🔴 That measurement ages; re-run at deploy time.
+    -->
+    <fullName>Offer_Amount_Required_On_Offer</fullName>
+    <active>true</active>
+    <description>An offer must carry the amount offered. Blocks a blank Offer_Amount__c only; a deliberate zero is permitted, since positivity on the counter fields is Counter_Price_Is_Positive&apos;s job. A rule, not required=true, because required fields cannot hold FLS.</description>
+    <errorConditionFormula>ISBLANK(Offer_Amount__c)</errorConditionFormula>
+    <errorMessage>Enter the Offer Amount. An offer with no amount cannot be countered, ranked against the other offers on this disposition, or selected as the winning offer.</errorMessage>
+    <errorDisplayField>Offer_Amount__c</errorDisplayField>
+</ValidationRule>

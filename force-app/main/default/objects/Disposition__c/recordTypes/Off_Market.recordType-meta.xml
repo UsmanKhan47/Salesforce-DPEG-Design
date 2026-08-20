@@ -9,26 +9,67 @@
         placed ABOVE <RecordType> breaks `sf` deploy at source conversion with a misleading
         "unable to find matching parent xml file" error.
 
-        THE DIRECT, UNLISTED DISPOSITION PATH.
-        Disposition Readiness, NDA, Disposition Offer, LOI, PSA, Closing, Completed.
+        THE DIRECT, UNLISTED DISPOSITION PATH. NINE STAGES:
+        Disposition Readiness, Broker Selection, NDA, Release Materials, Offer Selection,
+        LOI, PSA, Closing, Sale Closes.
 
-        No broker is engaged, so there is no BOV Outreach, no Active Listing and no Call for
-        Offers - those three stages are restricted OUT here. Disposition_Stage__c is
-        restricted to the SEVEN off-market stages.
+        No broker is MARKETED THROUGH, so BOV Outreach and Active Listing are restricted out.
+        A broker is still NAMED - Broker Selection is on this path too, and on this path the
+        Broker Selection to NDA hop is owned by the adapted Broker_Selection_Approval rather
+        than by a manual Advance button.
 
-        A disposition is created On Market by default (DispositionService.findOrCreate stamps
-        On_Market explicitly); switch it to Off Market early, while the record is still at
-        Disposition Readiness.
+        =====================================================================================
+        🔴 RETRACTED 2026-08-19 - THE "NO BROKER, THEREFORE NO BROKER STAGE" NARRATIVE IS DEAD,
+        AND SO IS ITS ON-MARKET MIRROR.
+        =====================================================================================
+        The superseded paragraph is quoted and retracted rather than deleted, because its shape
+        (a stage list justified by "no broker is engaged") is what a future reader would rebuild
+        from if it were simply removed:
+
+            RETRACTED: "No broker is engaged, so there is no BOV Outreach, no Active Listing and
+            no Call for Offers - those three stages are restricted OUT here. Disposition_Stage__c
+            is restricted to the SEVEN off-market stages."
+
+        WHAT REPLACED IT: an off-market deal DOES engage a broker - it just does not run a BOV
+        beauty parade or a public listing. The client's redefinition adds Broker Selection,
+        Release Materials, Offer Selection and Sale Closes here, and Disposition Offer is
+        retired in favour of Offer Selection. What survives from that paragraph is only the
+        narrow truth: BOV Outreach and Active Listing are still restricted out, because those
+        two are genuinely marketing-side.
+
+        🔴 THE SISTER DOCTRINE IS ALSO DEAD: "NDA and Disposition Offer are off-market stage
+        values ONLY", which stood in On_Market.recordType-meta.xml, in
+        All_NDAs_Signed_Before_Progression and in lwc/dispositionSidebar.js. NDA IS NOW ON BOTH
+        PATHS. Nine of this type's eleven listed values are shared with On_Market, so THE STAGE
+        VALUE NO LONGER IDENTIFIES THE PATH - test Disposition__c.Is_On_Market__c (or the record
+        type itself) instead.
+
+        =====================================================================================
+        THE TRANSITION-WINDOW UNION - WHY THIS LIST HAS 11 VALUES AND NOT 9.
+        =====================================================================================
+        Disposition Offer and Completed are RETIRED but still listed. A metadata deploy CANNOT
+        delete a picklist value, so they still exist on Disposition_Stage__c until a manual
+        Setup deletion wave removes them; and a record type cannot reference a value that no
+        longer exists, so they must be listed here until that wave runs and Salesforce drops
+        them from this type automatically. This list is therefore old-values UNION new-values.
+        ⚠ THEY WILL RENDER AS TWO UNGUIDED PATH STEPS after Sale Closes until the wave runs,
+        because Disposition_Path_Off_Market has no step for either. That is cosmetic and it
+        affects zero records - an org sweep on 2026-08-19 found no Disposition__c row on any
+        retired value, and no Off_Market row at all.
 
         Sell_Decision_Trigger__c is enumerated in full because a record type file must list
         EVERY picklist on the object or values are silently dropped from that type.
         Disposition__c has exactly two picklists today.
 
         No <businessProcess> - that element is for Opportunity, Case, Lead and Solution only.
+
+        ⚠ RECORD-TYPE PICKLIST RESTRICTION IS UI-ONLY. An API, seed or data-load write can put
+        an on-market value on an off-market row. The gates that MATTER are the validation rules
+        and the server-side asserts in DispositionApprovalService, not this list.
     -->
     <fullName>Off_Market</fullName>
     <active>true</active>
-    <description>The direct, unlisted disposition path: Readiness, NDA, Disposition Offer, LOI, PSA, Closing, Completed. No broker is engaged, so BOV Outreach, Active Listing and Call for Offers are restricted out. See the XML comment in this file.</description>
+    <description>The direct, unlisted path, 9 stages: Readiness, Broker Selection, NDA, Release Materials, Offer Selection, LOI, PSA, Closing, Sale Closes. BOV Outreach and Active Listing are restricted out. Disposition Offer and Completed are retired, pending deletion.</description>
     <label>Off Market</label>
     <picklistValues>
         <picklist>Disposition_Stage__c</picklist>
@@ -37,11 +78,19 @@
             <default>true</default>
         </values>
         <values>
+            <fullName>Broker Selection</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>NDA</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Disposition Offer</fullName>
+            <fullName>Release Materials</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Offer Selection</fullName>
             <default>false</default>
         </values>
         <values>
@@ -54,6 +103,15 @@
         </values>
         <values>
             <fullName>Closing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Sale Closes</fullName>
+            <default>false</default>
+        </values>
+        <!-- RETIRED, transition window only. See the note above. -->
+        <values>
+            <fullName>Disposition Offer</fullName>
             <default>false</default>
         </values>
         <values>

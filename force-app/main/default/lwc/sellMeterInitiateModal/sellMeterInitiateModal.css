@@ -1,0 +1,55 @@
+/* SLDS 2 design tokens only (--slds-g-*), each with the documented fallback so
+   the component still renders sanely on a surface that has not loaded the token
+   set. No hardcoded brand colours anywhere. */
+
+.smi-body {
+    min-height: 120px;
+    overflow-wrap: anywhere;
+}
+
+.smi-intro {
+    margin: 0 0 var(--slds-g-spacing-4, 16px);
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-neutral-base-10, #181818);
+}
+
+/* Two-column label/value grid. The <dl> carries dt/dd pairs with NO wrapper
+   elements (axe's definition-list rule), so the columns are produced here
+   rather than in the markup. */
+.smi-summary {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: var(--slds-g-spacing-4, 16px);
+    row-gap: var(--slds-g-spacing-2, 8px);
+    margin: 0;
+    padding: var(--slds-g-spacing-3, 12px);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-2, 8px);
+    background: var(--slds-g-color-surface-container-1, #fafaf9);
+}
+
+.smi-label {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-neutral-base-60, #706e6b);
+    align-self: center;
+}
+
+.smi-value {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-neutral-base-10, #181818);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Cross-bundle error-banner class — shared with recentLeads /
+   recentOpportunities / renewalList / competingBrokerSubmissions. Do not rename. */
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}

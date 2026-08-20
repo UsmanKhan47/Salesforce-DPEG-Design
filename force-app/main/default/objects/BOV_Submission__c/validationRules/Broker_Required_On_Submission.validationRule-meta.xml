@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS NOTE LIVES IN A COMMENT, NOT IN <description>, AND IT MUST STAY THAT WAY.
+        ValidationRule.Description is capped at 255 characters and the rationale below is far
+        longer; a comment is repo-only and is never sent to the Metadata API. NOTE ALSO: the
+        comment must sit INSIDE the root element. A comment placed ABOVE <ValidationRule>
+        breaks `sf` deploy at conversion with a misleading "unable to find matching parent xml
+        file" error.
+
+        =====================================================================================
+        ADDED 2026-08-20 (Tranche 2, Workstream A1). THE FIRST VALIDATION RULE ON THIS OBJECT.
+        =====================================================================================
+        A broker response with no broker on it is not a response. BOV_Submission__c is the
+        record of WHICH broker said WHAT, and the whole comparison matrix, the appointment
+        flow (BovSubmissionService.replaceSelectedBroker) and the stamped denormalised text
+        (BovSubmissionBrokerStampService) are all keyed on Broker__c. A row with a blank
+        Broker__c carries a firm string and a contact name that nothing derived and nothing
+        can re-derive.
+
+        =====================================================================================
+        🔴 WHY THIS IS A VALIDATION RULE AND NOT `required=true` ON THE FIELD. TWO INDEPENDENT
+        REASONS, EITHER OF WHICH IS SUFFICIENT.
+        =====================================================================================
+        1. THE DELETE CONSTRAINT. Salesforce does not permit deleteConstraint SetNull on a
+           REQUIRED lookup; a required lookup must be Restrict. Broker__c is SetNull today and
+           its own field header carries an explicit, reasoned DO NOT: switching to Restrict
+           would block legitimate Contact deletion org wide and would diverge from all four
+           sibling broker lookups. `required=true` here is therefore not an attribute flip,
+           it is the schema change that header refuses.
+        2. 🔴 IT WOULD BREAK BOTH DISPOSITION PERMISSION SETS. A universally required field
+           cannot carry field level security, and the Metadata API rejects a fieldPermissions
+           entry naming one. Every field this tranche makes "required" would have to be
+           DELETED from DPEG_Disposition_Edit and DPEG_Disposition_View to keep them
+           deployable. Measured 2026-08-20: BOV_Submission__c.BOV_Amount__c and
+           Disposition_Offer__c.Offer_Amount__c are both granted in both sets, so the
+           `required=true` route named in the tranche 2 requirements doc (§2 A1) for the two
+           CURRENCY fields would have taken two grants with it. All four A1 requirements are
+           validation rules for this reason; see the sibling rule files.
+
+        A rule also stays scopeable later (exempt a status, exempt a record type) with a
+        one file edit and no schema change on live data.
+
+        =====================================================================================
+        NO ISCHANGED / ISNEW GUARD, MATCHING Broker_Lookup_Is_Off_Market_Only.
+        =====================================================================================
+        This is an INVARIANT, not a transition: a BOV submission never legitimately holds a
+        blank broker, at any point in its life. A transition guard would leave every
+        pre existing blank row permanently invisible to the rule.
+        🔴 AN UNGUARDED RULE CANNOT TRAP A RECORD HERE, WHICH IS WHAT MAKES IT SAFE. If a row
+        is in the forbidden state every subsequent save fails, including SYSTEM_MODE machine
+        writes (SYSTEM_MODE does NOT bypass validation rules). But the remedy, saving with a
+        broker picked, is itself a PERMITTED save and the error message says so.
+        ⚠ Broker__c carries an ACTIVE, non optional lookupFilter on Contact.Is_Broker__c, so
+        the remedy requires a Contact flagged as a broker. That is the same population
+        scripts/seed-broker-contacts.apex maintains.
+
+        =====================================================================================
+        🔴 MEASURED IMPACT AT CREATION: ONE EXISTING ROW IS REFUSED. NOT ZERO.
+        =====================================================================================
+        Queried on usman-dpeg, 2026-08-20:
+          SELECT COUNT(Id) FROM BOV_Submission__c                          -> 1
+          SELECT COUNT(Id) FROM BOV_Submission__c WHERE Broker__c = null   -> 1
+        That single row is BOV-0014 (Submission_Status__c = 'Backup', Broker__c,
+        Broker_Firm__c, Contact_Name__c and BOV_Amount__c all null). It is the live evidence
+        that motivated this rule, and it violates this rule and
+        BOV_Amount_Required_On_Submission both. From the moment this deploys, BOV-0014 cannot
+        be saved until a broker Contact is chosen on it. It is a demo artefact carrying no
+        broker and no amount, so DELETING it is the recommended remedy; repairing it needs a
+        broker Contact that passes the Is_Broker__c filter.
+        🔴 THAT MEASUREMENT AGES. Re-run the count at deploy time rather than citing this
+        line. A larger non zero result is an escalation, not a deploy.
+
+        =====================================================================================
+        ⚠ TEST AND SEED BLAST RADIUS, OWNED BY THE DEVELOPER AGENT, NOT BY THIS FILE.
+        =====================================================================================
+        TestDataFactory.createBovSubmissions sets Broker_Firm__c and Contact_Name__c and
+        leaves Broker__c NULL, so every fixture it produces is refused the moment this
+        deploys.
+
+        🔴 CORRECTED 2026-08-20 (code-review finding C2). THE SEED SENTENCE NAMED THE WRONG
+        FILES AND DEFERRED WORK THAT IS NOW DONE. Quoted and retracted in place rather than
+        edited, because a reader who took the old list at face value needs to see that BOTH
+        halves of it were wrong, not just that a number changed:
+
+            RETRACTED: "scripts/seed-disposition-bulk.apex and
+            scripts/seed-disposition-offers.apex break the same way. Those edits are
+            requirements doc §3 D1 and are NOT part of this change. 🔴 DO NOT DEPLOY THIS
+            RULE AHEAD OF THEM: RunLocalTests goes red across the whole BOV surface."
+
+        WHAT WAS WRONG WITH IT:
+          - scripts/seed-disposition-offers.apex CREATES NO BOV SUBMISSIONS AT ALL. Measured:
+            zero occurrences of BOV_Submission__c in that file. It seeds Disposition_Offer__c
+            and every row sets Buyer_Name__c and Offer_Amount__c, so it was already clean and
+            was never in this rule's blast radius.
+          - IT OMITTED TWO FILES THAT ARE. scripts/seed-disposition.apex (4 rows) and
+            scripts/seed-disp0002.apex (4 rows) both built BOV submissions with a NULL
+            Broker__c exactly as the bulk seed did.
+          - THE Broker__c GREP THAT PRODUCED THE LIST MATCHED THE WRONG FIELD. The hits at
+            seed-disposition-bulk.apex lines 68/75/80 are Disposition__c.Selected_Broker__c -
+            a different field on a different object - not this lookup.
+
+        THE SWEEP IS DONE, NOT DEFERRED. As of 2026-08-20 all THREE files that create BOV
+        submissions resolve a broker Contact and set Broker__c:
+            scripts/seed-disposition-bulk.apex   14 rows
+            scripts/seed-disposition.apex         4 rows
+            scripts/seed-disp0002.apex            4 rows
+        Each queries the Is_Broker__c = true Contact population up front, BEFORE its first
+        DML, and ABORTS naming scripts/seed-broker-contacts.apex if that population is empty -
+        so a broker-less org fails loudly instead of half-seeding. Each row resolves by firm
+        against that roster, because the lookupFilter above is active and non-optional. The
+        scripts no longer set Broker_Firm__c or Contact_Name__c: BovSubmissionBrokerStampService
+        overwrites both from the chosen Contact in the same before-save, so any literal there
+        would be dead on arrival.
+
+        WHAT REMAINS OWNED ELSEWHERE: TestDataFactory.createBovSubmissions and the BOV test
+        classes. That is the unit-testing agent's work, not this file's and not the seed
+        sweep's. 🔴 DO NOT DEPLOY THIS RULE AHEAD OF IT: RunLocalTests goes red across the
+        whole BOV surface.
+    -->
+    <fullName>Broker_Required_On_Submission</fullName>
+    <active>true</active>
+    <description>A BOV submission must name the broker who responded. Broker__c keys the comparison matrix, the appointment flow and the stamped firm/contact text, none of which can be re-derived from a blank lookup. A rule, not required=true: see the XML comment.</description>
+    <errorConditionFormula>ISBLANK(Broker__c)</errorConditionFormula>
+    <errorMessage>Choose the Broker Contact who submitted this BOV. A submission with no broker cannot be compared or appointed. The lookup offers only Contacts flagged as brokers; if the broker is missing, create the Contact and tick Is Broker first.</errorMessage>
+    <errorDisplayField>Broker__c</errorDisplayField>
+</ValidationRule>

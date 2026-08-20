@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        THE CHILD-SIDE HALF OF THE APPROVAL AUTO-ADVANCE SEMAPHORE (design decision D-1), for
+        the offer-selection approval. Exact twin of BOV_Submission__c.Approval_Status__c.
+
+        WHAT WRITES IT: the workflow field updates Set_Offer_Approval_Approved and
+        Set_Offer_Approval_Rejected in workflows/Disposition_Offer__c.workflow-meta.xml, fired
+        as finalApprovalActions / finalRejectionActions of Offer_Selection_Approval on THIS
+        object. Nothing else writes it.
+
+        WHAT READS IT: DispositionOfferTriggerHandler. On Approved, where Is_Selected__c is
+        true, it sets this offer's own Offer_Status__c to 'Accepted', moves the PARENT
+        Disposition from Offer Selection to LOI and stamps Accepted_Offer_Price__c. The parent
+        write is synchronous for the same reason as the BOV twin: Offer_Selection_Approval locks
+        THIS OFFER, not the Disposition.
+
+        🔴 REJECTION IS NOT A DEAD END, AND THAT IS THE POINT OF THE TWO-STEP DESIGN (D-3).
+        Selecting an offer already moved the Disposition to Offer Selection by explicit service
+        DML, so a Rejected offer leaves the deal PARKED AT Offer Selection for a re-pick rather
+        than stranded at Active Listing pretending nothing happened. The stage always tells the
+        truth.
+
+        🔴 BLANK IS A REAL STATE: UNSUBMITTED. No default, no 'Pending' value. See the BOV twin
+        for the full reasoning; it applies verbatim.
+
+        ⚠ THIS IS A SECOND, DISTINCT PICKLIST FROM Offer_Status__c ON THIS SAME OBJECT.
+        Offer_Status__c is the commercial negotiation state of the offer. Approval_Status__c is
+        whether the principals signed off on selecting it. The trigger WRITES the first from the
+        second; they are not interchangeable.
+
+        FLS: READ ONLY, in both DPEG_Disposition_View and DPEG_Disposition_Edit - the sole
+        writer is a workflow field update running in system context.
+    -->
+    <fullName>Approval_Status__c</fullName>
+    <description>Outcome of Offer_Selection_Approval on this offer. Written ONLY by the Set_Offer_Approval_Approved / Set_Offer_Approval_Rejected workflow field updates. BLANK means never submitted. Read by DispositionOfferTriggerHandler, which accepts the offer and advances the parent Disposition from Offer Selection to LOI when this reads Approved on the selected offer.</description>
+    <inlineHelpText>Set automatically when the principals approve or reject the selection of this offer. Blank means it has not been submitted for approval yet.</inlineHelpText>
+    <label>Approval Status</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Approved</fullName>
+                <default>false</default>
+                <label>Approved</label>
+            </value>
+            <value>
+                <fullName>Rejected</fullName>
+                <default>false</default>
+                <label>Rejected</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

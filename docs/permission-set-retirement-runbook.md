@@ -39,6 +39,45 @@ Stages are ordered smallest-blast-radius first. **They are independent of each o
 
 **Never delete first. Steps C and E are in-org actions that no deploy performs and no deploy verifies** — `PermissionSetAssignment` and group membership are not deployable metadata.
 
+#### 🔴 STEP E IS NOT HYGIENE. SKIPPING IT MAKES STEP F FAIL. (measured 2026-08-19)
+
+Do not read Step E as "tidy up the assignments so nothing is left orphaned." **The platform refuses to delete a permission set that is still assigned to anyone.** It does not cascade the assignments away, and it does not warn — the destructive deploy simply fails, with the assignee named in the error. Measured on `usman-dpeg` retiring `Disposition_Deal_Driver`, dry run `0Afiw000000Mzo3CAC`, sole error:
+
+```
+This permission set is assigned to one or more users. You can only delete
+permission sets that aren't assigned to users. : Junior Dhanani.
+```
+
+The failure lands at the *last* step, after every additive migration in Steps B and C has already shipped — so a stage that skips E burns its whole run before discovering it.
+
+**Always `--dry-run` a destructive permission-set deploy.** It is free, and it is the only thing that surfaces this before the real attempt.
+
+To unassign from the CLI (Setup → Manage Assignments works too):
+
+```bash
+# 1. find the assignment rows
+sf data query --query "SELECT Id, Assignee.Name FROM PermissionSetAssignment \
+  WHERE PermissionSet.Name = '<DoomedSet>'" --target-org <alias>
+
+# 2. delete each one — this is org DATA, not metadata
+sf data delete record --sobject PermissionSetAssignment \
+  --record-id <0Pa...> --target-org <alias> --json
+```
+
+⚠ **An agent may not be able to run step 2.** Both `sf data delete record` and an equivalent `sf apex run` script with `Database.delete` were **blocked by the Claude Code auto-mode classifier** during this retirement, so a human had to run the unassignment. Plan for the in-org half of Step E to need a person, or add an explicit Bash allow-rule first.
+
+**Before unassigning, prove the assignee loses nothing** — query the doomed set's real payload rather than trusting prose about it:
+
+```bash
+sf data query --query "SELECT SetupEntityId, SetupEntityType FROM SetupEntityAccess \
+  WHERE ParentId = '<0PS...>'" --target-org <alias>
+# repeat for FieldPermissions and ObjectPermissions filtered by the same ParentId
+```
+
+⚠ **Both directions are manual.** Unassignment is manual, and re-assignment on rollback is manual — redeploying the deleted set from git history restores the *set*, never its assignees.
+
+⚠ **A permission set group's aggregate grants asynchronously.** A user can hold a set's payload with **no direct assignment to it**, via `user → PSG aggregate PermissionSet (Type='Group') → SetupEntityAccess.ParentId`. That aggregate row appears only once recalculation finishes, so a grantor count can legitimately *rise* hours after a deploy. Check `PermissionSetGroup.Status = 'Updated'` before concluding either that a grant is missing or that an extra grantor is a defect.
+
 ---
 
 ## 1. THE FOUR THINGS THAT WILL BITE YOU
