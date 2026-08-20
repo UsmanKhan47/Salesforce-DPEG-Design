@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        🔴 A SNAPSHOT, NOT A REDUNDANCY. Outgoing_Broker__c is deleteConstraint SetNull, and
+        scripts/seed-broker-contacts.apex mass-deletes every Contact on the Contact.Broker
+        record type. (⚠ CORRECTED 2026-08-20 — this read "every Contact flagged Is_Broker__c
+        (`delete [SELECT Id FROM Contact WHERE Is_Broker__c = true]`)". Both halves are stale:
+        the inline delete was hoisted into a guarded six-step structure, and the broker
+        definition moved to the record type. 🔴 THE MOVE MADE THIS HAZARD REAL RATHER THAN
+        THEORETICAL: measured on usman-dpeg, the old predicate matched ZERO rows org-wide, so
+        that delete was a guaranteed no-op; the new one matches ~19 live brokers.) Re-running
+        that script
+        against an org holding BOV_Broker_Change__c rows NULLS Outgoing_Broker__c on every row
+        pointing at a deleted broker, silently and with no error. A history row whose broker
+        column reads blank at that point is not history - it is exactly the corruption-that-
+        reads-as-health BOV_Submission__c.Broker_Firm__c's own comment describes for the same
+        seed script. This Text field is stamped by BovSubmissionService.replaceSelectedBroker
+        (developer-owned, D4.3) at write time from the Contact chosen in Outgoing_Broker__c, and
+        it is NOT retired or superseded by that lookup - it is the field that survives the
+        lookup going blank.
+
+        Length 255, unrequired, unindexed - a plain snapshot, matching Broker_Firm__c's own shape
+        on BOV_Submission__c (Text 255, not unique, not an external Id).
+    -->
+    <fullName>Outgoing_Broker_Firm__c</fullName>
+    <externalId>false</externalId>
+    <description>Snapshot of the outgoing broker's firm at the time of this change. Stamped from Outgoing_Broker__c; survives that Contact later being deleted (Outgoing_Broker__c is deleteConstraint SetNull and scripts/seed-broker-contacts.apex mass-deletes broker Contacts).</description>
+    <inlineHelpText>Filled in automatically from the outgoing broker's Contact record. Do not type into it.</inlineHelpText>
+    <label>Outgoing Broker Firm</label>
+    <length>255</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

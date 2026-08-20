@@ -1,16 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        🔴 RECONCILED 2026-08-20 (code review). PREDICATE REPOINTED FROM Is_Broker__c TO THE
+        Contact.Broker RECORD TYPE.
+        =====================================================================================
+        The broker definition moved from the Contact.Is_Broker__c checkbox to the
+        Contact.Broker record type. This field's <lookupFilter> was left on the old checkbox
+        predicate after that migration and refused every real broker as a result.
+
+        MEASURED LIVE ON usman-dpeg:
+            SELECT COUNT(Id) FROM Contact WHERE Is_Broker__c = true                 -> 0
+            SELECT COUNT(Id) FROM Contact WHERE RecordType.DeveloperName='Broker'   -> 19
+
+        <filterItems> now reads Contact.RecordType.DeveloperName = 'Broker', copied exactly
+        from BOV_Submission__c.Broker__c. Is_Broker__c is retained on Contact but is no longer
+        the definition and is not referenced by this filter, its errorMessage, or the field's
+        help text; see objects/Contact/fields/Is_Broker__c.field-meta.xml. The same fix was
+        applied in the same pass to Disposition__c.Broker__c, Broker_Assignment__c.Broker__c,
+        BOV_Broker_Change__c.Outgoing_Broker__c and BOV_Broker_Change__c.Incoming_Broker__c.
+    -->
     <fullName>Broker__c</fullName>
     <deleteConstraint>SetNull</deleteConstraint>
+    <inlineHelpText>Pick the broker for this lease inquiry. Only Contacts on the Broker record type appear.</inlineHelpText>
     <label>Broker</label>
     <lookupFilter>
         <active>true</active>
         <booleanFilter>1</booleanFilter>
-        <errorMessage>The selected Contact is not flagged as a broker (Is_Broker__c).</errorMessage>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
         <filterItems>
-            <field>Contact.Is_Broker__c</field>
+            <field>Contact.RecordType.DeveloperName</field>
             <operation>equals</operation>
-            <value>True</value>
+            <value>Broker</value>
         </filterItems>
         <isOptional>false</isOptional>
     </lookupFilter>

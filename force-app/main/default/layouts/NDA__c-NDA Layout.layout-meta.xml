@@ -1,6 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
-    <excludeButtons>SmartFillEnrich</excludeButtons>
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE <Layout>
+        breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+        xml file" error.
+
+        Buyer__c and Materials_Released_Date__c ADDED 2026-08-20 (Workstream D6.1, buyer activity
+        timeline, disposition-tranche-2-requirements.md §3). Both fields are reachable
+        elsewhere as of this change, but not from a page layout, which is the exact stub-layout
+        defect this repo hit this week on BOV_Submission__c and Disposition_Offer__c (see those
+        layouts' own headers) - a field that exists in the schema and is granted FLS but has no
+        rendered input is functionally invisible to an analyst.
+
+        🔴 NDA__c HAS ONLY ONE LAYOUT, SHARED BY BOTH Acquisition_NDA AND Disposition_NDA RECORD
+        TYPES. There is no per-record-type layout separation on this object today (confirmed:
+        objects/NDA__c/layouts holds no second file, and no layoutAssignments entry scopes a
+        second one). So both new fields are layout-reachable on EITHER record type once this
+        deploys - they are NOT hidden from an acquisition NDA the way this file's own
+        instructions asked for a permission-set-level exclusion. FLS is the actual gate: neither
+        field is granted on DPEG_Acquisition_Edit / DPEG_Acquisition_View / DPEG_Admin_Access
+        (see the field files and the two disposition permission sets), so a pure-acquisition
+        persona sees a layout item for a field they cannot read, which Lightning simply omits
+        from render - the same protection every other dual-module field on this layout already
+        relies on. A user holding BOTH an acquisition and a disposition permission set set will
+        see them everywhere, which is an accepted, pre-existing class of residual on this shared
+        layout, not something introduced by this change.
+
+        Placement: Buyer__c sits with Opportunity__c at the top of column 1 (who this NDA
+        concerns); Materials_Released_Date__c sits at the end of column 1, alongside the other
+        NDA lifecycle dates (Date_Sent__c, Date_Signed__c).
+    -->
+    <!--
+        REMOVED 2026-08-20: <excludeButtons>SmartFillEnrich</excludeButtons>. This line arrived
+        via a RETRIEVE from usman-dpeg (commit b426598, "Retrieve Notes & Attachments onto the
+        LOI, NDA and PSA Version layouts"), not hand-authored, and it blocked every subsequent
+        deploy of this file with:
+          "In field: excludeButtons, no such standard action: SmartFillEnrich"
+        Verified safe to remove, not just to silence: SmartFillEnrich is not a QuickActionDefinition
+        in this org, does not appear in NDA__c's sobject describe, and - the decisive check - is
+        absent from the full standard-action inventory the UI API actions endpoint returns for a
+        live NDA__c record (13 actions: NewEvent, NewTask, LogACall, NewCase, Edit, Delete, Clone,
+        ChangeOwnerOne, ChangeRecordType, PrintableView, Share, RecordShareHierarchy, Submit,
+        AssignRecordLabel - no SmartFillEnrich). excludeButtons only ever HIDES a button; excluding
+        one that does not exist is a no-op, so deleting the exclusion changes nothing a user sees.
+        🔴 A future retrieve of this layout from the same org will RE-INTRODUCE this line (the org
+        emits the token on retrieve even though it rejects it on deploy - a platform asymmetry).
+        Whoever hits that should re-apply this same removal rather than re-investigate from
+        scratch.
+    -->
     <layoutSections>
         <customLabel>true</customLabel>
         <detailHeading>true</detailHeading>
@@ -17,6 +64,10 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
+                <field>Buyer__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
                 <field>Status__c</field>
             </layoutItems>
             <layoutItems>
@@ -26,6 +77,10 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Date_Signed__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Materials_Released_Date__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>

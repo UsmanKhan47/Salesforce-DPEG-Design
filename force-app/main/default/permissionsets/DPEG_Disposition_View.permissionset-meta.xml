@@ -874,6 +874,20 @@
         <field>Disposition_Offer__c.Is_Selected__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-20 - Workstream D6.1 (buyer activity timeline, disposition-tranche-2
+        -requirements.md §3). Disposition_Offer__c.Buyer__c: readable only. This is the read
+        only Principal persona; every other Disposition_Offer__c grant in this file is read
+        only for the same reason. A Metadata API deployed field carries NO FLS for anyone,
+        System Administrator included, so this grant and
+        objects/Disposition_Offer__c/fields/Buyer__c.field-meta.xml must deploy together.
+        Appended at the tail of the Disposition_Offer__c run, following this file's convention.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition_Offer__c.Buyer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>LOI__c.Ball_In_Court__c</field>
@@ -1019,6 +1033,26 @@
         <field>NDA__c.Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-20 - Workstream D6.1 (buyer activity timeline, disposition-tranche-2
+        -requirements.md §3). NDA__c.Buyer__c and NDA__c.Materials_Released_Date__c: readable
+        only, matching this file's read-only Principal persona and every other NDA__c field
+        grant here. NDA__c is dual-module (Acquisitions + Dispositions); neither field is
+        granted on DPEG_Acquisition_View or DPEG_Admin_Access, matching this file's convention
+        for the rest of the object. A Metadata API deployed field carries NO FLS for anyone,
+        System Administrator included, so these grants and the two matching field files under
+        objects/NDA__c/fields/ must deploy together. Appended at the tail of the NDA__c run.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Buyer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Materials_Released_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>PSA_Version__c.Direction__c</field>
@@ -1072,6 +1106,75 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Wire__c.Wire_Instructions_Source__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-20 - BOV_Broker_Change__c (Workstream B, disposition-tranche-2-requirements.md
+        §3 D4.1/D4.2). New disposition child object; read only here, matching every other DISP
+        object on this file. All 11 fields readable, none editable - this is the read only
+        Principal persona. Object grant added at the tail of the objectPermissions run below,
+        following this file's convention of appending rather than reflowing alphabetically.
+        A Metadata API deployed object/field carries NO FLS for anyone, System Administrator
+        included, so this block, the object/field files under
+        objects/BOV_Broker_Change__c/ and the matching block in DPEG_Disposition_Edit must all
+        deploy together.
+        ⚠ A PermissionSet DEPLOY REPLACES fieldPermissions WHOLESALE. This edit inserted these
+        11 blocks plus one objectPermissions block; diff against HEAD to confirm it is purely
+        additive.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Outgoing_BOV_Submission__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Incoming_BOV_Submission__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Outgoing_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Incoming_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Outgoing_Broker_Firm__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Incoming_Broker_Firm__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Notes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Entry_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Logged_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
@@ -1164,6 +1267,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>PSA_Version__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>BOV_Broker_Change__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
 </PermissionSet>

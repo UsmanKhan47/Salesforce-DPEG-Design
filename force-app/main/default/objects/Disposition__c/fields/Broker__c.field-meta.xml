@@ -6,6 +6,29 @@
         "unable to find matching parent xml file" error.
 
         =====================================================================================
+        🔴 RECONCILED 2026-08-20 (code review). THE COMMENT BELOW SAID THE FILTER MOVED. IT
+        HAD NOT. THIS IS THE FIX, NOT JUST THE DOCUMENTATION.
+        =====================================================================================
+        The "TWO CORRECTIONS" block below already stated "the broker definition MOVED to the
+        Contact.Broker record type" and RETRACTED the Is_Broker__c claim - but the actual
+        <lookupFilter><filterItems> twelve lines under this comment still read
+        Contact.Is_Broker__c = True, twelve lines of prose ahead of a predicate it had already
+        declared obsolete. That contradiction is exactly how this field kept refusing all 19
+        real brokers after the migration was believed complete.
+
+        MEASURED LIVE ON usman-dpeg, THE SAME DAY THIS WAS CAUGHT:
+            SELECT COUNT(Id) FROM Contact WHERE Is_Broker__c = true                 -> 0
+            SELECT COUNT(Id) FROM Contact WHERE RecordType.DeveloperName='Broker'   -> 19
+
+        The <filterItems> below is now repointed to Contact.RecordType.DeveloperName = 'Broker',
+        copied exactly from BOV_Submission__c.Broker__c (the one field in this family that was
+        already correct). <errorMessage> and <inlineHelpText> are reworded to stop naming
+        Is_Broker__c to the end user - neither should reference a field that no longer defines
+        anything. Same reconciliation applied in the same pass to Broker_Assignment__c.Broker__c,
+        Lease_Inquiry__c.Broker__c, BOV_Broker_Change__c.Outgoing_Broker__c and
+        BOV_Broker_Change__c.Incoming_Broker__c - all five carried the identical stale predicate.
+
+        =====================================================================================
         ADDED 2026-08-20. THE OFF-MARKET BROKER PICK BECOMES A VALIDATED CONTACT LOOKUP.
         =====================================================================================
         An off-market analyst used to type a broker's name as free text into
@@ -14,9 +37,24 @@
 
         XML SHAPE IS COPIED FROM Broker_Assignment__c.Broker__c, DELIBERATELY AND EXACTLY.
         Same referenceTo, same ACTIVE non-optional lookupFilter, same errorMessage text, same
-        deleteConstraint. Lease_Inquiry__c.Broker__c and Opportunity.Broker__c are the other two
-        precedents and carry the same filter. There is no Broker__c OBJECT in this org; every
-        "broker" in this application is a Contact flagged Is_Broker__c.
+        deleteConstraint. Lease_Inquiry__c.Broker__c is the other precedent that carries the
+        same filter. There is no Broker__c OBJECT in this org; every "broker" in this
+        application is a Contact on the Contact.Broker RECORD TYPE.
+
+        🔴 TWO CORRECTIONS, 2026-08-20, quoted rather than deleted:
+
+          RETRACTED: "Lease_Inquiry__c.Broker__c and Opportunity.Broker__c are the other two
+          precedents and carry the same filter."
+        Opportunity.Broker__c has NO <lookupFilter> ELEMENT AT ALL - verified twice by reading
+        that file in full. Three other files in this repo repeat the same false claim. No filter
+        is being added there either: that field is machine-stamped by LeadConvertService at
+        conversion, and a non-optional filter would make lead conversion fail hard. User-decided
+        OUT of scope; the documentation is what was wrong.
+
+          RETRACTED: "every 'broker' in this application is a Contact flagged Is_Broker__c."
+        The definition MOVED to the Contact.Broker record type. Measured on usman-dpeg before
+        the move: ZERO Contacts carried Is_Broker__c = true, 19 sat on the record type.
+        Is_Broker__c is retained but unused; retirement is a separate, deferred task.
 
         =====================================================================================
         🔴 WHY THIS IS ADDITIVE, AND WHY Selected_Broker__c (Text 255) SURVIVES.
@@ -115,8 +153,23 @@
              disposition data.
         🔴 DO NOT "FIX" THIS BY SWITCHING TO deleteConstraint Restrict. That would make the seed
         fail loudly but would also block legitimate Contact deletion for the whole org.
-        ⚠ The guard in part 1 is NOT in this deliverable. It is a separate edit to
-        scripts/seed-broker-contacts.apex and it is still OPEN as of this file's creation.
+
+        ⚠ CORRECTED 2026-08-20 (re-review). This block read:
+
+            RETRACTED: "That script opens at line 4 with:
+                delete [SELECT Id FROM Contact WHERE Is_Broker__c = true];
+            ...The guard in part 1 is NOT in this deliverable. It is a separate edit to
+            scripts/seed-broker-contacts.apex and it is still OPEN as of this file's creation."
+
+        Both halves are now false. (1) The inline delete no longer exists: it was hoisted into
+        a six-step structure (STEP 1 scan basis, STEP 2 guard scan, STEP 3 abort gate, STEP 4
+        force-path clear, STEP 5 explicit Database.delete, STEP 6 reseed) with a working
+        pre-DML guard and an abort gate, exactly as part 1 above specifies. (2) The predicate
+        is now the Contact.Broker record type, not Is_Broker__c - which MADE THE HAZARD REAL
+        rather than reducing it: under the old predicate the delete matched zero rows org-wide;
+        under the new one it matches the org's ~19 live brokers. See the reconciled header of
+        scripts/seed-broker-contacts.apex for the full write-up, including why the guard binds
+        to the doomed Contact set rather than to `Broker__c != null`.
 
         =====================================================================================
         RELATIONSHIP NAME: Brokered_Dispositions. CHOSEN FOR MEANING, NOT FORCED BY A COLLISION.
@@ -172,16 +225,16 @@
     <fullName>Broker__c</fullName>
     <deleteConstraint>SetNull</deleteConstraint>
     <description>OFF-MARKET ONLY. The broker Contact directly picked for this disposition, and the field the Broker Selection approval gate tests. Selected_Broker__c is stamped from this lookup as a display string and is retained because the on-market BOV chain still writes text into it. See the XML comment in this file.</description>
-    <inlineHelpText>Pick the broker for this off-market deal. Only Contacts flagged as brokers appear. Selected Broker fills in automatically from your pick, so do not type into it.</inlineHelpText>
+    <inlineHelpText>Pick the broker for this off-market deal. Only Contacts on the Broker record type appear. Selected Broker fills in automatically from your pick, so do not type into it.</inlineHelpText>
     <label>Broker</label>
     <lookupFilter>
         <active>true</active>
         <booleanFilter>1</booleanFilter>
-        <errorMessage>The selected Contact is not flagged as a broker (Is_Broker__c).</errorMessage>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
         <filterItems>
-            <field>Contact.Is_Broker__c</field>
+            <field>Contact.RecordType.DeveloperName</field>
             <operation>equals</operation>
-            <value>True</value>
+            <value>Broker</value>
         </filterItems>
         <isOptional>false</isOptional>
     </lookupFilter>

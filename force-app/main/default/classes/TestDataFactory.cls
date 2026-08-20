@@ -609,9 +609,82 @@ public with sharing class TestDataFactory {
     }
 
     /**
-     * Contacts flagged Is_Broker__c = true. REQUIRED for any Broker__c lookup:
-     * Broker_Assignment__c.Broker__c and Lease_Inquiry__c.Broker__c both carry an
-     * active, non-optional lookup filter on Contact.Is_Broker__c.
+     * Contacts that are GENUINELY NOT BROKERS — added 2026-08-20, when the broker definition moved
+     * from `Contact.Is_Broker__c = true` to the `Contact.Broker` RECORD TYPE.
+     *
+     * ══ 🔴 WHY THIS EXISTS: `createContacts` IS NOT A NON-BROKER FIXTURE AND NEVER WAS ══
+     * `createContacts` STAMPS THE BROKER RECORD TYPE on every row it produces (see its body,
+     * unchanged since the 2026-08-10 IR segregation). It merely leaves `Is_Broker__c` at its
+     * `false` default. That made it *look* like a non-broker fixture for as long as the checkbox
+     * was the definition, and several tests used it as their "no brokers exist" / "a non-broker
+     * must be excluded" control while asserting an empty or reduced result.
+     *
+     * The instant the definition moved to the record type, every one of those controls INVERTED:
+     * the fixture became a positive, and the assertions that were meant to prove EXCLUSION began
+     * proving nothing (or failing outright). Those tests were repointed here rather than deleted —
+     * they are the only proof the broker selectors exclude non-brokers, which is precisely the
+     * property that has to keep holding.
+     *
+     * 🔴 DO NOT "SIMPLIFY" A NON-BROKER FIXTURE BACK TO `createContacts(...)`. It produces brokers.
+     *
+     * ── WHY BOTH HALVES ARE SET, AND WHY `RecordTypeId = null` IS A CORRECT ANSWER ──
+     * `Is_Broker__c` is forced to `false` and the record type is moved OFF Broker, so a row from
+     * here fails BOTH the retired and the current definition. That keeps these fixtures valid
+     * whichever definition a given test's target happens to be on mid-migration.
+     *
+     * `recordTypeId(...)` returns null when `Contact.Investor` is unavailable to the running user
+     * (see its long header). Assigning null is HARMLESS HERE and is not the silent degradation it
+     * is on the broker path: a null RecordTypeId on insert lands the row on the user's DEFAULT
+     * record type, which is Master in this org — still NOT Broker, so the fixture's one guarantee
+     * ("this Contact is not a broker") holds either way. The broker path cannot make that claim,
+     * which is why its degradation needed a paragraph and this one does not.
+     *
+     * @param count     Number of Contacts.
+     * @param accountId Parent Account; may be null.
+     * @param doInsert  Insert when true.
+     * @return Contacts that are NOT on the Contact.Broker record type and NOT flagged Is_Broker__c.
+     * @example
+     * // "a non-broker Contact must be excluded from the broker list"
+     * TestDataFactory.createNonBrokerContacts(3, null, true);
+     */
+    public static List<Contact> createNonBrokerContacts(Integer count, Id accountId, Boolean doInsert) {
+        List<Contact> contacts = createContacts(count, accountId, false);
+        Id investorRt = recordTypeId(Contact.SObjectType, 'Investor');
+        for (Contact c : contacts) {
+            c.Is_Broker__c = false;
+            c.RecordTypeId = investorRt;   // null => the user's default (Master) — also not Broker
+        }
+        insertContactsIf(doInsert, contacts);
+        return contacts;
+    }
+
+    /**
+     * Single non-broker Contact. See `createNonBrokerContacts` for why `createContact` is NOT a
+     * substitute (it stamps the Broker record type).
+     * @param accountId Parent Account (nullable). @param doInsert Insert when true.
+     * @return A Contact that is not a broker under either the retired or the current definition.
+     */
+    public static Contact createNonBrokerContact(Id accountId, Boolean doInsert) {
+        return createNonBrokerContacts(1, accountId, doInsert)[0];
+    }
+
+    /**
+     * Broker Contacts. REQUIRED for any `Broker__c` lookup — every one of them carries an ACTIVE,
+     * NON-OPTIONAL lookup filter, which the platform enforces on Apex DML and not merely in the UI.
+     *
+     * ⚠ CORRECTED 2026-08-20. This read: "Contacts flagged Is_Broker__c = true. REQUIRED for any
+     * Broker__c lookup: Broker_Assignment__c.Broker__c and Lease_Inquiry__c.Broker__c both carry an
+     * active, non-optional lookup filter on Contact.Is_Broker__c." BOTH halves were stale: the
+     * lookup filters now test the `Contact.Broker` RECORD TYPE, and there are SIX such lookups in
+     * this repo, not two.
+     *
+     * WHAT ACTUALLY SATISFIES THE FILTER IS THE RECORD-TYPE STAMP APPLIED BY `createContacts`,
+     * which this method delegates to — NOT the `Is_Broker__c = true` set in the loop below.
+     * 🔴 The checkbox is still set here ON PURPOSE and must not be removed: `Is_Broker__c` is
+     * retained (unused) on Contact, several TEST classes still resolve their fixture by querying
+     * `WHERE Is_Broker__c = true`, and dropping it would break those without touching a single
+     * production predicate. Removing it belongs to the field's separate, deferred retirement.
+     *
      * @param count     Number of broker Contacts.
      * @param accountId Parent Account (nullable).
      * @param doInsert  Insert when true.
@@ -2637,6 +2710,56 @@ public with sharing class TestDataFactory {
     /** Single BOV Submission. @param dispositionId Parent Disposition. @param doInsert Insert when true. @return The submission. */
     public static BOV_Submission__c createBovSubmission(Id dispositionId, Boolean doInsert) {
         return createBovSubmissions(1, dispositionId, doInsert)[0];
+    }
+
+    /**
+     * BOV broker-change history rows — the append-only log written by
+     * `BovSubmissionService.replaceSelectedBroker` (added 2026-08-20, Tranche 2 Workstream B).
+     *
+     * ⚠ THIS BUILDS A ROW BY HAND, WHICH IS ONLY EVER CORRECT IN A *READ* TEST. In production
+     * nothing may insert this object except the replacement it records — a fixture row is a
+     * shortcut for exercising `BovBrokerChangeSelector` / `BovBrokerChangeController` without
+     * performing a whole broker swap per row, NOT a sanctioned way to create history. A test of
+     * the WRITE must call the service.
+     *
+     * ⚠ BOTH Contact LOOKUPS ARE LEFT NULL. `Outgoing_Broker__c` / `Incoming_Broker__c` carry an
+     * ACTIVE, NON-OPTIONAL lookup filter (`Contact.Is_Broker__c = true`) enforced on Apex DML, so a
+     * fixture that pointed them at an ordinary `createContact` Contact would fail at insert with
+     * the filter's error rather than at the assertion. A caller that needs them populated should
+     * use `createBrokerContactWithFirm(...)`, which produces a Contact the filter accepts.
+     * ⚠ `Entry_DateTime__c` IS SET EXPLICITLY AND DESCENDS BY ONE MINUTE PER INDEX, so a caller can
+     * assert the selector's newest-first ORDER BY without depending on insert order or on the
+     * frozen test clock (every row in one transaction otherwise shares a DateTime to the
+     * millisecond, leaving only the `Name DESC` tie-break to prove).
+     *
+     * @param count         Number of history rows.
+     * @param dispositionId Parent Disposition__c (nullable).
+     * @param doInsert      Insert when true.
+     * @return Broker-change rows, index 0 the NEWEST.
+     */
+    public static List<BOV_Broker_Change__c> createBovBrokerChanges(
+            Integer count, Id dispositionId, Boolean doInsert) {
+        requirePositive(count);
+        Datetime base = Datetime.now();
+        List<BOV_Broker_Change__c> changes = new List<BOV_Broker_Change__c>();
+        for (Integer i = 0; i < count; i++) {
+            changes.add(new BOV_Broker_Change__c(
+                Disposition__c = dispositionId,
+                Outgoing_Broker_Firm__c = 'Outgoing Brokerage ' + i,
+                Incoming_Broker_Firm__c = 'Incoming Brokerage ' + i,
+                Reason__c = 'Performance Issue',
+                Notes__c = 'Test broker change ' + i,
+                Entry_DateTime__c = base.addMinutes(-i),
+                Logged_By__c = UserInfo.getUserId()
+            ));
+        }
+        insertIf(doInsert, changes);
+        return changes;
+    }
+
+    /** Single BOV broker change. @param dispositionId Parent Disposition. @param doInsert Insert when true. @return The change row. */
+    public static BOV_Broker_Change__c createBovBrokerChange(Id dispositionId, Boolean doInsert) {
+        return createBovBrokerChanges(1, dispositionId, doInsert)[0];
     }
 
     /**

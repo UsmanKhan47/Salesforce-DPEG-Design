@@ -1,7 +1,13 @@
 /**
  * Read-only data provider for the Broker Hub Lightning page (Acquisitions).
- * Brokers are standard Contacts flagged with Is_Broker__c. Returns header
+ * Brokers are standard Contacts on the `Contact.Broker` RECORD TYPE. Returns header
  * stats, the full broker list, and the top brokers ranked by active listings.
+ *
+ * ⚠ CORRECTED 2026-08-20: this read "standard Contacts flagged with Is_Broker__c". The broker
+ * definition moved to the record type. 🔴 THIS PAGE WAS THE MOST VISIBLE CASUALTY OF THE DRIFT —
+ * measured on usman-dpeg, ZERO Contacts carried the checkbox, so every header stat read 0 and both
+ * lists rendered empty. The repoint lives entirely in ContactSelector's two queries; this class
+ * was not otherwise changed and needs no change.
  */
 public with sharing class BrokerController {
 

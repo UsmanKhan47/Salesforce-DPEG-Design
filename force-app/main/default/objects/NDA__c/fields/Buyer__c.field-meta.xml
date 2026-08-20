@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        ADDED 2026-08-20 (disposition-tranche-2-requirements.md, D6.1) - BUYER ACTIVITY TIMELINE,
+        SCHEMA HALF. ROLE-NAMED CONTACT LOOKUP, explicitly permitted by ARCHITECTURE.md §1 (a
+        second Contact lookup on one object cannot both be Contact__c, so the field name carries
+        the role).
+
+        =====================================================================================
+        🔴 DELIBERATELY UNFILTERED. DO NOT ADD Is_Buyer__c. THIS WAS AN OPEN DESIGN ITEM (O-5),
+        NOW CLOSED BY THE USER'S ACCEPTED RECOMMENDATION - DO NOT RE-OPEN IT.
+        =====================================================================================
+        Six Contact lookups in this repo (Broker_Assignment__c.Broker__c,
+        Disposition__c.Broker__c, Lease_Inquiry__c.Broker__c, BOV_Submission__c.Broker__c,
+        BOV_Broker_Change__c.Incoming_Broker__c / Outgoing_Broker__c) carry an ACTIVE,
+        non-optional lookupFilter selecting the Contact.Broker RECORD TYPE.
+
+        🔴 TWO CORRECTIONS, 2026-08-20, quoted rather than deleted:
+
+          RETRACTED: "Every other Contact lookup in this repo (... Opportunity.Broker__c ...)
+          carries an ACTIVE, non-optional lookupFilter on Contact.Is_Broker__c."
+        (a) It is not EVERY other one. Opportunity.Broker__c has NO <lookupFilter> element at
+        all - verified twice by reading that file in full - so it is removed from the list
+        above. Three other files in this repo repeat the same false claim. It is deliberately
+        staying unfiltered: it is machine-stamped by LeadConvertService, and a non-optional
+        filter there would make lead conversion fail hard. User-decided, do not re-open.
+        (b) The predicate is no longer Contact.Is_Broker__c. The broker definition moved to the
+        Contact.Broker record type on 2026-08-20 (measured: ZERO Contacts carried the checkbox,
+        19 sat on the record type). The argument below is UNAFFECTED - it is about whether
+        "buyer" is a durable role, not about how "broker" is spelled - so read
+        "Is_Broker__c works because..." as "the broker record type works because...".
+
+        This one intentionally does not, for a reason specific to what "buyer" means here:
+          1. The broker filter works because a broker is a DURABLE role - the same Contact brokers
+             many deals over years, and scripts/seed-broker-contacts.apex maintains that
+             population. A buyer is DEAL-SCOPED: the counterparty on one sale, often a one-time
+             principal created AT THE MOMENT the NDA is opened.
+          2. An active, non-optional filter would force the analyst to tick a checkbox on a
+             brand-new Contact before they can name them on an NDA mid-negotiation, with a
+             refusal message naming an internal field.
+          3. There is NO POPULATION TO FILTER AGAINST. Is_Broker__c was added with a seed script
+             behind it; a hypothetical Is_Buyer__c would read false on 100% of Contacts on day
+             one, and the lookup would offer nothing to pick.
+        If scoping is ever wanted, the documented fallback is an isOptional=true lookupFilter (a
+        suggestion, not a refusal) - never an active one, and never without a seed/backfill story
+        first.
+
+        =====================================================================================
+        🔴 NDA__c IS A DUAL-MODULE OBJECT. THIS FIELD IS INERT ON THE ACQUISITION SIDE.
+        =====================================================================================
+        NDA__c serves Acquisitions as well as Dispositions (both record types share this object).
+        This field carries no record-type restriction and is technically settable on an
+        acquisition NDA, but it is deliberately NOT added to any acquisition-specific
+        permission set (DPEG_Acquisition_Edit / DPEG_Acquisition_View) or layout in this change -
+        it ships FLS-invisible there, which is the safe default until an acquisition use case is
+        actually requested.
+
+        =====================================================================================
+        RELATIONSHIP NAME: Buyer_NDAs. COLLISION CHECKED, NOT ASSUMED.
+        =====================================================================================
+        Every referenceTo Contact field in this repo as of this change uses one of
+        Broker_Assignments, Brokered_Dispositions, Lease_Inquiries, Brokered_Opportunities,
+        Brokered_BOV_Submissions, Incoming_Broker_Changes or Outgoing_Broker_Changes.
+        Buyer_NDAs is free.
+
+        =====================================================================================
+        LABEL: "Buyer Contact", NOT "Buyer". CHECKED AGAINST EVERY EXISTING NDA__c FIELD LABEL.
+        =====================================================================================
+        No field on NDA__c is labelled "Buyer" today (Party_Role__c carries a PICKLIST VALUE
+        labelled "Buyer", a different namespace entirely - field labels and picklist value labels
+        never collide in the UI, but the two sitting side by side on the same edit form would
+        still read ambiguously). "Buyer Contact" is unique on this object and mirrors the label
+        chosen for Disposition_Offer__c.Buyer__c in the same change, where "Buyer" IS already
+        taken by Buyer_Name__c.
+
+        deleteConstraint SetNull, matching every sibling Contact lookup in this repo - deleting a
+        buyer Contact must never delete the NDA that is evidence of what they signed or refused.
+
+        =====================================================================================
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        =====================================================================================
+        A Metadata API deployed custom field arrives with NO field permissions for any profile,
+        System Administrator included. Read and edit are granted in DPEG_Disposition_Edit and
+        read only in DPEG_Disposition_View in the same change - the two permission sets that
+        already carry every other NDA__c business field. Neither DPEG_Acquisition_Edit,
+        DPEG_Acquisition_View nor DPEG_Admin_Access is touched (see the dual-module note above).
+        This file and those two permission sets must deploy together.
+    -->
+    <fullName>Buyer__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Buyer contact for this NDA. Deliberately UNFILTERED - see in-file comment; no Is_Buyer__c gate exists. NDA__c also serves Acquisitions; this field is inert there and is not granted on any acquisition permission set or layout.</description>
+    <inlineHelpText>Pick the buyer Contact this NDA is with. Not filtered by role - a buyer is often a brand-new Contact created for this deal.</inlineHelpText>
+    <label>Buyer Contact</label>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Buyer NDAs</relationshipLabel>
+    <relationshipName>Buyer_NDAs</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

@@ -40,8 +40,15 @@
  * `'TYPED ...'` literals first, so the assertion can only pass if the stamp actually ran.
  *
  * ── ⚠ BROKER CONTACTS MUST COME FROM `createBrokerContact(s)` ──
- * `BOV_Submission__c.Broker__c` carries an ACTIVE, NON-OPTIONAL lookup filter on
- * `Contact.Is_Broker__c`. A plain `createContacts()` Contact is refused at save time.
+ * `BOV_Submission__c.Broker__c` carries an ACTIVE, NON-OPTIONAL lookup filter on the
+ * `Contact.Broker` RECORD TYPE.
+ *
+ * ⚠ CORRECTED 2026-08-20 — THE OLD REASON IS NOW EXACTLY BACKWARDS. This read: "...lookup filter on
+ * `Contact.Is_Broker__c`. A plain `createContacts()` Contact is refused at save time." A plain
+ * `createContacts()` Contact is now ACCEPTED, because TestDataFactory stamps the Broker record type
+ * on every Contact it builds. Keep using `createBrokerContact(s)` here — they populate the Broker_*
+ * fields this stamp service reads — but do NOT use `createContacts()` as a NEGATIVE fixture. For a
+ * Contact that genuinely is not a broker, use `TestDataFactory.createNonBrokerContact(s)`.
  *
  * @see force-app/main/default/classes/BovSubmissionBrokerStampService.cls
  * @see force-app/main/default/classes/BovSubmissionTriggerHandler.cls (the only caller)
@@ -170,7 +177,20 @@ private class BovSubmissionBrokerStampServiceTest {
             + 'would render as a person who does not work there');
     }
 
-    /** Both fields move together when the picker changes from one broker to another. */
+    /**
+     * Both fields move together when the picker changes from one broker to another.
+     *
+     * ⚠ THE UPDATE IS A FRESH, NARROW sObject, AND THAT IS WHAT MAKES THE THIRD ASSERTION REAL
+     * (fixed 2026-08-21, sweep prompted by the NDA/offer twins' clear-branch failure). This test
+     * used to reuse the `submission` variable, which still carries the `TYPED_FIRM` / `TYPED_NAME`
+     * literals `typedSubmission()` wrote — Apex never refreshes an sObject with values a before
+     * trigger assigned, the same trap already documented at
+     * `updateThatDoesNotTouchBroker_leavesBothTextFieldsUnchanged` below. The test PASSED (the stamp
+     * fires on a broker change and overwrites), but `areNotEqual(brokerA.Broker_Firm__c, ...)` was
+     * VACUOUS: A's firm was never in the payload, so no implementation could have left it behind.
+     * With a narrow payload the DB really does hold A's stamped firm going into this save, so
+     * "A's firm must be gone" is now a claim that can fail.
+     */
     @isTest
     static void updateBrokerChangeFromAToB_restampsBothFields() {
         List<Contact> brokers = TestDataFactory.createBrokerContacts(2, null, true);
@@ -181,8 +201,7 @@ private class BovSubmissionBrokerStampServiceTest {
         insert submission;
 
         Test.startTest();
-        submission.Broker__c = brokerB.Id;
-        update submission;
+        update new BOV_Submission__c(Id = submission.Id, Broker__c = brokerB.Id);
         Test.stopTest();
 
         BOV_Submission__c saved = [

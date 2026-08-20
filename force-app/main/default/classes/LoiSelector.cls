@@ -11,8 +11,24 @@
  *   - CounterOfferService — selectNegotiationContextById, added Tranche 3B (2026-08-09).
  *   - DispositionStageEntryService — selectByDispositionIds, the disposition LOI-stage
  *     idempotency read, added 2026-08-10 (Tranche 3B fix pass).
+ *   - DispositionDealSummaryService — selectLatestByDispositionId, the disposition Deal Summary
+ *     card's LOI row, added 2026-08-20 (Tranche 2 Workstream C).
  *
- * LOI__c is a custom object — USER_MODE (P3 custom-field FLS gap = 0) on four of the six methods.
+ * ⚠ MODE COUNT — CORRECTED 2026-08-20, AND THE OLD SENTENCE IS QUOTED RATHER THAN DELETED SO A
+ * READER CARRYING IT KNOWS IT WAS WRONG. This header used to read:
+ *     > "LOI__c is a custom object — USER_MODE (P3 custom-field FLS gap = 0) on four of the six
+ *     >  methods."
+ * That was already false before this tranche touched the file: the class held SEVEN methods, FIVE
+ * of them USER_MODE. It is the same miscount NdaSelector's header records having propagated into
+ * ARCHITECTURE.md twice, and it is not cosmetic — ARCHITECTURE.md §2 makes these headers the
+ * authoritative SYSTEM_MODE inventory, so the number here is what a reviewer reconciles the doc
+ * against. Re-count against the method list, never against this sentence.
+ *   NOW: **EIGHT** public methods. **TWO** are `WITH SYSTEM_MODE` — `selectNegotiationContextById`
+ *   and `selectByDispositionIds`. The **SIX** remaining stay `WITH USER_MODE`: `selectById`,
+ *   `selectLatestByOpportunityId`, `selectOpportunityIdRequiredById`, `selectStageRequiredById`,
+ *   `selectByOpportunityIds` and `selectLatestByDispositionId`. LOI__c is a custom object (P3
+ *   custom-field FLS gap = 0), so USER_MODE is the correct default for every read a human asked
+ *   for.
  *
  * ⚠ MIXED MODES SINCE 2026-08-09: selectNegotiationContextById and (since 2026-08-10)
  * selectByDispositionIds are `WITH SYSTEM_MODE`, under the ARCHITECTURE.md §2 automation-path
@@ -233,6 +249,73 @@ public with sharing class LoiSelector {
             WHERE Opportunity__c IN :opportunityIds
             WITH USER_MODE
         ];
+    }
+
+    /**
+     * The most recently created LOI related to a DISPOSITION — backs the LOI row of the
+     * disposition Deal Summary card (`DispositionDealSummaryService` ->
+     * `c/dispositionDealSummary`). Added 2026-08-20, Tranche 2 Workstream C (design D5).
+     *
+     * 🔴 TWO FIELDS THE ACQUISITION SIBLING SELECTS ARE DELIBERATELY ABSENT, AND NEITHER IS AN
+     * OVERSIGHT. `selectLatestByOpportunityId` reads `LOI_Status__c` and the card's design brief
+     * lists `LOI_Signed_Date__c` as an obvious candidate. On the DISPOSITION path both are dead:
+     *   - `LOI_Status__c` — the `LOI_Signed_Status_Sync` flow's own header states this is "a
+     *     separate approval/deal vocabulary field that NO AUTOMATION EVER SETS". On a disposition
+     *     LOI it holds its default, `Draft`, forever, so selecting it would put "Draft" on the
+     *     card beside a `Stage__c` of "Executed" (design §0 C-10).
+     *   - `LOI_Signed_Date__c` — `LOI_Signed_Status_Sync` keys on `Stage__c = 'Signed'`, which is
+     *     the ACQUISITION terminal. The disposition terminal is `Executed`, so that flow can never
+     *     fire on a sale and the field is STRUCTURALLY always blank here (design §0 C-11). It
+     *     would render a permanent em-dash that reads as missing data.
+     * ⚠ Adding either later is not a widening, it is a regression. If a future change makes one of
+     * them live on the sell side, the thing to change first is the automation, then this list.
+     *
+     * ⚠ `Ball_In_Court__c` IS SELECTED AND ITS VOCABULARY INVERTS BETWEEN THE TWO SIDES —
+     * 'Seller' names the counterparty on a purchase and names DPEG on a sale (see
+     * `selectNegotiationContextById`). The card renders the raw value, which is correct for a
+     * disposition page, where the reader is the seller. Do not reuse this method behind an
+     * acquisition surface without re-reading that.
+     *
+     * READ-FOR-DISPLAY, null on miss: a disposition with no LOI yet is the normal state on 8 of
+     * the 11 stages — the card renders it as an empty state, never as an error. Same contract as
+     * `selectById` / `selectLatestByOpportunityId`, and deliberately NOT the throwing
+     * fetch-for-use contract the three `...RequiredById` methods carry.
+     *
+     * ⚠ ORDER BY carries an `Id DESC` TIE-BREAK. `CreatedDate` is second-granular, so two LOIs
+     * created under one Disposition inside the same second leave a single-key sort free to return
+     * either row and the card becomes non-deterministic between refreshes. Same reasoning, in
+     * full, on `NdaSelector.selectLatestByDispositionId`.
+     * ⚠ Its acquisition sibling has NO tie-break, and that is a preserved-verbatim P4 refactor
+     * artefact, not a precedent to copy.
+     *
+     * ── FLS: `WITH USER_MODE`, unlike the two disposition-facing methods around it ──
+     * This backs a read a human explicitly asked for by opening the record page, so
+     * ARCHITECTURE.md §2's automation-path exception does not apply. `USER_MODE` enforces FLS on
+     * the `WHERE` field too, so `LOI__c.Disposition__c` must stay granted alongside `Stage__c`,
+     * `Offer_Price__c` and `Ball_In_Court__c` — all four verified present in
+     * `DPEG_Disposition_View` and `DPEG_Disposition_Edit` on 2026-08-20. `USER_MODE` throws, it
+     * does not degrade, which is why the caller wraps this in a narrow fail-soft try/catch.
+     *
+     * @param dispositionId Parent Disposition__c Id; null-safe.
+     * @return The latest related LOI with Id, Stage__c, Offer_Price__c and Ball_In_Court__c
+     *         populated (ORDER BY CreatedDate DESC, Id DESC LIMIT 1), or null when the input is
+     *         null or the Disposition has no LOI.
+     * @example
+     * LOI__c loi = LoiSelector.selectLatestByDispositionId(dispositionId);
+     */
+    public static LOI__c selectLatestByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return null;
+        }
+        List<LOI__c> rows = [
+            SELECT Id, Stage__c, Offer_Price__c, Ball_In_Court__c
+            FROM LOI__c
+            WHERE Disposition__c = :dispositionId
+            WITH USER_MODE
+            ORDER BY CreatedDate DESC, Id DESC
+            LIMIT 1
+        ];
+        return rows.isEmpty() ? null : rows[0];
     }
 
     /**

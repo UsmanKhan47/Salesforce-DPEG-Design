@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        ADDED 2026-08-20 (disposition-tranche-2-requirements.md, D6.1) - BUYER ACTIVITY TIMELINE,
+        SCHEMA HALF. ROLE-NAMED CONTACT LOOKUP, explicitly permitted by ARCHITECTURE.md §1.
+
+        =====================================================================================
+        🔴 DELIBERATELY UNFILTERED. DO NOT ADD Is_Buyer__c. THIS WAS AN OPEN DESIGN ITEM (O-5),
+        NOW CLOSED BY THE USER'S ACCEPTED RECOMMENDATION - DO NOT RE-OPEN IT. Full reasoning is
+        in the twin field's comment, objects/NDA__c/fields/Buyer__c.field-meta.xml: a buyer is
+        deal-scoped, not a durable role like broker, so an active Is_Broker__c-style filter would
+        gate a brand-new Contact on a checkbox with no seed population behind it.
+
+        =====================================================================================
+        RELATIONSHIP NAME: Buyer_Disposition_Offers. COLLISION CHECKED, NOT ASSUMED.
+        =====================================================================================
+        Every referenceTo Contact field in this repo as of this change uses one of
+        Broker_Assignments, Brokered_Dispositions, Lease_Inquiries, Brokered_Opportunities,
+        Brokered_BOV_Submissions, Incoming_Broker_Changes or Outgoing_Broker_Changes.
+        Buyer_Disposition_Offers is free.
+
+        =====================================================================================
+        LABEL: "Buyer Contact", NOT "Buyer". "Buyer" IS ALREADY TAKEN.
+        =====================================================================================
+        Disposition_Offer__c.Buyer_Name__c already carries <label>Buyer</label> (free Text, the
+        pre-existing analyst-typed buyer name). Labelling this lookup "Buyer" too would put two
+        identically-labelled entries in the report field picker, Setup field list, Dynamic Forms
+        palette and every list view column chooser, with nothing to tell them apart - the exact
+        hazard this repo's other Contact-lookup fields (e.g. BOV_Submission__c.Broker__c, "Broker
+        Contact") were written to avoid. "Buyer Contact" is unique on this object and mirrors the
+        label chosen for the twin field on NDA__c in the same change.
+
+        🔴 Buyer_Name__c IS NOT RETIRED OR REPOINTED BY THIS FIELD. It stays free Text and stays
+        analyst-typed; nothing in this change stamps it from this lookup. Converting it, or
+        wiring a stamp between the two, is out of scope here (declarative-field-and-permset-only
+        deliverable) and is a decision for whoever next touches this object's Apex.
+
+        deleteConstraint SetNull, matching every sibling Contact lookup in this repo.
+
+        =====================================================================================
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        =====================================================================================
+        A Metadata API deployed custom field arrives with NO field permissions for any profile,
+        System Administrator included. Read and edit are granted in DPEG_Disposition_Edit and
+        read only in DPEG_Disposition_View in the same change - the two permission sets that
+        already carry every other Disposition_Offer__c business field. DPEG_Admin_Access is not
+        touched, matching how every other field on this object was granted. This file and those
+        two permission sets must deploy together.
+    -->
+    <fullName>Buyer__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Buyer contact for this offer. Deliberately UNFILTERED - see in-file comment; no Is_Buyer__c gate exists. Buyer_Name__c (free Text) stays as-is and is not stamped from this lookup by this change.</description>
+    <inlineHelpText>Pick the buyer Contact who made this offer. Not filtered by role - a buyer is often a brand-new Contact created for this deal.</inlineHelpText>
+    <label>Buyer Contact</label>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Buyer Disposition Offers</relationshipLabel>
+    <relationshipName>Buyer_Disposition_Offers</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

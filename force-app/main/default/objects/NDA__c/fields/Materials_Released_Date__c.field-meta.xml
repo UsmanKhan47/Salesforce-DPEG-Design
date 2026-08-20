@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        ADDED 2026-08-20 (disposition-tranche-2-requirements.md, D6.1) - BUYER ACTIVITY TIMELINE,
+        SCHEMA HALF.
+
+        🔴 THIS FIELD IS BOTH ANALYST-ENTERED AND MACHINE-DEFAULTED - NOT ONE OR THE OTHER.
+        SCHEMA ONLY SHIPS IN THIS CHANGE; THE DEFAULT-STAMPING IS A LATER DEVELOPER STEP.
+        A pure default cannot express "materials went to buyer A on Tuesday and buyer B on
+        Friday", which is the entire point of tracking this per-buyer (per-NDA) rather than once
+        on the parent Disposition. A pure manual field would be blank on most rows and the
+        timeline's middle hop would disappear. The intended shape, to be built by the developer
+        agent in DispositionStageEntryService alongside openBuyerNdas / stampListingDates /
+        openBrokerListings: on entry to the Release Materials stage, stamp this field on every
+        buyer-role NDA where it is still null - IDEMPOTENT AND BLANK-ONLY, never overwriting an
+        analyst's own entry, the same shape as NDA_Signed_Status_Sync's Date_Signed_Is_Blank gate
+        and openBuyerNdas's idempotency guard. The analyst can always override afterward for the
+        exceptions (a buyer who received materials on a different day).
+
+        NDA__c IS A DUAL-MODULE OBJECT (serves Acquisitions and Dispositions). This field is
+        inert on the acquisition side and is deliberately NOT added to any acquisition-specific
+        permission set or layout in this change.
+
+        🔴 FLS: A Metadata API deployed custom field arrives with NO field permissions for any
+        profile, System Administrator included. Read and edit are granted in
+        DPEG_Disposition_Edit, read only in DPEG_Disposition_View, in the same change. Neither
+        acquisition permission set nor DPEG_Admin_Access is touched.
+    -->
+    <fullName>Materials_Released_Date__c</fullName>
+    <description>Date the deal package/materials were released to the buyer named on this NDA. Analyst-entered, and later also default-stamped (blank-only, idempotent) on entry to the Release Materials stage by a developer-owned step - see in-file comment. Inert on acquisition NDAs.</description>
+    <inlineHelpText>When materials went out to this buyer. Usually set automatically when the disposition enters Release Materials; edit it if this buyer's materials went out on a different day.</inlineHelpText>
+    <label>Materials Released Date</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+</CustomField>

@@ -1,7 +1,9 @@
 /**
  * Keeps `BOV_Submission__c.Broker_Firm__c` and `BOV_Submission__c.Contact_Name__c` (both stored
- * Text(255)) in agreement with `BOV_Submission__c.Broker__c` (Lookup to Contact, filtered
- * `Is_Broker__c = true`) — added 2026-08-20 with the BOV broker-contact dropdown
+ * Text(255)) in agreement with `BOV_Submission__c.Broker__c` (Lookup to Contact, filtered to the
+ * `Contact.Broker` RECORD TYPE — ⚠ CORRECTED same day; this read "filtered `Is_Broker__c = true`",
+ * and the broker definition moved. This service reads neither and is unaffected) — added
+ * 2026-08-20 with the BOV broker-contact dropdown
  * (`agent-output/bov-broker-contact-lookup-requirements.md` §3, D-1).
  *
  * The analyst now PICKS a broker Contact instead of typing a firm and a person. Both Text fields

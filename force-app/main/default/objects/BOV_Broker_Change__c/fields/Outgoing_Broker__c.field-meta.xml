@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        ROLE-NAMED CONTACT LOOKUP, EXPLICITLY PERMITTED BY ARCHITECTURE.md §1 (a second Contact
+        lookup on one object cannot both be named Contact__c, so the field name carries the role).
+
+        XML SHAPE IS COPIED FROM Disposition__c.Broker__c / BOV_Submission__c.Broker__c,
+        DELIBERATELY AND EXACTLY: same ACTIVE non-optional lookupFilter selecting the
+        Contact.Broker RECORD TYPE, same errorMessage text, same deleteConstraint. There is no
+        Broker__c OBJECT in this org; every "broker" in this application is a Contact on the
+        Contact.Broker record type. Without this filter a hand-crafted history row could name a
+        non-broker Contact as the outgoing broker.
+
+        ⚠ CORRECTED 2026-08-20: both sentences above said Is_Broker__c. The broker definition
+        MOVED to the record type — measured on usman-dpeg, ZERO Contacts carried the checkbox
+        while 19 sat on the record type, so every broker predicate in the application was
+        matching nothing. Is_Broker__c is retained but unused; see
+        objects/Contact/fields/Is_Broker__c.field-meta.xml.
+
+        RELATIONSHIP NAME COLLISION CHECKED ON THE Contact PARENT, MEASURED NOT ASSUMED: five
+        fields in this repo carry referenceTo Contact today (Broker_Assignment__c.Broker__c,
+        Disposition__c.Broker__c, Lease_Inquiry__c.Broker__c, Opportunity.Broker__c,
+        BOV_Submission__c.Broker__c), using relationshipNames Broker_Assignments,
+        Brokered_Dispositions, Lease_Inquiries, Brokered_Opportunities and Brokered_BOV_Submissions.
+        Outgoing_Broker_Changes is free, and it must stay distinct from Incoming_Broker__c's
+        relationshipName (Incoming_Broker_Changes) - two lookups to the same object cannot share
+        a relationshipName.
+
+        deleteConstraint SetNull, matching every sibling Contact broker lookup. 🔴 THIS IS WHY
+        Outgoing_Broker_Firm__c (Text, this object) IS NOT REDUNDANT: scripts/seed-broker-contacts
+        .apex mass-deletes every broker Contact, which SetNull's this lookup with no error. A
+        history row whose broker column reads blank at that point is not history - the Text
+        snapshot is what survives the Contact's deletion. See Outgoing_Broker_Firm__c's own
+        comment for the full seed-hazard writeup.
+
+        =====================================================================================
+        🔴 RECONCILED 2026-08-20 (code review). THE COMMENT ABOVE ALREADY SAID THE PREDICATE
+        MOVED TO THE RECORD TYPE. THE ACTUAL <filterItems> BELOW HAD NOT. THIS IS THE FIX.
+        =====================================================================================
+        Same contradiction as Disposition__c.Broker__c and its siblings: this file's own
+        "CORRECTED 2026-08-20" note above already retracted the Is_Broker__c claim, but the
+        <lookupFilter> a few lines under it was still testing Contact.Is_Broker__c = True and
+        so refused every real broker Contact. Measured live on usman-dpeg the same day:
+            SELECT COUNT(Id) FROM Contact WHERE Is_Broker__c = true                 -> 0
+            SELECT COUNT(Id) FROM Contact WHERE RecordType.DeveloperName='Broker'   -> 19
+        <filterItems> now reads Contact.RecordType.DeveloperName = 'Broker'. errorMessage and
+        inlineHelpText below no longer name Is_Broker__c. Same reconciliation applied in the
+        same pass to Incoming_Broker__c, Disposition__c.Broker__c, Broker_Assignment__c.Broker__c
+        and Lease_Inquiry__c.Broker__c.
+    -->
+    <fullName>Outgoing_Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The broker Contact being replaced. Outgoing_Broker_Firm__c stamps this Contact's firm at write time so the row still reads correctly if this Contact is later deleted.</description>
+    <inlineHelpText>The broker who was replaced. Only Contacts on the Broker record type appear.</inlineHelpText>
+    <label>Outgoing Broker</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
+        <filterItems>
+            <field>Contact.RecordType.DeveloperName</field>
+            <operation>equals</operation>
+            <value>Broker</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Outgoing Broker Changes</relationshipLabel>
+    <relationshipName>Outgoing_Broker_Changes</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

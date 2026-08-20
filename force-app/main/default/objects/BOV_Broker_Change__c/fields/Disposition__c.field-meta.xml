@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - a comment above <CustomField>
+        breaks `sf` deploy at source conversion with a misleading "unable to find matching
+        parent xml file" error.
+
+        THE ANCHOR. RELATIONSHIP NAME COLLISION CHECKED, NOT ASSUMED: seven fields in this repo
+        carry referenceTo Disposition__c (Contract_Review__c, LOI__c, Disposition_Offer__c,
+        BOV_Submission__c, Broker_Listing__c, NDA__c, Wire__c), using relationshipNames
+        Contract_Reviews, LOIs, Disposition_Offers, BOV_Submissions, Broker_Listings, NDAs and
+        Wires respectively. BOV_Broker_Changes is free on the Disposition__c parent.
+
+        required is false, matching every other Disposition__c lookup on a disposition child
+        object in this repo (none of the seven siblings above sets required=true either) -
+        this repo enforces "must have a parent" via validation rule or trigger, not via the
+        lookup's own required flag.
+    -->
+    <fullName>Disposition__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The disposition this broker replacement happened on.</description>
+    <inlineHelpText>The disposition the broker was swapped on.</inlineHelpText>
+    <label>Disposition</label>
+    <referenceTo>Disposition__c</referenceTo>
+    <relationshipLabel>BOV Broker Changes</relationshipLabel>
+    <relationshipName>BOV_Broker_Changes</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

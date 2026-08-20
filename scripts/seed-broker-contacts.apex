@@ -1,6 +1,50 @@
 /**
  * Seed broker Contacts for the Acquisition Broker Hub.
- * Brokers are standard Contacts flagged with Is_Broker__c = true.
+ * Brokers are standard Contacts on the `Contact.Broker` RECORD TYPE.
+ *
+ * ⚠ CORRECTED 2026-08-20. This line read "Brokers are standard Contacts flagged with
+ * Is_Broker__c = true." The broker definition MOVED to the record type; `Is_Broker__c` is
+ * retained on Contact but is no longer what makes a Contact a broker. Every query and every
+ * insert in this file moved with it — see the 🔴 block immediately below.
+ *
+ * =====================================================================================
+ * 🔴 2026-08-20 — WHAT MOVED IN THIS FILE, AND WHY THE TWO HALVES CANNOT DRIFT APART
+ * =====================================================================================
+ * STEP 1 builds the `doomed` roster (the scan basis) and STEP 5 deletes it. Those are ONE
+ * LIST, not two queries: STEP 5 calls `Database.delete(doomed, false)` on the exact rows
+ * STEP 1 selected. That is load-bearing and MUST STAY THAT WAY.
+ *
+ * If STEP 1 and the delete were ever split back into two independent queries and only one
+ * were repointed, this script would scan zero rows, print "SCAN SKIPPED: there are no broker
+ * Contacts in this org", pass the STEP 3 abort gate, and then delete the org's REAL broker
+ * roster across five SetNull lookups — reporting SEED VERDICT: COMPLETE while doing it. The
+ * guard would not be broken, it would be INVERTED: an all-clear that is itself the evidence
+ * the scan looked at the wrong population.
+ *
+ * 🔴 NEVER REINTRODUCE A SECOND `[SELECT ... FROM Contact WHERE <broker predicate>]` IN THIS
+ * FILE. One predicate, one list, scanned and deleted.
+ *
+ * STEP 6's inserted roster is stamped with the Broker record type for the same reason: an
+ * unstamped seed Contact is no longer a broker, so it would satisfy nothing, be invisible to
+ * every broker query, and be REFUSED by all six broker lookup filters.
+ *
+ * =====================================================================================
+ * STEP ORDER — THE RECORD-TYPE GATE RUNS FIRST, BEFORE STEP 1
+ * =====================================================================================
+ * A PRE-FLIGHT GATE resolves the Contact.Broker record type and aborts if it is missing OR
+ * not visible to the operator. It sits ABOVE STEP 1, so the running order is:
+ *
+ *     PRE-FLIGHT GATE (describe, no SOQL, no DML)
+ *       -> STEP 1 roster query -> STEP 2 scan -> STEP 3 decision gate
+ *       -> STEP 4 denorm clears -> STEP 5 delete -> STEP 6 seed -> STEP 7 verdict
+ *
+ * 🔴 THE GATE USED TO SIT IN STEP 6, AFTER THE DELETE, AND THAT WAS A DATA-LOSS BUG (fixed
+ * 2026-08-20, code review W1). SOQL DOES NOT FILTER BY RECORD-TYPE VISIBILITY, so an operator
+ * who can SEE no Broker record type still selects — and still DELETES — every broker Contact
+ * in the org at STEP 5, and only then discovers it cannot re-create them. Aborting late was
+ * only ever harmless in the OTHER failure case (record type absent entirely, where STEP 1
+ * matches nothing and the delete is a no-op). Do not move the gate back down. The full
+ * argument is at the gate itself.
  *
  * Run:  sf apex run --file scripts/seed-broker-contacts.apex --target-org usman-dpeg
  * Then read the SCAN / ORPHAN RISK lines and the final "SEED VERDICT" line.
@@ -8,8 +52,13 @@
  * =====================================================================================
  * 🔴 THIS SCRIPT IS DESTRUCTIVE. IT IS REBUILD-ONLY. NEVER RUN IT AGAINST REAL DATA.
  * =====================================================================================
- * STEP 5 below deletes EVERY Contact in the org with Is_Broker__c = true — not just the
- * twelve rows this file creates. Broker Contacts also arrive from other seeds
+ * STEP 5 below deletes EVERY Contact in the org on the `Contact.Broker` record type — not
+ * just the twelve rows this file creates. (⚠ CORRECTED 2026-08-20: read "with
+ * Is_Broker__c = true". THE BLAST RADIUS GREW WHEN THE DEFINITION MOVED: measured on
+ * `usman-dpeg`, ZERO Contacts carried the checkbox while 19 sat on the Broker record type.
+ * This script's delete went from a guaranteed no-op to a 19-row destruction on the same day
+ * its predicate changed. That is the single most important consequence of the definition
+ * move anywhere in this repo.) Broker Contacts also arrive from other seeds
  * (`seed-broker-assignments.apex`, `seed-lease-inquiries.apex` both create their own, by
  * email) and, in a real org, from a human flagging a genuine broker. This script cannot
  * tell those apart and does not try to.
@@ -21,16 +70,37 @@
  *     RETRACTED: "FOUR LOOKUPS POINT AT THOSE CONTACTS. ALL FOUR ARE deleteConstraint =
  *     SetNull..."
  *
- * FIVE LOOKUPS POINT AT THOSE CONTACTS. ALL FIVE ARE deleteConstraint = SetNull, so the
- * delete does not fail — it silently BLANKS the lookup on every referencing record:
+ * ⚠ CORRECTED AGAIN 2026-08-20 (re-review, same day). Same reason as above — a reader
+ * carrying FIVE needs to see what changed, not just a new number:
  *
- *   Disposition__c.Broker__c        rel. Brokered_Dispositions      🔴 SEE THE NEXT BLOCK
- *   BOV_Submission__c.Broker__c     rel. Brokered_BOV_Submissions   🔴 SEE THE NEXT BLOCK —
- *                                   ADDED 2026-08-20, AND IT IS THE SECOND STORED-TEXT CASE
- *   Broker_Assignment__c.Broker__c  rel. Broker_Assignments
- *   Lease_Inquiry__c.Broker__c      rel. Lease_Inquiries
- *   Opportunity.Broker__c           rel. Brokered_Opportunities     (the Broker Protection
- *                                   submitting broker, stamped by LeadConvertService)
+ *     RETRACTED: "FIVE LOOKUPS POINT AT THOSE CONTACTS. ALL FIVE ARE deleteConstraint =
+ *     SetNull, so the delete does not fail — it silently BLANKS the lookup on every
+ *     referencing record" (followed by a five-row list that omitted BOV_Broker_Change__c
+ *     entirely — Workstream B added it the same day this count was last corrected, and
+ *     BROKER_LOOKUPS / STORED_DENORM_TEXT below had not been updated to match).
+ *
+ * SEVEN LOOKUPS ACROSS SIX OBJECTS POINT AT THOSE CONTACTS. ALL SEVEN ARE deleteConstraint =
+ * SetNull, so the delete does not fail — it silently BLANKS the lookup on every referencing
+ * record:
+ *
+ *   Disposition__c.Broker__c                 rel. Brokered_Dispositions      🔴 SEE THE NEXT
+ *                                             BLOCK
+ *   BOV_Submission__c.Broker__c              rel. Brokered_BOV_Submissions   🔴 SEE THE NEXT
+ *                                             BLOCK — ADDED 2026-08-20, THE SECOND
+ *                                             STORED-TEXT CASE
+ *   Broker_Assignment__c.Broker__c           rel. Broker_Assignments
+ *   Lease_Inquiry__c.Broker__c               rel. Lease_Inquiries
+ *   Opportunity.Broker__c                    rel. Brokered_Opportunities     (the Broker
+ *                                             Protection submitting broker, stamped by
+ *                                             LeadConvertService)
+ *   BOV_Broker_Change__c.Outgoing_Broker__c  rel. Outgoing_Broker_Changes    🔴 SEE THE NEXT
+ *                                             BLOCK — ADDED 2026-08-20 (Workstream B), THE
+ *                                             THIRD STORED-TEXT CASE, AND THE FIRST OBJECT
+ *                                             WITH TWO BROKER LOOKUPS ON ONE ROW
+ *   BOV_Broker_Change__c.Incoming_Broker__c  rel. Incoming_Broker_Changes    same object,
+ *                                             independent of Outgoing_Broker__c above — a
+ *                                             single history row can be orphaned on either
+ *                                             field, or both, in the same delete
  *
  * 🔴 DO NOT "FIX" THIS BY SWITCHING ANY OF THOSE FIELDS TO deleteConstraint = Restrict.
  * That was considered and rejected — see the XML comment in
@@ -40,10 +110,15 @@
  * and STEPS 2-4 below are it.
  *
  * =====================================================================================
- * 🔴 WHY Disposition__c AND BOV_Submission__c ARE THE SEVERE ONES: THE ORPHANED RECORD
- *    STILL LOOKS HEALTHY
+ * 🔴 WHY Disposition__c, BOV_Submission__c AND (PARTIALLY) BOV_Broker_Change__c NEED EXTRA
+ *    SCRUTINY: STORED TEXT SURVIVES A CASCADE THAT A FORMULA WOULD NOT
  * =====================================================================================
- * Three of the five objects fail VISIBLY. `Broker_Assignment__c.Broker_Name__c` /
+ * ⚠ Title CORRECTED 2026-08-20 (re-review, same day as the count above) to add
+ * BOV_Broker_Change__c. RETRACTED: "WHY Disposition__c AND BOV_Submission__c ARE THE SEVERE
+ * ONES" — that omitted the third object entirely; see its own paragraph below for why its
+ * severity is real but PARTIAL, not identical to the other two.
+ *
+ * Three of the six objects fail VISIBLY. `Broker_Assignment__c.Broker_Name__c` /
  * `Broker_Firm__c` / `Broker_Email__c` and `Lease_Inquiry__c.Broker_Name__c` /
  * `Broker_Firm__c` are FORMULA fields over `Broker__r.*` (measured, not assumed — read
  * their field-meta.xml), so when the lookup is nulled they evaluate to blank in the same
@@ -72,12 +147,37 @@
  *      `Disposition__c.Selected_Broker__c` on approval, so a stale firm can propagate to a
  *      SECOND object after the broker is already gone.
  *
- * ⚠ BUT THE REMEDY IS NOT THE SAME — SEE `FORCE_CLEARS_DENORM` BELOW. On Disposition the
- * text is a DERIVED DISPLAY COPY and blanking it makes the record honest. On BOV_Submission
- * the text IS THE BROKER'S RESPONSE DATA — the firm and person who actually bid, entered by
- * an analyst and, before 2026-08-20, typed by hand. Blanking it to repair a broken lookup
- * would destroy the record of who bid in order to tidy a display. This script therefore
- * SCANS AND REPORTS BOV_Submission__c and DOES NOT CLEAR IT.
+ * 🔴 `BOV_Broker_Change__c` ADDS A THIRD CASE — ADDED 2026-08-20 (Workstream B) — AND IT IS
+ * ONLY PARTIALLY MITIGATED, NOT ELIMINATED, BY ITS TWO FIRM SNAPSHOTS. Do not read the
+ * paragraph below as "so it's fine": it is better than the other two in one specific way and
+ * no better in another.
+ * `Outgoing_Broker_Firm__c` and `Incoming_Broker_Firm__c` are BOTH stored Text(255), stamped
+ * by `BovSubmissionService.replaceSelectedBroker` at write time from whichever Contact was
+ * chosen in the matching lookup (`objects/BOV_Broker_Change__c/fields/Outgoing_Broker_Firm__c
+ * .field-meta.xml` and its Incoming sibling). THE MITIGATING PART: because that firm text is
+ * stamped, a SetNull cascade blanking `Outgoing_Broker__c` / `Incoming_Broker__c` leaves the
+ * firm name — the part a reader scans for first — intact on the row, unlike a formula field
+ * on `Broker_Assignment__c` / `Lease_Inquiry__c` going visibly blank. THE PART THAT IS NOT
+ * MITIGATED: this object is an append-only AUDIT LOG of who replaced whom (see
+ * `objects/BOV_Broker_Change__c/BOV_Broker_Change__c.object-meta.xml`), and a nulled lookup
+ * on an audit row means that row can no longer be navigated to the Contact it names, even
+ * though the firm text still reads correctly — the row stops lying about WHICH FIRM and
+ * starts silently losing WHETHER THE PERSON IT NAMES IS STILL REACHABLE FROM IT. That is why
+ * this object is SCANNED AND REPORTED below alongside the other two, not treated as safe.
+ *
+ * ⚠ BUT THE REMEDY IS NOT THE SAME FOR ALL THREE — SEE `FORCE_CLEARS_DENORM` BELOW. On
+ * Disposition the text is a DERIVED DISPLAY COPY and blanking it makes the record honest. On
+ * BOV_Submission and BOV_Broker_Change__c the text IS ENTERED OR AUDITED DATA — respectively
+ * the firm and person who actually bid, entered by an analyst, and the firm snapshot on a
+ * completed broker-replacement history row — not a derivation. BOV_Broker_Change__c in
+ * particular exists so that history CANNOT be rewritten: both permission sets granting it
+ * (`DPEG_Disposition_View`, `DPEG_Disposition_Edit`) give every field `readable=true` and
+ * NO field `editable=true`, and the object's own `allowEdit` is `false` in both — a FORCE run
+ * blanking its stored text via `Database.update` would be rewriting an audit trail that the
+ * declarative security model deliberately makes un-rewritable through the UI. Blanking either
+ * object's stored text to repair a broken lookup would destroy or alter a historical record in
+ * order to tidy a display. This script therefore SCANS AND REPORTS BOV_Submission__c and
+ * BOV_Broker_Change__c and DOES NOT CLEAR EITHER.
  *
  * ⚠ THE PREMISE, STATED SO IT CAN BE CHALLENGED: "the stored text survives" is a claim
  * that a SetNull cascade does NOT fire `DispositionTrigger`, and therefore never reaches
@@ -254,8 +354,8 @@ final Boolean PREVIEW_ONLY = false;
 //    Defaults to FALSE. Flip it only after reading every ORPHAN RISK line.
 final Boolean FORCE = false;
 
-// ── Every lookup that points at a broker Contact, object API -> lookup field API.
-//    🔴 IF A SIXTH Contact LOOKUP IS EVER ADDED, ADD IT HERE. Nothing maintains this list
+// ── Every lookup that points at a broker Contact, object API -> lookup field API(s).
+//    🔴 IF ANOTHER Contact LOOKUP IS EVER ADDED, ADD IT HERE. Nothing maintains this list
 //    automatically, and a missing entry means that object is orphaned silently — the exact
 //    failure this whole file exists to prevent.
 //    ⚠ CORRECTED 2026-08-20: this banner said "IF A FIFTH ... IS EVER ADDED" and the line
@@ -264,12 +364,29 @@ final Boolean FORCE = false;
 //    retracted and replaced. The FIVE below are the complete set as of 2026-08-20
 //    (`grep -rl "<referenceTo>Contact</referenceTo>" objects/`). Re-run that grep before
 //    trusting this list; a date on a comment is not a measurement.
-final Map<String, String> BROKER_LOOKUPS = new Map<String, String>{
-    'Disposition__c'       => 'Broker__c',
-    'BOV_Submission__c'    => 'Broker__c',
-    'Broker_Assignment__c' => 'Broker__c',
-    'Lease_Inquiry__c'     => 'Broker__c',
-    'Opportunity'          => 'Broker__c'
+//    ⚠ CORRECTED AGAIN 2026-08-20 (re-review, same day). Retracted, not silently bumped to
+//    "SIXTH", because the correction is not just a new count — it is a SHAPE change:
+//
+//        RETRACTED: "🔴 IF A SIXTH Contact LOOKUP IS EVER ADDED, ADD IT HERE... The FIVE
+//        below are the complete set as of 2026-08-20" — followed by
+//        `Map<String, String> BROKER_LOOKUPS` holding exactly one field API per object.
+//
+//    Workstream B added BOV_Broker_Change__c the same day with TWO Contact lookups on ONE
+//    object — Outgoing_Broker__c and Incoming_Broker__c — which `Map<String, String>` cannot
+//    express for a single key without dropping one of them, the exact "force one field in
+//    and lose the other silently" failure STORED_DENORM_TEXT's own header already warns
+//    against a few lines below. The value type therefore changes to `List<String>`, matching
+//    STORED_DENORM_TEXT's existing shape, and STEP 2 / STEP 4 below are rewritten to iterate
+//    every lookup field an object declares rather than assume exactly one. SEVEN lookup
+//    fields across SIX objects are the complete set as of 2026-08-20 — re-run the grep above
+//    before trusting this list; a date on a comment is not a measurement.
+final Map<String, List<String>> BROKER_LOOKUPS = new Map<String, List<String>>{
+    'Disposition__c'       => new List<String>{ 'Broker__c' },
+    'BOV_Submission__c'    => new List<String>{ 'Broker__c' },
+    'Broker_Assignment__c' => new List<String>{ 'Broker__c' },
+    'Lease_Inquiry__c'     => new List<String>{ 'Broker__c' },
+    'Opportunity'          => new List<String>{ 'Broker__c' },
+    'BOV_Broker_Change__c' => new List<String>{ 'Outgoing_Broker__c', 'Incoming_Broker__c' }
 };
 
 // ── Objects carrying STORED (non-formula) denormalised copies of the broker, which a
@@ -296,9 +413,16 @@ final Map<String, String> BROKER_LOOKUPS = new Map<String, String>{
 //    (2026-08-20), so there are now TWO objects with stored copies — and BOV needs TWO
 //    FIELDS, which is why the value type here is List<String> and no longer String. That
 //    shape change is the whole reason this is not a one-line edit.
+//    ⚠ CHECKED AGAIN 2026-08-20 (re-review, same day) FOR BOV_Broker_Change__c, WHICH ALSO
+//    NEEDS TWO FIELDS (Outgoing_Broker_Firm__c, Incoming_Broker_Firm__c — both stored
+//    Text(255), both stamped by BovSubmissionService.replaceSelectedBroker). Unlike
+//    BROKER_LOOKUPS above, NO SHAPE CHANGE WAS NEEDED HERE: this map was already
+//    `Map<String, List<String>>` and can hold two field APIs under one object key without
+//    modification. The entry below is therefore a pure addition.
 final Map<String, List<String>> STORED_DENORM_TEXT = new Map<String, List<String>>{
-    'Disposition__c'    => new List<String>{ 'Selected_Broker__c' },
-    'BOV_Submission__c' => new List<String>{ 'Broker_Firm__c', 'Contact_Name__c' }
+    'Disposition__c'       => new List<String>{ 'Selected_Broker__c' },
+    'BOV_Submission__c'    => new List<String>{ 'Broker_Firm__c', 'Contact_Name__c' },
+    'BOV_Broker_Change__c' => new List<String>{ 'Outgoing_Broker_Firm__c', 'Incoming_Broker_Firm__c' }
 };
 
 // ── Of the objects above, the ones whose stored text the FORCE path may BLANK in STEP 4.
@@ -310,6 +434,18 @@ final Map<String, List<String>> STORED_DENORM_TEXT = new Map<String, List<String
 //    the header for the full argument, including the ENTITY_IS_LOCKED problem a clear would
 //    hit on any submitted submission. Its rows are still SCANNED and every one is REPORTED
 //    by name with its stale values; they are simply not written to.
+//    ⚠ ADDED 2026-08-20 (re-review, same day): BOV_Broker_Change__c IS ALSO DELIBERATELY
+//    ABSENT, for a related but distinct reason. It is an append-only AUDIT LOG of who
+//    replaced whom (see the object header), and both permission sets granting it
+//    (DPEG_Disposition_View, DPEG_Disposition_Edit) give every field readable=true and NO
+//    field editable=true, with the object's own allowEdit false in both — the declarative
+//    security model deliberately makes this object un-rewritable through the UI. A FORCE run
+//    blanking its stored firm text via Database.update would rewrite that audit trail from
+//    a script, defeating the reason the object is read-only in the first place. Its rows are
+//    still SCANNED and every one is REPORTED by name with both stale firm values; they are
+//    simply not written to. The damage is PARTIALLY mitigated — the firm text survives the
+//    cascade and keeps reading correctly — but not eliminated, because the lookup itself
+//    still goes blank and the row can no longer be navigated to the Contact it names.
 //    ⚠ Adding an object here without its entry in STORED_DENORM_TEXT above does nothing —
 //    STEP 4 iterates the fields that were actually selected.
 final Set<String> FORCE_CLEARS_DENORM = new Set<String>{ 'Disposition__c' };
@@ -317,6 +453,53 @@ final Set<String> FORCE_CLEARS_DENORM = new Set<String>{ 'Disposition__c' };
 // ── Bounds. This is a demo-seed guard, not a data-migration tool.
 final Integer SCAN_LIMIT = 5000;
 final Integer MAX_LOG_ROWS_PER_OBJECT = 25;
+
+// ═════════════════════════════════════════════════════════════════════════════════════
+// PRE-FLIGHT GATE. The Contact.Broker record type must resolve BEFORE anything else runs.
+// ═════════════════════════════════════════════════════════════════════════════════════
+// 🔴 MOVED HERE 2026-08-20 (code review W1). This describe-and-abort used to sit down in STEP 6,
+// which placed it AFTER STEP 5's destructive delete. The two failure paths are NOT symmetric, and
+// the dangerous one is not the one the old comment anticipated:
+//
+//   • Record type ABSENT from the org -> STEP 1's `WHERE RecordType.DeveloperName = 'Broker'`
+//     matches 0 rows -> the delete is a no-op -> aborting late was harmless. This is the case the
+//     old placement survived, which is exactly why it looked safe.
+//
+//   • 🔴 Record type PRESENT but NOT `isAvailable()` TO THE OPERATOR -> SOQL DOES NOT FILTER BY
+//     RECORD-TYPE VISIBILITY, so STEP 1 still matches every broker Contact in the org, STEP 5
+//     DELETES THEM ALL, and only then does the script discover it cannot re-create them. The org
+//     is left with ZERO brokers and blanked lookups across all five SetNull fields, unrecoverably.
+//     An UNDER-PROVISIONED OPERATOR — not a missing record type — is what turned this script into
+//     data loss, and that is the case the old placement did NOT survive.
+//
+// The gate depends on NOTHING that STEPS 1-5 produce and costs no SOQL, so there was never a
+// reason for it to run late. Both sibling seeds already do it this way: seed-broker-assignments
+// .apex and seed-lease-inquiries.apex each place the identical describe-and-abort above their
+// first DML. This file was the outlier.
+//
+// A DESCRIBE, NOT A QUERY — the same pattern seed-disposition.apex uses for its own record type:
+// `[SELECT Id FROM RecordType WHERE ...].Id` throws QueryException in an org where the record type
+// has not deployed yet, which would take the script down with an uncatchable exception instead of
+// the legible abort below.
+// ⚠ `brokerRtId` stays in scope for STEP 6's insert, which is its only consumer.
+Schema.RecordTypeInfo brokerRtInfo =
+    Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get('Broker');
+Id brokerRtId = (brokerRtInfo != null && brokerRtInfo.isAvailable())
+    ? brokerRtInfo.getRecordTypeId()
+    : null;
+if (brokerRtId == null) {
+    // 🔴 ABORT, do not degrade. Unlike TestDataFactory.recordTypeId — where an unstamped row is an
+    // acceptable outcome for an under-provisioned test persona — an unstamped row HERE would mean
+    // the twelve Contacts STEP 6 inserts are not brokers at all.
+    System.debug(LoggingLevel.ERROR,
+        'ABORT: the Contact.Broker record type is missing from this org, or is not available to '
+        + UserInfo.getUserName() + ', so every Contact this script would insert would NOT be a '
+        + 'broker under the current definition. NOTHING WAS SCANNED, NOTHING WAS DELETED, NOTHING '
+        + 'WAS CREATED, AND NO DML WAS PERFORMED - this gate runs before STEP 1. Your existing '
+        + 'broker Contacts are UNTOUCHED. Deploy the record type (or grant its visibility to this '
+        + 'user), then re-run this script.');
+    return;
+}
 
 // ═════════════════════════════════════════════════════════════════════════════════════
 // STEP 1. Exactly which Contacts is the delete in STEP 5 about to destroy? (This query is
@@ -331,10 +514,13 @@ final Integer MAX_LOG_ROWS_PER_OBJECT = 25;
 // speaks. A truncated result is worse than a slow one and is therefore treated as fatal below,
 // not merely logged: the scan would bind to a PARTIAL set of doomed Contacts and report a blast
 // radius smaller than the real one, while STEP 5 deleted only part of the roster.
+// 🔴 PREDICATE MOVED 2026-08-20: `WHERE Is_Broker__c = true` -> `WHERE RecordType.DeveloperName
+// = 'Broker'`. This is THE query that decides what gets deleted — STEP 5 deletes this exact list
+// and issues no query of its own. Read the 🔴 block in this file's header before touching it.
 List<Contact> doomed = [
     SELECT Id, Name, Broker_Firm__c
     FROM Contact
-    WHERE Is_Broker__c = true
+    WHERE RecordType.DeveloperName = 'Broker'
     ORDER BY Name
     LIMIT :SCAN_LIMIT
 ];
@@ -343,7 +529,7 @@ Map<Id, Contact> doomedById = new Map<Id, Contact>(doomed);
 Set<Id> doomedIds = new Set<Id>(doomedById.keySet());
 
 System.debug(LoggingLevel.INFO, 'SCAN BASIS: ' + doomedIds.size()
-    + ' existing Contact(s) with Is_Broker__c = true would be deleted by this run.');
+    + ' existing Contact(s) on the Contact.Broker record type would be deleted by this run.');
 
 // ═════════════════════════════════════════════════════════════════════════════════════
 // STEP 2. THE GUARD SCAN. Read-only. Runs before any DML, always.
@@ -353,6 +539,11 @@ Map<String, List<SObject>> hitsByObject = new Map<String, List<SObject>>();
 // Never assume STORED_DENORM_TEXT's contents are all present: a rebuild org may hold the lookup
 // but not the denorm field, and STEP 4 must only write columns it queried.
 Map<String, List<String>> denormSelected = new Map<String, List<String>>();
+// ⚠ ADDED 2026-08-20 (re-review, same day). Object API -> the lookup field(s) this org
+// ACTUALLY has and that were therefore SELECTED and used to build the scan's WHERE clause.
+// Same reasoning as denormSelected above, and STEP 4 must null only the fields recorded here
+// - never re-derive from BROKER_LOOKUPS directly, which may declare a field this org lacks.
+Map<String, List<String>> lookupsSelected = new Map<String, List<String>>();
 List<String> notInThisOrg = new List<String>();
 Integer totalHits = 0;
 // Seeded from STEP 1's own cap so a truncated DOOMED list routes into the single existing abort
@@ -371,7 +562,7 @@ if (doomedIds.isEmpty()) {
     scanOrder.sort();
 
     for (String objectApi : scanOrder) {
-        String lookupApi = BROKER_LOOKUPS.get(objectApi);
+        List<String> declaredLookups = BROKER_LOOKUPS.get(objectApi);
 
         Schema.SObjectType sot = globalTypes.get(objectApi);
         if (sot == null) {
@@ -380,8 +571,20 @@ if (doomedIds.isEmpty()) {
         }
         // fields.getMap() keys are case-insensitive, so the exact API name is a safe lookup.
         Map<String, Schema.SObjectField> fieldsByName = sot.getDescribe().fields.getMap();
-        if (fieldsByName.get(lookupApi) == null) {
-            notInThisOrg.add(objectApi + '.' + lookupApi + ' (field not deployed)');
+
+        // ⚠ ADDED 2026-08-20 (re-review, same day): each object's lookup fields are now checked
+        // INDIVIDUALLY, not as a single all-or-nothing field, because BOV_Broker_Change__c
+        // declares TWO (Outgoing_Broker__c, Incoming_Broker__c) and a rebuild org could
+        // legitimately have deployed one and not the other mid-rollout.
+        List<String> lookupApis = new List<String>();
+        for (String declaredLookupApi : declaredLookups) {
+            if (fieldsByName.get(declaredLookupApi) == null) {
+                notInThisOrg.add(objectApi + '.' + declaredLookupApi + ' (field not deployed)');
+                continue;
+            }
+            lookupApis.add(declaredLookupApi);
+        }
+        if (lookupApis.isEmpty()) {
             continue;
         }
 
@@ -403,18 +606,26 @@ if (doomedIds.isEmpty()) {
         if (!denormApis.isEmpty()) {
             denormSelected.put(objectApi, denormApis);
         }
+        lookupsSelected.put(objectApi, lookupApis);
 
+        // WHERE is an OR across every lookup field this object carries, since 2026-08-20: a
+        // BOV_Broker_Change__c row is at risk if EITHER Outgoing_Broker__c OR Incoming_Broker__c
+        // (or both) points at a doomed Contact, not only when the first one does.
+        List<String> whereClauses = new List<String>();
+        for (String lookupApi : lookupApis) {
+            whereClauses.add(lookupApi + ' IN :doomedIds');
+        }
         String soql =
-            'SELECT Id, Name, ' + lookupApi
+            'SELECT Id, Name, ' + String.join(lookupApis, ', ')
             + (denormApis.isEmpty() ? '' : ', ' + String.join(denormApis, ', '))
             + ' FROM ' + objectApi
-            + ' WHERE ' + lookupApi + ' IN :doomedIds'
+            + ' WHERE (' + String.join(whereClauses, ' OR ') + ')'
             + ' ORDER BY Name'
             + ' LIMIT ' + SCAN_LIMIT;
         List<SObject> hits = Database.query(soql);
 
         if (hits.isEmpty()) {
-            System.debug(LoggingLevel.INFO, 'SCAN ' + objectApi + '.' + lookupApi
+            System.debug(LoggingLevel.INFO, 'SCAN ' + objectApi + '.' + String.join(lookupApis, '/')
                 + ' -> 0 referencing records. Safe.');
             continue;
         }
@@ -425,8 +636,8 @@ if (doomedIds.isEmpty()) {
             scanCapHit = true;
         }
 
-        System.debug(LoggingLevel.WARN, 'SCAN ' + objectApi + '.' + lookupApi + ' -> '
-            + hits.size() + ' referencing record(s) WOULD BE ORPHANED.');
+        System.debug(LoggingLevel.WARN, 'SCAN ' + objectApi + '.' + String.join(lookupApis, '/') + ' -> '
+            + hits.size() + ' referencing record(s) WOULD BE ORPHANED on at least one lookup field.');
 
         Integer logged = 0;
         for (SObject row : hits) {
@@ -437,35 +648,48 @@ if (doomedIds.isEmpty()) {
             }
             logged++;
 
-            Id brokerId = (Id) row.get(lookupApi);
-            Contact broker = doomedById.get(brokerId);
-            String brokerLabel = (broker == null)
-                ? String.valueOf(brokerId)
-                : broker.Name + (String.isBlank(broker.Broker_Firm__c)
-                    ? ''
-                    : ' (' + broker.Broker_Firm__c + ')');
+            // ⚠ ADDED 2026-08-20 (re-review, same day): loop every lookup field this object
+            // carries and report each one that actually hit a doomed Contact separately - a
+            // BOV_Broker_Change__c row can be orphaned on Outgoing_Broker__c, Incoming_Broker__c,
+            // or both in the SAME row, and each is a distinct fact the analyst needs named.
+            for (String lookupApi : lookupApis) {
+                Id brokerId = (Id) row.get(lookupApi);
+                if (brokerId == null || !doomedIds.contains(brokerId)) {
+                    continue;
+                }
+                Contact broker = doomedById.get(brokerId);
+                String brokerLabel = (broker == null)
+                    ? String.valueOf(brokerId)
+                    : broker.Name + (String.isBlank(broker.Broker_Firm__c)
+                        ? ''
+                        : ' (' + broker.Broker_Firm__c + ')');
 
-            // Every stored text this object carries, reported field by field. The suffix says
-            // whether FORCE would repair it or deliberately leave it, so the analyst reading the
-            // line knows what the forced run will and will not do to THIS record.
-            String staleNote = '';
-            // ⚠ NOT named `denormApi` — that identifier is already a for-loop variable earlier in
-            // this same enclosing block, and Apex's scoping rules around repeated loop variables
-            // are not worth testing in a script that cannot be compiled without running it.
-            for (String staleFieldApi : denormApis) {
-                Object storedText = row.get(staleFieldApi);
-                staleNote += ' | ' + staleFieldApi + ' = '
-                    + (storedText == null ? '(blank)' : '"' + String.valueOf(storedText) + '"')
-                    + ' <- STORED TEXT: the cascade does NOT clear this, so the record would keep '
-                    + 'displaying this broker after the lookup is blanked'
-                    + (FORCE_CLEARS_DENORM.contains(objectApi)
-                        ? ' (FORCE would blank it — derived display copy)'
-                        : ' 🔴 (FORCE WILL **NOT** BLANK IT — this is the broker\'s entered '
-                          + 'response data, not a derivation. Review this row by hand.)');
+                // Every stored text this object carries, reported field by field. The suffix says
+                // whether FORCE would repair it or deliberately leave it, so the analyst reading
+                // the line knows what the forced run will and will not do to THIS record. Reported
+                // per lookup HIT rather than per denorm-field role: on BOV_Broker_Change__c an
+                // Outgoing_Broker__c hit and an Incoming_Broker__c hit both list BOTH firm
+                // snapshots, which over-informs rather than under-informs and is deliberate.
+                String staleNote = '';
+                // ⚠ NOT named `denormApi` — that identifier is already a for-loop variable earlier
+                // in this same enclosing block, and Apex's scoping rules around repeated loop
+                // variables are not worth testing in a script that cannot be compiled without
+                // running it.
+                for (String staleFieldApi : denormApis) {
+                    Object storedText = row.get(staleFieldApi);
+                    staleNote += ' | ' + staleFieldApi + ' = '
+                        + (storedText == null ? '(blank)' : '"' + String.valueOf(storedText) + '"')
+                        + ' <- STORED TEXT: the cascade does NOT clear this, so the record would keep '
+                        + 'displaying this broker after the lookup is blanked'
+                        + (FORCE_CLEARS_DENORM.contains(objectApi)
+                            ? ' (FORCE would blank it — derived display copy)'
+                            : ' 🔴 (FORCE WILL **NOT** BLANK IT — this is the broker\'s entered '
+                              + 'response data, not a derivation. Review this row by hand.)');
+                }
+
+                System.debug(LoggingLevel.WARN, '    ORPHAN RISK ' + objectApi + '.' + lookupApi + ' '
+                    + String.valueOf(row.get('Name')) + ' -> broker ' + brokerLabel + staleNote);
             }
-
-            System.debug(LoggingLevel.WARN, '    ORPHAN RISK ' + objectApi + ' '
-                + String.valueOf(row.get('Name')) + ' -> broker ' + brokerLabel + staleNote);
         }
     }
 }
@@ -567,9 +791,16 @@ for (String objectApi : denormSelected.keySet()) {
         continue;
     }
 
-    String lookupApi = BROKER_LOOKUPS.get(objectApi);
+    // ⚠ CHANGED 2026-08-20 (re-review, same day): iterates every SELECTED lookup field for this
+    // object, not a single BROKER_LOOKUPS.get(objectApi) value - that call would now return a
+    // List<String> and could no longer be assigned straight into a lookup field name. No object
+    // in FORCE_CLEARS_DENORM today has more than one lookup field, so this is currently a
+    // one-iteration loop everywhere it runs, but it no longer silently assumes that stays true.
+    List<String> lookupApisForClear = lookupsSelected.get(objectApi);
     for (SObject row : hits) {
-        row.put(lookupApi, null);
+        for (String lookupApi : lookupApisForClear) {
+            row.put(lookupApi, null);
+        }
         for (String clearFieldApi : denormApis) {
             row.put(clearFieldApi, null);
         }
@@ -583,8 +814,8 @@ for (String objectApi : denormSelected.keySet()) {
         if (clearResults[i].isSuccess()) {
             clearedRows++;
             System.debug(LoggingLevel.INFO, 'CLEARED ' + objectApi + ' '
-                + String.valueOf(hits[i].get('Name')) + ' - ' + lookupApi + ' and '
-                + String.join(denormApis, ', ') + ' are now all blank.');
+                + String.valueOf(hits[i].get('Name')) + ' - ' + String.join(lookupApisForClear, ' and ')
+                + ' and ' + String.join(denormApis, ', ') + ' are now all blank.');
         } else {
             clearFailures++;
             String detail = '';
@@ -628,8 +859,18 @@ if (!doomed.isEmpty()) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════
-// STEP 6. Seed. Unchanged from the original script.
-// ═════════════════════════════════════════════════════════════════════════════════════
+// STEP 6. Seed.
+// ⚠ NO LONGER "unchanged from the original script" (2026-08-20). `Is_Broker__c = true` is kept on
+// every row below — the field is retained on Contact and several test classes still resolve their
+// fixture through it — but IT IS NO LONGER WHAT MAKES THESE ROWS BROKERS. The record-type stamp
+// applied below is. Without it, this script would delete the org's brokers in STEP 5 and then
+// insert twelve Contacts that no broker query returns and no broker lookup filter accepts: a seed
+// that reports COMPLETE and leaves the Broker Hub empty.
+//
+// 🔴 `brokerRtId` IS RESOLVED AND VALIDATED AT THE TOP OF THIS FILE, NOT HERE — see the PRE-FLIGHT
+// GATE above STEP 1 (moved 2026-08-20, code review W1). It used to be resolved at this point,
+// which put its abort AFTER STEP 5's delete and made an under-provisioned operator lose the org's
+// entire broker roster. DO NOT MOVE IT BACK DOWN HERE.
 List<Contact> brokers = new List<Contact>{
     new Contact(FirstName='Dana',   LastName='Pierce',    Is_Broker__c=true, Broker_Firm__c='CBRE',                 Broker_Specialty__c='Retail',      Broker_Status__c='Active',   Active_Listings__c=12, Offers_Received__c=18, Closed_Volume__c=48000000, Avg_Days_On_Market__c=88),
     new Contact(FirstName='Marcus', LastName='Whitfield', Is_Broker__c=true, Broker_Firm__c='Marcus & Millichap',   Broker_Specialty__c='Retail',      Broker_Status__c='Active',   Active_Listings__c=9,  Offers_Received__c=14, Closed_Volume__c=36000000, Avg_Days_On_Market__c=95),
@@ -644,6 +885,11 @@ List<Contact> brokers = new List<Contact>{
     new Contact(FirstName='Olivia', LastName='Reyes',     Is_Broker__c=true, Broker_Firm__c='Avison Young',         Broker_Specialty__c='Retail',      Broker_Status__c='Active',   Active_Listings__c=2,  Offers_Received__c=1,  Closed_Volume__c=12000000, Avg_Days_On_Market__c=110),
     new Contact(FirstName='Walter', LastName='Kim',       Is_Broker__c=true, Broker_Firm__c='Northmarq',            Broker_Specialty__c='Office',      Broker_Status__c='Inactive', Active_Listings__c=0,  Offers_Received__c=0,  Closed_Volume__c=0,        Avg_Days_On_Market__c=0)
 };
+
+// 🔴 THE LINE THAT MAKES THEM BROKERS. See the STEP 6 banner above.
+for (Contact b : brokers) {
+    b.RecordTypeId = brokerRtId;
+}
 
 Integer created = 0;
 Integer createFailures = 0;

@@ -10,11 +10,24 @@
  * .claude/rules/apex-layering-rule.md. The controller stays thin.
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * WHAT A REPLACEMENT IS, IN THREE WRITES THAT MUST NOT COME APART
+ * WHAT A REPLACEMENT IS, IN FOUR WRITES THAT MUST NOT COME APART
  * ══════════════════════════════════════════════════════════════════════════════
  *   1. the INCUMBENT  -> `Submission_Status__c = 'Backup'` and `Approval_Status__c` CLEARED
  *   2. the CHALLENGER -> `Submission_Status__c = 'Selected'` and `Approval_Status__c` CLEARED
  *   3. the DISPOSITION -> `Selected_Broker__c` = the challenger's `Broker_Firm__c`
+ *   4. the HISTORY ROW -> one `BOV_Broker_Change__c` recording who was replaced by whom, why,
+ *      and when (2026-08-20, Tranche 2 Workstream B / design D4.3)
+ *
+ * ⚠ WRITE 4 WAS ADDED AFTER THE OTHER THREE AND THIS BLOCK USED TO READ "THREE WRITES". It is
+ * corrected rather than appended to, because a header that undercounts its own DML is how a budget
+ * line stops being a contract.
+ *
+ * 🔴 WRITE 4 IS DELIBERATELY LAST, INSIDE THE SAME SAVEPOINT. A history row recording a
+ * replacement that then failed is worse than no history at all: it is a durable, reportable,
+ * append-only assertion that a broker changed, sitting next to a disposition where none did. Being
+ * last means it can only exist if writes 1-3 already succeeded; being inside the savepoint means
+ * writes 1-3 are undone if IT fails. Do not "optimise" it into the same block as the submission
+ * update, and do not move it out of the try.
  *
  * 🔴 CLEARING `Approval_Status__c` IS THE POINT OF THE WHOLE FEATURE, NOT HOUSEKEEPING. It is what
  * makes the new broker require a FRESH `Broker_Finalize_Approval`. Leave the incumbent's 'Approved'
@@ -33,12 +46,13 @@
  * ══════════════════════════════════════════════════════════════════════════════
  * ATOMICITY: A SAVEPOINT, BECAUSE A HALF-REPLACEMENT IS WORSE THAN A REFUSAL
  * ══════════════════════════════════════════════════════════════════════════════
- * The submissions and the Disposition are two objects and therefore two DML statements. The state
- * this service must never leave behind is "the submissions swapped but `Selected_Broker__c` still
- * names the old firm" — which is the value `Broker_Listing__c` copies on entry to `Active Listing`,
- * so a stale name propagates into the listing record and outlives the mistake. Under one savepoint
- * the only two reachable end states are "nothing happened, and here is why" and "all three
- * happened".
+ * The submissions, the Disposition and the history row are three objects and therefore three DML
+ * statements. The state this service must never leave behind is "the submissions swapped but
+ * `Selected_Broker__c` still names the old firm" — which is the value `Broker_Listing__c` copies on
+ * entry to `Active Listing`, so a stale name propagates into the listing record and outlives the
+ * mistake. Since 2026-08-20 there is a second such state: a `BOV_Broker_Change__c` row asserting a
+ * swap that did not survive its own transaction. Under one savepoint the only two reachable end
+ * states are "nothing happened, and here is why" and "all four writes happened".
  *
  * 🔴 A LOCKED DISPOSITION THEREFORE REFUSES THE WHOLE REPLACEMENT, AND THAT IS CORRECT RATHER THAN
  * UNFORTUNATE. If `Broker_Selection_Approval` is pending (off-market, stage `Broker Selection`) the
@@ -48,7 +62,12 @@
  * the broker underneath a pending approval OF that broker is not an operation this business has.
  *
  * ── SOQL / DML BUDGET ───────────────────────────────────────────────────────
- * 1 SOQL (all submissions for the disposition) + 2 DML. No SOQL or DML in any loop.
+ * 1 SOQL (all submissions for the disposition) + 3 DML. No SOQL or DML in any loop.
+ * ⚠ THIS LINE SAID "1 SOQL + 2 DML" UNTIL 2026-08-20 and was corrected in the same change that
+ * added the third DML (the `BOV_Broker_Change__c` history insert). The three are: the bulk
+ * submission update, the parent stamp, the history insert. The SOQL stayed at ONE — the history
+ * row's broker Contact (`Broker__c`) and firm snapshot (`Broker_Firm__c`) are both carried by the
+ * existing `selectStatusesByDispositionId` read rather than by a second query against Contact.
  *
  * ── BULK ────────────────────────────────────────────────────────────────────
  * Per-transaction-singleton @AuraEnabled operation, invoked once per modal click: one disposition,
@@ -60,6 +79,8 @@
  * @see force-app/main/default/classes/BovController.cls (thin caller)
  * @see force-app/main/default/classes/BovSubmissionTriggerHandler.cls (what the FRESH approval does)
  * @see force-app/main/default/classes/BovSubmissionSelector.cls (the one read)
+ * @see force-app/main/default/classes/BovBrokerChangeSelector.cls (who READS the history this
+ *      method writes — and why that read is USER_MODE while this write is not)
  */
 public with sharing class BovSubmissionService {
 
@@ -88,6 +109,24 @@ public with sharing class BovSubmissionService {
     private static final String ALREADY_SELECTED_MESSAGE =
         'That broker is already the selected broker for this disposition.';
 
+    /**
+     * ⚠ THE REASON IS REQUIRED BY THE SERVER, NOT ONLY BY THE MODAL'S COMBOBOX. `c/bovReplaceBrokerModal`
+     * marks it required and keeps its Confirm button disabled without one, but this class's own
+     * doctrine — stated two paragraphs down for the incumbent check — is that the server must not
+     * depend on a client affordance for correctness. A history row with a blank `Reason__c` is the
+     * one row this whole workstream exists to prevent: it records that a broker changed while
+     * answering none of the questions the record is read to answer.
+     *
+     * ⚠ THE VALUE ITSELF IS NOT VALIDATED HERE, DELIBERATELY. `BOV_Broker_Change__c.Reason__c` is a
+     * RESTRICTED picklist and restricted picklists ARE enforced by Apex DML, so an off-list value is
+     * refused by the platform with its own message (surfaced verbatim by the DmlException catch). A
+     * copy of the value set in Apex would be a second copy to keep in step with the field metadata —
+     * the same divergence the modal avoids by sourcing its options from `getPicklistValues` instead
+     * of a hardcoded array.
+     */
+    private static final String REASON_REQUIRED_MESSAGE =
+        'Choose a reason for the broker change.';
+
     private static final String REPLACED_MESSAGE =
         'Broker replaced. The new broker must be approved before the sale can proceed.';
 
@@ -107,26 +146,51 @@ public with sharing class BovSubmissionService {
      * modal only offers the button when exactly one submission is Selected, but the server must not
      * depend on a client affordance for correctness.
      *
+     * ── THE HISTORY ROW, AND WHAT IS DELIBERATELY NOT A PARAMETER ────────────────
+     * ⚠ THERE IS NO `effectiveDate` PARAMETER, AND ITS ABSENCE IS A DECISION.
+     * `BrokerAssignmentService.replaceBroker` — the five-parameter method this signature otherwise
+     * mirrors — takes one, because a LISTING has a tenure whose start and end dates are business
+     * facts a user may backdate. A BOV broker swap has no tenure: `Entry_DateTime__c` is the write
+     * time, full stop. Adding an effective date here would invent a second, editable answer to
+     * "when did this happen" on an append-only log whose value is that it cannot be re-narrated.
+     *
      * @param dispositionId    the Disposition__c whose broker is being replaced (required)
      * @param newSubmissionId  the BOV_Submission__c to appoint (required, must be its child)
+     * @param reason           a `BOV_Broker_Change__c.Reason__c` picklist value (required — see
+     *                         REASON_REQUIRED_MESSAGE for why the server enforces it too)
+     * @param notes            free text for the history row (optional; null and blank both fine)
      * @return an authored confirmation that also WARNS a fresh approval is required
      * @throws BovSubmissionException for a user-actionable rule violation, or carrying a platform
-     *         block's own message when either write is refused
+     *         block's own message when any of the three writes is refused
      * @throws DispositionActionPermissionService.AccessDeniedException when the running user is not
      *         a disposition driver
      * @example
-     * String msg = BovSubmissionService.replaceSelectedBroker(dispositionId, submissionId);
+     * String msg = BovSubmissionService.replaceSelectedBroker(
+     *     dispositionId, submissionId, 'Performance Issue', 'Missed two marketing deadlines.');
      */
-    public static String replaceSelectedBroker(Id dispositionId, Id newSubmissionId) {
+    public static String replaceSelectedBroker(Id dispositionId, Id newSubmissionId,
+                                               String reason, String notes) {
         DispositionActionPermissionService.assertDispositionActionAccess();
         if (dispositionId == null || newSubmissionId == null) {
             throw new BovSubmissionException(NO_RECORD_MESSAGE);
+        }
+        if (String.isBlank(reason)) {
+            throw new BovSubmissionException(REASON_REQUIRED_MESSAGE);
         }
 
         List<BOV_Submission__c> submissions =
             BovSubmissionSelector.selectStatusesByDispositionId(dispositionId);
 
         BOV_Submission__c challenger;
+        // 🔴 THE FIRST DEMOTED SUBMISSION, KEPT ONLY FOR THE HISTORY ROW'S "OUTGOING" COLUMNS.
+        // The swap itself needs no such reference — it demotes EVERY Selected row (see this
+        // method's self-healing note above). The history row has one Outgoing slot, so in the
+        // abnormal two-incumbents case it records the HIGHEST-SCORING one, which is the first row
+        // the selector returns (ORDER BY BOV_Score__c DESC NULLS LAST) and therefore deterministic
+        // rather than arbitrary. That case is a repair of a broken invariant, not a normal
+        // replacement; recording the top-scored incumbent is better than recording none, and both
+        // demotions remain visible on the submissions themselves.
+        BOV_Submission__c outgoing;
         List<BOV_Submission__c> writes = new List<BOV_Submission__c>();
         for (BOV_Submission__c submission : submissions) {
             if (submission.Id == newSubmissionId) {
@@ -134,6 +198,9 @@ public with sharing class BovSubmissionService {
                 continue; // written below, after the already-selected check
             }
             if (STATUS_SELECTED.equals(submission.Submission_Status__c)) {
+                if (outgoing == null) {
+                    outgoing = submission;
+                }
                 writes.add(new BOV_Submission__c(
                     Id = submission.Id,
                     Submission_Status__c = STATUS_BACKUP,
@@ -179,6 +246,58 @@ public with sharing class BovSubmissionService {
                 Id = dispositionId,
                 Selected_Broker__c = challenger.Broker_Firm__c
             );
+
+            // ── 🔴 THE HISTORY ROW, LAST, INSIDE THE SAME SAVEPOINT ──────────
+            // Last because a row asserting "CBRE was replaced by JLL" that outlives a rolled-back
+            // replacement is a durable, reportable lie about a sale — strictly worse than the
+            // absence of history. Inside the savepoint because the converse is also true: a
+            // replacement that happened with no record of who did it or why is what this
+            // append-only log exists to make impossible. Both directions, one savepoint.
+            //
+            // ── SYSTEM_MODE, for the same reason as the submission write above ──
+            // BOV_Broker_Change__c is a 2026-08-20 object and EVERY field on it arrives with NO
+            // permissions for ANY profile, System Administrator included (its own object header
+            // says so). More fundamentally, an audit row that a user can suppress by lacking FLS on
+            // one of its columns is not an audit row — the actor must not be able to decline to be
+            // recorded. Note the deliberate asymmetry with `BovBrokerChangeSelector`, which reads
+            // this object in USER_MODE: that read is a DISPLAY the user asked for and may degrade
+            // to "unavailable", whereas this write is performed on their behalf and may not.
+            // allOrNone = true, matching the swap above.
+            //
+            // ⚠ ONE REFUSAL PATH IS WORTH KNOWING ABOUT: `Outgoing_Broker__c` / `Incoming_Broker__c`
+            // carry an ACTIVE, NON-OPTIONAL lookup filter (the `Contact.Broker` RECORD TYPE) which
+            // the platform enforces on Apex DML. (⚠ 2026-08-20: this read `Contact.Is_Broker__c =
+            // true`; the broker definition moved to the record type. The refusal path itself is
+            // unchanged — only what triggers it moved.) A broker Contact since moved off that type
+            // therefore refuses the whole replacement, with the filter's own error message surfaced
+            // verbatim by the DmlException catch below. That is deliberately not worked around
+            // here: silently nulling the lookup to get the insert through would discard the very
+            // linkage the row exists to hold, and re-flagging the Contact is the real fix.
+            Database.insert(new BOV_Broker_Change__c(
+                Disposition__c = dispositionId,
+                // Null on both outgoing columns when there was no incumbent — "replace" degrading
+                // to "appoint" is a normal state, not an error, and the row still records the
+                // appointment. See this method's own no-incumbent note.
+                Outgoing_BOV_Submission__c = (outgoing == null) ? null : outgoing.Id,
+                Outgoing_Broker__c = (outgoing == null) ? null : outgoing.Broker__c,
+                // 🔴 THE FIRM IS STAMPED, NOT LEFT TO THE LOOKUP. Both Contact lookups are
+                // deleteConstraint SetNull and scripts/seed-broker-contacts.apex mass-deletes every
+                // broker Contact, so the lookups can go blank later with no error at all. This
+                // Text column is what survives that. It is sourced from the SUBMISSION's
+                // Broker_Firm__c rather than by re-querying Contact because
+                // BovSubmissionBrokerStampService keeps that column equal to
+                // `Broker__c.Broker_Firm__c` on every save — same value, no second SOQL.
+                Outgoing_Broker_Firm__c = (outgoing == null) ? null : outgoing.Broker_Firm__c,
+                Incoming_BOV_Submission__c = challenger.Id,
+                Incoming_Broker__c = challenger.Broker__c,
+                Incoming_Broker_Firm__c = challenger.Broker_Firm__c,
+                Reason__c = reason,
+                Notes__c = notes,
+                // The write time IS the event time — see the javadoc on why there is no
+                // effectiveDate parameter to disagree with it.
+                Entry_DateTime__c = System.now(),
+                Logged_By__c = UserInfo.getUserId()
+            ), true, AccessLevel.SYSTEM_MODE);
         } catch (DmlException e) {
             Database.rollback(beforeReplacement);
             // Surfaced verbatim: "This record is locked" and a validation rule's own text are the

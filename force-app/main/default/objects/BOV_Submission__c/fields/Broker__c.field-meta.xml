@@ -17,10 +17,30 @@
 
         XML SHAPE IS COPIED FROM Broker_Assignment__c.Broker__c, DELIBERATELY AND EXACTLY.
         Same referenceTo, same ACTIVE non-optional lookupFilter, same errorMessage string, same
-        deleteConstraint. Disposition__c.Broker__c, Lease_Inquiry__c.Broker__c and
-        Opportunity.Broker__c are the other three precedents and carry the same filter. There is
-        no Broker__c OBJECT in this org; every "broker" in this application is a Contact flagged
-        Is_Broker__c.
+        deleteConstraint. Disposition__c.Broker__c and Lease_Inquiry__c.Broker__c are the other
+        two precedents that carry the same filter. There is no Broker__c OBJECT in this org;
+        every "broker" in this application is a Contact on the Contact.Broker RECORD TYPE.
+
+        🔴 TWO CORRECTIONS, 2026-08-20. Quoted rather than deleted, because both were repeated
+        across several files and a reader may be carrying either one:
+
+          RETRACTED: "Disposition__c.Broker__c, Lease_Inquiry__c.Broker__c and
+          Opportunity.Broker__c are the other three precedents and carry the same filter."
+        Opportunity.Broker__c has NO <lookupFilter> ELEMENT AT ALL. Verified twice by reading
+        that file in full. It was never a precedent for this field, and three other files in
+        this repo repeat the same false claim. Nor is one being added: Opportunity.Broker__c is
+        MACHINE-STAMPED by LeadConvertService at conversion rather than human-picked, so an
+        active non-optional filter there would make lead conversion fail hard for any Contact
+        not on the Broker record type - and the Broker-Protection intake path is exactly where
+        non-Broker-record-type Contacts arise. Decided OUT of scope by the user; documentation
+        corrected here instead.
+
+          RETRACTED: "every 'broker' in this application is a Contact flagged Is_Broker__c."
+        The broker definition MOVED to the Contact.Broker record type on 2026-08-20. Measured
+        on usman-dpeg: ZERO Contacts carried Is_Broker__c = true while 19 sat on the record
+        type, so every broker query in the application was matching nothing. Is_Broker__c is
+        RETAINED on Contact but is no longer the definition; its retirement is a separate,
+        deferred task. See objects/Contact/fields/Is_Broker__c.field-meta.xml.
 
         =====================================================================================
         🔴 THE LABEL IS "Broker Contact", NOT "Contact" AND NOT "Broker". BOTH ARE TAKEN.
@@ -62,9 +82,20 @@
         =====================================================================================
         🔴 SEED HAZARD. scripts/seed-broker-contacts.apex CAN SILENTLY NULL THIS FIELD.
         =====================================================================================
-        That script opens with a mass delete of every broker Contact:
+        That script deletes every broker Contact in the org.
 
-            delete [SELECT Id FROM Contact WHERE Is_Broker__c = true];
+        ⚠ CORRECTED 2026-08-20 (twice over). This block read:
+
+            RETRACTED: "That script opens with a mass delete of every broker Contact:
+            delete [SELECT Id FROM Contact WHERE Is_Broker__c = true];"
+
+        Both halves are stale. (1) The inline delete no longer exists: it was hoisted into a
+        six-step structure with a working pre-DML guard scan and an abort gate, and this field
+        IS already in that script's BROKER_LOOKUPS map. (2) The predicate is now the
+        Contact.Broker record type - which MADE THE HAZARD REAL rather than reducing it: under
+        the old predicate the delete matched ZERO rows org-wide and was a guaranteed no-op;
+        under the new one it matches the org's ~19 live brokers. The rest of this block still
+        stands and matters more than it did.
 
         With deleteConstraint SetNull, re-running it NULLS Broker__c on every BOV Submission
         holding it, with no error and no warning. WORSE HERE THAN ON Disposition__c: the two
@@ -117,7 +148,34 @@
         will not deploy referencing a field that does not exist.
 
         ⚠ TESTS MUST USE TestDataFactory.createBrokerContact / createBrokerContacts. The lookup
-        filter below is ACTIVE and NOT optional, so a plain createContacts() Contact is refused.
+        filter below is ACTIVE and NOT optional.
+
+        🔴 CORRECTED 2026-08-20 - THE REASON GIVEN HERE WAS TRUE AND IS NOW EXACTLY BACKWARDS:
+
+            RETRACTED: "...so a plain createContacts() Contact is refused."
+
+        A plain createContacts() Contact is now ACCEPTED, because TestDataFactory stamps the
+        Contact.Broker record type on every Contact it builds. Use createBrokerContact(s)
+        anyway - they set the Broker_* fields the stamp service and the comparison matrix read -
+        but do NOT rely on createContacts() as a NEGATIVE fixture the way several tests did
+        before this change. For a Contact that genuinely is not a broker, use
+        TestDataFactory.createNonBrokerContact(s); for proof that this filter enforces at all,
+        see classes/BrokerLookupFilterEnforcementTest.
+
+        =====================================================================================
+        🔴 THE LOOKUP FILTER ITSELF NOW READS Contact.RecordType.DeveloperName = 'Broker'.
+        =====================================================================================
+        Chosen over Contact.RecordTypeId (an 18-char Id is not portable across orgs - see
+        .forceignore:34-37) and over Contact.RecordType.Name (label-based, brittle under a
+        rename or translation). This is the same predicate form already proven live in this org
+        since 2026-08-10 in ContactSelector.selectByEmails:262 (`RecordType.DeveloperName =
+        'Broker'`). Functional proof - that this shape actually refuses a non-Broker-record-type
+        Contact and accepts a Broker-record-type one, not merely that it deploys - is
+        classes/BrokerLookupFilterEnforcementTest, whose fixtures are adversarial on purpose
+        (a Broker-record-type Contact with Is_Broker__c FALSE must be ACCEPTED, and an
+        Investor-record-type Contact with Is_Broker__c TRUE must be REFUSED with
+        FIELD_FILTER_VALIDATION_EXCEPTION) so the test cannot pass identically under the old
+        checkbox filter and this new one.
     -->
     <fullName>Broker__c</fullName>
     <deleteConstraint>SetNull</deleteConstraint>
@@ -127,11 +185,11 @@
     <lookupFilter>
         <active>true</active>
         <booleanFilter>1</booleanFilter>
-        <errorMessage>The selected Contact is not flagged as a broker (Is_Broker__c).</errorMessage>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
         <filterItems>
-            <field>Contact.Is_Broker__c</field>
+            <field>Contact.RecordType.DeveloperName</field>
             <operation>equals</operation>
-            <value>True</value>
+            <value>Broker</value>
         </filterItems>
         <isOptional>false</isOptional>
     </lookupFilter>

@@ -11,8 +11,14 @@
 // with neither the old demo data nor the new, silently, until the next rebuild.
 //
 // HOW A BROKER IS CHOSEN. `Broker__c` carries an ACTIVE, NON-OPTIONAL lookupFilter on
-// `Contact.Is_Broker__c = true`, enforced on Apex DML and not only in the UI, so an arbitrary
-// Contact is REFUSED. The broker roster that `scripts/seed-broker-contacts.apex` maintains is
+// the `Contact.Broker` RECORD TYPE, enforced on Apex DML and not only in the UI, so an arbitrary
+// Contact is REFUSED. (⚠ CORRECTED 2026-08-20: this read `Contact.Is_Broker__c = true`. The broker
+// definition MOVED to the record type. 🔴 CONSEQUENCE FOR THIS SCRIPT SPECIFICALLY: the roster
+// query below matched ZERO rows on `usman-dpeg` under the old predicate, so this script ABORTED
+// at the gate below on every run. It will now find the org's real broker roster and DO REAL WORK
+// - including the deletes further down. That is intended, and it is the first run in a long time
+// where this script is not a no-op. Read the SEED VERDICT line.)
+// The broker roster that `scripts/seed-broker-contacts.apex` maintains is
 // queried ONCE up front — BEFORE the delete below, so an abort is a genuine no-op — indexed by
 // `Contact.Broker_Firm__c`, and each BOV row asks for the firm it represents. A firm absent from
 // the roster falls back to the roster in name order and says so in its log line.
@@ -38,12 +44,12 @@
 List<Contact> brokerRoster = [
     SELECT Id, Name, Broker_Firm__c
     FROM Contact
-    WHERE Is_Broker__c = true
+    WHERE RecordType.DeveloperName = 'Broker'
     ORDER BY Name
 ];
 if (brokerRoster.isEmpty()) {
     System.debug(LoggingLevel.ERROR,
-        'ABORT: this org holds no Contact with Is_Broker__c = true. Every BOV submission this '
+        'ABORT: this org holds no Contact on the Contact.Broker record type. Every BOV submission this '
         + 'script creates would be refused twice over - by the Broker_Required_On_Submission '
         + 'validation rule and by the ACTIVE non-optional lookup filter on BOV_Submission__c'
         + '.Broker__c - and the failure would roll the whole run back. RUN '

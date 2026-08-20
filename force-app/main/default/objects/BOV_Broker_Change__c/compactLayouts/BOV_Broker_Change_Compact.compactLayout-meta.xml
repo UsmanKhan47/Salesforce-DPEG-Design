@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>BOV_Broker_Change_Compact</fullName>
+    <fields>Disposition__c</fields>
+    <fields>Outgoing_Broker__c</fields>
+    <fields>Incoming_Broker__c</fields>
+    <fields>Reason__c</fields>
+    <fields>Entry_DateTime__c</fields>
+    <label>BOV Broker Change Compact</label>
+</CompactLayout>

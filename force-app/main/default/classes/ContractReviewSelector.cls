@@ -12,14 +12,20 @@
  *   - PsaVersionService — selectNegotiationContextById, added 2026-08-10 (Tranche 3C fix pass).
  *   - DispositionStageEntryService — selectByDispositionIds, the disposition PSA-stage
  *     idempotency read, added 2026-08-10 (Tranche 3C fix pass).
+ *   - DispositionDealSummaryService — selectLatestByDispositionId, the disposition Deal Summary
+ *     card's PSA row, added 2026-08-20 (Tranche 2 Workstream C).
  *
  * ⚠ THE CLAIM "USER_MODE ON EVERY METHOD … NO AUTOMATION PATH ON THIS OBJECT" WAS TRUE UNTIL
- * 2026-08-10 AND IS NOW FALSE. It has been REPLACED rather than left to mislead. Two methods are
- * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception —
- * `selectNegotiationContextById` and `selectByDispositionIds` — and the other four stay
- * `WITH USER_MODE` because each backs a read a human explicitly asked for. THE MODE IS A PROPERTY
- * OF THE METHOD, NEVER OF THIS CLASS: read the method's own Javadoc, which is where §2 says the
- * authoritative inventory lives. Same shape as LoiSelector, NdaSelector and TaskSelector.
+ * 2026-08-10 AND IS NOW FALSE. It has been REPLACED rather than left to mislead. Of the **SEVEN**
+ * public methods (SIX until 2026-08-20), two are `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2
+ * automation-path exception — `selectNegotiationContextById` and `selectByDispositionIds` — and
+ * the other **FIVE** stay `WITH USER_MODE` because each backs a read a human explicitly asked
+ * for: `selectLatestByOpportunityId`, `selectOpportunityIdRequiredById`,
+ * `selectByOpportunityIds`, `selectStageRequiredById` and `selectLatestByDispositionId`. THE MODE
+ * IS A PROPERTY OF THE METHOD, NEVER OF THIS CLASS: read the method's own Javadoc, which is where
+ * §2 says the authoritative inventory lives. Same shape as LoiSelector, NdaSelector and
+ * TaskSelector — and the count is ENUMERATED rather than asserted because a bare count in
+ * exactly this position has already gone stale twice in this repo (see NdaSelector's header).
  *
  * ⚠ Contrast its SIBLING PsaVersionSelector, which has been mixed-mode since 2026-08-09 for a
  * DIFFERENT reason again: its COUNT() feeds this object's derived Latest_Version__c, and an
@@ -238,6 +244,74 @@ public with sharing class ContractReviewSelector {
             WITH SYSTEM_MODE
             LIMIT 1
         ];
+    }
+
+    /**
+     * The most recently created Contract Review related to a DISPOSITION — backs the PSA row of
+     * the disposition Deal Summary card (`DispositionDealSummaryService` ->
+     * `c/dispositionDealSummary`). Added 2026-08-20, Tranche 2 Workstream C (design D5).
+     *
+     * ⚠ IT RETURNS THE RECORD-OR-NULL, WHERE ITS OPPORTUNITY SIBLING RETURNS A LIST OF 0 OR 1.
+     * That is a deliberate difference, not an inconsistency: `selectLatestByOpportunityId` returns
+     * a List only to preserve, byte-for-byte, a caller whose original inline query was consumed by
+     * a `for` loop (see this class's header). This method has no such history, so it takes the
+     * shape every other "latest child of a Disposition" read in the codebase takes —
+     * `NdaSelector.selectLatestByDispositionId`, `LoiSelector.selectLatestByDispositionId`,
+     * `DispositionSelector.selectMostRecentByPropertyAssetId`.
+     *
+     * 🔴 IT SELECTS `Negotiation_Status__c`, NOT `Stage__c` — the same contract
+     * `selectStageRequiredById` carries, for a different reason. There, writing `Stage__c` is
+     * silently discarded by the active before-save flow `Contract_Review_Stage_Sync`. Here the
+     * concern is READ fidelity: `Stage__c` is a DERIVED PROJECTION of `Negotiation_Status__c`
+     * (Initial Draft -> PSA Drafting, Revised / Ready for Execution -> Review, either Counter ->
+     * Counter, Executed -> Contract Execution), so it collapses four negotiation states into
+     * three and cannot distinguish "Revised" from "Ready for Execution" — precisely the
+     * distinction a seller watching a PSA wants. Read the source field, not its projection.
+     *
+     * `Latest_Version__c` is itself derived — `PsaVersionService` maintains it from the
+     * `PSA_Version__c` log — so the card shows the version count without a second query or a
+     * second FLS surface. `Execution_Date__c` is null until the PSA is executed, which the card
+     * renders as an absent line rather than an em-dash.
+     *
+     * READ-FOR-DISPLAY, null on miss: most dispositions have no PSA for most of their life, so
+     * "no Contract Review" is a normal state the card renders as an empty state, never an error.
+     * Deliberately NOT the throwing fetch-for-use contract of the two `...RequiredById` methods.
+     *
+     * ⚠ ORDER BY carries an `Id DESC` TIE-BREAK. `CreatedDate` is second-granular; two Contract
+     * Reviews created under one Disposition inside the same second would otherwise make the card
+     * non-deterministic between refreshes. Full reasoning on
+     * `NdaSelector.selectLatestByDispositionId`. The Opportunity sibling above has no tie-break —
+     * that is a preserved P4 refactor artefact, not a precedent.
+     *
+     * ── FLS: `WITH USER_MODE`, unlike the two SYSTEM_MODE methods either side of it ──
+     * A human asked for this by opening the record page, so ARCHITECTURE.md §2's automation-path
+     * exception does not apply and the fix for any denial is a permission set. `USER_MODE`
+     * enforces FLS on the `WHERE` field as well, so `Contract_Review__c.Disposition__c` must stay
+     * granted alongside `Negotiation_Status__c`, `Execution_Date__c` and `Latest_Version__c` — all
+     * four verified present in `DPEG_Disposition_View` and `DPEG_Disposition_Edit` on 2026-08-20.
+     * `USER_MODE` throws rather than degrades, which is why the caller wraps this in a narrow
+     * fail-soft try/catch; the grant and the catch are both required.
+     *
+     * @param dispositionId Parent Disposition__c Id; null-safe.
+     * @return The latest related Contract Review with Id, Negotiation_Status__c, Execution_Date__c
+     *         and Latest_Version__c populated (ORDER BY CreatedDate DESC, Id DESC LIMIT 1), or
+     *         null when the input is null or the Disposition has none.
+     * @example
+     * Contract_Review__c psa = ContractReviewSelector.selectLatestByDispositionId(dispositionId);
+     */
+    public static Contract_Review__c selectLatestByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return null;
+        }
+        List<Contract_Review__c> rows = [
+            SELECT Id, Negotiation_Status__c, Execution_Date__c, Latest_Version__c
+            FROM Contract_Review__c
+            WHERE Disposition__c = :dispositionId
+            WITH USER_MODE
+            ORDER BY CreatedDate DESC, Id DESC
+            LIMIT 1
+        ];
+        return rows.isEmpty() ? null : rows[0];
     }
 
     /**

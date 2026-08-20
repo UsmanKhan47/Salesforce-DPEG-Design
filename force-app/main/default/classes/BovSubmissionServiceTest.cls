@@ -13,6 +13,24 @@
  * over however many submissions the disposition has — tested at 3, which is enough to exercise
  * the exclusivity swap (one incumbent demoted, one challenger promoted, one bystander untouched).
  *
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * 2026-08-20 — THE HISTORY ROW (Tranche 2 Workstream B, design D4.3)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * `replaceSelectedBroker` now takes `reason` and `notes` and writes a fourth record: one
+ * `BOV_Broker_Change__c`. Three of the tests below exist ONLY for that write, and the most
+ * important of them is not any of the happy-path ones — it is
+ * `lockedDisposition_refusesTheWholeReplacementAndRollsBack`, which now also asserts that NO
+ * history row survives a refused replacement. A history row that outlives its own rolled-back
+ * transaction is a durable, reportable claim that a broker changed when none did; that assertion is
+ * the falsifier for "the insert is inside the savepoint", and it fails if anyone moves the insert
+ * out of the try block or commits it separately.
+ *
+ * ⚠ The order of the writes is asserted INDIRECTLY, by that rollback test, and cannot be asserted
+ * directly from Apex — there is no observable "which DML ran first" after a successful transaction.
+ * If the insert is ever moved BEFORE the parent stamp, the rollback test still passes; what breaks
+ * is the guarantee that history is only written once the swap has actually succeeded. The service's
+ * own header carries that instruction; this note records that no test enforces it.
+ *
  * @see force-app/main/default/classes/BovSubmissionService.cls
  * @author Unit Testing Agent
  */
@@ -45,6 +63,29 @@ private class BovSubmissionServiceTest {
         ]);
     }
 
+    /** A reason is REQUIRED by the service, so every positive-path call must supply one. */
+    private static final String REASON = 'Performance Issue';
+
+    /**
+     * The history rows written against one disposition, newest first.
+     *
+     * ⚠ QUERIED DIRECTLY RATHER THAN THROUGH `BovBrokerChangeSelector`, DELIBERATELY. A test of the
+     * WRITER must not be able to pass because the READER agrees with it — the selector is
+     * `WITH USER_MODE` and this query is not, so a future FLS regression that blanks the card would
+     * leave these assertions correctly green and the selector's own test correctly red.
+     */
+    private static List<BOV_Broker_Change__c> historyFor(Id dispositionId) {
+        return [
+            SELECT Id, Outgoing_BOV_Submission__c, Incoming_BOV_Submission__c,
+                   Outgoing_Broker__c, Incoming_Broker__c,
+                   Outgoing_Broker_Firm__c, Incoming_Broker_Firm__c,
+                   Reason__c, Notes__c, Entry_DateTime__c, Logged_By__c
+            FROM BOV_Broker_Change__c
+            WHERE Disposition__c = :dispositionId
+            ORDER BY Entry_DateTime__c DESC, Name DESC
+        ];
+    }
+
     @isTest
     static void replacesTheIncumbentAndStampsTheParent() {
         Disposition__c d = dispositionAt('BOV Outreach');
@@ -63,7 +104,8 @@ private class BovSubmissionServiceTest {
         insert new List<BOV_Submission__c>{ incumbent, challenger, bystander };
 
         Test.startTest();
-        String msg = BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id);
+        String msg = BovSubmissionService.replaceSelectedBroker(
+            d.Id, challenger.Id, REASON, 'Missed two marketing deadlines.');
         Test.stopTest();
 
         Map<Id, BOV_Submission__c> after = submissionsById(d.Id);
@@ -94,12 +136,121 @@ private class BovSubmissionServiceTest {
         insert challenger;
 
         Test.startTest();
-        BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id);
+        BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, null);
         Test.stopTest();
 
         Assert.areEqual('Selected',
             [SELECT Submission_Status__c FROM BOV_Submission__c WHERE Id = :challenger.Id].Submission_Status__c,
             'With nothing to demote, the challenger is simply promoted');
+
+        // The history row is still written — an appointment IS a change worth recording — and its
+        // outgoing columns are blank rather than absent.
+        List<BOV_Broker_Change__c> history = historyFor(d.Id);
+        Assert.areEqual(1, history.size(),
+            'An appointment with no incumbent must still be recorded, not skipped');
+        Assert.isNull(history[0].Outgoing_BOV_Submission__c,
+            'There was no incumbent, so the outgoing submission must be blank — not the challenger');
+        Assert.isNull(history[0].Outgoing_Broker_Firm__c,
+            'And no outgoing firm may be invented');
+        Assert.areEqual(challenger.Id, history[0].Incoming_BOV_Submission__c,
+            'The appointed submission must still be recorded as incoming');
+        Assert.isNull(history[0].Notes__c,
+            'Notes are OPTIONAL — a null must round-trip as a null, not as an empty string or a '
+            + 'DML failure');
+    }
+
+    /**
+     * 🔴 THE HISTORY ROW IS THE POINT OF THE 2026-08-20 CHANGE, AND THE FIRM SNAPSHOTS ARE THE
+     * POINT OF THE HISTORY ROW. Both Contact lookups are `deleteConstraint SetNull` and
+     * `scripts/seed-broker-contacts.apex` mass-deletes every broker Contact, so a row that leaned
+     * on the lookups for the firm name would read blank after any seed re-run. This test asserts
+     * the TEXT columns carry the firms, and — the falsifier for the same claim — that they still
+     * carry them after the Contacts are deleted out from under the row.
+     */
+    @isTest
+    static void historyRow_stampsBothFirmsAndSurvivesTheBrokerContactsBeingDeleted() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        Contact outgoingBroker = TestDataFactory.createBrokerContactWithFirm('CBRE - Old Incumbent', true);
+        Contact incomingBroker = TestDataFactory.createBrokerContactWithFirm('JLL - New Challenger', true);
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Broker__c = outgoingBroker.Id;
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Broker__c = incomingBroker.Id;
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+
+        Test.startTest();
+        BovSubmissionService.replaceSelectedBroker(
+            d.Id, challenger.Id, 'Better BOV Received', 'JLL came in 600k higher.');
+        Test.stopTest();
+
+        List<BOV_Broker_Change__c> history = historyFor(d.Id);
+        Assert.areEqual(1, history.size(), 'Exactly ONE history row per replacement');
+        BOV_Broker_Change__c row = history[0];
+        Assert.areEqual(incumbent.Id, row.Outgoing_BOV_Submission__c, 'Outgoing submission');
+        Assert.areEqual(challenger.Id, row.Incoming_BOV_Submission__c, 'Incoming submission');
+        Assert.areEqual(outgoingBroker.Id, row.Outgoing_Broker__c, 'Outgoing broker Contact');
+        Assert.areEqual(incomingBroker.Id, row.Incoming_Broker__c, 'Incoming broker Contact');
+        Assert.areEqual('CBRE - Old Incumbent', row.Outgoing_Broker_Firm__c,
+            '🔴 THE OUTGOING FIRM MUST BE STAMPED AS TEXT, not left to the Contact lookup');
+        Assert.areEqual('JLL - New Challenger', row.Incoming_Broker_Firm__c,
+            '🔴 And so must the incoming firm');
+        Assert.areEqual('Better BOV Received', row.Reason__c, 'The reason must be recorded');
+        Assert.areEqual('JLL came in 600k higher.', row.Notes__c, 'And the notes verbatim');
+        Assert.areEqual(UserInfo.getUserId(), row.Logged_By__c, 'The actor must be recorded');
+        Assert.isNotNull(row.Entry_DateTime__c,
+            'The write time IS the event time — there is no effectiveDate parameter to supply one');
+
+        // ── THE FALSIFIER ────────────────────────────────────────────────────
+        // Reproduces scripts/seed-broker-contacts.apex's mass delete. Both lookups go null with no
+        // error whatsoever; if the firms had been read through them, the row would now be anonymous.
+        delete new List<Contact>{ outgoingBroker, incomingBroker };
+        BOV_Broker_Change__c afterDelete = historyFor(d.Id)[0];
+        Assert.isNull(afterDelete.Outgoing_Broker__c,
+            'PRECONDITION: SetNull must have blanked the outgoing lookup, or this proves nothing');
+        Assert.isNull(afterDelete.Incoming_Broker__c,
+            'PRECONDITION: and the incoming lookup');
+        Assert.areEqual('CBRE - Old Incumbent', afterDelete.Outgoing_Broker_Firm__c,
+            '🔴 THE SNAPSHOT MUST SURVIVE THE CONTACT — this is the entire reason the Text column '
+            + 'exists alongside the lookup');
+        Assert.areEqual('JLL - New Challenger', afterDelete.Incoming_Broker_Firm__c,
+            '🔴 Both of them');
+    }
+
+    /**
+     * The reason is required by the SERVER, not only by the modal's combobox — this class's
+     * subject already refuses to depend on a client affordance for correctness (see the
+     * cross-disposition test). A refusal must also write NOTHING.
+     */
+    @isTest
+    static void blankReason_isRefusedAndNeitherSwapsNorRecords() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+
+        Test.startTest();
+        Integer refusals = 0;
+        for (String emptyReason : new List<String>{ null, '', '   ' }) {
+            try {
+                BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, emptyReason, 'notes');
+                Assert.fail('A blank reason must be refused, not recorded as a blank');
+            } catch (BovSubmissionService.BovSubmissionException e) {
+                refusals++;
+                Assert.isTrue(e.getMessage().contains('reason'),
+                    'The refusal must name the missing reason: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        Assert.areEqual(3, refusals, 'null, empty and whitespace-only reasons must all be refused');
+        Assert.areEqual(0, historyFor(d.Id).size(), 'A refused replacement records nothing');
+        Assert.areEqual('Selected',
+            submissionsById(d.Id).get(incumbent.Id).Submission_Status__c,
+            'And the guard must run BEFORE any write — the incumbent is untouched');
     }
 
     @isTest
@@ -112,7 +263,7 @@ private class BovSubmissionServiceTest {
         Test.startTest();
         Boolean refused = false;
         try {
-            BovSubmissionService.replaceSelectedBroker(d.Id, already.Id);
+            BovSubmissionService.replaceSelectedBroker(d.Id, already.Id, REASON, null);
             Assert.fail('Replacing a broker with itself must be refused, not silently no-op');
         } catch (BovSubmissionService.BovSubmissionException e) {
             refused = true;
@@ -132,7 +283,7 @@ private class BovSubmissionServiceTest {
         Test.startTest();
         Boolean refused = false;
         try {
-            BovSubmissionService.replaceSelectedBroker(d.Id, foreign.Id);
+            BovSubmissionService.replaceSelectedBroker(d.Id, foreign.Id, REASON, null);
             Assert.fail('A submission belonging to a DIFFERENT disposition must be refused');
         } catch (BovSubmissionService.BovSubmissionException e) {
             refused = true;
@@ -151,13 +302,13 @@ private class BovSubmissionServiceTest {
         Test.startTest();
         Boolean refusedNullDisposition = false;
         try {
-            BovSubmissionService.replaceSelectedBroker(null, sub.Id);
+            BovSubmissionService.replaceSelectedBroker(null, sub.Id, REASON, null);
         } catch (BovSubmissionService.BovSubmissionException e) {
             refusedNullDisposition = true;
         }
         Boolean refusedNullSubmission = false;
         try {
-            BovSubmissionService.replaceSelectedBroker(d.Id, null);
+            BovSubmissionService.replaceSelectedBroker(d.Id, null, REASON, null);
         } catch (BovSubmissionService.BovSubmissionException e) {
             refusedNullSubmission = true;
         }
@@ -210,7 +361,7 @@ private class BovSubmissionServiceTest {
         DispositionActionPermissionService.clearCache();
         System.runAs(dispositionDriver) {
             try {
-                BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id);
+                BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, 'notes');
                 Assert.fail('A locked Disposition must refuse the whole replacement');
             } catch (BovSubmissionService.BovSubmissionException e) {
                 refused = true;
@@ -226,6 +377,12 @@ private class BovSubmissionServiceTest {
             + 'incumbent demoted while the parent stamp failed, disagreeing about who is Selected');
         Assert.areEqual('Backup', after.get(challenger.Id).Submission_Status__c,
             'And the challenger must still read Backup');
+        Assert.areEqual(0, historyFor(d.Id).size(),
+            '🔴 NO HISTORY ROW MAY SURVIVE A REFUSED REPLACEMENT. This is the falsifier for "the '
+            + 'insert is the LAST DML inside the existing savepoint": an insert placed outside the '
+            + 'try, or committed separately, leaves behind a durable, reportable, append-only claim '
+            + 'that this disposition changed brokers — next to a disposition that did not. That is '
+            + 'strictly worse than no history at all.');
     }
 
     /**

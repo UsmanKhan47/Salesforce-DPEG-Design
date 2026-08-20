@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        🔴 OPEN DECISION - THE USER HAS NOT CONFIRMED THIS VALUE SET (design D4.2 / O-2).
+        The five values below are a PROPOSED DEFAULT ONLY: Performance Issue, Better BOV
+        Received, Broker Withdrew, Company Decision, Other. Do NOT treat this list as settled
+        without a user confirmation - flag it again before this deploys anywhere but a dry run.
+
+        WHY NOT Broker_Assignment__c.Reason_Ended__c's VALUE SET, DELIBERATELY: that field is
+        {Leased Up, Performance Issue, Company Decision, Other}. "Leased Up" is leasing
+        vocabulary (a listing ending because the space leased) and is meaningless on a
+        disposition BOV, which is a sale-side broker swap. Copying it verbatim would ship a
+        picklist value that can never correctly apply to any row on this object.
+
+        restricted=true, matching Submission_Status__c on BOV_Submission__c and this repo's
+        general practice for closed-set reason/status fields - it stops a hand-typed value the
+        five proposed options do not cover, which is also why "Other" exists as the escape hatch
+        until the value set is confirmed and finalized.
+    -->
+    <fullName>Reason__c</fullName>
+    <description>Why the broker was replaced. PROVISIONAL VALUE SET - not yet confirmed by the user. See the XML comment in this file before treating this list as final.</description>
+    <inlineHelpText>Pick the closest reason. Use Other if none fit, and add detail in Notes.</inlineHelpText>
+    <label>Reason</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Performance Issue</fullName>
+                <default>false</default>
+                <label>Performance Issue</label>
+            </value>
+            <value>
+                <fullName>Better BOV Received</fullName>
+                <default>false</default>
+                <label>Better BOV Received</label>
+            </value>
+            <value>
+                <fullName>Broker Withdrew</fullName>
+                <default>false</default>
+                <label>Broker Withdrew</label>
+            </value>
+            <value>
+                <fullName>Company Decision</fullName>
+                <default>false</default>
+                <label>Company Decision</label>
+            </value>
+            <value>
+                <fullName>Other</fullName>
+                <default>false</default>
+                <label>Other</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

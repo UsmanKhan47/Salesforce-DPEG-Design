@@ -1,0 +1,165 @@
+/*
+ * SLDS 2 GLOBAL STYLING HOOKS ONLY — every colour, space, radius and font size is a `--slds-g-*`
+ * hook (ARCHITECTURE.md §5). There is not one authored hex or px value in this file.
+ *
+ * ⚠ THE `var(--hook, <value>)` FALLBACKS WERE WRITTEN BY `npx slds-linter lint --fix`, NOT BY
+ * HAND, AND THAT MATTERS. This file was first authored bare (`var(--hook)` with no second
+ * argument) on the reasoning that a fallback is a hard-coded colour smuggled into a stylesheet.
+ * The repo's own gate disagrees: `slds/no-slds-var-without-fallback` warns on every bare hook,
+ * because styling hooks are UNAVAILABLE in some Salesforce environments and a bare hook there
+ * renders as nothing at all. The fallbacks are the linter's canonical SLDS values, so
+ * regenerating them is a one-command operation rather than a judgement call — re-run the fixer
+ * after adding a hook instead of guessing a value.
+ *
+ * ⚠ THREE THINGS THE FIXER CANNOT CATCH, ALL THREE MEASURED AGAINST
+ * `@salesforce-ux/sds-metadata/current/globalStylingHooks.metadata.json` ON 2026-08-20:
+ *   1. `--slds-g-color-on-surface-1` IS THE GREY ONE (#757575) AND `-3` IS THE DARKEST (#181818).
+ *      The numbering reads like an emphasis scale and is not one. An earlier draft of this file
+ *      had the card title on `-1` and the secondary meta text on `-3`, i.e. the hierarchy exactly
+ *      inverted, and every automated check passed it.
+ *   2. `--slds-g-color-disabled-container-1` is WHITE and `--slds-g-color-on-disabled-1` is a pale
+ *      grey — the natural-looking "neutral pill" pairing is invisible on this card's white
+ *      surface. See `.pill_neutral`.
+ *   3. `--slds-g-spacing-px` DOES NOT EXIST. The fixer flagged it under a different rule
+ *      (`no-slds-namespace-for-custom-hooks`, i.e. "that is not ours, make your own") rather than
+ *      as a typo. It was dropped rather than replaced.
+ */
+
+:host {
+    display: block;
+}
+
+.card {
+    background: var(--slds-g-color-surface-container-1, #ffffff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-3, 0.5rem);
+    overflow: hidden;
+}
+
+.card-header {
+    padding: var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-2, 0.5rem);
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
+}
+
+.card-title {
+    margin: 0;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.card-sub {
+    margin: 0;
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.error-line {
+    padding: var(--slds-g-spacing-4, 1rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-error-1, #ffffff);
+    background: var(--slds-g-color-error-container-1, #ba0517);
+}
+
+.rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
+}
+
+.row:last-child {
+    border-bottom: none;
+}
+
+.row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+}
+
+.row-left {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+}
+
+.row-label {
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.row-meta {
+    margin: 0;
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+.row-hint {
+    margin: 0;
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-style: italic;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/*
+ * A DEGRADED row is tinted, an EMPTY row is not. The distinction is functional, not decorative —
+ * see the template comment and design §0 C-1.
+ */
+.row-hint_alert {
+    font-style: normal;
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-error-base-40, #ba0517);
+}
+
+/* ── status pills ──────────────────────────────────────────────────────────────────────── */
+.pill {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-3, 0.75rem);
+    border-radius: var(--slds-g-radius-border-4, 1rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    white-space: nowrap;
+}
+
+.pill_complete {
+    background: var(--slds-g-color-success-container-1, #2e844a);
+    color: var(--slds-g-color-on-success-1, #ffffff);
+}
+
+.pill_progress {
+    background: var(--slds-g-color-accent-container-1, #0b5cab);
+    color: var(--slds-g-color-on-accent-1, #ffffff);
+}
+
+.pill_attention {
+    background: var(--slds-g-color-warning-container-1, #dd7a01);
+    color: var(--slds-g-color-on-warning-1, #181818);
+}
+
+.pill_blocked {
+    background: var(--slds-g-color-error-container-1, #ba0517);
+    color: var(--slds-g-color-on-error-1, #ffffff);
+}
+
+/*
+ * ⚠ NEUTRAL IS BUILT FROM neutral-base-95 + on-surface-2, NOT FROM THE disabled-* PAIR.
+ * `--slds-g-color-disabled-container-1` resolves to WHITE and `--slds-g-color-on-disabled-1` to a
+ * pale grey, so the obvious-looking "disabled" pairing renders near-invisible text on the card's
+ * own white surface. Neutral here means "nothing has happened yet", which must still be legible.
+ */
+.pill_neutral {
+    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}

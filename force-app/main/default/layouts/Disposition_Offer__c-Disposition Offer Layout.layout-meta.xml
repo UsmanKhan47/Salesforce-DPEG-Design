@@ -61,7 +61,19 @@
             remove the ability to record a negotiation.
 
          THE relatedLists BLOCK BELOW IS UNTOUCHED. It carries RelatedProcessHistoryList, which is
-         the only route to Recall Approval Request on this object. -->
+         the only route to Recall Approval Request on this object.
+
+         =====================================================================================
+         Buyer__c ADDED 2026-08-20 (Workstream D6.1, buyer activity timeline,
+         disposition-tranche-2-requirements.md §3). Placed directly after Buyer_Name__c in the
+         Information section - this object has NO custom FlexiPage anywhere in force-app (see
+         the "SECOND EXPOSURE" note above), so this layout is the ONLY route to reachability for
+         this field, unlike NDA__c which also has a Dynamic Forms record page. Edit behaviour,
+         matching Buyer_Name__c and Disposition__c in the same section: the field is
+         analyst-entered and carries no machine-only write path. Buyer_Name__c itself is
+         UNCHANGED and UNRETIRED - it stays free Text; this field does not stamp it and the two
+         are independent inputs, see the field's own comment.
+         ===================================================================================== -->
     <layoutSections>
         <customLabel>false</customLabel>
         <detailHeading>false</detailHeading>
@@ -79,6 +91,10 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Buyer_Name__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Buyer__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>

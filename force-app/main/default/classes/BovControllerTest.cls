@@ -310,7 +310,8 @@ private class BovControllerTest {
         insert new List<BOV_Submission__c>{ incumbent, challenger };
 
         Test.startTest();
-        String msg = BovController.replaceSelectedBroker(d.Id, challenger.Id);
+        String msg = BovController.replaceSelectedBroker(
+            d.Id, challenger.Id, 'Company Decision', 'Owner asked for a change.');
         Test.stopTest();
 
         System.assertEquals('Selected',
@@ -318,6 +319,49 @@ private class BovControllerTest {
         System.assertEquals('Backup',
             [SELECT Submission_Status__c FROM BOV_Submission__c WHERE Id = :incumbent.Id].Submission_Status__c);
         System.assert(msg.contains('must be approved'), 'The warning must survive the controller boundary: ' + msg);
+        // The two new parameters are PASSED THROUGH, not swallowed — proved on the row the service
+        // writes rather than by mocking, because "the controller is thin" is only meaningful if the
+        // values actually arrive at the far end.
+        BOV_Broker_Change__c row = [
+            SELECT Reason__c, Notes__c FROM BOV_Broker_Change__c WHERE Disposition__c = :d.Id LIMIT 1
+        ];
+        Assert.areEqual('Company Decision', row.Reason__c,
+            'The reason must reach the history row through the controller');
+        Assert.areEqual('Owner asked for a change.', row.Notes__c,
+            'And so must the notes');
+    }
+
+    /**
+     * A blank reason is a SERVICE rule, and the controller must surface it through the SECOND
+     * catch — verbatim — rather than adding a rule of its own or masking it as a system failure.
+     * This is the same three-catch-order proof as the two tests below, on the newest refusal path.
+     */
+    @isTest
+    static void replaceSelectedBroker_blankReason_surfacesTheRefusalVerbatim() {
+        Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Submission_Status__c = 'Selected';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            BovController.replaceSelectedBroker(d.Id, challenger.Id, null, 'notes');
+            Assert.fail('A blank reason must be refused');
+        } catch (AuraHandledException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('reason'),
+                'The service\'s authored refusal must surface verbatim, not the generic '
+                + 'REPLACE_FAILURE_MESSAGE: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The controller must surface the BovSubmissionException verbatim');
+        Assert.areEqual(0,
+            [SELECT COUNT() FROM BOV_Broker_Change__c WHERE Disposition__c = :d.Id],
+            'And nothing may be recorded');
     }
 
     /**
@@ -337,7 +381,7 @@ private class BovControllerTest {
         Test.startTest();
         Boolean refused = false;
         try {
-            BovController.replaceSelectedBroker(d.Id, foreign.Id);
+            BovController.replaceSelectedBroker(d.Id, foreign.Id, 'Other', null);
             Assert.fail('A cross-disposition submission must be refused');
         } catch (AuraHandledException e) {
             refused = true;
@@ -368,7 +412,7 @@ private class BovControllerTest {
             Test.startTest();
             Boolean denied = false;
             try {
-                BovController.replaceSelectedBroker(d.Id, challenger.Id);
+                BovController.replaceSelectedBroker(d.Id, challenger.Id, 'Other', null);
                 Assert.fail('A bare user with no disposition-driver grant must be denied');
             } catch (AuraHandledException e) {
                 denied = true;

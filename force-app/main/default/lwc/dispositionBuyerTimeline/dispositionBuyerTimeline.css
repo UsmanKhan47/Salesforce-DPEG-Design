@@ -1,0 +1,37 @@
+:host { display:block; }
+
+/* Shared card chrome — matches c/brokerAssignmentHistory and c/dispositionDealSummary so the
+   Disposition record page reads as one surface. */
+.dbt-card { background:var(--slds-g-color-surface-container-1, #fff); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); }
+
+/* Tabular numerals so the date and duration columns align down the card. */
+.dbt-mono { font-variant-numeric:tabular-nums; }
+
+.dbt-error { display:flex; align-items:center; gap:8px; padding:var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-5, 24px); color:var(--slds-g-color-error-container-1, #8B1A1A); font-size:var(--slds-g-font-scale-neg-1, 13px); }
+.dbt-empty { padding:var(--slds-g-spacing-4, 16px) var(--slds-g-spacing-5, 24px); color:var(--slds-g-color-on-surface-1, #757575); font-size:var(--slds-g-font-scale-neg-1, 13px); }
+
+.dbt-body { padding:10px var(--slds-g-spacing-5, 24px) 18px; }
+/* ⚠ --slds-g-color-on-surface-1 is the GREY one (#757575); -2 and -3 are progressively darker.
+   The numbering reads like an ascending emphasis scale and is the reverse, so secondary text takes
+   -1 and primary text takes -2. */
+.dbt-intro { font-size:var(--slds-g-font-scale-neg-1, 12px); color:var(--slds-g-color-on-surface-1, #757575); margin:6px 0 10px; }
+
+.dbt-row { display:grid; grid-template-columns:minmax(0, 2fr) repeat(5, minmax(0, 1fr)); align-items:center; gap:12px; padding:10px var(--slds-g-spacing-4, 16px); margin-top:6px; border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); background:var(--slds-g-color-surface-container-1, #fff); }
+
+.dbt-head { margin-top:0; padding-top:var(--slds-g-spacing-1, 4px); padding-bottom:var(--slds-g-spacing-1, 4px); border:none; background:none; font-size:var(--slds-g-font-scale-neg-2, 11px); font-weight:var(--slds-g-font-weight-7, 700); letter-spacing:0.04em; text-transform:uppercase; color:var(--slds-g-color-on-surface-1, #757575); }
+
+/* TERMINATED ROW. Muted rather than red: a party who declined is a normal, recorded outcome, not an
+   error state. The accessible signal is the badge text and the row's aria-label — never this colour.
+   ⚠ --slds-g-color-disabled-container-1 is WHITE and --slds-g-color-on-disabled-1 is pale grey, so
+   the natural-looking "disabled" pairing would be near-invisible on this white card. */
+.dbt-row--declined { background:var(--slds-g-color-neutral-base-95, #f3f3f3); border-style:dashed; }
+.dbt-row--declined .dbt-buyer { color:var(--slds-g-color-on-surface-1, #757575); }
+.dbt-row--declined .dbt-c { color:var(--slds-g-color-on-surface-1, #757575); }
+
+.dbt-c { font-size:var(--slds-g-font-scale-neg-1, 12px); color:var(--slds-g-color-on-surface-2, #2e2e2e); min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.dbt-c-buyer { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dbt-buyer { font-weight:var(--slds-g-font-weight-6, 600); font-size:var(--slds-g-font-scale-1, 14px); color:var(--slds-g-color-on-surface-3, #181818); overflow:hidden; text-overflow:ellipsis; }
+
+.dbt-badge { display:inline-flex; align-items:center; font-size:var(--slds-g-font-scale-neg-2, 10px); font-weight:var(--slds-g-font-weight-7, 700); letter-spacing:0.04em; text-transform:uppercase; border-radius:9999px; padding:1px var(--slds-g-spacing-2, 8px); white-space:nowrap; }
+.dbt-badge--declined { color:var(--slds-g-color-on-surface-2, #2e2e2e); background:var(--slds-g-color-neutral-base-95, #f3f3f3); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); }
+.dbt-badge--anomaly { color:var(--slds-g-color-error-container-1, #8B1A1A); background:var(--slds-g-color-surface-container-1, #fff); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-error-base-40, #BA0517); }

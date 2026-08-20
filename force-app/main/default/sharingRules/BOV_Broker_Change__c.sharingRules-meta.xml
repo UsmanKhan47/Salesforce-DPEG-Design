@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <sharingOwnerRules>
+        <fullName>BOV_Broker_Change_Team_RW</fullName>
+        <accessLevel>Edit</accessLevel>
+        <label>BOV Broker Change Team RW</label>
+        <sharedTo>
+            <group>DPEG_Acquisitions_Team</group>
+        </sharedTo>
+        <sharedFrom>
+            <roleAndSubordinates>Acquisitions_Analyst</roleAndSubordinates>
+        </sharedFrom>
+    </sharingOwnerRules>
+</SharingRules>

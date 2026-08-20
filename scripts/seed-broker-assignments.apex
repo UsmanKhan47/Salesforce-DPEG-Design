@@ -28,9 +28,38 @@ brokerSeed.put('priya.nair@cbre.com',             new Contact(LastName='Nair',  
 brokerSeed.put('daniel.reyes@colliers.com',       new Contact(LastName='Reyes', FirstName='Daniel',  Email='daniel.reyes@colliers.com',       Phone='(832) 555-0173', Is_Broker__c=true, Broker_Firm__c='Colliers',          Broker_Status__c='Active'));
 brokerSeed.put('sandra.koch@naipartners.com',     new Contact(LastName='Koch',  FirstName='Sandra',  Email='sandra.koch@naipartners.com',     Phone='(713) 555-0226', Is_Broker__c=true, Broker_Firm__c='NAI Partners',      Broker_Status__c='Active'));
 
+// 🔴 BROKER DEFINITION MOVED 2026-08-20 — `Is_Broker__c = true` above is NO LONGER what makes
+// these Contacts brokers; the `Contact.Broker` record type is. The checkbox is left in place (the
+// field is retained, unused) but WITHOUT the stamp below these four rows would insert fine and then
+// be REFUSED by `Broker_Assignment__c.Broker__c`'s active, non-optional lookup filter a few lines
+// later — a hard FIELD_FILTER_VALIDATION_EXCEPTION rolling back the whole seed.
+// A describe, not a query: `[SELECT Id FROM RecordType WHERE ...]` throws in an org where the
+// record type has not deployed.
+//
+// ⚠ THE STAMP APPLIES ONLY TO ROWS THIS SCRIPT CREATES, NOT TO ONES IT REUSES. The reuse-by-email
+// branch above adopts whatever Contact already holds that address, and this script deliberately
+// does NOT upgrade its record type — re-typing pre-existing Contacts is a data change, not a seed
+// concern, and the confirmed scope of the 2026-08-20 definition move excludes it. Consequence, so
+// it is not a surprise: if this org already holds e.g. a Master-record-type 'priya.nair@cbre.com',
+// the assignment insert below will be refused for that ONE broker by the lookup filter. Fix it by
+// re-typing that Contact by hand, never by weakening the filter.
+Schema.RecordTypeInfo brokerRtInfo =
+    Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get('Broker');
+Id brokerRtId = (brokerRtInfo != null && brokerRtInfo.isAvailable())
+    ? brokerRtInfo.getRecordTypeId()
+    : null;
+if (brokerRtId == null) {
+    System.debug(LoggingLevel.ERROR,
+        'ABORT: the Contact.Broker record type is missing or unavailable to '
+        + UserInfo.getUserName() + '. Every broker Contact this script creates would be refused by '
+        + 'Broker_Assignment__c.Broker__c\'s lookup filter. Nothing was created.');
+    return;
+}
 for (String email : brokerSeed.keySet()) {
     if (!existingByEmail.containsKey(email)) {
-        toInsert.add(brokerSeed.get(email));
+        Contact seedContact = brokerSeed.get(email);
+        seedContact.RecordTypeId = brokerRtId;
+        toInsert.add(seedContact);
     }
 }
 if (!toInsert.isEmpty()) {

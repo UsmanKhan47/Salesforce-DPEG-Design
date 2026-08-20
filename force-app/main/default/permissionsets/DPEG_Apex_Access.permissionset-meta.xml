@@ -3,6 +3,25 @@
     <description>Grants invoke access to every Apex controller class the authenticated DPEG LWCs call via @salesforce/apex.</description>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG Apex Access</label>
+    <!--
+      LIVE-BREAK FIX 2026-08-21. BovBrokerChangeController, DispositionBuyerTimelineController and
+      DispositionDealSummaryController (added 2026-08-20/21, disposition-tranche-2) shipped with
+      fieldPermissions/objectPermissions but NO classAccesses entry in either disposition
+      permission set — UAT hit "You do not have access to the Apex class named
+      'DispositionBuyerTimelineController'" and the Deal Summary card's fail-soft
+      "Couldn't load the deal summary." Only the three ENTRY-POINT controllers are granted here,
+      matching this file's established pattern (see the PortfolioDealController and
+      BrokerLeaderboardController comments below): the selector/service classes each controller
+      calls (BovBrokerChangeSelector, DispositionBuyerTimelineService, DispositionDealSummaryService)
+      are reached only through the controller and need no grant of their own.
+      NdaBuyerStampService and DispositionOfferBuyerStampService, shipped the same day, are NOT
+      @AuraEnabled and are invoked only from NdaTriggerHandler / DispositionOfferTriggerHandler in
+      trigger (system) context — not entry points, correctly ungranted, not added here.
+    -->
+    <classAccesses>
+        <apexClass>BovBrokerChangeController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>BovController</apexClass>
         <enabled>true</enabled>
@@ -49,7 +68,15 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>DispositionBuyerTimelineController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>DispositionController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>DispositionDealSummaryController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>

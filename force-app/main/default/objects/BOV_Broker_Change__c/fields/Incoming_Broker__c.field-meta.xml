@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        Twin of Outgoing_Broker__c in this same folder; read that file's comment for the full
+        role-named-lookup, lookupFilter and relationship-name-collision reasoning. relationshipName
+        Incoming_Broker_Changes is distinct from Outgoing_Broker__c's Outgoing_Broker_Changes and
+        free on the Contact parent (measured against the same five existing Contact lookups).
+
+        Same SetNull seed hazard as Outgoing_Broker__c: scripts/seed-broker-contacts.apex mass
+        deleting broker Contacts SetNull's this lookup too. Incoming_Broker_Firm__c is the
+        snapshot that survives it.
+
+        =====================================================================================
+        🔴 RECONCILED 2026-08-20 (code review). SAME FIX AS Outgoing_Broker__c IN THIS FOLDER.
+        =====================================================================================
+        This field's <lookupFilter> was still testing Contact.Is_Broker__c = True despite the
+        object's own comment already documenting the move to the Contact.Broker record type.
+        Measured live on usman-dpeg the same day:
+            SELECT COUNT(Id) FROM Contact WHERE Is_Broker__c = true                 -> 0
+            SELECT COUNT(Id) FROM Contact WHERE RecordType.DeveloperName='Broker'   -> 19
+        <filterItems> now reads Contact.RecordType.DeveloperName = 'Broker'. errorMessage and
+        inlineHelpText below no longer name Is_Broker__c.
+    -->
+    <fullName>Incoming_Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The broker Contact who replaced the outgoing one. Incoming_Broker_Firm__c stamps this Contact's firm at write time so the row still reads correctly if this Contact is later deleted.</description>
+    <inlineHelpText>The broker who replaced the outgoing one. Only Contacts on the Broker record type appear.</inlineHelpText>
+    <label>Incoming Broker</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
+        <filterItems>
+            <field>Contact.RecordType.DeveloperName</field>
+            <operation>equals</operation>
+            <value>Broker</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Incoming Broker Changes</relationshipLabel>
+    <relationshipName>Incoming_Broker_Changes</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

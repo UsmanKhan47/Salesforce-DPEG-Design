@@ -1,8 +1,69 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        =====================================================================================
+        🔴 2026-08-20 — THIS FIELD IS RETAINED BUT IS NO LONGER THE BROKER DEFINITION.
+        =====================================================================================
+        A broker is now a Contact on the Contact.Broker RECORD TYPE. This checkbox no longer
+        decides anything. Nothing in production Apex, no SOQL predicate, and no lookup filter
+        reads it any more.
+
+        🔴 RECONCILED 2026-08-20 (code review, same day). "No lookup filter reads it any more"
+        was FALSE when first written here: five <lookupFilter> blocks - Disposition__c.Broker__c,
+        Broker_Assignment__c.Broker__c, Lease_Inquiry__c.Broker__c,
+        BOV_Broker_Change__c.Outgoing_Broker__c and BOV_Broker_Change__c.Incoming_Broker__c -
+        still tested Contact.Is_Broker__c = True despite this comment already declaring the
+        move complete, and each one refused all 19 real brokers as a result (measured: 0 rows
+        match Is_Broker__c = true, 19 match the record type). All five have now been repointed
+        to Contact.RecordType.DeveloperName = 'Broker' in the same pass that added this note,
+        so the sentence above is accurate again as of this fix - verify against a live grep of
+        `Contact.Is_Broker__c` under objects/**/fields/*.field-meta.xml before trusting it a
+        third time.
+
+        WHY IT MOVED, MEASURED NOT ASSUMED. On usman-dpeg: ZERO Contacts carried
+        Is_Broker__c = true, while 19 sat on the Contact.Broker record type and 6 on Master.
+        Every `WHERE Is_Broker__c = true` query in the application was therefore matching
+        NOTHING - broker options empty, Broker Hub empty, and every guest Broker-Portal
+        submission silently defaulting to 'Standard' priority. That was an application-wide
+        outage, not a per-feature bug, and repointing the definition is what repaired it.
+
+        =====================================================================================
+        🔴 DO NOT DELETE, BACKFILL OR DE-PERMISSION THIS FIELD. RETIREMENT IS DEFERRED.
+        =====================================================================================
+        That is a user-confirmed scope boundary of the 2026-08-20 change, not an oversight.
+        The field stays, unused, and is retired under its own separate task. Reasons to leave
+        it alone until then:
+
+          - TestDataFactory.createBrokerContacts STILL SETS IT, deliberately, and several test
+            classes still resolve their fixture with `WHERE Is_Broker__c = true`. Deleting the
+            field breaks those tests without touching a single production predicate.
+          - classes/BrokerLookupFilterEnforcementTest depends on being able to set it to values
+            that CONTRADICT the record type. That is how it proves the lookup filters read the
+            record type and not this checkbox. Remove the field and that proof cannot be
+            expressed at all.
+          - The six broker <lookupFilter> blocks, the Broker_Required_On_Submission validation
+            rule, ~40 force-ignored profiles and a long tail of prose all still name it.
+            Retirement is a sweep, and a sweep done in the same change as a behavioural repoint
+            is how a repoint gets blamed for a sweep's breakage.
+
+        ⚠ IT IS NOT SAFE TO ASSUME THIS FIELD AND THE RECORD TYPE AGREE. They do not, and never
+        did: the measurement above is 19 record-type brokers with ZERO ticked checkboxes. Do not
+        write `RecordType.DeveloperName = 'Broker' AND Is_Broker__c = true` anywhere - that
+        conjunction reintroduces the exact zero-row outage this change repaired. And do not
+        write a backfill that ticks the box for the 19, either: that would make the two agree
+        today and quietly re-establish the checkbox as a second, competing source of truth.
+
+        SEE ALSO: classes/ContactSelector.cls (the four SOQL predicates that moved), and
+        scripts/seed-broker-contacts.apex (whose destructive delete moved with them - it went
+        from a guaranteed no-op to a real 19-row delete on the same day).
+    -->
     <fullName>Is_Broker__c</fullName>
     <defaultValue>false</defaultValue>
-    <description>Flags this Contact as a brokerage broker for the Acquisition Broker Hub.</description>
+    <description>RETAINED BUT NO LONGER THE BROKER DEFINITION (2026-08-20). A broker is a Contact on the Contact.Broker record type. Nothing reads this checkbox any more; retirement is a separate deferred task. Do not use it to identify brokers and do not combine it with the record type in a filter.</description>
     <label>Is Broker</label>
     <trackFeedHistory>false</trackFeedHistory>
     <type>Checkbox</type>

@@ -27,8 +27,15 @@
 // acceptance criterion is "this script runs clean"; until this change it did not.
 //
 // HOW A BROKER IS CHOSEN. `Broker__c` carries an ACTIVE, NON-OPTIONAL lookupFilter on
-// `Contact.Is_Broker__c = true`, and a non-optional lookup filter is enforced on Apex DML, not
-// only in the UI — an arbitrary Contact is REFUSED. Every row therefore resolves against the
+// the `Contact.Broker` RECORD TYPE, and a non-optional lookup filter is enforced on Apex DML, not
+// only in the UI — an arbitrary Contact is REFUSED.
+// ⚠ CORRECTED 2026-08-20: this read `Contact.Is_Broker__c = true`. The broker definition MOVED to
+// the record type. 🔴 CONSEQUENCE FOR THIS SCRIPT SPECIFICALLY: on `usman-dpeg` the roster query
+// below matched ZERO rows under the old predicate, so this script ABORTED at its gate on every
+// run. It will now find the org's real broker roster and DO REAL WORK — including the deletes
+// near the top that this file's own header warns about. Intended, but it is the first run in a
+// long time that is not a no-op; read the SEED VERDICT line.
+// Every row therefore resolves against the
 // broker-Contact population that `scripts/seed-broker-contacts.apex` maintains: that roster is
 // queried ONCE up front, indexed by `Contact.Broker_Firm__c`, and each BOV row asks for the firm
 // it is meant to represent. A row whose firm is absent from the roster falls back to the roster
@@ -94,12 +101,12 @@ Date today = Date.today();
 List<Contact> brokerRoster = [
     SELECT Id, Name, Broker_Firm__c
     FROM Contact
-    WHERE Is_Broker__c = true
+    WHERE RecordType.DeveloperName = 'Broker'
     ORDER BY Name
 ];
 if (brokerRoster.isEmpty()) {
     System.debug(LoggingLevel.ERROR,
-        'ABORT: this org holds no Contact with Is_Broker__c = true. Every BOV submission this '
+        'ABORT: this org holds no Contact on the Contact.Broker record type. Every BOV submission this '
         + 'script creates would be refused twice over - by the Broker_Required_On_Submission '
         + 'validation rule and by the ACTIVE non-optional lookup filter on BOV_Submission__c'
         + '.Broker__c - and the failure would roll the whole run back. RUN '

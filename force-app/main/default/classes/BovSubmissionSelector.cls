@@ -174,9 +174,19 @@ public with sharing class BovSubmissionSelector {
      * if that ever changes is a `private without sharing` inner class holding only this query,
      * after `DispositionOfferSelector.TractionReads`.
      *
+     * ⚠ `Broker__c` WAS ADDED TO THIS SELECT ON 2026-08-20 (Tranche 2 Workstream B, D4.3) AND IS
+     * NOT USED BY THE SWAP ITSELF. Its caller now also writes a `BOV_Broker_Change__c` history row,
+     * whose `Outgoing_Broker__c` / `Incoming_Broker__c` Contact lookups are stamped from this
+     * column. Adding it here rather than issuing a second query is what keeps the caller's budget at
+     * 1 SOQL. It is FLS-free by construction — this read is already SYSTEM_MODE for
+     * `Approval_Status__c`, so the addition cannot take the read down the way it could on a
+     * USER_MODE sibling. `Broker__c` was confirmed present in usman-dpeg (live describe) before it
+     * was added.
+     *
      * @param dispositionId Disposition__c Id whose submissions to read; null-safe.
-     * @return All submissions with Id, Broker_Firm__c, Submission_Status__c and Approval_Status__c
-     *         populated; an empty list when the Disposition has none or the input is null.
+     * @return All submissions with Id, Broker__c, Broker_Firm__c, Submission_Status__c and
+     *         Approval_Status__c populated; an empty list when the Disposition has none or the
+     *         input is null.
      * @example
      * List&lt;BOV_Submission__c&gt; subs =
      *     BovSubmissionSelector.selectStatusesByDispositionId(dispId);
@@ -186,7 +196,8 @@ public with sharing class BovSubmissionSelector {
             return new List<BOV_Submission__c>();
         }
         return [
-            SELECT Id, Disposition__c, Broker_Firm__c, Submission_Status__c, Approval_Status__c
+            SELECT Id, Disposition__c, Broker__c, Broker_Firm__c, Submission_Status__c,
+                   Approval_Status__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
             WITH SYSTEM_MODE

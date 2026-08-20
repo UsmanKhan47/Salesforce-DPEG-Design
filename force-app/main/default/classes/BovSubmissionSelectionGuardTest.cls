@@ -132,7 +132,11 @@ private class BovSubmissionSelectionGuardTest {
         insert new List<BOV_Submission__c>{ incumbent, challenger };
 
         Test.startTest();
-        String message = BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id);
+        // ⚠ The 4-parameter signature dates from 2026-08-20 (Tranche 2 Workstream B): the reason is
+        // now REQUIRED by the service, so a 2-parameter call here would fail on the missing reason
+        // and this falsifier would go green for the wrong reason — proving nothing about the guard.
+        String message = BovSubmissionService.replaceSelectedBroker(
+            d.Id, challenger.Id, 'Performance Issue', null);
         Test.stopTest();
 
         Map<Id, BOV_Submission__c> after = statusesOn(d.Id);

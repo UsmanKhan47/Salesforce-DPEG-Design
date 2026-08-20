@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomObject> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        ADDED 2026-08-20. Workstream B (disposition-tranche-2-requirements.md, D4.1/A7).
+        Append-only history of broker replacements on a disposition BOV, one row per swap.
+        This is the schema half only - BovSubmissionService.replaceSelectedBroker (D4.3) is
+        the developer-owned writer and is out of scope for this deliverable.
+
+        API NAME WAS AN OPEN NAMING ITEM (design O-1), NOW ACCEPTED: BOV_Broker_Change__c.
+        Alternatives rejected: Broker_Replacement__c (ambiguous with Broker_Assignment__c's
+        own "replace" concept), BOV_Broker_History__c ("History" collides with the platform's
+        __History feature). This name follows ARCHITECTURE.md §1 (Title_Case_With_Underscores,
+        no prefix, acronym fully uppercase).
+
+        SETTINGS ARE COPIED FROM BOV_Submission__c.object-meta.xml, DELIBERATELY AND EXACTLY,
+        matching every other disposition child object in this repo (Disposition_Offer__c,
+        Broker_Listing__c, NDA__c, Wire__c): sharingModel/externalSharingModel Private (NOT
+        the sf-custom-object skill's generic ReadWrite default - this object has no
+        Master-Detail field, but the disposition module is uniformly Private OWD per the
+        2026-07-22 RBAC build and every sibling child object matches it), enableHistory false,
+        enableActivities false, enableReports true, enableSearch true, enableBulkApi true,
+        deploymentStatus Deployed, visibility Public. AutoNumber name BBC-{0000}.
+
+        🔴 FLS: EVERY FIELD ON THIS OBJECT ARRIVES WITH NO PERMISSIONS FOR ANYONE, SYSTEM
+        ADMINISTRATOR INCLUDED.
+
+        ⚠ CORRECTED 2026-08-20 (re-review, same day as C3 below). Retracted in place rather
+        than silently edited, because the stale version described a grant this file's own C3
+        fix exists specifically to remove - a future reader seeing `editable=false` a few
+        fields below against a header still promising `read+edit` could reasonably conclude a
+        PermissionSet's wholesale fieldPermissions replace (see the C3 note below) had
+        accidentally DROPPED the edit grant, and "restore" it - silently UNDOING the fix that
+        keeps this audit trail from being rewritable:
+
+            RETRACTED: "Read is granted in DPEG_Disposition_View and read+edit in
+            DPEG_Disposition_Edit in the same change."
+
+        BOTH permission sets grant READ ONLY. DPEG_Disposition_View and DPEG_Disposition_Edit
+        both carry `allowCreate`/`allowEdit`/`allowDelete` = false and `allowRead` = true on
+        this object's objectPermissions block, and all eleven fields are `readable=true` with
+        no field carrying `editable=true` in either set - measured by reading both
+        .permissionset-meta.xml files directly, not assumed from their names. This is C3: the
+        object is an append-only AUDIT TRAIL of who replaced a broker and when, written by
+        `BovSubmissionService.replaceSelectedBroker` in SYSTEM_MODE (ARCHITECTURE.md §2
+        automation-path exception - a write on the principal's behalf, not at their request),
+        so no human persona - including one holding "Edit" in its permission set name - may
+        rewrite it through the UI. `DPEG_Disposition_Edit`'s objectPermissions block is ALSO
+        `allowCreate=false` here, same as `allowEdit`: every row on this object is written
+        exclusively by `BovSubmissionService.replaceSelectedBroker`'s SYSTEM_MODE DML, never
+        by a human clicking New, so there is no CREATE grant to preserve either. "Edit" in the
+        permission set's name describes its role across the disposition module generally, not
+        a promise about this specific object.
+        This object, its fields, the layout, the compact layout, the list view and the two
+        permission sets must land TOGETHER.
+
+        🔴 SHARING: modelled on sharingRules/BOV_Submission__c.sharingRules-meta.xml - one
+        sharingOwnerRules entry granting Edit to group DPEG_Acquisitions_Team from
+        roleAndSubordinates Acquisitions_Analyst. See sharingRules/BOV_Broker_Change__c
+        .sharingRules-meta.xml. Sharing rules deploy ONE AT A TIME in this org; do not batch
+        this file's deploy with any other sharingRules file. DPEG_Acquisitions_Team was
+        confirmed to exist in usman-dpeg before this file was written (queried live,
+        DeveloperName='DPEG_Acquisitions_Team', Type=Regular, one row returned).
+    -->
+    <actionOverrides>
+        <actionName>Accept</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Accept</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Accept</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>CancelEdit</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>CancelEdit</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>CancelEdit</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Clone</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Clone</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Clone</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Delete</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Delete</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Delete</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Edit</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Edit</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Edit</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>List</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>List</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>List</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>New</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>New</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>New</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>SaveEdit</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>SaveEdit</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>SaveEdit</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Tab</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Tab</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>Tab</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <formFactor>Large</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <formFactor>Small</formFactor>
+        <type>Default</type>
+    </actionOverrides>
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <compactLayoutAssignment>BOV_Broker_Change_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Append-only history of broker replacements on a disposition BOV. One row per swap: the outgoing and incoming BOV_Submission__c rows, the outgoing and incoming broker (Contact plus a stamped firm snapshot), the reason, and free-text notes. Written by BovSubmissionService.replaceSelectedBroker (developer-owned, out of scope for this file).</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+    <label>BOV Broker Change</label>
+    <nameField>
+        <displayFormat>BBC-{0000}</displayFormat>
+        <label>Broker Change Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>BOV Broker Changes</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

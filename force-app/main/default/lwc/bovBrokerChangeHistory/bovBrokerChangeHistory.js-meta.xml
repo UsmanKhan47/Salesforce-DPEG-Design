@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE DESCRIPTION BELOW IS CAPPED AT 255 CHARACTERS AND ONLY A DEPLOY CATCHES A BREACH -
+        Jest, the SLDS linter and code review have all passed a 258-character one in this repo.
+        It was counted before this file was written; count it again before editing it.
+
+        Place on the Disposition record page only. recordId must be a Disposition__c Id, not a
+        BOV_Submission__c or Broker_Assignment__c Id - see the component header.
+
+        🔴 THAT SENTENCE IS NOW ENFORCED, NOT MERELY REQUESTED (code review W5, 2026-08-20). It used
+        to be an instruction sitting in a comment while an actual targetConfig objects restriction
+        existed one directory over, in dispositionBuyerTimeline. A misplaced instance would not have
+        errored: the read is WHERE Disposition__c = :id, which matches no rows rather than throwing,
+        so the card would have rendered its "No broker changes recorded" empty state forever - and
+        that empty state is the NORMAL case for most sales, so nobody would ever have suspected it.
+    -->
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>BOV Broker Change History</masterLabel>
+    <description>Every broker replacement recorded against this disposition, newest first, with the reason and any notes. Most sales never replace a broker, so an empty card is the normal state and is shown as plain text.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <!-- The ELEMENT form; the objects= ATTRIBUTE form is rejected by the Metadata API. -->
+            <objects>
+                <object>Disposition__c</object>
+            </objects>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

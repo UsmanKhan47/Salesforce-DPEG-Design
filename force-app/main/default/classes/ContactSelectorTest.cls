@@ -2,13 +2,41 @@
  * Tests for ContactSelector (P4, Module B2 — Property Management; standard object).
  *
  * Covers the single relocated query:
- *   - selectBrokersOrderedByName : the Is_Broker__c = true filter, ORDER BY Name,
- *     Broker_Firm__c population, the no-brokers empty result, AND the standard-object
- *     USER_MODE proof required by design §7.
+ *   - selectBrokersOrderedByName : the broker filter, ORDER BY Name, Broker_Firm__c
+ *     population, the no-brokers empty result, AND the standard-object USER_MODE proof
+ *     required by design §7.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * 🔴 2026-08-20 — THE BROKER DEFINITION MOVED, AND FOUR FIXTURES IN THIS CLASS INVERTED
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * A broker is now a Contact on the `Contact.Broker` RECORD TYPE, not `Is_Broker__c = true`.
+ *
+ * 🔴 `TestDataFactory.createContacts` / `createContact` ARE NOT NON-BROKER FIXTURES. They
+ * stamp the Broker record type (and have since 2026-08-10); they only leave `Is_Broker__c`
+ * at its false default. Four tests here used them as "a non-broker must be excluded" or
+ * "no brokers exist" controls, which worked ONLY because the checkbox was the definition:
+ *
+ *   selectBrokersOrderedByName_returnsOnlyBrokersOrderedByName        2 rows -> 3
+ *   selectBrokersOrderedByName_noBrokers_returnsEmpty                 0 rows -> 3
+ *   selectBrokersRankedByClosedVolume_ranksByVolumeThenName_...       3 rows -> 4
+ *   selectBrokersRankedByClosedVolume_noBrokers_returnsEmpty          0 rows -> 3
+ *   selectBrokerPriorityByEmailSystem_nonBrokerWithSameEmail_excluded null -> a row
+ *
+ * All five now use `TestDataFactory.createNonBrokerContacts` / `createNonBrokerContact`.
+ * EVERY ORIGINAL ASSERTION SURVIVED UNCHANGED — the fixtures were wrong, the expectations
+ * were not, and these are the suite's only proofs that the broker selectors EXCLUDE
+ * non-brokers. Do not repoint any of them back at `createContact(s)`.
+ *
+ * ⚠ NOT affected, checked individually: every `selectByEmails_*` and `selectEarliestBy*`
+ * test (they assert presence or scope, not broker exclusion) and
+ * `selectByEmails_251DistinctEmailsWithAccounts_returnsAll`, which DEPENDS on the factory's
+ * Broker stamp because selectByEmails has filtered the record type since 2026-08-10.
  *
  * USER_MODE PROOF NUANCE (design mismatch flagged to the orchestrator): unlike the
- * Task standard-object proof, this query selects the CUSTOM Contact.Broker_Firm__c
- * and filters the CUSTOM Contact.Is_Broker__c. A bare Standard User has no FLS on
+ * Task standard-object proof, this query selects the CUSTOM Contact.Broker_Firm__c.
+ * (⚠ 2026-08-20: this also read "and filters the CUSTOM Contact.Is_Broker__c" — retracted;
+ * the predicate is now a non-FLS RecordType traversal, so the SELECT list carries the whole
+ * FLS exposure.) A bare Standard User has no FLS on
  * those custom fields, so USER_MODE would throw. The runAs proof therefore assigns
  * DPEG_Contact_Edit, the layer-3 module set that owns broker Contact access —
  * mirroring the real broker-options persona, and confirming USER_MODE returns rows
@@ -36,23 +64,44 @@ private class ContactSelectorTest {
         brokers[1].LastName = 'Alpha';                // Name 'Test Alpha' -> sorts first
         brokers[1].Broker_Firm__c = 'Alpha Realty';
         insert brokers;
-        // A non-broker Contact must be excluded (Is_Broker__c defaults false).
-        TestDataFactory.createContact(null, true);
+        // A non-broker Contact must be excluded.
+        // ⚠ 2026-08-20: was `createContact(null, true)`, on the belief that a plain factory Contact
+        // is a non-broker. IT IS NOT — createContacts stamps the Broker record type. That was
+        // invisible while Is_Broker__c was the definition and became a false positive the moment it
+        // stopped being. See TestDataFactory.createNonBrokerContacts.
+        TestDataFactory.createNonBrokerContact(null, true);
 
         Test.startTest();
         List<Contact> rows = ContactSelector.selectBrokersOrderedByName();
         Test.stopTest();
 
-        Assert.areEqual(2, rows.size(), 'Only Is_Broker__c = true Contacts are returned; the plain Contact is excluded');
+        Assert.areEqual(2, rows.size(),
+            'Only Contact.Broker record-type Contacts are returned; the non-broker Contact is excluded');
         Assert.areEqual('Test Alpha', rows[0].Name, 'ORDER BY Name returns the alphabetically-first broker first');
         Assert.areEqual('Alpha Realty', rows[0].Broker_Firm__c, 'Broker_Firm__c is selected for the option label');
         Assert.areEqual('Test Zeta', rows[1].Name, 'The second broker sorts after the first by Name');
     }
 
+    /**
+     * ⚠ FIXTURE REPOINTED 2026-08-20 — READ BEFORE "SIMPLIFYING" IT BACK.
+     *
+     * This test used `TestDataFactory.createContacts(3, null, true)` as its "only non-broker
+     * Contacts exist" fixture. That was WRONG THE WHOLE TIME and merely undetectable: the factory
+     * has stamped the `Contact.Broker` record type on every Contact it produces since 2026-08-10,
+     * and only left `Is_Broker__c` at its false default. While the checkbox WAS the broker
+     * definition the fixture behaved as intended by accident; when the definition moved to the
+     * record type the same three rows became BROKERS and this assertion inverted from 0 to 3.
+     *
+     * 🔴 THE ASSERTION IS DELIBERATELY UNCHANGED. It is one of only two proofs in this suite that
+     * the broker selectors return an empty list rather than everything when no broker exists, and
+     * weakening it to match the new fixture behaviour would have deleted the proof instead of
+     * fixing the fixture. The FIXTURE was wrong, not the expectation.
+     */
     @isTest
     static void selectBrokersOrderedByName_noBrokers_returnsEmpty() {
-        // Only non-broker Contacts exist.
-        TestDataFactory.createContacts(3, null, true);
+        // Only non-broker Contacts exist — off the Broker record type AND unflagged, so they fail
+        // both the retired and the current definition.
+        TestDataFactory.createNonBrokerContacts(3, null, true);
 
         Test.startTest();
         List<Contact> rows = ContactSelector.selectBrokersOrderedByName();
@@ -137,14 +186,17 @@ private class ContactSelectorTest {
         // Alpha ties Bravo on Closed_Volume__c so the Name ASC tiebreak decides order.
         brokers[2].LastName = 'Alpha'; brokers[2].Closed_Volume__c = 30000000; brokers[2].Active_Listings__c = 4;
         insert brokers;
-        // A non-broker Contact (Is_Broker__c defaults false) must be excluded.
-        TestDataFactory.createContact(null, true);
+        // A non-broker Contact must be excluded. ⚠ 2026-08-20: was `createContact(null, true)` —
+        // see the identical correction on selectBrokersOrderedByName_returnsOnlyBrokersOrderedByName
+        // above. A plain factory Contact carries the Broker record type and is NOT a non-broker.
+        TestDataFactory.createNonBrokerContact(null, true);
 
         Test.startTest();
         List<Contact> rows = ContactSelector.selectBrokersRankedByClosedVolume();
         Test.stopTest();
 
-        Assert.areEqual(3, rows.size(), 'Only Is_Broker__c = true Contacts are returned; the plain Contact is excluded');
+        Assert.areEqual(3, rows.size(),
+            'Only Contact.Broker record-type Contacts are returned; the non-broker Contact is excluded');
         Assert.areEqual('Test Alpha', rows[0].Name,
             'Closed_Volume__c DESC then Name ASC: Alpha wins the 30M tie over Bravo on Name');
         Assert.areEqual('Test Bravo', rows[1].Name, 'Bravo is the second of the two 30M brokers');
@@ -153,9 +205,15 @@ private class ContactSelectorTest {
         Assert.areEqual(4, rows[0].Active_Listings__c, 'Active_Listings__c is selected for the header stats');
     }
 
+    /**
+     * ⚠ FIXTURE REPOINTED 2026-08-20 for the same reason, and with the same refusal to weaken the
+     * assertion, as selectBrokersOrderedByName_noBrokers_returnsEmpty above. These two are the
+     * suite's only proofs that a broker selector returns EMPTY rather than EVERYTHING when the org
+     * holds no brokers; both had been resting on a fixture that silently produced brokers.
+     */
     @isTest
     static void selectBrokersRankedByClosedVolume_noBrokers_returnsEmpty() {
-        TestDataFactory.createContacts(3, null, true);
+        TestDataFactory.createNonBrokerContacts(3, null, true);
 
         Test.startTest();
         List<Contact> rows = ContactSelector.selectBrokersRankedByClosedVolume();
@@ -248,6 +306,11 @@ private class ContactSelectorTest {
     // shape (email trim, Is_Broker__c filter, field population, blank guard). The
     // guest sharing/ownership model itself is out of scope for a unit test — it needs
     // the P3 guest-sharing spike verified before portal promotion (see the report).
+    //
+    // ⚠ 2026-08-20: "the Is_Broker__c filter" above is retracted — this query now filters
+    // `RecordType.DeveloperName = 'Broker'`. On the live org that swap takes it from matching
+    // ZERO rows to matching the real broker roster, so the exclusion test below stopped being
+    // a formality and became the containment proof for an internet-reachable read.
 
     @isTest
     static void selectBrokerPriorityByEmailSystem_matchingBroker_returnsPriority() {
@@ -264,11 +327,23 @@ private class ContactSelectorTest {
         Assert.areEqual('High', result.Broker_Priority__c, 'Broker_Priority__c is populated for the caller to copy');
     }
 
+    /**
+     * 🔴 THE HIGHEST-VALUE EXCLUSION PROOF IN THIS CLASS — it guards the only UNAUTHENTICATED read
+     * in ContactSelector. This is the assertion that says a guest supplying an arbitrary email
+     * cannot pull a non-broker Contact's `Broker_Priority__c` back out of the org.
+     *
+     * ⚠ FIXTURE REPOINTED 2026-08-20, and this one was NOT on the change brief's list of inverting
+     * tests — it was found by tracing `createContact` (singular) through to `createContacts`, which
+     * stamps the Broker record type. It would have inverted exactly like the two `noBrokers_*`
+     * tests: the "plain" Contact becomes a broker, the guest read matches it, and `Assert.isNull`
+     * fails. Had the assertion been "fixed" to match, the suite would have lost its only proof of
+     * containment on the guest path.
+     */
     @isTest
     static void selectBrokerPriorityByEmailSystem_nonBrokerWithSameEmail_excluded() {
-        // A non-broker Contact (Is_Broker__c defaults false) with the same email
-        // must not match — the WHERE Is_Broker__c = true filter excludes it.
-        Contact plain = TestDataFactory.createContact(null, false);
+        // A genuinely non-broker Contact (off the Broker record type AND unflagged) with the same
+        // email must not match — the record-type predicate excludes it.
+        Contact plain = TestDataFactory.createNonBrokerContact(null, false);
         plain.Email = 'plain.contact@example.com';
         insert plain;
 
@@ -276,7 +351,9 @@ private class ContactSelectorTest {
         Contact result = new ContactSelector.GuestReads().selectBrokerPriorityByEmailSystem('plain.contact@example.com');
         Test.stopTest();
 
-        Assert.isNull(result, 'A non-broker Contact is excluded by Is_Broker__c = true');
+        Assert.isNull(result,
+            'A non-broker Contact is excluded by RecordType.DeveloperName = \'Broker\' — a guest '
+            + 'must not be able to read priority off an arbitrary Contact by guessing its email');
     }
 
     @isTest

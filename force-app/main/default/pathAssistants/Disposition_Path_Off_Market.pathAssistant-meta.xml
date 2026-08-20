@@ -67,7 +67,10 @@
         AMENDED 2026-08-20. THE Broker Selection STEP'S KEY FIELD IS NOW THE LOOKUP.
         =====================================================================================
         fieldNames moved from Selected_Broker__c (Text 255) to Broker__c, the new
-        Lookup(Contact) filtered on Is_Broker__c. The info text was rewritten in the same change
+        Lookup(Contact) filtered on the Contact.Broker RECORD TYPE. (⚠ CORRECTED 2026-08-20:
+        this read "filtered on Is_Broker__c"; the broker definition moved. THE PATH STEP ITSELF
+        IS UNAFFECTED — it references Broker__c, the lookup, and never the checkbox, so nothing
+        here blocks the checkbox's eventual retirement.) The info text was rewritten in the same change
         because it said "name the broker directly in Selected Broker", which after this change
         is a WRONG INSTRUCTION rather than merely a stale one: the approval gate in
         DispositionApprovalService no longer reads that text field at all, so a user following

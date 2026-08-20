@@ -1,734 +1,403 @@
-# DESIGN REQUIREMENTS — Disposition Flow Redesign (On-Market / Off-Market Stage Overhaul)
+# Design Requirements — Broker definition moves from `Contact.Is_Broker__c` to the `Contact.Broker` record type
 
-**Source of truth:** `C:\Users\usman.khan\.claude\plans\now-we-have-a-linear-phoenix.md` (approved plan, user-confirmed).
-**Status:** Design already confirmed at Gate 1. This document is the *transcription* of that plan into
-admin / development work items for the downstream specialist agents. **It adds no scope.** Where the
-plan is silent on a name, this document says so explicitly rather than inventing one.
-
-**Branch:** `feature/disposition-redesign` (new branch, per user-confirmed decision 4).
-**API version:** 67.0 (`sfdx-project.json` → `sourceApiVersion`).
-**Package directory:** `force-app/main/default`.
+**Date:** 2026-08-20
+**Branch:** `feature/disposition-redesign`
+**Design agent run:** requirements analysis only. No metadata, Apex, or scripts were modified.
 
 ---
 
-## 1. REQUIREMENT SUMMARY AND SCOPE
+## 🎯 What the user requested (verbatim)
 
-### 1.1 What is being built
+> "Derek Simmons is my contact broker but on adding BOV response when I click on broker contact then it doesn't populate any broker. We don't have to validate on checkbox instead we have a record type on Contact — we need to validate from that."
 
-The client has redefined the disposition flow. The module today runs a 10-value
-`Disposition__c.Disposition_Stage__c` picklist across two record types (`On_Market`, `Off_Market`),
-an Initiate button that creates a Disposition directly with no popup and no approval, three approval
-processes carrying **no** `finalApprovalActions` (stage moves are manual via Path), and stage-routed
-LWCs.
+**Confirmed scope (settled with the user before this run — not re-opened here):**
 
-The redesign:
-
-| New On-Market sequence (11 stages) | New Off-Market sequence (9 stages) |
-|---|---|
-| Disposition Readiness | Disposition Readiness |
-| BOV Outreach | — |
-| Broker Selection | Broker Selection |
-| NDA | NDA |
-| Release Materials | Release Materials |
-| Active Listing | — |
-| Offer Selection | Offer Selection |
-| LOI | LOI |
-| PSA | PSA |
-| Closing | Closing |
-| Sale Closes | Sale Closes |
-
-**Stage surgery:** ADD `Broker Selection`, `Release Materials`, `Offer Selection`, `Sale Closes`.
-REMOVE `Call for Offers`, `Disposition Offer`, `Completed`. Migrate existing org rows off the three
-removed values between the two deploys.
-
-NDA moves into the On-Market path (the "NDA is off-market only" doctrine recorded in the record-type
-XML comments, `dispositionSidebar.js` and `All_NDAs_Signed_Before_Progression` is dead and must be
-rewritten wherever it is asserted).
-
-### 1.2 Transition ownership map (drives every work item below)
-
-| Transition | Owner |
-|---|---|
-| Readiness → BOV Outreach (On) / Broker Selection (Off) | `Sale_Decision_Approval` final approval (record-type-dependent target) |
-| BOV Outreach → Broker Selection (On) | new `BOV_Submission__c.Broker_Finalize_Approval` |
-| Broker Selection → NDA (On) | manual quick action |
-| Broker Selection → NDA (Off) | adapted `Broker_Selection_Approval` |
-| NDA → Release Materials (both) | manual quick action, gated by the all-NDAs-signed VR |
-| Release Materials → Active Listing (On) | manual quick action |
-| Active Listing (On) / Release Materials (Off) → Offer Selection | offer-selection **submission** (explicit service DML) |
-| Offer Selection → LOI | new `Disposition_Offer__c.Offer_Selection_Approval` |
-| LOI → PSA | manual quick action |
-| PSA → Closing | existing `ContractExecutionService` — **unchanged** |
-| Closing → Sale Closes | `Closing_Approval` final approval; wire VR backstop |
-
-### 1.3 Load-bearing design decisions carried from the plan
-
-- **D-1 — approval auto-advance is a SEMAPHORE, not a direct stage FieldUpdate.**
-  A final-approval FieldUpdate writes only `Disposition__c.Approval_Advance_Pending__c` (for
-  Disposition-target approvals) or `Approval_Status__c` on the child (BOV / Offer approvals). A
-  direct stage FieldUpdate is **forbidden** — it bypasses validation rules, which is the reasoning
-  already recorded in the existing approval XMLs and in
-  `Wire_Complete_Before_Completed`'s comment. An approval-triggered flow is also **rejected** — it
-  runs as the approver (known org incident, see memory `flow-runinmode-runs-as-approver`).
-  The semaphore re-fires `DispositionTrigger`; the after-update handler detects false→true and
-  enqueues a Queueable that writes the stage with ordinary
-  `Database.update(..., AccessLevel.SYSTEM_MODE)` — validation rules still evaluate, approver CRUD
-  is irrelevant, and the `recordEditability = AdminOnly` lock has definitively released by the time
-  the job runs. Child-object approvals (BOV / Offer) update the **parent synchronously** in their
-  own trigger — the parent is not the locked record — with `allOrNone = false` and SYSTEM_MODE, the
-  same shape as `ContractExecutionService`.
-- **D-2 — stage-advance framework.** Register `Disposition__c` in
-  `RecordStageAdvanceService.CONFIG_BY_TYPE`. `StageConfig.byRecordType` already supports
-  per-record-type sequences natively; `defaultTypeKey = 'On_Market'`. The maps hold **only manual
-  hops**, so the Advance button structurally cannot skip an approval- or machine-owned hop.
-  Gate: the existing `Disposition_Deal_Actions` custom permission (`DISPOSITION_DRIVER`).
-- **D-3 — offer selection is two steps.** Selecting an offer advances
-  Active Listing / Release Materials → **Offer Selection** by explicit service DML (with savepoint)
-  *and* submits the offer for approval. The approval then advances Offer Selection → LOI. The stage
-  always tells the truth; a rejected offer parks at Offer Selection for a re-pick.
-- **D-4 — new formula field `Disposition__c.Is_On_Market__c`** (`RecordType.DeveloperName = 'On_Market'`)
-  exists solely so flexipage visibility rules can test the record type. Never `{!$User...}`;
-  spanning `{!Record.RecordType...}` in a FlexiPage rule is unverified and is not to be used.
-- **D-5 — new `c/dispositionCallForOffers` card.** The existing `callForOffersList` /
-  `callForOffersPanel` bundles are Opportunity-scoped — **do not touch them**.
-
-### 1.4 Explicitly out of scope
-
-- `ContractExecutionService` (PSA → Closing) — no functional change.
-- `DispositionStageEntryService` — no functional change (comment rewrite only).
-- `DispositionService.findOrCreate` — untouched.
-- `callForOffersList` / `callForOffersPanel` — untouched (Opportunity-scoped).
-- Any new custom permission — `Disposition_Deal_Actions` already exists and is reused.
-
-### 1.5 Risk register (carried verbatim from the plan; every agent must read it)
-
-1. Stage values are governed in lockstep across ~15 artifacts: the field, 2 record types, 3 path
-   assistants, the LWC routers, the flexipage visibility rules, the services, 2 validation rules,
-   the approvals, the object translations, `TestDataFactory`, and the seed / query scripts.
-2. **New fields have NO FLS until the permission-set deploy lands.** A visibility rule reading a
-   field the user cannot see fails **silently** and hides every gated action
-   (memory: `metadata-field-fls-gotcha`).
-3. **PermissionSet deploys REPLACE the whole `fieldPermissions` set** — diff against HEAD first
-   (memory: `content-publication-and-permset-replace`).
-4. **FlexiPage deploys can roll back and still report success** — read the page back in-org
-   (memory: `flexipage-template-pattern`).
-5. **`sf project retrieve` UNIONS picklist values** — it will silently restore locally-deleted values
-   (memory: `retrieve-merges-picklist-values`).
-6. **Recall any pending Disposition approvals before deploy 1** — `Broker_Selection_Approval`'s entry
-   criteria change under them.
-7. Transition window (deploy 1 → migration): rows still on the old stages briefly lose sidebar
-   offer-card routing. **Accepted.**
-8. A queueable-budget-exhausted advance skip leaves the semaphore `true` — documented,
-   admin-visible, recoverable.
-9. **Shared working tree** — a second session may be building into this repo concurrently. Diff hub
-   files (permission sets, flexipages) against HEAD before deploying
-   (memory: `commit-retrieves-before-editing`).
+1. Scope is **all 6 lookup filters + all Apex** — one consistent definition of "broker", in one change.
+2. `Contact.Is_Broker__c` **stays in place, unused**. No delete, no backfill, no layout/permission-set removal. Additive rule: add → repoint → retire later.
+3. The 6 Master-record-type Contacts and the 3 duplicate "Derek Simmons" rows are **reported, not fixed**.
 
 ---
 
-## 2. ADMIN / DECLARATIVE WORK ITEMS
+## 🔴 SECTION 0 — CONTRADICTED PREMISES (read before anything else)
 
-**Routing:** this is complex multi-object declarative work (5 approval processes across 3 objects,
-record-type union surgery, 9 quick actions with Dynamic Actions, security model changes) →
-`salesforce-solution-architect`.
+The brief was right about the concept and right about most of the inventory. It is **wrong or stale on four material points**, two of which materially change the size and the sequencing of the work.
 
-### PHASE 0 — Pre-removal sweep (no files written)
+### 0.1 🔴 `TestDataFactory` ALREADY stamps the `Contact.Broker` record type. The brief's central test-fallout claim is false.
 
-**A-0.** Before any file is touched:
-- `git checkout -b feature/disposition-redesign`.
-- Diff the hub files against HEAD: `permissionsets/DPEG_Disposition_View.permissionset-meta.xml`,
-  `permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml`,
-  `flexipages/Disposition_Record_Page.flexipage-meta.xml`.
-- Org query to size the migration:
-  `SELECT RecordType.DeveloperName, Disposition_Stage__c, COUNT(Id) FROM Disposition__c GROUP BY RecordType.DeveloperName, Disposition_Stage__c`
-- Recall any pending `Disposition__c` approvals (risk 6).
-- Known repo hit-list for the three doomed values (already grepped, confirmed):
-  `objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml`;
-  both record types; `pathAssistants/Disposition_Path_On_Market`,
-  `Disposition_Path_Off_Market`, and legacy inactive `Disposition_Path`;
-  `validationRules/All_NDAs_Signed_Before_Progression`, `validationRules/Wire_Complete_Before_Completed`;
-  `lwc/dispositionMain` (js + `__tests__`), `lwc/dispositionSidebar` (js + `__tests__`);
-  `flexipages/Disposition_Record_Page.flexipage-meta.xml` (lines 292 and 333);
-  `objectTranslations/Disposition__c-en_US/Disposition_Stage__c.fieldTranslation-meta.xml`;
-  `classes/TestDataFactory.cls`; `scripts/seed-disposition.apex`, `scripts/seed-disp0002.apex`,
-  `scripts/query-dispositions.apex`, `scripts/verify-disposition-reports.apex`.
+The brief states:
 
----
+> "`TestDataFactory.createBrokerContacts` (line ~623) sets `Is_Broker__c = true`. ~15 test classes depend on it… Once the filters move to record type, every one of those tests fails at DML unless the factory stamps the Broker record type."
 
-### PHASE 1 — Additive schema (DEPLOY 1)
+**Measured — `TestDataFactory.cls:580-585`, inside `createContacts` (not `createBrokerContacts`):**
 
-**A-1. Picklist — add 4 values, keep the 3 doomed values.**
-`force-app/main/default/objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml`
-Add: `Broker Selection`, `Release Materials`, `Offer Selection`, `Sale Closes`.
-Do **not** remove `Call for Offers`, `Disposition Offer`, `Completed` in this deploy — they are
-removed in Deploy 2, after the migration.
-
-**A-2. Record types — transition-window UNION.**
-`objects/Disposition__c/recordTypes/On_Market.recordType-meta.xml`
-`objects/Disposition__c/recordTypes/Off_Market.recordType-meta.xml`
-Each type's `Disposition_Stage__c` `picklistValues` block must list **old values ∪ new values** for
-the transition window. Both files must continue to enumerate `Sell_Decision_Trigger__c` in full
-(a record type file that omits a picklist silently drops its values from that type).
-**Rewrite the in-XML design comments in both files** — the "NDA and Disposition Offer are
-off-market stage values ONLY … Do not 'helpfully' add them here" doctrine in `On_Market` and the
-matching "no NDA on-market" narrative in `Off_Market` are now FALSE. Keep the comment **inside** the
-root element and keep `<description>` under 255 characters (memory: `xml-comment-must-be-inside-root`).
-
-**A-3. New fields (5).**
-
-| # | File | Type | Notes |
-|---|---|---|---|
-| A-3a | `objects/Disposition__c/fields/Approval_Advance_Pending__c.field-meta.xml` | Checkbox | The D-1 semaphore. System-written only. **No FLS for anyone** — deliberately absent from both permission sets. |
-| A-3b | `objects/Disposition__c/fields/Is_On_Market__c.field-meta.xml` | Formula (Checkbox) | `RecordType.DeveloperName = 'On_Market'`. Exists for flexipage visibility rules (D-4). Needs **read FLS**. |
-| A-3c | `objects/BOV_Submission__c/fields/Approval_Status__c.field-meta.xml` | Picklist | Values `Approved`, `Rejected`. Blank = unsubmitted. |
-| A-3d | `objects/Disposition_Offer__c/fields/Is_Selected__c.field-meta.xml` | Checkbox | Entry criterion for `Offer_Selection_Approval`. |
-| A-3e | `objects/Disposition_Offer__c/fields/Approval_Status__c.field-meta.xml` | Picklist | Values `Approved`, `Rejected`. Blank = unsubmitted. |
-
-⚠ `BOV_Submission__c` and `Disposition_Offer__c` **already carry a status-like picklist each**
-(`Submission_Status__c`, `Offer_Status__c`). `Approval_Status__c` is a *second, distinct* field on
-each — do not conflate them (memory: `verify-something-writes-the-trigger-value`).
-
-**A-4. Permission sets — read on the new visible fields.**
-`permissionsets/DPEG_Disposition_View.permissionset-meta.xml`
-`permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml`
-- Add read on `Disposition__c.Is_On_Market__c`, `BOV_Submission__c.Approval_Status__c`,
-  `Disposition_Offer__c.Is_Selected__c`, `Disposition_Offer__c.Approval_Status__c`.
-- **Verify** `Disposition__c.Wire_Verification_Completed__c` read is present — the
-  `Submit_Closing_Approval` visibility rule reads it, and a visibility rule on an unreadable field
-  fails silently.
-- **`Approval_Advance_Pending__c` gets NO entry in either set** (A-3a).
-- ⚠ A PermissionSet deploy replaces `fieldPermissions` wholesale — **diff against HEAD before
-  writing** (risk 3, risk 9).
-
-**A-5. New workflow field updates (3 files, all new — no `Disposition__c`, `BOV_Submission__c` or
-`Disposition_Offer__c` workflow file exists in the repo today).**
-
-| File | FieldUpdates |
-|---|---|
-| `workflows/Disposition__c.workflow-meta.xml` (new) | `Set_Approval_Advance_Pending` → `Approval_Advance_Pending__c = true` |
-| `workflows/BOV_Submission__c.workflow-meta.xml` (new) | `Set_BOV_Approval_Approved` / `Set_BOV_Approval_Rejected` → `Approval_Status__c` |
-| `workflows/Disposition_Offer__c.workflow-meta.xml` (new) | `Set_Offer_Approval_Approved` / `Set_Offer_Approval_Rejected` → `Approval_Status__c` |
-
-⚠ The plan writes the BOV / Offer update names as the shorthand `Set_*_Approval_Approved/Rejected`.
-The names in the table are the transcription of that shorthand; the solution-architect agent may
-adjust casing/segments to match repo convention but must then use the same names in A-7 and A-9.
-
----
-
-### PHASE 3 — Approval processes (DEPLOY 1)
-
-**A-6. `approvalProcesses/Disposition__c.Sale_Decision_Approval.approvalProcess-meta.xml` — MODIFY.**
-- Add `finalApprovalActions` → field update `Set_Approval_Advance_Pending`.
-- Rewrite `<description>` — the current text ends "No field updates fire on approval or rejection …
-  the stage is advanced by a human afterwards", which becomes false with this change.
-- Everything else (entry criterion `Disposition_Stage__c = Disposition Readiness`, the two
-  principals, `FirstResponse`, `recordEditability = AdminOnly`) is unchanged.
-
-**A-7. `approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval.approvalProcess-meta.xml` — NEW.**
-- Entry criteria: `BOV_Submission__c.Submission_Status__c = 'Selected'`.
-- Same two principal approvers and `whenMultipleApprovers = FirstResponse` as `Sale_Decision_Approval`.
-- `recordEditability = AdminOnly` — this locks the **submission**, not the Disposition, which is
-  precisely why the parent update in D-1 can be synchronous.
-- `finalApprovalActions` → `Set_BOV_Approval_Approved`; `finalRejectionActions` → `Set_BOV_Approval_Rejected`.
-- `approvalPageFields`: BOV-relevant fields (`Broker_Display__c`, `BOV_Amount__c`, `Cap_Rate__c`,
-  `Commission_Rate__c`, `Days_To_Market__c`, `Hist_Success_Rate__c`, `Property_Name__c`) — the
-  solution-architect agent selects the final list from the object's real fields.
-
-**A-8. `approvalProcesses/Disposition__c.Broker_Selection_Approval.approvalProcess-meta.xml` — ADAPT.**
-- Entry criteria → `Disposition_Stage__c = 'Broker Selection'` **AND** record type = Off Market.
-- Add `finalApprovalActions` → `Set_Approval_Advance_Pending`.
-- Swap `approvalPageFields` to surface `Selected_Broker__c`.
-- Rewrite the description / rationale — the existing rationale is dead.
-- ⚠ Risk 6: pending instances of this process must be recalled before deploy 1.
-
-**A-9. `approvalProcesses/Disposition_Offer__c.Offer_Selection_Approval.approvalProcess-meta.xml` — NEW.**
-- Entry criteria: `Disposition_Offer__c.Is_Selected__c = true`.
-- `finalApprovalActions` → `Set_Offer_Approval_Approved`; `finalRejectionActions` → `Set_Offer_Approval_Rejected`.
-- `approvalPageFields`: offer fields (`Buyer_Name__c`, `Offer_Amount__c`, `Offer_Date__c`,
-  `Earnest_Money_Proposed__c`, `Due_Diligence_Days__c`, `Closing_Period_Days__c`,
-  `Offer_Financing_Type__c`) — final list chosen by the solution-architect agent.
-
-**A-10. `approvalProcesses/Disposition__c.Closing_Approval.approvalProcess-meta.xml` — MODIFY.**
-- **Add entry criterion `Wire_Verification_Completed__c = true`.** This kills the
-  AdminOnly-lock / wire-rollup deadlock.
-- Add `finalApprovalActions` → `Set_Approval_Advance_Pending`.
-- Rewrite the description. ⚠ **This supersedes the documented design Q4 decision** recorded in
-  `Wire_Complete_Before_Completed`'s XML comment ("WHY THIS SHAPE, NOT AN APPROVAL entryCriteria …
-  putting the flag in Closing_Approval's entryCriteria would surface an unmet gate as the platform's
-  'no applicable approval process was found'"). The new argument must be carried in the rewritten
-  description **and** in the VR's comment (see A-16) — the mitigation is `dispositionSubmitForApproval`'s
-  authored pre-check message (D-2 / dev item DEV-2), which replaces the platform's unhelpful error.
-
----
-
-### PHASE 4 — Quick actions + flexipage (DEPLOY 1)
-
-**A-11. Nine new quick actions.** All are `force-app/main/default/quickActions/Disposition__c.<Name>.quickAction-meta.xml`,
-`type = LightningWebComponent`, `actionSubtype = Action`, `optionsCreateFeedItem = false` — the
-shape of the existing `Transaction__c.Advance_Stage` / `Opportunity.Begin_Review` files.
-
-| # | File (`quickActions/Disposition__c.…`) | `lightningWebComponent` | Screen? |
-|---|---|---|---|
-| A-11a | `Submit_Sale_Decision` | `dispositionSubmitForApproval` (new) | headless |
-| A-11b | `Submit_Selected_Broker` | `dispositionSubmitForApproval` | headless |
-| A-11c | `Submit_Broker_Selection` | `dispositionSubmitForApproval` | headless |
-| A-11d | `Submit_Closing_Approval` | `dispositionSubmitForApproval` | headless |
-| A-11e | `Advance_to_NDA` | `advanceRecordStage` (existing) | headless |
-| A-11f | `Advance_to_Release_Materials` | `advanceRecordStage` | headless |
-| A-11g | `Advance_to_Active_Listing` | `advanceRecordStage` | headless |
-| A-11h | `Advance_to_PSA` | `advanceRecordStage` | headless |
-| A-11i | `Select_Offer` | `dispositionOfferSelect` (new) | **ScreenAction** |
-
-**A-12. Flexipage — Dynamic Actions block and its visibility rules.**
-`force-app/main/default/flexipages/Disposition_Record_Page.flexipage-meta.xml`
-- Add the Dynamic Actions `valueList` property block (copy the property block from the Opportunity
-  record page) listing the nine actions from A-11.
-- Every action's visibility rule is **AND-ed** with
-  `{!$Permission.CustomPermission.Disposition_Deal_Actions} EQUAL true`.
-  ⚠ **Three-segment form only.** `{!$Permission.<Name>}` and `{!$CustomPermission.<Name>}` are both
-  REJECTED by the Metadata API (measured 2026-08-12; see `RecordStageAdvanceService.StageActionGate`).
-
-| Action | Additional visibility criteria |
-|---|---|
-| `Submit_Sale_Decision` | `Disposition_Stage__c` = `Disposition Readiness` |
-| `Submit_Selected_Broker` | `Disposition_Stage__c` = `BOV Outreach` |
-| `Submit_Broker_Selection` | `Disposition_Stage__c` = `Broker Selection` AND `Is_On_Market__c` = false |
-| `Submit_Closing_Approval` | `Disposition_Stage__c` = `Closing` AND `Wire_Verification_Completed__c` = true |
-| `Advance_to_NDA` | `Disposition_Stage__c` = `Broker Selection` AND `Is_On_Market__c` = true |
-| `Advance_to_Release_Materials` | `Disposition_Stage__c` = `NDA` |
-| `Advance_to_Active_Listing` | `Disposition_Stage__c` = `Release Materials` AND `Is_On_Market__c` = true |
-| `Advance_to_PSA` | `Disposition_Stage__c` = `LOI` |
-| `Select_Offer` | (`Active Listing` AND `Is_On_Market__c` = true) OR (`Release Materials` AND `Is_On_Market__c` = false) |
-
-- Also in the same file: change `Completed` → `Sale Closes` in the **two existing visibility rules**
-  (currently lines **292** — the `c_dispositionMain` `1 OR 2 OR 3 OR 4` rule — and **333** — the
-  `flexipage_fieldSection` "Details" `1 AND 2 AND 3 AND 4` rule).
-- ⚠ **Enabling Dynamic Actions in App Builder silently empties a page's inherited action bar**
-  (memory: `dynamic-actions-discards-inherited-actions`), and a FlexiPage deploy can roll back while
-  reporting success (risk 4). **Read the page back in-org after deploy 1** — this is verification
-  step 1 in §4.
-
----
-
-### PHASE 6 — Validation rules (DEPLOY 2, AFTER the migration)
-
-**A-13. `objects/Disposition__c/validationRules/All_NDAs_Signed_Before_Progression.validationRule-meta.xml` — MODIFY.**
-- **Drop the `RecordType.DeveloperName = 'Off_Market'` term** — NDA is now an on-market stage too.
-- Gated stages become: `Release Materials`, `Active Listing`, `Offer Selection`, `LOI`, `PSA`,
-  `Closing`, `Sale Closes`.
-- Keep `ISCHANGED(Disposition_Stage__c)` (not `ISNEW`) and both `BLANKVALUE(...,0)` guards — the XML
-  comment explains why each is load-bearing.
-- **Rewrite the XML comment.** The "WHY THE RECORD-TYPE TEST IS REQUIRED" and "only Disposition
-  Offer and NDA are off-market-only" paragraphs are now false. Follow the file's own convention:
-  quote and retract, do not silently delete. Keep `<description>` ≤ 255 characters.
-
-**A-14. Rename-by-recreate the wire gate.**
-- NEW: `objects/Disposition__c/validationRules/Wire_Complete_Before_Sale_Closes.validationRule-meta.xml`
-  — same shape, `ISPICKVAL(Disposition_Stage__c, 'Sale Closes')`.
-- OLD: `Wire_Complete_Before_Completed` goes into `destructiveChangesPost.xml`.
-- ⚠ A validation-rule API-name change is a delete + create, not a rename
-  (memory: `api-name-rename-is-delete-create`).
-- Carry the A-10 supersession note into the new rule's comment: the wire flag is now BOTH an entry
-  criterion on `Closing_Approval` AND this backstop.
-
----
-
-### PHASE 8 — Removal + cleanup (DEPLOY 2 + one manual org step)
-
-**A-15. Trim the picklist and both record types to their final value sets.**
-- `objects/Disposition__c/fields/Disposition_Stage__c.field-meta.xml` — remove `Call for Offers`,
-  `Disposition Offer`, `Completed`.
-- `On_Market.recordType-meta.xml` — final 11 values.
-- `Off_Market.recordType-meta.xml` — final 9 values.
-
-**A-16. Path assistants.**
-- `pathAssistants/Disposition_Path_On_Market.pathAssistant-meta.xml` — rebuild to the 11 steps.
-- `pathAssistants/Disposition_Path_Off_Market.pathAssistant-meta.xml` — rebuild to the 9 steps.
-- `pathAssistants/Disposition_Path.pathAssistant-meta.xml` — legacy inactive path, **delete**
-  via `destructiveChangesPost.xml`.
-
-**A-17. Translations.**
-`objectTranslations/Disposition__c-en_US/Disposition_Stage__c.fieldTranslation-meta.xml` — add the
-4 new value translations, remove the 3 retired ones.
-
-**A-18. MANUAL ORG STEP (post-deploy-2, not a metadata deploy).**
-Delete the three retired picklist values in Setup. **A deploy does not delete picklist values.**
-Then re-retrieve and confirm repo and org agree — ⚠ `sf project retrieve` **UNIONS** local and
-remote values, so a retrieve immediately after will *restore the deleted values locally* and mimic a
-failed deploy. Verify via REST describe, not via the retrieved file
-(memory: `retrieve-merges-picklist-values`).
-
-**A-19. Sweep org list views and reports** for filters on the three removed values (org op, not repo).
-
----
-
-## 3. DEVELOPMENT WORK ITEMS
-
-**Routing:** standard Apex service / trigger-handler / selector / LWC work with no external
-integration, no LDV and no Named Credentials → `salesforce-developer`. All Apex must obey
-`.claude/rules/apex-layering-rule.md` (SOQL only in selectors, no SOQL/DML in domain, thin triggers,
-`with sharing` everywhere).
-
-### PHASE 2 — Apex (DEPLOY 1)
-
-**DEV-1. `classes/DispositionService.cls` + `classes/DispositionController.cls` — MODIFY.**
-- New `DispositionService.initiateAndSubmit(Id assetId, String recordTypeDevName)`:
-  - record-type **allow-list** on `recordTypeDevName` (`On_Market` / `Off_Market` only);
-  - keep the existing idempotent-find behaviour and the RED sell-meter-band refusal;
-  - create at `Disposition Readiness` with the chosen record type;
-  - `Approval.ProcessSubmitRequest` to submit `Sale_Decision_Approval`;
-  - pending-duplicate gate (do not resubmit an already-pending record);
-  - on submit failure return `{dispositionId, submitted, message}` so the client can toast
-    "created but not submitted" **and still navigate**.
-- `DispositionController.initiateAndSubmit` — thin `@AuraEnabled` wrapper, `AuraHandledException` at
-  the boundary.
-- **`DispositionService.findOrCreate` is untouched.**
-
-**DEV-2. `classes/DispositionApprovalService.cls` + `classes/DispositionApprovalController.cls` — NEW.**
-Twin of the Opportunity equivalent.
-- `submitForApproval(Id dispositionId)` derives the target from **stage + record type**:
-
-  | Stage / RT | Behaviour |
-  |---|---|
-  | `Disposition Readiness` | resubmit the Disposition (`Sale_Decision_Approval`) |
-  | `BOV Outreach` (On) | submit the **Selected** `BOV_Submission__c`; typed error if none is Selected |
-  | `Broker Selection` (Off) | validate `Selected_Broker__c` is non-blank, then submit the Disposition |
-  | `Closing` | pre-check `Wire_Verification_Completed__c` with an **authored** message, then submit the Disposition |
-
-  Every branch: pending-approval gate + `DispositionActionPermissionService.assertDispositionActionAccess()`.
-- `selectOffer(Id dispositionId, Id offerId)` (D-3): assert the current stage is
-  `Active Listing` (On) or `Release Materials` (Off); flip `Disposition_Offer__c.Is_Selected__c`
-  **exclusively** (clear any other selected offer); advance the Disposition to `Offer Selection` via
-  ordinary DML; submit the offer for approval; **savepoint rollback if the submit fails**.
-- **Apex dependencies:** `DispositionActionPermissionService` (existing —
-  `hasDispositionActionAccess()` / `assertDispositionActionAccess()`), `DispositionSelector`,
-  `BovSubmissionSelector` (new method, DEV-8), `DispositionOfferSelector` (existing).
-
-**DEV-3. `classes/DispositionApprovalAdvanceService.cls` + `classes/DispositionApprovalAdvanceQueueable.cls` — NEW; `classes/DispositionTriggerHandler.cls` — MODIFY.**
-- `DispositionTriggerHandler.afterUpdate` gains a hook: detect
-  `Approval_Advance_Pending__c` **false → true** and enqueue the Queueable, **guarded against the
-  queueable limit**.
-- The Queueable maps `(record type, current stage)` → target:
-  - `Disposition Readiness` → `BOV Outreach` (On_Market) / `Broker Selection` (Off_Market)
-  - `Broker Selection` → `NDA` (Off_Market only)
-  - `Closing` → `Sale Closes`
-- It writes the stage **and clears the semaphore**, using
-  `Database.update(..., false, AccessLevel.SYSTEM_MODE)`.
-- **A failed write leaves the flag `true`** — visible to an admin and recoverable. Do not swallow it
-  into a state that looks succeeded (memory: `validation-rules-beat-system-mode-apex`).
-- ⚠ `DispositionTrigger.trigger` itself does not change — it already delegates one line to the
-  handler across `before insert, before update, after insert, after update`.
-
-**DEV-4. `triggers/BovSubmissionTrigger.trigger` + `classes/BovSubmissionTriggerHandler.cls` — NEW.**
-- On `Approval_Status__c` → `Approved` where `Submission_Status__c = 'Selected'`:
-  set the parent `Disposition__c.Disposition_Stage__c = 'Broker Selection'` **only if the parent is
-  currently on `BOV Outreach`** (idempotency guard), and stamp
-  `Disposition__c.Selected_Broker__c`.
-- Parent update is synchronous, `allOrNone = false`, SYSTEM_MODE (D-1).
-- Handler must extend the project's `TriggerHandler` base class; the trigger file is one line.
-
-**DEV-5. `triggers/DispositionOfferTrigger.trigger` + `classes/DispositionOfferTriggerHandler.cls` — NEW.**
-- On `Approval_Status__c` → `Approved` where `Is_Selected__c = true`:
-  set own `Offer_Status__c = 'Accepted'`; set the parent stage to `LOI` **only if the parent is
-  currently on `Offer Selection`**; stamp `Disposition__c.Accepted_Offer_Price__c`.
-- The `LOI` stage entry then auto-creates the sell-side LOI through the existing
-  `DispositionStageEntryService` — **no change is needed there**.
-- Same synchronous / `allOrNone = false` / SYSTEM_MODE shape as DEV-4.
-
-**DEV-6. `classes/BovController.cls` — MODIFY; backing service class — NEW.**
-- `BovController.replaceSelectedBroker(Id dispositionId, Id newSubmissionId)`.
-- Behaviour: demote the old Selected submission → `Backup` **and clear its `Approval_Status__c`**;
-  promote the new submission → `Selected`; update `Disposition__c.Selected_Broker__c`.
-- A replace performed **after** the stage already advanced does **not** re-advance — the DEV-4
-  current-stage guard covers this; a fresh approval is what re-legitimizes the new broker.
-- ⚠ **There is no `Bov*Service` class in the repo today** (only `BovController` and
-  `BovSubmissionSelector`). The plan says "(+ service)" without naming it. The developer agent
-  creates one following the `<Feature>Service` convention (suggested: `BovSubmissionService`) —
-  the controller must stay thin.
-
-**DEV-7. `classes/RecordStageAdvanceService.cls` — MODIFY (D-2).**
-- Add a `Disposition__c` entry to `CONFIG_BY_TYPE`, keyed by record type, `defaultTypeKey = 'On_Market'`,
-  stage field `Disposition_Stage__c`, gate `StageActionGate.DISPOSITION_DRIVER`.
-- **Manual hops only:**
-  - `On_Market`: `Broker Selection → NDA`, `NDA → Release Materials`,
-    `Release Materials → Active Listing`, `LOI → PSA`
-  - `Off_Market`: `NDA → Release Materials`, `LOI → PSA`
-- Add `NO_NEXT_STEP_HINTS` entries naming the **real owner** of every blocked hop (e.g. "Broker
-  Selection advances when the Broker Selection approval is approved").
-- Extend `load()`'s dispatch for the new object; **no dynamic SOQL** (the class holds zero SOQL by
-  design).
-- Update the class header inventory — it currently says "SEVEN … objects" and "TEN StageTypeConfigs";
-  `Disposition__c` makes it eight objects and twelve configs.
-
-**DEV-8. Selectors — NEW METHODS.**
-- `classes/DispositionSelector.cls` → `selectStageRequiredById(Id)` for `RecordStageAdvanceService`.
-  **`WITH SYSTEM_MODE`, justified in the class header** per ARCHITECTURE.md §2 (automation-path
-  exception).
-- `classes/BovSubmissionSelector.cls` → a method returning the **Selected** submission for a
-  disposition (used by DEV-2's `BOV Outreach` branch; a typed error is raised when none exists).
-- `classes/DispositionOfferSelector.cls` → reuse for the offer list backing `dispositionOfferSelect`;
-  add a method only if no existing one fits.
-
-**DEV-9. `classes/DispositionStageEntryService.cls` — COMMENT REWRITE ONLY.**
-No functional change. Rewrite the now-false header, the NDA-stage narrative and the approval-lock
-analysis (`finalApprovalRecordLock` reasoning) to match the new flow. **No behaviour may change in
-this file.**
-
-**DEV-10. `classes/TestDataFactory.cls` — MODIFY.**
-Fixture updates for the new stage values and the new fields. (Note: `TestDataFactory` currently
-references the removed values — see the A-0 hit-list.)
-
----
-
-### PHASE 5 — LWC (DEPLOY 1)
-
-Every bundle below needs a Jest test under `__tests__/` and `@sa11y/jest` accessibility coverage
-(ARCHITECTURE.md §5). All bundles at API 67.0. Run the SLDS linter before deploy. Keep every
-`.js-meta.xml` `<description>` under 255 characters — only a deploy catches a breach
-(memory: `xml-comment-must-be-inside-root`).
-
-**DEV-11. `lwc/sellMeterInitiateModal` — NEW.**
-- `LightningModal`. Read-only property summary + a **mandatory** On Market / Off Market radio group.
-- Buttons: Cancel, "Send for Approval".
-- Apex dependency: `DispositionController.initiateAndSubmit` (DEV-1).
-
-**DEV-12. `lwc/sellMeterList` — MODIFY.**
-- The row action now opens `sellMeterInitiateModal`.
-- **The sell-meter band gate is unchanged**: RED stays blocked; YELLOW keeps its existing
-  `LightningConfirm` and then opens the modal.
-- On success: toast + navigate to the new Disposition. On `submitted = false`, toast the
-  created-but-not-submitted message and still navigate.
-
-**DEV-13. `lwc/dispositionSubmitForApproval` — NEW.**
-- Headless `RecordAction` (`lightning__RecordAction`, `actionType=Action`).
-- Permission pre-flight against the **Disposition** guard —
-  `DispositionActionPermissionService.hasDispositionActionAccess`, **NOT** `dealActionGuard`
-  (that is the acquisitions gate).
-- Imperative call to `DispositionApprovalController.submitForApproval`, then
-  `getRecordNotifyChange` so the page reflects the new state.
-- Apex dependency: DEV-2.
-
-**DEV-14. `lwc/dispositionOfferSelect` — NEW.**
-- ScreenAction; pattern-match the existing `brokerReplaceQuickAction` bundle.
-- Radio list of the disposition's offers → `DispositionApprovalController.selectOffer` → toast →
-  close the action.
-- Apex dependencies: DEV-2 (`selectOffer`), offer read (DEV-8).
-
-**DEV-15. `lwc/bovComparisonMatrix` — MODIFY; `lwc/bovReplaceBrokerModal` — NEW.**
-- Add two top-right buttons to `bovComparisonMatrix`:
-  - **"Add Broker Response"** — `NavigationMixin` create with defaults.
-  - **"Replace Broker"** — rendered **only when exactly one submission is Selected**; opens
-    `bovReplaceBrokerModal`.
-- `bovReplaceBrokerModal` calls `BovController.replaceSelectedBroker`, then `refreshApex`, and
-  **warns the user that a fresh approval is required**.
-- Apex dependency: DEV-6.
-
-**DEV-16. `lwc/dispositionCallForOffers` — NEW (D-5).**
-- Card rendered in `dispositionMain`'s **Active Listing** block.
-- Shows the call-for-offers date (`Broker_Listing__c.Call_For_Offers_Date__c`), the offers count,
-  and a **+ Log Offer** action.
-- ⚠ **Do not touch `lwc/callForOffersList` or `lwc/callForOffersPanel`** — those are Opportunity-scoped.
-
-**DEV-17. `lwc/dispositionMain` — MODIFY.**
-- `isClosing` currently returns `this._stage === 'Closing' || this._stage === 'Completed'`
-  (`dispositionMain.js:30`). It must cover `'Sale Closes'` and drop `'Completed'`.
-- Mount `dispositionCallForOffers` in the Active Listing block.
-- Update `__tests__/dispositionMain.test.js` — it currently asserts on `'Completed'`.
-
-**DEV-18. `lwc/dispositionSidebar` — MODIFY.**
-- The offer-panel stage set becomes `Active Listing | Release Materials | Offer Selection | LOI`
-  (drops `'Call for Offers'` and `'Disposition Offer'`, currently at `dispositionSidebar.js:65-66`).
-- **Rewrite the dead "the two record types' stage value sets are DISJOINT" comment block**
-  (`dispositionSidebar.js:37-41`) — with `Release Materials` and `Offer Selection` shared across
-  both types, the stage value alone no longer identifies the path.
-- Update `__tests__/dispositionSidebar.test.js` — it currently asserts on all three removed values.
-
----
-
-### PHASE 9 — Tests
-
-**DEV-19. Apex tests** (`salesforce-unit-testing`). 251+ records wherever the path is trigger-driven,
-per `.claude/rules/bulk-test-rule.md`; per-transaction-singleton `@AuraEnabled` methods carry the
-documented exemption (the shape `RecordStageAdvanceService` already uses).
-- `DispositionServiceTest` — `initiateAndSubmit` happy paths for both record types, RED-band refusal,
-  idempotent no-resubmit, `ProcessInstance` actually created.
-- `DispositionApprovalServiceTest` — per-stage target derivation, pending gate, typed errors
-  (no Selected BOV; blank `Selected_Broker__c`; wire flag false), `selectOffer` savepoint rollback.
-- `DispositionApprovalAdvanceServiceTest` — **251-row semaphore chunk test**, record-type-dependent
-  targets, and a VR-refusal case asserting the flag is **left true**.
-- `BovSubmissionTriggerHandlerTest` / `DispositionOfferTriggerHandlerTest` — 251-row bulk,
-  current-stage idempotency guards.
-- End-to-end approval tests via `Approval.process` (approve **and** reject) for all five processes.
-- `RecordStageAdvanceServiceTest` — map-walk additions for both Disposition record types, plus a
-  refusal test proving an approval-owned hop is **not** reachable through `advance()`.
-- `DispositionStageEntryServiceTest` — NDA-on-`On_Market` bulk coverage (new territory).
-- `TestDataFactory` fixture updates (DEV-10).
-
-**DEV-20. Jest** — one test file per new/touched bundle from DEV-11 … DEV-18.
-
----
-
-## 4. EXECUTION ORDERING AND ACCEPTANCE CRITERIA
-
-### 4.1 Ordering
-
-```
-PHASE 0  Branch + pre-removal sweep + recall pending approvals + GROUP BY baseline
-   │
-   ▼
-DEPLOY 1  (additive only — nothing is removed)
-   │   A-1  picklist: ADD 4 values, KEEP the 3 doomed ones
-   │   A-2  record types: UNION value sets + comment rewrite
-   │   A-3  5 new fields
-   │   A-4  permission sets (MUST land with / before the flexipage — risk 2)
-   │   A-5  3 new workflow files (field updates)
-   │   DEV-1 … DEV-10  Apex
-   │   A-6 … A-10  5 approval processes
-   │   A-11, A-12  9 quick actions + flexipage Dynamic Actions
-   │   DEV-11 … DEV-18  LWC
-   │   DEV-19, DEV-20  tests
-   │
-   ▼
-MIGRATION  (org operation, between the deploys — PHASE 7)
-   │   scripts/migrate-disposition-stages.apex
-   │     Call for Offers  → Active Listing
-   │     Disposition Offer → Release Materials
-   │     Completed         → Sale Closes
-   │   Database.update(rows, false, AccessLevel.SYSTEM_MODE), per-row logging.
-   │   Precedent: scripts/migrate-loi-psa-stages.apex
-   │   ⚠ MUST run BEFORE the new VRs deploy — the OLD All_NDAs rule does not name
-   │     'Release Materials', so the migration passes cleanly; the NEW one would block it.
-   │   Stage-entry service side effects are idempotent — state that in the script header.
-   │   Then: re-run the GROUP BY. REQUIRE ZERO ROWS on all three removed values.
-   │   Then: sweep org list views / reports for filters on the removed values (A-19).
-   │
-   ▼
-DEPLOY 2  (removal)
-   │   A-13, A-14  validation rules (modify + rename-by-recreate)
-   │   A-15  trimmed picklist + both record types (final value sets)
-   │   A-16  2 rebuilt path assistants; legacy Disposition_Path destructive
-   │   A-17  translations
-   │   destructiveChangesPost.xml: Wire_Complete_Before_Completed, Disposition_Path
-   │
-   ▼
-MANUAL ORG STEP  (A-18)
-       Delete the 3 picklist values in Setup (a deploy cannot).
-       Re-retrieve; confirm repo and org agree — remembering retrieve UNIONS values.
+```apex
+Id brokerRt = recordTypeId(Contact.SObjectType, 'Broker');
+if (brokerRt != null) {
+    for (Contact c : contacts) {
+        c.RecordTypeId = brokerRt;
+    }
+}
 ```
 
-**Intra-deploy-1 dependency notes**
-- **A-4 (permission sets) must not lag A-12 (flexipage).** Without read FLS on `Is_On_Market__c` and
-  `Wire_Verification_Completed__c`, every gated quick action is silently hidden.
-- **A-5 (field updates) must precede A-6 … A-10** — an approval process referencing a
-  non-existent field update fails the deploy.
-- **A-3 must precede everything** that references the new fields.
-- **DEV-3 (semaphore hook) must be live before A-6/A-8/A-10** land in a real org, or an approval
-  will set a flag nothing reads.
+`createBrokerContacts` delegates to `createContacts` (`:621`), so **every Contact the factory produces already carries the Broker record type**. Independent proof inside the suite itself: `ContactSelectorTest.selectByEmails_251DistinctEmailsWithAccounts_returnsAll` (`:535-547`) builds its 251 rows with plain `createContacts(...)` and asserts all 251 come back from `selectByEmails`, which **already filters `RecordType.DeveloperName = 'Broker'`**. That test could not pass if the factory left the record type unset.
 
-### 4.2 Acceptance criteria (from the plan's Verification section)
+**⇒ The mass test-migration the brief priced does not exist.** The factory needs **no change** for the happy path. Two narrower, real problems replace it — see 0.2 and 3.2.
 
-**AC-1 — Deploy 1 smoke.**
-1. **Read the flexipage back in-org** and confirm the new action list is present — this is the
-   silent-rollback check (risk 4) and is not optional.
-2. Create a test Property → Initiate from the Sell Meter row → the modal renders with the read-only
-   property summary and a required record-type radio.
-3. Both radio choices create a Disposition with the **correct record type** and a **pending Sale
-   Decision approval**.
-4. Approve as a principal → the stage **auto-advances to the record-type-correct target**
-   (`BOV Outreach` for On Market, `Broker Selection` for Off Market).
+### 0.2 🔴 The real test risk is the opposite one: the factory's record-type stamp is *conditional*, and it silently degrades
 
-**AC-2 — On-Market end-to-end walk (one record).**
-BOV responses → select → submit broker → approve → `Broker Selection` → `NDA` (NDA auto-created; sign
-it) → `Release Materials` → `Active Listing` (CFO card renders; offers logged) → Select Offer →
-approve → `LOI` (LOI auto-created) → `PSA` → `Closing` (wire completed) → submit closing → approve →
-`Sale Closes`.
+`recordTypeId()` (`TestDataFactory.cls:324-329`) returns **null** when `!info.isAvailable()` for the running user, and the caller then leaves `RecordTypeId` unset — deliberately, and documented at length at `:270-322` after a live `INVALID_CROSS_REFERENCE_KEY` reproduction.
 
-**AC-3 — Off-Market end-to-end walk (one record).** The same walk minus `BOV Outreach` and
-`Active Listing`, with `Broker Selection → NDA` driven by the adapted `Broker_Selection_Approval`.
+Consequence under the new definition: inside `System.runAs(<persona without Contact.Broker record-type visibility>)`, the factory produces a **Master**-record-type Contact. Today that Contact still satisfies the `Is_Broker__c` filter (the factory sets the checkbox unconditionally). **Under a record-type filter it will be refused at DML** with `FIELD_FILTER_VALIDATION_EXCEPTION`.
 
-**AC-4 — Negative checks.**
-- The Advance button is **refused** at every approval-owned hop, and the refusal message **names the
-  real owner** of that hop (the `NO_NEXT_STEP_HINTS` entries from DEV-7).
-- The NDA gate blocks `Release Materials` while any non-Declined NDA is unsigned.
-- `Submit_Closing_Approval` is blocked (with the authored message, not the platform's "no applicable
-  approval process was found") while `Wire_Verification_Completed__c` is false.
-- Replace-broker clears the previous approval status and requires a fresh approval; a replace done
-  after the stage already advanced does **not** re-advance the stage.
+Measured grant matrix for `Contact.Broker` `recordTypeVisibilities`:
 
-**AC-5 — Suites and migration.**
-- `sf apex run test --test-level RunLocalTests` green (full local suite).
-- Jest suite green.
-- The migration GROUP BY returns **zero rows** on `Call for Offers`, `Disposition Offer` and
-  `Completed` **before deploy 2 is attempted**.
+| Permission set | Grants `Contact.Broker`? |
+|---|---|
+| `DPEG_Contact_Edit` (`:91`) | ✅ |
+| `DPEG_Contact_View` (`:91`) | ✅ |
+| `DPEG_Admin_Access` (`:482`) | ✅ |
+| `Lead_Stage_Actions_Access` (`:82`) | ✅ |
+| `DPEG_Disposition_Edit` / `DPEG_Disposition_View` | ❌ |
+| `DPEG_Acquisition_Edit` / `DPEG_Acquisition_View` | ❌ |
+| `Broker_Protection_Access` | ❌ |
 
----
+⚠ Note `profiles/**` is **force-ignored** (`.forceignore:28`), so permission sets are the only real source of record-type visibility here. Any `runAs` test whose persona is granted only a Disposition/Acquisition set and which then creates a broker Contact is a **new** failure introduced by this change. This is a targeted audit, not a factory rewrite.
 
-## 5. PROMPTS FOR SPECIALIST AGENTS
+### 0.3 🔴 The `seed-broker-contacts.apex` guard is ALREADY IMPLEMENTED. The brief calls it "unimplemented".
 
-### 🟤 PROMPT FOR `salesforce-solution-architect`
+The brief states line 4 is `delete [SELECT Id FROM Contact WHERE Is_Broker__c = true];` and that the guard is open. **Both are stale.**
 
-> Implement §2 (ADMIN / DECLARATIVE WORK ITEMS) of `agent-output/design-requirements.md`, items
-> **A-1 through A-19**, on branch `feature/disposition-redesign`. Read `ARCHITECTURE.md` and
-> `.claude/rules/salesforce-global-rule.md` first and follow the per-type skill-load → API-context →
-> generate loop for every metadata type.
->
-> Split the output by deploy: **A-1 … A-12 are Deploy 1**; **A-13 … A-17 are Deploy 2** and must not
-> be included in the Deploy-1 payload. **A-18 and A-19 are manual org steps** — produce written
-> instructions, not metadata.
->
-> Hard constraints: keep every `<description>` ≤ 255 characters and put long rationale in an XML
-> comment **inside** the root element; use the three-segment
-> `{!$Permission.CustomPermission.Disposition_Deal_Actions}` form in FlexiPage visibility rules;
-> **diff both permission sets and the flexipage against HEAD before writing** (a PermissionSet
-> deploy replaces `fieldPermissions` wholesale and this working tree is shared with another
-> session); `Approval_Advance_Pending__c` gets **no** FLS entry in any permission set. Rewrite —
-> do not delete — the now-false design comments in both record types,
-> `All_NDAs_Signed_Before_Progression` and `Wire_Complete_Before_Completed`, following each file's
-> own quote-and-retract convention. Do not deploy; write metadata files only.
+Measured: line 4 is a doc comment. The destructive delete was hoisted out of the inline `delete [SELECT ...]` into a 6-step structure with a working guard:
 
-### 🟢 PROMPT FOR `salesforce-developer`
+- **STEP 1** (`:337`) — hoisted `WHERE Is_Broker__c = true` query, capped, reporting the doomed roster.
+- **STEP 2** (`:349`) — read-only scan of **all five** referencing lookups, before any DML.
+- **STEP 3** (`:504-511`) — abort gate; `final Boolean FORCE = false;` (`:255`). A truncated scan aborts and **`FORCE` cannot override it** (`:480-489`).
+- **STEP 4** — repairs `FORCE_CLEARS_DENORM = { 'Disposition__c' }` (`:315`) before the delete.
+- **STEP 5** — the actual delete.
 
-> Implement §3 (DEVELOPMENT WORK ITEMS) of `agent-output/design-requirements.md`, items **DEV-1
-> through DEV-18**, on branch `feature/disposition-redesign`. Read `ARCHITECTURE.md` §2 and §5 and
-> `.claude/rules/apex-layering-rule.md` first.
->
-> Layering is non-negotiable: all SOQL in selectors, thin triggers delegating one line to a handler
-> extending the project `TriggerHandler` base, `with sharing` on every class, `AuraHandledException`
-> at every `@AuraEnabled` boundary. `DispositionSelector.selectStageRequiredById` uses
-> `WITH SYSTEM_MODE` and **must carry its justification in the class header** per ARCHITECTURE.md's
-> automation-path exception.
->
-> The approval auto-advance mechanism is **fixed by design decision D-1** — a semaphore field read
-> by the trigger and written by a Queueable using
-> `Database.update(..., false, AccessLevel.SYSTEM_MODE)`. Do **not** substitute a direct approval
-> field update on the stage (it bypasses validation rules) and do **not** substitute an
-> approval-triggered flow (it runs as the approver). A failed advance must leave the semaphore
-> `true`, visible and recoverable — never silently cleared.
->
-> Scope discipline: `DispositionService.findOrCreate`, `ContractExecutionService` and
-> `DispositionStageEntryService`'s **behaviour** are untouched; `DispositionStageEntryService` gets a
-> comment rewrite only. Do not modify `lwc/callForOffersList` or `lwc/callForOffersPanel` — they are
-> Opportunity-scoped. Every new/touched LWC bundle needs a Jest test plus `@sa11y/jest` coverage,
-> at API 67.0, SLDS-linted, with `.js-meta.xml` `<description>` under 255 characters. Do not deploy.
+The field-XML headers that call the guard "still OPEN" (e.g. `Disposition__c/fields/Broker__c.field-meta.xml:118-119`) are **out of date relative to the script**. This is the [class-headers-can-be-wrong] pattern again — the headers are load-bearing but not automatically true.
 
-### 🟡 PROMPT FOR `salesforce-unit-testing`
+**⇒ The work is not "build a guard". It is "repoint the guard's own query" (`:337`) so the guard scans the population it is now protecting.** If the definition moves and `:337` is left on `Is_Broker__c`, the guard scans 0 rows, reports "nothing at risk", and STEP 5's delete — if it is repointed — destroys 19 real broker Contacts with a green verdict line. **The guard query and the delete query must be repointed in the same edit or neither.**
 
-> Create the Apex test classes described in **DEV-19** of `agent-output/design-requirements.md`.
-> Use `TestDataFactory` for all fixtures; never `SeeAllData=true`. Apply the 251-record mandate from
-> `.claude/rules/bulk-test-rule.md` to the trigger-driven paths (`DispositionApprovalAdvanceService`
-> semaphore chunking, `BovSubmissionTriggerHandler`, `DispositionOfferTriggerHandler`). The
-> per-transaction-singleton `@AuraEnabled` methods carry the documented exemption — record that
-> reasoning in the class header so review does not demand 251. Target 90%+ per class.
+### 0.4 ⚠ `Opportunity.Broker__c` — brief's flag CONFIRMED, and it is worse than stated
+
+Verified: `objects/Opportunity/fields/Broker__c.field-meta.xml` has **no `<lookupFilter>` element at all** (30 lines, read in full).
+
+At least **four** places in the repo assert it does:
+
+- `BOV_Submission__c/fields/Broker__c.field-meta.xml:20-21` — "Disposition\_\_c.Broker\_\_c, Lease\_Inquiry\_\_c.Broker\_\_c and Opportunity.Broker\_\_c are the other three precedents and **carry the same filter**"
+- `Disposition__c/fields/Broker__c.field-meta.xml:17-18` — "Lease\_Inquiry\_\_c.Broker\_\_c and Opportunity.Broker\_\_c are the other two precedents and **carry the same filter**"
+- `NDA__c/fields/Buyer__c.field-meta.xml:17-20` — lists `Opportunity.Broker__c` among fields carrying "an ACTIVE, non-optional lookupFilter"
+- `seed-broker-contacts.apex:32` lists it as one of the five referencing lookups (that one *is* correct — it references Contact; it just isn't filtered)
+
+**Recommendation: OUT of scope for this change. Documentation fix IN scope.** Reasons:
+
+1. The user's confirmed "all 6 lookups" was enumerated from the 6 that actually *have* filters. Adding a 7th filter is new behaviour, not consistency.
+2. `Opportunity.Broker__c` is **machine-stamped by `LeadConvertService` at conversion**, not human-picked. An active non-optional filter there would make lead conversion fail hard for any Contact not on the Broker record type — and the Broker-Protection intake path is exactly where Master-record-type Contacts arise (see 5.1).
+3. It is `SetNull` and has no denormalised copy, so it carries none of the corruption risk that motivated the other filters.
+
+**Decision required from the user** — recorded as blocking gate **G3** below.
 
 ---
 
-## 6. OPEN NAMING ITEMS (flagged, not invented)
+## 🔴 SECTION 1 — BLOCKING GATES (resolve before any file is written)
 
-The plan leaves three names as shorthand. They are transcribed above with a suggested spelling; the
-implementing agent must pick one spelling and use it consistently across the workflow file, the
-approval process and any Apex that references it.
+### G1 — 🔴 HIGHEST RISK: the `lookupFilter` record-type metadata shape is UNRESOLVED
 
-1. The BOV field-update names — transcribed as `Set_BOV_Approval_Approved` / `Set_BOV_Approval_Rejected`.
-2. The Offer field-update names — transcribed as `Set_Offer_Approval_Approved` / `Set_Offer_Approval_Rejected`.
-3. The new BOV service class behind `BovController.replaceSelectedBroker` — the plan says
-   "(+ service)"; no `Bov*Service` class exists in the repo today. Suggested: `BovSubmissionService`.
+I could **not** resolve this. The `salesforce-api-context` MCP tools are **not available in this agent's tool set** — I have only file-system tools, so I could make no real attempt and will not guess. The `sf-custom-field` skill does not cover record-type filtering (it documents `lookupFilter` only for scalar fields and `$Source` valueFields, `SKILL.md:220-228`), and the only repo example is `Contact.AccountId equals $Source.AccountId` (`sf-metadata/references/field-types-example.md:254-262`). **There is no existing record-type lookupFilter anywhere in this repo to copy.**
+
+Candidate shapes, none verified:
+
+| Candidate `<field>` | `<value>` | Note |
+|---|---|---|
+| `Contact.RecordTypeId` | `Broker` | Setup UI presents "Contact: Record Type"; the Metadata API may expect the developer name, the label, or an 18-char Id |
+| `Contact.RecordType.DeveloperName` | `Broker` | Matches the SOQL form already used in `ContactSelector.selectByEmails:262` |
+| `Contact.RecordType.Name` | `Broker` | Label-based; brittle if the label is ever translated or renamed |
+
+🔴 **Why this is the top risk and not a detail:** a malformed `lookupFilter` has two failure modes on this project, and the second is the dangerous one — it can **deploy green and filter nothing**, leaving all six lookups wide open while every reviewer believes they are validated. A hardcoded 18-char Id would additionally be non-portable across orgs, which this repo has been burned by before (`.forceignore:34-37`).
+
+**Required resolution protocol (assign to `salesforce-admin`, must complete before writing ANY of the six files):**
+
+1. Load the `sf-custom-field` skill and call `salesforce-api-context` (`get_metadata_type_fields_properties` on `CustomField` → `lookupFilter` → `filterItems`). Record `mcp=complete` + `mcp_tools=<list>`, or `mcp=unavailable` after a real attempt.
+2. Prove the shape on **ONE** field first — `BOV_Submission__c.Broker__c`, the field the user actually hit — via a **check-only dry-run** against `usman-dpeg`. Do not write the other five until one is proven.
+3. 🔴 **Read the filter back from the org and confirm it actually filters** — do not accept deploy success as proof. Verify by attempting to save a Master-record-type Contact into the lookup and confirming refusal. This repo has a measured history of green deploys that changed nothing ([deploy-silent-rollback-zero-errors], [forceignored-settings-are-unverified-fiction]).
+4. Only then replicate to the remaining five.
+
+### G2 — `errorMessage` wording (needed for all six files)
+
+Current string on all six, identical: `The selected Contact is not flagged as a broker (Is_Broker__c).`
+
+It names the retired mechanism, so it must change. Proposed: `The selected Contact is not a Broker. Only Contacts on the Broker record type can be chosen here.` **Confirm wording with the user** — it is user-facing on six objects.
+
+### G3 — `Opportunity.Broker__c`: in or out?
+
+Recommendation **OUT** (see 0.4). Needs an explicit yes/no.
+
+### G4 — Deploy-order confirmation for the seed guard
+
+Confirm that `scripts/seed-broker-contacts.apex` STEP 1 (`:337`) and STEP 5 are repointed **in the same edit** (see 0.3). Confirm nobody runs that script against `usman-dpeg` during this change — it now holds 19 real broker Contacts.
+
+---
+
+## 🔵 ADMIN WORK (`salesforce-admin`)
+
+### A1 — Repoint 6 lookup filters (blocked on G1 + G2)
+
+All six currently carry a byte-identical `<lookupFilter>` block: `<active>true</active>`, `<booleanFilter>1</booleanFilter>`, `<field>Contact.Is_Broker__c</field>`, `<operation>equals</operation>`, `<value>True</value>`, `<isOptional>false</isOptional>`. **Verified individually — all six read exactly as the brief described.**
+
+| # | File | Verified |
+|---|---|---|
+| 1 | `force-app/main/default/objects/BOV_Submission__c/fields/Broker__c.field-meta.xml` (`:127-137`) | ✅ the field the user hit |
+| 2 | `force-app/main/default/objects/Disposition__c/fields/Broker__c.field-meta.xml` (`:177-187`) | ✅ |
+| 3 | `force-app/main/default/objects/Broker_Assignment__c/fields/Broker__c.field-meta.xml` (`:6-16`) | ✅ |
+| 4 | `force-app/main/default/objects/Lease_Inquiry__c/fields/Broker__c.field-meta.xml` (`:6-16`) | ✅ |
+| 5 | `force-app/main/default/objects/BOV_Broker_Change__c/fields/Incoming_Broker__c.field-meta.xml` (`:21-31`) | ✅ |
+| 6 | `force-app/main/default/objects/BOV_Broker_Change__c/fields/Outgoing_Broker__c.field-meta.xml` | ✅ (same shape) |
+
+Change per file: `filterItems.field` + `value` to the G1-resolved shape; `errorMessage` to the G2-resolved string. **Keep `active=true`, `isOptional=false`, `booleanFilter=1` exactly as-is** — narrowing or optionalising the filter is not requested.
+
+🔴 **Do NOT touch these two Contact lookups** — both are deliberately unfiltered with an explicit closed-decision banner (`DO NOT RE-OPEN IT`, design item O-5):
+- `objects/NDA__c/fields/Buyer__c.field-meta.xml` (its `Is_Broker__c` hits are header prose explaining the absence)
+- `objects/Disposition_Offer__c/fields/Buyer__c.field-meta.xml`
+
+### A2 — Validation-rule error message
+
+`objects/BOV_Submission__c/validationRules/Broker_Required_On_Submission.validationRule-meta.xml:125` ends with: *"…if the broker is missing, create the Contact and **tick Is Broker** first."* That instruction becomes wrong. Reword to direct the user to the Broker record type. Also update the in-file comment at `:54-56`.
+
+### A3 — 🔴 No new permission-set work — verified, and stated explicitly as the brief asked
+
+This change **adds no fields**, so the "Metadata-API field arrives with no FLS" hazard does **not** apply. Confirmed:
+- `Contact.RecordTypeId` is a standard field requiring no FLS grant.
+- `Contact.Broker` record-type visibility is already granted where broker Contacts are created (0.2 table).
+- `Contact.Is_Broker__c` grants in `DPEG_Contact_View` / `DPEG_Contact_Edit` **stay untouched** per confirmed scope item 2.
+
+⚠ One caveat, not a permission-set edit: record-type visibility governs **creating/assigning**, not **reading**. Users without `Contact.Broker` visibility will still *see* broker Contacts in the repointed lookups. Only the `runAs` test personas in 0.2 are affected.
+
+---
+
+## 🟢 DEVELOPMENT WORK (`salesforce-developer`)
+
+### D1 — `ContactSelector.cls`: repoint 4 queries
+
+Use the **in-repo precedent** — `selectByEmails:262`, `AND RecordType.DeveloperName = 'Broker'` (added 2026-08-10 for IR segregation). This change resolves the internal inconsistency that method created.
+
+| Method | Line | Mode | Note |
+|---|---|---|---|
+| `selectBrokersOrderedByName` | `~105` | `USER_MODE` | backs `BrokerAssignmentController.getBrokerOptions` |
+| `selectBrokersRankedByClosedVolume` | `~128` | `USER_MODE` | backs `BrokerController.getBrokerHub` |
+| `selectTopBrokersByActiveListings` | `~156` | `USER_MODE` | `WHERE Is_Broker__c = true AND Active_Listings__c > 0` — keep the `Active_Listings__c` term |
+| `GuestReads.selectBrokerPriorityByEmailSystem` | `~389` | `SYSTEM_MODE`, `without sharing` | see D1a |
+
+🔴 **Leave `selectBrokerLabelsByIds` (`:332`) alone.** Its ApexDoc (`:316`) documents the deliberate absence of a broker filter. Do not "make it consistent."
+
+**D1a — trust-model consequence of the guest path (the brief asked for this explicitly).**
+`GuestReads.selectBrokerPriorityByEmailSystem` is the **public LWR Broker Portal intake** read: `WHERE Email = :trimmedEmail AND Is_Broker__c = true`, `without sharing` + `WITH SYSTEM_MODE`. Swapping the predicate to `RecordType.DeveloperName = 'Broker'` **widens** what the unauthenticated path matches, because today the `Is_Broker__c = true` term matches **zero rows org-wide** — this query is currently a guaranteed no-match. After the change it will match 19 real broker Contacts and return `Broker_Priority__c` for them.
+
+That is the *intended* restoration of a broken feature, not a regression — but it is the one place in this change where a **guest** principal begins receiving data it currently never receives. Two properties keep it safe and both should be re-verified rather than assumed: the query is **email-equality-scoped** (a guest gets only the row matching an email they already supplied), and it selects **only `Broker_Priority__c`**. Confirm the selected field list is not widened while the predicate is changed, and confirm no `Contact.Investor` record can ever satisfy it (the record-type predicate makes this *stronger* than the checkbox did — an Investor Contact with a stray ticked checkbox would have matched before; now it cannot).
+
+### D2 — 🔴 Two tests INVERT and will fail — the fixture becomes a positive
+
+`TestDataFactory.createContacts` produces Broker-record-type Contacts with `Is_Broker__c = false` (0.1). Two tests use exactly that as their **"no brokers exist"** fixture and assert an empty result. Under the new predicate they will return 3 rows.
+
+| Test | Line | Today | After |
+|---|---|---|---|
+| `ContactSelectorTest.selectBrokersOrderedByName_noBrokers_returnsEmpty` | `:53-62` | `createContacts(3)` → asserts `0` | returns **3** → ❌ |
+| `ContactSelectorTest.selectBrokersRankedByClosedVolume_noBrokers_returnsEmpty` | `:156-165` | `createContacts(3)` → asserts `0` | returns **3** → ❌ |
+
+This is the [retirement-checklist] item 7 pattern exactly: *a test that uses a real value as its "unknown value" fixture keeps passing while its premise inverts.* Here it fails loudly, which is the good outcome — but the fix must be a **new non-Broker fixture** (a Contact explicitly on the Investor or Master record type), **not** deleting the assertion. Losing these two tests would remove the only proof that the broker selectors exclude non-brokers.
+
+⚠ **Unaffected, checked:** `ContactSelectorTest:332` and `:537` also use `createContacts` but assert presence/count, not exclusion. `:537` in fact *depends* on the Broker record type being stamped (0.1).
+
+### D3 — Audit `runAs` personas that create broker Contacts (0.2)
+
+Enumerate every test that wraps broker-Contact creation in `System.runAs(...)` with a persona granted **only** a Disposition/Acquisition/Broker-Protection set. Those inserts begin failing with `FIELD_FILTER_VALIDATION_EXCEPTION` because the factory leaves `RecordTypeId` unset for them. Fix by granting `Contact.Broker` visibility to the test persona — **not** by weakening the lookup filter.
+Known starting point: `ContactSelectorTest:64-79` documents this persona pattern and uses `DPEG_Contact_Edit`, which **does** grant the record type, so it is safe. Others must be checked individually.
+
+### D4 — 🔴 Repoint the seed guard (see 0.3) — highest data-loss risk in the change
+
+`scripts/seed-broker-contacts.apex`: STEP 1's roster query (`:337`) and STEP 5's delete must move to the record-type definition **together**. Repointing one without the other yields a guard that scans 0 rows and reports "nothing at risk" while the delete destroys 19 live broker Contacts across 5 `SetNull` lookups. Also correct the header prose at `:3` and `:11`.
+
+Other seed scripts referencing the flag, all needing the same predicate sweep:
+`scripts/seed-broker-assignments.apex` (4 hits), `scripts/seed-lease-inquiries.apex` (4), `scripts/seed-disposition.apex` (3), `scripts/seed-disposition-bulk.apex` (3), `scripts/seed-disp0002.apex` (3).
+⚠ Per `Broker_Required_On_Submission`'s header (`:108-110`), the three disposition seeds **abort** when the broker population is empty. They abort today (0 rows). After this change they will find 19 — so a previously-aborting script starts doing real work. Intended, but must be expected.
+
+### D5 — Documentation debt (in scope, not an afterthought)
+
+Sweep measured: **192 occurrences of `Is_Broker__c` across 84 files.** Excluding the 40 force-ignored `profiles/**` files (1 hit each, non-deploying, per `.forceignore:28`) and `docs/` (also force-ignored, `.forceignore:12`), the load-bearing prose to correct:
+
+- The 6 field files' own headers (they describe the filter they carry).
+- `objects/Contact/fields/Is_Broker__c.field-meta.xml` — must gain a banner: retained but **no longer the broker definition**, retirement deferred.
+- `objects/BOV_Broker_Change__c/fields/Outgoing_Broker_Firm__c.field-meta.xml` (2 hits).
+- `classes/ContactSelector.cls` — **13 hits**, mostly the class header's authoritative SOQL-mode inventory (`:33-77`). ARCHITECTURE.md §2 names selector headers as the authoritative inventory, so this one matters most.
+- `classes/BovSubmissionService.cls`, `BovSubmissionBrokerStampService.cls` (`:79`), `BrokerController.cls`.
+- 🔴 **Correct the four false "Opportunity.Broker\_\_c carries the same filter" claims** (0.4).
+- `pathAssistants/Disposition_Path_Off_Market.pathAssistant-meta.xml` (1 hit) — check whether it is an active step *referencing* the field ([retirement-checklist] item 4). It does not block anything now (nothing is being deleted), but it must be correct before any future retirement.
+
+---
+
+## 🔗 EXECUTION ORDER
+
+1. **G1** — resolve the lookupFilter shape on ONE field, dry-run, read back. Everything else is blocked on this.
+2. **G2 / G3 / G4** — user decisions.
+3. **A1 + A2** — the six filters and the VR message (declarative, deploys together).
+4. **D1** — `ContactSelector` (4 queries). Independent of A1; can run in parallel.
+5. **D2 + D3** — test fixes. Must land **with or before** A1, or `RunLocalTests` goes red.
+6. **D4** — seed guard. 🔴 Both queries in one edit.
+7. **D5** — documentation sweep.
+
+⚠ **Concurrent-session hazard.** Per [commit-retrieves-before-editing], another session has previously built a whole feature into this same working tree. `git status` currently shows `DPEG_Disposition_Edit`/`DPEG_Disposition_View` and several BOV classes already modified and uncommitted, plus untracked `BovBrokerChange*` classes. **Diff every shared hub file against HEAD before deploying.**
+
+---
+
+## 📋 REPORT ONLY — no data changes (confirmed scope item 3)
+
+### 5.1 Six Contacts sit on the Master record type
+
+Org measurement: `rt=null | isb=false | 6`.
+
+This contradicts `Contact/recordTypes/Broker.recordType-meta.xml:4-6`, which asserts *"Every Contact that existed before 2026-08-10 is this type."* It is not true for 6 rows.
+
+This is a **known, documented, unclosed gap**: `ContactSelector.selectByEmails`'s ApexDoc (`:240-241`) already warns —
+
+> "⚠ A Contact on the MASTER record type will not match. That is intended and is why the Task 3 backfill is gated on a zero-row query before OWD flips."
+
+**That Task 3 backfill evidently never completed.** After this change, these 6 Contacts become invisible to **every** broker lookup and **every** broker query in the application — a strictly wider blast radius than today, where they are already invisible to `selectByEmails`. Recommend a follow-up record-type stamp as a separate deliverable.
+
+### 5.2 "Derek Simmons" exists three times
+
+| Id | Record type | `Is_Broker__c` |
+|---|---|---|
+| `003iw000000nzojAAA` | null / Master | false |
+| `003iw000000o34LAAQ` | Broker | false |
+| `003iw000000o39BAAQ` | Broker | false |
+
+After this change the **two Broker-record-type rows will both appear** in the BOV broker picker — which fixes the user's reported symptom but presents them with a duplicate choice. The Master row will not appear. Recommend a dedupe as a separate deliverable.
+
+⚠ Note the org's `Standard_Contact_Duplicate_Rule` is **active** (referenced at `TestDataFactory.cls:591`) yet three same-named rows exist — it is Alert/Allow, so it warns rather than blocks.
+
+### 5.3 Zero Contacts carry `Is_Broker__c = true` — this is an application-wide outage, not a BOV bug
+
+Confirmed by the brief's measurement and consistent with everything read here. Every broker lookup and every `WHERE Is_Broker__c = true` query matches nothing today. The Broker Hub, the Broker Assignment picker, the off-market Disposition broker pick, the Replace Broker modal and the guest Broker Portal priority read are **all equally broken** and none has been reported. This change fixes all of them at once.
+
+---
+
+## 📝 PROMPTS FOR SPECIALIST AGENTS
+
+### 🔵 `salesforce-admin`
+
+```
+FIRST, AND BLOCKING — resolve the lookupFilter record-type metadata shape. Load the
+sf-custom-field skill, then call salesforce-api-context (get_metadata_type_fields_properties
+on CustomField -> lookupFilter -> filterItems). Record mcp=complete + mcp_tools=<list>, or
+mcp=unavailable after a real attempt. There is NO record-type lookupFilter anywhere in this
+repo to copy - do not guess the shape. Candidates: Contact.RecordTypeId / 
+Contact.RecordType.DeveloperName / Contact.RecordType.Name.
+
+Prove the shape on ONE field only - objects/BOV_Submission__c/fields/Broker__c.field-meta.xml -
+with a CHECK-ONLY dry-run against usman-dpeg. Then READ THE FILTER BACK FROM THE ORG and prove
+it actually refuses a Master-record-type Contact. A malformed lookupFilter can deploy green and
+filter nothing. Do not proceed to the other five until one is proven. Do not hardcode an
+18-char record type Id - it is not portable across orgs.
+
+THEN repoint the lookupFilter in exactly these six files, changing ONLY filterItems.field,
+filterItems.value and errorMessage. Keep active=true, isOptional=false, booleanFilter=1:
+  objects/BOV_Submission__c/fields/Broker__c.field-meta.xml
+  objects/Disposition__c/fields/Broker__c.field-meta.xml
+  objects/Broker_Assignment__c/fields/Broker__c.field-meta.xml
+  objects/Lease_Inquiry__c/fields/Broker__c.field-meta.xml
+  objects/BOV_Broker_Change__c/fields/Incoming_Broker__c.field-meta.xml
+  objects/BOV_Broker_Change__c/fields/Outgoing_Broker__c.field-meta.xml
+
+New errorMessage (confirm with user first): "The selected Contact is not a Broker. Only
+Contacts on the Broker record type can be chosen here."
+
+ALSO update objects/BOV_Submission__c/validationRules/Broker_Required_On_Submission.
+validationRule-meta.xml - the errorMessage (:125) tells users to "tick Is Broker", which
+becomes wrong. Update the in-file comment at :54-56 too.
+
+🔴 DO NOT touch NDA__c/fields/Buyer__c or Disposition_Offer__c/fields/Buyer__c. Both are
+deliberately unfiltered and carry an explicit "DO NOT RE-OPEN IT" closed-decision banner.
+🔴 DO NOT add a lookupFilter to Opportunity.Broker__c unless the user answers YES to gate G3.
+🔴 DO NOT delete, backfill or de-permission Contact.Is_Broker__c - it stays in place, unused.
+NO new permission set work is needed: this change adds no fields. Contact.Broker record-type
+visibility is already granted in DPEG_Contact_Edit, DPEG_Contact_View, DPEG_Admin_Access and
+Lead_Stage_Actions_Access.
+
+Update the affected field-file header comments in the same change - they describe the filter
+they carry, and this repo treats those headers as authoritative.
+Do not deploy - create/modify metadata files only.
+```
+
+### 🟢 `salesforce-developer`
+
+```
+Read ARCHITECTURE.md §1/§2 and .claude/rules/apex-layering-rule.md first.
+
+1. classes/ContactSelector.cls - repoint FOUR queries from `Is_Broker__c = true` to the record
+   type. Use the in-repo precedent already in this same class: selectByEmails:262 uses
+   `AND RecordType.DeveloperName = 'Broker'`.
+     selectBrokersOrderedByName (~:105)         USER_MODE
+     selectBrokersRankedByClosedVolume (~:128)  USER_MODE
+     selectTopBrokersByActiveListings (~:156)   USER_MODE - KEEP the Active_Listings__c > 0 term
+     GuestReads.selectBrokerPriorityByEmailSystem (~:389)  SYSTEM_MODE, without sharing
+   🔴 LEAVE selectBrokerLabelsByIds (:332) ALONE - its ApexDoc (:316) documents the deliberate
+   absence of a broker filter. Do not "make it consistent".
+   🔴 GUEST PATH: selectBrokerPriorityByEmailSystem is the public LWR Broker Portal intake. It
+   matches ZERO rows today; after this it matches 19. Keep the predicate email-equality-scoped
+   and do NOT widen the selected field list beyond Broker_Priority__c while changing the
+   predicate. Preserve WITH SYSTEM_MODE and the without-sharing inner class exactly.
+
+2. 🔴 TWO TESTS WILL INVERT AND FAIL. TestDataFactory.createContacts ALREADY stamps the
+   Contact.Broker record type (TestDataFactory.cls:580-585) while leaving Is_Broker__c = false,
+   so these two use it as a "no brokers exist" fixture and assert 0 rows:
+     ContactSelectorTest.selectBrokersOrderedByName_noBrokers_returnsEmpty (:53-62)
+     ContactSelectorTest.selectBrokersRankedByClosedVolume_noBrokers_returnsEmpty (:156-165)
+   Fix by giving them a genuine NON-Broker fixture (Investor or Master record type). DO NOT
+   delete the assertions - they are the only proof the broker selectors exclude non-brokers.
+   NOTE: ContactSelectorTest:332 and :537 also use createContacts but are UNAFFECTED (they
+   assert presence, not exclusion); :537 actually depends on the Broker stamp.
+
+3. TestDataFactory needs NO change for the happy path - it already stamps the record type.
+   BUT recordTypeId() (:324-329) returns null when the record type is not available to the
+   RUNNING user, leaving RecordTypeId unset. Audit every test that creates a broker Contact
+   inside System.runAs with a persona granted ONLY DPEG_Disposition_*, DPEG_Acquisition_* or
+   Broker_Protection_Access - none of those grant Contact.Broker visibility, so those inserts
+   will start failing FIELD_FILTER_VALIDATION_EXCEPTION. Fix by granting the record type to the
+   TEST PERSONA, never by weakening the lookup filter.
+
+4. 🔴 HIGHEST DATA-LOSS RISK - scripts/seed-broker-contacts.apex. The guard is ALREADY BUILT
+   (STEP 1 :337, STEP 2 :349, STEP 3 gate :504-511, FORCE=false :255) - the field headers that
+   call it "still OPEN" are STALE. Repoint STEP 1's roster query (:337) AND STEP 5's delete in
+   the SAME edit. Repointing one and not the other makes the guard scan 0 rows and report
+   "nothing at risk" while the delete destroys 19 live broker Contacts across 5 SetNull lookups.
+   Correct the header prose at :3 and :11.
+   Same predicate sweep in: seed-broker-assignments.apex, seed-lease-inquiries.apex,
+   seed-disposition.apex, seed-disposition-bulk.apex, seed-disp0002.apex. Expect the three
+   disposition seeds - which abort today on an empty broker population - to start doing real work.
+
+5. Documentation sweep. 🔴 Correct the FOUR false claims that Opportunity.Broker__c "carries the
+   same filter" - it has NO lookupFilter at all (verified): BOV_Submission__c/fields/Broker__c
+   (:20-21), Disposition__c/fields/Broker__c (:17-18), NDA__c/fields/Buyer__c (:17-20), and the
+   ContactSelector class header. Update ContactSelector's header SOQL-mode inventory (13 hits,
+   :33-77) - ARCHITECTURE.md §2 names selector headers as the authoritative inventory. Add a
+   banner to Contact/fields/Is_Broker__c.field-meta.xml: retained but NO LONGER the broker
+   definition; retirement deferred to a separate task.
+
+🔴 DO NOT delete or backfill Contact.Is_Broker__c. DO NOT stamp record types on existing
+Contacts. DO NOT dedupe the three Derek Simmons rows. All three are explicitly out of scope.
+⚠ Another session may be working in this tree - diff shared files against HEAD before deploying.
+```
+
+---
+
+## Summary of what changed vs. the brief
+
+| Brief claim | Verdict |
+|---|---|
+| 6 lookup filters, identical shape | ✅ **Confirmed** — all six read individually |
+| `Opportunity.Broker__c` has no filter despite headers saying so | ✅ **Confirmed** — recommend OUT of scope, fix the docs |
+| 4 `ContactSelector` queries + `selectByEmails` precedent | ✅ **Confirmed** |
+| `TestDataFactory` must be changed to stamp the record type; ~15 test classes fail | ❌ **FALSE** — it already stamps it (`:580-585`) |
+| `seed-broker-contacts.apex` guard is unimplemented; line 4 is the delete | ❌ **FALSE / STALE** — guard is fully built; work is to repoint its query |
+| lookupFilter record-type shape must be resolved via MCP | ⚠ **UNRESOLVED** — MCP unavailable to this agent; escalated as blocking gate G1 |
+| No new permission-set work needed | ✅ **Confirmed and stated** — but see the `runAs` test-persona gap (0.2) |

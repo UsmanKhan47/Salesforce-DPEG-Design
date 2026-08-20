@@ -14,10 +14,34 @@ brokerByEmail.put('marcus.webb@lee-associates.com', new Contact(LastName='Webb',
 brokerByEmail.put('priya.nair@cbre.com',            new Contact(LastName='Nair', FirstName='Priya', Email='priya.nair@cbre.com', Phone='(281) 555-0198', Is_Broker__c=true, Broker_Firm__c='CBRE Houston'));
 brokerByEmail.put('daniel.reyes@colliers.com',      new Contact(LastName='Reyes', FirstName='Daniel', Email='daniel.reyes@colliers.com', Phone='(832) 555-0173', Is_Broker__c=true, Broker_Firm__c='Colliers'));
 brokerByEmail.put('sandra.koch@naipartners.com',    new Contact(LastName='Koch', FirstName='Sandra', Email='sandra.koch@naipartners.com', Phone='(713) 555-0226', Is_Broker__c=true, Broker_Firm__c='NAI Partners'));
+// 🔴 BROKER DEFINITION MOVED 2026-08-20 — the `Is_Broker__c=true` above is retained but is NO
+// LONGER what makes these Contacts brokers; the `Contact.Broker` record type is. Without the stamp
+// below, `Lease_Inquiry__c.Broker__c`'s active, non-optional lookup filter refuses every inquiry
+// this script then creates. A describe, not a query (the query form throws where the record type
+// has not deployed). ⚠ Reused-by-email Contacts are NOT re-typed — same deliberate limitation, and
+// same consequence, as documented at length in scripts/seed-broker-assignments.apex.
+Schema.RecordTypeInfo brokerRtInfo =
+    Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get('Broker');
+Id brokerRtId = (brokerRtInfo != null && brokerRtInfo.isAvailable())
+    ? brokerRtInfo.getRecordTypeId()
+    : null;
+if (brokerRtId == null) {
+    System.debug(LoggingLevel.ERROR,
+        'ABORT: the Contact.Broker record type is missing or unavailable to '
+        + UserInfo.getUserName() + '. Every Lease_Inquiry__c below would be refused by '
+        + 'Lease_Inquiry__c.Broker__c\'s lookup filter. Nothing was created.');
+    return;
+}
 Set<String> haveEmails = new Set<String>();
 for (Contact c : [SELECT Email FROM Contact WHERE Email IN :brokerByEmail.keySet()]) haveEmails.add(c.Email);
 List<Contact> newBrokers = new List<Contact>();
-for (String e : brokerByEmail.keySet()) if (!haveEmails.contains(e)) newBrokers.add(brokerByEmail.get(e));
+for (String e : brokerByEmail.keySet()) {
+    if (!haveEmails.contains(e)) {
+        Contact seedContact = brokerByEmail.get(e);
+        seedContact.RecordTypeId = brokerRtId;
+        newBrokers.add(seedContact);
+    }
+}
 if (!newBrokers.isEmpty()) insert newBrokers;
 Map<String, Id> bId = new Map<String, Id>();
 for (Contact c : [SELECT Id, Email FROM Contact WHERE Email IN :brokerByEmail.keySet()]) bId.put(c.Email, c.Id);

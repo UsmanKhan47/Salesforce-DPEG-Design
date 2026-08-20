@@ -16,11 +16,18 @@
  *
  * ⚠ AMENDED AGAIN 2026-08-16 (FSD Tranche 1, Item 2) — THE SENTENCE ABOVE NOW UNDERSTATES IT IN
  * BOTH HALVES, AND SHARING HAS JOINED MODE AS A PER-METHOD PROPERTY.
- *   MODE     this class has **SEVEN** public methods. **TWO** are `WITH SYSTEM_MODE` —
- *            `selectByDispositionIds` and `queryExpiryAlerts` — and the **FIVE** remaining ones
- *            stay `WITH USER_MODE`: `selectById`, `selectLatestByOpportunityId`,
- *            `selectLatestByDispositionId`, `selectByOpportunityIds` and
- *            `selectStageRequiredById`.
+ *   MODE     this class has **NINE** public methods (EIGHT earlier on 2026-08-20, when Tranche 2
+ *            Workstream C added `selectLatestSummaryByDispositionId`; SEVEN before that).
+ *            **TWO** are `WITH SYSTEM_MODE` — `selectByDispositionIds` and `queryExpiryAlerts` —
+ *            and the **SEVEN** remaining ones stay `WITH USER_MODE`: `selectById`,
+ *            `selectLatestByOpportunityId`, `selectLatestByDispositionId`,
+ *            `selectLatestSummaryByDispositionId`, `selectBuyerTimelineByDispositionId`,
+ *            `selectByOpportunityIds` and `selectStageRequiredById`.
+ *            ⚠ `selectBuyerTimelineByDispositionId` (Tranche 2 Workstream D, 2026-08-20) is the
+ *            first method here to TRAVERSE A RELATIONSHIP (`Buyer__r.Name`), which under
+ *            `USER_MODE` adds an OBJECT-level gate on `Contact` that no NDA__c permission set
+ *            grants. That is argued at the method; it is not a mode change, it is a new KIND of
+ *            gate this class has not carried before.
  *            ⚠ THE COUNT IS ENUMERATED RATHER THAN ASSERTED BECAUSE IT WAS WRONG HERE FIRST, AND
  *            THE WRONG NUMBER PROPAGATED. This block said "the FOUR remaining methods" when
  *            `queryExpiryAlerts` was added (2026-08-16), and ARCHITECTURE.md said the same in two
@@ -158,6 +165,69 @@ public with sharing class NdaSelector {
     }
 
     /**
+     * The most recently created NDA related to a DISPOSITION, WITH ITS SIGNED DATE — backs the
+     * NDA row of the disposition Deal Summary card
+     * (`DispositionDealSummaryService` -> `c/dispositionDealSummary`). Added 2026-08-20,
+     * Tranche 2 Workstream C (design D5).
+     *
+     * 🔴 IT IS A SECOND METHOD RATHER THAN `Date_Signed__c` ADDED TO
+     * `selectLatestByDispositionId`, AND THAT IS THE WHOLE POINT. That method's own Javadoc
+     * carries a written instruction — "Do not widen this field set without re-checking the FLS
+     * grants on DPEG_Disposition_View and DPEG_Disposition_Edit" — because its caller is the BOV
+     * Outreach pill, which renders `Status__c` and nothing else. Widening it would hand that pill
+     * a brand-new way to throw (one extra field = one extra FLS denial surface) in exchange for a
+     * value it cannot display. Two callers, two field lists, one query each: the same per-caller
+     * split this class already makes between `selectStageRequiredById` and
+     * `selectLatestByOpportunityId`.
+     * ⚠ Do NOT "de-duplicate" the two by merging them later. The duplication is one line of SOQL;
+     * the coupling it prevents is a live pill on a live page.
+     *
+     * READ-FOR-DISPLAY, null on miss: "no NDA yet" is the normal state for most dispositions —
+     * the card renders it as an empty state, never as an error.
+     *
+     * ⚠ ORDER BY carries an `Id DESC` TIE-BREAK, for the reason stated in full on
+     * `selectLatestByDispositionId` and on `WireSelector.selectMostRecentByDispositionId`:
+     * `CreatedDate` is SECOND-granular, so two NDAs created under one Disposition inside the same
+     * second — routine in a test transaction, and reachable in a bulk load or a double-click —
+     * leave `ORDER BY CreatedDate DESC LIMIT 1` free to return either row, and the card then
+     * shows a different NDA on every refresh. Do not drop the second sort key.
+     *
+     * ── FLS: `WITH USER_MODE`, AND THE GRANT IS THE PRECONDITION ──
+     * This is a read a human explicitly asked for (they opened the Disposition record page), so
+     * ARCHITECTURE.md §2's automation-path exception does NOT apply and `SYSTEM_MODE` would be
+     * wrong here. `USER_MODE` THROWS rather than degrades, and it enforces FLS on the `WHERE`
+     * field as well as the `SELECT` list — so BOTH `NDA__c.Date_Signed__c` AND
+     * `NDA__c.Disposition__c` must stay granted to `DPEG_Disposition_View` and
+     * `DPEG_Disposition_Edit`. Both are present as of 2026-08-20 (verified in both files); a
+     * PermissionSet deploy REPLACES its entire `<fieldPermissions>` set, so one unrelated
+     * redeploy that drops either line silently degrades this row.
+     * ⚠ The caller (`DispositionDealSummaryService`) wraps this call in a NARROW fail-soft
+     * try/catch for exactly that reason. The grant and the catch are BOTH required; neither
+     * substitutes for the other.
+     *
+     * @param dispositionId Parent Disposition__c Id; null-safe.
+     * @return The latest related NDA with Id, Status__c and Date_Signed__c populated
+     *         (ORDER BY CreatedDate DESC, Id DESC LIMIT 1), or null when the input is null or the
+     *         Disposition has no NDA.
+     * @example
+     * NDA__c nda = NdaSelector.selectLatestSummaryByDispositionId(dispositionId);
+     */
+    public static NDA__c selectLatestSummaryByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return null;
+        }
+        List<NDA__c> rows = [
+            SELECT Id, Status__c, Date_Signed__c
+            FROM NDA__c
+            WHERE Disposition__c = :dispositionId
+            WITH USER_MODE
+            ORDER BY CreatedDate DESC, Id DESC
+            LIMIT 1
+        ];
+        return rows.isEmpty() ? null : rows[0];
+    }
+
+    /**
      * NDAs related to a set of Opportunities — backs OpportunityReviewService.ensureNda
      * idempotency (drop any deal that already has an NDA so a second is never opened).
      * Added by Module A2: the A2 OpportunityReviewService repoint needs a bulk,
@@ -208,19 +278,184 @@ public with sharing class NdaSelector {
      * Narrowing either does not fail loudly — it makes auto-create fire a second time on a
      * disposition that already has its NDA.
      *
+     * ══ 🔴 WIDENED BY ONE FIELD ON 2026-08-20 (Tranche 2 Workstream D) — `Materials_Released_Date__c`
+     *      ══
+     * A SECOND caller now shares this query: `DispositionStageEntryService.stampMaterialsReleasedDates`,
+     * the blank-only default stamp that runs on entry to `Release Materials`. It needs the same rows
+     * (buyer NDAs of a set of dispositions) plus that one field to answer its idempotency question
+     * ("is it still null?").
+     *
+     * ⚠ THE CONTRACT NOTE ABOVE IS ABOUT **NARROWING** AND IS NOT VIOLATED BY THIS. Widening costs
+     * the original caller nothing: it ignores the extra field, and this query is `WITH SYSTEM_MODE`,
+     * so — unlike a `USER_MODE` widening — an extra field adds NO new FLS denial surface and cannot
+     * make the query throw for anyone. 🔴 That is the whole reason a second selector method was not
+     * added instead: two near-identical SYSTEM_MODE reads over the same rows would be two queries
+     * per chunk for one answer, and `DispositionStageEntryService`'s documented budget is
+     * "1 SOQL / 1 DML PER STAGE ENTERED". The two callers key on DIFFERENT stages
+     * (`NDA` vs `Release Materials`), so a single chunk entering both legitimately issues this query
+     * twice — once per stage — and that is the budget working, not a leak.
+     *
+     * ⚠ `Materials_Released_Date__c` IS NOW PART OF THE CONTRACT TOO. Dropping it does not fail
+     * loudly either: the stamp would read null on every row and re-stamp NDAs that already carry an
+     * analyst's own date, destroying it. Blank-only idempotency depends entirely on this field being
+     * selected.
+     *
      * @param dispositionIds Parent Disposition__c Ids; null/empty-safe.
-     * @return NDAs with Id, Disposition__c, Party_Role__c, Status__c and RecordTypeId populated;
-     *         empty when the input is null or empty.
+     * @return NDAs with Id, Disposition__c, Party_Role__c, Status__c, RecordTypeId and
+     *         Materials_Released_Date__c populated; empty when the input is null or empty.
      */
     public static List<NDA__c> selectByDispositionIds(Set<Id> dispositionIds) {
         if (dispositionIds == null || dispositionIds.isEmpty()) {
             return new List<NDA__c>();
         }
         return [
-            SELECT Id, Disposition__c, Party_Role__c, Status__c, RecordTypeId
+            SELECT Id, Disposition__c, Party_Role__c, Status__c, RecordTypeId,
+                   Materials_Released_Date__c
             FROM NDA__c
             WHERE Disposition__c IN :dispositionIds
             WITH SYSTEM_MODE
+        ];
+    }
+
+    /**
+     * The `Party_Role__c` value the buyer activity timeline is scoped to.
+     *
+     * 🔴 IT IS A FILTER IN THE QUERY, NOT A DISPLAY PREFERENCE. An `Introducing Broker` NDA is a
+     * real, expected row on a disposition — DPEG collects and counter-signs one per party — and it
+     * is NOT a buyer. Rendering it as a timeline row would put a broker in a table whose every
+     * column ("NDA signed", "materials released", "first offer", "days for buyer to respond") is a
+     * statement about a prospective purchaser, and would silently inflate the buyer count the
+     * analyst reads off the card.
+     *
+     * ⚠ It is the SAME STRING as `DispositionStageEntryService.BUYER_ROLE`, deliberately NOT shared
+     * through a constant. That one is an IDEMPOTENCY KEY whose change would alter what auto-create
+     * writes; this one is a READ FILTER. Coupling them would mean a future change to either silently
+     * moved the other. Both must match `objects/NDA__c/fields/Party_Role__c.field-meta.xml`, whose
+     * value set is `restricted` and holds exactly `Buyer` and `Introducing Broker`.
+     */
+    @TestVisible
+    private static final String PARTY_ROLE_BUYER = 'Buyer';
+
+    /**
+     * EVERY BUYER-ROLE NDA on one Disposition, with the three timeline dates and the buyer's name —
+     * backs `DispositionBuyerTimelineService.getTimeline` -> `c/dispositionBuyerTimeline` (Tranche 2
+     * Workstream D, design D6.3).
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 `NDA_Signed__c` IS **NOT** SELECTED, AND THAT IS THE CENTRAL CORRECTNESS DECISION OF THIS
+     *    WHOLE FEATURE. DO NOT ADD IT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * That checkbox LATCHES. Even after Workstream A3 it is only ever CLEARED on `Declined`; it
+     * stays true through `Sent`, and it stayed true FOREVER for any counterparty who walked away
+     * before A3 landed. A timeline that read it would show a SIGNED NDA FOR A PARTY WHO REFUSED —
+     * beside the NDAs related list on the same page, which would say `Declined`.
+     *
+     * ⚠ AND `Date_Signed__c` ALONE IS NOT SUFFICIENT EITHER — THIS IS THE SHARPER HALF OF THE SAME
+     * TRAP. The before-save flow `NDA_Signed_Status_Sync` **NEVER CLEARS `Date_Signed__c`**, by
+     * explicit design (`NDA_Path_Disposition`: *"it never clears `Date_Signed__c` — so the historical
+     * signature date is retained while the record stops counting as signed"*). A `Signed -> Declined`
+     * party therefore keeps a NON-NULL `Date_Signed__c` forever. **The GATE is `Status__c`;
+     * `Date_Signed__c` is only the VALUE displayed once that gate passes.** Both fields are selected
+     * and the caller applies the gate — see `DispositionBuyerTimelineService`.
+     *
+     * ⚠ DECLINED PARTIES ARE RETURNED, NOT FILTERED OUT. `NDA__c.allowDelete` is FALSE on both
+     * disposition permission sets by decision D20, so they persist as audit evidence, and hiding
+     * them here would make this card DISAGREE WITH THE NDAs RELATED LIST SITTING ON THE SAME PAGE.
+     * The caller renders them as a terminated row with em-dashes in every date column. Adding
+     * `AND Status__c != 'Declined'` here would be the one change that makes this component lie.
+     *
+     * ⚠ ORDER BY carries an `Id ASC` TIE-BREAK. `CreatedDate` is SECOND-granular, so two NDAs
+     * created under one Disposition inside the same second — routine in a test transaction and
+     * reachable in a bulk load — would otherwise leave row order non-deterministic between renders.
+     * ASC (oldest first) because this is a TIMELINE: the first party to sign reads first. The caller
+     * then re-sorts declined parties LAST while preserving this order among the actives.
+     *
+     * ── 🔴 FLS: `WITH USER_MODE`, AND THE GRANTS ARE THE PRECONDITION ──────────────────────────
+     * This is a read a human explicitly asked for (they opened the Disposition record page), so
+     * ARCHITECTURE.md §2's automation-path exception does NOT apply and `SYSTEM_MODE` would be wrong
+     * here. `USER_MODE` THROWS rather than degrades, and it enforces FLS on the `WHERE` fields as
+     * well as the `SELECT` list, so **EVERY ONE of these is a gate**:
+     *   `Disposition__c`, `Party_Role__c`, `Status__c`, `Date_Signed__c`,
+     *   `Materials_Released_Date__c`, `Counterparty_Name__c`, `Buyer__c`.
+     * All SEVEN are granted in `DPEG_Disposition_View` and `DPEG_Disposition_Edit` — verified in
+     * both files, 2026-08-20. ⚠ A PermissionSet deploy REPLACES its entire `<fieldPermissions>` set,
+     * so one unrelated redeploy that drops any line takes this whole card down.
+     *
+     * 🔴 AND THERE IS AN EIGHTH GATE THAT IS **NOT** ON EITHER DISPOSITION PERMISSION SET:
+     * `Buyer__r.Name` traverses to `Contact`, and `USER_MODE` enforces OBJECT-level read on the
+     * related object. Neither `DPEG_Disposition_View` nor `_Edit` grants `Contact` — that grant lives
+     * in `DPEG_Contact_View` / `DPEG_Contact_Edit`, which are separate members of the same
+     * permission-set GROUPS (`DPEG_Principal_PSG` carries `DPEG_Disposition_View` + `DPEG_Contact_View`;
+     * `DPEG_Junior_Analyst_PSG` carries `DPEG_Disposition_Edit` + `DPEG_Contact_Edit` — both verified
+     * 2026-08-20). So this works for both intended personas TODAY, and it is a CROSS-PERMISSION-SET
+     * COUPLING rather than a self-contained one: a persona assembled from the disposition set alone
+     * would hit `QueryException` on the traversal, and the fix is to add the Contact set, never to
+     * switch this query to `SYSTEM_MODE`.
+     * ⚠ `Contact.Name` itself is `permissionable = false` and is always readable, so the gate is the
+     * OBJECT, not the field.
+     *
+     * ── ⚠ THERE IS DELIBERATELY **NO `LIMIT`** HERE, AND THE SIBLING READ WRITTEN THE SAME DAY HAS
+     *    ONE. THAT IS A DECISION, NOT AN OVERSIGHT (code review W7, 2026-08-20). ────────────────
+     * `BovBrokerChangeSelector.selectByDispositionId` caps at 200 and argues it. This one does not,
+     * for three reasons that do not transfer:
+     *
+     *   1. 🔴 A TRUNCATION HERE WOULD DROP THE **NEWEST** BUYERS, NOT THE OLDEST. That read is
+     *      `ORDER BY Entry_DateTime__c DESC` — a cap keeps the recent entries, which is what anyone
+     *      reading a log wants. This read is `ORDER BY CreatedDate ASC` because it is a TIMELINE, so
+     *      a cap would silently discard the most recently engaged parties: precisely the buyers a
+     *      sale in progress is about.
+     *   2. 🔴 A DROPPED ROW HERE IS A DISAPPEARED **PARTY**, NOT A MISSING LOG LINE, AND THIS CARD
+     *      SITS BESIDE THE RELATED LIST THAT WOULD CONTRADICT IT. The block above refuses
+     *      `AND Status__c != 'Declined'` on exactly that ground — "the one change that makes this
+     *      component lie". A `LIMIT` is the same lie with a different cause, and it is the more
+     *      dangerous one because it has no visible trigger.
+     *   3. THE ROW SET IS BOUNDED BY REALITY, NOT BY LUCK. One row per counterparty invited into one
+     *      sale's data room. The broker-change log is written by an AUTOMATED action on every
+     *      replacement, so a defect there can loop; a buyer NDA is created deliberately, one per
+     *      party, and 50,000 of them on a single Disposition is not a state this application has.
+     *
+     * ⚠ THE HEADROOM IS NOT INFINITE, SO HERE IS THE ACTUAL FAILURE MODE: far enough past any real
+     * data volume, this read THROWS rather than truncating, and the controller converts that into the
+     * card's error banner — LOUD, and pointing at real data corruption. That is strictly preferable
+     * to a card that quietly shows the first 200 of 300 buyers. If a cap is ever added, it must come
+     * WITH a visible "showing the first N" affordance in `c/dispositionBuyerTimeline`; a silent one
+     * is the wrong answer at any N.
+     *
+     * ⚠ CORRECTED 2026-08-20 (re-review S2) — THE BOUNDARY WAS NAMED, AND THE NAME WAS WRONG. The
+     * paragraph above used to read: *"at 50,000 matching rows this throws `QueryException: Too many
+     * query rows`"*. 50,000 is the wrong number and `QueryException` is probably the wrong exception.
+     * This SELECT returns eight columns per row, one of which (`Buyer__r.Name`) materialises a child
+     * sObject on every row, so the 6 MB synchronous HEAP ceiling arrives well before the 50,000-row
+     * query-rows ceiling does — the likelier first throw is `System.LimitException: Apex heap size
+     * too large`. 🔴 THE CONCLUSION ABOVE IS UNCHANGED AND MUST STAY: both limits THROW and neither
+     * TRUNCATES, so "no LIMIT" still means "loud failure, never a quiet half-answer". Only the cited
+     * boundary was wrong. Do not read this correction as an argument for adding a `LIMIT`, and do not
+     * replace 50,000 with another guessed number — the point is the SHAPE of the failure, not its
+     * coordinate.
+     *
+     * @param dispositionId Parent Disposition__c Id; null-safe.
+     * @return Buyer-role NDAs with Id, Buyer__c, Buyer__r.Name, Counterparty_Name__c, Status__c,
+     *         Date_Signed__c, Materials_Released_Date__c and Party_Role__c populated, oldest first;
+     *         an empty list when the input is null or the Disposition has no buyer NDA (never null).
+     * @throws System.QueryException when the running user lacks read on `NDA__c`, on `Contact`, or
+     *         on any of the seven custom fields above. The caller converts it to an
+     *         `AuraHandledException` — see `DispositionBuyerTimelineController`.
+     * @example
+     * List&lt;NDA__c&gt; ndas = NdaSelector.selectBuyerTimelineByDispositionId(dispositionId);
+     */
+    public static List<NDA__c> selectBuyerTimelineByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<NDA__c>();
+        }
+        String buyerRole = PARTY_ROLE_BUYER;
+        return [
+            SELECT Id, Buyer__c, Buyer__r.Name, Counterparty_Name__c, Status__c, Date_Signed__c,
+                   Materials_Released_Date__c, Party_Role__c
+            FROM NDA__c
+            WHERE Disposition__c = :dispositionId
+              AND Party_Role__c = :buyerRole
+            WITH USER_MODE
+            ORDER BY CreatedDate ASC, Id ASC
         ];
     }
 

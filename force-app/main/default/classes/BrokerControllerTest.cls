@@ -9,9 +9,17 @@ private class BrokerControllerTest {
         applyBroker(brokers[1], 'Nguyen', 'JLL', 'Office', 'Active', 5, 7, 18000000, 110);
         applyBroker(brokers[2], 'Alvarez', 'Newmark', 'Industrial', 'Active', 2, 3, 6000000, 60);
         applyBroker(brokers[3], 'Cole', 'Colliers', 'Land', 'Inactive', 0, 0, 0, 0);
-        Contact nonBroker = TestDataFactory.createContact(null, false);
+        // ⚠ FIXTURE REPOINTED 2026-08-20 — this was `createContact(null, false)` with
+        // `Is_Broker__c = false`, which was NEVER a non-broker fixture: TestDataFactory stamps the
+        // `Contact.Broker` record type on every Contact it builds and only leaves the checkbox
+        // false. That was harmless while the checkbox WAS the broker definition; once the
+        // definition moved to the record type this row became a fifth BROKER and every count below
+        // would have read one too high (`totalBrokers` 4 -> 5, `hub.brokers.size()` 4 -> 5) while
+        // still calling itself "excludes non-broker". The assertions are unchanged on purpose —
+        // this row is the only thing in this class proving the hub filters at all.
+        // `createNonBrokerContacts` fails BOTH definitions; see its ApexDoc.
+        Contact nonBroker = TestDataFactory.createNonBrokerContact(null, false);
         nonBroker.LastName = 'NotABroker';
-        nonBroker.Is_Broker__c = false;
         brokers.add(nonBroker);
         insert brokers;
     }

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        Precedent name: Lease_Activity__c.Logged_By__c. Same reasoning as Entry_DateTime__c in
+        this folder - CreatedById is free and would cover the same fact, and the explicit field
+        is used here only to mirror the existing four-instance pattern (design O-4).
+
+        RELATIONSHIP NAME COLLISION CHECKED ON THE User PARENT, MEASURED NOT ASSUMED: thirteen
+        fields in this repo carry referenceTo User (Owner_User__c, UW_Approved_By__c,
+        Lead_Approved_By__c, LOI_Prep_Approved_By__c, Legal_Owner__c, Handling_Person__c x2,
+        Logged_By__c on Lease_Activity__c, Approved_By__c, Requested_By__c x2, DPEG_First__c,
+        IR_Owner__c) using relationshipNames including Owned_Work_Orders,
+        UW_Approved_Opportunities, Lead_Approved_Deals, LOI_Prep_Approved_Opportunities,
+        Handled_Lease_Renewals, Lease_Activities, Approved_LOIs, Requested_Development_Reviews,
+        Requested_Construction_Reviews, DPEG_First_Leads and IR_Offerings. BOV_Broker_Changes is
+        free on the User parent (relationship names are unique per parent object, so this does
+        not collide with the identically-named relationshipName already used on the
+        Disposition__c parent by this object's own Disposition__c field).
+    -->
+    <fullName>Logged_By__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The user who logged this broker change.</description>
+    <inlineHelpText>Who recorded this broker change.</inlineHelpText>
+    <label>Logged By</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>BOV Broker Changes</relationshipLabel>
+    <relationshipName>BOV_Broker_Changes</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

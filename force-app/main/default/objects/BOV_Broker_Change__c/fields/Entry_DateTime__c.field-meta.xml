@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy.
+
+        Matches the four-instance append-only-log convention (Lease_Activity__c.Entry_DateTime__c,
+        Deal_Message__c.Entry_DateTime__c) rather than the free CreatedDate/CreatedById system
+        fields (design O-4). CreatedDate/CreatedById would have covered the same two facts and
+        are free - the explicit fields are used here only because the brief specifies mirroring
+        the existing pattern, and that pattern uses explicit fields. Flag to the user if the free
+        system fields would be preferred instead.
+    -->
+    <fullName>Entry_DateTime__c</fullName>
+    <defaultValue>NOW()</defaultValue>
+    <description>When this broker change happened. Defaults to now on create; orders the append-only history.</description>
+    <inlineHelpText>Date AND time the broker change actually happened - not necessarily when it was logged. Defaults to now; backdate it if recording an earlier change.</inlineHelpText>
+    <label>Entry DateTime</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

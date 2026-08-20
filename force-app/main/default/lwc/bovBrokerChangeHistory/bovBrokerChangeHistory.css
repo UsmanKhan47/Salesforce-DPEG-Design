@@ -1,0 +1,145 @@
+/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom colour below is a token with a
+   literal fallback, matching c/brokerAssignmentHistory's shape — that component is this one's
+   PRESENTATION model, so the two are kept visually interchangeable on purpose. */
+
+:host { display: block; }
+
+.bbc-card {
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e2e0db);
+    border-radius: var(--slds-g-radius-border-2, 8px);
+    box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
+    overflow: hidden;
+}
+
+.bbc-body {
+    padding: 10px var(--slds-g-spacing-5, 24px) 18px;
+}
+
+.bbc-intro {
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    color: var(--slds-g-color-neutral-base-30, #524f4a);
+    margin: 6px 0 2px;
+}
+
+.bbc-mono { font-variant-numeric: tabular-nums; }
+
+/* ===== a recorded change ===== */
+.bbc-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px var(--slds-g-spacing-4, 16px);
+    margin-top: 10px;
+    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e2e0db);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border-radius: var(--slds-g-radius-border-2, 8px);
+}
+
+.bbc-left { min-width: 0; }
+
+.bbc-swap {
+    display: flex;
+    align-items: center;
+    gap: var(--slds-g-spacing-2, 8px);
+    flex-wrap: wrap;
+}
+
+/* The replaced firm is de-emphasised and the appointed firm is not — the row reads
+   left-to-right as "this became that". */
+.bbc-outgoing {
+    font-size: var(--slds-g-font-scale-1, 14px);
+    color: var(--slds-g-color-neutral-base-60, #8a8680);
+    text-decoration: line-through;
+}
+
+.bbc-incoming {
+    font-weight: var(--slds-g-font-weight-6, 600);
+    font-size: var(--slds-g-font-scale-1, 14px);
+    color: var(--slds-g-color-on-surface-2, #1a1714);
+}
+
+.bbc-arrow { --slds-c-icon-color-foreground-default: var(--slds-g-color-neutral-base-60, #8a8680); }
+
+/* ===== notes ===== */
+.bbc-notes {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    color: var(--slds-g-color-neutral-base-30, #524f4a);
+    margin-top: 5px;
+}
+.bbc-notes--clip { max-width: 100%; }
+.bbc-notes-lbl {
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-neutral-base-30, #3e3b37);
+    flex-shrink: 0;
+}
+.bbc-notes-txt { min-width: 0; }
+.bbc-notes--clip .bbc-notes-txt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.bbc-notes-view {
+    flex-shrink: 0;
+    border: none;
+    background: none;
+    color: var(--slds-g-color-brand-base-50, #1565c0);
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    font-weight: var(--slds-g-font-weight-6, 600);
+    cursor: pointer;
+    padding: 0;
+}
+.bbc-notes-view:hover { text-decoration: underline; }
+
+/* ===== right column ===== */
+.bbc-right { text-align: right; flex-shrink: 0; }
+.bbc-when {
+    font-size: var(--slds-g-font-scale-neg-1, 12px);
+    color: var(--slds-g-color-neutral-base-30, #524f4a);
+}
+.bbc-reason {
+    font-size: 11px;
+    color: var(--slds-g-color-neutral-base-60, #8a8680);
+    margin-top: 3px;
+}
+.bbc-loggedby {
+    font-size: 11px;
+    color: var(--slds-g-color-neutral-base-60, #8a8680);
+    margin-top: 2px;
+}
+
+/* ===== empty vs unavailable =====
+   🔴 TWO STATES, TWO CLASSES, NEITHER OF THEM AN ERROR STYLE. Empty is the majority state of this
+   card and must look completely ordinary; unavailable is rarer and is only ITALICISED, not coloured
+   red and not given an error surface — see the component header for why a secondary informational
+   card does not get to raise an alarm. Do NOT restyle either of these using the shared `.lv-error`
+   look used elsewhere in this repo. */
+.bbc-empty {
+    font-size: var(--slds-g-font-scale-base, 13px);
+    color: var(--slds-g-color-neutral-base-60, #8a8680);
+    padding: var(--slds-g-spacing-3, 12px) 0 var(--slds-g-spacing-1, 4px);
+}
+.bbc-unavailable {
+    font-size: var(--slds-g-font-scale-base, 13px);
+    color: var(--slds-g-color-neutral-base-60, #8a8680);
+    font-style: italic;
+    padding: var(--slds-g-spacing-3, 12px) 0 var(--slds-g-spacing-1, 4px);
+}
+
+/* ===== full-note popup ===== */
+.bbc-note-sub {
+    font-size: var(--slds-g-font-scale-base, 13px);
+    color: var(--slds-g-color-neutral-base-60, #8a8680);
+    margin-top: var(--slds-g-spacing-1, 4px);
+}
+.bbc-note-full {
+    font-size: var(--slds-g-font-scale-1, 14px);
+    color: var(--slds-g-color-on-surface-2, #1a1714);
+    line-height: var(--slds-g-font-line-height-4, 1.5);
+    white-space: pre-wrap;
+    word-break: break-word;
+}

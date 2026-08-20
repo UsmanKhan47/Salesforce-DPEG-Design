@@ -16,10 +16,13 @@
  *   - DispositionApprovalService.submitForApproval / selectOffer
  *                                             -> selectApprovalContextById (redesign, 2026-08-19)
  *   - DispositionApprovalAdvanceService.advance -> selectStageAndTypeByIds (redesign, 2026-08-19)
+ *   - DispositionDealSummaryService.summarise -> selectNdaCountsById (Tranche 2 Workstream C,
+ *                                              2026-08-20)
  *
- * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. Four
+ * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. FIVE
  * controller-backed reads are `WITH USER_MODE` (selectMostRecentByPropertyAssetId,
- * selectClosingSummaryById, selectOutreachById, selectApprovalContextById); four are
+ * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectNdaCountsById);
+ * four are
  * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception (selectStagesByIds,
  * selectListingClockByIds, selectStageRequiredById, selectStageAndTypeByIds), each justified at
  * its own declaration — which is where §2 says the authoritative inventory lives. The sentence
@@ -40,7 +43,12 @@
  * `DispositionOfferSelector` reaches the OTHER answer for the same feature. `SYSTEM_MODE` never
  * implies `without sharing`; it is always a second, separate question.
  *
- * MODE (the three USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
+ * ⚠ THE NEXT SENTENCE USED TO OPEN "MODE (the three USER_MODE reads)" AND HAS BEEN CORRECTED
+ * RATHER THAN DELETED — it said THREE while the paragraph above it listed FOUR, and as of
+ * 2026-08-20 there are FIVE. Re-count against the method list, never against a sentence; a stale
+ * count in this exact position is the defect NdaSelector's header records propagating into
+ * ARCHITECTURE.md twice.
+ * MODE (the five USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
  * FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS. USER_MODE also
  * covers the Wires__r relationship subquery (Wire__c is likewise custom, FLS gap 0).
  *
@@ -153,6 +161,62 @@ public with sharing class DispositionSelector {
             WITH USER_MODE
             LIMIT 1
         ];
+    }
+
+    /**
+     * The two maintained NDA counters for one Disposition — backs the NDA row of the Deal Summary
+     * card (`DispositionDealSummaryService` -> `c/dispositionDealSummary`), which renders them as
+     * "3 of 4 signed". Added 2026-08-20, Tranche 2 Workstream C (design D5).
+     *
+     * ⚠ THIS METHOD IS NOT IN THE D5 DELIVERABLE LIST AND WAS ADDED DELIBERATELY. D5 names the
+     * counters as card content and names only three selectors to edit, none of which owns
+     * `Disposition__c`. The alternatives were both worse: SOQL in the service or the controller
+     * violates `.claude/rules/apex-layering-rule.md` outright, and a `getRecord` wire for these
+     * two fields alone would give one card two data sources with two independent refresh clocks
+     * and two different failure shapes (D5 itself floats that hybrid only as "an alternative if
+     * the user prefers LDS", while directing that the Apex version ship). One selector method is
+     * the smallest correct answer.
+     *
+     * 🔴 BOTH COUNTERS ARE `DERIVED - DO NOT HAND-EDIT` AND ARE NULL, NOT ZERO, ON PRE-EXISTING
+     * ROWS. They are maintained by the `NDA_Signed_Rollup` AFTER-SAVE FLOW — not a roll-up summary
+     * (every child->Disposition relationship on this object is a Lookup, so no roll-up is possible)
+     * and not Apex. A Disposition that existed before that flow, or that has never had an NDA,
+     * holds null in both. Every existing reader wraps them in `BLANKVALUE(...,0)`; this method
+     * returns them RAW and the coalescing happens once, in the client
+     * (`dispositionDealSummary.js`), so that the Apex DTO cannot quietly report a real null as a
+     * confident "0 of 0". Do not "helpfully" coalesce here as well.
+     *
+     * READ-FOR-DISPLAY, null on miss — and that is a DEPARTURE from the two fetch-for-use reads
+     * above it (`selectClosingSummaryById` / `selectOutreachById`), which throw. Those back cards
+     * whose entire content is the Disposition. This one backs ONE ROW of a card that must survive
+     * on all 11 stages, and its caller fails soft per row; returning null lets a vanished or
+     * unreadable parent degrade one line instead of raising an exception the caller would only
+     * swallow anyway.
+     *
+     * ── FLS: `WITH USER_MODE` — a read the user asked for by opening the record page ──
+     * ARCHITECTURE.md §2's automation-path exception does not apply. Both fields are granted in
+     * `DPEG_Disposition_View` and `DPEG_Disposition_Edit` (verified 2026-08-20); a PermissionSet
+     * deploy REPLACES its whole `<fieldPermissions>` set, so the caller's narrow fail-soft catch
+     * stands behind the grant rather than instead of it.
+     *
+     * @param dispositionId Disposition__c Id to read the NDA counters for; null-safe.
+     * @return The Disposition__c with Id, NDA_Count__c and Signed_NDA_Count__c populated — either
+     *         may be null — or null when the input is null or the row is not visible.
+     * @example
+     * Disposition__c d = DispositionSelector.selectNdaCountsById(dispositionId);
+     */
+    public static Disposition__c selectNdaCountsById(Id dispositionId) {
+        if (dispositionId == null) {
+            return null;
+        }
+        List<Disposition__c> rows = [
+            SELECT Id, NDA_Count__c, Signed_NDA_Count__c
+            FROM Disposition__c
+            WHERE Id = :dispositionId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+        return rows.isEmpty() ? null : rows[0];
     }
 
     /**

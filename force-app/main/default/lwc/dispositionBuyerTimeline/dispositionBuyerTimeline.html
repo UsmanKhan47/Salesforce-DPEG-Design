@@ -1,0 +1,62 @@
+<template>
+    <!-- ERROR: visible and loud. The controller throws rather than returning an empty list
+         precisely so this branch exists — a silent blank card would be a confident wrong answer. -->
+    <template if:true={hasError}>
+        <div class="dbt-card dbt-error" role="alert">
+            <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+            <span>{loadError}</span>
+        </div>
+    </template>
+
+    <template if:true={isEmpty}>
+        <div class="dbt-card dbt-empty">
+            <p>No buyer NDAs yet. Rows appear here as buyers are engaged on this disposition.</p>
+        </div>
+    </template>
+
+    <template if:true={hasRows}>
+        <div class="dbt-card">
+            <div class="dbt-body">
+                <p class="dbt-intro" id="dbt-intro">
+                    Every buyer engaged on this disposition, in order. Parties who declined are kept
+                    as a record and shown last.
+                </p>
+
+                <!-- Column headings. A real header row rather than per-cell labels, so the table
+                     reads once and every row below is scannable against it. -->
+                <div class="dbt-row dbt-head" aria-hidden="true">
+                    <span class="dbt-c dbt-c-buyer">Buyer</span>
+                    <span class="dbt-c">NDA signed</span>
+                    <span class="dbt-c">Materials released</span>
+                    <span class="dbt-c">First offer</span>
+                    <span class="dbt-c">Days to release</span>
+                    <span class="dbt-c">Days to respond</span>
+                </div>
+
+                <template for:each={timelineRows} for:item="row">
+                    <!-- ⚠ ACCESSIBILITY: the row's state travels as READABLE TEXT — the visible
+                         "Declined" badge below AND this aria-label. Colour alone is not a state. -->
+                    <div key={row.id} class={row.rowClass} role="group" aria-label={row.rowLabel}>
+                        <span class="dbt-c dbt-c-buyer">
+                            <span class="dbt-buyer">{row.buyerName}</span>
+                            <template if:true={row.isDeclined}>
+                                <span class="dbt-badge dbt-badge--declined">Declined</span>
+                            </template>
+                            <template if:true={row.hasAnomaly}>
+                                <span class="dbt-badge dbt-badge--anomaly"
+                                      title="These dates are out of order, so the durations cannot be shown.">
+                                    Check dates
+                                </span>
+                            </template>
+                        </span>
+                        <span class="dbt-c dbt-mono">{row.ndaSigned}</span>
+                        <span class="dbt-c dbt-mono">{row.materialsReleased}</span>
+                        <span class="dbt-c dbt-mono">{row.firstOffer}</span>
+                        <span class="dbt-c dbt-mono">{row.daysToRelease}</span>
+                        <span class="dbt-c dbt-mono">{row.daysToRespond}</span>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+</template>

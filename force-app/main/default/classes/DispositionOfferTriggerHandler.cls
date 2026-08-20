@@ -10,13 +10,15 @@
  * deleted because what it was actually explaining — why the offer's own status is written in the
  * BEFORE context — is unchanged and is argued in full below.
  *
- *   before insert -> 🔴 NEW 2026-08-20. ONLY the single-selected guard. Nothing else: an insert
- *                    cannot be an approval TRANSITION (`Approval_Status__c` cannot have changed on
- *                    a row that did not exist), so `stampAcceptedStatus` has nothing to detect here
- *                    and is deliberately NOT called. See the trigger file's header for the
- *                    blast-radius argument.
- *   before update -> `Offer_Status__c = 'Accepted'` on the offer itself (in memory, ZERO DML), and
- *                    the single-selected guard.
+ *   before insert -> 🔴 NEW 2026-08-20. The single-selected guard, and (later the same day,
+ *                    Workstream D) the buyer-name stamp. `stampAcceptedStatus` is deliberately NOT
+ *                    called: an insert cannot be an approval TRANSITION (`Approval_Status__c` cannot
+ *                    have changed on a row that did not exist), so it has nothing to detect here.
+ *                    ⚠ The buyer stamp IS called, and that asymmetry is argued at the method — it
+ *                    derives a field from a VALUE, not from a transition. See the trigger file's
+ *                    header for the blast-radius argument.
+ *   before update -> `Offer_Status__c = 'Accepted'` on the offer itself (in memory, ZERO DML), the
+ *                    single-selected guard, and the buyer-name stamp.
  *   after update  -> the PARENT Disposition: stage `Offer Selection` -> `LOI` (guarded), and
  *                    `Accepted_Offer_Price__c` stamped from `Offer_Amount__c` (unguarded)
  *
@@ -126,9 +128,14 @@
  *   afterUpdate  ONE selector query + ONE `Database.update` per chunk.
  *   before*      ZERO statements for the `Offer_Status__c` stamp (an in-memory assignment at any
  *                record count) + AT MOST ONE query and ZERO DML for the single-selected guard,
- *                which returns before querying when no row is becoming selected.
- * All CONSTANT in the number of offers. A chunk in which no offer became Approved-and-Selected and
- * none became selected costs nothing at all.
+ *                which returns before querying when no row is becoming selected + AT MOST ONE query
+ *                and ZERO DML for the buyer-name stamp (2026-08-20, Workstream D), which likewise
+ *                returns before querying when no row changed `Buyer__c`.
+ * All CONSTANT in the number of offers. A chunk in which no offer became Approved-and-Selected,
+ * none became selected and none changed its buyer costs nothing at all.
+ * ⚠ THE BEFORE-CONTEXT WORST CASE IS THEREFORE **TWO** QUERIES PER CHUNK, NOT ONE. Both are
+ * per-chunk constants, so the ceiling does not move with record count; the number is stated because
+ * "AT MOST ONE query" was true of this context until Workstream D and a reader may be carrying it.
  *
  * @see force-app/main/default/classes/BovSubmissionTriggerHandler.cls (the sibling child approval)
  * @see force-app/main/default/classes/DispositionApprovalService.cls (what SELECTS the offer)
@@ -170,6 +177,16 @@ public with sharing class DispositionOfferTriggerHandler extends TriggerHandler 
             (List<Disposition_Offer__c>) newList,
             null
         );
+        // 🔴 THE BUYER-NAME STAMP **DOES** RUN ON INSERT, UNLIKE `stampAcceptedStatus` ABOVE, AND
+        // THE DIFFERENCE IS NOT ARBITRARY. That method detects a TRANSITION (`Approval_Status__c`
+        // CHANGING to 'Approved'), which is unreachable on a row that did not previously exist. This
+        // one derives a field from a VALUE (`Buyer__c`), and an offer CREATED naming a buyer Contact
+        // must carry its `Buyer_Name__c` from that very first save — otherwise the offer inserts with
+        // a blank name and `Buyer_Required_On_Offer` refuses it. Same `null` old-map convention.
+        DispositionOfferBuyerStampService.stampBuyerName(
+            (List<Disposition_Offer__c>) newList,
+            null
+        );
     }
 
     /**
@@ -185,6 +202,10 @@ public with sharing class DispositionOfferTriggerHandler extends TriggerHandler 
             (Map<Id, Disposition_Offer__c>) oldMap
         );
         DispositionOfferSelectionGuardService.enforceSingleSelected(
+            (List<Disposition_Offer__c>) newList,
+            (Map<Id, Disposition_Offer__c>) oldMap
+        );
+        DispositionOfferBuyerStampService.stampBuyerName(
             (List<Disposition_Offer__c>) newList,
             (Map<Id, Disposition_Offer__c>) oldMap
         );

@@ -1,7 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        REMOVED 2026-08-20: <excludeButtons>SmartFillEnrich</excludeButtons>. This line arrived
+        via a RETRIEVE from usman-dpeg (commit b426598, "Retrieve Notes & Attachments onto the
+        LOI, NDA and PSA Version layouts"), not hand-authored, and it blocked every subsequent
+        deploy of this file with:
+          "In field: excludeButtons, no such standard action: SmartFillEnrich"
+        Verified safe to remove, not just to silence: SmartFillEnrich is not a QuickActionDefinition
+        in this org, and - the decisive check - is absent from the full standard-action inventory
+        the UI API actions endpoint returns for a live LOI__c record (Edit, LOI__c.Submit_for_Approval,
+        Delete, Global.NewTask, Global.LogACall, Global.NewEvent, Global.SendEmail - no
+        SmartFillEnrich). Contrast with the OpenSlackRecordChannel exclusion retained just below:
+        that one deploys cleanly with no error, proving the validator DOES recognize real standard
+        action names when excluded - it specifically does not recognize SmartFillEnrich as one.
+        excludeButtons only ever HIDES a button; excluding one that does not exist is a no-op, so
+        deleting the exclusion changes nothing a user sees.
+        🔴 A future retrieve of this layout from the same org will RE-INTRODUCE this line (the org
+        emits the token on retrieve even though it rejects it on deploy - a platform asymmetry).
+        Whoever hits that should re-apply this same removal rather than re-investigate from
+        scratch.
+    -->
     <excludeButtons>OpenSlackRecordChannel</excludeButtons>
-    <excludeButtons>SmartFillEnrich</excludeButtons>
     <layoutSections>
         <customLabel>true</customLabel>
         <detailHeading>true</detailHeading>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Deal Summary</masterLabel>
+    <!--
+        The description below is 227 characters (counted, not estimated). The Metadata API caps
+        it at 255 and ONLY a
+        deploy catches a breach - Jest, the SLDS linter and code review have all passed a
+        258-character one in this repo. Count it before editing, and keep this comment INSIDE
+        the root element (a comment above the root breaks sf at source conversion).
+    -->
+    <description>Latest NDA, LOI and PSA status for one sale, with the signed-NDA count. Ungated: it renders on every disposition stage. Each row fails soft, so a permission gap on one object degrades a single line instead of blanking the card.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <!--
+                🔴 RESTRICTED TO Disposition__c (code review W5, 2026-08-20). Without this the card
+                could be dropped on ANY record page, and it would not error there: every read behind
+                it is WHERE Disposition__c = :id, which matches no rows rather than throwing, so a
+                misplaced instance renders a confident, permanent EMPTY summary that looks exactly
+                like a sale that has not started. The controller now also refuses a foreign Id at the
+                server (code review C4) - this is the declarative half of the same guard, and it is
+                the half that stops the mistake being made at all.
+
+                The ELEMENT form. The objects= ATTRIBUTE form is rejected by the Metadata API - see
+                marketDataSync.js-meta.xml, where that was measured.
+            -->
+            <objects>
+                <object>Disposition__c</object>
+            </objects>
+            <!--
+                🔴 THIS PROPERTY IS NOW THE ONLY DECLARATION OF recordId FOR THIS CARD - KEEP IT.
+                Resolved 2026-08-20: Disposition_Record_Page no longer carries a
+                componentInstanceProperties block for this component. The empty one it had was
+                deleted, so the card now matches the three siblings on that page that are known to
+                work, and recordId is supplied by the record page context against the declaration
+                below. Delete this element and there is nothing left on either side that names
+                recordId.
+
+                An earlier version of this comment described the FlexiPage defect as OPEN and listed
+                two candidate fixes pending another agent's decision. That decision has been made -
+                the FlexiPage side was chosen - and this file was correct to leave the property
+                alone. ⚠ Do not restate the claim that an empty-valued property block BREAKS the
+                card: it was formally retracted as unproven, since dispositionMain carries the
+                identical block and renders in production.
+            -->
+            <property name="recordId" type="String" />
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

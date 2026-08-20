@@ -35,6 +35,38 @@
                     required
                 ></lightning-radio-group>
 
+                <!-- Reason is REQUIRED and its options come from getPicklistValues — never from a
+                     hardcoded array. See the component header. -->
+                <lightning-combobox
+                    class="brb-reason slds-m-top_small"
+                    name="reason"
+                    label="Reason for the change"
+                    placeholder="Choose a reason"
+                    options={reasonOptions}
+                    value={reason}
+                    onchange={handleReasonChange}
+                    required
+                ></lightning-combobox>
+
+                <template lwc:if={reasonLoadError}>
+                    <div
+                        class="lv-error slds-text-color_error slds-m-top_x-small"
+                        role="alert"
+                    >
+                        {reasonLoadError}
+                    </div>
+                </template>
+
+                <lightning-textarea
+                    class="brb-notes slds-m-top_small"
+                    name="notes"
+                    label="Notes (optional)"
+                    placeholder="Anything the next reader of this sale should know."
+                    value={notes}
+                    onchange={handleNotesChange}
+                    max-length="32768"
+                ></lightning-textarea>
+
                 <template lwc:if={error}>
                     <div
                         class="lv-error slds-text-color_error slds-m-top_small"

@@ -19,9 +19,22 @@
  *    so: refusals here are about the CHOSEN SUBMISSION, so picking a different backup is a real
  *    remedy. There, refusals are properties of the asset and a retry is pointless.
  * 3. Confirm is disabled until a backup is chosen, and the Apex parameters are `dispositionId` /
- *    `newSubmissionId` verbatim — an imperative call binds by NAME.
+ *    `newSubmissionId` / `reason` / `notes` verbatim — an imperative call binds by NAME.
+ * 4. 🔴 THE REASON OPTIONS COME FROM `getPicklistValues` AND ARE NOT AUTHORED IN JS (2026-08-20,
+ *    Tranche 2 Workstream B). The suite asserts the combobox's options are the wire's payload
+ *    passed through, and — the falsifier that matters — that a value the wire emits which appears
+ *    NOWHERE in this repo's source still reaches the combobox. That is what would fail if somebody
+ *    "simplified" the wire into a constant array: a hardcoded list keeps passing an equality check
+ *    against a fixture built from the same list.
+ * 5. A FAILED PICKLIST READ BLOCKS THE ACTION, it does not degrade it into an unattributed swap.
+ *
+ * ⚠ THE PICKLIST FIXTURE IS THE PLATFORM'S REAL PAYLOAD SHAPE, not a convenient one. `data.values`
+ * entries carry `attributes` / `validFor` alongside `label` / `value`; the component passes the
+ * array straight to lightning-combobox, so a fixture trimmed to `{label, value}` would quietly
+ * stop proving that pass-through works on what LDS actually sends.
  */
 import { createElement } from 'lwc';
+import { getObjectInfo, getPicklistValues } from 'lightning/uiObjectInfoApi';
 import BovReplaceBrokerModal from 'c/bovReplaceBrokerModal';
 import replaceSelectedBroker from '@salesforce/apex/BovController.replaceSelectedBroker';
 
@@ -34,6 +47,37 @@ jest.mock(
 const DISPOSITION_ID = 'a0D5g000000DispEAG';
 const SUB_B = 'a0X010000000002';
 const SUB_C = 'a0X010000000003';
+
+/** getObjectInfo's only load-bearing member here: the master record type. */
+const OBJECT_INFO = {
+    apiName: 'BOV_Broker_Change__c',
+    defaultRecordTypeId: '012000000000000AAA',
+    fields: {}
+};
+
+const picklistValue = (v) => ({
+    attributes: null,
+    label: v,
+    validFor: [],
+    value: v
+});
+
+/**
+ * ⚠ 'Deliberately Not In Source' is not a real picklist value and that is the point — it stands in
+ * for a value an admin adds in Setup tomorrow. A hardcoded options array in the component could
+ * never produce it, so any test asserting it reaches the combobox is a genuine falsifier for
+ * "the options are sourced from LDS".
+ */
+const REASON_PAYLOAD = {
+    controllerValues: {},
+    defaultValue: null,
+    url: '/services/data/v67.0/ui-api/object-info/BOV_Broker_Change__c/picklist-values/012000000000000AAA/Reason__c',
+    values: [
+        picklistValue('Performance Issue'),
+        picklistValue('Better BOV Received'),
+        picklistValue('Deliberately Not In Source')
+    ]
+};
 
 const PROPS = {
     dispositionId: DISPOSITION_ID,
@@ -58,16 +102,38 @@ describe('c-bov-replace-broker-modal', () => {
         jest.clearAllMocks();
     });
 
+    /**
+     * Mounts and drives BOTH LDS wires to a loaded state, which is the state every test other than
+     * the picklist-failure one assumes. Emits are UNFILTERED, so they broadcast regardless of
+     * whether each wire's config has settled yet — a filtered emit here would silently reach nobody
+     * before the first microtask.
+     */
     function createComponent(props = PROPS) {
         const element = createElement('c-bov-replace-broker-modal', {
             is: BovReplaceBrokerModal
         });
         Object.assign(element, props);
         document.body.appendChild(element);
+        getObjectInfo.emit(OBJECT_INFO);
+        getPicklistValues.emit(REASON_PAYLOAD);
+        return element;
+    }
+
+    /** Mounts WITHOUT resolving the reason picklist — for the load-failure path. */
+    function createComponentWithFailedReasons(props = PROPS) {
+        const element = createElement('c-bov-replace-broker-modal', {
+            is: BovReplaceBrokerModal
+        });
+        Object.assign(element, props);
+        document.body.appendChild(element);
+        getObjectInfo.emit(OBJECT_INFO);
+        getPicklistValues.error();
         return element;
     }
 
     const radio = (el) => el.shadowRoot.querySelector('lightning-radio-group');
+    const reasonBox = (el) => el.shadowRoot.querySelector('.brb-reason');
+    const notesBox = (el) => el.shadowRoot.querySelector('.brb-notes');
     const confirmBtn = (el) => el.shadowRoot.querySelector('.brb-confirm');
     const cancelBtn = (el) => el.shadowRoot.querySelector('.brb-cancel');
 
@@ -76,6 +142,26 @@ describe('c-bov-replace-broker-modal', () => {
             new CustomEvent('change', { detail: { value } })
         );
         return Promise.resolve();
+    }
+
+    function chooseReason(element, value) {
+        reasonBox(element).dispatchEvent(
+            new CustomEvent('change', { detail: { value } })
+        );
+        return Promise.resolve();
+    }
+
+    function typeNotes(element, value) {
+        notesBox(element).dispatchEvent(
+            new CustomEvent('change', { detail: { value } })
+        );
+        return Promise.resolve();
+    }
+
+    /** The minimum a user must supply before Confirm enables. */
+    async function fillRequiredFields(element, submissionId = SUB_B) {
+        await chooseBackup(element, submissionId);
+        await chooseReason(element, 'Performance Issue');
     }
 
     it('lists the caller-supplied backups verbatim and names the incumbent', async () => {
@@ -104,7 +190,7 @@ describe('c-bov-replace-broker-modal', () => {
         expect(element.shadowRoot.textContent).not.toContain('undefined');
     });
 
-    it('GATE: confirm is disabled until a backup is chosen, and clicking it calls no Apex', async () => {
+    it('GATE: confirm needs BOTH a backup and a reason, and clicking it early calls no Apex', async () => {
         const element = createComponent();
 
         await Promise.resolve();
@@ -113,25 +199,87 @@ describe('c-bov-replace-broker-modal', () => {
         await flushPromises();
         expect(replaceSelectedBroker).not.toHaveBeenCalled();
 
+        // A backup alone is NOT enough — the reason is half the gate, matching the server rule.
         await chooseBackup(element, SUB_B);
+        expect(confirmBtn(element).disabled).toBe(true);
+        confirmBtn(element).click();
+        await flushPromises();
+        expect(replaceSelectedBroker).not.toHaveBeenCalled();
+
+        await chooseReason(element, 'Performance Issue');
         expect(confirmBtn(element).disabled).toBe(false);
     });
 
-    it('SUCCESS: calls Apex by NAME and closes carrying the SERVER message unchanged', async () => {
+    it('GATE: a reason alone, with no backup chosen, also leaves confirm disabled', async () => {
+        const element = createComponent();
+
+        await chooseReason(element, 'Company Decision');
+
+        expect(confirmBtn(element).disabled).toBe(true);
+        confirmBtn(element).click();
+        await flushPromises();
+        expect(replaceSelectedBroker).not.toHaveBeenCalled();
+    });
+
+    it('REASONS: offers exactly what getPicklistValues emitted — including a value found NOWHERE in this repo', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        // Pass-through, not re-mapped: the wire's own option shape IS lightning-combobox's.
+        expect(reasonBox(element).options).toEqual(REASON_PAYLOAD.values);
+        // 🔴 THE FALSIFIER for "the options are not hardcoded". No array authored in
+        // bovReplaceBrokerModal.js could contain this value; it exists only in the wire payload.
+        expect(
+            reasonBox(element).options.map((o) => o.value)
+        ).toContain('Deliberately Not In Source');
+        expect(reasonBox(element).required).toBe(true);
+        // No load error while the wire is healthy.
+        expect(element.shadowRoot.querySelector('.lv-error')).toBeNull();
+    });
+
+    it('REASONS: a failed picklist read BLOCKS the replace and explains itself', async () => {
+        const element = createComponentWithFailedReasons();
+
+        await Promise.resolve();
+
+        expect(reasonBox(element).options).toEqual([]);
+        const banner = element.shadowRoot.querySelector('.lv-error');
+        expect(banner).not.toBeNull();
+        expect(banner.textContent).toContain('could not be loaded');
+        expect(banner.getAttribute('role')).toBe('alert');
+
+        // 🔴 NOT DEGRADED INTO AN UNATTRIBUTED SWAP. Choosing a backup is still not enough, because
+        // no reason can be chosen — and an unexplained broker change is the exact row the history
+        // object exists to prevent.
+        await chooseBackup(element, SUB_B);
+        expect(confirmBtn(element).disabled).toBe(true);
+        confirmBtn(element).click();
+        await flushPromises();
+        expect(replaceSelectedBroker).not.toHaveBeenCalled();
+    });
+
+    it('SUCCESS: calls Apex by NAME with reason and notes, and closes carrying the SERVER message unchanged', async () => {
         replaceSelectedBroker.mockResolvedValue(SERVER_MESSAGE);
 
         const element = createComponent();
         const closeHandler = jest.fn();
         element.addEventListener('close', closeHandler);
 
-        await chooseBackup(element, SUB_B);
+        await fillRequiredFields(element, SUB_B);
+        await typeNotes(element, 'Missed two marketing deadlines.');
         confirmBtn(element).click();
         await flushPromises();
 
         expect(replaceSelectedBroker).toHaveBeenCalledTimes(1);
+        // 🔴 ALL FOUR NAMES, VERBATIM. An imperative Apex call binds by NAME: a misspelt key does
+        // not fail the build or throw — it arrives at Apex as a null, and `reason` arriving null is
+        // a refusal the user cannot explain.
         expect(replaceSelectedBroker).toHaveBeenCalledWith({
             dispositionId: DISPOSITION_ID,
-            newSubmissionId: SUB_B
+            newSubmissionId: SUB_B,
+            reason: 'Performance Issue',
+            notes: 'Missed two marketing deadlines.'
         });
 
         // 🔴 CHARACTER FOR CHARACTER. The "fresh approval is required" warning is the SERVER's
@@ -154,7 +302,7 @@ describe('c-bov-replace-broker-modal', () => {
         const closeHandler = jest.fn();
         element.addEventListener('close', closeHandler);
 
-        await chooseBackup(element, SUB_C);
+        await fillRequiredFields(element, SUB_C);
         confirmBtn(element).click();
         await flushPromises();
 
@@ -173,13 +321,32 @@ describe('c-bov-replace-broker-modal', () => {
 
         const element = createComponent();
 
-        await chooseBackup(element, SUB_B);
+        await fillRequiredFields(element, SUB_B);
         confirmBtn(element).click();
         await flushPromises();
 
         expect(
             element.shadowRoot.querySelector('.lv-error').textContent
         ).toContain('The selected broker could not be replaced.');
+    });
+
+    it('NOTES ARE OPTIONAL: an untouched textarea sends undefined, not an empty string', async () => {
+        replaceSelectedBroker.mockResolvedValue(SERVER_MESSAGE);
+
+        const element = createComponent();
+
+        await fillRequiredFields(element, SUB_B);
+        confirmBtn(element).click();
+        await flushPromises();
+
+        // Apex maps both undefined and '' to a null/blank String, so this is a claim about the
+        // CLIENT: it must not invent a value for a field the user chose not to fill in.
+        expect(replaceSelectedBroker).toHaveBeenCalledWith({
+            dispositionId: DISPOSITION_ID,
+            newSubmissionId: SUB_B,
+            reason: 'Performance Issue',
+            notes: undefined
+        });
     });
 
     it('NO BACKUPS: explains, hides the confirm button entirely, calls no Apex', async () => {
@@ -192,6 +359,10 @@ describe('c-bov-replace-broker-modal', () => {
         await Promise.resolve();
 
         expect(radio(element)).toBeNull();
+        // The reason and notes inputs live inside the same hasOptions branch — asking WHY a broker
+        // was replaced makes no sense on a modal that cannot replace one.
+        expect(reasonBox(element)).toBeNull();
+        expect(notesBox(element)).toBeNull();
         expect(confirmBtn(element)).toBeNull();
         expect(element.shadowRoot.textContent).toContain(
             'no backup submissions to promote'

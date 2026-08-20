@@ -18,15 +18,21 @@
 //    word that went stale is "BOTH" — a COUNT, which is exactly the kind of claim that decays.
 // ══════════════════════════════════════════════════════════════════════════════════════════
 //
-//   BEFORE INSERT  🔴 NEW. ONLY the single-Selected guard
-//                  (`DispositionOfferSelectionGuardService`), routed through the handler's new
-//                  `beforeInsert`. It refuses an insert that would leave a Disposition with two
-//                  `Is_Selected__c = true` offers. Nothing else runs here — an insert cannot be an
-//                  approval TRANSITION, so the `Offer_Status__c` stamp has nothing to detect.
+//   BEFORE INSERT  🔴 NEW. The single-Selected guard (`DispositionOfferSelectionGuardService`),
+//                  routed through the handler's new `beforeInsert`. It refuses an insert that would
+//                  leave a Disposition with two `Is_Selected__c = true` offers. The
+//                  `Offer_Status__c` stamp does NOT run here — an insert cannot be an approval
+//                  TRANSITION, so it has nothing to detect.
+//                  ⚠ PLUS, SINCE LATER THE SAME DAY (Workstream D), the buyer-name stamp
+//                  (`DispositionOfferBuyerStampService`) — which DOES belong on insert, because an
+//                  offer CREATED naming a buyer Contact needs its `Buyer_Name__c` derived
+//                  immediately. That is a genuine difference from the guard/stamp split above, not
+//                  an inconsistency: one detects a TRANSITION, the other detects a VALUE.
 //   BEFORE UPDATE  the offer's OWN `Offer_Status__c = 'Accepted'` — a field on the record being
 //                  saved, and the record the approval LOCKS. Writing it in memory makes it part of
 //                  the approval's own save, so no second DML exists for ENTITY_IS_LOCKED to refuse.
-//                  PLUS the same single-Selected guard, for the changed-to-selected half.
+//                  PLUS the same single-Selected guard, for the changed-to-selected half, PLUS the
+//                  buyer-name stamp.
 //   AFTER UPDATE   the PARENT Disposition's stage and accepted price — a different record, which
 //                  needs the child's committed values and is not itself locked.
 // Do not "harmonise" them into one context: see the handler's header for why neither half can move.
@@ -42,6 +48,13 @@
 // in-memory pass, before any SOQL. `TestDataFactory.createDispositionOffers` leaves `Is_Selected__c`
 // unset, which is why every existing offer fixture in the suite stays free. This is the same
 // expansion, with the same justification, that `BovSubmissionTrigger` made on 2026-08-20.
+//
+// ⚠ THE BUYER-NAME STAMP ADDED LATER THAT DAY RIDES THE SAME EXPANSION AND WIDENS NOTHING FURTHER.
+// It has its OWN zero-query fast path — CHANGE-KEYED on `Buyer__c`, so a chunk in which no row
+// changed its buyer returns after one in-memory pass before any SOQL — and
+// `TestDataFactory.createDispositionOffers` sets `Buyer_Name__c` but never `Buyer__c`, which is why
+// every existing offer fixture stays green by construction here too. Full argument in
+// `DispositionOfferBuyerStampService`'s header.
 trigger DispositionOfferTrigger on Disposition_Offer__c (before insert, before update, after update) {
     new DispositionOfferTriggerHandler().run();
 }

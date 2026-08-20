@@ -3,20 +3,28 @@
  * OpportunityReviewService, and deliberately shaped after it rather than invented fresh
  * (decisions D15/Q3, D16.2, D19.1).
  *
- * IT DOES FOUR THINGS, ONE PER STAGE, AND THE FOUR ARE NOT INTERCHANGEABLE:
+ * IT DOES FIVE THINGS, ONE PER STAGE, AND THE FIVE ARE NOT INTERCHANGEABLE:
  *
- *   | stage entered    | child opened                        | added  | DML mode    | parent stamp |
- *   | ---------------- | ----------------------------------- | ------ | ----------- | ------------ |
- *   | `NDA`            | NDA__c, Party_Role__c = 'Buyer'     | 3A     | SYSTEM_MODE | DEFERRED     |
- *   | `LOI`            | LOI__c, Disposition_LOI             | 3B fix | SYSTEM_MODE | NONE         |
- *   | `PSA`            | Contract_Review__c, Disposition_PSA | 3C fix | SYSTEM_MODE | NONE         |
- *   | `Active Listing` | Broker_Listing__c                   | 5B     | SYSTEM_MODE | BEFORE-SAVE  |
+ *   | stage entered       | what happens                          | added  | DML mode    | parent stamp |
+ *   | ------------------- | ------------------------------------- | ------ | ----------- | ------------ |
+ *   | `NDA`               | OPENS NDA__c, Party_Role__c = 'Buyer' | 3A     | SYSTEM_MODE | DEFERRED     |
+ *   | `LOI`               | OPENS LOI__c, Disposition_LOI         | 3B fix | SYSTEM_MODE | NONE         |
+ *   | `PSA`               | OPENS Contract_Review__c, Disp_PSA    | 3C fix | SYSTEM_MODE | NONE         |
+ *   | `Release Materials` | UPDATES existing buyer NDAs           | T2-D   | SYSTEM_MODE | NONE         |
+ *   | `Active Listing`    | OPENS Broker_Listing__c               | 5B     | SYSTEM_MODE | BEFORE-SAVE  |
  *
- * 🔴 THE LAST TWO COLUMNS ARE THE PART A READER MUST NOT SKIM. All four blocks use SYSTEM_MODE
- * DML, but they reach that answer by THREE different routes and they handle the parent write three
- * different ways. Only the NDA block defers a parent stamp to a Queueable; the LOI and PSA blocks
- * have nothing to defer; and the Active Listing block writes its parent field IN A BEFORE-SAVE
- * CONTEXT, which is neither of the other two answers. Each block's reasoning is argued at the
+ * 🔴 THE `Release Materials` ROW IS THE ODD ONE OUT AND ITS "what happens" CELL IS WHY THIS TABLE'S
+ * HEADING CHANGED FROM "child opened" ON 2026-08-20. It CREATES NOTHING — it fills a blank field on
+ * children that already exist (`Materials_Released_Date__c`, the buyer activity timeline's middle
+ * hop). Its idempotency question is "is the field blank?", not "does the child exist?", and it is
+ * the only block whose absence produces a wrong TIMELINE rather than a missing RECORD. Do not fold
+ * it into the `open*` family.
+ *
+ * 🔴 THE LAST TWO COLUMNS ARE THE PART A READER MUST NOT SKIM. All five blocks use SYSTEM_MODE
+ * DML, but they reach that answer by SEVERAL different routes and they handle the parent write three
+ * different ways. Only the NDA block defers a parent stamp to a Queueable; the LOI, PSA and Release
+ * Materials blocks have nothing to defer; and the Active Listing block writes its parent field IN A
+ * BEFORE-SAVE CONTEXT, which is neither of the other two answers. Each block's reasoning is argued at the
  * block, from scratch, because inheriting a justification is precisely the mistake review W1
  * caught in DispositionNdaStampQueueable (which had copied OpportunityReviewService's LOI-block
  * wording verbatim into a case where it did not hold).
@@ -68,18 +76,24 @@
  * those stages. Do not harmonize in either direction.
  *
  * ── LAYERING / BULK ─────────────────────────────────────────────────────────
- * Service (ARCHITECTURE.md §2). ZERO inline SOQL — the four idempotency reads go to
- * NdaSelector.selectByDispositionIds, LoiSelector.selectByDispositionIds,
- * ContractReviewSelector.selectByDispositionIds and BrokerListingSelector.selectByDispositionIds,
- * all `WITH SYSTEM_MODE` for automation-path reasons documented at those methods.
+ * Service (ARCHITECTURE.md §2). ZERO inline SOQL — the FIVE idempotency reads go to
+ * NdaSelector.selectByDispositionIds (used TWICE, by two different stage blocks, for two different
+ * questions), LoiSelector.selectByDispositionIds, ContractReviewSelector.selectByDispositionIds and
+ * BrokerListingSelector.selectByDispositionIds, all `WITH SYSTEM_MODE` for automation-path reasons
+ * documented at those methods.
  *
  * Trigger-driven, so the `.claude/rules/bulk-test-rule.md` per-transaction-singleton exemption
- * does NOT apply and literal 251-record bulk tests exist for all four stages. Budget is
- * 1 SOQL / 1 DML PER STAGE ENTERED IN THE CHUNK (≤ 4 / ≤ 4), plus ≤ 1 enqueue for the NDA block —
- * CONSTANT IN THE NUMBER OF DISPOSITIONS. That constancy is the property the bulk tests assert,
- * not merely that 251 rows produced 251 children. A chunk that enters no target stage at all — the
- * overwhelmingly common case, since this trigger now fires on EVERY Disposition write in the org —
- * costs zero queries, zero DML and zero enqueues.
+ * does NOT apply and literal 251-record bulk tests exist for all five stages. Budget is
+ * 1 SOQL / 1 DML PER STAGE ENTERED IN THE CHUNK (≤ 5 / ≤ 5, raised from ≤ 4 on 2026-08-20 by the
+ * Release Materials block), plus ≤ 1 enqueue for the NDA block — CONSTANT IN THE NUMBER OF
+ * DISPOSITIONS. That constancy is the property the bulk tests assert, not merely that 251 rows
+ * produced 251 children. A chunk that enters no target stage at all — the overwhelmingly common
+ * case, since this trigger fires on EVERY Disposition write in the org — costs zero queries, zero
+ * DML and zero enqueues.
+ * ⚠ A SINGLE CHUNK THAT ENTERS BOTH `NDA` AND `Release Materials` ISSUES
+ * `NdaSelector.selectByDispositionIds` TWICE. That is the per-stage budget working as documented,
+ * not a duplicate read: the two calls carry DIFFERENT Id sets (a disposition cannot be entering both
+ * stages in one save) and answer different questions.
  *
  * ⚠ `stampListingDates` IS OUTSIDE THAT BUDGET BY CONSTRUCTION, NOT BY EXEMPTION: it runs in a
  * BEFORE context and performs zero SOQL, zero DML and zero enqueues at any record count. It cannot
@@ -159,6 +173,26 @@ public with sharing class DispositionStageEntryService {
      */
     @TestVisible
     private static final String LISTING_STAGE = 'Active Listing';
+
+    /**
+     * The stage whose ENTRY default-stamps `NDA__c.Materials_Released_Date__c` on every buyer NDA
+     * that does not already carry one (Tranche 2 Workstream D, design D6.1).
+     *
+     * 🔴 ON **BOTH** RECORD TYPES BY VALUE SET, and no RecordType criterion is needed or wanted.
+     * Verified against objects/Disposition__c/recordTypes/: `Release Materials` is exposed on
+     * `On_Market` AND `Off_Market` — the on-market path walks
+     * `... Broker Selection -> NDA -> Release Materials -> Active Listing ...` and the off-market
+     * path walks `... NDA -> Release Materials -> Offer Selection ...`. Both release a deal package
+     * to the buyers who signed, which is exactly what this date records. Keying on the TRANSITION
+     * rather than on the type is the standing argument this file already makes at `NDA_STAGE`.
+     *
+     * ⚠ UNLIKE THE OTHER FOUR STAGE CONSTANTS, THIS ONE OPENS NO CHILD RECORD. It updates children
+     * that already exist. That is why it is handled by its own method below and is deliberately NOT
+     * folded into the `open*` family — the four `open*` methods are all "create if absent", and this
+     * is "fill if blank", which is a different idempotency question with a different failure mode.
+     */
+    @TestVisible
+    private static final String RELEASE_MATERIALS_STAGE = 'Release Materials';
 
     /**
      * The `Listing_Status__c` every auto-created listing opens at.
@@ -265,6 +299,7 @@ public with sharing class DispositionStageEntryService {
         Set<Id> ndaStageEntrants = new Set<Id>();
         Set<Id> loiStageEntrants = new Set<Id>();
         Set<Id> psaStageEntrants = new Set<Id>();
+        Set<Id> materialsStageEntrants = new Set<Id>();
         List<Disposition__c> listingStageEntrants = new List<Disposition__c>();
         for (Disposition__c d : newDispositions) {
             Disposition__c prior = (oldMap == null) ? null : oldMap.get(d.Id);
@@ -280,6 +315,8 @@ public with sharing class DispositionStageEntryService {
                 loiStageEntrants.add(d.Id);
             } else if (PSA_STAGE == d.Disposition_Stage__c) {
                 psaStageEntrants.add(d.Id);
+            } else if (RELEASE_MATERIALS_STAGE == d.Disposition_Stage__c) {
+                materialsStageEntrants.add(d.Id);
             } else if (LISTING_STAGE == d.Disposition_Stage__c) {
                 // ⚠ The WHOLE RECORD, not just the Id — unlike the other three, this block copies
                 // two values off the parent (Listing_Date__c and Selected_Broker__c) onto the
@@ -289,10 +326,11 @@ public with sharing class DispositionStageEntryService {
             }
         }
         // Each helper returns immediately on an empty set, so a chunk that entered none of the
-        // four target stages — the overwhelmingly common Disposition save — costs nothing at all.
+        // FIVE target stages — the overwhelmingly common Disposition save — costs nothing at all.
         openBuyerNdas(ndaStageEntrants);
         openDispositionLois(loiStageEntrants);
         openDispositionContractReviews(psaStageEntrants);
+        stampMaterialsReleasedDates(materialsStageEntrants);
         openBrokerListings(listingStageEntrants);
     }
 
@@ -741,6 +779,128 @@ public with sharing class DispositionStageEntryService {
         }
         Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
         // NO PARENT STAMP AND NO QUEUEABLE — see point 3 above.
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // `Release Materials` STAGE — the per-buyer materials date. Tranche 2 Workstream D (D6.1).
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Default-stamps `NDA__c.Materials_Released_Date__c = TODAY` on every BUYER-ROLE NDA of each
+     * entrant that does not already carry a date.
+     *
+     * 🔴 THIS IS THE ONE BLOCK IN THIS FILE THAT CREATES NOTHING. It UPDATES existing children.
+     * Every `open*` sibling asks "does a child exist?" and inserts if not; this asks "is a field
+     * blank?" and fills if so. Do not harmonise it into the `open*` family — the questions, the
+     * idempotency keys and the failure modes are all different.
+     *
+     * ── 🔴 WHY THE FIELD IS BOTH ANALYST-ENTERED **AND** MACHINE-DEFAULTED (design D6.1) ──────
+     * A PURE DEFAULT cannot express *"materials went to buyer A on Tuesday and buyer B on Friday"*,
+     * which is the entire point of tracking this per-NDA rather than once on the parent. A PURE
+     * MANUAL FIELD would be blank on most rows and the timeline's MIDDLE HOP would simply disappear
+     * — and with it both duration columns, since each is an arithmetic over this date. The default
+     * gives the correct value for the common case (everyone gets the package when the sale enters
+     * `Release Materials`) and the analyst overrides the exceptions.
+     *
+     * ── 🔴 BLANK-ONLY AND IDEMPOTENT. NEVER UNCONDITIONAL. THREE INDEPENDENT REASONS ──────────
+     * 1. IT WOULD DESTROY REAL DATA. An analyst who recorded the true release date by hand before
+     *    advancing the stage would have it silently replaced with "today". Same class of silent loss
+     *    `stampListingDates` refuses for `Listing_Date__c`, for the same reason.
+     * 2. IDEMPOTENCY. Stepping back out of `Release Materials` and forward again must not restamp.
+     *    The `createStageEntryRecords` loop already tests ENTRY rather than presence, so a re-save
+     *    never reaches here — this guard is the SECOND, independent mechanism, exactly as the
+     *    `open*` blocks' existence reads are.
+     * 3. IT IS THE SHAPE THE REST OF THIS FEATURE ALREADY USES: `NDA_Signed_Status_Sync`'s
+     *    `Date_Signed_Is_Blank` gate and `openBuyerNdas`'s idempotency guard.
+     *
+     * ── 🔴 WHY THIS IS AN **AFTER** CONTEXT WHEN EVERY OTHER STAMP IN THIS FILE IS **BEFORE** ──
+     * `stampListingDates` is before-context because `Listing_Date__c` is a field ON THE DISPOSITION
+     * BEING SAVED. This writes a field on a CHILD — a different record, which the trigger is not
+     * saving — so it is a DML no matter which context it sits in, and a before-context DML would be
+     * a DML against uncommitted parents. Same structural distinction `DispositionTriggerHandler`'s
+     * header draws between `Listing_Date__c` (movable) and `Primary_NDA__c` (not).
+     *
+     * ⚠ AND THE APPROVAL LOCK DOES NOT REACH IT, WHICH IS WHY NO QUEUEABLE IS NEEDED. The record
+     * updated here is the NDA, not the Disposition. `NDA__c` is the entry object of NO approval
+     * process in this org (measured 2026-08-20: the seven files in approvalProcesses/ enter on
+     * `BOV_Submission__c`, `Disposition_Offer__c`, `Disposition__c` ×3 and `Opportunity` ×2), and a
+     * CHILD OF A LOCKED RECORD IS NOT ITSELF LOCKED. `Release Materials` is in any case not any
+     * approval's entry stage (`Disposition Readiness`; `Broker Selection` + Off Market; `Closing` +
+     * wire-verified). Adding a Queueable would assert a hazard that is not present — the exact
+     * mistake review W1 caught in `DispositionNdaStampQueueable`.
+     *
+     * ── SYSTEM_MODE, AND THE REASON IS THE FIELD ──────────────────────────────────────────────
+     * `Materials_Released_Date__c` is a 2026-08-20 field, and a Metadata-API-deployed custom field
+     * arrives with NO field permissions for ANY profile, System Administrator included. A
+     * `USER_MODE` update would therefore be refused for EVERYONE in the deploy window — and, this
+     * being an after-update trigger, that refusal ROLLS BACK THE USER'S OWN STAGE CHANGE with
+     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY`. Independently: `DPEG_Disposition_Edit` grants `NDA__c`
+     * `allowEdit = true` but the running user may be an APPROVER who is read-only on it. Both legs
+     * hold; either alone is sufficient. The idempotency READ is `SYSTEM_MODE` too
+     * (`NdaSelector.selectByDispositionIds`), and a USER_MODE read feeding a SYSTEM_MODE write would
+     * be a shape where the write is permitted and the read deciding what to write is not.
+     *
+     * ── allOrNone = true, MATCHING THE THREE `open*` BLOCKS AND FOR THE SAME REASON ───────────
+     * A silently un-stamped NDA is exactly the failure D6.1 exists to prevent: the timeline's middle
+     * hop vanishes and both duration columns render `—` on a sale where the materials demonstrably
+     * went out. Nothing anywhere would notice. A refused stage change is LOUD. Silence is the
+     * failure mode this tranche keeps paying for.
+     * ⚠ AND THE REFUSAL SURFACE HERE IS SMALL BY MEASUREMENT, NOT BY HOPE: `NDA__c` carries ZERO
+     * validation rules (objects/NDA__c/ has no validationRules directory) and no approval, so there
+     * is very little that can refuse this update once SYSTEM_MODE has covered CRUD and FLS.
+     *
+     * ── ⚠ WHAT IT DOES **NOT** DO, STATED SO IT IS NOT READ AS A BUG ─────────────────────────
+     * It does not stamp `Introducing Broker` NDAs. The date means "the deal package went to THIS
+     * BUYER", and a broker is not a buyer — the same distinction `openBuyerNdas` makes with the same
+     * key, and the same one `NdaSelector.selectBuyerTimelineByDispositionId` filters on so the
+     * timeline and this stamp cannot disagree about who counts.
+     * It also does not stamp an NDA created AFTER the stage entry (a buyer added later gets no
+     * default and the analyst types the date). Auto-defaults fire on a transition; a row that did
+     * not exist at the transition missed it. That is the same accepted consequence
+     * `openDispositionLois` records for a second-round LOI.
+     *
+     * ✅ IN PRACTICE THE ROWS THIS STAMPS ARE ALREADY SIGNED, AND THAT IS WORTH KNOWING RATHER THAN
+     * ASSUMED: `All_NDAs_Signed_Before_Progression` blocks a real `update` INTO `Release Materials`
+     * unless every non-Declined NDA on the disposition is `Signed`. So on the normal path the
+     * materials date lands on NDAs whose `Date_Signed__c` is already set, and the timeline's first
+     * duration is computable immediately. ⚠ That rule is `ISCHANGED`-only, so a row INSERTED
+     * directly at `Release Materials` (seed scripts, data loads, several test surfaces) bypasses it
+     * — which is precisely why this method must not assume a signed status and does not test one.
+     *
+     * @param entrants Dispositions that just entered `Release Materials`. Never null (the caller
+     *                 always passes a constructed Set); empty is the common case and returns
+     *                 immediately.
+     */
+    private static void stampMaterialsReleasedDates(Set<Id> entrants) {
+        if (entrants.isEmpty()) {
+            return;
+        }
+
+        // Resolved once for the whole chunk. Date.today() is stable within a transaction, but
+        // hoisting it also makes every NDA stamped in one save carry an identical date rather than
+        // relying on that — the same reason `stampListingDates` hoists it.
+        Date today = Date.today();
+
+        // ONE query for the whole chunk — never one per disposition. The selector returns
+        // `Materials_Released_Date__c` for exactly this guard; see its ApexDoc for why that field is
+        // now part of its contract.
+        List<NDA__c> toStamp = new List<NDA__c>();
+        for (NDA__c nda : NdaSelector.selectByDispositionIds(entrants)) {
+            if (!BUYER_ROLE.equals(nda.Party_Role__c)) {
+                continue;
+            }
+            if (nda.Materials_Released_Date__c != null) {
+                // FILL-IF-BLANK. An analyst's own date, or a previous stamp, wins. Never overwrite.
+                continue;
+            }
+            toStamp.add(new NDA__c(Id = nda.Id, Materials_Released_Date__c = today));
+        }
+        if (toStamp.isEmpty()) {
+            return;
+        }
+
+        // ONE DML for the whole chunk. See the SYSTEM_MODE and allOrNone paragraphs above.
+        Database.update(toStamp, true, AccessLevel.SYSTEM_MODE);
     }
 
     // ═════════════════════════════════════════════════════════════════════════

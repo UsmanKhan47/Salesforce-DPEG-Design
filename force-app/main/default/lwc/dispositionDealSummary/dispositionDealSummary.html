@@ -1,0 +1,53 @@
+<template>
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Deal Summary</h2>
+            <p class="card-sub">NDA, LOI and PSA status for this sale</p>
+        </div>
+
+        <!--
+            THE ERROR BRANCH IS THE WHOLE-CARD ONE, AND IT IS REACHED ONLY WHEN THE CONTROLLER
+            ITSELF THROWS. A permission gap on NDA / LOI / Contract Review degrades a single ROW
+            (see the `unavailable` branch below) because this card is ungated and renders on all
+            11 disposition stages — a whole-card banner would be a permanent fixture.
+        -->
+        <template lwc:if={hasError}>
+            <div class="error-line" role="alert">{loadError}</div>
+        </template>
+
+        <template lwc:elseif={hasSummary}>
+            <ul class="rows">
+                <template for:each={rows} for:item="row">
+                    <li key={row.key} class="row" data-row={row.key}>
+                        <div class="row-head">
+                            <span class="row-left">
+                                <lightning-icon
+                                    icon-name={row.iconName}
+                                    size="x-small"
+                                    alternative-text={row.label}
+                                ></lightning-icon>
+                                <span class="row-label">{row.label}</span>
+                            </span>
+                            <span class={row.pillClass} data-pill={row.key}>{row.statusLabel}</span>
+                        </div>
+
+                        <template for:each={row.metaLines} for:item="line">
+                            <p key={line.key} class="row-meta" data-meta={line.key}>{line.text}</p>
+                        </template>
+
+                        <!--
+                            One hint slot, two meanings, styled apart on purpose: an EMPTY row
+                            says "No LOI on this sale yet" (a fact about the sale) and a DEGRADED
+                            row says the data is not readable (a fact about the reader's access).
+                            Collapsing the two is what hid a live provisioning gap behind the BOV
+                            NDA pill — design §0 C-1.
+                        -->
+                        <template lwc:if={row.hintText}>
+                            <p class={row.hintClass} data-hint={row.key}>{row.hintText}</p>
+                        </template>
+                    </li>
+                </template>
+            </ul>
+        </template>
+    </div>
+</template>

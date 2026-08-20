@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Layout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE <Layout>
+         breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
+         xml file" error.
+
+         BUILT WITH ALL BUSINESS FIELDS FROM DAY ONE, DELIBERATELY, NOT AS A STUB. This repo has
+         shipped three stub layouts this week that carried only Name/OwnerId/CreatedById/
+         LastModifiedById and no business field (BOV_Submission__c, Disposition_Offer__c,
+         Broker_Listing__c - see the "BUSINESS FIELDS ADDED 2026-08-20 (UAT gap)" comment on each
+         of those three files). All 11 custom fields plus Name and OwnerId are placed below so
+         this object does not become the fourth.
+
+         EVERY FIELD IS SERVICE-WRITTEN IN THE NORMAL PATH, BUT NONE IS FORCED Readonly FOR THAT
+         REASON ALONE. BovSubmissionService.replaceSelectedBroker (D4.3, developer-owned) is the
+         only path the UI exposes (bovReplaceBrokerModal), and it inserts every field on this
+         object in one call - there is no genuine "New BOV Broker Change" user flow. But unlike
+         BOV_Submission__c's Approval_Status__c (owned for the record's entire life by an approval
+         process's field updates) or Broker_Listing__c's counters, nothing here is re-written after
+         insert, and an admin correcting a bad backfill row needs somewhere to type the fix. So the
+         DECISION fields - the parent links, the two brokers, Reason, Notes, Entry DateTime and
+         Logged By - stay Edit, exactly the same reasoning Broker_Listing__c's layout comment used
+         for Days_On_Market__c and Offers_Received__c ("only ever read... locking them would leave
+         them permanently at their default" - the inverse risk here is locking a field with no
+         other correction path).
+
+         THE TWO FIELDS THAT ARE Readonly ARE READONLY BECAUSE THEY ARE DERIVED FROM A SIBLING
+         FIELD ON THIS SAME ROW, NOT BECAUSE THEY ARE OWNED BY LONG-RUNNING AUTOMATION:
+         Outgoing_Broker_Firm__c and Incoming_Broker_Firm__c are snapshots stamped from
+         Outgoing_Broker__c / Incoming_Broker__c at write time (see each field's own XML comment -
+         the snapshot exists specifically to survive scripts/seed-broker-contacts.apex nulling the
+         lookup). Hand-editing the Text snapshot independently of the lookup it was stamped from
+         would desync the two and defeat the reason the snapshot exists. This is the same rule
+         BOV_Submission__c's layout comment states as "MACHINE WRITTEN FIELDS ARE Readonly," applied
+         to a same-row derivation instead of an approval-process field update.
+
+         Name stays Readonly. It is an AutoNumber, displayFormat BBC-{0000}.
+
+         THIS OBJECT HAS NO APPROVAL PROCESS, matching Broker_Listing__c's layout, so there is
+         correctly no relatedLists block and no RelatedProcessHistoryList here. Nothing was
+         removed - this is the object's first layout. -->
+    <layoutSections>
+        <customLabel>false</customLabel>
+        <detailHeading>false</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Information</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Name</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Disposition__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>OwnerId</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Outgoing_BOV_Submission__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Incoming_BOV_Submission__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Broker Change Details</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Outgoing_Broker__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Outgoing_Broker_Firm__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Reason__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Incoming_Broker__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>Incoming_Broker_Firm__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Notes__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>true</customLabel>
+        <detailHeading>true</detailHeading>
+        <editHeading>true</editHeading>
+        <label>Log Entry</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Entry_DateTime__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Logged_By__c</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>false</customLabel>
+        <detailHeading>false</detailHeading>
+        <editHeading>true</editHeading>
+        <label>System Information</label>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>CreatedById</field>
+            </layoutItems>
+        </layoutColumns>
+        <layoutColumns>
+            <layoutItems>
+                <behavior>Readonly</behavior>
+                <field>LastModifiedById</field>
+            </layoutItems>
+        </layoutColumns>
+        <style>TwoColumnsTopToBottom</style>
+    </layoutSections>
+    <layoutSections>
+        <customLabel>false</customLabel>
+        <detailHeading>false</detailHeading>
+        <editHeading>true</editHeading>
+        <layoutColumns/>
+        <layoutColumns/>
+        <layoutColumns/>
+        <style>CustomLinks</style>
+    </layoutSections>
+    <showEmailCheckbox>false</showEmailCheckbox>
+    <showHighlightsPanel>false</showHighlightsPanel>
+    <showInteractionLogPanel>false</showInteractionLogPanel>
+    <showRunAssignmentRulesCheckbox>false</showRunAssignmentRulesCheckbox>
+    <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
+</Layout>

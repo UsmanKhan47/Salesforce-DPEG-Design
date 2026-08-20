@@ -117,8 +117,66 @@ public with sharing class BovController {
     }
 
     /**
+     * Replaces the disposition's appointed broker with another BOV submission — the server half of
+     * `c/bovReplaceBrokerModal` (DEV-6).
+     *
+     * ⚠ THE THREE CATCHES AND THEIR ORDER MIRROR `DispositionApprovalController`, for the same
+     * reasons: a permission denial must not be masked as a system failure (so it is caught FIRST
+     * and surfaced verbatim); every user-actionable refusal — including a platform block's own
+     * "this record is locked" text, which is the only thing naming the pending approval — arrives
+     * as `BovSubmissionException` and is surfaced verbatim; anything else is masked.
+     *
+     * 🔴 THE RETURNED MESSAGE WARNS THAT A FRESH APPROVAL IS REQUIRED, and the client must show it.
+     * Replacing the broker CLEARS both submissions' `Approval_Status__c`, so the sale is
+     * deliberately left without an approved broker until someone re-submits. A toast that says only
+     * "saved" would hide the single most important consequence of the action.
+     *
+     * ⚠ `reason` AND `notes` (2026-08-20, Tranche 2 Workstream B / design D4.4) ARE PASSED STRAIGHT
+     * THROUGH AND NOT VALIDATED HERE. A blank reason is refused by the SERVICE, which owns that
+     * rule and owns the sentence describing it; validating it a second time in this class would put
+     * a copy of a business rule in the layer that is supposed to have none. The three catches, their
+     * order and both fixed generic messages are unchanged by that addition — a missing reason
+     * arrives as a `BovSubmissionException` and is therefore surfaced verbatim through the SECOND
+     * catch, exactly like every other user-actionable refusal.
+     *
+     * @param dispositionId   the Disposition__c whose broker is being replaced
+     * @param newSubmissionId the BOV_Submission__c to appoint
+     * @param reason          a BOV_Broker_Change__c.Reason__c picklist value (required by the
+     *                        service; the client sources the value set from getPicklistValues)
+     * @param notes           optional free text recorded on the history row
+     * @return an authored confirmation including the fresh-approval warning
+     * @throws AuraHandledException on denial (verbatim), on a user-actionable refusal (verbatim),
+     *         or — with a fixed generic message — on an unexpected failure
+     */
+    @AuraEnabled
+    public static String replaceSelectedBroker(Id dispositionId, Id newSubmissionId,
+                                               String reason, String notes) {
+        try {
+            return BovSubmissionService.replaceSelectedBroker(
+                dispositionId, newSubmissionId, reason, notes);
+        } catch (DispositionActionPermissionService.AccessDeniedException e) {
+            throw ahe(e.getMessage());
+        } catch (BovSubmissionService.BovSubmissionException e) {
+            System.debug(LoggingLevel.INFO, 'BovController.replaceSelectedBroker refused on '
+                + dispositionId + '/' + newSubmissionId + ': ' + e.getMessage());
+            throw ahe(e.getMessage());
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'BovController.replaceSelectedBroker on '
+                + dispositionId + '/' + newSubmissionId + ': ' + e.getMessage() + ' | '
+                + e.getStackTraceString());
+            throw ahe(REPLACE_FAILURE_MESSAGE);
+        }
+    }
+
+    /**
      * The disposition's latest NDA status, or null when there is none — or when the read
      * itself fails.
+     *
+     * ⚠ THIS BLOCK WAS ORPHANED (code review W1, 2026-08-20): it had drifted up to sit
+     * above replaceSelectedBroker, which has its own ApexDoc, leaving THIS method
+     * undocumented and the reader of that one facing two headers. Moved back verbatim —
+     * NOT rewritten, and neither method's behaviour, catch structure or message strings
+     * were touched.
      *
      * 🔴 THE NARROW TRY/CATCH IS THE ENTIRE POINT OF THIS METHOD AND MUST NOT BE FOLDED
      * BACK INTO getOutreachSummary's OUTER CATCH. NDA__c is granted to the disposition
@@ -142,45 +200,6 @@ public with sharing class BovController {
      * @param dispositionId the disposition whose NDA to read
      * @return the latest NDA's Status__c; null when there is no NDA or the read failed
      */
-    /**
-     * Replaces the disposition's appointed broker with another BOV submission — the server half of
-     * `c/bovReplaceBrokerModal` (DEV-6).
-     *
-     * ⚠ THE THREE CATCHES AND THEIR ORDER MIRROR `DispositionApprovalController`, for the same
-     * reasons: a permission denial must not be masked as a system failure (so it is caught FIRST
-     * and surfaced verbatim); every user-actionable refusal — including a platform block's own
-     * "this record is locked" text, which is the only thing naming the pending approval — arrives
-     * as `BovSubmissionException` and is surfaced verbatim; anything else is masked.
-     *
-     * 🔴 THE RETURNED MESSAGE WARNS THAT A FRESH APPROVAL IS REQUIRED, and the client must show it.
-     * Replacing the broker CLEARS both submissions' `Approval_Status__c`, so the sale is
-     * deliberately left without an approved broker until someone re-submits. A toast that says only
-     * "saved" would hide the single most important consequence of the action.
-     *
-     * @param dispositionId   the Disposition__c whose broker is being replaced
-     * @param newSubmissionId the BOV_Submission__c to appoint
-     * @return an authored confirmation including the fresh-approval warning
-     * @throws AuraHandledException on denial (verbatim), on a user-actionable refusal (verbatim),
-     *         or — with a fixed generic message — on an unexpected failure
-     */
-    @AuraEnabled
-    public static String replaceSelectedBroker(Id dispositionId, Id newSubmissionId) {
-        try {
-            return BovSubmissionService.replaceSelectedBroker(dispositionId, newSubmissionId);
-        } catch (DispositionActionPermissionService.AccessDeniedException e) {
-            throw ahe(e.getMessage());
-        } catch (BovSubmissionService.BovSubmissionException e) {
-            System.debug(LoggingLevel.INFO, 'BovController.replaceSelectedBroker refused on '
-                + dispositionId + '/' + newSubmissionId + ': ' + e.getMessage());
-            throw ahe(e.getMessage());
-        } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'BovController.replaceSelectedBroker on '
-                + dispositionId + '/' + newSubmissionId + ': ' + e.getMessage() + ' | '
-                + e.getStackTraceString());
-            throw ahe(REPLACE_FAILURE_MESSAGE);
-        }
-    }
-
     private static String readNdaStatusFailSoft(Id dispositionId) {
         try {
             NDA__c nda = NdaSelector.selectLatestByDispositionId(dispositionId);

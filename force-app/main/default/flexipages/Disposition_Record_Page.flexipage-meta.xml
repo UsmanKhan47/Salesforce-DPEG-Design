@@ -782,6 +782,35 @@
                 <identifier>contractReviewsList</identifier>
             </componentInstance>
         </itemInstances>
+        <!-- BOV BROKER CHANGE HISTORY (Tranche 2, A6/B). Placed after contractReviewsList per the
+             brief's named slot. Ungated - the component's own description confirms an empty card
+             (no broker replacement) is the normal state and renders as plain text, so no
+             visibilityRule is needed to avoid an awkward empty state.
+             NO recordId componentInstanceProperties HERE - MEASURED, NOT STYLE. This bundle's
+             js-meta.xml declares no targetConfigs/property at all, so a `recordId`
+             componentInstanceProperties entry deploys as "Invalid property [recordId] in
+             component [c:bovBrokerChangeHistory]" (confirmed via dry-run 2026-08-20). recordId
+             still reaches the component - it is a lightning__RecordPage implicit input and the
+             JS exposes `@api recordId` - the platform injects it automatically without a
+             FlexiPage-side declaration. -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>bovBrokerChangeHistory</componentName>
+                <identifier>bovBrokerChangeHistory</identifier>
+            </componentInstance>
+        </itemInstances>
+        <!-- BUYER ACTIVITY TIMELINE (Tranche 2, A6/B). Placed after bovBrokerChangeHistory,
+             ungated, same rationale as its sibling above.
+             NO recordId componentInstanceProperties HERE, SAME MEASURED REASON: this bundle's
+             targetConfig declares only <objects><object>Disposition__c</object></objects>, no
+             `recordId` property, so declaring it here fails the same way bovBrokerChangeHistory
+             did. recordId is still supplied implicitly (JS has `@api recordId`). -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>dispositionBuyerTimeline</componentName>
+                <identifier>dispositionBuyerTimeline</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>main</name>
         <type>Region</type>
     </flexiPageRegions>
@@ -822,6 +851,77 @@
         <type>Facet</type>
     </flexiPageRegions>
     <flexiPageRegions>
+        <!-- DEAL SUMMARY CARD (Tranche 2, A6/C). FIRST item in sidebar, ahead of
+             dispositionSidebar, and DELIBERATELY CARRIES NO visibilityRule - the user's explicit
+             requirement is that it renders on all eleven stages. dispositionMain is stage-gated
+             to four of the eleven stages and dispositionSidebar itself renders nothing on seven
+             of them, so the sidebar's top slot is the only genuinely ungated glance surface on
+             this page. Do not add a stage or record-type condition here. -->
+        <!-- RECONCILED 2026-08-20 (code review, CRITICAL). The recordId property below had no
+             <value>, so the FlexiPage bound the component to an empty string instead of letting
+             the platform inject recordId implicitly - the card silently showed "No NDA / No LOI
+             / No PSA" on every sale.
+
+             🔴 FIRST ATTEMPT, RETRACTED, MEASURED WRONG: "<value>{!recordId}</value>" was tried
+             first. It deploys FALSE on this org: check-only against the byte-identical (live)
+             copy of this file reports "state": "Unchanged" and SKIPS VALIDATION ENTIRELY, so the
+             original empty-value shape was never actually validated. The moment the file differs
+             from the live copy - as this edit makes it - check-only genuinely validates it, and
+             <value>{!recordId}</value> fails with "Field recordId does not exist. Check
+             spelling." (measured, not assumed; re-run against usman-dpeg before trusting either
+             direction again). That syntax is invalid here regardless of the property being
+             declared in dispositionDealSummary's own js-meta.xml.
+
+             FIX APPLIED INSTEAD: the entire <componentInstanceProperties> block for recordId is
+             DELETED, leaving no recordId property on this itemInstance at all. This is the exact
+             shape already proven to deploy clean on THIS SAME PAGE for dispositionSidebar (whose
+             js-meta.xml also declares recordId as a String property but whose itemInstance below
+             carries no componentInstanceProperties block for it) and for bovBrokerChangeHistory /
+             dispositionBuyerTimeline (see their own comments a few lines up in this file):
+             recordId is a lightning__RecordPage implicit input, and the JS's `@api recordId`
+             receives the real record Id from the platform automatically, with NO FlexiPage-side
+             declaration required.
+
+             ⚠ CORRECTED 2026-08-20 (re-review, same day). This block asserted a causal claim that
+             its own next paragraph disproves, and named the wrong Apex controller. Both retracted
+             in place rather than deleted, formally, per the reviewer:
+
+                 RETRACTED (causal claim): "An explicit but EMPTY-valued property block is what
+                 broke this card - it registered a binding and left it blank, overriding the
+                 implicit injection the omitted shape relies on."
+
+             That is NOT established, and the very next paragraph in this comment (below)
+             disproves it: dispositionMain carries the IDENTICAL empty-valued recordId property
+             block and is WORKING IN PRODUCTION TODAY. If an empty-valued block were sufficient to
+             break implicit injection, dispositionMain would be broken too, and it is not. The
+             correct framing is that this fix aligns the shape with the three proven siblings on
+             this page (dispositionSidebar, bovBrokerChangeHistory, dispositionBuyerTimeline) -
+             not that the empty block was proven to be the cause of THIS card's specific symptom.
+
+                 RETRACTED (wrong controller): "...so BovController's Apex method received an
+                 empty Id and returned an empty summary..."
+
+             This card is served by DispositionDealSummaryController, not BovController.
+
+             ⚠ lwc/dispositionDealSummary/dispositionDealSummary.js-meta.xml is UNCHANGED by this
+             fix and still declares <property name="recordId" type="String" /> in its targetConfig
+             - a developer agent is concurrently active in lwc/**, so that file was deliberately
+             left untouched. The declared-but-unreferenced property is harmless and does not block
+             deploy (dispositionSidebar is the live proof), so removing it from js-meta.xml is
+             OPTIONAL tidiness, not required for correctness, and is left for the developer agent
+             or a follow-up pass rather than done here.
+             ⚠ dispositionMain (a few lines up in this file) carries the IDENTICAL empty-valued
+             recordId property block. RETRACTED, follow-up sweep queued in a prior pass: "flagged
+             here as a likely sibling defect worth a follow-up sweep, not fixed in this change."
+             dispositionMain is WORKING IN PRODUCTION TODAY (see above) - there is no open
+             investigation against it, and none should be queued; do not re-open this as a
+             sibling-defect sweep. -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>dispositionDealSummary</componentName>
+                <identifier>dispositionDealSummary</identifier>
+            </componentInstance>
+        </itemInstances>
         <itemInstances>
             <componentInstance>
                 <componentName>dispositionSidebar</componentName>

@@ -1584,6 +1584,20 @@
         <field>Disposition_Offer__c.Is_Selected__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-20 - Workstream D6.1 (buyer activity timeline, disposition-tranche-2
+        -requirements.md §3). Disposition_Offer__c.Buyer__c: readable AND editable. This is the
+        analyst Edit persona - the field is deliberately UNFILTERED (no Is_Buyer__c gate), so no
+        lookupFilter-driven FLS dependency beyond the ordinary grant. A Metadata API deployed
+        field carries NO FLS for anyone, System Administrator included, so this grant and
+        objects/Disposition_Offer__c/fields/Buyer__c.field-meta.xml must deploy together.
+        Appended at the tail of the Disposition_Offer__c run, following this file's convention.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Disposition_Offer__c.Buyer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>LOI__c.Ball_In_Court__c</field>
@@ -1729,6 +1743,28 @@
         <field>NDA__c.Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!--
+        ADDED 2026-08-20 - Workstream D6.1 (buyer activity timeline, disposition-tranche-2
+        -requirements.md §3). NDA__c.Buyer__c and NDA__c.Materials_Released_Date__c: readable
+        AND editable. This is the analyst Edit persona; Materials_Released_Date__c is
+        analyst-entered (with a later, blank-only default stamped on stage entry by a separate
+        developer-owned change - see the field's own comment), and Buyer__c is the analyst's
+        pick when opening an NDA. NDA__c is dual-module; neither field is granted on
+        DPEG_Acquisition_Edit or DPEG_Admin_Access, matching this file's convention for the rest
+        of the object. A Metadata API deployed field carries NO FLS for anyone, System
+        Administrator included, so these grants and the two matching field files under
+        objects/NDA__c/fields/ must deploy together. Appended at the tail of the NDA__c run.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.Buyer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>NDA__c.Materials_Released_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>PSA_Version__c.Direction__c</field>
@@ -1782,6 +1818,112 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Wire__c.Wire_Instructions_Source__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-20 - BOV_Broker_Change__c (Workstream B, disposition-tranche-2-requirements.md
+        §3 D4.1/D4.2). New disposition child object; Create/Read/Edit (no Delete) for the
+        Acquisitions Analyst persona, matching the CRUD level given to the other DISP objects on
+        this file (Disposition_Offer__c, BOV_Submission__c, Broker_Listing__c, Wire__c).
+
+        🔴 RECONCILED 2026-08-20 (code review, same day). THE PARAGRAPH BELOW DESCRIBED NINE
+        EDITABLE FIELDS INCLUDING Logged_By__c AND Entry_DateTime__c. THAT WAS WRONG AND IS
+        RETRACTED, NOT JUST THE FIELD FLAGS.
+
+        RETRACTED: "NINE OF THE ELEVEN FIELDS ARE EDITABLE ... unlike a field owned for its
+        whole life by an approval process or a recurring batch, an admin correcting a bad
+        backfill row needs somewhere to type the fix, so these nine stay editable rather than
+        being locked the way BOV_Submission__c.Approval_Status__c is."
+
+        BOV_Broker_Change__c IS THE AUDIT LOG OF WHO REPLACED A BROKER AND WHEN.
+        BovSubmissionService.replaceSelectedBroker writes every field on this object in SYSTEM
+        MODE (ARCHITECTURE.md §2 automation-path exception - a write on the principal's behalf,
+        not at their request), so this persona's object CRUD was never load-bearing for the
+        normal path in the first place. Granting allowCreate/allowEdit here, and Logged_By__c /
+        Entry_DateTime__c editable in particular, let the analyst who replaced a broker go back
+        and rewrite WHO did it and WHEN - which is exactly the "actor can suppress the audit row"
+        shape BovSubmissionService's own class header names as the thing an audit row must never
+        allow. The "admin correcting a bad backfill row" justification does not hold: this set is
+        held by the Acquisitions Analyst persona generally, not scoped to admins, and a genuine
+        backfill correction is a System Administrator operation outside this permission set
+        entirely.
+
+        FIX: allowCreate and allowEdit -> FALSE on the BOV_Broker_Change__c objectPermissions
+        block below (allowDelete was already false and is untouched). ALL ELEVEN fields below are
+        now editable=false; readable stays true on all eleven. The service's SYSTEM_MODE write
+        path is unaffected - object CRUD and FLS govern USER_MODE only, and this is the reason the
+        feature keeps working with zero create/edit grants here. Same reconciliation was verified
+        already correct (no change needed) on DPEG_Disposition_View, which shipped read-only on
+        2026-08-20 and was never wrong.
+
+        Outgoing_Broker_Firm__c AND Incoming_Broker_Firm__c stay editable=false as originally
+        shipped - they are pure same-row snapshots stamped from Outgoing_Broker__c/
+        Incoming_Broker__c and were never typed by anyone (see each field's own XML comment for
+        the seed-hazard reasoning); that reasoning is unaffected by this fix.
+
+        Object grant added at the tail of the objectPermissions run below, following this file's
+        convention of appending rather than reflowing alphabetically. A Metadata API deployed
+        object/field carries NO FLS for anyone, System Administrator included, so this block, the
+        object/field files under objects/BOV_Broker_Change__c/ and the matching block in
+        DPEG_Disposition_View must all deploy together.
+        ⚠ A PermissionSet DEPLOY REPLACES fieldPermissions WHOLESALE. This edit inserted these
+        11 blocks plus one objectPermissions block, then narrowed allowCreate/allowEdit and all
+        11 editable flags in the same file in a second pass; diffed against HEAD both times to
+        confirm no unrelated grant was reordered, altered or lost.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Disposition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Outgoing_BOV_Submission__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Incoming_BOV_Submission__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Outgoing_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Incoming_Broker__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Outgoing_Broker_Firm__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Incoming_Broker_Firm__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Notes__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Entry_DateTime__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>BOV_Broker_Change__c.Logged_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
@@ -1874,6 +2016,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
         <object>PSA_Version__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>BOV_Broker_Change__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <recordTypeVisibilities>
