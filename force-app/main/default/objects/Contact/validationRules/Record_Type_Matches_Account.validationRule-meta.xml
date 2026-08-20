@@ -8,7 +8,7 @@
         WHY THIS RULE IS SECURITY, NOT DATA HYGIENE. Contact OWD is ControlledByParent, so a
         Contact is visible to exactly the people who can see its Account. The Account record type
         is what the criteria-based sharing rules key on. A Broker Contact parented to an
-        Investor_Entity Account is therefore visible to Investor Relations and invisible to
+        Investing_Entity Account is therefore visible to Investor Relations and invisible to
         Acquisitions - the exact leak this feature exists to prevent - and nothing else in the
         system would notice.
 
@@ -42,10 +42,10 @@
         ),
         AND(
             RecordType.DeveloperName = "Investor",
-            Account.RecordType.DeveloperName &lt;&gt; "Investor_Entity"
+            Account.RecordType.DeveloperName &lt;&gt; "Investing_Entity"
         )
     )
 )</errorConditionFormula>
     <errorDisplayField>AccountId</errorDisplayField>
-    <errorMessage>A Broker contact must belong to a Broker Firm account, and an Investor contact to an Investor Entity account. Record-level access is inherited from the account, so a mismatch would expose this contact to the wrong team.</errorMessage>
+    <errorMessage>A Broker contact must belong to a Broker Firm account, and an Investor contact to an Investing Entity account. Record-level access is inherited from the account, so a mismatch would expose this contact to the wrong team.</errorMessage>
 </ValidationRule>

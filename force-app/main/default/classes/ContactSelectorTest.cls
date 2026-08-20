@@ -474,7 +474,7 @@ private class ContactSelectorTest {
     static void selectByEmails_investorContact_isExcluded() {
         Account investorAccount = TestDataFactory.createAccount(false);
         investorAccount.RecordTypeId = [SELECT Id FROM RecordType
-            WHERE SobjectType = 'Account' AND DeveloperName = 'Investor_Entity' LIMIT 1].Id;
+            WHERE SobjectType = 'Account' AND DeveloperName = 'Investing_Entity' LIMIT 1].Id;
         insert investorAccount;
 
         Contact investor = TestDataFactory.createContact(investorAccount.Id, false);

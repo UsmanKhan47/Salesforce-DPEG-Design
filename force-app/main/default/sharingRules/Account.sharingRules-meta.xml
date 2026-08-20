@@ -56,7 +56,7 @@
     </sharingCriteriaRules>
     <sharingCriteriaRules>
         <fullName>Account_Investor_Entity_IR</fullName>
-        <label>Account Investor Entity - IR</label>
+        <label>Account Investing Entity - IR</label>
         <accessLevel>Edit</accessLevel>
         <accountSettings>
             <caseAccessLevel>None</caseAccessLevel>
@@ -66,7 +66,7 @@
         <criteriaItems>
             <field>RecordTypeId</field>
             <operation>equals</operation>
-            <value>Investor Entity</value>
+            <value>Investing Entity</value>
         </criteriaItems>
         <sharedTo>
             <group>Investor_Relations</group>

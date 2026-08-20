@@ -1,9 +1,73 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>IR layer-3 read-only data set. Read-only on Lead/Contact/Account/Task/Event (no create/edit/delete); same minimal FLS as DPEG_IR_Default_Access, readable only; Investor_Onboarding + Investor record types visible. No Apex class access.</description>
+    <!--
+        ⚠ DESCRIPTION TRIMMED 2026-08-20 - was 433 chars, over the 255-char cap (deployment
+        validation error). Meaning preserved, wording shortened.
+    -->
+    <description>IR layer-3 read-only data set. Read-only on Lead/Contact/Account/ACR/Task/Event (no create/edit/delete); same minimal FLS as DPEG_IR_Default_Access; Investor_Onboarding + Investor RTs visible. No Apex class access. Junction FLS included.</description>
+    <!--
+        ⚠ ADDED (Account/Contact junction change, 2026-08-20) - read-only mirror of the grants
+        added to DPEG_IR_Default_Access for the same change. See that file's comments for the
+        full rationale. Object CRUD (Read only) was added in a follow-up change; see that block
+        further down in this file. NO recordTypeVisibilities entry exists for
+        AccountContactRelation - a record type was originally added and then DELETED: deployment
+        validation measured that AccountContactRelation cannot have a custom Record Type on this
+        org at all. These fields are now reached via the object's reworked, record-type-free
+        default Page Layout instead.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Appfolio_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Entity_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>Account.Phone</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Tax_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Account.Tax_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>AccountContactRelation.Is_Primary_Contact__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>AccountContactRelation.Is_Required_Signer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>AccountContactRelation.Signing_Order__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Active_Investor__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Active_Positions__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Appfolio_ID__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -18,12 +82,47 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Contact.Lifetime_Invested__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Mobile_Activated__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Contact.Phone</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Contact.Portal_Activated__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Contact.Referred_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Repeat_Investor__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Total_Commitments__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Total_Distributed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Contact.Total_Investing_Entities__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -72,6 +171,19 @@
         <object>Lead</object>
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
+    <!--
+        ⚠ ADDED (Account/Contact junction change, follow-up 2026-08-20) - AccountContactRelation
+        Read-only, mirroring every other object block in this read-only permission set.
+    -->
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>AccountContactRelation</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
     <objectPermissions>
         <allowCreate>false</allowCreate>
         <allowDelete>false</allowDelete>
@@ -109,7 +221,7 @@
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <recordTypeVisibilities>
-        <recordType>Account.Investor_Entity</recordType>
+        <recordType>Account.Investing_Entity</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
@@ -120,4 +232,14 @@
         <recordType>Lead.Investor_Onboarding</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
+    <!--
+        ⚠ ADDED 2026-08-20 - ViewEncryptedData, needed for this persona to see Account.Tax_ID__c
+        (now Text (Encrypted)) in clear text rather than masked to its last four characters. This
+        is the first userPermissions entry in this file - DPEG_IR_Principle_Read previously
+        carried no system permissions at all.
+    -->
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewEncryptedData</name>
+    </userPermissions>
 </PermissionSet>

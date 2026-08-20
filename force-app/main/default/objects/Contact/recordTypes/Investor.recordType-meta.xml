@@ -5,7 +5,7 @@
 
         CONTACT RECORD TYPES DRIVE LAYOUT, FLS AND REPORTING ONLY - NOT SHARING. Contact
         sharing is inherited from its Account via ControlledByParent (target state - see the
-        comment in Account/recordTypes/Investor_Entity.recordType-meta.xml for the org's
+        comment in Account/recordTypes/Investing_Entity.recordType-meta.xml for the org's
         current, measured OWD, which has not yet been corrected to match this design). MEASURED,
         not assumed: Contact's live InternalSharingModel was queried via the Tooling API
         (`SELECT InternalSharingModel FROM EntityDefinition WHERE DeveloperName = 'Contact'`)

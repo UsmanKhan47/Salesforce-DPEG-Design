@@ -31,7 +31,7 @@
         remote picklist values and a repo field file can list values the org no longer has. Note
         that standard Account.Type already carries a value literally named 'Broker Firm' -
         coincidental overlap with this record type's own label, not a dependency; nothing here
-        reads or writes Account.Type. Both Account record types (this one and Investor_Entity)
+        reads or writes Account.Type. Both Account record types (this one and Investing_Entity)
         carry the IDENTICAL, COMPLETE value set - the org has no default on any of these six
         picklists, so no <default>true</default> appears anywhere in this file. Narrowing either
         record type's values is a separate, deliberate change for later, and this fix is

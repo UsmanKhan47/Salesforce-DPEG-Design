@@ -41,6 +41,26 @@
         <type>Flexipage</type>
         <profile>DPEG-IR-SF-Minimum Access</profile>
     </profileActionOverrides>
+    <profileActionOverrides>
+        <actionName>View</actionName>
+        <content>Investing_Entity_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <pageOrSobjectType>Account</pageOrSobjectType>
+        <recordType>Account.Investing_Entity</recordType>
+        <type>Flexipage</type>
+        <profile>DPEG-IR-SF-Minimum Access</profile>
+    </profileActionOverrides>
+    <!--
+        ⚠ REMOVED 2026-08-20 (was here, now deleted) - a profileActionOverride binding
+        Investor_Investing_Entity_Record_Page to AccountContactRelation.Investor_Investing_Entity.
+        Deployment validation measured that AccountContactRelation cannot have a custom Lightning
+        Record Page on this org ("The object type you specified AccountContactRelation is
+        invalid") - a restriction independent of the record-type rejection - so the FlexiPage
+        itself was deleted and this override removed with it. AccountContactRelation records are
+        still reachable via the reworked Page Layout (see layouts/AccountContactRelation-Investor-
+        Investing Entity Layout.layout-meta.xml) through the standard (non-Lightning-App-Builder)
+        record view, just not through a custom FlexiPage inside this app.
+    -->
     <tabs>standard-Lead</tabs>
     <tabs>standard-Contact</tabs>
     <tabs>standard-Account</tabs>

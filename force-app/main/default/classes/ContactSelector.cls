@@ -222,7 +222,7 @@ public with sharing class ContactSelector {
      * and investor populations are disjoint by policy, so this filter changes no behaviour
      * today — it makes the guarantee STRUCTURAL. Without it, one shared email address between
      * a broker and an investor would attach an acquisition deal to an IR Contact and its
-     * Investor_Entity Account, which is precisely the boundary this module exists to hold.
+     * Investing_Entity Account, which is precisely the boundary this module exists to hold.
      *
      * ⚠ A Contact on the MASTER record type will not match. That is intended and is why the
      * Task 3 backfill is gated on a zero-row query before OWD flips.

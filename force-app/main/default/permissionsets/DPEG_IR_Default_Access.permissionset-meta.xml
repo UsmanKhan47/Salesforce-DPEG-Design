@@ -8,10 +8,68 @@
         <apexClass>InvestorLeadConvertService</apexClass>
         <enabled>true</enabled>
     </classAccesses>
-    <description>IR layer-3 module data. Lead CRUD minus Delete w/ onboarding FLS; Contact/Account CRUD(+Account delete); Task/Event CRUD; EditTask+EmailSingle+ConvertLeads+EmailTemplateManagement; 3 IR flows; Investor_Onboarding+Investor RTs visible; conversion access.</description>
+    <!--
+        ⚠ DESCRIPTION TRIMMED 2026-08-20 - was 442 chars, over the 255-char cap (deployment
+        validation error). Meaning preserved, wording shortened.
+    -->
+    <description>IR layer-3 module data. Lead CRUD minus Delete w/ onboarding FLS; Contact/Account/ACR CRUD(+Acct delete); Task/Event CRUD; EditTask+EmailSingle+ConvertLeads+EmailTemplateMgmt; 3 IR flows; Investor_Onboarding+Investor RTs; conversion + junction FLS.</description>
+    <!--
+        ⚠ ADDED (Account/Contact junction change, 2026-08-20) - the four new "Investing Entity"
+        fields on Account (Entity_Type__c, Tax_ID__c, Tax_Address__c, Appfolio_ID__c). None of
+        these are required fields, so all four are eligible for FLS per the sf-permission-set
+        skill's "no required fields in fieldPermissions" rule.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Account.Appfolio_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Account.Entity_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>Account.Phone</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Account.Tax_Address__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Account.Tax_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ⚠ ADDED (Account/Contact junction change, 2026-08-20) - the three new fields on
+        AccountContactRelation (Signing_Order__c, Is_Primary_Contact__c, Is_Required_Signer__c).
+        Object CRUD (mirroring the Contact objectPermissions block below - Create/Read/Edit true,
+        Delete/modifyAll/viewAll false) was added in a follow-up change; see that block further
+        down in this file. NO recordTypeVisibilities entry exists for AccountContactRelation - a
+        record type was originally added and then DELETED: deployment validation measured that
+        AccountContactRelation cannot have a custom Record Type on this org at all
+        (`RecordType.SObjectType = AccountContactRelation` is rejected as a restricted picklist
+        value). These fields are now reached via the object's reworked, record-type-free default
+        Page Layout instead - see layouts/AccountContactRelation-Investor-Investing Entity
+        Layout.layout-meta.xml and profiles/DPEG-IR-SF-Minimum Access.profile-meta.xml.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>AccountContactRelation.Is_Primary_Contact__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>AccountContactRelation.Is_Required_Signer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>AccountContactRelation.Signing_Order__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <!--
@@ -53,6 +111,61 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Contact.Referred_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ⚠ ADDED (Account/Contact junction change, 2026-08-20) - the ten new investor-tracking
+        fields on Contact (4 activation/status checkboxes, 5 lifetime/position metrics, and the
+        AppFolio external ID). None are required fields, so all ten are eligible for FLS.
+    -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Active_Investor__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Active_Positions__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Appfolio_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Lifetime_Invested__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Mobile_Activated__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Portal_Activated__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Repeat_Investor__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Total_Commitments__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Total_Distributed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Contact.Total_Investing_Entities__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -113,6 +226,21 @@
         <object>Lead</object>
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
+    <!--
+        ⚠ ADDED (Account/Contact junction change, follow-up 2026-08-20) - AccountContactRelation
+        object CRUD, mirroring this same permission set's Contact block immediately below
+        (Create/Read/Edit true, Delete false) since that was the closest comparable pattern and
+        nothing broader was requested.
+    -->
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>AccountContactRelation</object>
+        <viewAllRecords>false</viewAllRecords>
+    </objectPermissions>
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>false</allowDelete>
@@ -150,7 +278,7 @@
         <viewAllRecords>false</viewAllRecords>
     </objectPermissions>
     <recordTypeVisibilities>
-        <recordType>Account.Investor_Entity</recordType>
+        <recordType>Account.Investing_Entity</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
@@ -228,6 +356,14 @@
     <userPermissions>
         <enabled>true</enabled>
         <name>ManageTranslation</name>
+    </userPermissions>
+    <!--
+        ⚠ ADDED 2026-08-20 - ViewEncryptedData, needed for this persona to see Account.Tax_ID__c
+        (now Text (Encrypted)) in clear text rather than masked to its last four characters.
+    -->
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewEncryptedData</name>
     </userPermissions>
     <userPermissions>
         <enabled>true</enabled>

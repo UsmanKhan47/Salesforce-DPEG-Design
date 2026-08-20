@@ -161,22 +161,22 @@ private class AccountSelectorTest {
     /**
      * IR segregation (2026-08-10, Task 6). The broker and investor populations are disjoint by
      * policy, so this pins the STRUCTURAL guarantee: even a fabricated shared-name collision
-     * between a brokerage firm and an investor entity must not surface an IR Account as a
+     * between a brokerage firm and an investing entity must not surface an IR Account as a
      * lead-conversion match target — see the RECORD TYPE SCOPE note on
      * AccountSelector.selectByNames's ApexDoc. Mirrors
      * ContactSelectorTest.selectByEmails_investorContact_isExcluded.
      */
     @isTest
     static void selectByNames_investorEntityAccount_isExcluded() {
-        Account investorAccount = new Account(Name = 'Shared Name Investor Entity',
+        Account investorAccount = new Account(Name = 'Shared Name Investing Entity',
             BillingCity = 'Houston', BillingState = 'TX',
             RecordTypeId = [SELECT Id FROM RecordType
-                WHERE SobjectType = 'Account' AND DeveloperName = 'Investor_Entity' LIMIT 1].Id);
+                WHERE SobjectType = 'Account' AND DeveloperName = 'Investing_Entity' LIMIT 1].Id);
         insert investorAccount;
 
         Test.startTest();
         List<Account> matched = AccountSelector.selectByNames(
-            new Set<String>{ 'Shared Name Investor Entity' });
+            new Set<String>{ 'Shared Name Investing Entity' });
         Test.stopTest();
 
         Assert.areEqual(0, matched.size(),

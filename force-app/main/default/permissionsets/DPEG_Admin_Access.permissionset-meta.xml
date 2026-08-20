@@ -74,7 +74,7 @@
         UNASSIGNED. Never the other way round.
 
         (B) 🔴 SIX recordTypeVisibilities WERE ADDED TO STOP THIS FILE SILENTLY WIPING THEM.
-        Account.Broker_Firm, Account.Investor_Entity, Contact.Broker, Contact.Investor,
+        Account.Broker_Firm, Account.Investing_Entity, Contact.Broker, Contact.Investor,
         Lead.Acquisition_Broker and Lead.IR_Investor were LIVE IN THE ORG on this set and were
         ABSENT FROM THIS FILE. A PermissionSet deploy REPLACES the whole grant list rather than
         merging into it, so the very next deploy of this file - including the app move in (A),
@@ -190,7 +190,7 @@
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
-        <recordType>Account.Investor_Entity</recordType>
+        <recordType>Account.Investing_Entity</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
@@ -210,7 +210,7 @@
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>
-        <recordType>Account.Investor_Entity</recordType>
+        <recordType>Account.Investing_Entity</recordType>
         <visible>true</visible>
     </recordTypeVisibilities>
     <recordTypeVisibilities>

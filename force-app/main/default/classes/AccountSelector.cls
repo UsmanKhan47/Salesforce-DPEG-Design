@@ -63,8 +63,8 @@ public with sharing class AccountSelector {
      * RECORD TYPE SCOPE (2026-08-10, IR segregation). Restricted to Account.Broker_Firm. The
      * broker and investor populations are disjoint by policy, so this filter changes no behaviour
      * today — it makes the guarantee STRUCTURAL. Without it, one shared firm name between a
-     * brokerage and an investor entity would attach an acquisition deal's new Contact to an
-     * Investor_Entity Account, which is precisely the boundary this module exists to hold.
+     * brokerage and an investing entity would attach an acquisition deal's new Contact to an
+     * Investing_Entity Account, which is precisely the boundary this module exists to hold.
      *
      * ⚠ An Account on the MASTER record type will not match. That is intended and is why the
      * Task 3 backfill is gated on a zero-row query before OWD flips.

@@ -620,7 +620,7 @@ public with sharing class LeadConvertService {
      *   - ROOT CAUSE, confirmed by a read-only metadata retrieve of the LIVE org copy of
      *     DPEG_Admin_Access (not the repo file): the org's deployed permission set does NOT
      *     contain the six IR-segregation <recordTypeVisibilities> entries the repo file declares
-     *     (Account.Broker_Firm, Account.Investor_Entity, Contact.Broker, Contact.Investor,
+     *     (Account.Broker_Firm, Account.Investing_Entity, Contact.Broker, Contact.Investor,
      *     Lead.Acquisition_Broker) — only the pre-existing ones (Contract
      *     Review / Disposition / LOI / NDA / Opportunity) are live. Task 2's grant was committed
      *     to source but never actually landed in the org; the record types themselves (Task 1)

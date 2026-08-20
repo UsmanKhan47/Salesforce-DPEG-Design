@@ -15,7 +15,7 @@
         own Contact.object-meta.xml, which still declares ControlledByParent. The
         Record_Type_Matches_Account validation rule (Task 8) is what keeps a Contact's own
         record type from disagreeing with its parent Account's record type - without it a
-        Broker Contact could be filed under an Investor_Entity Account (or vice versa) and the
+        Broker Contact could be filed under an Investing_Entity Account (or vice versa) and the
         two segregation boundaries would silently diverge.
 
         ⚠ FIX 2026-08-10 (code review, CRITICAL) - EVERY PICKLIST ON THE OBJECT IS ENUMERATED

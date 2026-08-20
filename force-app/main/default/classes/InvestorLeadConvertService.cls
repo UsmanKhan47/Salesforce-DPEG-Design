@@ -12,7 +12,7 @@
  * not block.
  *
  * Per Lead:
- *   1. insert a temporary Account, stamped Investor_Entity (describe-resolved, never a hardcoded Id)
+ *   1. insert a temporary Account, stamped Investing_Entity (describe-resolved, never a hardcoded Id)
  *   2. Database.convertLead(setLeadId + setAccountId + setDoNotCreateOpportunity(true)) — and
  *      deliberately NO setContactId, which is what makes the platform create the Contact
  *   3. read LeadConvertResult.getContactId()
@@ -204,7 +204,7 @@ public with sharing class InvestorLeadConvertService {
     public static final String TEMP_ACCOUNT_NAME_PREFIX = 'IR Conversion Temp Account';
 
     /** Account record type stamped on the temporary Account. */
-    private static final String TEMP_ACCOUNT_RECORD_TYPE = 'Investor_Entity';
+    private static final String TEMP_ACCOUNT_RECORD_TYPE = 'Investing_Entity';
 
     /** Contact record type stamped on the Contact the conversion creates. */
     private static final String INVESTOR_CONTACT_RECORD_TYPE = 'Investor';
@@ -493,7 +493,7 @@ public with sharing class InvestorLeadConvertService {
         return (info != null && info.isAvailable()) ? info.getRecordTypeId() : null;
     }
 
-    /** Memoized Investor_Entity Account record type Id (null is a legitimate answer). */
+    /** Memoized Investing_Entity Account record type Id (null is a legitimate answer). */
     private static Id tempAccountRecordTypeId() {
         if (!tempAccountRecordTypeResolved) {
             tempAccountRecordTypeIdCache =
@@ -901,7 +901,7 @@ public with sharing class InvestorLeadConvertService {
      *
      * ⚠ The `Investor` record type combined with a null AccountId is accepted by the
      * Record_Type_Matches_Account validation rule, which only fires when the Contact's Account HAS a
-     * record type that is not Investor_Entity — verified against the live rule formula, whose first
+     * record type that is not Investing_Entity — verified against the live rule formula, whose first
      * clause is NOT(ISBLANK(AccountId)).
      */
     private static void applyInvestorFields(List<Work> works, List<Result> results) {
