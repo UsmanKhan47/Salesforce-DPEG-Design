@@ -1,11 +1,62 @@
 /**
  * c-disposition-buyer-timeline
  * ---------------------------------------------------------------------------
- * The buyer activity timeline on the Disposition record page: one row per
- * buyer-role NDA, showing the three dates of the buyer journey
- * (NDA signed -> materials released -> first offer) and the two durations
- * between them. Tranche 2 Workstream D
- * (agent-output/disposition-tranche-2-requirements.md §3 D6.3).
+ * The card titled "Broker Activity Timeline" on the Disposition record page: one
+ * row per buyer-role NDA, showing the NDA's number, the broker it names, the two dates
+ * of the NDA journey (signed -> materials released) and the duration between
+ * them. Tranche 2 Workstream D
+ * (agent-output/disposition-tranche-2-requirements.md §3 D6.3), retargeted
+ * 2026-08-21.
+ *
+ * ==========================================================================
+ * 🔴 THREE NAMES, ALL DIFFERENT, ALL DELIBERATE. READ THIS BEFORE "FIXING" ANY.
+ * ==========================================================================
+ *   BUNDLE / APEX API NAME  ->  dispositionBuyerTimeline  (a BUYER concept)
+ *   CARD TITLE ON SCREEN    ->  "Broker Activity Timeline" (2026-08-21)
+ *   ONE ROW REPRESENTS      ->  ONE NDA
+ * Nothing here agrees with anything else, and each disagreement has a reason:
+ *
+ * 1. THE BUNDLE NAME IS HISTORICAL AND IS NOT GOING TO BE CORRECTED. DPEG
+ *    communicates only with the appointed listing broker; buyers sit behind them
+ *    and are not tracked (user decision, 2026-08-21), so this card stopped
+ *    rendering a buyer identity — but it was NOT RENAMED. The bundle is placed
+ *    by `flexipages/Disposition_Record_Page` and its Apex
+ *    (`DispositionBuyerTimelineController` / `Service` / `Test`) is compiled into
+ *    the org under these names, so a rename is a FlexiPage edit PLUS a
+ *    destructive Apex delete — a two-sided deploy that a check-only validation
+ *    cannot prove and that leaves a dangling reference if either half lands
+ *    alone. Only the user-visible strings were changed, which costs nothing and
+ *    is what anyone actually reads. Treat every "buyer" in an API name on this
+ *    feature as historical.
+ *
+ * 2. 🔴 THE TITLE SAYS "BROKER" BUT THE ROWS ARE NOT GROUPED BY BROKER, AND
+ *    GROUPING THEM WOULD DESTROY THE CARD. There is ONE appointed broker per
+ *    sale, so THE SAME BROKER NAME REPEATS ON EVERY ROW — that is the data being
+ *    true, not duplication to be cleaned up. The title says "Broker" because the
+ *    broker is the party DPEG actually deals with (user instruction, 2026-08-21),
+ *    NOT because the card is a per-broker rollup. Group by broker and a
+ *    three-NDA sale collapses to a single row, deleting the entire timeline this
+ *    component exists to show. The broker is therefore rendered as a per-tile
+ *    SUBTITLE, never as the tile heading.
+ *
+ * 3. The row's identity is the NDA AutoNumber, the only per-row identity that is
+ *    always present. The intro line and the empty state still say "NDA" for that
+ *    reason, and they are correct — they describe the rows, the title names the
+ *    counterparty.
+ *
+ * ==========================================================================
+ * 🔴 THE "FIRST OFFER" COLUMN WAS DELETED. THE OBVIOUS REPLACEMENT IS A LIE.
+ * ==========================================================================
+ * Each row used to carry the earliest offer made by THAT ROW'S BUYER on this
+ * sale, joined on a Contact Id at both ends. With the buyer gone from the offer
+ * form, NOTHING LINKS AN OFFER TO A SPECIFIC NDA, so no attribution this card
+ * can make is true.
+ * 🔴 DO NOT SUBSTITUTE THE DISPOSITION'S EARLIEST OFFER. It is one query away
+ * and it would render the SAME DATE ON EVERY TILE, under a label that reads as a
+ * per-row fact. This repo deleted a whole component three weeks ago on exactly
+ * that ground — a component rendering a fixed lie is worse than an empty one.
+ * The Apex selector method behind the column was deleted with it so the shortcut
+ * has no one-liner to reach for.
  *
  * ==========================================================================
  * 🔴 🔴 THIS COMPONENT MUST NOT READ `NDA_Signed__c`. IT DOES NOT. DO NOT ADD IT.
@@ -20,7 +71,9 @@
  * the same trap. The before-save flow `NDA_Signed_Status_Sync` NEVER CLEARS
  * `Date_Signed__c`, by explicit design, so a `Signed -> Declined` party keeps a
  * non-null date forever. THE GATE IS `Status__c = 'Signed'`; the date is only
- * the value shown once that gate passes.
+ * the value shown once that gate passes. ⚠ THE 2026-08-21 RETARGET DID NOT
+ * TOUCH ANY OF THIS — it is restated because a different column WAS deleted that
+ * day, and the two must not be confused.
  *
  * 🔴 Neither field is decided HERE. `DispositionBuyerTimelineService` applies
  * the gate server-side and a declined party's retained date NEVER CROSSES THE
@@ -31,12 +84,12 @@
  * Included, never hidden — they are audit evidence (`NDA__c.allowDelete` is
  * false by decision D20), and hiding them would make this card disagree with
  * the NDAs related list on the same page. Rendered as a visually distinct
- * TERMINATED row: the buyer name, a `Declined` badge, and em-dashes in all
- * three date columns and both duration columns. Sorted LAST.
+ * TERMINATED row: the NDA number, its broker, a `Declined` badge, and em-dashes
+ * in both date columns and the duration. Sorted LAST.
  *
  * ⚠ ACCESSIBILITY: the `Declined` state is carried as READABLE TEXT inside the
  * badge, not by colour alone, and each terminated row's group carries an
- * `aria-label` naming the buyer and the state. A coloured pill on its own is
+ * `aria-label` naming the NDA and the state. A coloured pill on its own is
  * not an accessible state, and this repo has a measured incident of a
  * text->badge swap deleting accessible content a test had pinned. The Jest
  * suite asserts on the rendered TEXT, so that regression fails loudly here.
@@ -50,35 +103,30 @@
  *
  * ── DATA ACCESS ──────────────────────────────────────────────────────────
  * Imperative-free: a single `@wire(getTimeline, { dispositionId: '$recordId' })`.
- * Apex rather than LDS/GraphQL because the payload is a cross-object
- * computation — NDAs joined to their earliest matching offer, with a status
- * gate and two derived durations — which no wire adapter can express
- * (ARCHITECTURE.md §5, "Imperative Apex only when LDS cannot express the
- * query"). The controller is a thin wrapper over the service.
+ * Apex rather than LDS/GraphQL because the payload carries a status gate and a
+ * derived duration that no wire adapter can express (ARCHITECTURE.md §5,
+ * "Imperative Apex only when LDS cannot express the query"). The controller is a
+ * thin wrapper over the service.
  *
  * ── ERROR BRANCH ─────────────────────────────────────────────────────────
  * The controller throws `AuraHandledException` rather than returning an empty
- * list, because an empty timeline on a sale with three engaged buyers is a
+ * list, because an empty timeline on a sale with three raised NDAs is a
  * confident wrong answer nothing on the page contradicts. This component
  * therefore renders a visible inline alert — never a silent blank.
- *
- * ⚠ AMENDED 2026-08-21. This paragraph used to end "...and NO card". That was
- * literally true of the old markup, which had no card chrome at all and emitted
- * a bare <div> per branch. The card chrome is now UNCONDITIONAL and the alert
- * renders inside it. The requirement the sentence was protecting is unchanged
- * and is still pinned by the tests: on the error branch there are NO TILES and
- * NO EMPTY STATE. What has changed is that the failing panel now says which
- * panel it is.
+ * ⚠ EXPECT THIS BRANCH IMMEDIATELY AFTER DEPLOY. `NDA__c.Broker__c` is a
+ * 2026-08-21 field, and a Metadata-API-deployed field arrives with NO FLS for
+ * anyone (System Administrator included), so the `WITH USER_MODE` read behind
+ * this card throws until both disposition permission sets grant it. That is a
+ * deploy-order dependency, not a defect.
  *
  * ══════════════════════════════════════════════════════════════════════════
  * 🔴 DESIGNED FOR A ~340px SIDEBAR COLUMN. DO NOT REINTRODUCE COLUMNS.
  * ══════════════════════════════════════════════════════════════════════════
  * The rendered unit is a self-labelling TILE, not a row in a shared grid — see
- * the long note in the template. The five values below are still produced in
- * the same order and still flattened to em-dashes in exactly the same cases;
- * only their arrangement changed. The three "step class" getters added below
- * drive a decorative milestone rail and carry NO information that is not
- * already in the value cell beside them.
+ * the long note in the template. The three values below are produced in reading
+ * order and flattened to em-dashes in exactly the same cases as before; the two
+ * "step class" getters drive a decorative milestone rail and carry NO
+ * information that is not already in the value cell beside them.
  */
 import { LightningElement, api, wire } from 'lwc';
 import getTimeline from '@salesforce/apex/DispositionBuyerTimelineController.getTimeline';
@@ -100,8 +148,12 @@ export default class DispositionBuyerTimeline extends LightningElement {
             this.rows = result.data;
             this.loadError = undefined;
         } else if (result.error) {
+            // The fallback names the card the user is looking at ("broker
+            // activity timeline"), not the objects behind it — a message that
+            // names a card the user cannot see on screen is not actionable.
             this.loadError =
-                result.error?.body?.message || "Couldn't load the buyer timeline.";
+                result.error?.body?.message ||
+                "Couldn't load the broker activity timeline.";
             this.rows = undefined;
         }
     }
@@ -155,26 +207,35 @@ export default class DispositionBuyerTimeline extends LightningElement {
     }
 
     /**
-     * The card's visible title, with the buyer count appended ONLY once the wire
+     * The card's visible title, with the NDA count appended ONLY once the wire
      * has answered.
      *
      * 🔴 A PREMATURE "(0)" IS A CLAIM THIS CARD IS NOT ENTITLED TO MAKE. Before
      * the wire settles, `rows` is undefined and nothing is known about the sale;
-     * "Buyer Activity Timeline (0)" would state, in the same words it uses for a
-     * genuinely empty sale, that no buyer has been engaged. The same reasoning
-     * keeps the EMPTY STATE out of the pre-wire render, and it is the one thing
-     * that must survive any future re-titling of this card.
+     * "Broker Activity Timeline (0)" would state, in the same words it uses for a
+     * genuinely empty sale, that no NDA has been raised. The same reasoning
+     * keeps the EMPTY STATE out of the pre-wire render, and it survived the
+     * 2026-08-21 re-titling exactly as its previous wording said it must.
+     *
+     * ⚠ THE COUNT IS A COUNT OF NDAs, NOT OF BROKERS — see the class header. On
+     * a sale with one broker and four NDAs this reads "Broker Activity Timeline
+     * (4)", which is correct. Do not "reconcile" the number with the title by
+     * counting distinct brokers; that number is 1 on every disposition and tells
+     * the reader nothing.
+     *
+     * ⚠ THE TITLE SAYS "Broker", THE BUNDLE SAYS "buyer". The title is the half
+     * that was safe to change — see the class header.
      */
     get cardTitle() {
         return this.hasRows || this.isEmpty
-            ? `Buyer Activity Timeline (${this.rows.length})`
-            : 'Buyer Activity Timeline';
+            ? `Broker Activity Timeline (${this.rows.length})`
+            : 'Broker Activity Timeline';
     }
 
     /**
      * The rendered rows, in SERVER ORDER (see the class header — no sort here).
      *
-     * A declined row is flattened to em-dashes in ALL FIVE value columns right
+     * A declined row is flattened to em-dashes in ALL THREE value columns right
      * here, so the template has no per-column conditional to get wrong and the
      * "terminated rows show no dates" rule lives in exactly one place.
      */
@@ -187,38 +248,37 @@ export default class DispositionBuyerTimeline extends LightningElement {
             const materialsReleased = declined
                 ? EM_DASH
                 : this.formatDate(row.materialsReleasedDate);
-            const firstOffer = declined
-                ? EM_DASH
-                : this.formatDate(row.firstOfferDate);
+            // ⚠ Never `undefined` anywhere below: a getter bound to a custom
+            // element's attribute is written UNCONDITIONALLY, so `undefined`
+            // would render the literal string "undefined" in the DOM.
+            const ndaName = row.ndaName || EM_DASH;
             return {
                 id: row.ndaId,
-                buyerName: row.buyerName || EM_DASH,
+                // 🔴 THE ROW'S IDENTITY IS THE NDA NUMBER. It used to be the
+                // buyer's name; buyers are no longer tracked, and the AutoNumber
+                // is the only per-row identity that is always present.
+                ndaName,
+                brokerName: row.brokerName || EM_DASH,
                 isDeclined: declined,
-                // ⚠ Never `undefined`: a getter bound to a custom element's
-                // attribute is written UNCONDITIONALLY, so `undefined` would
-                // render the literal string "undefined" in the DOM.
                 tileClass: declined ? 'dbt-tile dbt-tile--declined' : 'dbt-tile',
                 // The accessible name for the whole tile group. Colour and the
                 // badge are reinforcement; THIS is the state a screen reader
                 // announces.
                 rowLabel: declined
-                    ? `${row.buyerName} — NDA declined; no dates recorded`
-                    : `${row.buyerName} — ${row.status || 'in progress'}`,
+                    ? `${ndaName} — NDA declined; no dates recorded`
+                    : `${ndaName} — ${row.status || 'in progress'}`,
                 ndaSigned,
                 materialsReleased,
-                firstOffer,
                 daysToRelease: declined ? EM_DASH : this.formatDays(row.daysToRelease),
-                daysToRespond: declined ? EM_DASH : this.formatDays(row.daysToRespond),
                 // ── Milestone rail (DECORATION ONLY — see the class header) ──
                 // Derived from the RENDERED value, not from the raw payload, so
                 // the marker and the text beside it cannot disagree: a declined
                 // party's retained signature date is already em-dashed above, so
                 // its marker is correctly hollow without a second `declined`
-                // test here. `--end` suppresses the connector below the third
-                // milestone; the two duration rows that follow are not steps.
+                // test here. `--end` suppresses the connector below the LAST
+                // milestone; the duration row that follows is not a step.
                 ndaSignedStepClass: stepClass(ndaSigned),
-                materialsStepClass: stepClass(materialsReleased),
-                firstOfferStepClass: `${stepClass(firstOffer)} dbt-step--end`,
+                materialsStepClass: `${stepClass(materialsReleased)} dbt-step--end`,
                 // The anomaly flag is suppressed on a declined row too — it has
                 // no dates to be inconsistent with, so a warning there would be
                 // noise pointing at nothing.

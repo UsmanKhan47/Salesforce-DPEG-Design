@@ -268,17 +268,17 @@ describe('c-bov-broker-change-history', () => {
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
         expect(unavailable(element)).toBeNull();
 
-        // Structure, not a bare grey sentence: a status region with an icon and the explanatory
-        // line. The intro wording is kept VERBATIM because "nothing is deleted" is the point of
-        // an audit log — an empty audit log that does not say what it would have contained is
-        // indistinguishable from a broken one.
+        // Structure, not a bare grey sentence: a status region with an icon.
+        // ⚠ THE ASSERTION ON `.bbc-state-sub` WAS DELETED ON 2026-08-21, NOT SOFTENED. It pinned
+        // 'Every broker ever appointed to this sale — nothing is deleted.' verbatim; the user
+        // named that exact string as prose they did not want, so the sub-line is gone and its
+        // assertion went with it. The HEADLINE assertion above is the one that mattered for this
+        // test's actual claim — that EMPTY is distinguishable from LOADING and from UNAVAILABLE —
+        // and it is untouched.
         const state = element.shadowRoot.querySelector('.bbc-state');
         expect(state.getAttribute('role')).toBe('status');
         expect(state.querySelector('lightning-icon').iconName).toBe(
             'utility:change_record_type'
-        );
-        expect(state.querySelector('.bbc-state-sub').textContent).toBe(
-            'Every broker ever appointed to this sale — nothing is deleted.'
         );
         // The count IS shown once the wire has answered, even at zero — at that point it is a
         // fact about the sale rather than a guess.
@@ -311,8 +311,73 @@ describe('c-bov-broker-change-history', () => {
         // 🔴 NO COUNT IN THE TITLE. "Broker Change History (0)" is the empty state's claim in
         // fewer words, and it is the one place the state templates cannot guard.
         expect(title(element)).toBe('Broker Change History');
-        // The intro sentence is a COMPLETENESS claim ("every broker ever appointed"), and this
-        // is exactly the state in which the card cannot make one.
+        // ⚠ `expect(text(element)).not.toContain('nothing is deleted')` STOOD HERE AND WAS DELETED
+        // ON 2026-08-21. It was a real falsifier while the intro rendered in the other two states
+        // — it proved this state alone withheld the completeness claim. The 2026-08-21 removal
+        // deleted that sentence EVERYWHERE, so the assertion became one that passes no matter what
+        // the component does: exactly the always-green test the absence-pin rule exists to
+        // prevent. The claim now lives once, in T-NO-PROSE below, run on a POPULATED fixture where
+        // it can still fail.
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
+    //
+    // `get intro()` — 'Every broker ever appointed to this sale — nothing is deleted.' — was
+    // removed at the user's request; they quoted it. It rendered in TWO places, above the tile
+    // list and as the empty state's sub-line, and both are gone.
+    //
+    // 🔴 THE PIN RUNS ON THE POPULATED FIXTURE, AND THAT IS THE WHOLE POINT. The assertion it
+    // replaces (in the UNAVAILABLE test) became always-green the moment the sentence stopped
+    // rendering anywhere: a card that renders NOTHING satisfies "does not contain 'nothing is
+    // deleted'" just as well as a correct one. Asserting it on two rendered tiles is what keeps
+    // it falsifiable.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-PROSE: no intro sentence above the tiles, and none in the empty state', async () => {
+        const element = createComponent();
+
+        getHistory.emit(HISTORY);
+        await Promise.resolve();
+
+        // Guard the guard: real tiles rendered, so the absences below are real.
+        expect(rows(element).length).toBe(2);
+
+        // 1. THE OLD SELECTOR.
+        expect(element.shadowRoot.querySelector('.bbc-intro')).toBeNull();
+
+        // 2. 🔴 THE RENDERED WORDS — a re-added line usually arrives under a new class name.
+        expect(text(element)).not.toContain('nothing is deleted');
+        expect(text(element).toLowerCase()).not.toContain('every broker ever appointed');
+
+        // 3. 🔴 NO DANGLING aria-describedby. The paragraph carried `id="bbc-intro"` and the list
+        //    pointed at it; an aria-describedby naming an element that no longer exists promises
+        //    a screen-reader user a description that resolves to nothing — strictly worse than
+        //    having none. This is the assertion that catches "deleted the <p>, left the attribute".
+        const list = element.shadowRoot.querySelector('.bbc-list');
+        expect(list).not.toBeNull();
+        expect(list.getAttribute('aria-describedby')).toBeNull();
+        // The list's own accessible NAME is unaffected and must stay.
+        expect(list.getAttribute('aria-label')).toBe('Broker changes');
+    });
+
+    it('🔴 T-NO-PROSE: the EMPTY state keeps its headline and loses only the sub-line', async () => {
+        const element = createComponent();
+
+        getHistory.emit([]);
+        await Promise.resolve();
+
+        // 🔴 THE HALF THAT MUST SURVIVE. The user kept empty states explicitly: without this
+        // sentence an empty audit log is indistinguishable from a broken one. A future "tidy-up"
+        // that deletes the whole state to satisfy the absence half of this pin fails HERE.
+        expect(empty(element)).not.toBeNull();
+        expect(empty(element).textContent).toBe('No broker changes recorded');
+        expect(
+            element.shadowRoot.querySelector('.bbc-state').getAttribute('role')
+        ).toBe('status');
+
+        // 🔴 THE HALF THAT MUST NOT COME BACK.
+        expect(element.shadowRoot.querySelector('.bbc-state-sub')).toBeNull();
         expect(text(element)).not.toContain('nothing is deleted');
     });
 

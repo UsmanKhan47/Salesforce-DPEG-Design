@@ -11,6 +11,7 @@ import {
     MONTHS,
     formatMoney,
     formatMillions,
+    formatExactCurrency,
     formatShortDate,
     formatLongDate,
     brokerOptionLabel
@@ -160,6 +161,79 @@ describe('c/utils formatMillions (always $M, em-dash fallback)', () => {
 
     it('renders negatives in millions', () => {
         expect(formatMillions(-9800000)).toBe('$-9.8M');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 THE CONTRACT ABOVE IS UNCHANGED BY THE 2026-08-21 EXACT-CURRENCY WORK.
+    //    `c/dispositionOfferSelect` stopped CALLING this function; it was not
+    //    widened, because `c/backupBrokers` and `c/bovComparisonMatrix` render
+    //    BOV valuations where `$11.0M` is the right register and their suites
+    //    assert those exact strings. The test below is the pin on that decision.
+    // ─────────────────────────────────────────────────────────────────────────
+    it('🔴 STILL ROUNDS — this is why the offer-select label had to stop using it', () => {
+        // The org's two real offers. One string for two different bids; that is
+        // the defect, and it is CORRECT behaviour for a $M abbreviation. Anyone
+        // tempted to "fix" it here should read formatExactCurrency's header.
+        expect(formatMillions(1850000)).toBe('$1.9M');
+        expect(formatMillions(1860000)).toBe('$1.9M');
+        expect(formatMillions(1850000)).toBe(formatMillions(1860000));
+    });
+});
+
+describe('c/utils formatExactCurrency (exact, grouped, never abbreviated)', () => {
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 THE DEFECT THIS EXPORT EXISTS FOR (live UAT, 2026-08-21): the two offers
+    //    in `usman-dpeg` both rendered `$1.9M` on the screen that picks the
+    //    winning bid. These two lines are the whole point of the change.
+    // ─────────────────────────────────────────────────────────────────────────
+    it('🔴 renders the org’s two real offers as two DISTINCT strings', () => {
+        expect(formatExactCurrency(1850000)).toBe('$1,850,000');
+        expect(formatExactCurrency(1860000)).toBe('$1,860,000');
+        expect(formatExactCurrency(1850000)).not.toBe(
+            formatExactCurrency(1860000)
+        );
+    });
+
+    it('🔴 has a collision distance of zero cents — $10 apart still reads apart', () => {
+        // Two decimals would have rendered both of these `$1.85M`. There is no
+        // choice of decimal places that survives this; only an exact figure does.
+        expect(formatExactCurrency(1850000)).not.toBe(
+            formatExactCurrency(1850010)
+        );
+        expect(formatExactCurrency(1850000.5)).toBe('$1,850,000.50');
+    });
+
+    it('groups thousands at every scale', () => {
+        expect(formatExactCurrency(0)).toBe('$0');
+        expect(formatExactCurrency(999)).toBe('$999');
+        expect(formatExactCurrency(1000)).toBe('$1,000');
+        expect(formatExactCurrency(12500000)).toBe('$12,500,000');
+        expect(formatExactCurrency(1234567890)).toBe('$1,234,567,890');
+    });
+
+    it('shows cents only when they are non-zero', () => {
+        expect(formatExactCurrency(2500000.0)).toBe('$2,500,000');
+        expect(formatExactCurrency(2500000.4)).toBe('$2,500,000.40');
+        expect(formatExactCurrency(2500000.456)).toBe('$2,500,000.46');
+    });
+
+    it('coerces a decimal-over-the-wire string', () => {
+        expect(formatExactCurrency('1850000')).toBe('$1,850,000');
+        expect(formatExactCurrency('1850000.25')).toBe('$1,850,000.25');
+    });
+
+    it('renders negatives with the sign OUTSIDE the currency symbol', () => {
+        expect(formatExactCurrency(-1850000)).toBe('-$1,850,000');
+    });
+
+    it('renders null / undefined / empty / non-numeric as an em dash', () => {
+        // ⚠ Stricter than formatMillions, which returns '$NaNM' for a non-numeric
+        // input. An amount is the deciding value on this screen — "—" says "not
+        // stated", where "$NaNM" says nothing at all.
+        expect(formatExactCurrency(null)).toBe('—');
+        expect(formatExactCurrency(undefined)).toBe('—');
+        expect(formatExactCurrency('')).toBe('—');
+        expect(formatExactCurrency('not a number')).toBe('—');
     });
 });
 

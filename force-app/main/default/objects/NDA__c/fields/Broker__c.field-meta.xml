@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        ADDED 2026-08-21 (buyer-to-broker-counterparty-change.md). REPLACES Buyer__c AS THE NDA
+        COUNTERPARTY ON THE DISPOSITION SIDE, BY EXPLICIT USER DECISION: "we don't need buyer
+        information, we just need broker contact for disposition offers and NDA" / "everything
+        must be linked with broker contact as he is the only person that DPEG will be
+        communicating." DPEG communicates only with the appointed listing broker on the sale -
+        one per disposition, not one per interested buyer - so this lookup targets
+        Disposition__c.Broker__c's population (the Contact.Broker record type), not a
+        deal-scoped buyer principal. Role-named Contact lookup, explicitly permitted by
+        ARCHITECTURE.md §1.
+
+        =====================================================================================
+        XML SHAPE IS COPIED FROM Disposition_Offer__c.Broker__c, DELIBERATELY AND EXACTLY,
+        MATCHING Broker_Assignment__c.Broker__c, BOV_Submission__c.Broker__c, Lease_Inquiry__c
+        .Broker__c and Disposition__c.Broker__c. Same referenceTo, same ACTIVE non-optional
+        lookupFilter, same errorMessage string, same deleteConstraint. There is no Broker__c
+        OBJECT in this org; every "broker" in this application is a Contact on the
+        Contact.Broker RECORD TYPE.
+
+        🔴 DO NOT USE Contact.Is_Broker__c. That checkbox matches ZERO Contacts in this org -
+        the broker definition moved to the Contact.Broker RECORD TYPE on 2026-08-20, and six
+        fields were repointed off Is_Broker__c onto the record type that same day. This field
+        follows that same, current definition from the start; it was never pointed at the
+        retired checkbox.
+
+        THIS FILTER IS ACTIVE AND NON-OPTIONAL, UNLIKE THE RETIRING Buyer__c FIELD IT REPLACES.
+        Buyer__c's own comment explains at length why an active filter was wrong for a
+        deal-scoped buyer principal with no seed population. That reasoning does not carry over:
+        Broker__c targets the SAME durable, seeded population Disposition__c.Broker__c and
+        Disposition_Offer__c.Broker__c already filter against - a real, non-empty Contact.Broker
+        record-type population maintained by scripts/seed-broker-contacts.apex - so gating the
+        picker on it costs nothing and prevents a non-broker Contact from ever being NDA'd.
+
+        =====================================================================================
+        LABEL: "Broker Contact", NOT "Broker". Matches Disposition_Offer__c.Broker__c,
+        BOV_Submission__c.Broker__c and Disposition__c.Broker__c - every sibling Contact lookup
+        on a deal-adjacent object in this repo uses this label. No field on NDA__c carries the
+        bare label "Broker" today, so "Broker Contact" is unique here too and keeps this field
+        consistent with its family rather than with the retiring Buyer__c ("Buyer Contact").
+
+        =====================================================================================
+        RELATIONSHIP NAME: Brokered_NDAs. COLLISION CHECKED, NOT ASSUMED.
+        =====================================================================================
+        Every referenceTo Contact field in this repo as of this change uses one of
+        Broker_Assignments, Brokered_Dispositions, Lease_Inquiries, Brokered_Opportunities,
+        Brokered_BOV_Submissions, Incoming_Broker_Changes, Outgoing_Broker_Changes, Buyer_NDAs
+        (this object's own retiring field), Buyer_Disposition_Offers or
+        Brokered_Disposition_Offers. Brokered_NDAs is free. The Brokered_ prefix matches
+        Brokered_Dispositions/Brokered_Opportunities/Brokered_BOV_Submissions/
+        Brokered_Disposition_Offers: under Contact, a bare "NDAs" would read as "this Contact's
+        own NDAs" when the list actually means "NDAs this Contact BROKERS".
+        ⚠ A relationshipName is disruptive to change after deploy. Settled here, before the
+        first deploy, while it costs nothing.
+
+        =====================================================================================
+        🔴 NDA__c IS A DUAL-MODULE OBJECT. THIS FIELD IS INERT ON THE ACQUISITION SIDE.
+        =====================================================================================
+        NDA__c serves Acquisitions as well as Dispositions (both record types share this
+        object). This field carries no record-type restriction and is technically settable on
+        an acquisition NDA, but it is deliberately NOT added to any acquisition-specific
+        permission set (DPEG_Acquisition_Edit / DPEG_Acquisition_View) or layout in this
+        change - it ships FLS-invisible there, matching every other disposition-only field on
+        this object (Buyer__c, Materials_Released_Date__c, Is_Disposition_NDA__c).
+
+        deleteConstraint SetNull, matching every sibling Contact lookup in this repo - deleting
+        a broker Contact must never delete the NDA that is evidence of what was sent or signed.
+
+        =====================================================================================
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        =====================================================================================
+        A Metadata API deployed custom field arrives with NO field permissions for any profile,
+        System Administrator included. Read and edit are granted in DPEG_Disposition_Edit and
+        read only in DPEG_Disposition_View in the same change - the two permission sets that
+        already carried Buyer__c and carry every other NDA__c disposition-only field. Neither
+        DPEG_Acquisition_Edit, DPEG_Acquisition_View nor DPEG_Admin_Access is touched (see the
+        dual-module note above). This file and those two permission sets must deploy together.
+
+        ⚠ TESTS MUST USE TestDataFactory.createBrokerContact / createBrokerContacts. The lookup
+        filter below is ACTIVE and NOT optional - out of scope for this declarative change, but
+        recorded here since it will bite the next Apex change that touches this field.
+    -->
+    <fullName>Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The broker Contact this NDA is with - DPEG communicates only with the appointed listing broker on the sale, one per disposition. Replaces Buyer__c as the disposition NDA counterparty. Deliberately UNFILTERED on Acquisitions - see dual-module note in this file's comment.</description>
+    <inlineHelpText>Pick the broker Contact this NDA is with. Only Contacts on the Broker record type can occupy this field.</inlineHelpText>
+    <label>Broker Contact</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
+        <filterItems>
+            <field>Contact.RecordType.DeveloperName</field>
+            <operation>equals</operation>
+            <value>Broker</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Brokered NDAs</relationshipLabel>
+    <relationshipName>Brokered_NDAs</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

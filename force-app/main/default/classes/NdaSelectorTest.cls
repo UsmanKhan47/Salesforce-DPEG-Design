@@ -621,196 +621,27 @@ private class NdaSelectorTest {
             'All 251 rows are inside the ceiling (0-5 days) and all 251 are selected');
     }
 
+
     // ═══════════════════════════════════════════════════════════════════════════════════════
-    // selectSignedBuyerNdasByDispositionId — the Log Offer buyer picker (2026-08-21).
+    // 🔴 SEVEN `selectSignedBuyerNdas_*` TESTS WERE DELETED HERE ON 2026-08-21, WITH THE METHOD.
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // `NdaSelector.selectSignedBuyerNdasByDispositionId` backed the Log Offer buyer picker. DPEG
+    // communicates only with the appointed listing broker, so the picker was removed and the
+    // query lost its only caller.
     //
-    // 🔴 FOUR PREDICATES, FOUR NEGATIVE TESTS. Every one of them is a row that WOULD be offered
-    // as a selectable buyer if the predicate were dropped, and each failure is silent:
-    //   Party_Role__c = 'Buyer'   -> the INTRODUCING BROKER becomes a buyer option;
-    //   Status__c     = 'Signed'  -> an unsigned or DECLINED party stays selectable;
-    //   Buyer__c     != NULL      -> a legacy NDA produces an option with no Contact Id in it;
-    //   Disposition__c = :id      -> another sale's buyer appears on this one.
-    // The negatives are asserted as ABSENCE, which is the only shape that catches a dropped
-    // predicate — a positive-only suite stays green when the filter is removed.
-    // ═══════════════════════════════════════════════════════════════════════════════════════
-
-    /** A signed, buyer-role NDA naming a Contact — the only shape that qualifies. */
-    private static NDA__c signedBuyerNda(Id dispositionId, Id buyerContactId) {
-        NDA__c nda = TestDataFactory.createDispositionNda(dispositionId, false);
-        nda.Status__c = 'Signed';
-        nda.Buyer__c = buyerContactId;
-        insert nda;
-        return nda;
-    }
-
-    @isTest
-    static void selectSignedBuyerNdas_returnsTheBuyerWithItsContactAndName() {
-        Disposition__c disp = TestDataFactory.createDisposition(
-            TestDataFactory.defaultPropertyAsset().Id, true);
-        Contact buyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(disp.Id, buyer.Id);
-        Contact expected = [SELECT Id, Name FROM Contact WHERE Id = :buyer.Id LIMIT 1];
-
-        Test.startTest();
-        List<NDA__c> result = NdaSelector.selectSignedBuyerNdasByDispositionId(disp.Id);
-        Test.stopTest();
-
-        Assert.areEqual(1, result.size(), 'The one qualifying NDA comes back');
-        // 🔴 `Buyer__c` IS THE PRODUCT. It becomes the picker option's VALUE and is written
-        // straight into `Disposition_Offer__c.Buyer__c` — the Contact-Id join
-        // DispositionBuyerTimelineService matches each buyer's NDA to their own first offer on.
-        Assert.areEqual(expected.Id, result[0].Buyer__c, 'Buyer__c must be selected');
-        Assert.areEqual(
-            expected.Name,
-            result[0].Buyer__r.Name,
-            'Buyer__r.Name is the picker LABEL — the traversal is not optional'
-        );
-        // Selected as the label FALLBACK for a buyer the running user cannot see under sharing.
-        Assert.isNotNull(
-            result[0].Counterparty_Name__c,
-            'Counterparty_Name__c must stay in the SELECT — it is the label fallback'
-        );
-    }
-
-    @isTest
-    static void selectSignedBuyerNdas_excludesTheIntroducingBroker() {
-        Disposition__c disp = TestDataFactory.createDisposition(
-            TestDataFactory.defaultPropertyAsset().Id, true);
-        Contact buyer = TestDataFactory.createContact(null, true);
-        Contact broker = TestDataFactory.createBrokerContact(null, true);
-        signedBuyerNda(disp.Id, buyer.Id);
-
-        NDA__c brokerNda = TestDataFactory.createDispositionNda(disp.Id, false);
-        brokerNda.Party_Role__c = 'Introducing Broker';
-        brokerNda.Status__c = 'Signed';
-        brokerNda.Buyer__c = broker.Id;
-        insert brokerNda;
-
-        Test.startTest();
-        List<NDA__c> result = NdaSelector.selectSignedBuyerNdasByDispositionId(disp.Id);
-        Test.stopTest();
-
-        // 🔴 THE MOST IMPORTANT NEGATIVE IN THIS FILE. DPEG collects and counter-signs ONE NDA
-        // PER PARTY, so a signed broker NDA beside a signed buyer one is the ORDINARY shape of a
-        // brokered sale — not an edge case. Without the Party_Role__c term the picker offers the
-        // introducing broker as a buyer, an analyst picks it, and a broker's name is stamped into
-        // Buyer_Name__c, into the competitive bid table, and into the record
-        // DispositionApprovalService.selectOffer is choosing between. Nothing contradicts it.
-        Assert.areEqual(1, result.size(), 'Only the BUYER-role NDA qualifies');
-        Assert.areEqual(buyer.Id, result[0].Buyer__c, 'The broker must not be offered as a buyer');
-    }
-
-    @isTest
-    static void selectSignedBuyerNdas_excludesUnsignedAndDeclinedParties() {
-        Disposition__c disp = TestDataFactory.createDisposition(
-            TestDataFactory.defaultPropertyAsset().Id, true);
-        Contact signedBuyer = TestDataFactory.createContact(null, true);
-        Contact declinedBuyer = TestDataFactory.createContact(null, true);
-        Contact pendingBuyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(disp.Id, signedBuyer.Id);
-
-        // 🔴 THE DECLINED ROW IS THE SHARP ONE, AND IT IS BUILT SIGNED-THEN-DECLINED ON PURPOSE.
-        // `NDA_Signed__c` LATCHES and the before-save flow NEVER CLEARS `Date_Signed__c`, so this
-        // row keeps a non-null signature date forever. Gating on either of those instead of on
-        // Status__c would leave a party who walked away permanently selectable as a buyer.
-        NDA__c declined = TestDataFactory.createDispositionNda(disp.Id, false);
-        declined.Status__c = 'Signed';
-        declined.Buyer__c = declinedBuyer.Id;
-        insert declined;
-        declined.Status__c = 'Declined';
-        update declined;
-
-        NDA__c pending = TestDataFactory.createDispositionNda(disp.Id, false);
-        pending.Buyer__c = pendingBuyer.Id;   // factory default status is 'Not Sent'
-        insert pending;
-
-        Test.startTest();
-        List<NDA__c> result = NdaSelector.selectSignedBuyerNdasByDispositionId(disp.Id);
-        Test.stopTest();
-
-        Set<Id> offered = new Set<Id>();
-        for (NDA__c nda : result) {
-            offered.add(nda.Buyer__c);
-        }
-        Assert.areEqual(1, result.size(), 'Only the Signed party qualifies');
-        Assert.isTrue(offered.contains(signedBuyer.Id), 'The signed buyer is offered');
-        Assert.isFalse(offered.contains(declinedBuyer.Id),
-            'A Signed -> Declined party must NOT stay selectable, however their dates read');
-        Assert.isFalse(offered.contains(pendingBuyer.Id), 'An unsigned party is not selectable');
-    }
-
-    @isTest
-    static void selectSignedBuyerNdas_excludesALegacyNdaWithNoBuyerContact() {
-        Disposition__c disp = TestDataFactory.createDisposition(
-            TestDataFactory.defaultPropertyAsset().Id, true);
-        // ⚠ THIS IS THE LIVE SHAPE OF `usman-dpeg` ON 2026-08-21: the org's only disposition has
-        // exactly one NDA, and it is Signed AND Buyer-role AND has a NULL `Buyer__c`. It passes
-        // two of the four predicates and must still not produce an option, because the option's
-        // VALUE is the Contact Id. `NDA__c.Buyer__c` was added 2026-08-20 with no backfill.
-        NDA__c legacy = TestDataFactory.createDispositionNda(disp.Id, false);
-        legacy.Status__c = 'Signed';
-        insert legacy;
-
-        Test.startTest();
-        List<NDA__c> result = NdaSelector.selectSignedBuyerNdasByDispositionId(disp.Id);
-        Test.stopTest();
-
-        // 🔴 Matching on `Counterparty_Name__c` instead is explicitly forbidden: two buyers can
-        // share a name, and a name-matched offer attributes one buyer's bid to another.
-        Assert.areEqual(0, result.size(),
-            'An NDA with no buyer Contact cannot produce a picker option');
-    }
-
-    @isTest
-    static void selectSignedBuyerNdas_isScopedToOneDisposition() {
-        Disposition__c mine = TestDataFactory.createDisposition(
-            TestDataFactory.defaultPropertyAsset().Id, true);
-        Disposition__c other = TestDataFactory.createDisposition(
-            TestDataFactory.defaultPropertyAsset().Id, true);
-        Contact myBuyer = TestDataFactory.createContact(null, true);
-        Contact otherBuyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(mine.Id, myBuyer.Id);
-        signedBuyerNda(other.Id, otherBuyer.Id);
-
-        Test.startTest();
-        List<NDA__c> result = NdaSelector.selectSignedBuyerNdasByDispositionId(mine.Id);
-        Test.stopTest();
-
-        Assert.areEqual(1, result.size(), 'Another sale\'s buyers must not leak into this picker');
-        Assert.areEqual(myBuyer.Id, result[0].Buyer__c, 'Only this disposition\'s buyer');
-    }
-
-    @isTest
-    static void selectSignedBuyerNdas_returnsBothRowsWhenOneBuyerHasTwoNdas() {
-        Disposition__c disp = TestDataFactory.createDisposition(
-            TestDataFactory.defaultPropertyAsset().Id, true);
-        Contact buyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(disp.Id, buyer.Id);
-        signedBuyerNda(disp.Id, buyer.Id);
-
-        Test.startTest();
-        List<NDA__c> result = NdaSelector.selectSignedBuyerNdasByDispositionId(disp.Id);
-        Test.stopTest();
-
-        // 🔴 THE SELECTOR DOES **NOT** DE-DUPLICATE, AND THAT IS PINNED HERE RATHER THAN LEFT
-        // IMPLICIT. SOQL has no SELECT DISTINCT, so the duplicate is real and the CALLER
-        // (DispositionOfferFormService.toOptions) is what collapses it. If someone "fixes" this
-        // by adding a LIMIT or a GROUP BY here, this test should fail and send them to read the
-        // service instead — a duplicate `value` in a lightning-combobox renders a dead menu item.
-        Assert.areEqual(2, result.size(),
-            'Two NDAs for one buyer return two rows; de-duplication belongs to the caller');
-    }
-
-    @isTest
-    static void selectSignedBuyerNdas_nullInput_returnsEmptyWithoutQuerying() {
-        Test.startTest();
-        Integer queriesBefore = Limits.getQueries();
-        List<NDA__c> result = NdaSelector.selectSignedBuyerNdasByDispositionId(null);
-        Integer queriesUsed = Limits.getQueries() - queriesBefore;
-        Test.stopTest();
-
-        Assert.areEqual(0, result.size(), 'Null input returns an empty list');
-        // The modal's wire can fire before dispositionId is set; that must not cost a query.
-        Assert.areEqual(0, queriesUsed, 'A null Id must not issue a query');
-    }
+    // ⚠ THIS IS RECORDED RATHER THAN SILENTLY DROPPED BECAUSE THE TESTS WERE THE VALUABLE HALF.
+    // They were four NEGATIVE tests — one per predicate — each asserting ABSENCE, which is the
+    // only shape that catches a dropped filter:
+    //   `Party_Role__c = 'Buyer'`   the INTRODUCING BROKER becomes a buyer option;
+    //   `Status__c = 'Signed'`      an unsigned or DECLINED party stays selectable;
+    //   `Buyer__c != NULL`          a legacy NDA produces an option with no Contact Id in it;
+    //   `Disposition__c = :id`      another sale's buyer appears on this one.
+    // 🔴 IF A BUYER-SHAPED READ IS EVER REBUILT, RECOVER THESE FROM GIT HISTORY RATHER THAN
+    // RE-DERIVING THEM. Three of the four predicates are non-obvious and one of them
+    // (`Party_Role__c`) is the one most easily forgotten and the most damaging to forget.
+    //
+    // ⚠ `selectBuyerTimelineByDispositionId` IS STILL HERE AND ITS TESTS LIVE IN
+    // `DispositionBuyerTimelineTest`, NOT IN THIS CLASS. It was retargeted the same day (it now
+    // selects `Name` and `Broker__c` instead of the buyer fields) and it was NOT deleted — do not
+    // read this block as covering both.
 }

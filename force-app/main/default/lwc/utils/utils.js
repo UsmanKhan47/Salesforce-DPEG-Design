@@ -89,6 +89,61 @@ export function formatMillions(n) {
 }
 
 /**
+ * EXACT currency, grouped, never abbreviated — `$1,850,000`. Cents are shown
+ * only when non-zero (`$1,850,000.50`). Null / empty / non-numeric render as an
+ * em dash (`—`).
+ *
+ * ── 🔴 WHY THIS EXISTS BESIDE `formatMillions` RATHER THAN REPLACING IT ──────
+ * ADDED 2026-08-21 from live UAT. `c/dispositionOfferSelect` — the screen where
+ * DPEG picks the WINNING BID — was labelling its radio options with
+ * `formatMillions`, and the org's two live offers are:
+ *
+ *     OFFER-0005   $1,850,000        OFFER-0006   $1,860,000
+ *
+ * Both rendered `$1.9M`. Two distinct bids reading as the same string on the
+ * screen that chooses between them is a wrong-decision defect.
+ *
+ * ⚠ MORE DECIMAL PLACES WOULD NOT HAVE FIXED IT, IT WOULD HAVE MOVED IT. Any
+ * abbreviation has a collision distance: one decimal collides at $100k, two at
+ * $10k, three at $1k. DPEG's offers routinely differ by increments smaller than
+ * the last kept digit, so every choice of N leaves a pair of real bids that
+ * render identically — there is no safe N. An exact figure has a collision
+ * distance of ZERO CENTS by construction, which is the only property that makes
+ * the label safe to decide on. It is also how the platform itself renders the
+ * field (the UI API returns `displayValue: "$1,850,000"` for
+ * `Offer_Amount__c`), so the radio label now agrees with the record detail page
+ * beside it instead of disagreeing by $50,000.
+ *
+ * 🔴 `formatMillions` IS DELIBERATELY LEFT EXACTLY AS IT WAS. Its other two
+ * callers — `c/backupBrokers` and `c/bovComparisonMatrix` — render BOV
+ * VALUATIONS in a dense comparison grid, where `$11.0M` is the right register
+ * and where the labels are already disambiguated by score and by the
+ * submission's own auto-number (see `brokerOptionLabel` below). Widening
+ * `formatMillions` would have changed their rendered output, breaking the
+ * byte-compatibility contract stated at the top of this module, to fix a defect
+ * neither of them has. One new export, zero behaviour change for existing
+ * callers.
+ *
+ * @param {number|string|null|undefined} n Raw amount (Decimals arrive as
+ *   strings over the wire).
+ * @returns {string} e.g. `'$1,850,000'`, `'$1,850,000.50'`, `'$0'`, or `'—'`.
+ */
+export function formatExactCurrency(n) {
+    if (n == null || n === '') {
+        return '—';
+    }
+    const v = Number(n);
+    if (!isFinite(v)) {
+        return '—';
+    }
+    // `toFixed(2)` then split, rather than arithmetic on the fractional part:
+    // it has no floating-point edge where the cents round up to `100`.
+    const [whole, cents] = Math.abs(v).toFixed(2).split('.');
+    const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (v < 0 ? '-$' : '$') + grouped + (cents === '00' ? '' : '.' + cents);
+}
+
+/**
  * One radio-option label for the Select / Replace Broker picker, from a
  * `BovController.BovRow`.
  *

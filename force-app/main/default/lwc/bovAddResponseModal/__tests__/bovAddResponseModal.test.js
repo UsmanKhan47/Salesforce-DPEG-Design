@@ -159,13 +159,55 @@ describe('c-bov-add-response-modal', () => {
     it('STATUS: defaults to Backup — appointment is the Replace Broker path', () => {
         const element = createComponent();
 
+        // 🔴 THE CONTROL ITSELF IS THE VISIBLE STEER, AND SINCE 2026-08-21 IT IS THE
+        // ONLY ONE. `.bar-note` ("New responses are logged as Backup. Use Replace
+        // Broker on the comparison matrix to appoint one.") was removed in the UAT
+        // prose pass, and this assertion is what makes that removal safe: the field
+        // renders WITH the value, so a user still sees "Backup" before saving.
+        // If this default is ever dropped, the removal stops being safe — see
+        // T-NO-PROSE below.
         expect(
             element.shadowRoot.querySelector('.bar-field-status').value
         ).toBe('Backup');
-        // The steer is also visible to the user, not just encoded in a default.
-        expect(element.shadowRoot.querySelector('.bar-note').textContent).toContain(
-            'Replace Broker'
-        );
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
+    //
+    // TWO paragraphs were removed at the user's request:
+    //   .bar-intro  "Log a broker's opinion of value against this sale. It is
+    //                saved here on the disposition — you stay on this page and the
+    //                comparison matrix refreshes behind this dialog."
+    //   .bar-note   "New responses are logged as Backup. Use Replace Broker on the
+    //                comparison matrix to appoint one."
+    // Only the second was asserted anywhere, and that assertion was deleted rather
+    // than weakened. This pin replaces both.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-PROSE: neither the intro nor the closing note is rendered — the removal must not come back', () => {
+        const element = createComponent();
+
+        // Guard the guard: the form genuinely rendered, so every absence below is a
+        // real absence rather than an unrendered component.
+        expect(
+            element.shadowRoot.querySelector('lightning-record-edit-form')
+        ).not.toBeNull();
+        expect(
+            element.shadowRoot.querySelectorAll('lightning-input-field').length
+        ).toBeGreaterThan(0);
+
+        // 1. THE OLD SELECTORS.
+        expect(element.shadowRoot.querySelector('.bar-intro')).toBeNull();
+        expect(element.shadowRoot.querySelector('.bar-note')).toBeNull();
+
+        // 2. 🔴 THE RENDERED WORDS — a re-added paragraph usually arrives under a
+        //    new class name, so the selector assertions alone would stay green.
+        const text = element.shadowRoot.textContent.toLowerCase();
+        expect(text).not.toContain('you stay on this page');
+        expect(text).not.toContain('refreshes behind this dialog');
+        expect(text).not.toContain('opinion of value against this sale');
+        expect(text).not.toContain('are logged as backup');
+        expect(text).not.toContain('to appoint one');
     });
 
     it('surfaces platform field errors through lightning-messages', () => {

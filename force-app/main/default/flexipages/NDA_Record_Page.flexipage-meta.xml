@@ -4,6 +4,18 @@
          <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
          matching parent xml file" error.
 
+         🔴 AMENDED 2026-08-21 (buyer-to-broker-counterparty-change.md), LATER THE SAME DAY AS
+         THE "THREE FIELDS ADDED" NOTE DIRECTLY BELOW. Record.Buyer__c is REMOVED from this page
+         and replaced, in the same slot and under the same Is_Disposition_NDA__c visibility rule,
+         by Record.Broker__c (identifier RecordBroker_cField, was RecordBuyer_cField). User
+         decision: "we don't need buyer information, we just need broker contact for disposition
+         offers and NDA" - DPEG communicates only with the appointed listing broker on the sale.
+         NDA__c.Buyer__c itself is NOT deleted (additive-only rule; see the field's own comment)
+         but is no longer reachable from this page. NDA__c.Materials_Released_Date__c is
+         untouched - the timeline still uses it and it keeps its own visibility rule below.
+         FLS for the new field ships in the same change: DPEG_Disposition_Edit gets read+edit,
+         DPEG_Disposition_View gets read only, matching how Buyer__c was granted before it.
+
          THREE FIELDS ADDED 2026-08-21 (buyer activity timeline follow-up). Record.Disposition__c,
          Record.Buyer__c and Record.Materials_Released_Date__c were carrying no path to render
          anywhere on this page - the disposition NDA had no visible link back to its Disposition,
@@ -295,8 +307,8 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.Buyer__c</fieldItem>
-                <identifier>RecordBuyer_cField</identifier>
+                <fieldItem>Record.Broker__c</fieldItem>
+                <identifier>RecordBroker_cField</identifier>
                 <visibilityRule>
                     <criteria>
                         <leftValue>{!Record.Is_Disposition_NDA__c}</leftValue>

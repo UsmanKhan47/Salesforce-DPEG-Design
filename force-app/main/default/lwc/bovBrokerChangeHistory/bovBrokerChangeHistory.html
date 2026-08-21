@@ -23,16 +23,16 @@
              role="list" is NOT redundant: `list-style: none` makes WebKit drop the implicit
              list role, and aria-label is only exposed on an element whose role supports
              naming. axe has no rule for it, so a passing toBeAccessible() is not evidence
-             against it. -->
-        <template lwc:if={hasRows}>
-            <p class="bbc-intro" id="bbc-intro">{intro}</p>
+             against it.
 
-            <ul
-                class="bbc-list"
-                role="list"
-                aria-label="Broker changes"
-                aria-describedby="bbc-intro"
-            >
+             🔴 THE INTRO LINE ("Every broker ever appointed to this sale — nothing is deleted.")
+             WAS REMOVED ON 2026-08-21 at the user's request — they quoted it. It rendered here
+             AND inside the empty state, and both copies are gone, along with the `id="bbc-intro"`
+             it carried and the `aria-describedby` on the list below that pointed at it. ⚠ A
+             DANGLING `aria-describedby` IS WORSE THAN NONE — it names an element that does not
+             exist, so do not leave the attribute behind if the paragraph ever goes again. -->
+        <template lwc:if={hasRows}>
+            <ul class="bbc-list" role="list" aria-label="Broker changes">
                 <template for:each={historyRows} for:item="row">
                     <li key={row.id} class="bbc-item">
                         <div class="bbc-tile">
@@ -111,9 +111,13 @@
              ═══════════════════════════════════════════════════════════════════════════════
              Most dispositions never replace a broker, so this is what most disposition record
              pages in the org will render. It is a STATUS, never an alert and never a spinner.
-             The explanatory line beneath is the intro sentence, kept verbatim because "nothing
-             is deleted" is the POINT of an audit log — an empty audit log that does not say
-             what it would have contained is indistinguishable from a broken one. -->
+
+             🔴 THE SENTENCE ITSELF IS THE EMPTY STATE, AND IT STAYS. "No broker changes recorded"
+             is what separates EMPTY from LOADING from UNAVAILABLE, and the icon + role="status"
+             are what stop it reading as an error. The 2026-08-21 prose removal took the
+             explanatory SUB-LINE ("Every broker ever appointed to this sale — nothing is
+             deleted.") and nothing else — the user named that string specifically. Do not delete
+             the heading with it. -->
         <template lwc:if={isEmpty}>
             <div class="bbc-state" role="status">
                 <lightning-icon
@@ -122,7 +126,6 @@
                     class="bbc-state-icon"
                 ></lightning-icon>
                 <p class="bbc-empty">No broker changes recorded</p>
-                <p class="bbc-state-sub">{intro}</p>
             </div>
         </template>
 
@@ -134,9 +137,11 @@
              cannot read the situation well enough to raise an alarm, and the realistic cause is
              a missing FLS grant, which is an administrator's problem rather than this user's
              emergency. The wording is what separates the two states, plus the italics.
-             ⚠ THE INTRO SENTENCE IS DELIBERATELY ABSENT HERE. "Every broker ever appointed to
-             this sale" is a completeness claim, and this is precisely the state in which the
-             card cannot make one. -->
+             ⚠ THIS STATE ALREADY EXCLUDED THE INTRO SENTENCE BEFORE 2026-08-21 REMOVED IT
+             EVERYWHERE, and for a reason worth keeping: "Every broker ever appointed to this sale"
+             was a COMPLETENESS CLAIM, and this is precisely the state in which the card cannot
+             make one. If any explanatory line is ever added back to the empty state, it must
+             still not appear here. -->
         <template lwc:if={isUnavailable}>
             <div class="bbc-state" role="status">
                 <lightning-icon

@@ -5,15 +5,19 @@
          unlabelled fragment of text floating between two proper cards. A titled card that
          is briefly empty tells the user WHICH panel is still thinking; an untitled blob
          tells them nothing. The count is appended only once the wire has answered — see
-         `cardTitle` in the JS for why a premature "(0)" is a claim this card may not make. -->
-    <lightning-card icon-name="standard:buyer_group">
+         `cardTitle` in the JS for why a premature "(0)" is a claim this card may not make.
+         ⚠ THE ICON IS `standard:contract`, NOT `standard:buyer_group`. It changed with the
+         subject of the card: these are NDAs, not buyers. -->
+    <lightning-card icon-name="standard:contract">
         <span slot="title">{cardTitle}</span>
 
         <!-- ERROR: visible and loud. The controller throws rather than returning an empty
              list precisely so this branch exists — a silent blank card would be a confident
              wrong answer. `lv-error` is the ONE genuinely cross-bundle class in this repo
              (shared with recentLeads / recentOpportunities / renewalList /
-             competingBrokerSubmissions) — do not rename it. -->
+             competingBrokerSubmissions) — do not rename it.
+             ⚠ EXPECT THIS BRANCH RIGHT AFTER DEPLOY until both disposition permission sets
+             grant the new `NDA__c.Broker__c` — see the JS header. -->
         <template lwc:if={hasError}>
             <div
                 class="lv-error dbt-error slds-p-around_medium slds-text-color_error"
@@ -24,17 +28,15 @@
         </template>
 
         <template lwc:else>
-            <!-- DATA: ONE STACKED TILE PER BUYER.
+            <!-- DATA: ONE STACKED TILE PER NDA.
                  ═══════════════════════════════════════════════════════════════════════
                  🔴 THIS WAS A SIX-COLUMN TABLE AND MUST NEVER BECOME ONE AGAIN.
                  ═══════════════════════════════════════════════════════════════════════
                  The previous markup was a CSS grid of
-                 `minmax(0, 2fr) repeat(5, minmax(0, 1fr))` with a shared heading row —
-                 buyer, NDA signed, materials released, first offer, days to release, days
-                 to respond. That is a fine shape in the ~800px main region it was designed
-                 for and an unusable one in the ~340px record-page SIDEBAR this card now
-                 lives in: five value columns at ~35px each, every date clipped to an
-                 ellipsis.
+                 `minmax(0, 2fr) repeat(5, minmax(0, 1fr))` with a shared heading row. That
+                 is a fine shape in the ~800px main region it was designed for and an
+                 unusable one in the ~340px record-page SIDEBAR this card now lives in:
+                 five value columns at ~35px each, every date clipped to an ellipsis.
 
                  The replacement is the same shape c/competingBrokerSubmissions adopted for
                  the same reason: a <ul>/<li> of self-labelling tiles, each carrying its own
@@ -49,16 +51,25 @@
                  supports naming. axe has no rule for it, so a passing toBeAccessible() is
                  not evidence against it. -->
             <template lwc:if={hasRows}>
-                <p class="dbt-intro" id="dbt-intro">
-                    Every buyer engaged on this disposition, in order. Parties who
-                    declined are kept as a record and shown last.
-                </p>
+                <!-- 🔴 THE INTRO LINE WAS REMOVED ON 2026-08-21 (UAT prose removal). It read
+                     "Every NDA raised on this disposition, in order. NDAs that were declined are
+                     kept as a record and shown last." — a description of the list the list itself
+                     already demonstrates. The `id="dbt-intro"` went with it, and so did the
+                     `aria-describedby` below that pointed at it: ⚠ AN aria-describedby NAMING A
+                     REMOVED ELEMENT IS WORSE THAN NONE, because it promises a description that
+                     resolves to nothing.
+                     ⚠ THE ORDERING FACT THE SENTENCE CARRIED IS STILL TRUE AND STILL THE
+                     SERVER'S: declined NDAs come last because `NdaSelector` puts them last, not
+                     because this component sorts. See the JS header — that is where it belongs.
 
+                     ⚠ THE LIST'S aria-label MATCHES THE CARD TITLE ON PURPOSE. A
+                     screen-reader user hears the card name and then the list name;
+                     two different names for the same region reads as two regions.
+                     Retitled with the card on 2026-08-21 and pinned by T-NARROW. -->
                 <ul
                     class="dbt-list"
                     role="list"
-                    aria-label="Buyer activity timeline"
-                    aria-describedby="dbt-intro"
+                    aria-label="Broker activity timeline"
                 >
                     <template for:each={timelineRows} for:item="row">
                         <li key={row.id} class="dbt-item">
@@ -76,8 +87,21 @@
                                 role="group"
                                 aria-label={row.rowLabel}
                             >
+                                <!-- 🔴 THE HEADING IS THE NDA NUMBER, AND THE BROKER IS
+                                     THE SUBTITLE UNDER IT. It was the BUYER'S NAME until
+                                     2026-08-21; buyers are not tracked, and the AutoNumber
+                                     is the only per-row identity always present. The broker
+                                     is one per sale, so it repeats down the list — that is
+                                     the data being true, not a bug, and it is placed as a
+                                     subtitle rather than a heading precisely so the
+                                     repetition reads as context rather than as identity.
+                                     🔴 THE CARD IS TITLED "Broker Activity Timeline" AND IS
+                                     STILL NOT GROUPED BY BROKER. The title names the party
+                                     DPEG deals with; grouping by it would collapse a
+                                     three-NDA sale into one row and delete the timeline.
+                                     See the JS header. -->
                                 <div class="dbt-tile-head">
-                                    <h3 class="dbt-buyer">{row.buyerName}</h3>
+                                    <h3 class="dbt-nda">{row.ndaName}</h3>
                                     <template lwc:if={row.isDeclined}>
                                         <span class="dbt-badge dbt-badge--declined">
                                             Declined
@@ -86,25 +110,31 @@
                                     <template lwc:if={row.hasAnomaly}>
                                         <span
                                             class="dbt-badge dbt-badge--anomaly"
-                                            title="These dates are out of order, so the durations cannot be shown."
+                                            title="These dates are out of order, so the duration cannot be shown."
                                         >
                                             Check dates
                                         </span>
                                     </template>
                                 </div>
 
+                                <p class="dbt-broker">{row.brokerName}</p>
+
                                 <!-- dt/dd ONLY, in order and with no wrapper divs — axe's
                                      `definition-list` rule is strict, so the two-track
                                      layout and the milestone rail are done entirely in
-                                     CSS. The first three pairs are the buyer JOURNEY
-                                     (rendered as a compact vertical timeline: a filled
-                                     marker for a milestone that has a date, a hollow one
-                                     for a milestone still to come); the last two are the
-                                     DURATIONS between them, separated by a rule.
+                                     CSS. The first two pairs are the NDA JOURNEY (rendered
+                                     as a compact vertical timeline: a filled marker for a
+                                     milestone that has a date, a hollow one for a milestone
+                                     still to come); the last is the DURATION between them,
+                                     separated by a rule.
                                      ⚠ THE MARKER IS REINFORCEMENT ONLY. The date cell
                                      already states the milestone's status in words (a
                                      date, or an em-dash), so a user who cannot see the
-                                     marker loses nothing. -->
+                                     marker loses nothing.
+                                     🔴 THERE IS NO "First offer" PAIR AND NO "Days to
+                                     respond" PAIR. Both were deleted on 2026-08-21 because
+                                     nothing links an offer to a specific NDA any more —
+                                     see the JS header before adding either back. -->
                                 <dl class="dbt-facts">
                                     <dt class={row.ndaSignedStepClass}>NDA signed</dt>
                                     <dd class="dbt-c dbt-mono">{row.ndaSigned}</dd>
@@ -116,16 +146,10 @@
                                         {row.materialsReleased}
                                     </dd>
 
-                                    <dt class={row.firstOfferStepClass}>First offer</dt>
-                                    <dd class="dbt-c dbt-mono">{row.firstOffer}</dd>
-
                                     <dt class="dbt-label dbt-sep">Days to release</dt>
                                     <dd class="dbt-c dbt-mono dbt-sep">
                                         {row.daysToRelease}
                                     </dd>
-
-                                    <dt class="dbt-label">Days to respond</dt>
-                                    <dd class="dbt-c dbt-mono">{row.daysToRespond}</dd>
                                 </dl>
                             </div>
                         </li>
@@ -135,8 +159,14 @@
 
             <!-- EMPTY. Centred icon + headline + the explanatory line, rather than the
                  bare grey sentence this used to be. The wording's INTENT is unchanged: it
-                 says the rows appear as buyers are engaged, so an empty card reads as
-                 "nothing has happened yet" and never as "something is broken". -->
+                 says the rows appear as NDAs are raised, so an empty card reads as
+                 "nothing has happened yet" and never as "something is broken".
+                 🔴 KEPT THROUGH THE 2026-08-21 PROSE REMOVAL — A JUDGEMENT CALL, NOT AN
+                 OVERSIGHT. The user kept empty states explicitly, because they are what
+                 distinguish EMPTY from LOADING from BROKEN. The sub-line is doing that job here
+                 rather than describing an action, and unlike this card's intro line (deleted
+                 above) it names no rule the user could get from anywhere else on the screen.
+                 If they want it gone too it is a two-line deletion — the headline must stay. -->
             <template lwc:elseif={isEmpty}>
                 <div class="dbt-empty" role="status">
                     <lightning-icon
@@ -144,9 +174,9 @@
                         size="small"
                         class="dbt-empty-icon"
                     ></lightning-icon>
-                    <p class="dbt-empty-text">No buyer NDAs yet</p>
+                    <p class="dbt-empty-text">No NDAs yet</p>
                     <p class="dbt-empty-sub">
-                        Rows appear here as buyers are engaged on this disposition.
+                        Rows appear here as NDAs are raised on this disposition.
                     </p>
                 </div>
             </template>

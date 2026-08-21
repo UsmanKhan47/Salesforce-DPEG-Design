@@ -28,8 +28,9 @@
  *    against a fixture built from the same list.
  * 5. A FAILED PICKLIST READ BLOCKS THE ACTION, it does not degrade it into an unattributed swap.
  * 6. 🔴 ONE BUNDLE SERVES BOTH "Replace Broker" AND "Select Broker" (2026-08-21). `@api
- *    isFirstAppointment` switches the heading, the intro copy, the confirm label, the empty state
- *    and the reason — and NOTHING else. The `describe('first-appointment mode')` block at the
+ *    isFirstAppointment` switches the heading, the confirm label, the empty state and the reason
+ *    — and NOTHING else. (It switched the INTRO COPY too until the 2026-08-21 UAT prose removal
+ *    deleted both mode notes; T-NO-PROSE now pins their absence in BOTH modes.) The `describe('first-appointment mode')` block at the
  *    bottom re-asserts the SAME Apex method and the SAME four parameter names, which is what makes
  *    "one mechanism, two entry points" a tested claim rather than a comment. Point 5's block is
  *    deliberately NOT inherited by that mode, and the reason is asserted there.
@@ -154,7 +155,9 @@ describe('c-bov-replace-broker-modal', () => {
     const confirmBtn = (el) => el.shadowRoot.querySelector('.brb-confirm');
     const cancelBtn = (el) => el.shadowRoot.querySelector('.brb-cancel');
     const header = (el) => el.shadowRoot.querySelector('lightning-modal-header');
-    const note = (el) => el.shadowRoot.querySelector('.brb-note');
+    // ⚠ THE `note` HELPER WAS DELETED ON 2026-08-21 with `.brb-note` / `.brb-note_info` (UAT prose
+    // removal). Do not reintroduce it as a convenience — a helper for a selector that must not
+    // exist is an invitation to re-add the element. T-NO-PROSE asserts its absence instead.
 
     function chooseBackup(element, value) {
         radio(element).dispatchEvent(
@@ -183,18 +186,23 @@ describe('c-bov-replace-broker-modal', () => {
         await chooseReason(element, 'Performance Issue');
     }
 
-    it('lists the caller-supplied backups verbatim and names the incumbent', async () => {
+    it('lists the caller-supplied backups verbatim', async () => {
         const element = createComponent();
 
         await Promise.resolve();
 
         expect(radio(element).options).toEqual(PROPS.backupOptions);
-        expect(element.shadowRoot.querySelector('.brb-note').textContent).toContain(
-            'Colliers International'
-        );
     });
 
-    it('names a generic incumbent — NOT "undefined" — when the caller supplies none', async () => {
+    it('renders no "undefined" anywhere when the caller supplies no incumbent name', async () => {
+        // ⚠ THIS TEST USED TO ALSO ASSERT THE INCUMBENT WAS NAMED ("Colliers
+        // International", falling back to "the current broker"). Both halves were
+        // DELETED on 2026-08-21 with `.brb-note`, not softened — the dialog no
+        // longer names the incumbent at all, and `incumbentLabel` went with it.
+        // What survives is the reason the fallback existed: a getter bound into
+        // the DOM is written unconditionally, so an undefined renders as the
+        // literal string "undefined". Still worth pinning for the bindings that
+        // remain (`effectiveReason`, `emptyMessage`, `confirmLabel`).
         const element = createComponent({
             dispositionId: DISPOSITION_ID,
             backupOptions: PROPS.backupOptions
@@ -202,11 +210,54 @@ describe('c-bov-replace-broker-modal', () => {
 
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.brb-note').textContent).toContain(
-            'the current broker'
-        );
-        // Asserted on the RENDERED markup, not on the getter.
+        // Guard the guard: the options branch genuinely rendered.
+        expect(radio(element)).not.toBeNull();
+        // Asserted on the RENDERED markup, not on a getter.
         expect(element.shadowRoot.textContent).not.toContain('undefined');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
+    //
+    // BOTH mode intro notes were removed at the user's request:
+    //   .brb-note       "<incumbent> moves back to Backup and the broker you
+    //                    choose becomes Selected. The broker approval is cleared
+    //                    by this change."
+    //   .brb-note_info  "The broker you choose becomes this sale's Selected
+    //                    broker. They must still be approved before the sale can
+    //                    proceed, and the appointment is recorded in the broker
+    //                    change history."
+    //
+    // 🔴 WHAT THIS PIN MUST NOT BE READ AS. It does NOT say "this component may
+    // not display consequential text". The SERVER'S returned warning — authored
+    // by BovSubmissionService, carried out through close({ message }) — is
+    // untouched and is asserted character-for-character elsewhere in this file.
+    // The rule is: this component authors no prose of its own. It never rendered
+    // the server string, and it still must not re-author it.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-PROSE: no mode intro note in EITHER mode — the removal must not come back', async () => {
+        const replacement = createComponent();
+        const appointment = createAppointmentComponent();
+
+        await Promise.resolve();
+
+        [replacement, appointment].forEach((element) => {
+            // Guard the guard: the options branch genuinely rendered in both modes.
+            expect(radio(element).options.length).toBeGreaterThan(0);
+
+            // 1. THE OLD SELECTORS.
+            expect(element.shadowRoot.querySelector('.brb-note')).toBeNull();
+            expect(element.shadowRoot.querySelector('.brb-note_info')).toBeNull();
+
+            // 2. 🔴 THE RENDERED WORDS — a re-added note usually arrives under a
+            //    new class name, so the selectors alone would stay green.
+            const text = element.shadowRoot.textContent.toLowerCase();
+            expect(text).not.toContain('moves back to backup');
+            expect(text).not.toContain('approval is cleared by this change');
+            expect(text).not.toContain('must still be approved');
+            expect(text).not.toContain('the current broker');
+        });
     });
 
     it('GATE: confirm needs BOTH a backup and a reason, and clicking it early calls no Apex', async () => {
@@ -445,19 +496,13 @@ describe('c-bov-replace-broker-modal', () => {
             );
         });
 
-        it('does NOT name an incumbent — there is none, not even a generic one', async () => {
-            const element = createAppointmentComponent();
-
-            await Promise.resolve();
-
-            // The replacement note falls back to "the current broker" when no name
-            // is supplied. On a first appointment that fallback would ASSERT an
-            // incumbent that does not exist, so the copy is different rather than
-            // merely blank-tolerant.
-            expect(note(element).textContent).not.toContain('the current broker');
-            expect(note(element).textContent).not.toContain('moves back to Backup');
-            expect(element.shadowRoot.textContent).not.toContain('undefined');
-        });
+        // ⚠ THE TEST THAT USED TO SIT HERE — 'does NOT name an incumbent — there is
+        // none, not even a generic one' — WAS DELETED ON 2026-08-21, not softened.
+        // Every one of its assertions read `.brb-note`, which no longer exists in
+        // EITHER mode after the UAT prose removal, so retargeting it would have
+        // produced a test whose name claimed a mode difference that no longer
+        // exists and which could never fail. The absence is now covered once, for
+        // both modes, by T-NO-PROSE above.
 
         it('🔴 hides the reason combobox and DISCLOSES the value it will record', async () => {
             const element = createAppointmentComponent();
@@ -470,8 +515,22 @@ describe('c-bov-replace-broker-modal', () => {
             // But the value is stated, so nothing is written to the append-only
             // history that the user was not shown.
             expect(fixedReason(element)).not.toBeNull();
-            expect(fixedReason(element).textContent).toContain(
-                'Initial Appointment'
+
+            // 🔴 THE WHOLE RENDERED SENTENCE, NOT A SUBSTRING OF IT — and this is the
+            // assertion, not a stylistic preference. The LWC template compiler DROPS
+            // the trailing whitespace of a text node that ends a source line before an
+            // inline element, so `…history as\n<strong>{effectiveReason}</strong>`
+            // renders "…history asInitial Appointment". A `toContain('Initial
+            // Appointment')` passes on BOTH the correct and the broken markup because
+            // the substring stops short of the seam — which is exactly how that defect
+            // survived in this repo before. Normalising runs of whitespace is safe here
+            // and does NOT mask the bug: the dropped space is gone from the DOM before
+            // any normalisation can see it, so a missing space stays missing.
+            const disclosed = fixedReason(element)
+                .textContent.replace(/\s+/g, ' ')
+                .trim();
+            expect(disclosed).toBe(
+                'Recorded in the broker change history as Initial Appointment.'
             );
         });
 

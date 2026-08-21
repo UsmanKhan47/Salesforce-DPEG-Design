@@ -2,7 +2,21 @@
  * Tests for `DispositionOfferFormService` — the Log Offer dialog's read (2026-08-21).
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 WHAT THIS CLASS IS ACTUALLY DEFENDING
+ * 🔴 SIX BUYER TESTS WERE DELETED FROM THIS CLASS ON 2026-08-21, WITH THE PICKER THEY COVERED
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * DPEG communicates only with the appointed listing broker; buyers sit behind them and are not
+ * tracked. `buyers_areReturnedAsContactIdKeyedOptionsWithNames`,
+ * `buyers_areDeDuplicatedWhenOnePartyHasTwoNdas`,
+ * `buyers_excludeTheIntroducingBrokerAndUnsignedParties`,
+ * `buyers_emptyIsAFirstClassAnswer_notAnError` and `buyers_areScopedToThisDisposition` were
+ * DELETED, not softened — the DTO members they asserted on no longer compile, so keeping them as
+ * `isNull` checks was not even an option. The de-duplication they guarded went with them.
+ * ⚠ If a buyer-shaped read ever returns, recover them from git history: the de-duplication test in
+ * particular encoded a non-obvious fact (SOQL has no `SELECT DISTINCT`, and a duplicate `value` in
+ * a `lightning-combobox` renders a dead, unselectable menu item).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 WHAT THIS CLASS IS ACTUALLY DEFENDING NOW
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * 1. THE BROKER SOURCE IS PER RECORD TYPE, AND THE TWO SOURCES ARE DIFFERENT OBJECTS. On-market
  *    it is the SELECTED `BOV_Submission__c`'s `Broker__c`; off-market it is
@@ -10,14 +24,17 @@
  *    every off-market offer to a BOV broker who was never appointed, or leaves every on-market
  *    offer brokerless. Both directions are asserted, and the CROSS-CONTAMINATION is asserted as
  *    absence (an off-market sale that ALSO has a Selected BOV row must still read the parent).
+ *    ⚠ THE STAKES ROSE ON 2026-08-21: a brokerless context now REFUSES the save rather than
+ *    rendering an empty read-only field, so a record-type branch that falls through takes the
+ *    dialog out entirely instead of degrading it.
  * 2. `Selected_Broker__c` IS NEVER PARSED. It is a display string that reads "Firm" on one path
  *    and "Person - Firm" on the other, and its own field metadata says NO CONSUMER MAY PARSE IT.
  *    A test below gives it a value that would produce a WRONG answer if anyone ever did.
- * 3. THE BUYER LIST IS DE-DUPLICATED BY CONTACT ID. The selector deliberately does not (SOQL has
- *    no SELECT DISTINCT), so this is the only place that collapses two NDAs for one party — and
- *    a duplicate `value` in a `lightning-combobox` renders a dead, unselectable menu item.
- * 4. THE QUERY BUDGET IS A CEILING, NOT A DESCRIPTION. 3 SOQL on-market, 2 off-market, 1 for a
- *    null/invalid parent. A fourth query added later is invisible on a single-record screen.
+ * 3. 🔴 A DENIED READ **THROWS** AND DOES NOT DEGRADE TO "no broker appointed". This is the
+ *    2026-08-21 reversal and it is the highest-value test in the file — see
+ *    `deniedPersona_throwsRatherThanReportingNoBrokerAppointed`.
+ * 4. THE QUERY BUDGET IS A CEILING, NOT A DESCRIPTION. 2 SOQL on-market, 1 off-market, 0 for a
+ *    null parent. A third query added later is invisible on a single-record screen.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * ⚠ `.claude/rules/bulk-test-rule.md`'s 251-RECORD MANDATE DOES NOT APPLY HERE, AND THE REASON
@@ -30,8 +47,8 @@
  * so a 251-record test would exercise no additional code path while risking unrelated governor
  * limits — the exact anti-pattern the exemption exists to prevent.
  * 🔴 IT IS NOT A RELAXATION OF "no SOQL/DML in loops", WHICH IS HONOURED IN FULL AND IS TESTED:
- * `budget_*` below prove the query count is CONSTANT in the number of buyers, which is the part
- * that would actually break. ⚠ IF A CALLER EVER PASSES A COLLECTION, THIS EXEMPTION LAPSES.
+ * `budget_*` below pin the exact query count. ⚠ IF A CALLER EVER PASSES A COLLECTION, THIS
+ * EXEMPTION LAPSES.
  *
  * ⚠ `@TestSetup` builds Property -> Property_Asset only. Every test creates its OWN Disposition,
  * because the record type is the variable under test in half of them and a shared on-market
@@ -69,15 +86,6 @@ private class DispositionOfferFormServiceTest {
         return disposition;
     }
 
-    /** A signed, buyer-role NDA naming a Contact — the only shape the picker accepts. */
-    private static NDA__c signedBuyerNda(Id dispositionId, Id buyerContactId) {
-        NDA__c nda = TestDataFactory.createDispositionNda(dispositionId, false);
-        nda.Status__c = 'Signed';
-        nda.Buyer__c = buyerContactId;
-        insert nda;
-        return nda;
-    }
-
     /** Promotes one of a disposition's BOV submissions to Selected and returns its broker Id. */
     private static Id appointBovBroker(Id dispositionId) {
         BOV_Submission__c submission =
@@ -85,14 +93,6 @@ private class DispositionOfferFormServiceTest {
         submission.Submission_Status__c = 'Selected';
         update submission;
         return submission.Broker__c;
-    }
-
-    private static Set<Id> buyerIdsOf(DispositionOfferFormService.OfferFormContext context) {
-        Set<Id> ids = new Set<Id>();
-        for (DispositionOfferFormService.BuyerOption option : context.buyers) {
-            ids.add((Id) option.value);
-        }
-        return ids;
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════
@@ -114,7 +114,7 @@ private class DispositionOfferFormServiceTest {
         Assert.areEqual(expectedBroker, context.brokerId,
             'On-market, the broker is the SELECTED BOV submission\'s Broker__c');
         Assert.areEqual(broker.Name, context.brokerName,
-            'The name is displayed read-only beside the picker');
+            'The name is displayed read-only on the form');
         Assert.areEqual(DispositionOfferFormService.SOURCE_ON_MARKET, context.brokerSource,
             'The source line tells the analyst WHY that name is there');
     }
@@ -159,26 +159,35 @@ private class DispositionOfferFormServiceTest {
             'The Selected BOV submission is not the off-market source');
     }
 
+    /**
+     * 🔴 NO SELECTED SUBMISSION -> NULL BROKER, AND THE MODAL NOW REFUSES THE SAVE ON IT.
+     *
+     * ⚠ THE MEANING OF THIS TEST CHANGED ON 2026-08-21 EVEN THOUGH ITS ASSERTIONS DID NOT. It used
+     * to end `Assert.areEqual(1, context.buyers.size(), 'The buyer picker still loads')` — i.e. "a
+     * null broker degrades one field of a working dialog". With the buyer gone, `brokerId == null`
+     * is the dialog's ONLY refusal condition: `c/dispositionLogOfferModal` renders an explained
+     * panel with no form and no Save button. This is still NOT a throw, and that distinction is the
+     * whole point — "no broker appointed" is a readable state the dialog must be able to explain,
+     * whereas "the broker is unreadable" is a provisioning gap it must NOT report as the same thing
+     * (see `deniedPersona_throwsRatherThanReportingNoBrokerAppointed`).
+     */
     @isTest
-    static void onMarket_noSelectedSubmission_leavesTheBrokerEmptyButStillLoads() {
+    static void onMarket_noSelectedSubmission_leavesTheBrokerNullWithoutThrowing() {
         Disposition__c disposition = onMarket();
         // Every factory submission defaults to Backup — the state before the appointment is
         // approved, which is exactly when an early offer might be logged.
         TestDataFactory.createBovSubmissions(2, disposition.Id, true);
-        Contact buyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(disposition.Id, buyer.Id);
 
         Test.startTest();
         DispositionOfferFormService.OfferFormContext context =
             DispositionOfferFormService.getFormContext(disposition.Id);
         Test.stopTest();
 
-        // 🔴 A NULL BROKER IS AN ACCEPTED OUTCOME, NOT A FAILURE. Nothing backfills it later —
-        // that was accepted in the design rather than solved — and the dialog must still work.
         Assert.isNull(context.brokerId, 'No Selected submission means no broker yet');
         Assert.areEqual('', context.brokerName,
             'NEVER null across the @AuraEnabled boundary — an undefined renders as "undefined"');
-        Assert.areEqual(1, context.buyers.size(), 'The buyer picker still loads');
+        Assert.areEqual(DispositionOfferFormService.SOURCE_ON_MARKET, context.brokerSource,
+            'and the source line still answers, so the modal can word its refusal per record type');
     }
 
     /**
@@ -262,126 +271,98 @@ private class DispositionOfferFormServiceTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════
-    // BUYERS — the picker's contents
+    // 🔴 THE 2026-08-21 REVERSAL: A DENIED READ THROWS, IT DOES NOT DEGRADE
     // ═════════════════════════════════════════════════════════════════════════════════════
 
-    @isTest
-    static void buyers_areReturnedAsContactIdKeyedOptionsWithNames() {
-        Disposition__c disposition = onMarket();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(disposition.Id, buyer.Id);
-        Contact expected = [SELECT Id, Name FROM Contact WHERE Id = :buyer.Id LIMIT 1];
-
-        Test.startTest();
-        DispositionOfferFormService.OfferFormContext context =
-            DispositionOfferFormService.getFormContext(disposition.Id);
-        Test.stopTest();
-
-        Assert.areEqual(1, context.buyers.size(), 'One qualifying buyer');
-        // 🔴 THE OPTION VALUE IS THE **CONTACT** ID, NOT THE NDA ID. Returning the NDA Id would
-        // compile, render identically, save without error, and silently populate
-        // `Disposition_Offer__c.Buyer__c` with a row that is not a Contact — caught by nothing
-        // until c/dispositionBuyerTimeline showed blanks for every buyer.
-        Assert.areEqual((String) expected.Id, context.buyers[0].value,
-            'The value must be the buyer CONTACT Id');
-        Assert.areEqual(expected.Name, context.buyers[0].label, 'Labelled with the Contact name');
+    /**
+     * A persona on `Minimum Access - Salesforce` holding NO permission set — so no
+     * `Disposition__c` object read at all.
+     *
+     * 🔴 THE BASE PROFILE IS LOAD-BEARING. `Standard User` grants read on standard objects and
+     * would mask a denial; `Minimum Access - Salesforce` grants nothing, which is what makes the
+     * `WITH USER_MODE` selector throw. Same fixture, same reasoning, as
+     * `DispositionOfferFormControllerTest.deniedPersona`.
+     *
+     * ⚠ `User` DML is SETUP-object DML and the caller also inserts `Disposition__c` (non-setup) in
+     * the same transaction, so this runs inside `System.runAs(new User(Id = UserInfo.getUserId()))`
+     * — the MIXED_DML_OPERATION workaround used across this repo.
+     */
+    private static User deniedPersona() {
+        Profile minimumAccess = [
+            SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1
+        ];
+        String unique = 'doffs' + String.valueOf(DateTime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        User persona = new User(
+            FirstName = 'Offer',
+            LastName = 'FormServiceDenied',
+            Alias = 'doffs',
+            Email = 'doffs@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = minimumAccess.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert persona;
+        }
+        return persona;
     }
 
+    /**
+     * 🔴 THE HIGHEST-VALUE TEST IN THIS FILE. IT PINS A DELIBERATE REVERSAL, AND THE BEHAVIOUR IT
+     *    FORBIDS IS THE ONE THIS SERVICE USED TO HAVE.
+     *
+     * Until 2026-08-21 both broker reads sat inside `catch (System.QueryException)` blocks that
+     * degraded to "no broker resolved", because the buyer picker was the dialog and an FLS gap on
+     * the broker must not take it down. The buyer picker is gone. Keeping those catches would now
+     * mean a persona who cannot READ the broker is told **"No broker is appointed on this sale
+     * yet — go appoint one on the BOV comparison matrix"**, about a sale that already has one.
+     * That is a confident wrong answer with a remedy that cannot work, and it is strictly worse
+     * than an error naming a provisioning gap.
+     *
+     * ⚠ THE ASSERTION IS DELIBERATELY "IT THREW", NOT A MESSAGE MATCH. The user-facing wording is
+     * the CONTROLLER's job and is asserted in `DispositionOfferFormControllerTest`; what this test
+     * owns is that the exception ESCAPES this layer at all.
+     * 🔴 SECOND-ORDER CONSEQUENCE THIS ALSO PROTECTS: if the catches come back, `getFormContext`
+     * becomes incapable of throwing, the controller's single `catch` goes permanently unreachable,
+     * and that class drops under the 75% per-class coverage threshold — which this repo has
+     * measured rolling a whole deploy back with every error counter reading zero.
+     */
     @isTest
-    static void buyers_areDeDuplicatedWhenOnePartyHasTwoNdas() {
-        Disposition__c disposition = onMarket();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        // An NDA re-issued rather than amended is the ordinary way to reach this.
-        signedBuyerNda(disposition.Id, buyer.Id);
-        signedBuyerNda(disposition.Id, buyer.Id);
-
-        Test.startTest();
-        DispositionOfferFormService.OfferFormContext context =
-            DispositionOfferFormService.getFormContext(disposition.Id);
-        Test.stopTest();
-
-        // 🔴 SOQL HAS NO `SELECT DISTINCT`, so the selector returns both rows on purpose (pinned
-        // in NdaSelectorTest) and THIS is the only place that collapses them. A duplicate `value`
-        // in a lightning-combobox renders a second option that can never be selected — a dead
-        // menu item, which reads to the user as a broken control rather than as a data issue.
-        Assert.areEqual(1, context.buyers.size(),
-            'Two NDAs naming one Contact produce ONE option');
-        Assert.areEqual((String) buyer.Id, context.buyers[0].value, 'Keyed on the Contact');
-    }
-
-    @isTest
-    static void buyers_excludeTheIntroducingBrokerAndUnsignedParties() {
-        Disposition__c disposition = onMarket();
-        Contact buyer = TestDataFactory.createContact(null, true);
+    static void deniedPersona_throwsRatherThanReportingNoBrokerAppointed() {
         Contact broker = TestDataFactory.createBrokerContact(null, true);
-        Contact pending = TestDataFactory.createContact(null, true);
-        signedBuyerNda(disposition.Id, buyer.Id);
+        Disposition__c disposition = offMarket(broker.Id);
+        User denied = deniedPersona();
 
-        NDA__c brokerNda = TestDataFactory.createDispositionNda(disposition.Id, false);
-        brokerNda.Party_Role__c = 'Introducing Broker';
-        brokerNda.Status__c = 'Signed';
-        brokerNda.Buyer__c = broker.Id;
-        insert brokerNda;
-
-        NDA__c unsigned = TestDataFactory.createDispositionNda(disposition.Id, false);
-        unsigned.Buyer__c = pending.Id;
-        insert unsigned;
+        Exception failure;
+        DispositionOfferFormService.OfferFormContext degraded;
 
         Test.startTest();
-        DispositionOfferFormService.OfferFormContext context =
-            DispositionOfferFormService.getFormContext(disposition.Id);
+        System.runAs(denied) {
+            try {
+                degraded = DispositionOfferFormService.getFormContext(disposition.Id);
+            } catch (Exception e) {
+                failure = e;
+            }
+        }
         Test.stopTest();
 
-        Set<Id> offered = buyerIdsOf(context);
-        Assert.areEqual(1, context.buyers.size(), 'Only the signed BUYER-role party');
-        Assert.isTrue(offered.contains(buyer.Id), 'The buyer is offered');
-        // Asserted here as well as in NdaSelectorTest deliberately: the predicate lives in the
-        // selector, but this is the layer whose OUTPUT a human clicks on.
-        Assert.isFalse(offered.contains(broker.Id),
-            'The introducing broker must never be offered as a buyer');
-        Assert.isFalse(offered.contains(pending.Id), 'An unsigned party is not selectable');
-    }
-
-    @isTest
-    static void buyers_emptyIsAFirstClassAnswer_notAnError() {
-        Disposition__c disposition = onMarket();
-        appointBovBroker(disposition.Id);
-        // ⚠ THE LIVE SHAPE OF `usman-dpeg` ON 2026-08-21: one Signed, Buyer-role NDA with a NULL
-        // `Buyer__c`. It passes two of the four predicates and still cannot produce an option.
-        NDA__c legacy = TestDataFactory.createDispositionNda(disposition.Id, false);
-        legacy.Status__c = 'Signed';
-        insert legacy;
-
-        Test.startTest();
-        DispositionOfferFormService.OfferFormContext context =
-            DispositionOfferFormService.getFormContext(disposition.Id);
-        Test.stopTest();
-
-        Assert.isNotNull(context, 'A context is always returned');
-        Assert.isNotNull(context.buyers, 'buyers is NEVER null — the LWC iterates it');
-        Assert.areEqual(0, context.buyers.size(), 'Empty, and the modal explains it');
-        // The broker still resolves — the dialog's empty state is about the BUYER only.
-        Assert.isNotNull(context.brokerId, 'An empty picker does not suppress the broker');
-    }
-
-    @isTest
-    static void buyers_areScopedToThisDisposition() {
-        Disposition__c mine = onMarket();
-        Disposition__c other = onMarket();
-        Contact myBuyer = TestDataFactory.createContact(null, true);
-        Contact otherBuyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(mine.Id, myBuyer.Id);
-        signedBuyerNda(other.Id, otherBuyer.Id);
-
-        Test.startTest();
-        DispositionOfferFormService.OfferFormContext context =
-            DispositionOfferFormService.getFormContext(mine.Id);
-        Test.stopTest();
-
-        Set<Id> offered = buyerIdsOf(context);
-        Assert.areEqual(1, context.buyers.size(), 'One sale, one buyer list');
-        Assert.isTrue(offered.contains(myBuyer.Id), 'This sale\'s buyer');
-        Assert.isFalse(offered.contains(otherBuyer.Id), 'Another sale\'s buyer must not leak in');
+        Assert.isNull(degraded,
+            '🔴 A DENIED READ MUST NOT RETURN A CONTEXT AT ALL. If this is non-null, a '
+                + 'degrade-catch has been re-added and the dialog is now telling users with a '
+                + 'permission gap that their sale has no appointed broker. Returned brokerId: '
+                + (degraded == null ? 'n/a' : String.valueOf(degraded.brokerId)));
+        Assert.isNotNull(failure,
+            'FIXTURE PRECONDITION: a Minimum Access persona with no permission set must not be '
+                + 'able to read Disposition__c. If this stops throwing, the profile changed or the '
+                + 'selector stopped using USER_MODE — investigate, do not delete this test.');
+        Assert.isTrue(failure instanceof QueryException,
+            'and the documented type is System.QueryException, which is what the controller\'s '
+                + '`instanceof` test branches on to choose the ACCESS message over the generic '
+                + 'one. Actual: ' + failure.getTypeName() + ': ' + failure.getMessage());
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════
@@ -396,17 +377,24 @@ private class DispositionOfferFormServiceTest {
         Test.stopTest();
 
         // 🔴 NEVER A THROW. The modal's `@wire` fires before `dispositionId` is set on a slow
-        // first render, and an exception there would flash an error toast on a dialog that is
+        // first render, and an exception there would flash an error banner on a dialog that is
         // about to work perfectly.
         Assert.isNotNull(context, 'A null Id still returns a context');
         Assert.isNull(context.brokerId, 'No broker');
         Assert.areEqual('', context.brokerName, 'A STRING, never null — see the DTO');
         Assert.areEqual('', context.brokerSource, 'A STRING, never null');
-        Assert.isNotNull(context.buyers, 'buyers is never null');
-        Assert.areEqual(0, context.buyers.size(), 'And empty');
         Assert.areEqual(true, context.isOnMarket, 'Defaults to the On_Market branch');
     }
 
+    /**
+     * A DELETED parent degrades to an empty context rather than throwing.
+     *
+     * ⚠ THIS IS NOT IN TENSION WITH `deniedPersona_throwsRatherThanReportingNoBrokerAppointed`,
+     * AND THE DIFFERENCE IS THE WHOLE DESIGN. `selectBrokerContextById` returns NULL for a row
+     * that does not exist (or is not visible under SHARING) and THROWS when the running user
+     * cannot read the object or a field (FLS/CRUD). "It isn't there" is a data state the dialog
+     * can honestly report; "you may not look" is a provisioning gap it must not disguise as one.
+     */
     @isTest
     static void deletedDisposition_degradesInsteadOfThrowing() {
         Disposition__c ghost = onMarket();
@@ -419,28 +407,27 @@ private class DispositionOfferFormServiceTest {
         Test.stopTest();
 
         // The record-type fallback is DispositionDomain.recordTypeNameOf's own (`On_Market` for a
-        // null/Master row), reused rather than re-derived — so an unreadable parent answers the
+        // null/Master row), reused rather than re-derived — so an absent parent answers the
         // same way a Master-record-type row does, in this class and in
         // DispositionApprovalService alike.
         Assert.isNotNull(context, 'A missing parent is a degrade, not an exception');
         Assert.isNull(context.brokerId, 'Nothing to resolve');
         Assert.areEqual(true, context.isOnMarket, 'The shared On_Market fallback');
-        Assert.areEqual(0, context.buyers.size(), 'And no buyers');
     }
 
     // ═════════════════════════════════════════════════════════════════════════════════════
     // BUDGET — a CEILING, asserted, not described
     // ═════════════════════════════════════════════════════════════════════════════════════
 
+    /**
+     * ⚠ THE CEILING DROPPED FROM 3 TO 2 ON 2026-08-21 when the buyer NDA read was deleted.
+     * Asserting the EXACT number is what makes that deletion stick: a `<= 3` ceiling would let the
+     * query quietly return.
+     */
     @isTest
-    static void budget_onMarketCostsAtMostThreeQueries_constantInBuyerCount() {
+    static void budget_onMarketCostsExactlyTwoQueries() {
         Disposition__c disposition = onMarket();
         appointBovBroker(disposition.Id);
-        // TEN buyers. If any read were per-buyer this would be visibly more than three.
-        for (Integer i = 0; i < 10; i++) {
-            Contact buyer = TestDataFactory.createContact(null, true);
-            signedBuyerNda(disposition.Id, buyer.Id);
-        }
 
         Test.startTest();
         Integer before = Limits.getQueries();
@@ -449,19 +436,16 @@ private class DispositionOfferFormServiceTest {
         Integer used = Limits.getQueries() - before;
         Test.stopTest();
 
-        Assert.areEqual(10, context.buyers.size(), 'All ten buyers are offered');
-        // 🔴 THE CEILING, NOT A DESCRIPTION. Parent + Selected BOV + buyer NDAs. A fourth query
-        // added later is invisible on a single-record screen and would only surface as latency.
-        Assert.areEqual(3, used,
-            'On-market costs exactly 3 SOQL regardless of how many buyers there are');
+        Assert.isNotNull(context.brokerId, 'The broker resolved');
+        // 🔴 THE CEILING, NOT A DESCRIPTION. Parent + Selected BOV. A third query added later is
+        // invisible on a single-record screen and would only surface as latency.
+        Assert.areEqual(2, used, 'On-market costs exactly 2 SOQL');
     }
 
     @isTest
-    static void budget_offMarketCostsTwoQueries_theBovReadIsSkippedEntirely() {
+    static void budget_offMarketCostsOneQuery_theBovReadIsSkippedEntirely() {
         Contact broker = TestDataFactory.createBrokerContact(null, true);
         Disposition__c disposition = offMarket(broker.Id);
-        Contact buyer = TestDataFactory.createContact(null, true);
-        signedBuyerNda(disposition.Id, buyer.Id);
 
         Test.startTest();
         Integer before = Limits.getQueries();
@@ -473,7 +457,7 @@ private class DispositionOfferFormServiceTest {
         // which is the shape a "read both, prefer one" refactor takes — would cost every
         // off-market dialog an extra query for a value it must not use, and would ALSO defeat
         // the cross-contamination test above by making the wrong value available.
-        Assert.areEqual(2, used, 'Off-market skips the BOV read entirely');
+        Assert.areEqual(1, used, 'Off-market skips the BOV read entirely');
     }
 
     @isTest

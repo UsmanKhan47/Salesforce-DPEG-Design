@@ -94,15 +94,52 @@ describe('c-disposition-main', () => {
         expect(
             element.shadowRoot.querySelector('c-backup-brokers')
         ).not.toBeNull();
-        // The disposition-scoped call-for-offers card. ⚠ NOT c-call-for-offers-list
-        // / c-call-for-offers-panel — those are OPPORTUNITY-scoped (acquisitions
-        // buy-side) and are explicitly out of scope for this module.
-        expect(
-            element.shadowRoot.querySelector('c-disposition-call-for-offers')
-        ).not.toBeNull();
         expect(
             element.shadowRoot.querySelector('c-bov-comparison-matrix')
         ).toBeNull();
+    });
+
+    it('🔴 renders NO call-for-offers card at Active Listing — the UAT removal must not come back', async () => {
+        // DELIBERATE ABSENCE PIN (UAT 2026-08-21: "also remove call for offers lwc, we
+        // don't need to show"). The positive assertion that used to prove
+        // c-disposition-call-for-offers rendered here was DELETED, not weakened — this
+        // replaces it, and it is the only thing standing between a one-line re-add of the
+        // tag in dispositionMain.html and it silently shipping. The bundle still exists in
+        // lwc/, so the re-add is genuinely one line.
+        //
+        // ⚠ THE FIXTURE IS THE POPULATED ONE ON PURPOSE. 'Active Listing' is the exact
+        // stage the card used to render at; an absence assertion against the pre-wire
+        // empty state would pass for the wrong reason. The two not-toBeNull() checks below
+        // exist to PROVE the block actually rendered, so the absence below means "the card
+        // is gone" and not "nothing rendered at all".
+        //
+        // ⚠ SUBSTRING MATCH ON TAG NAMES, NOT A SINGLE querySelector, AND NOT textContent.
+        // textContent would be VACUOUS here: c-disposition-main is a router whose children
+        // are custom elements with their own shadow roots, so the host's textContent never
+        // contains their copy whether they render or not. Tag names are what this component
+        // actually controls. The substring also catches the OPPORTUNITY-scoped
+        // c-call-for-offers-list / c-call-for-offers-panel, which are out of scope for the
+        // disposition module and are the likeliest wrong thing for someone to reach for.
+        const element = createComponent();
+
+        getRecord.emit(recordForStage('Active Listing'));
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('c-broker-listing')
+        ).not.toBeNull();
+        expect(
+            element.shadowRoot.querySelector('c-backup-brokers')
+        ).not.toBeNull();
+
+        const renderedTags = Array.from(
+            element.shadowRoot.querySelectorAll('*')
+        ).map((el) => el.tagName.toLowerCase());
+
+        expect(renderedTags.length).toBeGreaterThan(0);
+        expect(
+            renderedTags.filter((tag) => tag.includes('call-for-offers'))
+        ).toEqual([]);
     });
 
     it('Closing stage renders wire verification + the closing checklist', async () => {

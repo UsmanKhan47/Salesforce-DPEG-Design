@@ -87,18 +87,14 @@ export default class BovBrokerChangeHistory extends LightningElement {
         }
     }
 
-    /**
-     * The card's one-line explanation of what it contains.
-     *
-     * 🔴 KEPT VERBATIM. "nothing is deleted" is the POINT of an audit log, and it is the single
-     * most useful sentence on the card in its majority (empty) state — an empty audit log that
-     * does not say what it WOULD have contained is indistinguishable from a broken one. It is
-     * rendered above the tiles in the data state and as the explanatory line inside the empty
-     * state, and it is deliberately ABSENT from the unavailable state (see the template).
-     */
-    get intro() {
-        return 'Every broker ever appointed to this sale — nothing is deleted.';
-    }
+    // ⚠ `get intro()` — 'Every broker ever appointed to this sale — nothing is deleted.' — WAS
+    // DELETED ON 2026-08-21. The user quoted this exact string as prose they did not want. It
+    // rendered in TWO places (above the tiles, and as the empty state's sub-line) and both went;
+    // the `id="bbc-intro"` / `aria-describedby` pair went with it, because an aria-describedby
+    // naming a removed element is worse than none at all.
+    // 🔴 THE EMPTY STATE ITSELF SURVIVED — "No broker changes recorded" is still rendered, still
+    // with role="status" and an icon and never an alert or a spinner. That requirement (see the
+    // three-states block above) is about the STATE being distinguishable, not about this sentence.
 
     /**
      * The card's visible title, with the change count appended ONLY once the wire has answered

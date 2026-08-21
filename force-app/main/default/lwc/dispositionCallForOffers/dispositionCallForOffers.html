@@ -6,9 +6,14 @@
             ⚠ NO `slot="actions"`. A "+ Log Offer" brand button lived here and was REMOVED at UAT on
             2026-08-21 ("I asked you to remove the log offer button from call for offers lwc"). The
             dialog it opened is NOT orphaned: `c/dispositionOffer` in the SIDEBAR opens the same
-            `c/dispositionLogOfferModal`, and `dispositionSidebar.isOfferStage` includes
-            'Active Listing' — the only stage this card renders at — so both cards are on screen
-            together and the remaining entry point is one click away.
+            `c/dispositionLogOfferModal`, and that sidebar card is the sole live opener.
+
+            ⚠ LATER THE SAME DAY this whole card stopped being rendered at all — the tag was
+            removed from lwc/dispositionMain/dispositionMain.html, the only place that rendered
+            it ("also remove call for offers lwc, we don't need to show"). The bundle is kept
+            deliberately; see the header comment in dispositionCallForOffers.js. So the clause
+            that used to sit here — "the only stage this card renders at" — is retracted: it
+            renders at no stage, and the modal's reachability never depended on it.
         -->
 
         <template lwc:if={hasError}>

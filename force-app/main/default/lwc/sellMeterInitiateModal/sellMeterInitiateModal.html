@@ -10,11 +10,20 @@
                 ></lightning-spinner>
             </template>
 
-            <p class="smi-intro">
-                Initiating a disposition for
-                <strong>{propertyLabel}</strong> creates the record and sends it
-                straight into the Sale Decision approval.
-            </p>
+            <!-- ═══════════════════════════════════════════════════════════════════════════
+                 🔴 NO INTRO PARAGRAPH. `.smi-intro` was removed on 2026-08-21 (UAT prose
+                 removal). It read "Initiating a disposition for <property> creates the record and
+                 sends it straight into the Sale Decision approval." — the same shape as the
+                 string the user quoted: a sentence restating what the button below does. The
+                 button says "Send for Approval"; that is the statement now.
+
+                 ⚠ ONE CONSEQUENCE, RECORDED SO IT IS A DECISION AND NOT AN OVERSIGHT: that
+                 sentence was the only place this dialog NAMED the property. The summary below
+                 shows the property's numbers but not its name, and the modal is only ever opened
+                 from a row the user just clicked in c/sellMeterList. `@api propertyName` is still
+                 accepted but is no longer rendered. If the name is wanted back it belongs as a
+                 fifth `summaryRows` entry — a label/value pair — NOT as a restored sentence.
+                 ═══════════════════════════════════════════════════════════════════════════ -->
 
             <!-- Read-only property summary. dt/dd ONLY, in order and with no
                  wrapper divs — axe's `definition-list` rule is strict, and the

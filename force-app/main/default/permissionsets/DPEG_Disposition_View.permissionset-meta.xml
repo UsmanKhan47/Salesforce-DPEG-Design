@@ -1131,12 +1131,15 @@
         for the rest of the object. A Metadata API deployed field carries NO FLS for anyone,
         System Administrator included, so these grants and the two matching field files under
         objects/NDA__c/fields/ must deploy together. Appended at the tail of the NDA__c run.
+
+        🔴 NDA__c.Buyer__c GRANT REMOVED 2026-08-21 (buyer-to-broker-counterparty-change.md).
+        User decision: "we don't need buyer information, we just need broker contact for
+        disposition offers and NDA." The field itself is NOT deleted (additive-only rule; see
+        the field's own comment, now marked superseded) - only this permission-set grant is
+        withdrawn, alongside removing it from NDA_Record_Page. Replaced by the NDA__c.Broker__c
+        grant below. NDA__c.Materials_Released_Date__c KEEPS its grant, unchanged - the timeline
+        still uses it.
     -->
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>NDA__c.Buyer__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>NDA__c.Materials_Released_Date__c</field>
@@ -1144,7 +1147,7 @@
     </fieldPermissions>
     <!--
         ADDED 2026-08-21 - NDA_Record_Page needs a record-type discriminator to gate
-        Record.Disposition__c / Record.Buyer__c / Record.Materials_Released_Date__c to disposition
+        Record.Disposition__c / Record.Broker__c / Record.Materials_Released_Date__c to disposition
         NDAs only, without hiding them when blank. NDA__c.Is_Disposition_NDA__c is a formula
         (readable only - editable is not applicable to a formula field), matching this file's
         read-only Principal persona. Not granted on DPEG_Acquisition_View or DPEG_Admin_Access,
@@ -1152,10 +1155,28 @@
         WITH OR BEFORE the flexipage - a visibility rule reading a field the running user cannot
         see evaluates FALSE and hides the element with no error anywhere. Appended at the tail of
         the NDA__c run, after Materials_Released_Date__c, following this file's own convention.
+        ⚠ Record.Buyer__c UPDATED TO Record.Broker__c 2026-08-21 - this comment described the
+        flexipage's field list as it stood earlier that day; buyer-to-broker-counterparty-change.md
+        replaced the Buyer__c field instance on that page with Broker__c in the same slot, under
+        this same visibility rule.
     -->
     <fieldPermissions>
         <editable>false</editable>
         <field>NDA__c.Is_Disposition_NDA__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-21 (buyer-to-broker-counterparty-change.md). NDA__c.Broker__c: readable
+        only, matching this file's read-only Principal persona and every other NDA__c field
+        grant here. NDA__c is dual-module; not granted on DPEG_Acquisition_View or
+        DPEG_Admin_Access, matching this file's convention for the rest of the object. A
+        Metadata API deployed field carries NO FLS for anyone, System Administrator included,
+        so this grant and objects/NDA__c/fields/Broker__c.field-meta.xml must deploy together.
+        Appended at the tail of the NDA__c run.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

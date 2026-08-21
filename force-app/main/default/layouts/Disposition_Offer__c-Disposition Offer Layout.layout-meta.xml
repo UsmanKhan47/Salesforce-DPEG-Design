@@ -4,6 +4,16 @@
          breaks `sf` deploy at source conversion with a misleading "unable to find matching parent
          xml file" error.
 
+         🔴 Buyer__c REMOVED FROM THIS LAYOUT 2026-08-21 (buyer-to-broker-counterparty-change.md).
+         SUPERSEDED BY Disposition_Offer__c.Broker__c, WHICH IS DELIBERATELY NOT ON THIS LAYOUT
+         EITHER (see that field's own comment - it is machine-stamped, not analyst-entered). User
+         decision: "we don't need buyer information, we just need broker contact for disposition
+         offers and NDA." Buyer__c the FIELD is NOT deleted - this repo's standing rule is
+         additive (add -> repoint -> retire) and a deletion needs its own sequenced wave plus a
+         manual Setup erase - only its reachability from this form is removed. Its permission-set
+         grants and Buyer_Name__c (the separate free-text field, already removed from this layout
+         2026-08-21 below) are untouched by this change; narrowing those was not asked for here.
+
          BUSINESS FIELDS ADDED 2026-08-20 (UAT gap). Until now this layout was a STUB: it carried
          exactly four fields, Name, OwnerId, CreatedById and LastModifiedById, and not one business
          field. Clicking "+ Log Offer" therefore opened a "New Disposition Offer" modal offering
@@ -122,10 +132,6 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Disposition__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Buyer__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>

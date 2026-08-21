@@ -32,7 +32,9 @@
     border-bottom: 1px solid #f3f4f6;
     font-size: var(--slds-g-font-scale-neg-1, 12px);
 }
-.offer-buyer { font-weight: var(--slds-g-font-weight-4, 400); color: var(--slds-g-color-on-surface-2, #181818); flex: 1; }
+/* The first column. It was `.offer-buyer` until 2026-08-21, when buyer identity was retired and
+   the offer's own AutoNumber took its place — same slot, same weight, different subject. */
+.offer-name { font-weight: var(--slds-g-font-weight-4, 400); color: var(--slds-g-color-on-surface-2, #181818); flex: 1; }
 .offer-amount { font-weight: var(--slds-g-font-weight-4, 400); color: var(--slds-g-color-palette-green-40, #1B7A4B); margin: 0 var(--slds-g-spacing-3, 12px); }
 .offer-date { color: var(--slds-g-color-neutral-base-60, #8a96a3); }
 .log-btn-wrap {

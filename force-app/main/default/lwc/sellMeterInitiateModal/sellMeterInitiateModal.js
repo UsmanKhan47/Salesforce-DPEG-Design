@@ -61,7 +61,15 @@ const DASH = '—';
 export default class SellMeterInitiateModal extends LightningModal {
     /** The Property_Asset__c to initiate against. */
     @api assetId;
-    /** Display name of that property. Used in the prompt copy only. */
+    /**
+     * Display name of that property.
+     *
+     * ⚠ NO LONGER RENDERED (2026-08-21). It fed the intro paragraph, which the UAT prose removal
+     * deleted. The property is RETAINED rather than removed because `c/sellMeterList` still passes
+     * it into `LightningModal.open()`, and because the property's NAME is the one fact that
+     * removal cost this dialog — if a user asks for it back, this is the value to render, as a
+     * fifth `summaryRows` entry and not as a sentence.
+     */
     @api propertyName;
 
     // ── Pre-formatted summary strings, supplied by the caller (see header) ──
@@ -108,9 +116,10 @@ export default class SellMeterInitiateModal extends LightningModal {
         }));
     }
 
-    get propertyLabel() {
-        return this.propertyName || 'this property';
-    }
+    // ⚠ `propertyLabel` WAS DELETED ON 2026-08-21 with the intro paragraph, its only consumer. Its
+    // `|| 'this property'` fallback existed to stop an absent `propertyName` rendering the literal
+    // string "undefined"; nothing binds that value now, and the suite still pins
+    // `not.toContain('undefined')` on the rendered markup for the bindings that remain.
 
     get isSaving() {
         return this._saving;

@@ -15,8 +15,10 @@
  * `Disposition_Offer__c`. The platform's post-save behaviour for a record created
  * that way is to NAVIGATE TO THE NEW RECORD, so logging an offer threw the user
  * off the Disposition page; and that create screen renders from the PAGE LAYOUT,
- * which offers `Buyer__c` as an UNFILTERED Contact lookup — every Contact in the
- * org, including the introducing broker whose signed NDA sits on the same sale.
+ * which cannot express a narrow field set or a read-only, server-resolved broker.
+ * ⚠ THE SECOND DEFECT USED TO BE DESCRIBED AS "the layout offers `Buyer__c` as an
+ * UNFILTERED Contact lookup". That sentence was retired on 2026-08-21 with buyer
+ * identity itself — DPEG communicates only with the appointed listing broker.
  *
  * 🔴 `LOG OFFER: never navigates` BELOW IS THE ANTI-REGRESSION PIN, AND IT IS
  * DELIBERATELY AN ASSERTION ABOUT **ABSENCE**. Asserting only that the modal
@@ -75,7 +77,7 @@ const OFFERS = {
         {
             id: 'a0E01',
             fields: {
-                Buyer_Name__c: { value: 'Blackstone RE' },
+                Name: { value: 'OFFER-0001' },
                 Offer_Amount__c: { value: 2500000 },
                 Offer_Date__c: { value: '2026-03-15' }
             }
@@ -83,7 +85,7 @@ const OFFERS = {
         {
             id: 'a0E02',
             fields: {
-                Buyer_Name__c: { value: 'Brookfield' },
+                Name: { value: 'OFFER-0002' },
                 Offer_Amount__c: { value: 2350000 },
                 Offer_Date__c: { value: '2026-03-20' }
             }
@@ -141,9 +143,12 @@ describe('c-disposition-offer', () => {
         const rows = element.shadowRoot.querySelectorAll('.offer-row');
         expect(rows.length).toBe(2);
 
+        // 🔴 THE OFFER'S OWN NUMBER, NOT A BUYER NAME (2026-08-21). With the buyer
+        // gone the amount and the date are otherwise the only things telling two
+        // offers apart, and two offers can legitimately share both.
         expect(
-            element.shadowRoot.querySelector('.offer-buyer').textContent
-        ).toBe('Blackstone RE');
+            element.shadowRoot.querySelector('.offer-name').textContent
+        ).toBe('OFFER-0001');
         expect(
             element.shadowRoot.querySelector('.offer-amount').textContent
         ).toBe('$2.50M');
@@ -240,7 +245,7 @@ describe('c-disposition-offer', () => {
 
     it('LOG OFFER: a dialog that fails to open reports it instead of failing silently', async () => {
         DispositionLogOfferModal.open.mockRejectedValue({
-            body: { message: 'You do not have access to the buyer information.' }
+            body: { message: 'You do not have access to the broker information.' }
         });
         const element = createComponent();
         const toastHandler = jest.fn();
@@ -271,6 +276,41 @@ describe('c-disposition-offer', () => {
         expect(
             element.shadowRoot.querySelector('.wire-error')
         ).not.toBeNull();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-BUYER — THE DELIBERATE ABSENCE PIN (2026-08-21)
+    //
+    // The buyer-name assertion above was RETARGETED, not deleted, so this card
+    // kept a first-column test. What it did NOT keep is anything that fails if a
+    // buyer column is added BACK beside the offer number. This is that pin, and
+    // it runs against the two-row fixture so it cannot pass on an empty card.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-BUYER: the card names no buyer and requests no buyer field', async () => {
+        const element = createComponent();
+
+        getRelatedListRecords.emit(OFFERS);
+        await Promise.resolve();
+
+        // Guard the guard: two rows genuinely rendered.
+        expect(element.shadowRoot.querySelectorAll('.offer-row').length).toBe(2);
+
+        // 1. THE OLD SELECTOR.
+        expect(element.shadowRoot.querySelector('.offer-buyer')).toBeNull();
+
+        // 2. 🔴 THE RENDERED WORD. A re-added column arrives under a new class
+        //    name, so the selector assertion alone would stay green.
+        expect(element.shadowRoot.textContent.toLowerCase()).not.toContain('buyer');
+
+        // 3. 🔴 THE WIRE REQUEST ITSELF. This is the assertion that catches the
+        //    field coming back into the LDS `fields` list — which would re-add the
+        //    FLS gate on `Buyer_Name__c` for every user of this card even if
+        //    nothing rendered it. `getConfig()` is the sfdx-lwc-jest adapter's
+        //    view of the last config the component asked for.
+        const config = getRelatedListRecords.getLastConfig();
+        expect(config.fields).not.toContain('Disposition_Offer__c.Buyer_Name__c');
+        expect(config.fields).toContain('Disposition_Offer__c.Name');
     });
 
     it('is accessible', async () => {

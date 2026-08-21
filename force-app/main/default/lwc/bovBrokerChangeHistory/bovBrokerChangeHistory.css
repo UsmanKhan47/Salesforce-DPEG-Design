@@ -46,14 +46,9 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* ===== Intro ===== */
-.bbc-intro {
-    min-width: 0;
-    margin: 0;
-    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem) 0;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
+/* ⚠ `.bbc-intro` WAS DELETED ON 2026-08-21 with the intro paragraph above the tile list (UAT
+   prose removal). `.bbc-list` carries its own padding, so the list is not left flush against the
+   card header by its removal. */
 
 /* ===== Tile list ===== */
 .bbc-list {
@@ -223,15 +218,9 @@
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
-.bbc-state-sub {
-    min-width: 0;
-    /* A measure, not a width: keeps the explanatory line from running edge-to-edge in a wide
-       region while still shrinking freely in the sidebar. `ch` (not px) so it tracks the font. */
-    max-width: var(--slds-g-sizing-content-2, 45ch);
-    margin: 0;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
+/* ⚠ `.bbc-state-sub` WAS DELETED ON 2026-08-21 with the empty state's explanatory sub-line (UAT
+   prose removal). The state is now icon + `.bbc-empty` only; `.bbc-state`'s `gap` and centring
+   already handle a single-child body, so nothing else moved. */
 
 /* ===== Full-note popup ===== */
 .bbc-note-sub {

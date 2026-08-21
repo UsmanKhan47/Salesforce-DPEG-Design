@@ -22,22 +22,15 @@
             ></lightning-spinner>
         </template>
 
-        <!-- Offers exist: pick one. -->
+        <!-- Offers exist: pick one.
+             🔴 NO EXPLANATORY NOTE ABOVE THE RADIO GROUP. The `.qa-note` panel that used to sit
+             here ("Selecting an offer moves this disposition to Offer Selection and sends the
+             offer for principal approval…") was removed at the user's request on 2026-08-21 — it
+             is the string they quoted. The button label below still says "Select and send for
+             approval", which is where the behaviour is now stated; do not restore the paragraph.
+             ⚠ The distinction this note drew — selecting is NOT accepting — survives in the JS
+             class header, which is where developers need it. -->
         <template lwc:if={hasOffers}>
-            <div class="qa-note">
-                <lightning-icon
-                    icon-name="utility:info"
-                    size="xx-small"
-                    class="slds-m-right_x-small"
-                ></lightning-icon>
-                <span>
-                    Selecting an offer moves this disposition to
-                    <strong>Offer Selection</strong> and sends the offer for
-                    principal approval. It does not accept the offer — the
-                    approval does that.
-                </span>
-            </div>
-
             <lightning-radio-group
                 class="qa-offers slds-m-top_small"
                 name="dispositionOffer"

@@ -1,8 +1,41 @@
 /**
- * Builds the BUYER ACTIVITY TIMELINE for one Disposition — one row per buyer-role NDA, carrying the
- * three dates of the buyer journey (NDA signed -> materials released -> first offer) and the two
- * durations between them. Backs `DispositionBuyerTimelineController` -> `c/dispositionBuyerTimeline`
- * (Tranche 2 Workstream D, `agent-output/disposition-tranche-2-requirements.md` §3 D6.3).
+ * Builds the card titled "BROKER ACTIVITY TIMELINE" for one Disposition — one row per buyer-role NDA, carrying the
+ * NDA's number, the broker it names, the two dates of the NDA journey (signed -> materials
+ * released) and the duration between them. Backs `DispositionBuyerTimelineController` ->
+ * `c/dispositionBuyerTimeline` (Tranche 2 Workstream D,
+ * `agent-output/disposition-tranche-2-requirements.md` §3 D6.3; retargeted 2026-08-21).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THREE NAMES, ALL DIFFERENT, ALL DELIBERATE — READ THIS BEFORE "CORRECTING" ANY OF THEM
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ *   API NAMES (this class, the controller, the test, the LWC bundle) say  BUYER
+ *   THE CARD TITLE ON SCREEN says                        "Broker Activity Timeline"
+ *   ONE ROW IS                                            ONE NDA
+ *
+ * 1. THE API NAMES ARE HISTORICAL AND STAY. DPEG communicates only with the appointed listing
+ *    broker; buyers sit behind them and are not tracked (user decision, 2026-08-21), so this card
+ *    stopped rendering a buyer identity — but it was NOT renamed. `c/dispositionBuyerTimeline` is
+ *    placed by `flexipages/Disposition_Record_Page` and this class is compiled into the org under
+ *    this name, so a rename is a FlexiPage edit PLUS a destructive Apex delete: a two-sided deploy
+ *    that a check-only validation cannot verify and that leaves a dangling reference if either half
+ *    lands alone. Only the USER-VISIBLE strings were changed, which costs nothing and is what
+ *    anyone actually reads.
+ *    ⚠ Treat every occurrence of "buyer" in an API NAME on this feature as historical. The DTO's
+ *    inner class WAS renamed (`BuyerRow` -> `NdaRow`) because an inner class has no org-level
+ *    identity of its own and the rename is fully compile-checked.
+ *
+ * 2. 🔴 THE TITLE SAYS "BROKER"; THE ROWS ARE NOT GROUPED BY BROKER, AND GROUPING THEM WOULD
+ *    DESTROY THE CARD. There is ONE appointed broker per sale, so `brokerName` BELOW IS THE SAME
+ *    STRING ON EVERY ROW of a normal disposition. That is the data being true, not duplication to
+ *    be cleaned up. The title (user instruction, 2026-08-21; it was briefly "NDA Activity Timeline")
+ *    names the party DPEG deals with — it is not a promise of a per-broker rollup. A GROUP BY here
+ *    would collapse a three-NDA sale to a single row and delete the timeline the card exists to
+ *    show. `buildRow` therefore stays strictly one-row-per-NDA, and the LWC renders the broker as a
+ *    per-tile SUBTITLE under the NDA number rather than as the tile heading.
+ *
+ * 3. The row's identity is the NDA AutoNumber — the only per-row identity always present (a broker
+ *    can be null; see the no-backfill note below). The card's intro line and empty state still say
+ *    "NDA" for that reason and are correct: they describe the ROWS, the title names the party.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 🔴 THIS TIMELINE MUST NOT READ `NDA__c.NDA_Signed__c`. IT DOES NOT. DO NOT ADD IT. 🔴 🔴
@@ -24,7 +57,25 @@
  *
  * 🔴 **THE GATE IS `Status__c = 'Signed'`. `Date_Signed__c` IS ONLY THE VALUE DISPLAYED ONCE THAT
  * GATE PASSES.** Both are used, in that order, in `buildRow` below. Neither substitutes for the
- * other.
+ * other. ⚠ THE 2026-08-21 RETARGET DID NOT TOUCH THIS. It is stated because the retarget deleted a
+ * different column and it must be obvious that the signed gate was not part of that deletion.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 THE "FIRST OFFER" COLUMN AND ITS DURATION WERE DELETED 2026-08-21. DO NOT RE-ADD THEM.
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * This class used to take a second query — `DispositionOfferSelector.selectEarliestByBuyerIds` —
+ * and join each NDA's BUYER Contact to that buyer's earliest dated offer on the same Disposition.
+ * With the buyer gone from `Disposition_Offer__c`'s entry point, **nothing links an offer to a
+ * specific NDA any more**, so no attribution this class could make would be true.
+ *
+ * 🔴 THE TEMPTING SUBSTITUTE IS THE WRONG ANSWER, AND IT IS WORSE THAN THE MISSING COLUMN. The
+ * disposition's earliest offer across ALL its NDAs is one query away and would render happily —
+ * as the SAME DATE ON EVERY ROW, in a column whose header says "first offer", read by an analyst
+ * as a per-row fact. This repo deleted a whole component three weeks ago on exactly that ground:
+ * a component rendering a fixed lie is worse than an empty one. The selector method was deleted
+ * with the column so the shortcut has no one-liner to reach for.
+ * ⚠ IF A PER-NDA OFFER LINK EVER EXISTS (an `NDA__c` lookup on `Disposition_Offer__c`, say), this
+ * column can come back — from THAT join, never from a disposition-level aggregate.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 DECLINED PARTIES ARE INCLUDED, NEVER HIDDEN — AND THEIR RETAINED DATE IS NEVER SHOWN
@@ -32,69 +83,71 @@
  * `NDA__c.allowDelete` is FALSE on both disposition permission sets by decision D20, so a declined
  * party PERSISTS as audit evidence. Two consequences, both deliberate:
  *   - THEY APPEAR. Hiding them would make this card DISAGREE WITH THE NDAs RELATED LIST SITTING ON
- *     THE SAME PAGE — the analyst would count three parties in one component and two in the other,
+ *     THE SAME PAGE — the analyst would count three NDAs in one component and two in the other,
  *     with nothing to explain the difference.
- *   - THEY CARRY NO DATES AT ALL. Every date and both durations are nulled for a declined row, so
- *     the component renders em-dashes across the board. `Date_Signed__c` is suppressed HERE, in the
+ *   - THEY CARRY NO DATES AT ALL. Every date and the duration are nulled for a declined row, so the
+ *     component renders em-dashes across the board. `Date_Signed__c` is suppressed HERE, in the
  *     service, rather than in the component — a value that must never be displayed should not cross
  *     the `@AuraEnabled` boundary at all, because a future template change cannot then leak it.
  * They sort LAST, after the active parties, mirroring `brokerAssignmentHistory`'s active-first sort.
+ * ⚠ THE WORD "Declined" REACHES THE USER AS READABLE TEXT, not as a colour — the component's own
+ * header and Jest suite pin that, and `status` below is what feeds it.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * ⚠ ONLY `Party_Role__c = 'Buyer'` ROWS EXIST HERE, AND THE FILTER IS IN THE QUERY
+ * ⚠ ONLY `Party_Role__c = 'Buyer'` ROWS EXIST HERE, AND THE FILTER IS IN THE QUERY — UNCHANGED
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * An `Introducing Broker` NDA is a real and expected row on a disposition and is NOT a buyer. It is
- * excluded by `NdaSelector.selectBuyerTimelineByDispositionId`'s own `WHERE` clause, so this class
- * never sees one and does not re-test it. Read that method before assuming this class is missing a
- * guard.
+ * An `Introducing Broker` NDA is a real and expected row on a disposition and is excluded by
+ * `NdaSelector.selectBuyerTimelineByDispositionId`'s own `WHERE` clause, so this class never sees
+ * one and does not re-test it.
+ * 🔴 THE 2026-08-21 RETARGET DELIBERATELY DID NOT WIDEN THIS. The card stopped labelling rows with
+ * a buyer; it did not change WHICH rows it shows. Admitting `Introducing Broker` NDAs would change
+ * the count on the card — a behavioural change nobody asked for, and one made hard to notice by
+ * the fact that the buyer column is gone. It is one line in the selector if it is ever wanted, and
+ * it needs its own decision.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 NEVER RENDER A NEGATIVE DURATION
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * `daysToRelease` and `daysToRespond` are null whenever either end of the span is null, AND whenever
- * the arithmetic comes out negative. A negative duration is not a small display defect: "-14 days
- * for the buyer to respond" reads as a data-entry instruction to nobody and as a bug to everyone.
- * Out-of-order dates are REACHABLE without anything being broken — an analyst can back-date
- * `Materials_Released_Date__c` to before the signature, or record an offer that pre-dates the
- * package (a buyer who bid before the formal release). So the row is not silently blanked either:
- * `hasDateAnomaly` is set, and the component flags it, so the analyst learns their dates disagree
- * instead of just seeing an em-dash.
+ * `daysToRelease` is null whenever either end of the span is null, AND whenever the arithmetic comes
+ * out negative. A negative duration is not a small display defect: "-14 days to release" reads as a
+ * data-entry instruction to nobody and as a bug to everyone. Out-of-order dates are REACHABLE
+ * without anything being broken — an analyst can back-date `Materials_Released_Date__c` to before
+ * the signature. So the row is not silently blanked either: `hasDateAnomaly` is set, and the
+ * component flags it, so the analyst learns their dates disagree instead of just seeing an em-dash.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * ⚠ LEGACY ROWS: THE NAME FALLS BACK TO `Counterparty_Name__c`, AND THERE IS NO BACKFILL
+ * ⚠ A NULL BROKER IS A REACHABLE, NORMAL STATE — AND THERE IS NO BACKFILL
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * `NDA__c.Buyer__c` was added on 2026-08-20; every NDA created before it has a NULL lookup and a
- * typed `Counterparty_Name__c`. **No backfill is in scope — that is a decision, not an omission.**
- * So the buyer name is `Buyer__r.Name` where the lookup is set and `Counterparty_Name__c` otherwise.
- * ⚠ CONSEQUENCE, STATED: a legacy row has no buyer Contact Id, so it can never be matched to an
- * offer and its "first offer" column and response duration are permanently `—`. That is truthful —
- * nothing in the data says which offers were theirs — and it self-heals the moment someone sets the
- * lookup. It is NOT a reason to match on NAME instead: two buyers can share a name, and a
- * name-matched offer would attribute one buyer's bid to another.
+ * `NDA__c.Broker__c` is a 2026-08-21 field. **Every NDA created before it has a NULL lookup, and no
+ * backfill is in scope — that is a decision, not an omission.** So `brokerName` falls back to a
+ * fixed placeholder, which is why it is NEVER blank: a blank first column on a tile is
+ * indistinguishable from a rendering failure. The row still identifies itself by its NDA NUMBER,
+ * which is always present (an AutoNumber), so a broker-less row is still a usable row.
+ * ⚠ AND `Broker__r` CAN BE NULL WHILE `Broker__c` IS NOT: `USER_MODE` returns the Id but not the
+ * related sObject when the running user cannot see that Contact under SHARING (mode lifts FLS,
+ * never sharing). That is a REACHABLE state, not a defensive nicety.
  *
  * ── LAYERING ────────────────────────────────────────────────────────────────────────────────
- * Service (ARCHITECTURE.md §2, `layer=service`). **ZERO SOQL and ZERO DML.** Both reads go to
- * selectors — `NdaSelector.selectBuyerTimelineByDispositionId` and
- * `DispositionOfferSelector.selectEarliestByBuyerIds` — both `WITH USER_MODE`, because a human
- * opened the record page and asked for exactly this. A `QueryException` from either is a REAL
+ * Service (ARCHITECTURE.md §2, `layer=service`). **ZERO SOQL and ZERO DML.** The one read goes to a
+ * selector — `NdaSelector.selectBuyerTimelineByDispositionId`, `WITH USER_MODE`, because a human
+ * opened the record page and asked for exactly this. A `QueryException` from it is a REAL
  * PROVISIONING GAP and is deliberately allowed to propagate to the controller, which converts it to
  * a user-safe `AuraHandledException`. **It is NOT swallowed into an empty timeline**: a card that
- * silently renders zero buyers on a sale that has three is the "wrong answer, not an error" failure
+ * silently renders zero NDAs on a sale that has three is the "wrong answer, not an error" failure
  * this repo has paid for repeatedly, and it is strictly worse here than a visible error message.
  *
  * ── BUDGET ──────────────────────────────────────────────────────────────────────────────────
- * **EXACTLY TWO SOQL AND ZERO DML PER CALL, CONSTANT IN THE NUMBER OF BUYERS** — one for the NDAs,
- * one for the offers, and the second is skipped entirely when no NDA carries a buyer lookup (every
- * legacy-only disposition), making the floor ONE. 🔴 The offer read takes the WHOLE buyer Set at
- * once and must never become a per-buyer read; `selectEarliestByBuyerIds`'s ApexDoc explains why a
- * `LIMIT 1` sibling called in a loop would be SOQL-in-a-loop on a page render.
+ * **EXACTLY ONE SOQL AND ZERO DML PER CALL, CONSTANT IN THE NUMBER OF NDAs** — it was two until
+ * 2026-08-21, when the offer read went with the first-offer column. 🔴 The broker name is
+ * TRAVERSED IN THE SAME QUERY (`Broker__r.Name`) and must never become a second Contact read, per
+ * NDA or otherwise; that would be SOQL-in-a-loop on a page render.
  * ⚠ This is a read path invoked once per page view, not a trigger path, so
  * `.claude/rules/bulk-test-rule.md`'s 251-record mandate does not attach to THIS class — it attaches
  * in full to the two stamp services and the trigger, which is where those tests live. The falsifier
- * that matters here is the CONSTANT query count across many buyers, and it is asserted.
+ * that matters here is the CONSTANT query count across many NDAs, and it is asserted.
  *
  * ── SHARING ─────────────────────────────────────────────────────────────────────────────────
- * `with sharing`. Both selector reads are `USER_MODE` on `with sharing` selectors, so a row the
+ * `with sharing`. The selector read is `USER_MODE` on a `with sharing` selector, so a row the
  * running user cannot see simply does not appear — the correct direction for a card a human is
  * reading. **Do not add a `without sharing` escape**: an under-count here is visible (the related
  * list beside it shows the same scoping) rather than an inverted automated verdict, which is the
@@ -102,7 +155,6 @@
  *
  * @see force-app/main/default/classes/DispositionBuyerTimelineController.cls (the thin boundary)
  * @see force-app/main/default/classes/NdaSelector.cls (selectBuyerTimelineByDispositionId)
- * @see force-app/main/default/classes/DispositionOfferSelector.cls (selectEarliestByBuyerIds)
  * @see force-app/main/default/lwc/dispositionBuyerTimeline/dispositionBuyerTimeline.js
  */
 public with sharing class DispositionBuyerTimelineService {
@@ -118,7 +170,8 @@ public with sharing class DispositionBuyerTimelineService {
      * ⚠ It matches `NdaSelector.STATUS_SIGNED` and is deliberately NOT shared with it — that one
      * scopes the ACQUISITION expiry-reminder batch and is pinned to a deployed report's filter. Two
      * unrelated decisions that happen to agree; coupling them would let a change to either move the
-     * other silently.
+     * other silently. (A third consumer briefly existed — the Log Offer buyer picker — and was
+     * deleted on 2026-08-21 with the buyer.)
      */
     @TestVisible
     private static final String STATUS_SIGNED = 'Signed';
@@ -127,15 +180,15 @@ public with sharing class DispositionBuyerTimelineService {
      * The terminal `NDA__c.Status__c` value that makes a party a TERMINATED row.
      *
      * ⚠ It is tested EXPLICITLY rather than inferred as "not Signed". `Not Sent`, `Sent`,
-     * `Received` and `Pending` are all IN-FLIGHT states — the buyer has not signed YET — and must
-     * render as an ordinary active row with an empty signature date, not as a terminated one. Only
-     * `Declined` is an ending.
+     * `Received` and `Pending` are all IN-FLIGHT states — the counterparty has not signed YET — and
+     * must render as an ordinary active row with an empty signature date, not as a terminated one.
+     * Only `Declined` is an ending.
      */
     @TestVisible
     private static final String STATUS_DECLINED = 'Declined';
 
     /**
-     * One buyer's row on the timeline. A DTO across the `@AuraEnabled` boundary (ARCHITECTURE.md §2)
+     * One NDA's row on the timeline. A DTO across the `@AuraEnabled` boundary (ARCHITECTURE.md §2)
      * — every field is a value the component renders directly, and nothing it must not display ever
      * crosses.
      *
@@ -143,20 +196,31 @@ public with sharing class DispositionBuyerTimelineService {
      * party's retained `Date_Signed__c` is suppressed in `buildRow` and never enters this object, so
      * no template change and no future consumer can leak it. That is why the suppression lives in
      * the service rather than in the component's getters.
+     *
+     * 🔴 AND THERE IS NO `buyerName`, NO `firstOfferDate` AND NO `daysToRespond`. All three were
+     * removed on 2026-08-21 — the first because buyer identity is not tracked, the other two because
+     * nothing links an offer to a specific NDA. Re-adding any of them is re-adding a claim the data
+     * cannot support; read the class header first.
      */
-    public class BuyerRow {
+    public class NdaRow {
 
         /** The NDA row's Id — the component's `for:each` key and its record link target. */
         @AuraEnabled
         public Id ndaId;
 
         /**
-         * `Buyer__r.Name`, falling back to `Counterparty_Name__c` for legacy rows, falling back
-         * again to a fixed placeholder. Never null and never blank — a blank cell in the first
-         * column of a table is indistinguishable from a rendering failure.
+         * `NDA__c.Name` — the `NDA-{0000}` AutoNumber. THE ROW'S IDENTITY, and the one value on this
+         * DTO that is guaranteed non-blank by the platform rather than by this class.
          */
         @AuraEnabled
-        public String buyerName;
+        public String ndaName;
+
+        /**
+         * `Broker__r.Name`, falling back to a fixed placeholder. Never null and never blank — see
+         * `resolveBrokerName` and the class header's note on why a null broker is normal.
+         */
+        @AuraEnabled
+        public String brokerName;
 
         /** Raw `Status__c`, for the component's accessible state text. Never a display date. */
         @AuraEnabled
@@ -177,40 +241,28 @@ public with sharing class DispositionBuyerTimelineService {
         @AuraEnabled
         public Date materialsReleasedDate;
 
-        /**
-         * The earliest DATED offer this buyer made ON THIS DISPOSITION. The clock stops here
-         * (user-confirmed). Null for a legacy row with no buyer lookup — see the class header.
-         */
-        @AuraEnabled
-        public Date firstOfferDate;
-
         /** `materialsReleasedDate - ndaSignedDate`. Null if either end is null OR if negative. */
         @AuraEnabled
         public Integer daysToRelease;
 
-        /** `firstOfferDate - materialsReleasedDate`. Null if either end is null OR if negative. */
-        @AuraEnabled
-        public Integer daysToRespond;
-
         /**
-         * True when a duration was suppressed because the arithmetic went NEGATIVE — i.e. the dates
-         * on this row are out of order. Deliberately NOT set merely because a date is missing: a
-         * blank materials date is normal and flagging it would cry wolf on most rows.
+         * True when the duration was suppressed because the arithmetic went NEGATIVE — i.e. the
+         * dates on this row are out of order. Deliberately NOT set merely because a date is missing:
+         * a blank materials date is normal and flagging it would cry wolf on most rows.
          */
         @AuraEnabled
         public Boolean hasDateAnomaly;
     }
 
-    /** Rendered when a row has neither a buyer Contact nor a typed counterparty name. */
+    /** Rendered when an NDA carries no broker Contact. See the class header — no backfill exists. */
     @TestVisible
-    private static final String UNNAMED_BUYER = 'Unnamed buyer';
+    private static final String NO_BROKER = 'No broker recorded';
 
     /**
-     * The timeline for one Disposition — active parties first (in NDA creation order), declined
-     * parties last.
+     * The timeline for one Disposition — active NDAs first (in creation order), declined last.
      *
      * NOT-FOUND CONTRACT: a null Id, or a Disposition with no buyer NDA, returns an EMPTY LIST
-     * rather than null. "No buyer has signed yet" is a completely normal early state that the
+     * rather than null. "No NDA has been raised yet" is a completely normal early state that the
      * component renders as an empty state; it must not be an exception and must not be a null the
      * caller has to guard.
      *
@@ -222,59 +274,39 @@ public with sharing class DispositionBuyerTimelineService {
      * `dispositionBuyerTimeline.js`'s header says so, so the two cannot start disagreeing.
      *
      * ⚠ ACTIVE ROWS KEEP THE SELECTOR'S `CreatedDate ASC, Id ASC` ORDER — this is a TIMELINE, so the
-     * first party to be engaged reads first. The sort below is STABLE with respect to that: it moves
-     * declined rows to the end and touches nothing else.
+     * first NDA raised reads first. The sort below is STABLE with respect to that: it moves declined
+     * rows to the end and touches nothing else.
      *
-     * @param dispositionId The Disposition whose buyer journey to build; null-safe.
+     * @param dispositionId The Disposition whose NDA journey to build; null-safe.
      * @return One row per buyer-role NDA, actives first then declined; empty when the input is null
      *         or there are no buyer NDAs. Never null.
-     * @throws System.QueryException when the running user lacks read on `NDA__c`, on `Contact`, on
-     *         `Disposition_Offer__c`, or on any selected custom field. Deliberately allowed to
-     *         propagate — see the class header's layering note.
+     * @throws System.QueryException when the running user lacks read on `NDA__c`, on `Contact`, or
+     *         on any selected custom field — `Broker__c` most likely of all, since it is new.
+     *         Deliberately allowed to propagate — see the class header's layering note.
      * @example
-     * List&lt;DispositionBuyerTimelineService.BuyerRow&gt; rows =
+     * List&lt;DispositionBuyerTimelineService.NdaRow&gt; rows =
      *     DispositionBuyerTimelineService.getTimeline(dispositionId);
      */
-    public static List<BuyerRow> getTimeline(Id dispositionId) {
-        List<BuyerRow> rows = new List<BuyerRow>();
+    public static List<NdaRow> getTimeline(Id dispositionId) {
+        List<NdaRow> rows = new List<NdaRow>();
         if (dispositionId == null) {
             return rows;
         }
 
-        // QUERY 1 of at most 2. Buyer-role NDAs only; `Party_Role__c` is filtered in the selector.
+        // THE ONLY QUERY. Buyer-role NDAs only; `Party_Role__c` is filtered in the selector, and the
+        // broker's name is TRAVERSED here rather than resolved by a second read.
         List<NDA__c> ndas = NdaSelector.selectBuyerTimelineByDispositionId(dispositionId);
         if (ndas.isEmpty()) {
             return rows;
-        }
-
-        Set<Id> buyerIds = new Set<Id>();
-        for (NDA__c nda : ndas) {
-            if (nda.Buyer__c != null) {
-                buyerIds.add(nda.Buyer__c);
-            }
-        }
-
-        // QUERY 2 of at most 2 — ONE query for EVERY buyer, never one per buyer. The selector
-        // returns an empty list WITHOUT querying when the set is empty, so a disposition whose NDAs
-        // are all legacy (no buyer lookup) costs exactly one query in total.
-        Map<Id, Date> firstOfferByBuyer = new Map<Id, Date>();
-        for (Disposition_Offer__c offer
-                : DispositionOfferSelector.selectEarliestByBuyerIds(buyerIds, dispositionId)) {
-            // Rows arrive `Offer_Date__c ASC, Id ASC`, so the FIRST row seen for a buyer is their
-            // earliest offer. `containsKey` — not `get(...) == null` — is what makes this
-            // first-wins rather than last-wins.
-            if (!firstOfferByBuyer.containsKey(offer.Buyer__c)) {
-                firstOfferByBuyer.put(offer.Buyer__c, offer.Offer_Date__c);
-            }
         }
 
         // Two passes so the declined rows land last without a comparator. A Comparable/Comparator
         // implementation would need its own class and its own tie-break to stay stable; splitting
         // the single ordered list in two preserves the selector's ordering within each group for
         // free, which is exactly the guarantee the ApexDoc promises.
-        List<BuyerRow> declined = new List<BuyerRow>();
+        List<NdaRow> declined = new List<NdaRow>();
         for (NDA__c nda : ndas) {
-            BuyerRow row = buildRow(nda, firstOfferByBuyer);
+            NdaRow row = buildRow(nda);
             if (row.isDeclined) {
                 declined.add(row);
             } else {
@@ -293,16 +325,16 @@ public with sharing class DispositionBuyerTimelineService {
      * show it — is the same code with the same output today and is one careless edit away from
      * leaking a declined party's retained signature date.
      *
-     * @param nda               A buyer-role NDA with the eight timeline fields populated.
-     * @param firstOfferByBuyer Buyer Contact Id -> their earliest dated offer on this disposition.
+     * @param nda A buyer-role NDA with the timeline fields populated.
      * @return The row. Never null.
      */
-    private static BuyerRow buildRow(NDA__c nda, Map<Id, Date> firstOfferByBuyer) {
-        BuyerRow row = new BuyerRow();
+    private static NdaRow buildRow(NDA__c nda) {
+        NdaRow row = new NdaRow();
         row.ndaId = nda.Id;
+        row.ndaName = nda.Name;
         row.status = nda.Status__c;
         row.isDeclined = STATUS_DECLINED.equals(nda.Status__c);
-        row.buyerName = resolveName(nda);
+        row.brokerName = resolveBrokerName(nda);
         row.hasDateAnomaly = false;
 
         // ── DECLINED: NO DATES AT ALL, AND THE RETAINED `Date_Signed__c` NEVER LEAVES THIS METHOD.
@@ -317,12 +349,8 @@ public with sharing class DispositionBuyerTimelineService {
             row.ndaSignedDate = nda.Date_Signed__c;
         }
         row.materialsReleasedDate = nda.Materials_Released_Date__c;
-        if (nda.Buyer__c != null) {
-            row.firstOfferDate = firstOfferByBuyer.get(nda.Buyer__c);
-        }
 
         row.daysToRelease = span(row.ndaSignedDate, row.materialsReleasedDate, row);
-        row.daysToRespond = span(row.materialsReleasedDate, row.firstOfferDate, row);
         return row;
     }
 
@@ -341,12 +369,16 @@ public with sharing class DispositionBuyerTimelineService {
      * dependency into a pure-Date calculation. `daysBetween` is signed, which is precisely why the
      * negative test below is needed and is not defensive decoration.
      *
+     * ⚠ IT STAYS A HELPER EVEN THOUGH IT NOW HAS ONE CALLER (it had two until 2026-08-21). Inlining
+     * it would put the negative-suppression rule and the anomaly flag inside `buildRow`'s happy
+     * path, where the next date column added would be written without them.
+     *
      * @param fromDate The earlier end; null-safe.
      * @param toDate   The later end; null-safe.
      * @param row      The row being built — mutated ONLY to set `hasDateAnomaly`.
      * @return Whole days, or null.
      */
-    private static Integer span(Date fromDate, Date toDate, BuyerRow row) {
+    private static Integer span(Date fromDate, Date toDate, NdaRow row) {
         if (fromDate == null || toDate == null) {
             return null;
         }
@@ -360,22 +392,20 @@ public with sharing class DispositionBuyerTimelineService {
     }
 
     /**
-     * The buyer's display name: the linked Contact, else the legacy typed text, else a placeholder.
+     * The broker's display name: the linked Contact, else a fixed placeholder.
      *
-     * ⚠ `String.isNotBlank` RATHER THAN A NULL CHECK ON `Counterparty_Name__c`. It is free Text and
-     * a whitespace-only value is reachable; a row rendering a single space in its first column looks
-     * like a broken component rather than like missing data.
+     * ⚠ `String.isNotBlank` RATHER THAN A NULL CHECK. `Broker__r` can come back null even when
+     * `Broker__c` is set — `USER_MODE` lifts FLS, never sharing — so both halves are reachable.
+     * 🔴 IT NEVER RETURNS BLANK. A blank cell here reads as a rendering failure rather than as
+     * missing data, and the placeholder is what tells the analyst the NDA has no broker on it yet.
      *
-     * @param nda The NDA, with `Buyer__r` resolved when `Buyer__c` is set.
+     * @param nda The NDA, with `Broker__r` resolved when `Broker__c` is set and visible.
      * @return A non-blank display name. Never null.
      */
-    private static String resolveName(NDA__c nda) {
-        if (nda.Buyer__c != null && nda.Buyer__r != null && String.isNotBlank(nda.Buyer__r.Name)) {
-            return nda.Buyer__r.Name;
+    private static String resolveBrokerName(NDA__c nda) {
+        if (nda.Broker__c != null && nda.Broker__r != null && String.isNotBlank(nda.Broker__r.Name)) {
+            return nda.Broker__r.Name;
         }
-        if (String.isNotBlank(nda.Counterparty_Name__c)) {
-            return nda.Counterparty_Name__c;
-        }
-        return UNNAMED_BUYER;
+        return NO_BROKER;
     }
 }

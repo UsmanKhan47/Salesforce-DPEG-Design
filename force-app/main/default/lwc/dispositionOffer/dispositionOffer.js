@@ -10,6 +10,19 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
  * c-disposition-offer — the Disposition record page's offers card.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 EACH ROW IS IDENTIFIED BY THE OFFER'S NUMBER, NOT BY A BUYER (2026-08-21).
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * `Buyer_Name__c` was the first column here until buyer identity was retired — DPEG communicates
+ * only with the appointed listing broker, and buyers sit behind them untracked. The field is NOT
+ * deleted from the object (a separate retirement wave owns that) and it is still populated on every
+ * pre-existing row; this card simply stops READING it. `Name` (the AutoNumber) replaces it, because
+ * with the buyer gone the amount and the date are otherwise the only things telling two offers on
+ * one sale apart — and two offers can legitimately share both.
+ * ⚠ DO NOT SUBSTITUTE `Broker__c` HERE. It is the SAME broker on every offer on the sale (one
+ * appointed broker per disposition), so a broker column would render one repeated name down the
+ * card while looking like a per-row discriminator.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 "+ LOG OFFER" OPENS A MODAL. IT USED TO NAVIGATE, AND THAT WAS THE BUG (2026-08-21).
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * It called:
@@ -25,12 +38,14 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
  *      NAVIGATE TO THE NEW RECORD. The user leaves the disposition page every time they log an
  *      offer. No flag suppresses it — `navigationLocation` belongs to the Aura
  *      `force:createRecord` event, not to `NavigationMixin`.
- *   2. That screen renders from the PAGE LAYOUT, which offers `Buyer__c` as a bare, UNFILTERED
- *      Contact lookup — every Contact in the org, including the introducing broker whose signed
- *      NDA sits on this same sale. A classic layout cannot express a filtered picker.
- * `c/dispositionLogOfferModal` fixes both: it saves in place and narrows the buyer to the parties
- * with a signed NDA on this disposition. Same shape as `c/bovComparisonMatrix` ->
- * `c/bovAddResponseModal`, built two days earlier for the identical complaint.
+ *   2. That screen renders from the PAGE LAYOUT, which cannot express a narrow field set or a
+ *      read-only, server-resolved broker.
+ * `c/dispositionLogOfferModal` fixes both: it saves in place and resolves the broker itself. Same
+ * shape as `c/bovComparisonMatrix` -> `c/bovAddResponseModal`, built two days earlier for the
+ * identical complaint.
+ * ⚠ DEFECT 2 USED TO READ "the layout offers `Buyer__c` as a bare, UNFILTERED Contact lookup, every
+ * Contact in the org". That sentence is retired, not merely reworded: the buyer was removed from
+ * this feature on 2026-08-21, so there is no picker left to narrow.
  * 🔴 A REGRESSION TO ANY FORM OF NAVIGATION HERE IS THE ORIGINAL BUG RETURNING. `NavigationMixin`
  * is no longer imported, deliberately — re-adding the import is the tell.
  *
@@ -50,7 +65,7 @@ export default class DispositionOffer extends LightningElement {
     @wire(getRelatedListRecords, {
         parentRecordId: '$recordId',
         relatedListId: 'Disposition_Offers__r',
-        fields: ['Disposition_Offer__c.Id', 'Disposition_Offer__c.Buyer_Name__c',
+        fields: ['Disposition_Offer__c.Id', 'Disposition_Offer__c.Name',
                  'Disposition_Offer__c.Offer_Amount__c', 'Disposition_Offer__c.Offer_Date__c']
     })
     wired(result) {
@@ -60,11 +75,11 @@ export default class DispositionOffer extends LightningElement {
             this._error = undefined;
             this._offers = data.records.map(r => ({
                 id: r.id,
-                // ⚠ `Buyer_Name__c` is DERIVED — DispositionOfferBuyerStampService copies it from
-                // Buyer__c in the before-save trigger. An em dash here means the offer has no
-                // buyer Contact, which is a legacy row: every offer logged through
-                // c/dispositionLogOfferModal names one by construction.
-                buyerName: r.fields.Buyer_Name__c?.value || '—',
+                // The AutoNumber. The platform assigns it on insert, so the em-dash fallback is
+                // unreachable in practice and exists only because every displayed value on this
+                // card must be a string — an `undefined` bound into the DOM renders the literal
+                // text "undefined" (measured in this repo).
+                offerName: r.fields.Name?.value || '—',
                 amountLabel: r.fields.Offer_Amount__c?.value != null
                     ? '$' + (r.fields.Offer_Amount__c.value / 1000000).toFixed(2) + 'M' : '—',
                 dateLabel: this._fmtDate(r.fields.Offer_Date__c?.value)

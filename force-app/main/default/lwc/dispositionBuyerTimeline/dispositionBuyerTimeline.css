@@ -14,10 +14,10 @@
         content instead of reflowing it only hides the burst, and the shorthand restores the
         horizontal scrollbar just as effectively as the longhand;
      2. no `nowrap` anywhere — neither `white-space: nowrap` nor `flex-wrap: nowrap` on the tile
-        head, whose badge must be free to drop beneath a long buyer name;
+        head, whose badges must be free to drop beneath the NDA number;
      3. `min-width: 0` on every flex/grid child holding text. A flex/grid item defaults to
         `min-width: auto` and then REFUSES to shrink below its longest unbreakable token, so one
-        long buyer name would force a tile wider than its container. The LOAD-BEARING one is on
+        long broker name would force a tile wider than its container. The LOAD-BEARING one is on
         `.dbt-tile` (the grid item); the rest are defensive;
      4. `overflow-wrap: anywhere` on :host — `anywhere`, not `break-word`, because only
         `anywhere` affects min-content sizing, which is what lets rule 3 take effect. It sits on
@@ -49,14 +49,10 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* ===== Intro ===== */
-.dbt-intro {
-    min-width: 0;
-    margin: 0;
-    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem) 0;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
+/* ⚠ `.dbt-intro` WAS DELETED ON 2026-08-21 with the intro paragraph above the tile list (UAT
+   prose removal). `.dbt-list` carries its own padding, so the list is not left flush against the
+   card header by its removal. `.dbt-empty-sub` is a DIFFERENT rule and was kept — see the
+   template's empty-state comment. */
 
 /* ===== Tile list ===== */
 .dbt-list {
@@ -90,12 +86,13 @@
     background: var(--slds-g-color-neutral-base-95, #f3f3f3);
     border-style: dashed;
 }
-.dbt-tile--declined .dbt-buyer,
+.dbt-tile--declined .dbt-nda,
+.dbt-tile--declined .dbt-broker,
 .dbt-tile--declined .dbt-c {
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
-/* Tile head: buyer name left, badges right; a badge wraps beneath the name at extreme narrow
+/* Tile head: NDA number left, badges right; a badge wraps beneath the number at extreme narrow
    widths rather than pushing the tile wider. */
 .dbt-tile-head {
     display: flex;
@@ -107,7 +104,7 @@
     margin-bottom: var(--slds-g-spacing-3, 0.75rem);
 }
 
-.dbt-buyer {
+.dbt-nda {
     min-width: 0;
     margin: 0;
     font-size: var(--slds-g-font-scale-1, 0.875rem);
@@ -115,7 +112,22 @@
     color: var(--slds-g-color-on-surface-3, #181818);
 }
 
-/* ===== Labelled facts: the three journey milestones, then the two durations ===== */
+/* The broker, as a SUBTITLE under the NDA number rather than as the heading.
+   ⚠ It is one broker per sale, so this line repeats down the whole list. That is the data being
+   true — placing it as secondary text is what stops the repetition reading as a per-row identity
+   claim, which is the same failure mode the deleted "first offer" column would have had. */
+.dbt-broker {
+    min-width: 0;
+    margin: calc(-1 * var(--slds-g-spacing-2, 0.5rem)) 0
+        var(--slds-g-spacing-3, 0.75rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ===== Labelled facts: the two journey milestones, then the one duration =====
+   ⚠ It was three milestones and two durations until 2026-08-21; "First offer" and "Days to
+   respond" were deleted, not hidden. The two-track grid below is unchanged and does not care how
+   many pairs it holds. */
 .dbt-facts {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -144,8 +156,8 @@
     color: var(--slds-g-color-on-surface-2, #2e2e2e);
 }
 
-/* Rule between the journey and the two derived durations — the second half of the tile is
-   arithmetic ABOUT the first half, not more of the same kind of fact. */
+/* Rule between the journey and the derived duration — the last row of the tile is arithmetic
+   ABOUT the rows above it, not more of the same kind of fact. */
 .dbt-sep {
     padding-top: var(--slds-g-spacing-2, 0.5rem);
     border-top: var(--slds-g-sizing-border-1, 1px) solid
@@ -193,7 +205,7 @@
 /* Connector between consecutive markers. It runs the full height of its own row and into the row
    gap below, so consecutive segments meet and read as one continuous rail; `left` is half the
    marker's diameter, which is what puts it through the dots' centres. Suppressed below the LAST
-   milestone — the two duration rows that follow are not steps in the journey. */
+   milestone — the duration row that follows is not a step in the journey. */
 .dbt-step::after {
     content: '';
     position: absolute;
@@ -238,8 +250,8 @@
 
 /* ===== Empty state =====
    Centred icon + headline + explanation, rather than the bare grey sentence this used to be.
-   It is a STATUS, not an alert: no buyer having signed an NDA yet is the ordinary early state of
-   a disposition, not a problem. */
+   It is a STATUS, not an alert: no NDA having been raised yet is the ordinary early state of a
+   disposition, not a problem. */
 .dbt-empty {
     display: flex;
     flex-direction: column;

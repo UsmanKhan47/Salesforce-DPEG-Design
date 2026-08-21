@@ -10,9 +10,16 @@
         find matching parent xml file" error.
 
         isExposed=false because there is nothing for an admin to place: the component has no
-        lightning__RecordPage target and is opened from JS by c/dispositionOffer and
-        c/dispositionCallForOffers only, the same way c/bovAddResponseModal is. Exposing it
-        would offer App Builder a dialog with no way to supply dispositionId.
+        lightning__RecordPage target and is opened from JS by c/dispositionOffer ONLY, the same
+        way c/bovAddResponseModal is. Exposing it would offer App Builder a dialog with no way
+        to supply dispositionId.
+
+        ⚠ c/dispositionCallForOffers WAS a second opener and is named here only so nobody
+        re-adds it from this comment. Its "+ Log Offer" button was removed at UAT on
+        2026-08-21, and later that day the card stopped being rendered anywhere at all. Losing
+        it did NOT orphan this modal: c/dispositionOffer renders in the sidebar whenever
+        dispositionSidebar.isOfferStage is true, which includes 'Active Listing' - the exact
+        stage the retired card used to appear at - so the entry point is unchanged on screen.
     -->
     <apiVersion>67.0</apiVersion>
     <isExposed>false</isExposed>

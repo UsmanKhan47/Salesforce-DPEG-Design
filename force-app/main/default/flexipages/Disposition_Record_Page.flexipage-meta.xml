@@ -100,6 +100,16 @@
          it is silent - the deploy succeeds and the buttons simply vanish. So the list below is
          not "the nine new actions", it is THE WHOLE ACTION BAR, and Edit, Clone and Delete are
          carried forward explicitly for that reason.
+         ⚠ RETRACTED 2026-08-21 (second App Builder session, this one deliberate). The user
+         removed Edit, Clone and Delete from the actionNames valueList in App Builder ON PURPOSE
+         this time - their words: "I have removed some action buttons like edit, clone and
+         delete from it" - and that removal is KEPT here, not restored. Unlike the 2026-08-19
+         App Builder incident this entry describes (an accidental drop, reverted the same day),
+         this is an intentional edit and the org is the source of truth for it. The sentence
+         immediately above ("Edit, Clone and Delete are carried forward explicitly") is left
+         standing rather than deleted because it correctly explains why those three were ever
+         added to this list in the first place; it no longer describes the CURRENT state. See
+         the final entry at the bottom of this comment for the full account.
          ⚠ WHAT WAS DELIBERATELY DROPPED, AND WHERE IT WENT:
            - Submit (the platform's generic Submit for Approval button). Dropped ON PURPOSE. The
              four Submit_* actions below route through DispositionApprovalService, which carries
@@ -114,6 +124,11 @@
          standard buttons are addressed in an actionNames valueList; custom quick actions take
          the Object.Action form. In-repo precedent for the bare form:
          flexipages/Portfolio_Deal_Record_Page.flexipage-meta.xml.
+         ⚠ RETRACTED 2026-08-21 (second App Builder session): this paragraph documents the SHAPE
+         these three items used while they existed on this page. They do not exist on this page
+         any more (see the retraction above and the final entry below); the shape note is kept
+         only as precedent for the next time a bare-form standard button is added anywhere in
+         this repo.
 
          EVERY RULE IS AND-ED WITH {!$Permission.CustomPermission.Disposition_Deal_Actions}.
          ⚠ THREE-SEGMENT FORM ONLY. {!$Permission.<Name>} and {!$CustomPermission.<Name>} are
@@ -151,6 +166,10 @@
          ⚠ A FLEXIPAGE DEPLOY CAN ROLL BACK AND STILL REPORT SUCCESS. Read this page back in the
          org after deploying and confirm the twelve-item action list is present. That readback is
          verification step 1 and it is not optional.
+         ⚠ COUNT RETRACTED 2026-08-21 (second App Builder session): the action list now holds
+         NINE entries, not twelve - see the final entry at the bottom of this comment. The
+         underlying instruction (read the page back and confirm the list matches what was
+         intended) still stands; only the number to check for has changed.
 
          =====================================================================
          2026-08-19 (code review, C-3) - APPROVAL HISTORY ADDED (identifier relatedLists).
@@ -211,6 +230,9 @@
 
          ⚠ THIS ADDS NO ACTIONS. The actionNames valueList above is untouched and still holds
          TWELVE entries. The twelve item readback in verification step 1 is unchanged.
+         ⚠ COUNT RETRACTED 2026-08-21: see the two retraction notes above. This paragraph's own
+         point - that ADDING Approval History added no ACTIONS - remains true; only the twelve
+         figure it cites is stale.
 
          =====================================================================
          2026-08-21 - APP BUILDER HAND-EDIT REVERTED; THREE OF ITS FOUR CHANGES KEPT.
@@ -243,6 +265,21 @@
            3. DISCARDED - flexipage_tabset (sidebar region) gained a label of "Tabs". Not applied.
            4. RESTORED SEPARATELY - the dropped Edit/Clone/Delete valueListItems, per this whole
               entry.
+         ⚠ BOTH RETRACTED 2026-08-21 (second, later App Builder session, same day). Quoted, not
+         deleted, per this repo's own retraction precedent:
+             ITEM 3, RETRACTED: "DISCARDED - flexipage_tabset (sidebar region) gained a label of
+             'Tabs'. Not applied." The label reappeared in the org during the second App Builder
+             session later this same day and is being KEPT this time, not discarded - see the
+             final entry at the bottom of this comment. Whether the user re-applied it
+             deliberately or App Builder re-added it as a side effect of opening the page again
+             was NOT established; it is treated as a real structural edit and kept, consistent
+             with this whole file's instruction that the org is the source of truth for changes
+             captured by this retrieve.
+             ITEM 4, RETRACTED: "RESTORED SEPARATELY - the dropped Edit/Clone/Delete
+             valueListItems, per this whole entry." Edit, Clone and Delete were removed again in
+             the second App Builder session, this time BY DELIBERATE USER REQUEST, and are NOT
+             being restored. See the retraction inside the 2026-08-19 entry above and the final
+             entry below.
 
          BOV BROKER CHANGE HISTORY AND BUYER ACTIVITY TIMELINE WERE ALSO MOVED, main -> sidebar,
          IN THIS SAME PASS - NOT PART OF THE APP BUILDER INCIDENT, A SEPARATE, DELIBERATE CHANGE.
@@ -319,6 +356,10 @@
          ⚠ THIS ADDS NO ACTIONS AND REMOVES NONE. The actionNames valueList still holds exactly
          TWELVE entries. Counted before (12) and after (12) this edit. Adding a criterion adds no
          entry. The twelve item readback in verification step 1 is unchanged and still mandatory.
+         ⚠ COUNT RETRACTED 2026-08-21 (second, later App Builder session, same day): the claim
+         that this specific edit added or removed no actions is STILL TRUE - it only appended
+         criteria to existing entries. The TWELVE figure is stale; see the final entry below for
+         the current count and why it changed.
 
          🔴 THIS FILE DEPLOYS LAST IN THIS CHANGE, AND ONLY AFTER THE recallActions BEHAVIOUR
          HAS BEEN PROVEN IN THE ORG. approvalProcesses/Disposition__c.Sale_Decision_Approval
@@ -327,223 +368,281 @@
          before 2026-08-21, and a recallActions block that deploys green and never fires would
          leave this flag stuck true, hiding a Submit button PERMANENTLY on an unlocked record
          with no route to resubmit. That is strictly worse than the noisy refusal it replaces.
-         If that readback fails, revert the approval processes and revert this entry with them. -->
+         If that readback fails, revert the approval processes and revert this entry with them.
 
+         =====================================================================
+         2026-08-21 (SECOND APP BUILDER SESSION) - RETRIEVE TO CAPTURE DELIBERATE HAND EDITS;
+         ACTION LIST CUT TO NINE; COMMENTS RESTORED ONTO THE ORG'S ACTUAL STRUCTURE.
+         =====================================================================
+         The user opened this page in App Builder a second time today and made edits ON PURPOSE,
+         reversing the standing "never open this page in App Builder" caution recorded twice
+         above - not because the caution was wrong (accidental regressions are still possible and
+         this retrieve exists precisely to catch them), but because this specific session's edits
+         were confirmed deliberate before this file was touched. The user's own words: "retrieve
+         disposition record page as I have removed some action buttons like edit, clone and
+         delete from it also remove call for offers lwc, we don't need to show."
+
+         WHAT THE RETRIEVE FOUND, STRUCTURALLY (comments do not count - a retrieve strips every
+         comment in this file regardless of whether anything else changed):
+           1. Edit, Clone and Delete removed from the actionNames valueList. TWELVE entries
+              became NINE. KEPT - deliberate, per the user's own words above. Every retraction
+              elsewhere in this comment pointing at this entry is the paper trail.
+           2. flexipage_tabset (sidebar region) carries a `label` property of "Tabs" again. This
+              is the SAME property the 19:18 2026-08-19 App Builder incident introduced and the
+              first 2026-08-21 entry above discarded as unreviewed. It is back in the org as of
+              this second session and is KEPT here, consistent with treating this retrieve's
+              structural findings as the user's real edits rather than a regression to revert -
+              whether it was re-applied deliberately or is a side effect of App Builder re-saving
+              the page was not established and does not change the outcome: the org is the
+              source of truth for what this retrieve captured.
+           3. NOTHING ELSE STRUCTURAL CHANGED. The four Submit_* visibility rules (Submit_Sale_
+              Decision, Submit_Selected_Broker, Submit_Broker_Selection, Submit_Closing_Approval)
+              still carry their Approval_Pending__c EQUAL false criterion, their stage criterion
+              and their Disposition_Deal_Actions custom-permission criterion, byte for byte. The
+              header region's Approval History (identifier relatedLists) is still
+              force:relatedListContainer with showActionBar=true. The sidebar still holds
+              dispositionDealSummary, dispositionSidebar, bovBrokerChangeHistory and
+              dispositionBuyerTimeline in that order. dispositionPath still carries
+              hideUpdateButton=true. All confirmed by direct comparison against the pre-retrieve
+              copy, not assumed.
+
+         🔴 "REMOVE CALL FOR OFFERS LWC" WAS INVESTIGATED, NOT ACTIONED, ON THIS FILE.
+         `dispositionCallForOffers` is NOT a FlexiPage itemInstance on this page in either the
+         pre-retrieve copy or the org's current copy - it never was one. It is rendered INSIDE
+         `lwc/dispositionMain/dispositionMain.html` as `<c-disposition-call-for-offers
+         record-id={recordId}></c-disposition-call-for-offers>`, a child of the `c_dispositionMain`
+         componentInstance below. Removing it therefore means editing dispositionMain.html, not
+         this FlexiPage, and dispositionMain.html is inside lwc/**, which a developer agent was
+         concurrently working in at the time of this retrieve and was explicitly out of bounds for
+         this change. Nothing in lwc/** was touched. This is flagged here for a developer-agent
+         follow-up, not silently dropped: dispositionCallForOffers.js's own header comment already
+         separately documents the user having removed the offer count and Log Offer button from
+         THAT component earlier the same day, so the card itself is mid-reduction; removing the
+         whole card is the next step and belongs to whoever next edits dispositionMain.html.
+
+         ⚠ COMMENT RESTORATION. The retrieve that captured the two structural findings above also
+         destroyed every comment in this file - 9 blocks, 476 lines of design rationale, none of
+         it recoverable from the org. This entire comment, and the eight smaller comment blocks
+         elsewhere in this file, were restored from the pre-retrieve backup and layered back onto
+         the org's ACTUAL structure (nine actions, tabset label present) rather than the file's
+         old, pre-edit structure. Every place in this comment that asserted a TWELVE-item action
+         list, or that Edit/Clone/Delete are present, or that the tabset label was discarded, was
+         retracted in place, quoted rather than deleted, immediately next to the original claim -
+         this final entry is the summary, not the only record.
+
+         ⚠ VERIFICATION FOR THIS ENTRY. This was a comment-only change layered onto a structure
+         retrieved from, and therefore already live in, the org - a check-only (dry run) deploy
+         reports a comment-only FlexiPage edit as `state: Unchanged` and SKIPS validation rather
+         than genuinely validating it (documented earlier in this repo's history). The genuine
+         verification available here is that the retrieve itself succeeded against the org and
+         that this file was diffed against that retrieved copy field-by-field before comments
+         were reinserted, not that a subsequent dry run passed. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
                     <name>actionNames</name>
-                        <valueList>
-                            <valueListItems>
-                                <value>Disposition__c.Submit_Sale_Decision</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Disposition Readiness</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>false</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Submit_Selected_Broker</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>BOV Outreach</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>false</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Submit_Broker_Selection</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Broker Selection</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>false</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>false</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Advance_to_NDA</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Broker Selection</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Advance_to_Release_Materials</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>NDA</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Advance_to_Active_Listing</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Release Materials</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Select_Offer</value>
-                                <visibilityRule>
-                                    <booleanFilter>(1 OR 2) AND (3 OR 4) AND 5</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Active Listing</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Release Materials</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Active Listing</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Is_On_Market__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>false</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Advance_to_PSA</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>LOI</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Disposition__c.Submit_Closing_Approval</value>
-                                <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
-                                    <criteria>
-                                        <leftValue>{!Record.Disposition_Stage__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>Closing</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Wire_Verification_Completed__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>true</rightValue>
-                                    </criteria>
-                                    <criteria>
-                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
-                                        <operator>EQUAL</operator>
-                                        <rightValue>false</rightValue>
-                                    </criteria>
-                                </visibilityRule>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Edit</value>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Clone</value>
-                            </valueListItems>
-                            <valueListItems>
-                                <value>Delete</value>
-                            </valueListItems>
-                        </valueList>
+                    <valueList>
+                        <valueListItems>
+                            <value>Disposition__c.Submit_Sale_Decision</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Disposition Readiness</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>false</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Submit_Selected_Broker</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>BOV Outreach</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>false</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Submit_Broker_Selection</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Broker Selection</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>false</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>false</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Advance_to_NDA</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Broker Selection</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Advance_to_Release_Materials</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>NDA</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Advance_to_Active_Listing</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Release Materials</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Select_Offer</value>
+                            <visibilityRule>
+                                <booleanFilter>(1 OR 2) AND (3 OR 4) AND 5</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Active Listing</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Release Materials</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Active Listing</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Is_On_Market__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>false</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Advance_to_PSA</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>LOI</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                        <valueListItems>
+                            <value>Disposition__c.Submit_Closing_Approval</value>
+                            <visibilityRule>
+                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <criteria>
+                                    <leftValue>{!Record.Disposition_Stage__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>Closing</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Wire_Verification_Completed__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>true</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                    <operator>EQUAL</operator>
+                                    <rightValue>false</rightValue>
+                                </criteria>
+                            </visibilityRule>
+                        </valueListItems>
+                    </valueList>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>collapsed</name>
@@ -1091,8 +1190,17 @@
                 <identifier>dispositionBuyerTimeline</identifier>
             </componentInstance>
         </itemInstances>
+        <!-- flexipage_tabset's `label`="Tabs" property: present in this retrieve (2026-08-21,
+             second App Builder session) though the FIRST 2026-08-21 entry in the root comment
+             above discarded this same property as unreviewed App Builder noise. It reappeared in
+             the org and is KEPT here this time - see that root-comment entry's retraction and the
+             final 2026-08-21 entry at the bottom of the root comment for the full account. -->
         <itemInstances>
             <componentInstance>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Tabs</value>
+                </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>tabs</name>
                     <value>Facet-aa520569-625a-4b02-a6be-7b89de865ee4</value>

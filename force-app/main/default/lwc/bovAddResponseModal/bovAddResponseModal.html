@@ -31,12 +31,11 @@
                      form to do this for it. -->
                 <lightning-messages></lightning-messages>
 
-                <p class="bar-intro">
-                    Log a broker's opinion of value against this sale. It is saved here
-                    on the disposition — you stay on this page and the comparison matrix
-                    refreshes behind this dialog.
-                </p>
-
+                <!-- 🔴 NO INTRO PARAGRAPH ABOVE THIS FORM. `.bar-intro` ("Log a broker's opinion
+                     of value against this sale. It is saved here on the disposition — you stay on
+                     this page and the comparison matrix refreshes behind this dialog.") was removed
+                     on 2026-08-21 at the user's request: it restated the dialog's own title and the
+                     Save button's behaviour. -->
                 <div class="bar-grid">
                     <!-- ═══════════════════════════════════════════════════════════════
                          THE PARENT. Shown so the analyst can see what they are logging
@@ -144,10 +143,15 @@
                     ></lightning-input-field>
                 </div>
 
-                <p class="bar-note">
-                    New responses are logged as Backup. Use <strong>Replace Broker</strong>
-                    on the comparison matrix to appoint one.
-                </p>
+                <!-- 🔴 NO CLOSING NOTE. `.bar-note` ("New responses are logged as Backup. Use
+                     Replace Broker on the comparison matrix to appoint one.") was removed on
+                     2026-08-21 at the user's request.
+                     ⚠ IT WAS NOT THE ONLY CARRIER OF THE FACT IT STATED, which is why it could go:
+                     `Submission_Status__c` above renders with `value={defaultStatus}`, so the user
+                     SEES "Backup" in the control itself. The reason that default is load-bearing —
+                     "Selected" exclusivity is a server invariant maintained by
+                     BovSubmissionService.replaceSelectedBroker — is documented on that field above,
+                     for developers, which is who needs it. -->
             </lightning-record-edit-form>
         </div>
     </lightning-modal-body>

@@ -3,7 +3,7 @@ import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 import { getRelatedListRecords } from 'lightning/uiRelatedListApi';
 import { CloseActionScreenEvent } from 'lightning/actions';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import { formatMillions, formatLongDate } from 'c/utils';
+import { formatExactCurrency, formatLongDate } from 'c/utils';
 import selectOffer from '@salesforce/apex/DispositionApprovalController.selectOffer';
 
 /**
@@ -15,13 +15,54 @@ import selectOffer from '@salesforce/apex/DispositionApprovalController.selectOf
  * more than either one owning a private copy.
  */
 const RELATED_LIST_ID = 'Disposition_Offers__r';
+/**
+ * ⚠ `Buyer_Name__c` WAS THE FIRST ENTRY HERE UNTIL 2026-08-21 and was replaced by `Name`. DPEG
+ * communicates only with the appointed listing broker; buyers sit behind them and are not tracked.
+ * That has not changed — the buyer is still gone, and `c/dispositionOffer`'s sidebar card still
+ * shows no broker column for the reason its own header gives.
+ *
+ * ── 🔴 `Broker__r.Name`, NOT `Broker__c` — MEASURED, NOT ASSUMED (2026-08-21) ─────────────────
+ * UAT asked for the broker contact in the label. The obvious request — `Disposition_Offer__c
+ * .Broker__c` — DOES NOT CARRY THE NAME. Measured against `usman-dpeg` on the live
+ * `related-list-records` endpoint, a plain lookup comes back with the Id and a NULL display value:
+ *
+ *     "Broker__c": { "displayValue": null, "value": "003iw000000o39BAAQ" }
+ *
+ * so a component reading `displayValue` renders an empty broker for every row and looks like the
+ * field is unpopulated. Requesting the TRAVERSAL instead returns the name, under a `Broker__r` key
+ * (NOT `Broker__c` — the key changes with the request, which is the part that bites):
+ *
+ *     "Broker__r": { "displayValue": "Derek Simmons",
+ *                    "value": { "id": "003…", "fields": { "Name": { "value": "Derek Simmons" } } } }
+ *
+ * ⚠ DO NOT "SIMPLIFY" THIS BACK TO `Broker__c`. It deploys, it passes a hand-written Jest fixture
+ * that invents a `displayValue`, and it renders nothing in the org.
+ *
+ * ⚠ `Offer_Financing_Type__c` WAS REMOVED FROM THIS LIST ON 2026-08-21 (UAT: "No need to show
+ * financing not started"). Nothing else in this bundle read it — it existed solely to build the
+ * label token that was dropped — so the field is not merely unrendered, it is no longer requested,
+ * which also drops an FLS gate this quick action no longer needs. 🔴 THE FIELD ITSELF IS UNTOUCHED
+ * and remains load-bearing on the offer layout, on `c/dispositionLogOfferModal`'s form (whose suite
+ * PINS its presence) and on the approval page.
+ */
 const FIELDS = [
     'Disposition_Offer__c.Id',
-    'Disposition_Offer__c.Buyer_Name__c',
+    'Disposition_Offer__c.Name',
+    'Disposition_Offer__c.Broker__r.Name',
     'Disposition_Offer__c.Offer_Amount__c',
-    'Disposition_Offer__c.Offer_Date__c',
-    'Disposition_Offer__c.Offer_Financing_Type__c'
+    'Disposition_Offer__c.Offer_Date__c'
 ];
+
+/**
+ * Rendered in place of the broker when the offer has none.
+ *
+ * ⚠ THIS IS THE COMMON CASE TODAY, NOT AN EDGE CASE. `Broker__c` landed on 2026-08-21 and is
+ * stamped only by `c/dispositionLogOfferModal`; every offer logged before it — including BOTH
+ * offers live in `usman-dpeg` right now — has a null broker. Deliberately a sentence, not an
+ * em dash or a blank: it must not be mistakable for a broker's name, and it must not leave the
+ * label opening with a bare separator.
+ */
+const NO_BROKER = 'Broker not recorded';
 
 /** Fallback when the Apex error carries no readable body. */
 const GENERIC_ERROR = 'The offer could not be selected.';
@@ -39,8 +80,11 @@ const GENERIC_ERROR = 'The offer could not be selected.';
  * 🔴 SO THIS BUTTON DOES NOT MEAN "ACCEPT THIS OFFER". It means "put this offer in front of the
  * principals". A rejected offer parks the disposition at `Offer Selection` for a re-pick, which is
  * exactly why the stage moves on SUBMISSION rather than on approval — the stage always tells the
- * truth about where the deal is. The confirm-button label and the note in the markup both say so;
- * do not shorten either to "Accept".
+ * truth about where the deal is.
+ * ⚠ THE ON-SCREEN NOTE THAT USED TO SAY THIS WAS REMOVED ON 2026-08-21 at the user's request (it
+ * is the exact string they quoted). The confirm-button label — "Select and send for approval" — is
+ * now the ONLY surface stating it, so do not shorten THAT to "Accept"; this paragraph is the
+ * developer-facing record and stays.
  *
  * ── READ PATH IS LDS, DELIBERATELY. NO APEX WAS ADDED FOR IT ─────────────────
  * The offer list is a plain child-record read with no joins, no aggregates and no system-context
@@ -76,20 +120,65 @@ export default class DispositionOfferSelect extends LightningElement {
             this._loadError = undefined;
             this._offers = (data.records || []).map((r) => {
                 const f = r.fields || {};
-                const buyer = (f.Buyer_Name__c && f.Buyer_Name__c.value) || 'Unnamed buyer';
-                const amount = formatMillions(
+                // See the FIELDS comment: the key is `Broker__r`, and the name is inside the
+                // spanned record. `displayValue` on the TRAVERSAL is populated (it is only null on
+                // a plain `Broker__c` request) and is kept as a second reading of the same value,
+                // not as a different source of truth.
+                const broker =
+                    f.Broker__r?.value?.fields?.Name?.value ||
+                    f.Broker__r?.displayValue ||
+                    NO_BROKER;
+                const amount = formatExactCurrency(
                     f.Offer_Amount__c ? f.Offer_Amount__c.value : null
                 );
                 const date = formatLongDate(f.Offer_Date__c ? f.Offer_Date__c.value : null);
-                const financing =
-                    (f.Offer_Financing_Type__c && f.Offer_Financing_Type__c.value) ||
-                    'Financing not stated';
+                // The offer's AutoNumber, falling back to the record Id. See the uniqueness
+                // argument below — the Id fallback is what keeps the invariant true even in the
+                // unreachable case where `Name` is absent, and it also means no token in this
+                // label can ever render the literal string "undefined".
+                const offerRef = f.Name?.value || r.id;
                 return {
-                    // The radio group needs ONE string per option, so the four fields are
-                    // composed into the label rather than laid out in a table. A radio whose
-                    // label is only the buyer name would make two offers from the same buyer
-                    // indistinguishable — which is a real case in a re-bid.
-                    label: `${buyer} — ${amount} · ${date} · ${financing}`,
+                    // The radio group needs ONE string per option, so the fields are composed into
+                    // the label rather than laid out in a table.
+                    //
+                    // ══════════════════════════════════════════════════════════════════════════
+                    // 🔴 UNIQUENESS IS THE CONTRACT OF THIS STRING. THIS IS THE SCREEN WHERE DPEG
+                    //    PICKS THE WINNING BID — TWO OPTIONS READING THE SAME IS A WRONG
+                    //    DECISION, NOT A COSMETIC DEFECT.
+                    // ══════════════════════════════════════════════════════════════════════════
+                    // That sentence is the one thing carried forward unchanged from the version of
+                    // this comment written when the buyer was retired and the AutoNumber LED the
+                    // label. What changed on 2026-08-21 is only WHICH tokens satisfy it, and why.
+                    //
+                    // THE BROKER NOW LEADS, because UAT asked to see the broker contact and the
+                    // broker is the only party an offer names. 🔴 IT IS NOT A DISCRIMINATOR AND
+                    // MUST NEVER BE RELIED ON AS ONE: there is one appointed broker per sale, so
+                    // every offer on one disposition carries the SAME broker — and today, in
+                    // `usman-dpeg`, both live offers carry NONE, so the leading token is the
+                    // identical `NO_BROKER` sentence on both. The old comment's objection to
+                    // putting a broker here was therefore correct on the facts and is NOT being
+                    // waved away; it is answered by making the tokens BEHIND the broker carry the
+                    // whole burden of telling two rows apart:
+                    //
+                    //   1. THE AMOUNT IS NOW EXACT (`formatExactCurrency`, not `formatMillions`).
+                    //      This is what made the broker safe to add. The live pair — $1,850,000 and
+                    //      $1,860,000 — BOTH rendered `$1.9M` under the old formatter, so the label
+                    //      was already ambiguous before a repeated broker was put in front of it.
+                    //      Any abbreviation just moves the collision distance; exact removes it.
+                    //   2. THE OFFER NUMBER IS APPENDED UNCONDITIONALLY, never "only when a
+                    //      collision is detected". Broker + exact amount + date can still coincide
+                    //      legitimately — one broker re-logging a revised bid on the same day at
+                    //      the same price is a real sequence — and a conditional disambiguator is
+                    //      a computation that can be wrong, whereas `Name` is a platform-assigned
+                    //      AutoNumber that is unique per row by construction. Unconditional means
+                    //      the guarantee does not depend on the data.
+                    //
+                    // ⚠ THE FINANCING TOKEN WAS REMOVED HERE, NOT DEFAULTED TO SOMETHING BETTER
+                    // (UAT: "No need to show financing not started"). It never contributed to
+                    // uniqueness anyway — it is a picklist of ~4 values across a handful of rows.
+                    // Token order mirrors `brokerOptionLabel` in `c/utils`: who, then the facts,
+                    // then the auto-number last as the tiebreak.
+                    label: `${broker} — ${amount} · ${date} · ${offerRef}`,
                     value: r.id
                 };
             });

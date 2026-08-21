@@ -11,40 +11,28 @@
             </template>
 
             <template lwc:if={hasOptions}>
-                <!-- Two intro notes, one per mode. The REPLACEMENT note names the
-                     incumbent because it is about to be demoted; the APPOINTMENT
-                     note cannot, because there is no incumbent to name. Both end
-                     on the approval consequence, which is identical either way. -->
-                <template lwc:if={isAppointment}>
-                    <div class="brb-note brb-note_info">
-                        <lightning-icon
-                            icon-name="utility:info"
-                            size="xx-small"
-                            class="slds-m-right_x-small"
-                        ></lightning-icon>
-                        <span>
-                            The broker you choose becomes this sale's
-                            <strong>Selected</strong> broker. They must still be
-                            approved before the sale can proceed, and the
-                            appointment is recorded in the broker change history.
-                        </span>
-                    </div>
-                </template>
-                <template lwc:else>
-                    <div class="brb-note">
-                        <lightning-icon
-                            icon-name="utility:warning"
-                            size="xx-small"
-                            class="slds-m-right_x-small"
-                        ></lightning-icon>
-                        <span>
-                            <strong>{incumbentLabel}</strong> moves back to Backup and
-                            the broker you choose becomes Selected. The broker
-                            approval is cleared by this change.
-                        </span>
-                    </div>
-                </template>
+                <!-- ═══════════════════════════════════════════════════════════════════════════
+                     🔴 THE TWO MODE INTRO NOTES WERE REMOVED ON 2026-08-21 (UAT prose removal).
+                     ═══════════════════════════════════════════════════════════════════════════
+                     `.brb-note` / `.brb-note_info` carried one sentence per mode describing what
+                     the action does ("<incumbent> moves back to Backup and the broker you choose
+                     becomes Selected. The broker approval is cleared by this change." /
+                     "The broker you choose becomes this sale's Selected broker. They must still
+                     be approved…"). The user asked for exactly this class of copy to go.
 
+                     🔴 WHAT DID **NOT** GO, AND MUST NOT: the SERVER'S returned warning. That
+                     sentence is authored by `BovSubmissionService.replaceSelectedBroker`, handed
+                     out of here untouched by `close({ message })`, and raised as a sticky toast by
+                     c/bovComparisonMatrix. It was never rendered in this template and nothing
+                     here may re-author it — see the class header.
+
+                     ⚠ ONE CONSEQUENCE, RECORDED SO IT IS A DECISION AND NOT AN OVERSIGHT: the
+                     replacement note was the only surface naming the INCUMBENT broker, so this
+                     dialog no longer says who is being replaced. The modal is only ever opened
+                     from c/bovComparisonMatrix, which shows the Selected row immediately behind
+                     it. `@api currentBroker` is still accepted (the matrix passes it) but is no
+                     longer rendered; if the name is wanted back, it belongs as a plain
+                     label/value pair, NOT as a restored sentence. -->
                 <lightning-radio-group
                     class="brb-options slds-m-top_small"
                     name="backupSubmission"
@@ -78,10 +66,21 @@
                 <template lwc:else>
                     <!-- Bound, not typed: the literal has ONE home (the module
                          constant) so the disclosure cannot end up naming a value
-                         different from the one actually sent to Apex. -->
+                         different from the one actually sent to Apex.
+                         🔴 KEPT THROUGH THE 2026-08-21 PROSE REMOVAL, DELIBERATELY. This is not
+                         copy describing what the action does — it is the DISCLOSURE OF A VALUE
+                         being written to an append-only history, standing in for the combobox
+                         that is hidden on a first appointment. Deleting it would write a
+                         `Reason__c` the user was never shown.
+                         ⚠ `as <strong>` IS ON ONE SOURCE LINE ON PURPOSE. The LWC template
+                         compiler drops the trailing whitespace of a text node that ENDS a line
+                         before an inline element, so breaking after "as" renders
+                         "…history asInitial Appointment" — measured in this repo, and a
+                         `.replace(/\s+/g,' ')` in a test cannot recover it because the space is
+                         gone from the DOM. Pinned by a rendered-text assertion in the suite. -->
                     <p class="brb-fixed-reason slds-m-top_small">
-                        Recorded in the broker change history as
-                        <strong>{effectiveReason}</strong>.
+                        Recorded in the broker change history
+                        as <strong>{effectiveReason}</strong>.
                     </p>
                 </template>
 

@@ -25,10 +25,20 @@
  * exactly that and validated the class at 38.5%, which returned a `codeCoverageWarnings` entry.
  *
  * 🔴 THE BASE PROFILE IS `Minimum Access - Salesforce` AND THAT IS LOAD-BEARING. The persona holds
- * NO permission set at all, so it has no `NDA__c` object read, and `NdaSelector`'s `WITH USER_MODE`
- * query throws. `Standard User` would be the wrong base for a STANDARD-object denial (it grants
- * `Contact` read and masks it) — the trap `DispositionBuyerTimelineTest`'s header records — and
- * although `NDA__c` is custom, using the same base keeps the two fixtures answering the same way.
+ * NO permission set at all, so it has no `Disposition__c` object read, and
+ * `DispositionSelector.selectBrokerContextById`'s `WITH USER_MODE` query throws. `Standard User`
+ * would be the wrong base for a STANDARD-object denial (it grants `Contact` read and masks it) —
+ * the trap `DispositionBuyerTimelineTest`'s header records — and although `Disposition__c` is
+ * custom, using the same base keeps the two fixtures answering the same way.
+ *
+ * ⚠ AMENDED 2026-08-21 — THE THROWING READ CHANGED, AND THE REASON IS WORTH KNOWING. It used to be
+ * `NdaSelector`'s buyer-picker query, which was the ONLY unwrapped selector call in the service.
+ * That query was deleted with the buyer, and the service's two remaining reads were UNWRAPPED in
+ * the same edit (a broker the running user cannot READ must not be reported as a broker that does
+ * not EXIST). Had they been left wrapped, `getFormContext` would have become incapable of throwing
+ * and THIS CATCH WOULD BE UNREACHABLE — dragging the controller back under the 75% per-class
+ * threshold and returning the `codeCoverageWarnings` entry described below. If anyone re-adds a
+ * degrade-catch to the service, this test goes red first, which is the correct order.
  *
  * ⚠ `User` DML is SETUP-object DML while this test also inserts `Disposition__c` / `NDA__c`
  * (non-setup) in the same transaction, so the persona insert runs inside
@@ -56,14 +66,20 @@ private class DispositionOfferFormControllerTest {
         );
     }
 
+    /** Promotes one of a disposition's BOV submissions to Selected and returns its broker Id. */
+    private static Id appointBovBroker(Id dispositionId) {
+        BOV_Submission__c submission =
+            TestDataFactory.createBovSubmission(dispositionId, true);
+        submission.Submission_Status__c = 'Selected';
+        update submission;
+        return submission.Broker__c;
+    }
+
     @isTest
     static void getOfferFormContext_returnsTheServiceResultUnchanged() {
         Disposition__c disposition = onMarketDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = TestDataFactory.createDispositionNda(disposition.Id, false);
-        nda.Status__c = 'Signed';
-        nda.Buyer__c = buyer.Id;
-        insert nda;
+        Id appointed = appointBovBroker(disposition.Id);
+        Contact expected = [SELECT Name FROM Contact WHERE Id = :appointed LIMIT 1];
 
         Test.startTest();
         DispositionOfferFormService.OfferFormContext context =
@@ -73,8 +89,8 @@ private class DispositionOfferFormControllerTest {
         // The controller is THIN: it marshals and delegates. Asserting the payload survives it
         // intact is what proves no filtering or reshaping crept into the boundary layer.
         Assert.isNotNull(context, 'The context is returned, not swallowed');
-        Assert.areEqual(1, context.buyers.size(), 'The service\'s buyer list passes through');
-        Assert.areEqual((String) buyer.Id, context.buyers[0].value, 'Unchanged, Contact-keyed');
+        Assert.areEqual(appointed, context.brokerId, 'The service\'s resolved broker passes through');
+        Assert.areEqual(expected.Name, context.brokerName, 'with its display name');
         Assert.areEqual(true, context.isOnMarket, 'And the record-type flag');
     }
 
@@ -88,7 +104,8 @@ private class DispositionOfferFormControllerTest {
         // 🔴 The modal's `@wire` fires before `dispositionId` is set on a slow first render. An
         // AuraHandledException there would flash an error banner on a dialog about to work.
         Assert.isNotNull(context, 'A null Id is a normal call, not an error');
-        Assert.areEqual(0, context.buyers.size(), 'With nothing in it');
+        Assert.isNull(context.brokerId, 'With nothing in it');
+        Assert.areEqual('', context.brokerName, 'a STRING, never null — see the DTO');
     }
 
     @isTest
@@ -137,11 +154,7 @@ private class DispositionOfferFormControllerTest {
     @isTest
     static void aDeniedPersona_getsTheAuthoredAccessMessage_notAStackTrace() {
         Disposition__c disposition = onMarketDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = TestDataFactory.createDispositionNda(disposition.Id, false);
-        nda.Status__c = 'Signed';
-        nda.Buyer__c = buyer.Id;
-        insert nda;
+        appointBovBroker(disposition.Id);
         User denied = deniedPersona();
 
         Test.startTest();
@@ -151,9 +164,10 @@ private class DispositionOfferFormControllerTest {
                 DispositionOfferFormController.getOfferFormContext(disposition.Id);
                 Assert.fail(
                     'FIXTURE PRECONDITION FAILED: a Minimum Access persona with no permission set '
-                        + 'must not be able to read NDA__c. If this stops throwing, either the '
-                        + 'profile now grants NDA__c or the selector stopped using USER_MODE — '
-                        + 'investigate, do not delete this test.'
+                        + 'must not be able to read Disposition__c. If this stops throwing, either '
+                        + 'the profile now grants it, or the selector stopped using USER_MODE, or a '
+                        + 'degrade-catch was re-added to DispositionOfferFormService — investigate, '
+                        + 'do not delete this test.'
                 );
             } catch (AuraHandledException e) {
                 refused = true;
@@ -175,8 +189,8 @@ private class DispositionOfferFormControllerTest {
                     'Raw platform text must never reach the user'
                 );
                 Assert.isFalse(
-                    e.getMessage().contains('NDA__c'),
-                    'No object or field name may be leaked into the user-facing message'
+                    e.getMessage().contains('__c'),
+                    'No object or field API name may be leaked into the user-facing message'
                 );
             }
         }

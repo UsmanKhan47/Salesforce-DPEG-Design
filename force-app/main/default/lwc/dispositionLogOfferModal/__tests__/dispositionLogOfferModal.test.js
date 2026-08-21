@@ -1,33 +1,41 @@
 /**
  * c-disposition-log-offer-modal
  * ---------------------------------------------------------------------------
- * The in-place, buyer-picker replacement for the "+ Log Offer" navigation-create
- * that threw the user off the Disposition page on save AND offered every Contact
- * in the org as a buyer (2026-08-21).
+ * The in-place replacement for the "+ Log Offer" navigation-create that threw
+ * the user off the Disposition page on save (2026-08-21).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 REWRITTEN 2026-08-21 — THE BUYER PICKER WAS DELETED, AND SO WERE ITS TESTS
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DPEG communicates only with the appointed listing broker; buyers sit behind
+ * them and are not tracked. Four T-BUYER tests, both buyer fixtures and every
+ * `Buyer__c` assertion inside T-INJECT-* were DELETED, not weakened into
+ * `expect(...).toBeNull()` inside a test still named for the picker. What
+ * replaces them is ONE deliberate absence pin (T-NO-BUYER), because deletion on
+ * its own leaves nothing to fail if a well-meaning edit puts the picker back.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * 🔴 THE FOUR FALSIFIERS THAT MATTER MOST HERE
  * ═══════════════════════════════════════════════════════════════════════════
- * 1. THE BUYER PICKER IS NARROW, AND ITS OPTION VALUE IS THE **CONTACT** ID.
- *    Returning the NDA Id instead would compile, render identically, save
- *    without error, and silently populate `Buyer__c` with a row that is not a
- *    Contact — caught by nothing until `c/dispositionBuyerTimeline` showed
- *    blanks. T-BUYER pins the value against the Contact Id the wire returned.
- * 2. `Disposition__c`, `Buyer__c` AND `Broker__c` REACH THE SERVER ON BOTH
- *    SUBMIT PATHS. None of the three is carried by an ordinary form input: the
- *    parent is `disabled`, the buyer lives in a combobox outside the form's
- *    field set, and the broker is plain text. There are genuinely two paths
- *    (footer button; ENTER inside a text input) and both are asserted.
- * 3. THE EMPTY STATE RENDERS NO FORM AND NO SAVE BUTTON. With no signed buyer
- *    NDA, `Buyer_Required_On_Offer` (`ISBLANK(Buyer_Name__c)`, no ISNEW guard)
- *    refuses EVERY save, so a form here would be a trap. ⚠ THIS IS THE LIVE
- *    SHAPE IN usman-dpeg: the org's one disposition has one Signed Buyer-role
- *    NDA whose `Buyer__c` is null.
+ * 1. `Disposition__c` AND `Broker__c` REACH THE SERVER ON BOTH SUBMIT PATHS.
+ *    Neither is carried by an ordinary form input: the parent is `disabled` and
+ *    the broker is plain text. There are genuinely two paths (footer button;
+ *    ENTER inside a text input) and both are asserted.
+ * 2. NO BROKER MEANS NO FORM AND NO SAVE BUTTON. This is the dialog's ONLY
+ *    refusal path now, and it is a design decision rather than a platform
+ *    constraint — nothing stops a broker-less offer saving. It is refused
+ *    because with the buyer gone, `Broker__c` is the only party an offer names.
+ *    ⚠ The old refusal ("no eligible buyer") was FORCED by an active validation
+ *    rule; this one is not. The two are not interchangeable and the component
+ *    header says so.
+ * 3. THE REFUSAL COPY IS WORDED PER RECORD TYPE, because the two remedies sit
+ *    on two different screens (the BOV comparison matrix; the Broker Selection
+ *    stage). One generic sentence would misdirect half the users.
  * 4. `Offer_Financing_Type__c` IS STILL ON THE FORM. The user asked to hide it;
  *    it is read by c/dispositionOfferSelect and by Offer_Selection_Approval's
- *    approval page, so hiding it blanks both. Pinned as PRESENT precisely
- *    because the argument for removing it is a direct user request and would
- *    otherwise be acted on by the next reader.
+ *    approval page, so hiding it blanks both. Its value went UP when the buyer
+ *    name left that radio label. Pinned as PRESENT precisely because the
+ *    argument for removing it is a direct user request.
  *
  * ⚠ `LightningModal` HAS NO sfdx-lwc-jest STUB — this repo supplies its own at
  * jest-mocks/lightning/modal.js, wired in through jest.config.js's
@@ -38,10 +46,10 @@
  *
  * ⚠ NOTHING HERE FABRICATES AN EVENT SHAPE THE PLATFORM DOES NOT EMIT. The
  * native submit is driven with a real `submit` CustomEvent carrying
- * `detail.fields`; the combobox change with `detail.value`; success and error
- * with `detail.id` / `detail.message`. `lightning-record-edit-form`'s stub
- * exposes `submit()` as a NO-OP @api method, so `jest.spyOn` on the rendered
- * element is the only honest way to see the payload.
+ * `detail.fields`; success and error with `detail.id` / `detail.message`.
+ * `lightning-record-edit-form`'s stub exposes `submit()` as a NO-OP @api method,
+ * so `jest.spyOn` on the rendered element is the only honest way to see the
+ * payload.
  */
 import { createElement } from 'lwc';
 import DispositionLogOfferModal from 'c/dispositionLogOfferModal';
@@ -58,42 +66,41 @@ jest.mock(
 
 const DISPOSITION_ID = 'a0Ciw000004C4ngEAC';
 const NEW_RECORD_ID = 'a0Biw000000009AAA';
-const BUYER_1 = '003iw000000o39BAAQ';
-const BUYER_2 = '003iw000000o39CAAQ';
 const BROKER_ID = '003iw000000mjSgAAI';
 
-/** The on-market shape: a resolved broker and two competing buyers. */
-const TWO_BUYERS = {
+/** The on-market happy path: a broker resolved from the Selected BOV submission. */
+const ON_MARKET_WITH_BROKER = {
     brokerId: BROKER_ID,
     brokerName: 'Derek Simmons',
     brokerSource: 'From the selected BOV submission',
-    isOnMarket: true,
-    buyers: [
-        { value: BUYER_1, label: 'Alice Buyer' },
-        { value: BUYER_2, label: 'Bob Buyer' }
-    ]
+    isOnMarket: true
 };
 
-/** The single-buyer shape — the one the component auto-selects. */
-const ONE_BUYER = {
-    ...TWO_BUYERS,
-    buyers: [{ value: BUYER_1, label: 'Alice Buyer' }]
+/** Off-market, with the broker picked at the Broker Selection stage. */
+const OFF_MARKET_WITH_BROKER = {
+    brokerId: BROKER_ID,
+    brokerName: 'Derek Simmons',
+    brokerSource: 'From the broker picked on this disposition',
+    isOnMarket: false
 };
 
 /**
- * 🔴 THE LIVE SHAPE OF `usman-dpeg` ON 2026-08-21: an on-market sale with an
- * appointed broker and NO eligible buyer, because its one Signed Buyer-role NDA
- * has a null `Buyer__c`.
+ * 🔴 THE LIVE SHAPE OF `usman-dpeg`'s OFF-MARKET PATH: `Disposition__c.Broker__c`
+ * is null until the Broker Selection stage. This is now the REFUSAL state.
  */
-const NO_BUYERS = { ...TWO_BUYERS, buyers: [] };
-
-/** Off-market, before the broker has been picked at Broker Selection. */
 const OFF_MARKET_NO_BROKER = {
     brokerId: null,
     brokerName: '',
     brokerSource: 'From the broker picked on this disposition',
-    isOnMarket: false,
-    buyers: [{ value: BUYER_1, label: 'Alice Buyer' }]
+    isOnMarket: false
+};
+
+/** On-market before `Broker_Finalize_Approval` has approved a submission. */
+const ON_MARKET_NO_BROKER = {
+    brokerId: null,
+    brokerName: '',
+    brokerSource: 'From the selected BOV submission',
+    isOnMarket: true
 };
 
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -111,9 +118,9 @@ describe('c-disposition-log-offer-modal', () => {
      *
      * 🔴 IT IS A SEPARATE HELPER RATHER THAN `createComponent(undefined)`, AND THAT IS NOT
      * STYLE. The first version of this suite passed `undefined` to a helper whose parameter was
-     * `context = TWO_BUYERS`; JavaScript's default-parameter rule substitutes the default for an
+     * `context = <default>`; JavaScript's default-parameter rule substitutes the default for an
      * explicit `undefined`, so the wire DID answer, the form DID render, and the test that was
-     * supposed to prove "the empty state does not flash" was asserting against a fully-loaded
+     * supposed to prove "the refusal panel does not flash" was asserting against a fully-loaded
      * component. It failed for the right reason by luck. A sentinel-free helper cannot be got
      * wrong that way.
      */
@@ -134,7 +141,6 @@ describe('c-disposition-log-offer-modal', () => {
     }
 
     const form = (el) => el.shadowRoot.querySelector('lightning-record-edit-form');
-    const combobox = (el) => el.shadowRoot.querySelector('lightning-combobox');
     const inputs = (el) => [...el.shadowRoot.querySelectorAll('lightning-input-field')];
     const fieldNames = (el) => inputs(el).map((i) => i.fieldName);
     const saveButton = (el) => el.shadowRoot.querySelector('.lom-save');
@@ -144,7 +150,7 @@ describe('c-disposition-log-offer-modal', () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     it('T-FIELDS: renders exactly the offer fields an analyst enters, in reading order', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
         expect(fieldNames(element)).toEqual([
             'Disposition__c',
@@ -162,27 +168,54 @@ describe('c-disposition-log-offer-modal', () => {
         expect(form(element).recordId).toBeUndefined();
     });
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
+    //
+    // `.lom-intro` ("Log an offer against this sale. It is saved here on the
+    // disposition — you stay on this page and the offers card refreshes behind
+    // this dialog.") was removed at the user's request. Nothing in this file
+    // asserted it, so its deletion left nothing to fail if it comes back.
+    //
+    // 🔴 THIS PIN IS NARROW ON PURPOSE. The REFUSAL panel in this same bundle was
+    // explicitly KEPT — it is the only surface explaining a dialog that renders
+    // no form and no Save button — and T-REFUSAL below still asserts its wording
+    // positively. A broader "no explanatory copy anywhere" assertion here would
+    // fight that test. Run on the FORM state, where the intro used to live.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-PROSE: no intro paragraph above the form — the removal must not come back', async () => {
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
+
+        // Guard the guard: the form branch genuinely rendered.
+        expect(form(element)).not.toBeNull();
+        expect(inputs(element).length).toBeGreaterThan(0);
+
+        // 1. THE OLD SELECTOR.
+        expect(element.shadowRoot.querySelector('.lom-intro')).toBeNull();
+
+        // 2. 🔴 THE RENDERED WORDS — a re-added paragraph usually arrives under a
+        //    new class name, so the selector assertion alone would stay green.
+        const text = element.shadowRoot.textContent.toLowerCase();
+        expect(text).not.toContain('you stay on this page');
+        expect(text).not.toContain('refreshes behind this dialog');
+        expect(text).not.toContain('log an offer against this sale');
+    });
+
     it('🔴 T-FIELDS: `Offer_Financing_Type__c` IS PRESENT — the user asked to hide it and it must not be', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
         // c/dispositionOfferSelect renders it into the Select Offer radio label,
         // and Offer_Selection_Approval carries it as an approvalPageField. This
         // dialog is the only entry point, so removing it blanks BOTH surfaces on
-        // every offer created afterwards, permanently and silently.
+        // every offer created afterwards, permanently and silently — and with the
+        // buyer name gone from that label it is now one of only three things
+        // telling two offers on one sale apart.
         expect(fieldNames(element)).toContain('Offer_Financing_Type__c');
     });
 
-    it('🔴 T-FIELDS: the derived, machine-written and negotiation fields are NOT offered', async () => {
-        const element = await createComponent(TWO_BUYERS);
+    it('🔴 T-FIELDS: the machine-written and negotiation fields are NOT offered', async () => {
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const rendered = fieldNames(element);
-
-        // DERIVED. DispositionOfferBuyerStampService copies it from Buyer__c in
-        // the before-save trigger, so anything sent here is overwritten inside
-        // the same save. The combobox IS this field's input now.
-        expect(rendered).not.toContain('Buyer_Name__c');
-        // ...and it is NOT rendered as a lookup either. The whole point of the
-        // modal is that the buyer is picked from a narrow list.
-        expect(rendered).not.toContain('Buyer__c');
 
         // User-requested removals.
         expect(rendered).not.toContain('NDA_Status__c');
@@ -207,7 +240,7 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('T-FIELDS: the validation-rule field is marked required on the client', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const required = inputs(element)
             .filter((i) => i.required)
             .map((i) => i.fieldName);
@@ -215,13 +248,10 @@ describe('c-disposition-log-offer-modal', () => {
         // Offer_Amount_Required_On_Offer refuses the save server-side. Marking it
         // here turns a round trip into an inline message.
         expect(required).toEqual(['Offer_Amount__c']);
-        // The buyer's requiredness lives on the combobox, not on an input-field —
-        // Buyer_Required_On_Offer is the rule behind it.
-        expect(combobox(element).required).toBe(true);
     });
 
     it('PARENT: the disposition is shown, and shown LOCKED', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const parent = element.shadowRoot.querySelector('.lom-field-disposition');
 
         expect(parent.value).toBe(DISPOSITION_ID);
@@ -231,100 +261,80 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('surfaces platform field errors through lightning-messages', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
         // Six validation rules are active on this object and each carries an
         // authored message naming its own field. Hand-parsing
         // error.detail.output.fieldErrors to rebuild a banner loses that.
+        // ⚠ ONE OF THE SIX IS `Buyer_Required_On_Offer`, WHICH THIS FORM CANNOT
+        // SATISFY UNTIL IT IS DEACTIVATED — this element is where that refusal
+        // lands. See the component header.
         expect(element.shadowRoot.querySelector('lightning-messages')).not.toBeNull();
     });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // T-BUYER — the picker is narrow and its value is the Contact Id
+    // 🔴 T-NO-BUYER — THE DELIBERATE ABSENCE PIN (2026-08-21)
+    //
+    // The buyer picker's own tests were DELETED. This is the one thing standing
+    // between the repo and a well-meaning edit that puts a buyer back on this
+    // form, and it runs against the FULLY-LOADED happy-path fixture so it cannot
+    // pass merely because nothing rendered.
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('🔴 T-BUYER: the picker offers ONLY the buyers the server returned, keyed on the CONTACT Id', async () => {
-        const element = await createComponent(TWO_BUYERS);
+    it('🔴 T-NO-BUYER: no buyer picker, no buyer field and no buyer WORD — the removal must not come back', async () => {
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
-        expect(combobox(element).options).toEqual([
-            { value: BUYER_1, label: 'Alice Buyer' },
-            { value: BUYER_2, label: 'Bob Buyer' }
-        ]);
-        // 🔴 The value is a Contact Id (003…), which is what gets written to
-        // Buyer__c — the join c/dispositionBuyerTimeline matches each buyer's NDA
-        // to their OWN first offer on. An NDA Id (a0J…) would save without error
-        // and break that join invisibly.
-        expect(combobox(element).options[0].value.startsWith('003')).toBe(true);
-    });
-
-    it('T-BUYER: two buyers means NOTHING is preselected — a competitive sale demands a choice', async () => {
-        const element = await createComponent(TWO_BUYERS);
-
-        expect(combobox(element).value).toBeUndefined();
-    });
-
-    it('T-BUYER: exactly one buyer IS preselected — a menu of one is a step that can only be forgotten', async () => {
-        const element = await createComponent(ONE_BUYER);
-
-        expect(combobox(element).value).toBe(BUYER_1);
-    });
-
-    it('🔴 T-BUYER: saving with no buyer chosen does NOT round-trip to the server', async () => {
-        const element = await createComponent(TWO_BUYERS);
-        const submit = jest.spyOn(form(element), 'submit');
-
-        saveButton(element).click();
-        await flushPromises();
-
-        // Buyer_Required_On_Offer would refuse it anyway — but its message names
-        // `Buyer_Name__c`, a field this form does not show, so the round trip
-        // would point the user at nothing.
-        expect(submit).not.toHaveBeenCalled();
-        // The dialog stays open and the message is put on the control it is about.
+        // Guard the guard: this fixture renders the whole form, so every
+        // assertion below is about an element that is genuinely absent rather
+        // than about an empty component.
         expect(form(element)).not.toBeNull();
-    });
+        expect(inputs(element).length).toBeGreaterThan(0);
 
-    it('🔴 T-BUYER: ENTER is not a way around the buyer gate either', async () => {
-        const element = await createComponent(TWO_BUYERS);
-        const submit = jest.spyOn(form(element), 'submit');
+        // 1. THE CONTROL. The picker was a `lightning-combobox`, the only one
+        //    this component ever rendered.
+        expect(element.shadowRoot.querySelector('lightning-combobox')).toBeNull();
+        expect(element.shadowRoot.querySelector('.lom-field-buyer')).toBeNull();
 
-        form(element).dispatchEvent(
-            new CustomEvent('submit', { detail: { fields: { Offer_Amount__c: 1 } } })
-        );
-        await flushPromises();
+        // 2. THE FIELDS, in either shape — a lookup or the derived text.
+        expect(fieldNames(element)).not.toContain('Buyer__c');
+        expect(fieldNames(element)).not.toContain('Buyer_Name__c');
 
-        // The footer button and the native submit are two separate code paths;
-        // a gate on only one of them is not a gate.
-        expect(submit).not.toHaveBeenCalled();
+        // 3. 🔴 THE RENDERED WORD. A re-added surface usually arrives under a new
+        //    class name and a new control, so the two assertions above would stay
+        //    green while a "Buyer" label sat on the form. This is the one that
+        //    catches that.
+        expect(element.shadowRoot.textContent.toLowerCase()).not.toContain('buyer');
     });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // T-INJECT — the three non-input values reach the server on BOTH paths
+    // T-INJECT — the two non-input values reach the server on BOTH paths
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('🔴 T-INJECT-BUTTON: the footer Save forces Disposition__c, Buyer__c and Broker__c onto the payload', async () => {
-        const element = await createComponent(TWO_BUYERS);
+    it('🔴 T-INJECT-BUTTON: the footer Save forces Disposition__c and Broker__c onto the payload', async () => {
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const submit = jest.spyOn(form(element), 'submit');
 
-        combobox(element).dispatchEvent(
-            new CustomEvent('change', { detail: { value: BUYER_2 } })
-        );
-        await flushPromises();
         saveButton(element).click();
 
         expect(submit).toHaveBeenCalledTimes(1);
         const payload = submit.mock.calls[0][0];
-        // 🔴 THE CENTRAL ASSERTION OF THIS FILE. None of the three is carried by
-        // an ordinary form input — the parent is `disabled` (and a disabled
-        // control is conventionally excluded from a submission), the buyer is in
-        // a combobox outside the form's field set, and the broker is plain text.
+        // 🔴 THE CENTRAL ASSERTION OF THIS FILE. Neither is carried by an
+        // ordinary form input — the parent is `disabled` (and a disabled control
+        // is conventionally excluded from a submission) and the broker is plain
+        // text.
         expect(payload.Disposition__c).toBe(DISPOSITION_ID);
-        expect(payload.Buyer__c).toBe(BUYER_2);
         expect(payload.Broker__c).toBe(BROKER_ID);
+        // 🔴 AND NOTHING BUYER-SHAPED RIDES ALONG. `Buyer__c` used to be forced
+        // onto this payload too; sending it now would be writing a lookup no
+        // control on this form can set.
+        expect(Object.prototype.hasOwnProperty.call(payload, 'Buyer__c')).toBe(false);
+        expect(Object.prototype.hasOwnProperty.call(payload, 'Buyer_Name__c')).toBe(
+            false
+        );
     });
 
-    it('🔴 T-INJECT-ENTER: a native submit (ENTER in a field) forces all three too', async () => {
-        const element = await createComponent(ONE_BUYER);
+    it('🔴 T-INJECT-ENTER: a native submit (ENTER in a field) forces both too', async () => {
+        const element = await createComponent(OFF_MARKET_WITH_BROKER);
         const submit = jest.spyOn(form(element), 'submit');
 
         // The REAL shape the platform dispatches: a `submit` event carrying the
@@ -341,28 +351,13 @@ describe('c-disposition-log-offer-modal', () => {
         // ENTER inside a text input submits the form natively and fires
         // `onsubmit`; the footer button's `submit(fields)` does NOT fire it.
         expect(payload.Disposition__c).toBe(DISPOSITION_ID);
-        expect(payload.Buyer__c).toBe(BUYER_1);
         expect(payload.Broker__c).toBe(BROKER_ID);
         // The typed values ride along untouched.
         expect(payload.Offer_Amount__c).toBe(26900000);
     });
 
-    it('🔴 T-INJECT: `Broker__c` is OMITTED, not nulled, when no broker is appointed', async () => {
-        const element = await createComponent(OFF_MARKET_NO_BROKER);
-        const submit = jest.spyOn(form(element), 'submit');
-
-        saveButton(element).click();
-
-        const payload = submit.mock.calls[0][0];
-        // Sending null would be a WRITE — clearing a field the form never showed.
-        // Omitting the key is also what lets this dialog save at all until the
-        // admin agent's `Disposition_Offer__c.Broker__c` field is deployed.
-        expect(Object.prototype.hasOwnProperty.call(payload, 'Broker__c')).toBe(false);
-        expect(payload.Buyer__c).toBe(BUYER_1);
-    });
-
     it('VALIDITY: an invalid input aborts the save before any round trip', async () => {
-        const element = await createComponent(ONE_BUYER);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const submit = jest.spyOn(form(element), 'submit');
 
         // ⚠ THE STUB'S `reportValidity()` RETURNS UNDEFINED, so the component
@@ -386,7 +381,7 @@ describe('c-disposition-log-offer-modal', () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     it('T-BROKER: the resolved broker is shown read-only with its source', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
         expect(
             element.shadowRoot.querySelector('.lom-readonly-value').textContent
@@ -396,80 +391,31 @@ describe('c-disposition-log-offer-modal', () => {
         ).toContain('selected BOV submission');
     });
 
-    it('T-BROKER: no broker is an ACCEPTED state, and the hint is per record type', async () => {
+    // ─────────────────────────────────────────────────────────────────────────
+    // T-REFUSAL — no broker means no form and no Save button
+    //
+    // ⚠ THIS BLOCK REPLACES THE OLD T-EMPTY BLOCK, WHICH WAS ABOUT THE BUYER.
+    // The assertions are structurally the same because the SHAPE of the refusal
+    // is the same; the SUBJECT and the justification are not. The old refusal
+    // was forced by an active validation rule, this one is a design decision.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-REFUSAL: with no appointed broker there is NO FORM and NO SAVE BUTTON', async () => {
         const element = await createComponent(OFF_MARKET_NO_BROKER);
 
-        // The broker only exists once the appointment is approved; an offer
-        // logged before that legitimately carries none. The form still renders.
-        expect(
-            element.shadowRoot.querySelector('.lom-readonly-value').textContent
-        ).toContain('Not appointed yet');
-        // 🔴 OFF-MARKET WORDING. The two remedies are on two different screens,
-        // so one generic sentence would misdirect half the users.
-        expect(
-            element.shadowRoot.querySelector('.lom-readonly-help').textContent
-        ).toContain('Broker Selection stage');
-        expect(form(element)).not.toBeNull();
-    });
-
-    it('T-BROKER: the on-market hint points at the BOV matrix instead', async () => {
-        const element = await createComponent({ ...NO_BUYERS, brokerId: null });
-
-        // Even in the empty state the record type still decides the wording — but
-        // the broker block is not rendered there, so assert via the on-market
-        // form shape instead.
-        expect(element.shadowRoot.querySelector('.lom-empty')).not.toBeNull();
-    });
-
-    it('T-BROKER: on-market with no broker points at the BOV comparison matrix', async () => {
-        const element = await createComponent({
-            ...TWO_BUYERS,
-            brokerId: null,
-            brokerName: ''
-        });
-
-        expect(
-            element.shadowRoot.querySelector('.lom-readonly-help').textContent
-        ).toContain('comparison matrix');
-    });
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // T-EMPTY — no buyer means no form, and no Save button
-    // ─────────────────────────────────────────────────────────────────────────
-
-    it('🔴 T-EMPTY: with no eligible buyer there is NO FORM and NO SAVE BUTTON', async () => {
-        const element = await createComponent(NO_BUYERS);
-
-        // `Buyer_Required_On_Offer` is ISBLANK(Buyer_Name__c) with no ISNEW
-        // guard, so it refuses EVERY save. A form here would let the analyst
-        // enter an amount, a date and a financing type and then be refused by a
-        // rule naming a field they were never shown.
+        // With the buyer gone, `Broker__c` is the only party an offer names. An
+        // offer naming nobody cannot be attributed, cannot be told apart from
+        // another offer on the same sale, and is what
+        // DispositionApprovalService.selectOffer would be choosing between.
         expect(form(element)).toBeNull();
-        expect(combobox(element)).toBeNull();
         // 🔴 ABSENT, not disabled. A disabled Save invites a click and then
         // explains nothing.
         expect(saveButton(element)).toBeNull();
         expect(element.shadowRoot.querySelector('.lom-empty')).not.toBeNull();
     });
 
-    /**
-     * 🔴 REWRITTEN 2026-08-21 AT UAT. THREE ASSERTIONS WERE DELETED, NOT RELAXED.
-     * The old test was named *"the copy names BOTH reasons"* and asserted
-     * `'signed NDA that names a buyer'`, `'not linked to a Contact'` and `'NDAs'`.
-     * All three strings are gone from the panel, and the test's PREMISE is gone
-     * with them: naming both reasons as alternatives is what made the message
-     * long enough for the user to abandon halfway. The panel was factually
-     * correct on NDA-0114 (Signed, Buyer role, `Buyer__c` NULL) and the user still
-     * concluded it was wrong, because they stopped at the opening sentence about
-     * why an offer needs a buyer.
-     *
-     * ⚠ THE SECOND CAUSE IS STILL COVERED AND IS STILL ASSERTED — just not as an
-     * alternative to diagnose. "No signed NDA on this sale names a buyer contact"
-     * is true whether the NDA is unsigned or merely unlinked, so the assertions
-     * below check that BOTH nouns survive in ONE sentence.
-     */
-    it('🔴 T-EMPTY: the copy leads with the cause and carries the remedy, in one sentence', async () => {
-        const element = await createComponent(NO_BUYERS);
+    it('🔴 T-REFUSAL: the copy leads with the cause and carries the off-market remedy', async () => {
+        const element = await createComponent(OFF_MARKET_NO_BROKER);
         const heading = element.shadowRoot.querySelector(
             '.lom-empty-heading'
         ).textContent;
@@ -478,46 +424,56 @@ describe('c-disposition-log-offer-modal', () => {
             .textContent.replace(/\s+/g, ' ')
             .trim();
 
-        expect(heading).toBe('No buyer available');
-        // THE CAUSE — both halves of it, in one clause the reader does not have to
-        // pick between: a signed NDA, and a buyer contact on it.
-        expect(copy).toContain('No signed NDA on this sale names a buyer contact');
-        // THE REMEDY — where to go and what to do when they get there.
-        expect(copy).toContain('Set the Buyer on the signed NDA');
-        expect(copy).toContain('then log the offer');
+        expect(heading).toBe('No broker appointed');
+        // THE CAUSE, first and in the reader's own terms.
+        expect(copy).toContain('No broker is appointed on this sale yet');
+        // 🔴 THE REMEDY, AND IT IS THE OFF-MARKET ONE. The two remedies are on
+        // two different screens, so a generic sentence would send half the users
+        // to the wrong place.
+        expect(copy).toContain('Broker Selection stage');
+        expect(copy).not.toContain('comparison matrix');
 
-        // 🔴 THE SENTENCE THE USER BOUNCED OFF MUST NOT COME BACK. It was true and
-        // it was the reason they never reached the sentence that answered them.
-        expect(copy).not.toContain('must name the buyer who made it');
         // 🔴 A LENGTH BUDGET, NOT A STYLE PREFERENCE. The defect being guarded is
-        // "the user read the first sentence and stopped", which regrows one
-        // well-meaning clarification at a time and which no other assertion here
-        // can see. The panel is ~101 characters today; the ceiling leaves room for
-        // a rewording and none for a third sentence.
+        // "the user read the first sentence and stopped" — measured on the panel
+        // this one replaced, which was correct in five sentences and abandoned
+        // after one. It regrows one well-meaning clarification at a time and no
+        // other assertion here can see it. The panel is ~108 characters today;
+        // the ceiling leaves room for a rewording and none for a third sentence.
         expect(copy.length).toBeLessThanOrEqual(160);
     });
 
-    it('T-EMPTY: the remaining button reads Close, not Cancel', async () => {
-        const element = await createComponent(NO_BUYERS);
+    it('🔴 T-REFUSAL: on-market points at the BOV comparison matrix instead', async () => {
+        const element = await createComponent(ON_MARKET_NO_BROKER);
+        const copy = element.shadowRoot
+            .querySelector('.lom-empty-copy')
+            .textContent.replace(/\s+/g, ' ')
+            .trim();
+
+        expect(copy).toContain('comparison matrix');
+        expect(copy).not.toContain('Broker Selection stage');
+        expect(copy.length).toBeLessThanOrEqual(160);
+    });
+
+    it('T-REFUSAL: the remaining button reads Close, not Cancel', async () => {
+        const element = await createComponent(ON_MARKET_NO_BROKER);
 
         // There is nothing to cancel — the dialog is only informing.
         expect(element.shadowRoot.querySelector('.lom-cancel').label).toBe('Close');
     });
 
-    it('🔴 T-EMPTY: neither the empty state NOR the form renders before the wire answers', async () => {
+    it('🔴 T-REFUSAL: neither the panel NOR the form renders before the wire answers', async () => {
         const element = createUnansweredComponent();
         await flushPromises();
 
-        // Without the `_loaded` gate this would render "No buyer available" for
+        // Without the `_loaded` gate this would render "No broker appointed" for
         // one frame on EVERY open, on the happy path, to every user.
         expect(element.shadowRoot.querySelector('.lom-empty')).toBeNull();
         // 🔴 AND NOT THE FORM EITHER. MEASURED: the first version of this
-        // template branched to the form with `lwc:else`, so the whole form —
-        // including an EMPTY, interactive buyer combobox — rendered underneath
-        // the spinner on every open. The chain now ends at `lwc:elseif={canSave}`
-        // with no `lwc:else`, so the loading state renders the spinner alone.
+        // template branched to the form with `lwc:else`, so the whole form
+        // rendered underneath the spinner on every open. The chain now ends at
+        // `lwc:elseif={canSave}` with no `lwc:else`, so the loading state renders
+        // the spinner alone.
         expect(form(element)).toBeNull();
-        expect(combobox(element)).toBeNull();
         expect(element.shadowRoot.querySelector('lightning-spinner')).not.toBeNull();
     });
 
@@ -538,7 +494,7 @@ describe('c-disposition-log-offer-modal', () => {
         getOfferFormContext.error(
             {
                 message:
-                    'You do not have access to the buyer or broker information on this disposition.'
+                    'You do not have access to the broker information on this disposition.'
             },
             400,
             'Bad Request'
@@ -548,8 +504,10 @@ describe('c-disposition-log-offer-modal', () => {
         expect(element.shadowRoot.querySelector('.lom-error').textContent).toContain(
             'do not have access'
         );
-        // A load failure is an ADMINISTRATOR's problem; the empty state is the
-        // ANALYST's. They must not render as the same screen.
+        // 🔴 A LOAD FAILURE IS AN ADMINISTRATOR'S PROBLEM; THE REFUSAL PANEL IS
+        // THE ANALYST'S. They must not render as the same screen — the error
+        // branch is checked FIRST in the template for exactly this reason, so an
+        // unreadable broker is never reported as an unappointed one.
         expect(element.shadowRoot.querySelector('.lom-empty')).toBeNull();
         expect(saveButton(element)).toBeNull();
     });
@@ -559,7 +517,7 @@ describe('c-disposition-log-offer-modal', () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     it('🔴 SUCCESS: closes with the new record Id and NEVER navigates', async () => {
-        const element = await createComponent(ONE_BUYER);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const closed = jest.fn();
         element.addEventListener('close', closed);
 
@@ -580,7 +538,7 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('SUCCESS: a missing Name still returns a usable result', async () => {
-        const element = await createComponent(ONE_BUYER);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const closed = jest.fn();
         element.addEventListener('close', closed);
 
@@ -598,7 +556,7 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('🔴 ERROR: the dialog STAYS OPEN and keeps what the user entered', async () => {
-        const element = await createComponent(ONE_BUYER);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const closed = jest.fn();
         element.addEventListener('close', closed);
 
@@ -613,6 +571,9 @@ describe('c-disposition-log-offer-modal', () => {
         // 🔴 Every realistic refusal here is about WHAT WAS ENTERED. Closing would
         // throw away both the message lightning-messages just rendered and the
         // user's other values.
+        // ⚠ Until `Buyer_Required_On_Offer` is deactivated this is the path EVERY
+        // save takes — which is exactly why staying open matters more now, not
+        // less.
         expect(closed).not.toHaveBeenCalled();
         expect(form(element)).not.toBeNull();
         // The spinner is released, so Save is usable again.
@@ -621,7 +582,7 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('SAVING: the spinner appears and Save is disabled while in flight', async () => {
-        const element = await createComponent(ONE_BUYER);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
 
@@ -633,7 +594,7 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('SAVING: a second click while in flight does not submit twice', async () => {
-        const element = await createComponent(ONE_BUYER);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const submit = jest.spyOn(form(element), 'submit');
 
         saveButton(element).click();
@@ -644,7 +605,7 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('CANCEL: closes with nothing, so the opener says nothing', async () => {
-        const element = await createComponent(ONE_BUYER);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
         const closed = jest.fn();
         element.addEventListener('close', closed);
 
@@ -663,7 +624,7 @@ describe('c-disposition-log-offer-modal', () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     it('🔴 STYLING: no inline style attribute anywhere in the template', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
         // The SLDS linter is a separate command a reviewer can forget; this is
         // the fence that runs on every commit.
@@ -671,13 +632,13 @@ describe('c-disposition-log-offer-modal', () => {
     });
 
     it('is accessible (form)', async () => {
-        const element = await createComponent(TWO_BUYERS);
+        const element = await createComponent(ON_MARKET_WITH_BROKER);
 
         await expect(element).toBeAccessible();
     });
 
-    it('is accessible (empty state)', async () => {
-        const element = await createComponent(NO_BUYERS);
+    it('is accessible (refusal panel)', async () => {
+        const element = await createComponent(ON_MARKET_NO_BROKER);
 
         await expect(element).toBeAccessible();
     });

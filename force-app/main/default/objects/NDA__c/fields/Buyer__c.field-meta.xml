@@ -1,9 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <!--
-        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
-        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
-        matching parent xml file" error.
+        🔴 SUPERSEDED 2026-08-21 (buyer-to-broker-counterparty-change.md). DO NOT DELETE - THIS
+        REPO'S STANDING RULE IS ADDITIVE (add -> repoint -> retire), AND A FIELD DELETION NEEDS
+        ITS OWN SEQUENCED WAVE PLUS A MANUAL SETUP ERASE. AWAITING RETIREMENT.
+        =====================================================================================
+        User decision: "we don't need buyer information, we just need broker contact for
+        disposition offers and NDA" / "everything must be linked with broker contact as he is
+        the only person that DPEG will be communicating." The NDA counterparty on the
+        disposition side is now NDA__c.Broker__c (the appointed listing broker on the sale),
+        not a buyer Contact. This field held exactly ONE value at the time of this change (a
+        test record) - measured on usman-dpeg, not assumed.
+        REMOVED FROM: flexipages/NDA_Record_Page.flexipage-meta.xml (the Record.Buyer__c field
+        instance) and BOTH permissionsets/DPEG_Disposition_Edit.permissionset-meta.xml and
+        DPEG_Disposition_View.permissionset-meta.xml (the NDA__c.Buyer__c fieldPermissions
+        block). The field itself, and the sibling field-level security rows for
+        Materials_Released_Date__c (which stays - the timeline still uses it), are untouched by
+        this change. Nothing in this change writes to or reads from this field.
+        =====================================================================================
+        THE COMMENT BELOW IS THE FIELD'S ORIGINAL HISTORY, KEPT AS A RECORD. IT NO LONGER
+        DESCRIBES HOW THIS FIELD IS REACHED OR USED.
+        =====================================================================================
 
         ADDED 2026-08-20 (disposition-tranche-2-requirements.md, D6.1) - BUYER ACTIVITY TIMELINE,
         SCHEMA HALF. ROLE-NAMED CONTACT LOOKUP, explicitly permitted by ARCHITECTURE.md §1 (a

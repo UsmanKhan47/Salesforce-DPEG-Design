@@ -8,6 +8,29 @@
         file" error.
 
         =====================================================================================
+        🔴 DEACTIVATED 2026-08-21 (buyer-to-broker-counterparty-change.md). DO NOT REACTIVATE
+        WITHOUT RE-READING THIS BLOCK.
+        =====================================================================================
+        User decision: "we don't need buyer information, we just need broker contact for
+        disposition offers and NDA." Buyer_Name__c is no longer collected on the offer form
+        (Disposition_Offer__c.Buyer__c, the intended future entry point this rule's own header
+        names below, is machine-stamped, not analyst-entered, and neither buyer field is on the
+        layout as of this same change). This rule's formula, ISBLANK(Buyer_Name__c), carries NO
+        ISCHANGED/ISNEW guard (by original design, see below) - so with nothing left to populate
+        Buyer_Name__c on a new offer, this rule would refuse EVERY save of EVERY
+        Disposition_Offer__c, permanently. Deactivating rather than deleting: the amendment this
+        rule's own header anticipated (re-point to Buyer__c when it lands as the entry point)
+        never happened, because Buyer__c was retired as a concept before that re-point occurred
+        - Broker__c replaced it instead, and an offer's counterparty is no longer a rule this
+        object enforces at all. If a future change needs an offer-counterparty invariant again,
+        confirm what field is authoritative THEN; do not simply flip active back to true.
+        ⚠ CHECKED FOR OTHER Buyer_Name__c / Buyer__c REFERENCES ON THIS DEPLOY: none of this
+        object's other five validation rules (Offer_Amount_Required_On_Offer,
+        Buyer_Counter_Price_Is_Positive, DPEG_Counter_Price_Is_Positive,
+        Closing_Period_Days_Not_Negative, Due_Diligence_Days_Not_Negative) reference either
+        field, and NDA__c carries no validation rules at all. Nothing else needed touching.
+
+        =====================================================================================
         ADDED 2026-08-20 (Tranche 2, Workstream A1). THE FIRST VALIDATION RULE ON THIS OBJECT.
         =====================================================================================
         An offer with no offeror cannot be countered, compared or selected. Buyer identity is
@@ -57,8 +80,8 @@
         in D, when the required field becomes the lookup the factory does not set.
     -->
     <fullName>Buyer_Required_On_Offer</fullName>
-    <active>true</active>
-    <description>An offer must name who made it. Targets the Text field Buyer_Name__c because that is the only buyer field today; Workstream D adds a Buyer Contact lookup and this same rule file is amended to require the lookup instead. See the XML comment in this file.</description>
+    <active>false</active>
+    <description>DEACTIVATED 2026-08-21: buyer identity is no longer collected on the offer form (broker-only counterparty model). See the XML comment in this file before reactivating.</description>
     <errorConditionFormula>ISBLANK(Buyer_Name__c)</errorConditionFormula>
     <errorMessage>Enter the Buyer who made this offer. An offer with no buyer cannot be countered, compared against the other offers, or selected as the winning offer.</errorMessage>
     <errorDisplayField>Buyer_Name__c</errorDisplayField>

@@ -5,7 +5,10 @@
             <div class="offer-list">
                 <template for:each={offers} for:item="o">
                     <div key={o.id} class="offer-row">
-                        <div class="offer-buyer">{o.buyerName}</div>
+                        <!-- 🔴 THE OFFER NUMBER, NOT A BUYER NAME. Buyer identity was retired
+                             on 2026-08-21; see the JS header before putting a party back in
+                             this column, and note that the BROKER is the same on every row. -->
+                        <div class="offer-name">{o.offerName}</div>
                         <div class="offer-amount">{o.amountLabel}</div>
                         <div class="offer-date">{o.dateLabel}</div>
                     </div>

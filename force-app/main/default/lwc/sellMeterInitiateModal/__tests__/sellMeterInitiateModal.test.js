@@ -102,9 +102,53 @@ describe('c-sell-meter-initiate-modal', () => {
             '$30.0M',
             'Aug 12, 2027'
         ]);
-        expect(
-            element.shadowRoot.querySelector('.smi-intro').textContent
-        ).toContain('Gateway Plaza');
+        // ⚠ THE ASSERTION THAT `.smi-intro` NAMED THE PROPERTY WAS DELETED ON
+        // 2026-08-21, NOT SOFTENED. The intro paragraph went with the UAT prose
+        // removal and it was the only surface rendering `propertyName`, so there is
+        // no weaker version of that assertion to keep — the value is not displayed
+        // at all now. See T-NO-PROSE below, which records the consequence.
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
+    //
+    // `.smi-intro` — "Initiating a disposition for <property> creates the record
+    // and sends it straight into the Sale Decision approval." — was removed at
+    // the user's request. It is the same shape as the string they quoted: a
+    // sentence restating what the button below does.
+    //
+    // ⚠ IT WAS ALSO THE ONLY PLACE THIS DIALOG NAMED THE PROPERTY. That is a real
+    // cost, recorded here rather than hidden: the modal is only ever opened from
+    // a row the user just clicked in c/sellMeterList, and `@api propertyName` is
+    // still accepted. If the name is wanted back it belongs as a fifth
+    // `summaryRows` entry — a label/value pair — NOT as a restored sentence, and
+    // the row-count assertion below is what would then need updating.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-PROSE: no intro paragraph — the removal must not come back', async () => {
+        const element = createComponent();
+
+        await Promise.resolve();
+
+        // Guard the guard: the summary genuinely rendered, so the absences below
+        // are real absences and not an unrendered component.
+        expect(element.shadowRoot.querySelectorAll('.smi-value').length).toBe(4);
+        expect(radio(element)).not.toBeNull();
+
+        // 1. THE OLD SELECTOR.
+        expect(element.shadowRoot.querySelector('.smi-intro')).toBeNull();
+
+        // 2. 🔴 THE RENDERED WORDS — a re-added paragraph usually arrives under a
+        //    new class name, so the selector alone would stay green.
+        const text = element.shadowRoot.textContent.toLowerCase();
+        expect(text).not.toContain('initiating a disposition for');
+        expect(text).not.toContain('creates the record');
+        expect(text).not.toContain('straight into the sale decision approval');
+
+        // 3. 🔴 WHAT MUST SURVIVE. The behaviour the sentence described is now
+        //    stated ONLY by the button label, so this half of the pin is what
+        //    stops a later edit renaming it to something that says nothing.
+        expect(confirmBtn(element).label).toBe('Send for Approval');
     });
 
     it('renders an em dash — NOT "undefined" — for a summary value the caller omitted', async () => {

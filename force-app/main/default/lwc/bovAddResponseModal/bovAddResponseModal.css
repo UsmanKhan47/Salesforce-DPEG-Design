@@ -12,12 +12,9 @@
     padding: var(--slds-g-spacing-1, 0.25rem) 0;
 }
 
-.bar-intro {
-    min-width: 0;
-    margin: 0 0 var(--slds-g-spacing-4, 1rem);
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
-}
+/* ⚠ `.bar-intro` AND `.bar-note` WERE DELETED ON 2026-08-21 with the two paragraphs they styled
+   (UAT prose removal — see the template). Both were grey `font-scale-neg-1` copy on
+   `on-surface-1`; nothing else in this bundle needs that rule. */
 
 /* Two-up where there is room, one-up where there is not.
    ⚠ `auto-fit` + `min(…, 100%)` and NO media query, for the same reason the disposition cards
@@ -39,11 +36,4 @@
    record NAME, which is the longest thing on this form and the one most worth reading whole. */
 .bar-field_full {
     grid-column: 1 / -1;
-}
-
-.bar-note {
-    min-width: 0;
-    margin: var(--slds-g-spacing-4, 1rem) 0 0;
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-surface-1, #757575);
 }

@@ -50,8 +50,9 @@ const REASON_LOAD_ERROR =
  * demoting the incumbent if there is one (design DEV-15 / DEV-6).
  *
  * ── 🔴 ONE BUNDLE, TWO MODES (2026-08-21) ────────────────────────────────────
- * `@api isFirstAppointment` switches the heading, the intro copy, the confirm label, the empty
- * state and the reason — and NOTHING else. The Apex call, the exclusivity swap, the approval
+ * `@api isFirstAppointment` switches the heading, the confirm label, the empty state and the
+ * reason — and NOTHING else. (It also switched the INTRO COPY until 2026-08-21, when the UAT prose
+ * removal deleted both mode notes; the flag now has one fewer visible effect, not a new one.) The Apex call, the exclusivity swap, the approval
  * revocation, the savepoint and the history row are identical, because they are the same server
  * method. The bundle was NOT forked into `bovSelectBrokerModal` deliberately: the five contracts
  * listed below are non-obvious, load-bearing and would have to be duplicated verbatim into a
@@ -114,7 +115,15 @@ export default class BovReplaceBrokerModal extends LightningModal {
      * about the same broker's numbers.
      */
     @api backupOptions;
-    /** Display name of the incumbent, for the prompt copy. Absent on a first appointment. */
+    /**
+     * Display name of the incumbent. Absent on a first appointment.
+     *
+     * ⚠ NO LONGER RENDERED (2026-08-21). It existed solely for the replacement intro note, which
+     * the UAT prose removal deleted. The property is RETAINED rather than removed because
+     * `c/bovComparisonMatrix` still passes it through `LightningModal.open()`, and because the
+     * incumbent's name is the one fact that removal cost this dialog — if a user asks for it back,
+     * this is the value to render, as a plain label/value pair and not as a sentence.
+     */
     @api currentBroker;
     /**
      * TRUE when this disposition has no appointed broker yet, so the modal is performing a FIRST
@@ -182,9 +191,10 @@ export default class BovReplaceBrokerModal extends LightningModal {
     get reasonOptions() {
         return this._reasonOptions;
     }
-    get incumbentLabel() {
-        return this.currentBroker || 'the current broker';
-    }
+    // ⚠ `incumbentLabel` WAS DELETED ON 2026-08-21 with the replacement intro note, its only
+    // consumer. Its `|| 'the current broker'` fallback existed to stop an absent `currentBroker`
+    // rendering the literal string "undefined"; nothing binds that value now, and the suite still
+    // pins `not.toContain('undefined')` on the rendered markup for the bindings that remain.
     get isSaving() {
         return this._saving;
     }

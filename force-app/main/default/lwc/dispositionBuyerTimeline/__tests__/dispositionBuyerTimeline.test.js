@@ -3,8 +3,30 @@
  * ---------------------------------------------------------------------------
  * Read-only: a single @wire(getTimeline, { dispositionId: '$recordId' }).
  *
- * 🔴 THE TWO FALSIFIERS THAT MATTER MOST HERE ARE THE DECLINED-ROW ONES.
- *   1. A declined party must render EM-DASHES IN ALL FIVE VALUE COLUMNS. The
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 RETARGETED 2026-08-21 — ONE ROW PER **NDA**, NOT PER BUYER
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DPEG communicates only with the appointed listing broker; buyers sit behind
+ * them and are not tracked. Three things changed and each has its own pin below:
+ *   - the tile HEADING is the NDA number and the broker is its subtitle;
+ *   - the "First offer" column and the "Days to respond" duration are GONE —
+ *     nothing links an offer to a specific NDA any more, so any attribution
+ *     would be fiction (T-NO-OFFER is the pin);
+ *   - the card TITLE says "Broker Activity Timeline" (user instruction,
+ *     2026-08-21 — it was briefly "NDA Activity Timeline") while the BUNDLE is
+ *     still called buyerTimeline, deliberately (a rename is a FlexiPage edit plus
+ *     a destructive Apex delete — see the component header).
+ *     🔴 THE TITLE ASSERTIONS BELOW ARE EXACT (`toBe`), NEVER `toContain`. A
+ *     substring match on "Activity Timeline" would pass for BOTH the old and the
+ *     new name, i.e. it would not detect the rename being reverted — which is
+ *     the only thing those assertions exist to detect.
+ *     ⚠ "Broker" IS NOT A GROUPING CLAIM. One broker per sale, so the same name
+ *     repeats on every tile and the count in the title counts NDAs, not brokers.
+ * The old per-buyer assertions were DELETED, not softened into always-true
+ * negations inside tests still named for buyers.
+ *
+ * 🔴 THE TWO FALSIFIERS THAT MATTER MOST HERE ARE STILL THE DECLINED-ROW ONES.
+ *   1. A declined party must render EM-DASHES IN ALL THREE VALUE COLUMNS. The
  *      payload below deliberately gives the declined row a real
  *      `ndaSignedDate`, because that is EXACTLY THE STATE THE PRODUCTION DATA
  *      IS IN: `NDA_Signed_Status_Sync` never clears `Date_Signed__c`, so a
@@ -31,14 +53,6 @@
  * T-NARROW / T-CSS below are anti-regression pins for that — modelled on the
  * identical pair in c/competingBrokerSubmissions, which solved the same problem
  * on Lead_Record_Page.
- *
- * EVERY BEHAVIOURAL ASSERTION FROM THE TABLE ERA SURVIVES UNCHANGED IN MEANING.
- * Only two selectors moved: `.dbt-row` -> `.dbt-tile` (there is no longer a
- * heading row to filter out, because each tile carries its own labels), and the
- * value cells are now the five <dd> elements rather than five <span>s. In
- * particular the declined-row falsifiers — em-dashes in all five value cells,
- * and the word "Declined" as READABLE TEXT plus an aria-label — are asserted
- * exactly as before.
  */
 import { createElement } from 'lwc';
 import DispositionBuyerTimeline from 'c/dispositionBuyerTimeline';
@@ -72,31 +86,29 @@ jest.mock(
 const RECORD_ID = 'a0Y0000000000001AAA';
 const EM_DASH = '—';
 
-/** Active, fully progressed: all three dates and both durations. */
+/** Active, fully progressed: both dates and the duration. */
 const COMPLETE_ROW = {
     ndaId: 'a0Z0000000000001AAA',
-    buyerName: 'Dana Reyes',
+    ndaName: 'NDA-0101',
+    brokerName: 'Derek Simmons',
     status: 'Signed',
     isDeclined: false,
     ndaSignedDate: '2026-03-02',
     materialsReleasedDate: '2026-03-09',
-    firstOfferDate: '2026-03-24',
     daysToRelease: 7,
-    daysToRespond: 15,
     hasDateAnomaly: false
 };
 
-/** Active, mid-journey: signed but nothing released yet — the common early state. */
+/** Active, mid-journey: nothing signed yet — the common early state. */
 const IN_FLIGHT_ROW = {
     ndaId: 'a0Z0000000000002AAA',
-    buyerName: 'Priya Raman',
+    ndaName: 'NDA-0102',
+    brokerName: 'Derek Simmons',
     status: 'Sent',
     isDeclined: false,
     ndaSignedDate: null,
     materialsReleasedDate: null,
-    firstOfferDate: null,
     daysToRelease: null,
-    daysToRespond: null,
     hasDateAnomaly: false
 };
 
@@ -107,14 +119,13 @@ const IN_FLIGHT_ROW = {
  */
 const ANOMALY_ROW = {
     ndaId: 'a0Z0000000000003AAA',
-    buyerName: 'Marcus Bell',
+    ndaName: 'NDA-0103',
+    brokerName: 'Derek Simmons',
     status: 'Signed',
     isDeclined: false,
     ndaSignedDate: '2026-04-10',
     materialsReleasedDate: '2026-04-06',
-    firstOfferDate: null,
     daysToRelease: null,
-    daysToRespond: null,
     hasDateAnomaly: true
 };
 
@@ -122,17 +133,20 @@ const ANOMALY_ROW = {
  * 🔴 DECLINED, CARRYING A RETAINED `ndaSignedDate`. See the header — this is the
  * real production shape, not a contrived one, and it is the whole reason this
  * fixture is not simply all-nulls.
+ *
+ * ⚠ IT ALSO CARRIES THE "no broker" PLACEHOLDER, because `NDA__c.Broker__c` is a
+ * 2026-08-21 field with NO BACKFILL: every NDA older than that date has a null
+ * lookup, and the service resolves it to this fixed string rather than to blank.
  */
 const DECLINED_ROW = {
     ndaId: 'a0Z0000000000004AAA',
-    buyerName: 'Toby Okonkwo',
+    ndaName: 'NDA-0104',
+    brokerName: 'No broker recorded',
     status: 'Declined',
     isDeclined: true,
     ndaSignedDate: '2026-02-14',
     materialsReleasedDate: '2026-02-20',
-    firstOfferDate: null,
     daysToRelease: 6,
-    daysToRespond: null,
     hasDateAnomaly: false
 };
 
@@ -157,15 +171,15 @@ describe('c-disposition-buyer-timeline', () => {
     }
 
     /**
-     * One element per buyer. There is no longer a shared heading row to filter
-     * out — each tile carries its own <dt> labels, which is exactly what makes
-     * it readable at 340px.
+     * One element per NDA. There is no shared heading row to filter out — each
+     * tile carries its own <dt> labels, which is exactly what makes it readable
+     * at 340px.
      */
     function dataRows(element) {
         return [...element.shadowRoot.querySelectorAll('.dbt-tile')];
     }
 
-    /** The five value cells of a tile, in template order, as text. */
+    /** The three value cells of a tile, in template order, as text. */
     function valueCells(row) {
         return [...row.querySelectorAll('.dbt-c')].map((cell) =>
             cell.textContent.trim()
@@ -185,27 +199,35 @@ describe('c-disposition-buyer-timeline', () => {
         expect(element.shadowRoot.querySelector('lightning-card')).not.toBeNull();
 
         // 🔴 ...but the card says nothing about the sale yet. No tiles, no empty
-        // state, and NO "(0)" in the title: "Buyer Activity Timeline (0)" would
+        // state, and NO "(0)" in the title: "Broker Activity Timeline (0)" would
         // state, in the same words it uses for a genuinely empty sale, that no
-        // buyer has been engaged — before anything is known.
+        // NDA has been raised — before anything is known.
         expect(dataRows(element).length).toBe(0);
         expect(element.shadowRoot.querySelector('.dbt-empty')).toBeNull();
         expect(element.shadowRoot.querySelector('.dbt-error')).toBeNull();
-        expect(title(element)).toBe('Buyer Activity Timeline');
+        expect(title(element)).toBe('Broker Activity Timeline');
         // No spinner either — a spinner is the only element on this card capable
         // of hanging forever if the wire never emits.
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
     });
 
-    it('HEADER: the card carries a title and an icon once the wire answers', async () => {
+    it('HEADER: the card carries the Broker Activity Timeline title and a contract icon once the wire answers', async () => {
         const element = createComponent();
 
         getTimeline.emit(TIMELINE);
         await Promise.resolve();
 
         const card = element.shadowRoot.querySelector('lightning-card');
-        expect(card.iconName).toBe('standard:buyer_group');
-        expect(title(element)).toBe('Buyer Activity Timeline (4)');
+        // 🔴 NOT `standard:buyer_group`. The icon moved with the subject of the
+        // card; a buyer-group icon over a list of NDAs is the visual half of the
+        // claim the retarget removed.
+        expect(card.iconName).toBe('standard:contract');
+        // 🔴 EXACT MATCH, AND THE COUNT IS A COUNT OF NDAs. The fixture holds
+        // FOUR NDAs naming just TWO distinct brokers ("Derek Simmons" x3 and the
+        // no-broker placeholder), so a future "group by broker" would render (2)
+        // here and fail. That is the point: the title names the counterparty, it
+        // does not promise a per-broker rollup.
+        expect(title(element)).toBe('Broker Activity Timeline (4)');
     });
 
     it('EMPTY BRANCH: an empty list renders an empty state, not an error', async () => {
@@ -219,46 +241,66 @@ describe('c-disposition-buyer-timeline', () => {
         expect(element.shadowRoot.querySelector('.dbt-error')).toBeNull();
         expect(dataRows(element).length).toBe(0);
 
-        // The empty state is a STATUS, not an alert: no buyer having signed an
-        // NDA yet is the ordinary early state of a disposition, not a problem.
+        // The empty state is a STATUS, not an alert: no NDA having been raised
+        // yet is the ordinary early state of a disposition, not a problem.
         expect(empty.getAttribute('role')).toBe('status');
         expect(element.shadowRoot.querySelector('[role="alert"]')).toBeNull();
 
         // An icon AND the explanatory line — the UAT complaint was that this
         // state was a bare grey sentence with no structure. The wording's INTENT
-        // is preserved: rows appear as buyers are engaged.
+        // is preserved: rows appear as NDAs are raised.
         expect(
             empty.querySelector('lightning-icon').iconName
         ).toBe('utility:groups');
         expect(empty.querySelector('.dbt-empty-text').textContent.trim()).toBe(
-            'No buyer NDAs yet'
+            'No NDAs yet'
         );
         expect(empty.querySelector('.dbt-empty-sub').textContent).toContain(
-            'as buyers are engaged on this disposition'
+            'as NDAs are raised on this disposition'
         );
     });
 
-    it('DATA BRANCH: one row per buyer, in the order the server returned', async () => {
+    it('🔴 DATA BRANCH: one row per NDA, headed by its NUMBER, in the order the server returned', async () => {
         const element = createComponent();
 
         getTimeline.emit(TIMELINE);
         await Promise.resolve();
 
-        const names = [...element.shadowRoot.querySelectorAll('.dbt-buyer')].map((el) =>
+        const names = [...element.shadowRoot.querySelectorAll('.dbt-nda')].map((el) =>
             el.textContent.trim()
         );
-        expect(names).toEqual([
-            'Dana Reyes',
-            'Priya Raman',
-            'Marcus Bell',
-            'Toby Okonkwo'
-        ]);
+        expect(names).toEqual(['NDA-0101', 'NDA-0102', 'NDA-0103', 'NDA-0104']);
         // Declined is last, and it is last because the SERVER put it last — the
         // component does not sort. Reordering the payload would reorder this.
-        expect(names[names.length - 1]).toBe('Toby Okonkwo');
+        expect(names[names.length - 1]).toBe('NDA-0104');
     });
 
-    it('DATA BRANCH: a complete row shows all three dates and both durations', async () => {
+    it('🔴 DATA BRANCH: the broker is the SUBTITLE, and it is allowed to repeat', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        const brokers = [...element.shadowRoot.querySelectorAll('.dbt-broker')].map(
+            (el) => el.textContent.trim()
+        );
+        // 🔴 THE SAME NAME ON THREE ROWS IS CORRECT HERE AND IS NOT THE DEFECT THE
+        // DELETED "first offer" COLUMN WOULD HAVE BEEN. There is genuinely ONE
+        // appointed broker per disposition, so repeating it is the data being
+        // true. It sits as a subtitle rather than as the heading precisely so the
+        // repetition reads as context, not as a per-row identity claim.
+        expect(brokers).toEqual([
+            'Derek Simmons',
+            'Derek Simmons',
+            'Derek Simmons',
+            // A pre-2026-08-21 NDA has no broker lookup and no backfill exists —
+            // the service resolves it to a fixed string rather than to blank,
+            // because a blank cell reads as a rendering failure.
+            'No broker recorded'
+        ]);
+    });
+
+    it('DATA BRANCH: a complete row shows both dates and the duration', async () => {
         const element = createComponent();
 
         getTimeline.emit(TIMELINE);
@@ -267,9 +309,7 @@ describe('c-disposition-buyer-timeline', () => {
         expect(valueCells(dataRows(element)[0])).toEqual([
             'Mar 2, 2026',
             'Mar 9, 2026',
-            'Mar 24, 2026',
-            '7 days',
-            '15 days'
+            '7 days'
         ]);
     });
 
@@ -282,8 +322,6 @@ describe('c-disposition-buyer-timeline', () => {
         expect(valueCells(dataRows(element)[1])).toEqual([
             EM_DASH,
             EM_DASH,
-            EM_DASH,
-            EM_DASH,
             EM_DASH
         ]);
         // It is ACTIVE, so it must not be styled or announced as terminated.
@@ -292,20 +330,14 @@ describe('c-disposition-buyer-timeline', () => {
         );
     });
 
-    it('🔴 DECLINED: em-dashes in ALL FIVE value columns, including the retained signed date', async () => {
+    it('🔴 DECLINED: em-dashes in ALL THREE value columns, including the retained signed date', async () => {
         const element = createComponent();
 
         getTimeline.emit(TIMELINE);
         await Promise.resolve();
 
         const declinedRow = dataRows(element)[3];
-        expect(valueCells(declinedRow)).toEqual([
-            EM_DASH,
-            EM_DASH,
-            EM_DASH,
-            EM_DASH,
-            EM_DASH
-        ]);
+        expect(valueCells(declinedRow)).toEqual([EM_DASH, EM_DASH, EM_DASH]);
         // The payload carried a real 2026-02-14 signature date and a real
         // 6-day duration. Neither may appear anywhere in the row.
         expect(declinedRow.textContent).not.toContain('Feb 14');
@@ -326,9 +358,10 @@ describe('c-disposition-buyer-timeline', () => {
         expect(badge).not.toBeNull();
         expect(badge.textContent.trim()).toBe('Declined');
 
-        // 2. Accessible name for the whole row group.
+        // 2. Accessible name for the whole row group. It names the NDA now — it
+        //    used to name the buyer, and there is no buyer to name.
         expect(declinedRow.getAttribute('role')).toBe('group');
-        expect(declinedRow.getAttribute('aria-label')).toContain('Toby Okonkwo');
+        expect(declinedRow.getAttribute('aria-label')).toContain('NDA-0104');
         expect(declinedRow.getAttribute('aria-label')).toContain('declined');
 
         // 3. Colour/style is reinforcement only — present, but never the sole signal.
@@ -343,9 +376,8 @@ describe('c-disposition-buyer-timeline', () => {
 
         const anomalyRow = dataRows(element)[2];
         const cells = valueCells(anomalyRow);
-        // Columns 4 and 5 are the two durations. Never a negative, never a number.
-        expect(cells[3]).toBe(EM_DASH);
-        expect(cells[4]).toBe(EM_DASH);
+        // The third cell is the duration. Never a negative, never a number.
+        expect(cells[2]).toBe(EM_DASH);
         expect(anomalyRow.textContent).not.toContain('-4');
 
         const flag = anomalyRow.querySelector('.dbt-badge--anomaly');
@@ -365,15 +397,21 @@ describe('c-disposition-buyer-timeline', () => {
     it('DURATION: 1 renders singular, so the card never says "1 days"', async () => {
         const element = createComponent();
 
-        getTimeline.emit([{ ...COMPLETE_ROW, daysToRelease: 1, daysToRespond: 0 }]);
+        getTimeline.emit([{ ...COMPLETE_ROW, daysToRelease: 1 }]);
         await Promise.resolve();
 
-        const cells = valueCells(dataRows(element)[0]);
-        expect(cells[3]).toBe('1 day');
-        // 🔴 ZERO IS A REAL, MEANINGFUL DURATION (same-day) AND MUST NOT FALL
-        // INTO THE EM-DASH BRANCH. A truthiness check instead of an explicit
-        // null/undefined test is exactly how that regression happens.
-        expect(cells[4]).toBe('0 days');
+        expect(valueCells(dataRows(element)[0])[2]).toBe('1 day');
+    });
+
+    it('🔴 DURATION: ZERO is a real duration and must not fall into the em-dash branch', async () => {
+        const element = createComponent();
+
+        getTimeline.emit([{ ...COMPLETE_ROW, daysToRelease: 0 }]);
+        await Promise.resolve();
+
+        // Same-day release is meaningful. A truthiness check instead of an
+        // explicit null/undefined test is exactly how that regression happens.
+        expect(valueCells(dataRows(element)[0])[2]).toBe('0 days');
     });
 
     it('DATE PARSING: an ISO date renders as the same calendar day, not UTC-shifted', async () => {
@@ -400,9 +438,97 @@ describe('c-disposition-buyer-timeline', () => {
         // recentOpportunities / renewalList / competingBrokerSubmissions.
         expect(alert.classList.contains('lv-error')).toBe(true);
         // An empty timeline would be a confident wrong answer. Neither the tiles
-        // nor the "no buyers yet" empty state may appear on the error branch.
+        // nor the "no NDAs yet" empty state may appear on the error branch.
         expect(dataRows(element).length).toBe(0);
         expect(element.shadowRoot.querySelector('.dbt-empty')).toBeNull();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-OFFER / T-NO-BUYER — THE DELIBERATE ABSENCE PIN (2026-08-21)
+    //
+    // The per-buyer and first-offer assertions were DELETED. This is the single
+    // pin standing between the repo and their return, and it runs against the
+    // FULL four-row fixture so it cannot pass merely because nothing rendered.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-OFFER: no buyer identity and no offer column anywhere — the removal must not come back', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        // Guard the guard: four tiles genuinely rendered, so every absence below
+        // is a real absence rather than an empty component.
+        expect(dataRows(element).length).toBe(4);
+
+        // 1. THE OLD SELECTOR. `.dbt-buyer` was the tile heading's class.
+        expect(element.shadowRoot.querySelector('.dbt-buyer')).toBeNull();
+
+        // 2. THE COLUMN COUNT. Five dt/dd pairs was the old shape; three is the
+        //    new one. A re-added column shows up here before it shows up
+        //    anywhere else.
+        dataRows(element).forEach((tile) => {
+            expect(tile.querySelectorAll('dt').length).toBe(3);
+            expect(tile.querySelectorAll('dd').length).toBe(3);
+        });
+
+        // 3. 🔴 THE RENDERED WORDS. A re-added surface usually arrives under a new
+        //    class name, so the selector assertions above would stay green while
+        //    a "First offer" label sat on every tile. These are the assertions
+        //    that catch that.
+        const text = element.shadowRoot.textContent.toLowerCase();
+        expect(text).not.toContain('first offer');
+        expect(text).not.toContain('days to respond');
+        // "buyer" must not appear as a rendered word at all — not in the title,
+        // not in a label, not in the empty state. (It could once also have
+        // appeared in the intro line; that line was removed on 2026-08-21 — see
+        // T-NO-PROSE below.)
+        expect(text).not.toContain('buyer');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 🔴 T-NO-PROSE — THE DELIBERATE ABSENCE PIN (2026-08-21 UAT prose removal)
+    //
+    // The intro line above the tile list — "Every NDA raised on this
+    // disposition, in order. NDAs that were declined are kept as a record and
+    // shown last." — was removed at the user's request. Nothing in this file
+    // asserted it, so its deletion left nothing to fail if it returns.
+    //
+    // 🔴 THE EMPTY STATE'S SUB-LINE WAS **KEPT**, and this pin is deliberately
+    // scoped so it does not fight the EMPTY BRANCH test that asserts it
+    // positively. The user kept empty states explicitly — they distinguish empty
+    // from loading from broken. Do not widen this pin to "no explanatory copy
+    // anywhere" without re-reading that decision.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    it('🔴 T-NO-PROSE: no intro line above the tile list — the removal must not come back', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        // Guard the guard: four tiles genuinely rendered.
+        expect(dataRows(element).length).toBe(4);
+
+        // 1. THE OLD SELECTOR.
+        expect(element.shadowRoot.querySelector('.dbt-intro')).toBeNull();
+
+        // 2. 🔴 THE RENDERED WORDS — a re-added line usually arrives under a new
+        //    class name, so the selector alone would stay green.
+        const words = element.shadowRoot.textContent.toLowerCase();
+        expect(words).not.toContain('every nda raised on this disposition');
+        expect(words).not.toContain('kept as a record and shown last');
+
+        // 3. 🔴 NO DANGLING aria-describedby. The paragraph carried `id="dbt-intro"`
+        //    and the list pointed at it; an aria-describedby naming a removed
+        //    element promises a description that resolves to nothing, which is
+        //    strictly worse than having none. This catches "deleted the <p>, left
+        //    the attribute".
+        const list = element.shadowRoot.querySelector('.dbt-list');
+        expect(list.getAttribute('aria-describedby')).toBeNull();
+        // The list's own accessible NAME is unaffected and must stay — it has to
+        // keep matching the card title (see T-NARROW).
+        expect(list.getAttribute('aria-label')).toBe('Broker activity timeline');
     });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -432,7 +558,10 @@ describe('c-disposition-buyer-timeline', () => {
         const list = element.shadowRoot.querySelector('.dbt-list');
         expect(list).not.toBeNull();
         expect(list.getAttribute('role')).toBe('list');
-        expect(list.getAttribute('aria-label')).toBe('Buyer activity timeline');
+        // Renamed with the card on 2026-08-21. It must keep MATCHING the card
+        // title — a list announced under a different name than the card wrapping
+        // it reads to a screen-reader user as a second, unrelated region.
+        expect(list.getAttribute('aria-label')).toBe('Broker activity timeline');
     });
 
     // T-LABELS — proves the old <th scope="col"> semantics were REPLACED, not
@@ -451,16 +580,8 @@ describe('c-disposition-buyer-timeline', () => {
         expect(labels).toEqual([
             'NDA signed',
             'Materials released',
-            'First offer',
-            'Days to release',
-            'Days to respond'
+            'Days to release'
         ]);
-        // ...on EVERY tile, not just the first — that is the whole point of
-        // dropping the shared heading row.
-        dataRows(element).forEach((tile) => {
-            expect(tile.querySelectorAll('dt').length).toBe(5);
-            expect(tile.querySelectorAll('dd').length).toBe(5);
-        });
     });
 
     // T-RAIL — the milestone marker is DECORATION and must be derived from the
@@ -478,28 +599,21 @@ describe('c-disposition-buyer-timeline', () => {
                 dt.classList.contains('dbt-step--done') ? 'done' : 'pending'
             );
 
-        // COMPLETE_ROW — all three dates present.
-        expect(stepState(dataRows(element)[0])).toEqual(['done', 'done', 'done']);
+        // COMPLETE_ROW — both dates present.
+        expect(stepState(dataRows(element)[0])).toEqual(['done', 'done']);
         // IN_FLIGHT_ROW — nothing recorded yet.
-        expect(stepState(dataRows(element)[1])).toEqual([
-            'pending',
-            'pending',
-            'pending'
-        ]);
+        expect(stepState(dataRows(element)[1])).toEqual(['pending', 'pending']);
         // 🔴 DECLINED_ROW — carries a RETAINED ndaSignedDate in the payload. The
         // cell is em-dashed, so the marker must be pending too.
-        expect(stepState(dataRows(element)[3])).toEqual([
-            'pending',
-            'pending',
-            'pending'
-        ]);
+        expect(stepState(dataRows(element)[3])).toEqual(['pending', 'pending']);
 
-        // The connector is suppressed below the LAST milestone only.
+        // The connector is suppressed below the LAST milestone only — which is
+        // now "Materials released", not "First offer".
         const ends = [
             ...dataRows(element)[0].querySelectorAll('.dbt-step--end')
         ];
         expect(ends.length).toBe(1);
-        expect(ends[0].textContent.trim()).toBe('First offer');
+        expect(ends[0].textContent.trim()).toBe('Materials released');
     });
 
     // T-CSS — the stylesheet pin, and it is deliberately a SOURCE-TEXT assertion
@@ -544,6 +658,11 @@ describe('c-disposition-buyer-timeline', () => {
         // narrower than 288px — invisible at desktop width, and the ONLY place
         // it shows is the sidebar this rework exists for.
         expect(CSS_SOURCE).toMatch(/minmax\(\s*min\(\s*18rem\s*,\s*100%\s*\)/);
+
+        // The broker subtitle, added 2026-08-21, must shrink like everything
+        // else on the tile — it is the longest free-text value on the card now
+        // that the buyer name is gone.
+        expect(CSS_SOURCE).toMatch(/\.dbt-broker\s*\{[^}]*min-width\s*:\s*0/);
     });
 
     it('is accessible', async () => {

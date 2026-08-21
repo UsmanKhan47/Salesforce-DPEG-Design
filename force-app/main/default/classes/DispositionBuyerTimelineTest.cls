@@ -1,13 +1,44 @@
 /**
- * @description Tests the buyer activity timeline read path end to end —
+ * @description Tests the read path behind the card titled "Broker Activity Timeline" end to end —
  * `DispositionBuyerTimelineController` -> `DispositionBuyerTimelineService` ->
- * `NdaSelector.selectBuyerTimelineByDispositionId` + `DispositionOfferSelector.selectEarliestByBuyerIds`
- * (`agent-output/disposition-tranche-2-requirements.md` §3 D6.3, added 2026-08-20).
+ * `NdaSelector.selectBuyerTimelineByDispositionId`
+ * (`agent-output/disposition-tranche-2-requirements.md` §3 D6.3, added 2026-08-20;
+ * RETARGETED 2026-08-21).
+ *
+ * ⚠ THE API NAMES SAY "BUYER", THE CARD SAYS "BROKER", AND A ROW IS AN NDA — all three disagree on
+ * purpose (`DispositionBuyerTimelineService`'s header carries the argument: a rename is a FlexiPage
+ * edit plus a destructive Apex delete, so only the user-visible strings changed). Nothing in THIS
+ * class asserts on the title — it is a server-side suite and the title lives in the LWC, pinned by
+ * `lwc/dispositionBuyerTimeline/__tests__` — so a re-titling does not and should not touch it.
+ * 🔴 What this suite DOES pin against the title is the row shape: **one element per NDA**, with the
+ * SAME broker name repeating across a sale's rows. That repetition is correct — one appointed
+ * broker per disposition — and any future "group by broker" would break these tests, which is the
+ * intended outcome: grouping would collapse a multi-NDA sale to one row and delete the timeline.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 WHAT THE 2026-08-21 RETARGET DELETED FROM THIS CLASS, AND WHY IT IS RECORDED HERE
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * DPEG communicates only with the appointed listing broker; buyers sit behind them and are not
+ * tracked. The card became one row per NDA, labelled by the NDA's NUMBER with its BROKER beneath.
+ * SIX tests were DELETED rather than weakened, all of them about the "first offer" column:
+ *   `offerOnAnotherDisposition_isNotCounted`, `severalOffersByOneBuyer_takesTheEarliest`,
+ *   `undatedOffer_doesNotDisplaceTheDatedOne`, `twoOffersOnTheSameDay_resolveDeterministically`,
+ *   `offerBeforeMaterialsRelease_suppressesTheResponseDurationAndFlags`, and
+ *   `selectEarliestByBuyerIds_withNullDisposition_returnsEmpty`.
+ * They were good tests. They tested a JOIN THAT NO LONGER EXISTS: with the buyer gone from the
+ * offer form, nothing links a `Disposition_Offer__c` to a specific `NDA__c`, so no attribution the
+ * card could make would be true. 🔴 THE SUBSTITUTE — the disposition's earliest offer across all
+ * NDAs — WAS REFUSED: it renders the same date on every row under a per-row label, which is a fixed
+ * lie rather than a missing value.
+ * ⚠ Their fixtures (`Offer_Date__c != NULL` beating a null sort, the `Id ASC` tie-break on a
+ * same-day pair) encode non-obvious SOQL behaviour. Recover them from git history if a per-NDA
+ * offer link is ever built; do not re-derive them.
  *
  * ═══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 THE TWO TESTS THAT MATTER MOST ARE THE LATCH TESTS. EVERYTHING ELSE IS SUPPORTING WORK.
  * ═══════════════════════════════════════════════════════════════════════════════════════════
- * The whole feature exists in the shadow of one trap with two halves:
+ * The whole feature exists in the shadow of one trap with two halves, and the retarget did NOT
+ * touch either half:
  *
  *   HALF 1 — `NDA_Signed__c` LATCHES. It is only ever CLEARED on `Declined`; it stays true through
  *            `Sent`, and it stayed true forever for any party who walked away before Workstream A3.
@@ -32,24 +63,35 @@
  * touches it for that value). Both are load-bearing for the fixtures above and are stated here so
  * nobody "cleans them up".
  *
+ * ── 🔴 DEPLOY-ORDER NOTE: `NDA__c.Broker__c` IS NEW ──
+ * It is a 2026-08-21 field owned by the admin agent and did NOT exist in `usman-dpeg` when this
+ * class was written (confirmed by `sf sobject describe`). Until it deploys, every test here that
+ * inserts an `NDA__c` carrying a broker fails at RUNTIME with `DmlException: Operation failed due to
+ * fields being inaccessible` or `QueryException: No such column` — neither of which means what it
+ * says, and neither of which is a defect in this class. See the header of
+ * `.claude/agent-memory-local/salesforce-developer/dryrun-with-undeployed-dependencies.md`.
+ *
  * ── BULK ──
  * ⚠ `.claude/rules/bulk-test-rule.md`'s 251-record mandate does NOT attach to this class, and that
  * is an argued position rather than an omission: nothing here is a trigger, a batch, a queueable or
  * a DML-performing service — it is a READ invoked once per page view. The mandate DOES apply in full
  * to this tranche's write paths, and the 251-record tests live where they belong, in
  * `NdaBuyerStampServiceTest` and `DispositionOfferBuyerStampServiceTest`.
- * 🔴 THE PROPERTY THAT MATTERS HERE IS A **CONSTANT QUERY COUNT ACROSS MANY BUYERS**, and it IS
- * asserted (`manyBuyers_costsExactlyTwoQueries`). A per-buyer offer read would be SOQL in a loop on
- * a page render — the specific defect `selectEarliestByBuyerIds`'s ApexDoc was written to prevent —
- * and a row count alone would never catch it.
+ * 🔴 THE PROPERTY THAT MATTERS HERE IS A **CONSTANT QUERY COUNT ACROSS MANY NDAs**, and it IS
+ * asserted (`manyNdas_costsExactlyOneQuery`). The broker's name is TRAVERSED in the same query; a
+ * per-NDA Contact read would be SOQL in a loop on a page render, and a row count alone would never
+ * catch it. ⚠ THE BUDGET DROPPED FROM TWO QUERIES TO ONE when the offer read was deleted — the
+ * number is asserted, so a re-added read fails here first.
  *
- * ── THE CROSS-PERMISSION-SET PIN (added 2026-08-20, re-review S3) ──
- * `NdaSelector.selectBuyerTimelineByDispositionId` selects `Buyer__r.Name`, and `WITH USER_MODE`
+ * ── THE CROSS-PERMISSION-SET PIN (added 2026-08-20, re-review S3; retargeted 2026-08-21) ──
+ * `NdaSelector.selectBuyerTimelineByDispositionId` traverses a Contact lookup, and `WITH USER_MODE`
  * enforces OBJECT read on the traversed `Contact`. NEITHER disposition permission set grants it —
  * it arrives from `DPEG_Contact_View` / `DPEG_Contact_Edit`, separate members of the same permission
- * set GROUPS. Until this class carried `contactReadDenied_theBuyerTraversalThrows` there was no
+ * set GROUPS. Until this class carried `contactReadDenied_theBrokerTraversalThrows` there was no
  * `System.runAs` anywhere in the `DispositionBuyerTimeline*` classes, so a future PSG edit that
  * dropped the Contact member would break the card in PRODUCTION with nothing going red first.
+ * ⚠ THE TRAVERSAL MOVED FROM `Buyer__r.Name` TO `Broker__r.Name`. The gate is identical; only the
+ * lookup changed.
  *
  * @see force-app/main/default/classes/DispositionDealSummaryServiceTest.cls (`userDeniedAccessTo`,
  *      the dynamic-permission-set technique this borrows)
@@ -63,7 +105,6 @@ private class DispositionBuyerTimelineTest {
     private static final String STATUS_SIGNED = 'Signed';
     private static final String STATUS_SENT = 'Sent';
     private static final String STATUS_DECLINED = 'Declined';
-    private static final String ROLE_BUYER = 'Buyer';
     private static final String ROLE_BROKER = 'Introducing Broker';
 
     /**
@@ -72,25 +113,37 @@ private class DispositionBuyerTimelineTest {
      * ⚠ Created at `Disposition Readiness` (the factory default) and NEVER advanced by `update`.
      * `All_NDAs_Signed_Before_Progression` blocks a stage change into `Release Materials` and beyond
      * unless every non-Declined NDA is Signed, and none of these tests needs a stage at all — the
-     * timeline reads NDAs and offers, not the parent's stage.
+     * timeline reads NDAs, not the parent's stage.
      */
     private static Disposition__c freshDisposition() {
         return TestDataFactory.createDisposition(null, true);
     }
 
     /**
-     * A buyer-role NDA on a disposition, unsaved, with its factory `Counterparty_Name__c` replaced
-     * by a caller-supplied literal so a name assertion can only pass on purpose.
+     * A buyer-role NDA on a disposition, unsaved, optionally carrying a broker Contact.
+     *
+     * ⚠ `createBrokerContact` IS USED RATHER THAN `createContact`, DELIBERATELY. Every `Broker__c`
+     * lookup in this org carries an ACTIVE, non-optional lookup filter on the `Contact.Broker`
+     * record type, and DML — unlike SOQL — enforces it. A plain Contact would be refused at insert
+     * with `FIELD_FILTER_VALIDATION_EXCEPTION`, which reads like a defect in the service.
+     *
+     * @param dispositionId  the parent sale
+     * @param brokerContactId the appointed broker, or null for a pre-2026-08-21 row
      */
-    private static NDA__c buyerNda(Id dispositionId, String counterpartyName) {
+    private static NDA__c timelineNda(Id dispositionId, Id brokerContactId) {
         NDA__c nda = TestDataFactory.createDispositionNda(dispositionId, false);
-        nda.Counterparty_Name__c = counterpartyName;
+        nda.Broker__c = brokerContactId;
         return nda;
     }
 
+    /** A broker Contact, inserted. */
+    private static Contact broker() {
+        return TestDataFactory.createBrokerContact(null, true);
+    }
+
     /** The single row for a disposition, asserted to exist. */
-    private static DispositionBuyerTimelineService.BuyerRow onlyRow(Id dispositionId) {
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+    private static DispositionBuyerTimelineService.NdaRow onlyRow(Id dispositionId) {
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineService.getTimeline(dispositionId);
         Assert.areEqual(1, rows.size(), 'FIXTURE PRECONDITION: exactly one timeline row expected');
         return rows[0];
@@ -108,7 +161,7 @@ private class DispositionBuyerTimelineTest {
     @isTest
     static void sentNdaWithLatchedSignedFlag_showsNoSignedDate() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Latched Larry');
+        NDA__c nda = timelineNda(d.Id, broker().Id);
         nda.Status__c = STATUS_SENT;
         // The latch: true while the status says otherwise. The flow does not touch the checkbox for
         // 'Sent', so this value survives the save — see the class header.
@@ -117,7 +170,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.isNull(row.ndaSignedDate,
@@ -131,12 +184,13 @@ private class DispositionBuyerTimelineTest {
      * 🔴 HALF 2 OF THE TRAP, AND THE SHARPER HALF. A DECLINED party who really did sign earlier
      * retains a non-null `Date_Signed__c` forever — `NDA_Signed_Status_Sync` never clears it. The
      * timeline must show NO dates at all for them: not the signature date, not the materials date,
-     * and neither duration.
+     * and not the duration.
      */
     @isTest
     static void declinedNdaWithRetainedSignedDate_showsNoDatesAtAll() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Walked-Away Wanda');
+        Contact appointed = broker();
+        NDA__c nda = timelineNda(d.Id, appointed.Id);
         nda.Status__c = STATUS_DECLINED;
         // The retained date. This is the real production shape, not a contrivance.
         nda.Date_Signed__c = Date.newInstance(2026, 2, 14);
@@ -144,7 +198,7 @@ private class DispositionBuyerTimelineTest {
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.isTrue(row.isDeclined, 'The row must be flagged terminated');
@@ -152,23 +206,23 @@ private class DispositionBuyerTimelineTest {
             '🔴 The RETAINED signature date must never cross the boundary — it is exactly the '
             + 'misleading value this whole feature exists to suppress');
         Assert.isNull(row.materialsReleasedDate, 'nor the materials date');
-        Assert.isNull(row.firstOfferDate, 'nor a first offer');
-        Assert.isNull(row.daysToRelease, 'nor either duration');
-        Assert.isNull(row.daysToRespond, 'nor either duration');
-        Assert.areEqual('Walked-Away Wanda', row.buyerName,
-            'but the buyer IS named — a declined party is audit evidence and is never hidden');
+        Assert.isNull(row.daysToRelease, 'nor the duration');
+        Assert.isTrue(String.isNotBlank(row.ndaName),
+            'but the NDA IS named — a declined party is audit evidence and is never hidden');
+        Contact expected = [SELECT Name FROM Contact WHERE Id = :appointed.Id LIMIT 1];
+        Assert.areEqual(expected.Name, row.brokerName, 'and its broker is still shown');
     }
 
     /** A declined party APPEARS. Hiding them would make this card disagree with the related list. */
     @isTest
     static void declinedParty_isIncludedNotHidden() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Walked-Away Wanda');
+        NDA__c nda = timelineNda(d.Id, broker().Id);
         nda.Status__c = STATUS_DECLINED;
         insert nda;
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Test.stopTest();
 
@@ -181,71 +235,77 @@ private class DispositionBuyerTimelineTest {
     @isTest
     static void declinedParties_sortAfterActiveOnes() {
         Disposition__c d = freshDisposition();
+        Contact appointed = broker();
         // Deliberately created declined-FIRST so a passing assertion cannot be creation order.
-        NDA__c declined = buyerNda(d.Id, 'Aaron Declined');
+        NDA__c declined = timelineNda(d.Id, appointed.Id);
         declined.Status__c = STATUS_DECLINED;
-        NDA__c active = buyerNda(d.Id, 'Zoe Active');
+        NDA__c active = timelineNda(d.Id, appointed.Id);
         active.Status__c = STATUS_SENT;
         insert new List<NDA__c>{ declined, active };
 
+        Map<Id, NDA__c> named = new Map<Id, NDA__c>(
+            [SELECT Id, Name FROM NDA__c WHERE Disposition__c = :d.Id]
+        );
+
         Test.startTest();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Test.stopTest();
 
         Assert.areEqual(2, rows.size(), 'Both parties appear');
-        Assert.areEqual('Zoe Active', rows[0].buyerName,
-            'The ACTIVE party comes first even though the declined one was created first — and '
-            + 'even though its name sorts later alphabetically, which rules out a name sort');
-        Assert.areEqual('Aaron Declined', rows[1].buyerName, 'and the declined one is last');
+        // ⚠ ASSERTED ON THE **NDA Id**, NOT ON THE AUTONUMBER STRING. The AutoNumber increments
+        // org-wide and is not predictable from a test, and it happens to sort in creation order —
+        // so a name-based assertion here could pass for the wrong reason.
+        Assert.areEqual(active.Id, rows[0].ndaId,
+            'The ACTIVE party comes first even though the declined one was created first');
+        Assert.areEqual(declined.Id, rows[1].ndaId, 'and the declined one is last');
+        Assert.areEqual(named.get(active.Id).Name, rows[0].ndaName,
+            'and the row carries its own NDA number');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // The happy path and the durations
+    // The happy path and the duration
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** The complete journey: three dates and both durations, computed from the signed gate. */
+    /** The complete journey: both dates and the duration, computed from the signed gate. */
     @isTest
-    static void signedNdaWithMaterialsAndOffer_computesBothDurations() {
+    static void signedNdaWithMaterials_computesTheDuration() {
         Disposition__c d = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = buyerNda(d.Id, 'IGNORED - THE LOOKUP WINS');
-        nda.Buyer__c = buyer.Id;
+        Contact appointed = broker();
+        NDA__c nda = timelineNda(d.Id, appointed.Id);
         nda.Status__c = STATUS_SIGNED;
         nda.Date_Signed__c = Date.newInstance(2026, 3, 2);
         nda.Materials_Released_Date__c = Date.newInstance(2026, 3, 9);
         insert nda;
 
-        Disposition_Offer__c offer = TestDataFactory.createDispositionOffer(d.Id, false);
-        offer.Buyer__c = buyer.Id;
-        offer.Offer_Date__c = Date.newInstance(2026, 3, 24);
-        insert offer;
+        Contact expected = [SELECT Name FROM Contact WHERE Id = :appointed.Id LIMIT 1];
+        NDA__c saved = [SELECT Name FROM NDA__c WHERE Id = :nda.Id LIMIT 1];
 
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.areEqual(Date.newInstance(2026, 3, 2), row.ndaSignedDate, 'signed date');
         Assert.areEqual(Date.newInstance(2026, 3, 9), row.materialsReleasedDate, 'materials date');
-        Assert.areEqual(Date.newInstance(2026, 3, 24), row.firstOfferDate, 'first offer date');
         Assert.areEqual(7, row.daysToRelease, 'Mar 2 -> Mar 9 is seven days');
-        Assert.areEqual(15, row.daysToRespond, 'Mar 9 -> Mar 24 is fifteen days');
         Assert.isFalse(row.hasDateAnomaly, 'and nothing is out of order');
-        Assert.areEqual(buyer.FirstName + ' ' + buyer.LastName, row.buyerName,
-            'The linked Contact WINS over the typed Counterparty_Name__c when both are present');
+        // 🔴 THE ROW'S IDENTITY IS THE NDA NUMBER, and its BROKER is the party shown beside it.
+        // Both replaced the buyer name on 2026-08-21.
+        Assert.areEqual(saved.Name, row.ndaName, 'The row is identified by its NDA number');
+        Assert.areEqual(expected.Name, row.brokerName, 'and labelled with the appointed broker');
     }
 
-    /** A mid-journey row: signed, nothing released. Both durations null, and NOT flagged. */
+    /** A mid-journey row: signed, nothing released. The duration is null, and NOT flagged. */
     @isTest
-    static void signedButNothingReleased_leavesDurationsNullWithoutFlagging() {
+    static void signedButNothingReleased_leavesTheDurationNullWithoutFlagging() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Mid-Journey Mo');
+        NDA__c nda = timelineNda(d.Id, broker().Id);
         nda.Status__c = STATUS_SIGNED;
         nda.Date_Signed__c = Date.newInstance(2026, 3, 2);
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.areEqual(Date.newInstance(2026, 3, 2), row.ndaSignedDate, 'the signature shows');
@@ -264,14 +324,14 @@ private class DispositionBuyerTimelineTest {
     @isTest
     static void materialsBeforeSignature_suppressesTheDurationAndFlagsTheRow() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Backwards Bob');
+        NDA__c nda = timelineNda(d.Id, broker().Id);
         nda.Status__c = STATUS_SIGNED;
         nda.Date_Signed__c = Date.newInstance(2026, 4, 10);
         nda.Materials_Released_Date__c = Date.newInstance(2026, 4, 6);
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.isNull(row.daysToRelease,
@@ -280,45 +340,18 @@ private class DispositionBuyerTimelineTest {
             'and the row must be FLAGGED, so the contradiction is visible rather than merely blank');
     }
 
-    /** An offer that pre-dates the materials release flags the SECOND duration the same way. */
-    @isTest
-    static void offerBeforeMaterialsRelease_suppressesTheResponseDurationAndFlags() {
-        Disposition__c d = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = buyerNda(d.Id, 'Eager Ellie');
-        nda.Buyer__c = buyer.Id;
-        nda.Status__c = STATUS_SIGNED;
-        nda.Date_Signed__c = Date.newInstance(2026, 5, 1);
-        nda.Materials_Released_Date__c = Date.newInstance(2026, 5, 10);
-        insert nda;
-
-        Disposition_Offer__c offer = TestDataFactory.createDispositionOffer(d.Id, false);
-        offer.Buyer__c = buyer.Id;
-        // Bid before the formal package went out — unusual but entirely real.
-        offer.Offer_Date__c = Date.newInstance(2026, 5, 4);
-        insert offer;
-
-        Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
-        Test.stopTest();
-
-        Assert.areEqual(9, row.daysToRelease, 'The FIRST duration is fine and must still compute');
-        Assert.isNull(row.daysToRespond, 'The second is negative and must be suppressed');
-        Assert.isTrue(row.hasDateAnomaly, 'and the row is flagged');
-    }
-
     /** A same-day span is ZERO, not null — zero is a real, meaningful duration. */
     @isTest
     static void materialsReleasedOnTheSigningDay_computesZeroNotNull() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Same-Day Sam');
+        NDA__c nda = timelineNda(d.Id, broker().Id);
         nda.Status__c = STATUS_SIGNED;
         nda.Date_Signed__c = Date.newInstance(2026, 6, 1);
         nda.Materials_Released_Date__c = Date.newInstance(2026, 6, 1);
         insert nda;
 
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
         Test.stopTest();
 
         Assert.areEqual(0, row.daysToRelease,
@@ -328,207 +361,84 @@ private class DispositionBuyerTimelineTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Scoping — role, disposition, and the offer tie-break
+    // Scoping and identity
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * 🔴 AN `Introducing Broker` NDA IS NOT A BUYER AND MUST NOT APPEAR. Every column on this card is
-     * a statement about a prospective purchaser; a broker row would also inflate the buyer count the
-     * analyst reads off it.
+     * 🔴 AN `Introducing Broker` NDA IS NOT ADMITTED, AND THE RETARGET DELIBERATELY DID NOT CHANGE
+     * THAT. The card stopped labelling rows with a buyer; it did not change WHICH rows it shows.
+     * Admitting broker-role NDAs would silently change the count the analyst reads off the card —
+     * and it would be easy to do by accident now that the word "buyer" has left the UI.
      */
     @isTest
-    static void introducingBrokerNda_isExcluded() {
+    static void introducingBrokerRoleNda_isStillExcluded() {
         Disposition__c d = freshDisposition();
-        NDA__c buyerRow = buyerNda(d.Id, 'Real Buyer');
-        NDA__c brokerRow = buyerNda(d.Id, 'Introducing Broker Bob');
-        brokerRow.Party_Role__c = ROLE_BROKER;
-        insert new List<NDA__c>{ buyerRow, brokerRow };
+        Contact appointed = broker();
+        NDA__c buyerRoleRow = timelineNda(d.Id, appointed.Id);
+        NDA__c brokerRoleRow = timelineNda(d.Id, appointed.Id);
+        brokerRoleRow.Party_Role__c = ROLE_BROKER;
+        insert new List<NDA__c>{ buyerRoleRow, brokerRoleRow };
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Test.stopTest();
 
-        Assert.areEqual(1, rows.size(), 'Only the BUYER-role NDA may produce a row');
-        Assert.areEqual('Real Buyer', rows[0].buyerName, 'and it is the buyer, not the broker');
+        Assert.areEqual(1, rows.size(),
+            'Only the BUYER-role NDA may produce a row. If this ever returns 2, the population was '
+            + 'widened — which is a decision that needs making explicitly, not a tidy-up.');
+        Assert.areEqual(buyerRoleRow.Id, rows[0].ndaId, 'and it is the buy-side one');
     }
 
-    /**
-     * 🔴 THE SAME BUYER'S OFFER ON A **DIFFERENT** DISPOSITION MUST NOT LEAK IN. Without the
-     * `dispositionId` term in `selectEarliestByBuyerIds`, another sale's earlier bid would be
-     * reported as this sale's first offer — a wrong date with nothing on the page to contradict it.
-     */
+    /** NDAs on another sale must not leak in. */
     @isTest
-    static void offerOnAnotherDisposition_isNotCounted() {
+    static void ndasOnAnotherDisposition_areNotReturned() {
         Disposition__c thisSale = freshDisposition();
         Disposition__c otherSale = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
+        Contact appointed = broker();
 
-        NDA__c nda = buyerNda(thisSale.Id, 'Cross-Deal Chris');
-        nda.Buyer__c = buyer.Id;
-        insert nda;
-
-        // An EARLIER offer, by the same buyer, on the OTHER sale. If scoping is broken this wins.
-        Disposition_Offer__c foreign = TestDataFactory.createDispositionOffer(otherSale.Id, false);
-        foreign.Buyer__c = buyer.Id;
-        foreign.Offer_Date__c = Date.newInstance(2026, 1, 1);
-        Disposition_Offer__c own = TestDataFactory.createDispositionOffer(thisSale.Id, false);
-        own.Buyer__c = buyer.Id;
-        own.Offer_Date__c = Date.newInstance(2026, 7, 15);
-        insert new List<Disposition_Offer__c>{ foreign, own };
+        NDA__c mine = timelineNda(thisSale.Id, appointed.Id);
+        NDA__c theirs = timelineNda(otherSale.Id, appointed.Id);
+        insert new List<NDA__c>{ mine, theirs };
 
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(thisSale.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(thisSale.Id);
         Test.stopTest();
 
-        Assert.areEqual(Date.newInstance(2026, 7, 15), row.firstOfferDate,
-            'The first offer ON THIS SALE. The other sale\'s earlier bid must not leak in.');
-    }
-
-    /** Of several offers by one buyer, the EARLIEST wins. */
-    @isTest
-    static void severalOffersByOneBuyer_takesTheEarliest() {
-        Disposition__c d = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = buyerNda(d.Id, 'Repeat Bidder');
-        nda.Buyer__c = buyer.Id;
-        insert nda;
-
-        List<Disposition_Offer__c> offers =
-            TestDataFactory.createDispositionOffers(3, d.Id, false);
-        offers[0].Offer_Date__c = Date.newInstance(2026, 8, 20);
-        offers[1].Offer_Date__c = Date.newInstance(2026, 8, 4);
-        offers[2].Offer_Date__c = Date.newInstance(2026, 8, 11);
-        for (Disposition_Offer__c offer : offers) {
-            offer.Buyer__c = buyer.Id;
-        }
-        insert offers;
-
-        Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
-        Test.stopTest();
-
-        Assert.areEqual(Date.newInstance(2026, 8, 4), row.firstOfferDate,
-            'The earliest of the three, regardless of insert order');
-    }
-
-    /**
-     * 🔴 AN UNDATED OFFER MUST NOT WIN. SOQL sorts NULLS FIRST on an ASC order, so without the
-     * `Offer_Date__c != NULL` filter an undated offer would sort to the top and become "the earliest
-     * offer" — with a null date — blanking the column for a buyer who demonstrably DID bid.
-     */
-    @isTest
-    static void undatedOffer_doesNotDisplaceTheDatedOne() {
-        Disposition__c d = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = buyerNda(d.Id, 'Half-Keyed Hank');
-        nda.Buyer__c = buyer.Id;
-        insert nda;
-
-        List<Disposition_Offer__c> offers =
-            TestDataFactory.createDispositionOffers(2, d.Id, false);
-        offers[0].Offer_Date__c = null;
-        offers[1].Offer_Date__c = Date.newInstance(2026, 9, 9);
-        for (Disposition_Offer__c offer : offers) {
-            offer.Buyer__c = buyer.Id;
-        }
-        insert offers;
-
-        Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
-        Test.stopTest();
-
-        Assert.areEqual(Date.newInstance(2026, 9, 9), row.firstOfferDate,
-            'The DATED offer must win. A null sorting first would blank this column.');
-    }
-
-    /**
-     * TWO OFFERS ON THE SAME DAY — the `Id ASC` tie-break. `Offer_Date__c` is a Date, so ties are
-     * routine rather than contrived; without the second sort key the chosen row (and therefore the
-     * rendered value) is non-deterministic between renders.
-     *
-     * ⚠ Both rows carry the SAME date, so the asserted VALUE cannot distinguish them. What this
-     * test pins is DETERMINISM: repeated calls in one transaction must agree, and the value must be
-     * that shared date rather than null.
-     */
-    @isTest
-    static void twoOffersOnTheSameDay_resolveDeterministically() {
-        Disposition__c d = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = buyerNda(d.Id, 'Tie-Break Tina');
-        nda.Buyer__c = buyer.Id;
-        insert nda;
-
-        Date sameDay = Date.newInstance(2026, 10, 5);
-        List<Disposition_Offer__c> offers =
-            TestDataFactory.createDispositionOffers(2, d.Id, false);
-        for (Disposition_Offer__c offer : offers) {
-            offer.Buyer__c = buyer.Id;
-            offer.Offer_Date__c = sameDay;
-        }
-        insert offers;
-
-        Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow first = onlyRow(d.Id);
-        DispositionBuyerTimelineService.BuyerRow second = onlyRow(d.Id);
-        Test.stopTest();
-
-        Assert.areEqual(sameDay, first.firstOfferDate, 'the shared date is returned');
-        Assert.areEqual(first.firstOfferDate, second.firstOfferDate,
-            'and two reads in one transaction agree — the Id ASC tie-break is what guarantees it');
+        Assert.areEqual(mine.Id, row.ndaId, 'One sale, one NDA list');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Legacy rows — no lookup, no backfill
+    // Legacy rows — no broker lookup, no backfill
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * A LEGACY row (typed `Counterparty_Name__c`, NULL `Buyer__c`) still renders, named from the
-     * text. **There is no backfill and none is in scope** — this fallback is the entire mitigation.
+     * 🔴 A PRE-2026-08-21 NDA HAS NO `Broker__c` AND THERE IS NO BACKFILL. It must still render,
+     * named by its NDA number, with a non-blank placeholder where the broker would be.
      *
-     * ⚠ ITS FIRST-OFFER COLUMN IS PERMANENTLY BLANK, AND THAT IS ASSERTED RATHER THAN TOLERATED:
-     * with no Contact Id there is nothing to match an offer against. Matching on NAME was rejected —
-     * two buyers can share a name, and a name-matched offer would attribute one buyer's bid to
-     * another.
+     * ⚠ THE PLACEHOLDER IS THE WHOLE MITIGATION, AND A BLANK WOULD NOT DO. A blank subtitle on a
+     * tile reads as a rendering failure rather than as missing data, and this state is the MAJORITY
+     * of rows in `usman-dpeg` on the day the field ships.
      */
     @isTest
-    static void legacyNdaWithNoBuyerLookup_fallsBackToTheTypedName() {
+    static void ndaWithNoBrokerLookup_rendersThePlaceholderNotABlank() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Legacy Lorraine');
+        NDA__c nda = timelineNda(d.Id, null);
         nda.Status__c = STATUS_SIGNED;
         nda.Date_Signed__c = Date.newInstance(2026, 3, 2);
         insert nda;
 
-        // An offer exists on this sale, but it can never be attributed to a lookup-less NDA.
-        Disposition_Offer__c offer = TestDataFactory.createDispositionOffer(d.Id, false);
-        offer.Offer_Date__c = Date.newInstance(2026, 3, 20);
-        insert offer;
-
         Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
+        DispositionBuyerTimelineService.NdaRow row = onlyRow(d.Id);
         Test.stopTest();
 
-        Assert.areEqual('Legacy Lorraine', row.buyerName,
-            'The typed Counterparty_Name__c is the fallback for pre-Buyer__c rows');
-        Assert.isNull(row.firstOfferDate,
-            'and with no Contact Id there is nothing to match an offer against — matching on NAME '
-            + 'was rejected because two buyers can share one');
-    }
-
-    /** Neither a lookup nor a typed name yields a placeholder, never a blank first column. */
-    @isTest
-    static void ndaWithNeitherLookupNorTypedName_rendersAPlaceholder() {
-        Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, null);
-        insert nda;
-
-        Test.startTest();
-        DispositionBuyerTimelineService.BuyerRow row = onlyRow(d.Id);
-        Test.stopTest();
-
-        Assert.isTrue(String.isNotBlank(row.buyerName),
-            'A blank first column is indistinguishable from a rendering failure, so a placeholder '
-            + 'is used instead');
+        Assert.areEqual(DispositionBuyerTimelineService.NO_BROKER, row.brokerName,
+            'A null broker resolves to the fixed placeholder, never to blank');
+        Assert.isTrue(String.isNotBlank(row.ndaName),
+            'and the row still identifies itself — the AutoNumber is always present, which is '
+            + 'exactly why it, and not the party, is the row heading');
+        Assert.areEqual(Date.newInstance(2026, 3, 2), row.ndaSignedDate,
+            'and a missing broker suppresses nothing else on the row');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -536,114 +446,63 @@ private class DispositionBuyerTimelineTest {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * 🔴 THE CONSTANT-QUERY FALSIFIER: MANY buyers, EXACTLY TWO queries. A per-buyer offer read is
-     * the specific defect `selectEarliestByBuyerIds` was written to prevent, and only a query-count
-     * assertion catches it — every row-value assertion in this class would stay green.
+     * 🔴 THE CONSTANT-QUERY FALSIFIER: MANY NDAs, EXACTLY ONE query.
+     *
+     * ⚠ THE NUMBER CHANGED FROM 2 TO 1 ON 2026-08-21 when the offer read was deleted, and asserting
+     * the EXACT count is what makes that deletion stick: `areEqual(1, ...)` fails the moment anyone
+     * re-adds a second read, including the disposition-level "earliest offer" shortcut the service
+     * header refuses. A `<= 2` ceiling would have let it back in silently.
+     * 🔴 The broker's NAME is traversed in that one query. A per-NDA Contact read would be SOQL in a
+     * loop on a page render, and every row-value assertion in this class would stay green.
      */
     @isTest
-    static void manyBuyers_costsExactlyTwoQueries() {
+    static void manyNdas_costsExactlyOneQuery() {
         Disposition__c d = freshDisposition();
-        Integer buyerCount = 25;
-        List<Contact> buyers = TestDataFactory.createContacts(buyerCount, null, true);
+        Integer ndaCount = 25;
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(ndaCount, null, true);
 
-        List<NDA__c> ndas = TestDataFactory.createDispositionNdas(buyerCount, d.Id, false);
-        List<Disposition_Offer__c> offers =
-            TestDataFactory.createDispositionOffers(buyerCount, d.Id, false);
-        for (Integer i = 0; i < buyerCount; i++) {
-            ndas[i].Buyer__c = buyers[i].Id;
+        List<NDA__c> ndas = TestDataFactory.createDispositionNdas(ndaCount, d.Id, false);
+        for (Integer i = 0; i < ndaCount; i++) {
+            ndas[i].Broker__c = brokers[i].Id;
             ndas[i].Status__c = STATUS_SIGNED;
             ndas[i].Date_Signed__c = Date.today().addDays(-30);
             ndas[i].Materials_Released_Date__c = Date.today().addDays(-20);
-            offers[i].Buyer__c = buyers[i].Id;
-            offers[i].Offer_Date__c = Date.today().addDays(-10);
         }
         insert ndas;
-        insert offers;
 
         Test.startTest();
         Integer queriesBefore = Limits.getQueries();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineService.getTimeline(d.Id);
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Test.stopTest();
 
-        Assert.areEqual(buyerCount, rows.size(), 'One row per buyer NDA');
-        Assert.areEqual(2, queriesUsed,
-            'EXACTLY TWO queries for ' + buyerCount + ' buyers — one for the NDAs and one for ALL '
-            + 'the offers. A per-buyer offer read would be SOQL in a loop on a page render.');
-        for (DispositionBuyerTimelineService.BuyerRow row : rows) {
-            Assert.areEqual(10, row.daysToRelease, 'and every row computed its first duration');
-            Assert.areEqual(10, row.daysToRespond, 'and its second');
+        Assert.areEqual(ndaCount, rows.size(), 'One row per buyer-role NDA');
+        Assert.areEqual(1, queriesUsed,
+            'EXACTLY ONE query for ' + ndaCount + ' NDAs, with the broker names traversed inside '
+            + 'it. A second read here is either a per-NDA Contact lookup (SOQL in a loop) or the '
+            + 'disposition-level offer read the service header refuses.');
+        for (DispositionBuyerTimelineService.NdaRow row : rows) {
+            Assert.areEqual(10, row.daysToRelease, 'and every row computed its duration');
+            Assert.isTrue(String.isNotBlank(row.brokerName), 'and named its broker');
         }
     }
 
-    /**
-     * The FLOOR of that budget is ONE, not two. When no NDA carries a buyer lookup — every
-     * legacy-only disposition — the offer selector returns empty WITHOUT querying.
-     */
-    @isTest
-    static void noBuyerLookups_skipsTheOfferQueryEntirely() {
-        Disposition__c d = freshDisposition();
-        insert TestDataFactory.createDispositionNdas(3, d.Id, false);
-
-        Test.startTest();
-        Integer queriesBefore = Limits.getQueries();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
-            DispositionBuyerTimelineService.getTimeline(d.Id);
-        Integer queriesUsed = Limits.getQueries() - queriesBefore;
-        Test.stopTest();
-
-        Assert.areEqual(3, rows.size(), 'The legacy rows still render');
-        Assert.areEqual(1, queriesUsed,
-            'ONE query. With no buyer Ids to match, the offer read must be skipped entirely rather '
-            + 'than issued against an empty set.');
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
-    // Selector contracts
+    // Selector contract
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Both new selector methods are null/empty-safe and issue NO query on the guard path. */
+    /** The selector is null-safe and issues NO query on the guard path. */
     @isTest
-    static void selectors_areNullAndEmptySafeWithoutQuerying() {
+    static void selector_isNullSafeWithoutQuerying() {
         Test.startTest();
         Integer queriesBefore = Limits.getQueries();
         List<NDA__c> noNdas = NdaSelector.selectBuyerTimelineByDispositionId(null);
-        List<Disposition_Offer__c> noOffersNullSet =
-            DispositionOfferSelector.selectEarliestByBuyerIds(null, null);
-        List<Disposition_Offer__c> noOffersEmptySet =
-            DispositionOfferSelector.selectEarliestByBuyerIds(new Set<Id>(), null);
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Test.stopTest();
 
         Assert.isTrue(noNdas.isEmpty(), 'A null disposition Id yields an empty list, never null');
-        Assert.isTrue(noOffersNullSet.isEmpty(), 'and so does a null buyer set');
-        Assert.isTrue(noOffersEmptySet.isEmpty(), 'and an empty one');
-        Assert.areEqual(0, queriesUsed, 'None of the three may issue a query');
-    }
-
-    /**
-     * `selectEarliestByBuyerIds` refuses an UNSCOPED read. A null disposition returns empty rather
-     * than every offer those buyers ever made, because an unscoped answer here would be actively
-     * wrong rather than merely broad.
-     */
-    @isTest
-    static void selectEarliestByBuyerIds_withNullDisposition_returnsEmpty() {
-        Disposition__c d = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        Disposition_Offer__c offer = TestDataFactory.createDispositionOffer(d.Id, false);
-        offer.Buyer__c = buyer.Id;
-        offer.Offer_Date__c = Date.today();
-        insert offer;
-
-        Test.startTest();
-        List<Disposition_Offer__c> rows = DispositionOfferSelector.selectEarliestByBuyerIds(
-            new Set<Id>{ buyer.Id }, null
-        );
-        Test.stopTest();
-
-        Assert.isTrue(rows.isEmpty(),
-            'A null disposition must return NOTHING, not every offer this buyer ever made');
+        Assert.areEqual(0, queriesUsed, 'and it must not issue a query');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -654,18 +513,21 @@ private class DispositionBuyerTimelineTest {
     @isTest
     static void controller_returnsTheTimeline() {
         Disposition__c d = freshDisposition();
-        NDA__c nda = buyerNda(d.Id, 'Controller Carol');
+        Contact appointed = broker();
+        NDA__c nda = timelineNda(d.Id, appointed.Id);
         nda.Status__c = STATUS_SIGNED;
         nda.Date_Signed__c = Date.newInstance(2026, 3, 2);
         insert nda;
 
+        NDA__c saved = [SELECT Name FROM NDA__c WHERE Id = :nda.Id LIMIT 1];
+
         Test.startTest();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineController.getTimeline(d.Id);
         Test.stopTest();
 
         Assert.areEqual(1, rows.size(), 'One row');
-        Assert.areEqual('Controller Carol', rows[0].buyerName, 'passed through unchanged');
+        Assert.areEqual(saved.Name, rows[0].ndaName, 'passed through unchanged');
         Assert.areEqual(Date.newInstance(2026, 3, 2), rows[0].ndaSignedDate, 'dates included');
     }
 
@@ -673,7 +535,7 @@ private class DispositionBuyerTimelineTest {
     @isTest
     static void controller_withNullId_returnsEmptyList() {
         Test.startTest();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineController.getTimeline(null);
         Test.stopTest();
 
@@ -687,12 +549,12 @@ private class DispositionBuyerTimelineTest {
         Disposition__c d = freshDisposition();
 
         Test.startTest();
-        List<DispositionBuyerTimelineService.BuyerRow> rows =
+        List<DispositionBuyerTimelineService.NdaRow> rows =
             DispositionBuyerTimelineController.getTimeline(d.Id);
         Test.stopTest();
 
         Assert.isTrue(rows.isEmpty(),
-            '"No buyer has signed yet" is a normal early state, rendered as an empty state');
+            '"No NDA has been raised yet" is a normal early state, rendered as an empty state');
     }
 
     /**
@@ -728,7 +590,7 @@ private class DispositionBuyerTimelineTest {
     /** The disposition read grant every timeline persona has. Grants NO `Contact` access. */
     private static final String PERMSET_DISPOSITION_VIEW = 'DPEG_Disposition_View';
 
-    /** The SEPARATE set the `Buyer__r.Name` traversal actually depends on. */
+    /** The SEPARATE set the `Broker__r.Name` traversal actually depends on. */
     private static final String PERMSET_CONTACT_VIEW = 'DPEG_Contact_View';
 
     /**
@@ -778,7 +640,7 @@ private class DispositionBuyerTimelineTest {
         String unique = 'btlfls' + String.valueOf(DateTime.now().getTime())
             + String.valueOf(Math.abs(Crypto.getRandomInteger()));
         User persona = new User(
-            FirstName = 'Buyer',
+            FirstName = 'Nda',
             LastName = withContactRead ? 'TimelineContactOk' : 'TimelineNoContact',
             Alias = 'btlfls',
             Email = 'btlfls@example.invalid',
@@ -803,7 +665,7 @@ private class DispositionBuyerTimelineTest {
     }
 
     /**
-     * 🔴 PINS THE EIGHTH GATE: `Buyer__r.Name` NEEDS `Contact` OBJECT READ, AND THE DISPOSITION
+     * 🔴 PINS THE TRAVERSAL GATE: `Broker__r.Name` NEEDS `Contact` OBJECT READ, AND THE DISPOSITION
      * PERMISSION SETS DO NOT GRANT IT.
      *
      * `NdaSelector.selectBuyerTimelineByDispositionId`'s header documents this at length — the
@@ -812,13 +674,21 @@ private class DispositionBuyerTimelineTest {
      * Both groups carry them today, so both intended personas work. But a documented coupling that
      * nothing executes is a coupling that can be dissolved by a PSG edit in Setup, and the first
      * anyone would learn of it is an error banner on a production record page.
+     * ⚠ RETARGETED 2026-08-21 FROM `Buyer__r.Name`. The lookup moved; the gate is identical, and
+     * that is precisely why this test had to move with it rather than being deleted — the coupling
+     * survives the retarget and would have stopped being executed if this test had gone with the
+     * buyer.
      *
      * ── WHY TWO PERSONAS AND NOT ONE ──
-     * "The denied persona throws" on its own proves almost nothing: this query has EIGHT other FLS
+     * "The denied persona throws" on its own proves almost nothing: this query has several other FLS
      * gates, and ANY of them missing produces the same `QueryException`. The control persona is
      * identical in every respect except that it also holds `DPEG_Contact_View`, so the exception is
      * attributable to that one set and to nothing else. If the control ALSO throws, the finding is a
-     * real provisioning gap somewhere else in the ten grants — read its message, do not weaken it.
+     * real provisioning gap somewhere else in the grants — read its message, do not weaken it.
+     * 🔴 AS OF 2026-08-21 THE MOST LIKELY CAUSE OF A FAILING **CONTROL** IS `NDA__c.Broker__c`, a
+     * brand-new field that neither disposition permission set can grant until the admin agent's
+     * change lands. If the control's message names `Broker__c`, this is the deploy-order dependency
+     * in the class header, not a defect.
      *
      * ⚠ THE CONTROL ASSERTS "DID NOT THROW", NOT A ROW COUNT, AND THAT IS NOT LAZINESS.
      * `DPEG_Disposition_View` grants `NDA__c` read with `PermissionsViewAllRecords = FALSE` (measured
@@ -828,17 +698,15 @@ private class DispositionBuyerTimelineTest {
      * but the granted persona legitimately reads an EMPTY list. Asserting `1` here would fail for a
      * sharing reason that has nothing to do with what this test is about.
      *
-     * ⚠ AND IT ASSERTS `QueryException`, NOT `Exception`. That is the type both selector headers and
-     * `DispositionBuyerTimelineService`'s `@throws` clause promise. If the platform ever delivers a
-     * different type here, that is a genuine finding worth writing down — widen this catch only
-     * together with those three docs, never on its own.
+     * ⚠ AND IT ASSERTS `QueryException`, NOT `Exception`. That is the type both the selector header
+     * and `DispositionBuyerTimelineService`'s `@throws` clause promise. If the platform ever delivers
+     * a different type here, that is a genuine finding worth writing down — widen this catch only
+     * together with those docs, never on its own.
      */
     @isTest
-    static void contactReadDenied_theBuyerTraversalThrows() {
+    static void contactReadDenied_theBrokerTraversalThrows() {
         Disposition__c d = freshDisposition();
-        Contact buyer = TestDataFactory.createContact(null, true);
-        NDA__c nda = buyerNda(d.Id, 'Gated Gary');
-        nda.Buyer__c = buyer.Id;
+        NDA__c nda = timelineNda(d.Id, broker().Id);
         nda.Status__c = STATUS_SIGNED;
         nda.Date_Signed__c = Date.newInstance(2026, 3, 2);
         insert nda;
@@ -868,14 +736,15 @@ private class DispositionBuyerTimelineTest {
 
         Assert.isNull(controlFailure,
             'CONTROL: the SAME read must succeed for a persona differing only by DPEG_Contact_View. '
-            + 'It did not, so the failure below is NOT attributable to Contact — one of the other ten '
-            + 'documented grants is missing. Actual: '
+            + 'It did not, so the failure below is NOT attributable to Contact — one of the other '
+            + 'documented grants is missing (NDA__c.Broker__c is the newest and the likeliest). '
+            + 'Actual: '
             + (controlFailure == null ? 'none' : controlFailure.getTypeName() + ': '
                 + controlFailure.getMessage()));
 
         Assert.isNotNull(deniedFailure,
             '🔴 A persona holding DPEG_Disposition_View but NOT DPEG_Contact_View MUST NOT be able '
-            + 'to read this timeline: Buyer__r.Name traverses to Contact and USER_MODE enforces '
+            + 'to read this timeline: Broker__r.Name traverses to Contact and USER_MODE enforces '
             + 'object read on the traversed object. If this is green, either the disposition set has '
             + 'started granting Contact (re-check the cross-permission-set note in NdaSelector) or '
             + 'the traversal was removed from the query.');

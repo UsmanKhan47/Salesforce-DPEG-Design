@@ -38,9 +38,27 @@ const LISTING_FIELDS = [
  *
  * ⚠ THE MODAL IS NOT ORPHANED, AND THAT WAS VERIFIED RATHER THAN ASSUMED. `c/dispositionOffer`
  * opens the identical `c/dispositionLogOfferModal` with the identical arguments, and
- * `dispositionSidebar.isOfferStage` includes `'Active Listing'` — the only stage
- * `dispositionMain.html` renders THIS card at — so at every moment this card is visible, the
- * offers card carrying the surviving "+ Log Offer" button is visible beside it in the sidebar.
+ * `dispositionSidebar.isOfferStage` includes `'Active Listing'`, so the surviving "+ Log Offer"
+ * button rides in the sidebar independently of anything this card does.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 LATER THE SAME DAY, THIS WHOLE CARD STOPPED BEING RENDERED ANYWHERE (2026-08-21)
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * The user's words: *"also remove call for offers lwc, we don't need to show."* The
+ * `<c-disposition-call-for-offers>` tag was removed from `lwc/dispositionMain/dispositionMain.html`
+ * — the ONLY place that rendered it. It was never a FlexiPage itemInstance on
+ * `Disposition_Record_Page`, so there is no second route: **this component is currently dead code
+ * on screen.**
+ *
+ * 🔴 THE BUNDLE WAS KEPT ON PURPOSE — DO NOT "TIDY IT UP" BY DELETING IT. Removing the render is
+ * trivially reversible (one line in dispositionMain.html); deleting the bundle is not, and the user
+ * asked only that it not be SHOWN. The falsifier for an accidental re-add lives in
+ * `lwc/dispositionMain/__tests__/dispositionMain.test.js`, not here.
+ *
+ * ⚠ CONSEQUENCE FOR THE SENTENCE ABOVE: the phrase "the only stage `dispositionMain.html` renders
+ * THIS card at" was true when written and is now retracted — it renders at NO stage. The modal's
+ * reachability argument is UNAFFECTED and now stands on its own, because it never depended on this
+ * card: `c/dispositionOffer` in the sidebar is the sole live opener either way.
  *
  * ── 🔴 THIS IS NOT `c/callForOffersList` OR `c/callForOffersPanel` ───────────
  * Those two are OPPORTUNITY-scoped (the acquisitions buy-side call-for-offers) and are explicitly

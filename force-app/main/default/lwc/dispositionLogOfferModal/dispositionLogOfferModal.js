@@ -11,7 +11,8 @@ const GENERIC_LOAD_ERROR =
 
 /**
  * Where to send someone whose disposition has no broker yet. TWO different screens, so one
- * generic sentence would misdirect half the users.
+ * generic sentence would misdirect half the users. These are now the REMEDY line of a refusal
+ * panel, not help text under an empty field.
  */
 const BROKER_HINT_ON_MARKET =
     'The broker is set when a BOV submission is approved on the comparison matrix.';
@@ -20,46 +21,63 @@ const BROKER_HINT_OFF_MARKET =
 
 /**
  * c-disposition-log-offer-modal — logs a `Disposition_Offer__c` against the disposition the user is
- * already looking at, WITHOUT leaving that page, with the broker auto-resolved and the buyer picked
- * from a narrow list (2026-08-21).
+ * already looking at, WITHOUT leaving that page, with the broker auto-resolved (2026-08-21).
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 WHY THIS IS AN LWC AND NOT A PAGE-LAYOUT EDIT — TWO INDEPENDENT REASONS.
+ * 🔴 THE BUYER PICKER WAS DELETED ON 2026-08-21. DO NOT RE-ADD IT.
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * 1. A CLASSIC PAGE LAYOUT CANNOT EXPRESS A FILTERED PICKER. `Disposition_Offer__c` has no
- *    FlexiPage and no create quick action anywhere in `force-app`, so the layout is the only
- *    entry point today — and `Buyer__c` is an UNFILTERED Contact lookup, so on that layout it
- *    offers every Contact in the org, including the introducing broker whose signed NDA sits on
- *    the same sale. Narrowing it to "buyers who signed an NDA on THIS disposition" is a
- *    per-record query no declarative lookup filter can state.
- * 2. NAVIGATING TO THE PLATFORM'S CREATE SCREEN THROWS THE USER OFF THE PAGE. Both existing
- *    "+ Log Offer" buttons called `NavigationMixin.Navigate` with
- *    `type: 'standard__objectPage', actionName: 'new'`, and the platform's own post-save
- *    behaviour there is to navigate to the record just created. Nothing suppresses it —
- *    `navigationLocation` belongs to the Aura `force:createRecord` event, not to
- *    `NavigationMixin` — so the fix is to stop navigating, exactly as `c/bovAddResponseModal`
- *    did for the same complaint two days earlier. This component is deliberately that
- *    component's twin in structure.
+ * User decision: *"we don't need buyer information, we just need broker contact for disposition
+ * offers and NDA… everything must be linked with broker contact as he is the only person that DPEG
+ * will be communicating"*. The combobox, its wire payload, its de-duplication, its required-field
+ * gate and its "No buyer available" empty state are all gone. `Buyer__c` is no longer sent on either
+ * submit path.
+ * ⚠ THE ARGUMENT THAT USED TO SIT HERE — "the buyer is picked, not stamped, because the timeline
+ * joins each buyer's NDA to THAT BUYER'S first offer" — is moot: that join was deleted the same day.
+ * Do not resurrect the picker from it.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 THE BUYER IS PICKED, NOT STAMPED. "ONE BUYER PER DISPOSITION" WAS REJECTED, AND IT WOULD
- *    HAVE BEEN WRONG SILENTLY.
+ * 🔴 🔴 SHIP-BLOCKER: `Buyer_Required_On_Offer` IS STILL **ACTIVE** ON `Disposition_Offer__c`.
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * `DispositionBuyerTimelineService` joins each buyer's NDA to THAT BUYER'S first offer on a
- * Contact Id at both ends. Stamping one disposition-scoped buyer onto every offer would show
- * buyer 1 a date derived from buyers 2 and 3's offers, leave the others permanently blank, and
- * render the same name on every row of the competitive bid table. A multi-buyer sale is the
- * NORMAL shape here. The analyst still never types a buyer — they choose from the two or three
- * names the deal already has.
+ * Measured in `usman-dpeg` via the Tooling API, 2026-08-21. Its formula is
+ * `ISBLANK(Buyer_Name__c)` with no `ISNEW` guard, and `Buyer_Name__c` is derived from `Buyer__c` by
+ * a before-save trigger. With the picker gone nothing sets `Buyer__c`, so **every save from this
+ * dialog is refused until that rule is deactivated** by whoever owns `objects/**`. The refusal
+ * arrives through `<lightning-messages>` naming a field this form does not show — which is exactly
+ * the "error with no reachable fix on this screen" shape the old empty state existed to prevent.
+ * This paragraph is the one-minute diagnosis.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * ⚠ THE COMPONENT WRITES NEITHER `Buyer_Name__c` NOR ANY OTHER DERIVED FIELD, AND MUST NOT.
+ * 🔴 THE REFUSAL PATH MOVED: NO BROKER NOW MEANS NO FORM AND NO SAVE BUTTON.
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * `DispositionOfferBuyerStampService.stampBuyerName` ALREADY derives `Buyer_Name__c` from
- * `Buyer__c` in before-insert, and a before trigger runs BEFORE validation — so setting the
- * lookup satisfies `Buyer_Required_On_Offer` (`ISBLANK(Buyer_Name__c)`) inside the same save.
- * Sending the text as well would be sending a value the trigger overwrites in the same
- * transaction.
+ * The dialog's only refusal used to be "no eligible buyer". Deleting the picker deleted it, and a
+ * dialog with no refusal path at all was not an option — so the refusal was RE-ESTABLISHED on the
+ * broker, which is now the only party an offer names.
+ *
+ * ⚠ THE TWO REFUSALS ARE NOT THE SAME KIND OF THING, AND THE DIFFERENCE IS WORTH KNOWING. The old
+ * one was FORCED: `Buyer_Required_On_Offer` made the save literally impossible, so rendering a form
+ * would have been a trap. This one is a DESIGN DECISION — nothing on the platform stops a
+ * broker-less offer saving (there is no `Broker_Required_On_Offer` rule; the six active rules were
+ * enumerated in the org on 2026-08-21 and none of them names the broker). It is refused because,
+ * with the buyer gone, an offer naming nobody cannot be attributed, cannot be told apart from
+ * another offer on the same sale, and is what `DispositionApprovalService.selectOffer` would be
+ * choosing between.
+ * 🔴 THE COST IS REAL AND IS REPORTED, NOT HIDDEN: an offer that genuinely arrives before the broker
+ * is appointed can no longer be logged here, and this dialog is the only entry point. The panel
+ * names the remedy screen, which differs by record type. If that trade is wrong, the fix is one
+ * getter (`canSave`) — not a partially-populated offer.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 WHY THIS IS AN LWC AND NOT A PAGE-LAYOUT EDIT — ONE REASON NOW, NOT TWO.
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * NAVIGATING TO THE PLATFORM'S CREATE SCREEN THROWS THE USER OFF THE PAGE. Both existing
+ * "+ Log Offer" buttons called `NavigationMixin.Navigate` with `type: 'standard__objectPage',
+ * actionName: 'new'`, and the platform's own post-save behaviour there is to navigate to the record
+ * just created. Nothing suppresses it — `navigationLocation` belongs to the Aura
+ * `force:createRecord` event, not to `NavigationMixin` — so the fix is to stop navigating, exactly
+ * as `c/bovAddResponseModal` did for the same complaint two days earlier.
+ * ⚠ THE SECOND REASON IS GONE. It was "a classic page layout cannot express a filtered buyer
+ * picker", and there is no picker any more. The remaining reason is sufficient on its own, and the
+ * dialog additionally keeps the field set narrow and the broker read-only, which a layout cannot.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
  * 🔴 `Offer_Financing_Type__c` IS ON THIS FORM EVEN THOUGH THE USER ASKED TO HIDE IT.
@@ -67,21 +85,13 @@ const BROKER_HINT_OFF_MARKET =
  * It is read by `c/dispositionOfferSelect` (rendered into the Select Offer radio label) and is
  * an `approvalPageField` on `Offer_Selection_Approval`. This dialog is the only entry point, so
  * dropping it blanks BOTH surfaces on every offer created afterwards, permanently and silently —
- * at the exact moment someone is choosing the winning bid. The user has been told; the decision
- * is theirs to reverse, and the template says the same thing beside the field.
+ * at the exact moment someone is choosing the winning bid. ⚠ ITS VALUE WENT UP ON 2026-08-21: with
+ * the buyer name gone from that radio label, the financing type is now one of only three things
+ * distinguishing two offers on the same sale. The user has been told; the decision is theirs to
+ * reverse, and the template says the same thing beside the field.
  *
  * ══════════════════════════════════════════════════════════════════════════════════════════
- * 🔴 DEPLOY-ORDER DEPENDENCY: `Disposition_Offer__c.Broker__c` MUST EXIST BEFORE THIS SHIPS.
- * ══════════════════════════════════════════════════════════════════════════════════════════
- * The field is owned by the admin agent and, as of 2026-08-21, exists in NEITHER the repo NOR
- * `usman-dpeg` (verified by `sf sobject describe`). The payload includes `Broker__c` ONLY when a
- * broker actually resolved, so a disposition with no appointed broker saves cleanly even without
- * the field — but on a sale that HAS one, `lightning-record-edit-form` would refuse the save with
- * an unknown-field error. Field + both permission-set grants must land first. ⚠ A
- * Metadata-API-deployed field arrives with NO FLS for anyone, System Administrator included.
- *
- * ══════════════════════════════════════════════════════════════════════════════════════════
- * ⚠ BOTH SUBMIT PATHS INJECT THE SAME THREE VALUES. THERE ARE GENUINELY TWO PATHS.
+ * ⚠ BOTH SUBMIT PATHS INJECT THE SAME TWO VALUES. THERE ARE GENUINELY TWO PATHS.
  * ══════════════════════════════════════════════════════════════════════════════════════════
  *   1. The footer "Save offer" button calls `handleSave`, which gathers the input-field values
  *      itself and calls `form.submit(fields)`. It HAS to gather them: calling `submit()` from a
@@ -89,17 +99,18 @@ const BROKER_HINT_OFF_MARKET =
  *      would get a chance to add anything.
  *   2. Pressing ENTER inside any text input natively submits the form, which DOES fire
  *      `onsubmit` — a path the footer button never touches. `handleSubmit` covers it.
- * Both funnel through `withResolvedFields()`, so exactly one place knows that `Disposition__c`,
- * `Buyer__c` and `Broker__c` are not carried by ordinary inputs: the parent is `disabled` (and a
- * disabled control is conventionally excluded from a submission), the buyer lives in a
- * `lightning-combobox` outside the form's field set, and the broker is plain text.
+ * Both funnel through `withResolvedFields()`, so exactly one place knows that `Disposition__c` and
+ * `Broker__c` are not carried by ordinary inputs: the parent is `disabled` (and a disabled control
+ * is conventionally excluded from a submission), and the broker is plain text.
+ * ⚠ `Broker__c` IS NOW SENT UNCONDITIONALLY rather than omitted-when-null. That is safe ONLY
+ * because the form does not render at all without a broker — see `canSave`. If that gate is ever
+ * relaxed, restore the `if (this._brokerId)` guard in the same edit, because a null there would be
+ * a WRITE clearing a field the form never showed.
  */
 export default class DispositionLogOfferModal extends LightningModal {
     /** The `Disposition__c` this offer is being logged against. */
     @api dispositionId;
 
-    _buyerId;
-    _buyerOptions = [];
     _brokerId;
     _brokerName = '';
     _brokerSource = '';
@@ -109,7 +120,7 @@ export default class DispositionLogOfferModal extends LightningModal {
     _saving = false;
 
     /**
-     * The single server read: the resolved broker and the selectable buyers.
+     * The single server read: the resolved broker.
      *
      * ⚠ `dispositionId` is reactive (`'$dispositionId'`) so the wire re-runs if the opener sets
      * the property after the first render. The Apex method is null-safe and answers an EMPTY
@@ -124,20 +135,11 @@ export default class DispositionLogOfferModal extends LightningModal {
             this._brokerName = data.brokerName || '';
             this._brokerSource = data.brokerSource || '';
             this._isOnMarket = data.isOnMarket !== false;
-            this._buyerOptions = data.buyers || [];
-            // ⚠ AUTO-SELECT WHEN THERE IS EXACTLY ONE BUYER. A menu of one is a question with a
-            // single answer, and forcing the analyst to open it is a step that can only be got
-            // wrong by forgetting it. It is NOT a stamp: with two or more buyers nothing is
-            // preselected, so the common competitive case still demands a deliberate choice.
-            this._buyerId =
-                this._buyerOptions.length === 1
-                    ? this._buyerOptions[0].value
-                    : undefined;
             this._loaded = true;
         } else if (error) {
             this._loadError =
                 (error && error.body && error.body.message) || GENERIC_LOAD_ERROR;
-            this._buyerOptions = [];
+            this._brokerId = undefined;
             this._loaded = true;
         }
     }
@@ -162,36 +164,31 @@ export default class DispositionLogOfferModal extends LightningModal {
     }
 
     /**
-     * 🔴 THE EMPTY STATE IS GATED ON `_loaded`, NOT MERELY ON AN EMPTY LIST. Without that the
-     * dialog would flash "No buyer available" for one frame on every single open, before the wire
-     * answers — a false statement shown to every user on the happy path. (That heading read "No
-     * buyer can be attributed yet" until the 2026-08-21 UAT copy cut; the gate is unrelated to the
-     * wording and did not change.)
+     * 🔴 THE REFUSAL PANEL IS GATED ON `_loaded`, NOT MERELY ON A MISSING BROKER. Without that the
+     * dialog would flash "No broker appointed" for one frame on every single open, before the wire
+     * answers — a false statement shown to every user on the happy path. (The panel used to say "No
+     * buyer available"; the gate is unrelated to the wording and did not change when the subject
+     * did.)
      */
     get showEmptyState() {
-        return this._loaded && !this._loadError && this._buyerOptions.length === 0;
+        return this._loaded && !this._loadError && !this._brokerId;
     }
 
-    /** No Save button in the empty state or on a load failure — see the footer comment. */
+    /**
+     * No Save button in the refusal panel or on a load failure — see the footer comment.
+     *
+     * 🔴 IT GATES ON `brokerId`, NOT ON `brokerName`. The name can legitimately be '' while the Id
+     * is set: `USER_MODE` returns a lookup Id but not the related sObject when the running user
+     * cannot see that Contact under SHARING. Gating on the name would refuse the save for a sale
+     * that genuinely has an appointed broker.
+     */
     get canSave() {
-        return this._loaded && !this._loadError && this._buyerOptions.length > 0;
+        return this._loaded && !this._loadError && !!this._brokerId;
     }
 
     /** "Cancel" while there is something to cancel; "Close" when the dialog is only informing. */
     get cancelLabel() {
         return this.canSave ? 'Cancel' : 'Close';
-    }
-
-    get buyerOptions() {
-        return this._buyerOptions;
-    }
-
-    get buyerId() {
-        return this._buyerId;
-    }
-
-    get hasBroker() {
-        return !!this._brokerId;
     }
 
     get brokerName() {
@@ -210,10 +207,6 @@ export default class DispositionLogOfferModal extends LightningModal {
         return this._saving;
     }
 
-    handleBuyerChange(event) {
-        this._buyerId = event.detail.value;
-    }
-
     // ─────────────────────────────────────────────────────────────────────────────────────
     // Submit
     // ─────────────────────────────────────────────────────────────────────────────────────
@@ -221,33 +214,25 @@ export default class DispositionLogOfferModal extends LightningModal {
     /**
      * The ONE place that knows which values are not carried by an ordinary form input.
      *
-     * 🔴 ALL THREE ARE INVISIBLE TO `lightning-record-edit-form`'s OWN FIELD SET:
+     * 🔴 BOTH ARE INVISIBLE TO `lightning-record-edit-form`'s OWN FIELD SET:
      *   `Disposition__c` is rendered `disabled`, and a disabled control is conventionally
      *      excluded from a submission — relying on it would make the parent depend on a
      *      base-component implementation detail;
-     *   `Buyer__c` lives in a `lightning-combobox`, which is not an `input-field` and is not part
-     *      of the form's field set at all;
      *   `Broker__c` is rendered as plain TEXT, because there is no case in which it should be
      *      hand-picked on an offer.
      *
-     * ⚠ `Broker__c` IS OMITTED ENTIRELY WHEN NO BROKER RESOLVED, rather than sent as null. Two
-     * reasons: a null would be a WRITE (clearing a field the form never showed), and — until the
-     * admin agent's field lands — omitting the key is what lets this dialog save at all on a
-     * disposition with no appointed broker.
+     * ⚠ NO NULL IS EVER SENT FOR `Broker__c`, because this method is unreachable without one —
+     * the form only renders when `canSave` is true, and `canSave` requires a broker.
      *
      * @param {object} fields the values gathered from the form
      * @returns {object} the payload actually sent
      */
     withResolvedFields(fields) {
-        const payload = {
+        return {
             ...fields,
             Disposition__c: this.dispositionId,
-            Buyer__c: this._buyerId
+            Broker__c: this._brokerId
         };
-        if (this._brokerId) {
-            payload.Broker__c = this._brokerId;
-        }
-        return payload;
     }
 
     /**
@@ -259,11 +244,6 @@ export default class DispositionLogOfferModal extends LightningModal {
      */
     handleSubmit(event) {
         event.preventDefault();
-        if (!this._buyerId) {
-            // Same gate as the footer button. ENTER must not be a way around a required field.
-            this.reportBuyerRequired();
-            return;
-        }
         this._saving = true;
         this.template
             .querySelector('lightning-record-edit-form')
@@ -273,16 +253,6 @@ export default class DispositionLogOfferModal extends LightningModal {
     /** Footer-button submit path. See the class header for why it gathers fields itself. */
     handleSave() {
         if (this._saving) {
-            return;
-        }
-
-        // 🔴 A REAL GATE, NOT A DECORATIVE ONE. `Buyer_Required_On_Offer` refuses the save
-        // server-side anyway, but its message names `Buyer_Name__c` — a field this form does not
-        // show — so letting it round-trip would point the user at nothing. Checked on the stored
-        // value rather than on the combobox's validity, so it works identically in Jest, where
-        // `reportValidity()` returns undefined.
-        if (!this._buyerId) {
-            this.reportBuyerRequired();
             return;
         }
 
@@ -311,20 +281,6 @@ export default class DispositionLogOfferModal extends LightningModal {
     }
 
     /**
-     * Surfaces "pick a buyer" through the combobox's OWN validity, so the message lands against
-     * the control it is about rather than in a banner at the top of the dialog.
-     *
-     * ⚠ Guarded because the combobox is absent in the empty state and on a load error, where this
-     * path is unreachable through the UI but reachable through a stray programmatic call.
-     */
-    reportBuyerRequired() {
-        const combobox = this.template.querySelector('lightning-combobox');
-        if (combobox) {
-            combobox.reportValidity();
-        }
-    }
-
-    /**
      * 🔴 THE OUTCOME GOES TO THE OPENER, NOT TO A TOAST RAISED FROM HERE. This component is about
      * to be destroyed; a toast dispatched from a closing modal is a race, and the offers card is
      * the thing that has to refresh anyway.
@@ -348,6 +304,8 @@ export default class DispositionLogOfferModal extends LightningModal {
      * this runs, so closing the dialog would throw away both the message and the user's other
      * values. This handler's only job is to release the spinner. `_message` is captured for
      * diagnosis only and is deliberately not rendered a second time.
+     * ⚠ UNTIL `Buyer_Required_On_Offer` IS DEACTIVATED, THIS IS THE PATH EVERY SAVE TAKES, and the
+     * message it renders names `Buyer_Name__c` — see the ship-blocker note in the class header.
      */
     handleError(event) {
         this._saving = false;

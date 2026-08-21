@@ -5,31 +5,9 @@
     overflow-wrap: anywhere;
 }
 
-/* Warning note — the replace clears the incoming broker's approval, so this is
-   deliberately the warning surface token, not the neutral container used by the
-   informational note in c/dispositionOfferSelect. */
-.brb-note {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--slds-g-spacing-2, 8px);
-    background: var(--slds-g-color-warning-container-1, #fef8f1);
-    border: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-warning-1, #fcc003);
-    border-radius: var(--slds-g-radius-border-1, 0.25rem);
-    padding: var(--slds-g-spacing-2, 8px) var(--slds-g-spacing-3, 12px);
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-neutral-base-30, #444444);
-}
-
-/* First-appointment variant of the same note. A first appointment revokes nothing and demotes
-   nobody, so the warning surface would be crying wolf — it is the NEUTRAL container instead,
-   byte-identical to c/dispositionOfferSelect's `.qa-note` (the informational precedent the rule
-   above already names). Only the two colour declarations are overridden; the layout, spacing and
-   type scale stay inherited from `.brb-note` so the two modes cannot drift apart visually. */
-.brb-note_info {
-    background: var(--slds-g-color-surface-container-1, #f3f3f2);
-    border-color: var(--slds-g-color-border-base-1, #e5e5e5);
-}
+/* ⚠ `.brb-note` AND `.brb-note_info` WERE DELETED ON 2026-08-21 with the two mode intro notes
+   they styled (UAT prose removal — see the template). c/dispositionOfferSelect's `.qa-note`, which
+   the deleted rules cited as their neutral-container precedent, was removed in the same pass. */
 
 /* The fixed reason disclosed in place of the combobox on a first appointment. Same type scale and
    colour as the empty state — it is a statement, not a control. */

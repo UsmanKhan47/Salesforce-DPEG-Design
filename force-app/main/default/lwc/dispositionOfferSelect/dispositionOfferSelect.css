@@ -13,18 +13,9 @@
     min-height: 90px;
 }
 
-.qa-note {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--slds-g-spacing-2, 8px);
-    background: var(--slds-g-color-surface-container-1, #f3f3f2);
-    border: var(--slds-g-sizing-border-1, 1px) solid
-        var(--slds-g-color-border-base-1, #e5e5e5);
-    border-radius: var(--slds-g-radius-border-1, 0.25rem);
-    padding: var(--slds-g-spacing-2, 8px) var(--slds-g-spacing-3, 12px);
-    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-neutral-base-30, #444444);
-}
+/* ⚠ `.qa-note` WAS DELETED WITH THE PARAGRAPH IT STYLED (2026-08-21 UAT removal — see the
+   template). c/brokerReplaceQuickAction still carries its own `.qa-note`; that bundle is a
+   different module and was deliberately left alone. */
 
 /* Cross-bundle error-banner class — do not rename. */
 .lv-error {

@@ -7,11 +7,9 @@
     overflow-wrap: anywhere;
 }
 
-.smi-intro {
-    margin: 0 0 var(--slds-g-spacing-4, 16px);
-    font-size: var(--slds-g-font-scale-base, 0.8125rem);
-    color: var(--slds-g-color-neutral-base-10, #181818);
-}
+/* ⚠ `.smi-intro` WAS DELETED ON 2026-08-21 with the paragraph it styled (UAT prose removal — see
+   the template). It supplied the gap between the intro and the summary box; the summary is now the
+   first element in the body, and `.smi-body`'s own padding sits above it. */
 
 /* Two-column label/value grid. The <dl> carries dt/dd pairs with NO wrapper
    elements (axe's definition-list rule), so the columns are produced here

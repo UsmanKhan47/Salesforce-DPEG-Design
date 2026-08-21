@@ -47,12 +47,19 @@
  * transfer to a row read backing a click, nor to a guard that fails OPEN when a row is invisible.
  * The reasoning is re-derived at each method rather than inherited; read it there.
  *
- * ⚠ AND A FOURTH METHOD LANDED LATER ON 2026-08-20: `selectEarliestByBuyerIds`, backing the buyer
- * activity timeline (Tranche 2 Workstream D). 🔴 IT IS THE FIRST METHOD ON THIS CLASS TO USE
- * `WITH USER_MODE`, so "everything here is SYSTEM_MODE" is no longer a rule you can read off the
- * class shape — READ THE METHOD. The other three are SYSTEM_MODE because they run inside triggers,
- * where a USER_MODE throw rolls back the user's own save; this one backs a read-only card a human
- * asked for, where a throw reports a real provisioning gap and the fix is a permission set.
+ * ⚠ A FOURTH METHOD LANDED ON 2026-08-20 AND WAS **DELETED ON 2026-08-21**:
+ * `selectEarliestByBuyerIds`, which backed the buyer activity timeline's "first offer" column
+ * (Tranche 2 Workstream D). It went with the buyer: nothing links an offer to a specific NDA any
+ * more, so the column it fed could only have been re-pointed at the disposition's earliest offer
+ * across ALL NDAs — the same date on every row, rendered as if it were a per-row fact. Deleting the
+ * column and its query was the honest option; recover the method from git history if a per-party
+ * join ever returns, and do NOT reconstruct it from memory (its `Offer_Date__c != NULL` filter and
+ * its `Id ASC` tie-break are both load-bearing and both non-obvious).
+ * 🔴 CONSEQUENCE FOR THIS CLASS'S SHAPE: it was the ONLY `WITH USER_MODE` method here, so all
+ * THREE remaining public methods are `SYSTEM_MODE` again. ⚠ THAT IS A COINCIDENCE OF THE CURRENT
+ * MEMBERSHIP, NOT A RULE — the three are SYSTEM_MODE because they run inside triggers, where a
+ * USER_MODE throw rolls back the user's own save. A future read-only method backing a card a human
+ * asked for belongs on USER_MODE. READ THE METHOD, never the class shape.
  *
  * @see force-app/main/default/classes/DispositionTractionService.cls (the count consumer)
  * @see force-app/main/default/classes/DispositionApprovalService.cls (the selection consumer)
@@ -109,8 +116,8 @@ public with sharing class DispositionOfferSelector {
      * — an administrator without `DPEG_Acquisitions`, an integration user, a future automated
      * caller — would blank the entire traction panel instead of reading a count.
      * ⚠ `Offer_Date__c` JOINS THE FLS GATE AS A SECOND SELECTED FIELD, and it is granted on both
-     * disposition permission sets (verified in both files, 2026-08-20, by
-     * `selectEarliestByBuyerIds`, which reads the same field `WITH USER_MODE`). Under SYSTEM_MODE it
+     * disposition permission sets (verified in both files, 2026-08-20, by the since-deleted
+     * `selectEarliestByBuyerIds`, which read the same field `WITH USER_MODE`). Under SYSTEM_MODE it
      * cannot blank the panel either way.
      *
      * 🔴 THE `without sharing` ARGUMENT COVERS THE DATE FOR THE SAME REASON IT COVERS THE COUNT, AND
@@ -265,102 +272,6 @@ public with sharing class DispositionOfferSelector {
         ];
     }
 
-    /**
-     * Every DATED offer made by a set of buyers ON ONE DISPOSITION, EARLIEST FIRST — backs
-     * `DispositionBuyerTimelineService.getTimeline`'s "first offer" column, which is where the
-     * buyer activity clock STOPS (user-confirmed, design D6.3). Added 2026-08-20, Tranche 2
-     * Workstream D.
-     *
-     * 🔴 IT TAKES A SET AND ISSUES **ONE QUERY FOR THE WHOLE SET, NEVER ONE PER BUYER.** That is the
-     * entire reason this method exists rather than a per-buyer `LIMIT 1` read: a disposition can
-     * carry many buyer NDAs, and a query per buyer is SOQL in a loop that blows the 100-query limit
-     * on a page render. The caller takes the FIRST row it sees per buyer, which — given the ORDER BY
-     * below — is that buyer's earliest offer. **Do not add `LIMIT 1`**; it would cap the whole
-     * result at one row and silently blank the column for every buyer but one.
-     *
-     * ⚠ `ORDER BY Offer_Date__c ASC, Id ASC` — **THE TIE-BREAK IS REQUIRED, NOT DECORATIVE.**
-     * `Offer_Date__c` is a `Date` (not a DateTime — measured in the field file), so two offers from
-     * one buyer on the same day are ROUTINE, not a contrived edge case. Without `Id ASC` the "first
-     * row per buyer" the caller takes is whichever the platform happened to return, and the rendered
-     * date is stable only by luck. Same reasoning, same fix, as
-     * `ContactSelector.selectByEmails`'s oldest-wins ordering.
-     *
-     * ⚠ `Offer_Date__c != NULL` IS A FILTER, NOT A DEFENSIVE CHECK, AND IT MUST STAY. SOQL sorts
-     * NULLS FIRST on an ASC order by default, so an undated offer would sort to the TOP and become
-     * "the earliest offer" — with a null date. The column would then render `—` for a buyer who
-     * demonstrably DID make a dated offer, which is worse than blank: it is wrong, and it looks
-     * exactly like the correct answer for a buyer who made none. Excluding undated rows in the QUERY
-     * means the caller has no special case to forget.
-     * ⚠ ACCEPTED CONSEQUENCE, STATED: a buyer whose ONLY offer carries no date shows `—` in the
-     * first-offer column and no response duration. That is truthful — the date is genuinely unknown
-     * — and it is visible and self-healing the moment someone fills the date in.
-     *
-     * 🔴 THE `dispositionId` TERM IS LOAD-BEARING AND IS NOT AN OPTIMISATION. The same buyer
-     * Contact legitimately bids on MANY dispositions. Without this term, a buyer's first offer on
-     * some OTHER sale would be reported as their first offer on THIS one — a wrong date on the very
-     * card whose job is to time this deal, with nothing on the page to contradict it.
-     *
-     * ── 🔴 `WITH USER_MODE` — A READ THE USER ASKED FOR, AND EVERY FIELD IS A GATE ─────────────
-     * They opened the Disposition record page, so ARCHITECTURE.md §2's automation-path exception
-     * does NOT apply and `SYSTEM_MODE` would be wrong here. ⚠ THAT MAKES THIS METHOD DELIBERATELY
-     * UNLIKE ITS TWO SIBLINGS ABOVE, both of which ARE `SYSTEM_MODE` — and their reason does not
-     * transfer: they run inside a BEFORE TRIGGER, where a `USER_MODE` throw escapes as
-     * `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and rolls back the user's own save. Nothing is being
-     * saved here. A throw on this path takes down a read-only card and nothing else, and it reports
-     * a REAL PROVISIONING GAP whose fix is a permission set.
-     *
-     * `USER_MODE` enforces FLS on the `WHERE` fields as well as the `SELECT` list, so all four of
-     * `Disposition__c`, `Buyer__c`, `Offer_Date__c` and (trivially) `Id` are gates. `Disposition__c`,
-     * `Buyer__c` and `Offer_Date__c` are granted in `DPEG_Disposition_View` and
-     * `DPEG_Disposition_Edit` — verified in both files, 2026-08-20. ⚠ A PermissionSet deploy
-     * REPLACES its entire `<fieldPermissions>` set, so one unrelated redeploy that drops any of them
-     * takes this column down.
-     *
-     * ── 🔴 AND IT STAYS `with sharing` — `TractionReads` DOES NOT REACH IT ─────────────────────
-     * The count above escapes sharing because an UNDER-count silently INVERTS an automated verdict
-     * nobody checks. This is a HUMAN reading a card. An offer they cannot see is one their own
-     * sharing says is not theirs to read, and the correct outcome is that its date does not appear —
-     * not that this class tells them a row they may not see exists. Bounded by the same measured
-     * fact the class header records: `DPEG_Disposition_Edit` and `DPEG_Disposition_View` both carry
-     * `viewAllRecords = true` on `Disposition_Offer__c`, so for the two personas this feature exists
-     * for there is nothing hidden.
-     *
-     * ⚠ NO `Buyer_Name__c` IN THE SELECT, DELIBERATELY. The buyer's NAME on this card comes from the
-     * NDA side (`NDA__c.Buyer__r.Name`, falling back to `NDA__c.Counterparty_Name__c`) — the offer is
-     * only ever asked for a DATE. Selecting a name here would add an FLS gate for a value nothing
-     * reads, and would invite a future reader to resolve the same buyer's name two different ways on
-     * one card.
-     *
-     * @param buyerIds      Contact Ids of the buyers named on this disposition's buyer NDAs;
-     *                      null or empty returns an empty list WITHOUT querying.
-     * @param dispositionId The Disposition to scope to; null returns an empty list WITHOUT querying,
-     *                      because an unscoped read here would be actively wrong (see above).
-     * @return Dated offers by those buyers on that disposition, with Id, Buyer__c and Offer_Date__c
-     *         populated, ordered `Offer_Date__c ASC, Id ASC`; an empty list when either input is
-     *         null/empty or no dated offer matches (never null).
-     * @throws System.QueryException when the running user lacks read on `Disposition_Offer__c` or on
-     *         any of the three custom fields above.
-     * @example
-     * List&lt;Disposition_Offer__c&gt; offers =
-     *     DispositionOfferSelector.selectEarliestByBuyerIds(buyerIds, dispositionId);
-     */
-    public static List<Disposition_Offer__c> selectEarliestByBuyerIds(
-        Set<Id> buyerIds,
-        Id dispositionId
-    ) {
-        if (buyerIds == null || buyerIds.isEmpty() || dispositionId == null) {
-            return new List<Disposition_Offer__c>();
-        }
-        return [
-            SELECT Id, Buyer__c, Offer_Date__c
-            FROM Disposition_Offer__c
-            WHERE Disposition__c = :dispositionId
-              AND Buyer__c IN :buyerIds
-              AND Offer_Date__c != NULL
-            WITH USER_MODE
-            ORDER BY Offer_Date__c ASC, Id ASC
-        ];
-    }
 
     /**
      * The one query that must not be sharing-filtered. Narrow on purpose: it holds a single
@@ -371,8 +282,9 @@ public with sharing class DispositionOfferSelector {
         /**
          * ⚠ `MIN(Offer_Date__c)` IS AN AGGREGATE, NOT AN `ORDER BY ... LIMIT 1`, and that is what
          * keeps this ONE query for the whole set. It also means undated offers are ignored rather
-         * than sorting to the top as they would under `ORDER BY Offer_Date__c ASC` (the trap
-         * `selectEarliestByBuyerIds` had to add an explicit `!= NULL` filter for).
+         * than sorting to the top as they would under `ORDER BY Offer_Date__c ASC` (the trap the
+         * since-deleted `selectEarliestByBuyerIds` had to add an explicit `!= NULL` filter for —
+         * see the class header before writing any new date-ordered read here).
          */
         private List<AggregateResult> countRows(Set<Id> dispositionIds) {
             return [
