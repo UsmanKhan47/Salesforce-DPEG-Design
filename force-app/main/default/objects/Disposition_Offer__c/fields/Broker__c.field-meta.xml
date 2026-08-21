@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+        matching parent xml file" error.
+
+        ADDED 2026-08-21 (offer-form-and-stage-retirement.md, Request A). Role-named Contact
+        lookup, explicitly permitted by ARCHITECTURE.md §1. This is the DECLARATIVE HALF ONLY:
+        the field, its lookup filter and its FLS. Populating it - on-market from the Selected
+        BOV_Submission__c.Broker__c, off-market from Disposition__c.Broker__c - is Apex work for
+        the developer agent and is explicitly OUT of this deliverable. NO CONSUMER MAY PARSE
+        Disposition__c.Selected_Broker__c to derive this value; see that field's own comment.
+
+        =====================================================================================
+        XML SHAPE IS COPIED FROM Broker_Assignment__c.Broker__c, DELIBERATELY AND EXACTLY,
+        MATCHING BOV_Submission__c.Broker__c, Lease_Inquiry__c.Broker__c and
+        Disposition__c.Broker__c. Same referenceTo, same ACTIVE non-optional lookupFilter, same
+        errorMessage string, same deleteConstraint. There is no Broker__c OBJECT in this org;
+        every "broker" in this application is a Contact on the Contact.Broker RECORD TYPE.
+
+        Opportunity.Broker__c is NOT a precedent for the filter shape below - it carries NO
+        <lookupFilter> at all, because it is machine-stamped by LeadConvertService at
+        conversion and an active filter there would make lead conversion fail hard. THAT
+        REASONING DOES NOT APPLY HERE: unlike Opportunity.Broker__c, this field has no writer
+        yet, and the writer the design document describes reads the broker off an ALREADY
+        broker-record-typed Contact (BOV_Submission__c.Broker__c or Disposition__c.Broker__c,
+        both of which carry this same active filter), so it can never be handed a non-Broker
+        Contact to stamp. An active filter here is therefore safe in a way it is not on
+        Opportunity.Broker__c.
+
+        =====================================================================================
+        LABEL: "Broker Contact", NOT "Broker". Matches BOV_Submission__c.Broker__c and
+        Disposition__c.Broker__c - the two siblings machine-stamp a lookup on a deal-adjacent
+        object the way this one eventually will - and mirrors how Buyer__c on this SAME object
+        took "Buyer Contact" to stay clear of Buyer_Name__c's "Buyer" label. No field on
+        Disposition_Offer__c carries the bare label "Broker" today, but "Broker Contact" is used
+        anyway for consistency with the sibling family and to leave "Broker" free should a
+        future Text/formula field ever want it.
+
+        =====================================================================================
+        RELATIONSHIP NAME: Brokered_Disposition_Offers. COLLISION CHECKED, NOT ASSUMED.
+        =====================================================================================
+        Every referenceTo Contact field in this repo as of this change uses one of
+        Broker_Assignments, Brokered_Dispositions, Lease_Inquiries, Brokered_Opportunities,
+        Brokered_BOV_Submissions, Incoming_Broker_Changes, Outgoing_Broker_Changes or
+        Buyer_NDAs (on NDA__c) / Buyer_Disposition_Offers (the sibling lookup on THIS object).
+        Brokered_Disposition_Offers is free. The Brokered_ prefix matches
+        Brokered_Dispositions/Brokered_Opportunities/Brokered_BOV_Submissions: under Contact, a
+        bare "Disposition Offers" would read as "this Contact's offers" when the list actually
+        means "offers this Contact BROKERS".
+        ⚠ A relationshipName is disruptive to change after deploy. Settled here, before the
+        first deploy, while it costs nothing.
+
+        =====================================================================================
+        🔴 NOT ADDED TO THE LAYOUT. This field is machine-stamped, not analyst-entered - the
+        request that created it explicitly asked for a SIMPLER offer form, and every other
+        machine-owned field on this object (Is_Selected__c, Approval_Status__c) is likewise
+        reached only via automation, reports or the approval page rather than direct entry.
+        Reachable via reports and list view columns once FLS lands.
+
+        =====================================================================================
+        🔴 FLS: THIS FIELD IS INVISIBLE TO EVERYONE, ADMINS INCLUDED, UNTIL A PERMSET LANDS.
+        =====================================================================================
+        A Metadata API deployed custom field arrives with NO field permissions for any profile,
+        System Administrator included. Read-only is granted in BOTH DPEG_Disposition_Edit and
+        DPEG_Disposition_View in the same change - matching how Is_Selected__c and
+        Approval_Status__c (the object's other machine-owned fields) are granted, not how the
+        analyst-entered Buyer__c is granted. DPEG_Admin_Access is not touched, matching how
+        every other field on this object was granted. This file and those two permission sets
+        must deploy together.
+
+        ⚠ TESTS MUST USE TestDataFactory.createBrokerContact / createBrokerContacts. The lookup
+        filter below is ACTIVE and NOT optional.
+    -->
+    <fullName>Broker__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The broker Contact associated with this offer - on-market from the Selected BOV_Submission__c's Broker__c, off-market from the parent Disposition__c.Broker__c. Machine-stamped; see the Apex layer for the writer. Never derived by parsing Disposition__c.Selected_Broker__c.</description>
+    <inlineHelpText>The broker Contact tied to this offer. Set automatically; not entered by hand. Only Contacts on the Broker record type can occupy this field.</inlineHelpText>
+    <label>Broker Contact</label>
+    <lookupFilter>
+        <active>true</active>
+        <booleanFilter>1</booleanFilter>
+        <errorMessage>Only Broker Contacts can be selected here.</errorMessage>
+        <filterItems>
+            <field>Contact.RecordType.DeveloperName</field>
+            <operation>equals</operation>
+            <value>Broker</value>
+        </filterItems>
+        <isOptional>false</isOptional>
+    </lookupFilter>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Brokered Disposition Offers</relationshipLabel>
+    <relationshipName>Brokered_Disposition_Offers</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

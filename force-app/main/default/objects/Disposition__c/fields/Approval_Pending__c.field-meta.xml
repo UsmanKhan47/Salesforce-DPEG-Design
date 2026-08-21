@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW 2026-08-21. THE "AN APPROVAL IS PENDING" UI FLAG. SYSTEM-WRITTEN ONLY.
+
+        =====================================================================================
+        🔴 A SECOND, DISTINCT FIELD FROM Approval_Advance_Pending__c. DO NOT CONFLATE THEM.
+        =====================================================================================
+        The two names differ by one word and they are opposites in time. Read this table before
+        wiring anything to either of them:
+
+            THIS FIELD (Approval_Pending__c)
+              TRUE  while an approval is PENDING.
+              Written ONLY by approval process actions: initialSubmissionActions sets it,
+              and finalApprovalActions / finalRejectionActions / recallActions all clear it.
+              Plus BovSubmissionTriggerHandler, which mirrors the BOV branch up from the child
+              (see "THE FOURTH ACTION" below).
+              Its lifetime is EXACTLY the ProcessInstance.Status = 'Pending' window.
+
+            Approval_Advance_Pending__c
+              The D-1 auto advance SEMAPHORE. Goes TRUE on FINAL APPROVAL, never on submission,
+              and is cleared by DispositionApprovalAdvanceQueueable in the same DML that writes
+              the new stage. It is deliberately LEFT TRUE when an advance is refused.
+              Read that field's own XML comment before touching it.
+
+        Precedent for carrying a banner like this rather than trusting the names to disambiguate
+        themselves: BOV_Submission__c.Approval_Status__c versus Submission_Status__c, which are
+        also two similarly named fields on one object with two different owners.
+
+        =====================================================================================
+        WHY THE FIELD EXISTS AT ALL
+        =====================================================================================
+        A FlexiPage visibility rule can read ONLY a field on the record itself. Every leftValue
+        on Disposition_Record_Page is either {!Record.<FieldApiName>} or
+        {!$Permission.CustomPermission.<Name>}; there is no approval state token, and approval
+        state is not reachable by a formula either (no relationship from Disposition__c to
+        ProcessInstance, and a formula cannot reach DOWN to the child BOV_Submission__c).
+        So the fact has to be MATERIALISED as a stored field on the record. That is the same
+        move this repo already made for the record type with Is_On_Market__c.
+
+        =====================================================================================
+        WHO READS IT: FOUR DYNAMIC ACTIONS, AND NOTHING ELSE
+        =====================================================================================
+        It is NOT on any page layout and NOT on any FlexiPage fieldInstance. Its only readers
+        are these four actionNames visibility rules on Disposition_Record_Page, named here so
+        the count stays checkable the way Is_On_Market__c's count is named in
+        permissionsets/DPEG_Disposition_View.permissionset-meta.xml:
+            Disposition__c.Submit_Sale_Decision
+            Disposition__c.Submit_Selected_Broker
+            Disposition__c.Submit_Broker_Selection
+            Disposition__c.Submit_Closing_Approval
+        Each rule ANDs {!Record.Approval_Pending__c} EQUAL false onto its EXISTING stage and
+        Disposition_Deal_Actions criteria. Select_Offer is deliberately NOT one of them: it is
+        a picker, not a submit button.
+
+        🔴 UNLIKE Approval_Advance_Pending__c, THIS FIELD MUST HAVE READ FLS, AND THE POLARITY
+        MAKES THAT LOAD BEARING. A visibility rule reading a field the running user cannot see
+        evaluates FALSE with no error anywhere. With the EQUAL false polarity above, a missing
+        grant does not fail safe: it hides ALL FOUR Submit buttons for EVERY user, silently and
+        permanently. Read is granted in DPEG_Disposition_View and DPEG_Disposition_Edit and in
+        no other set, mirroring Is_On_Market__c exactly. Those two files must land WITH OR
+        BEFORE the FlexiPage, never after.
+        It stays READ ONLY (editable=false) everywhere. Recovery from a stuck flag is anonymous
+        Apex or Data Loader, not a hand edit.
+
+        =====================================================================================
+        THE FOURTH ACTION IS THE ODD ONE OUT
+        =====================================================================================
+        Three of the four approvals TARGET the Disposition, so their own field updates write
+        this field directly. Submit_Selected_Broker's approval (Broker_Finalize_Approval)
+        targets the child BOV_Submission__c instead, and BOV_Submission__c.Disposition__c is a
+        LOOKUP, not Master Detail, which rules out both a roll up summary and a cross object
+        workflow field update. That branch is therefore mirrored up by
+        BovSubmissionTriggerHandler from BOV_Submission__c.Approval_Pending__c. Developer owned.
+
+        =====================================================================================
+        ⚠ WHY NO APEX WRITES THIS ON THE THREE DISPOSITION TARGET BRANCHES
+        =====================================================================================
+        All three set recordEditability = AdminOnly, so the Disposition is LOCKED for the whole
+        pending window: any Apex write throws ENTITY_IS_LOCKED, and neither AccessLevel
+        .SYSTEM_MODE nor a Queueable lifts a lock (a pending approval outlives the job). The
+        approval process's own field update is the one writer that is not blocked, which is why
+        this is declarative. An approval triggered FLOW was rejected for the reason recorded on
+        Approval_Advance_Pending__c: with no runInMode it runs as the APPROVER and its DML hits
+        the approver's read only access, a measured incident on this org.
+
+        ⚠ TARGET SCOPING IS A PROPERTY OF THE CURRENT STAGE LAYOUT, NOT A GENERAL TRUTH. ONE
+        flag serves all four actions only because the four entry stages are mutually exclusive
+        (Disposition Readiness, BOV Outreach, Broker Selection, Closing) and each rule already
+        ANDs its own stage. A FIFTH approval sharing one of those stages would make this flag
+        hide the wrong button, silently. Same shape as the "ONE UPDATE SERVES ALL THREE
+        APPROVALS" note in workflows/Disposition__c.workflow-meta.xml.
+
+        ⚠ NO VALIDATION RULE AND NO TRIGGER GUARD ENFORCE "DO NOT HAND EDIT". Read only FLS is
+        the control. Do not add one; it was not requested.
+
+        ⚠ DETECTION QUERY FOR A STUCK FLAG (a true with no pending approval behind it):
+            SELECT Id, Name, Disposition_Stage__c FROM Disposition__c
+            WHERE Approval_Pending__c = true
+              AND Id NOT IN (SELECT TargetObjectId FROM ProcessInstance WHERE Status = 'Pending')
+
+        DEPLOY ORDER, LOAD BEARING. This file must land BEFORE
+        workflows/Disposition__c.workflow-meta.xml (a field update naming a field that does not
+        exist fails the deploy), which must itself land before the three approval processes.
+    -->
+    <fullName>Approval_Pending__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD - DO NOT HAND-EDIT. TRUE while an approval is pending on this disposition. Set by the approval initialSubmissionActions and cleared by its final approval, final rejection and recall actions; the BOV branch is mirrored up by BovSubmissionTriggerHandler. Read ONLY by four Dynamic Actions on Disposition_Record_Page, which hide the matching Submit button while it is true. A SECOND, DISTINCT field from Approval_Advance_Pending__c - see the XML comment in this file.</description>
+    <inlineHelpText>Ticked automatically while this disposition has an approval awaiting a decision. It clears on approval, rejection or recall, and cannot be edited by hand.</inlineHelpText>
+    <label>Approval Pending</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

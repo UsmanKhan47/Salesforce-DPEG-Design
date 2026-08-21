@@ -2,7 +2,7 @@ import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { refreshApex } from '@salesforce/apex';
-import { formatMillions } from 'c/utils';
+import { formatMillions, brokerOptionLabel } from 'c/utils';
 import BovAddResponseModal from 'c/bovAddResponseModal';
 import BovReplaceBrokerModal from 'c/bovReplaceBrokerModal';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
@@ -13,40 +13,17 @@ const pillWrap = (bg) => `display:inline-flex;align-items:center;gap:7px;padding
 const pillDot = (c) => `width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0`;
 
 /**
- * One radio-option line for the Select / Replace Broker picker.
+ * ⚠ THE OPTION-LABEL FUNCTION MOVED TO `c/utils` ON 2026-08-21 AND ITS REASONING MOVED WITH IT.
+ * It used to be a module-local `optionLabel` const here, with a long header explaining why it names
+ * the firm, the contact, the amount, the score and the auto-number (this org has six duplicated
+ * broker Contacts and seven non-brokers on the Broker record type). Read
+ * `c/utils`'s `brokerOptionLabel` before shortening it.
  *
- * ── 🔴 IT IS DELIBERATELY LONG, BECAUSE THIS ORG'S DATA IS AMBIGUOUS ─────────
- * Two data realities are visible on this surface and NEITHER is filtered or de-duplicated here —
- * that is the user's decision to make, not this component's:
- *   - SIX broker Contacts exist TWICE with an identical name AND an identical firm (Derek Simmons,
- *     Priya Nair, Marcus Whitfield, Katie Osborne, Ryan O'Connell, Sofia Delgado). Firm alone —
- *     which is all this label carried until 2026-08-21 — renders two options as the same string,
- *     so the user is choosing at random between them.
- *   - SEVEN Contacts on the Broker record type are not brokers at all (Acme x3, Global Media x2,
- *     salesforce.com, "Unknown - Via Email"). They are shown, because hiding a bad row is how it
- *     survives.
- * The BOV amount and the submission's own auto-number are what actually separate two otherwise
- * identical lines, so both are in the label. Do not shorten this back to the firm.
- *
- * ⚠ A NULL SCORE RENDERS `—`, NEVER `0`. Every score in the org is null today (`BOV_Score__c` is
- * being recreated as a formula that returns null until the disposition has an asking price), and
- * `0` is a real, meaningful, terrible score — printing it for "not computed" would tell the user
- * something false about every broker on the list. `== null` rather than a falsy test, so a genuine
- * zero still prints as `0`.
+ * 🔴 WHY IT MOVED: `c/brokerListing` now opens the SAME `c/bovReplaceBrokerModal` from the Active
+ * Listing stage, and the modal's contract is that it does no formatting *"so the modal and the
+ * matrix behind it cannot disagree about the same broker's numbers"*. A second copy of the label
+ * rule in that component would have reintroduced precisely that disagreement.
  */
-const optionLabel = (r) => {
-    const who = [r.brokerFirm || 'Unnamed firm', r.contactName]
-        .filter(Boolean)
-        .join(' — ');
-    const facts = [
-        formatMillions(r.bovAmount),
-        `Score ${r.bovScore == null ? '—' : r.bovScore}`
-    ];
-    if (r.name) {
-        facts.push(r.name);
-    }
-    return `${who} · ${facts.join(' · ')}`;
-};
 
 const COLUMNS = [
     { label: 'Broker Firm', fieldName: 'recordUrl', type: 'url', typeAttributes: { label: { fieldName: 'brokerFirm' }, target: '_self' } },
@@ -89,6 +66,16 @@ const COLUMNS = [
  * exclusive by construction — the second getter is the first's negation — and BOTH open
  * `c/bovReplaceBrokerModal` and reach `BovSubmissionService.replaceSelectedBroker`. There is no
  * appoint-only server path and there must not be one; the reasoning is in that service's javadoc.
+ *
+ * ── ⚠ AND A THIRD BUTTON EXISTS OFF THIS COMPONENT, ON THE SAME MECHANISM (2026-08-21) ──────
+ * `c/brokerListing` carries a Replace Broker button beside its traction badge. It is NOT a
+ * duplicate of the one above and it did not fork anything: `dispositionMain.html` renders this
+ * matrix under `if:true={isBovOutreach}` and the listing cluster under `if:true={isActiveListing}`
+ * — MUTUALLY EXCLUSIVE — so the button above is unreachable at Active Listing, which is the only
+ * stage the traction ladder operates in. That component opens this same modal bundle and calls this
+ * same Apex method. 🔴 DO NOT "CONSOLIDATE" BY GIVING EITHER COMPONENT ITS OWN SERVER PATH: the
+ * four invariants (single-Selected exclusivity, approval revocation, the savepoint, the
+ * `BOV_Broker_Change__c` history row) live in `BovSubmissionService` exactly once.
  */
 export default class BovComparisonMatrix extends NavigationMixin(LightningElement) {
     @api recordId;
@@ -211,7 +198,7 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
     get _backupOptions() {
         return (this._data || [])
             .filter((r) => r.isSelected !== true)
-            .map((r) => ({ label: optionLabel(r), value: r.id }));
+            .map((r) => ({ label: brokerOptionLabel(r), value: r.id }));
     }
 
     /**

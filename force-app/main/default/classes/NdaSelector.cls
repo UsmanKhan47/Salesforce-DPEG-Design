@@ -16,13 +16,20 @@
  *
  * ⚠ AMENDED AGAIN 2026-08-16 (FSD Tranche 1, Item 2) — THE SENTENCE ABOVE NOW UNDERSTATES IT IN
  * BOTH HALVES, AND SHARING HAS JOINED MODE AS A PER-METHOD PROPERTY.
- *   MODE     this class has **NINE** public methods (EIGHT earlier on 2026-08-20, when Tranche 2
- *            Workstream C added `selectLatestSummaryByDispositionId`; SEVEN before that).
+ *   MODE     this class has **TEN** public methods (NINE earlier on 2026-08-21, before the Log
+ *            Offer buyer picker added `selectSignedBuyerNdasByDispositionId`; EIGHT before
+ *            2026-08-20, when Tranche 2 Workstream C added `selectLatestSummaryByDispositionId`;
+ *            SEVEN before that).
  *            **TWO** are `WITH SYSTEM_MODE` — `selectByDispositionIds` and `queryExpiryAlerts` —
- *            and the **SEVEN** remaining ones stay `WITH USER_MODE`: `selectById`,
+ *            and the **EIGHT** remaining ones stay `WITH USER_MODE`: `selectById`,
  *            `selectLatestByOpportunityId`, `selectLatestByDispositionId`,
  *            `selectLatestSummaryByDispositionId`, `selectBuyerTimelineByDispositionId`,
- *            `selectByOpportunityIds` and `selectStageRequiredById`.
+ *            `selectSignedBuyerNdasByDispositionId`, `selectByOpportunityIds` and
+ *            `selectStageRequiredById`.
+ *            ⚠ `selectSignedBuyerNdasByDispositionId` (2026-08-21, Log Offer modal) is the SECOND
+ *            method here to traverse `Buyer__r.Name`, and it inherits the Contact object-level gate
+ *            argued in full on `selectBuyerTimelineByDispositionId`. It is NOT a new kind of gate;
+ *            it is the same one, and the two must not drift apart.
  *            ⚠ `selectBuyerTimelineByDispositionId` (Tranche 2 Workstream D, 2026-08-20) is the
  *            first method here to TRAVERSE A RELATIONSHIP (`Buyer__r.Name`), which under
  *            `USER_MODE` adds an OBJECT-level gate on `Contact` that no NDA__c permission set
@@ -464,6 +471,129 @@ public with sharing class NdaSelector {
     }
 
     /**
+     * THE BUYERS ELIGIBLE TO HAVE MADE AN OFFER ON ONE DISPOSITION — every SIGNED, BUYER-ROLE NDA
+     * that names a buyer CONTACT. Backs `DispositionOfferFormService.getFormContext` ->
+     * `c/dispositionLogOfferModal`'s buyer picker (2026-08-21).
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 FOUR PREDICATES, AND EVERY ONE OF THEM IS LOAD-BEARING. DO NOT DROP ONE.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     *   `Disposition__c = :dispositionId`  the picker is scoped to the sale the modal was opened on.
+     *
+     *   `Party_Role__c = 'Buyer'`          🔴 THE ONE MOST EASILY FORGOTTEN AND THE MOST DAMAGING TO
+     *                                      FORGET. `Party_Role__c` is restricted to exactly
+     *                                      {Buyer, Introducing Broker}, and DPEG collects and
+     *                                      counter-signs ONE NDA PER PARTY — so a disposition
+     *                                      routinely carries a SIGNED broker NDA alongside the buyer
+     *                                      ones. Without this term the picker OFFERS THE INTRODUCING
+     *                                      BROKER AS A BUYER, and an analyst who picks it stamps a
+     *                                      broker's name into `Buyer_Name__c`, into the competitive
+     *                                      bid table, and into the record `DispositionApprovalService
+     *                                      .selectOffer` is choosing between. Nothing downstream
+     *                                      contradicts it. Same filter, same reason, as
+     *                                      `selectBuyerTimelineByDispositionId`.
+     *
+     *   `Status__c = 'Signed'`             🔴 AND **NOT** `NDA_Signed__c`, WHICH LATCHES.
+     *                                      `NDA__c/fields/NDA_Signed__c.field-meta.xml`: *"DO NOT USE
+     *                                      THIS FIELD TO ANSWER 'DID THIS PARTY SIGN'. Use
+     *                                      `Status__c`."* It is also granted on NEITHER disposition
+     *                                      permission set, so selecting it here would make this
+     *                                      `USER_MODE` read THROW for every persona.
+     *                                      🔴 AND **NOT** `Date_Signed__c != NULL` EITHER, which is
+     *                                      the sharper half of the same trap: the before-save flow
+     *                                      `NDA_Signed_Status_Sync` NEVER CLEARS `Date_Signed__c`, so
+     *                                      a `Signed -> Declined` counterparty keeps a non-null date
+     *                                      FOREVER and would stay in this picker after walking away.
+     *                                      The gate is the STATUS. `Date_Signed__c` is selected only
+     *                                      as a value to display once that gate has passed.
+     *
+     *   `Buyer__c != NULL`                 🔴 MANDATORY, AND IT IS WHAT MAKES THE RESULT USABLE AT
+     *                                      ALL. `NDA__c.Buyer__c` was added 2026-08-20 with NO
+     *                                      BACKFILL ("that is a decision, not an omission" —
+     *                                      `DispositionBuyerTimelineService`), so every NDA older
+     *                                      than that date carries only `Counterparty_Name__c`. A row
+     *                                      with no Contact cannot produce a picker option, because
+     *                                      the option's VALUE is the Contact Id that gets written to
+     *                                      `Disposition_Offer__c.Buyer__c`.
+     *                                      ⚠ MATCHING ON THE NAME INSTEAD IS EXPLICITLY FORBIDDEN by
+     *                                      that same passage: two buyers can share a name, and a
+     *                                      name-matched offer attributes one buyer's bid to another.
+     *                                      Excluding the row is the honest answer; the modal says so
+     *                                      to the user rather than silently offering fewer buyers.
+     *
+     * ⚠ DECLINED, PENDING AND SENT PARTIES ARE EXCLUDED HERE, AND THAT IS THE OPPOSITE OF
+     * `selectBuyerTimelineByDispositionId`, DELIBERATELY. That method returns declined parties
+     * because it is an AUDIT view sitting beside the NDAs related list, and hiding them would make
+     * the card disagree with the list on the same page. This one is a WRITE-SIDE PICKER: every row it
+     * returns is a party the analyst may attribute a live offer to. The two questions are different,
+     * which is why this is a second method and not a parameter on that one.
+     *
+     * ⚠ A BUYER CONTACT NAMED ON TWO NDAs APPEARS TWICE HERE, AND DE-DUPLICATION IS THE CALLER'S JOB,
+     * NOT THIS QUERY'S. `SELECT DISTINCT` does not exist in SOQL, and a duplicate `value` in a
+     * `lightning-combobox` is a real defect (the second option is unselectable), so
+     * `DispositionOfferFormService` keys its option map on `Buyer__c`. Stated here because the
+     * failure is invisible until a disposition genuinely has two NDAs for one party — which happens
+     * when an NDA is re-issued rather than amended.
+     *
+     * ── 🔴 FLS: `WITH USER_MODE`, AND THAT IS THE RIGHT ANSWER RATHER THAN THE DEFAULT ──────────
+     * A human opened the Log Offer dialog and asked to see the buyers on this sale. ARCHITECTURE.md
+     * §2's automation-path exception does NOT apply and `SYSTEM_MODE` would be wrong: there is no
+     * trigger to roll back and no batch to silently disable, so a throw here reports a real
+     * provisioning gap and the fix is a permission set.
+     * ⚠ `USER_MODE` gates the `WHERE` fields as well as the `SELECT` list, so ALL SIX of
+     * `Disposition__c`, `Party_Role__c`, `Status__c`, `Buyer__c`, `Counterparty_Name__c` and
+     * `Date_Signed__c` are gates. All six are granted read on `DPEG_Disposition_View` and
+     * `DPEG_Disposition_Edit` — MEASURED IN THE ORG via `FieldPermissions` on 2026-08-21, not read
+     * off the permission-set XML, because a permission-set GROUP grants the UNION of its members and
+     * the XML for one set cannot answer the question on its own.
+     *
+     * 🔴 AND THERE IS A SEVENTH GATE THAT IS ON NEITHER DISPOSITION PERMISSION SET: `Buyer__r.Name`
+     * traverses to `Contact`, and `USER_MODE` enforces OBJECT-level read on the related object. The
+     * grant lives in `DPEG_Contact_View` / `DPEG_Contact_Edit`, separate members of the same
+     * permission-set GROUPS. The full argument is on `selectBuyerTimelineByDispositionId` and is not
+     * repeated; the fix for a persona assembled from the disposition set alone is to add the Contact
+     * set, NEVER to switch this query to `SYSTEM_MODE`.
+     *
+     * ⚠ NO `LIMIT`, for the reason spelled out at length on `selectBuyerTimelineByDispositionId`: the
+     * row set is one per counterparty invited into one sale's data room, and a silent truncation here
+     * would remove a real buyer from a picker with nothing on screen saying so.
+     *
+     * ⚠ ORDER BY `Buyer__r.Name` — a picker is READ, not replayed, so alphabetical is the useful
+     * order, unlike the timeline's chronological one. `CreatedDate ASC, Id ASC` is kept as the
+     * tie-break so two buyers who share a name still come back in a stable order between renders.
+     *
+     * @param dispositionId Parent Disposition__c Id; null-safe.
+     * @return Signed buyer-role NDAs naming a Contact, with Id, Buyer__c, Buyer__r.Name,
+     *         Counterparty_Name__c and Date_Signed__c populated, buyer name first; an EMPTY LIST when
+     *         the input is null or the disposition has no such NDA (never null). ⚠ An empty list is a
+     *         FIRST-CLASS ANSWER and the modal renders it as an explained empty state — it is the
+     *         live shape of the only disposition in `usman-dpeg` today, whose one Signed buyer NDA
+     *         has a null `Buyer__c`.
+     * @throws System.QueryException when the running user lacks read on `NDA__c`, on `Contact`, or on
+     *         any of the six custom fields above. `DispositionOfferFormService` lets it propagate to
+     *         `DispositionOfferFormController`, which converts it to an `AuraHandledException`.
+     * @example
+     * List&lt;NDA__c&gt; buyers = NdaSelector.selectSignedBuyerNdasByDispositionId(dispositionId);
+     */
+    public static List<NDA__c> selectSignedBuyerNdasByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<NDA__c>();
+        }
+        String buyerRole = PARTY_ROLE_BUYER;
+        String signedStatus = STATUS_SIGNED;
+        return [
+            SELECT Id, Buyer__c, Buyer__r.Name, Counterparty_Name__c, Date_Signed__c
+            FROM NDA__c
+            WHERE Disposition__c = :dispositionId
+              AND Party_Role__c = :buyerRole
+              AND Status__c = :signedStatus
+              AND Buyer__c != NULL
+            WITH USER_MODE
+            ORDER BY Buyer__r.Name ASC NULLS LAST, CreatedDate ASC, Id ASC
+        ];
+    }
+
+    /**
      * Loads an NDA for the generic stage-advance quick action — backs
      * RecordStageAdvanceService.advance.
      *
@@ -522,6 +652,17 @@ public with sharing class NdaSelector {
      * `Is_Non_Expiring__c = 0`. Matching it exactly is what stops the report and the reminder
      * disagreeing on day one about which NDAs are expiring. Changing this constant without
      * changing that report re-opens exactly that divergence.
+     *
+     * ⚠ AMENDED 2026-08-21 — IT NOW HAS A SECOND CONSUMER THAT REACHES THE SAME VALUE BY A DIFFERENT
+     * ARGUMENT, AND THE PARAGRAPH ABOVE IS NO LONGER THE WHOLE JUSTIFICATION.
+     * `selectSignedBuyerNdasByDispositionId` (the Log Offer buyer picker) gates on `'Signed'` because
+     * `NDA_Signed__c` LATCHES and `Date_Signed__c` is NEVER CLEARED on decline — nothing to do with
+     * the expiry report. The value is shared because `NDA__c.Status__c`'s picklist has exactly one
+     * `Signed` and a second literal would be pure drift.
+     * 🔴 THE CONSEQUENCE IS A CHECK, NOT A BAN: whoever changes this constant must satisfy BOTH
+     * arguments, not just the one they came here for. Changing it to serve the picker would silently
+     * re-scope the expiry ladder, and vice versa. If they ever genuinely need to diverge, SPLIT the
+     * constant — do not repoint this one.
      */
     @TestVisible
     private static final String STATUS_SIGNED = 'Signed';

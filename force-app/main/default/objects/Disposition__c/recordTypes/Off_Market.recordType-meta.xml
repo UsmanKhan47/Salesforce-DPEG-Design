@@ -45,17 +45,22 @@
         type itself) instead.
 
         =====================================================================================
-        THE TRANSITION-WINDOW UNION - WHY THIS LIST HAS 11 VALUES AND NOT 9.
+        THE TRANSITION-WINDOW UNION - WHY THIS LIST HAD 11 VALUES AND NOT 9 (2026-08-19 TO
+        2026-08-21).
         =====================================================================================
-        Disposition Offer and Completed are RETIRED but still listed. A metadata deploy CANNOT
-        delete a picklist value, so they still exist on Disposition_Stage__c until a manual
-        Setup deletion wave removes them; and a record type cannot reference a value that no
-        longer exists, so they must be listed here until that wave runs and Salesforce drops
-        them from this type automatically. This list is therefore old-values UNION new-values.
-        ⚠ THEY WILL RENDER AS TWO UNGUIDED PATH STEPS after Sale Closes until the wave runs,
-        because Disposition_Path_Off_Market has no step for either. That is cosmetic and it
-        affects zero records - an org sweep on 2026-08-19 found no Disposition__c row on any
-        retired value, and no Off_Market row at all.
+        Disposition Offer and Completed were RETIRED but stayed listed for the transition
+        window. A metadata deploy CANNOT delete a picklist value, so they stayed on
+        Disposition_Stage__c until the manual Setup deletion wave removed them; and a record
+        type cannot reference a value that no longer exists, so they had to stay listed here
+        until that wave ran.
+
+        🔴 RETIRED 2026-08-21 (offer-form-and-stage-retirement.md, Request C). Both values are
+        now removed below, in the SAME commit as Disposition_Stage__c.field-meta.xml,
+        On_Market.recordType-meta.xml (which carries Call for Offers + Completed, a DIFFERENT
+        subset - do not copy this edit onto that file blind) and the objectTranslations file.
+        This edit must NOT be deployed until the manual Setup deletion of both values has
+        already happened; deploying first is a silent no-op that a later retrieve then undoes by
+        re-adding them.
 
         Sell_Decision_Trigger__c is enumerated in full because a record type file must list
         EVERY picklist on the object or values are silently dropped from that type.
@@ -69,7 +74,7 @@
     -->
     <fullName>Off_Market</fullName>
     <active>true</active>
-    <description>The direct, unlisted path, 9 stages: Readiness, Broker Selection, NDA, Release Materials, Offer Selection, LOI, PSA, Closing, Sale Closes. BOV Outreach and Active Listing are restricted out. Disposition Offer and Completed are retired, pending deletion.</description>
+    <description>The direct, unlisted path, 9 stages: Readiness, Broker Selection, NDA, Release Materials, Offer Selection, LOI, PSA, Closing, Sale Closes. BOV Outreach and Active Listing are restricted out. Disposition Offer and Completed retired 2026-08-21.</description>
     <label>Off Market</label>
     <picklistValues>
         <picklist>Disposition_Stage__c</picklist>
@@ -107,15 +112,6 @@
         </values>
         <values>
             <fullName>Sale Closes</fullName>
-            <default>false</default>
-        </values>
-        <!-- RETIRED, transition window only. See the note above. -->
-        <values>
-            <fullName>Disposition Offer</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Completed</fullName>
             <default>false</default>
         </values>
     </picklistValues>

@@ -1,0 +1,122 @@
+/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom value is a global styling hook
+   with its canonical literal fallback — a bare var(--hook) renders as NOTHING in the Salesforce
+   environments where hooks are unavailable. */
+
+:host {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.lom-body {
+    min-width: 0;
+    padding: var(--slds-g-spacing-1, 0.25rem) 0;
+}
+
+.lom-intro {
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-4, 1rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    /* ⚠ on-surface-1 (#757575) NOT neutral-base-60 (#939393): the latter is ~3.5:1 on white and
+       fails WCAG AA for body copy, and axe's colour-contrast rule is inert in jsdom so no test
+       would ever catch it. */
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* Two-up where there is room, one-up where there is not.
+   ⚠ `auto-fit` + `min(…, 100%)` and NO media query: a media query measures the VIEWPORT, but the
+   constraint here is the MODAL's width, which a size="medium" dialog sets and a phone shrinks
+   independently. A bare minmax(14rem, 1fr) bursts any container narrower than 224px. */
+.lom-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-4, 1rem);
+    min-width: 0;
+}
+
+.lom-field {
+    min-width: 0;
+}
+
+/* The parent lookup, the buyer picker and the broker each take the full width: all three carry a
+   record NAME, which is the longest thing on this form and the one most worth reading whole. */
+.lom-field_full {
+    grid-column: 1 / -1;
+}
+
+/* ── The read-only broker block ──────────────────────────────────────────────────────────────
+   Styled to sit in the same rhythm as the surrounding lightning-input-fields (small grey label
+   above, value below) so it reads as part of the form rather than as loose prose — while staying
+   visibly not-an-input. */
+.lom-readonly-label {
+    display: block;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.lom-readonly-value {
+    min-width: 0;
+    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
+    font-weight: var(--slds-g-font-weight-bold, 700);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+/* ⚠ `--slds-g-font-weight-regular` DOES NOT EXIST — measured against
+   node_modules/@salesforce-ux/sds-metadata/current/globalStylingHooks.metadata.json. The scale is
+   NUMERIC (`--slds-g-font-weight-1` … `-7`) with exactly ONE named member, `-bold`. The linter
+   reports the invented name under `no-slds-namespace-for-custom-hooks` ("create it in your own
+   namespace"), which reads like a naming-policy nit rather than "that hook is not real". */
+.lom-readonly-value_empty {
+    font-weight: var(--slds-g-font-weight-4, 400);
+    font-style: italic;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.lom-readonly-help {
+    min-width: 0;
+    margin: var(--slds-g-spacing-1, 0.25rem) 0 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ── The empty state ─────────────────────────────────────────────────────────────────────────
+   A brand-tinted panel rather than an error-tinted one, deliberately: nothing has gone wrong,
+   the analyst simply has a prerequisite to complete first. The soft-tint recipe is the SLDS 2
+   *-base-95 / -80 / -30 family. */
+.lom-empty {
+    min-width: 0;
+    padding: var(--slds-g-spacing-4, 1rem);
+    border-radius: var(--slds-g-radius-border-2, 0.25rem);
+    background: var(--slds-g-color-brand-base-95, #eef4ff);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-brand-base-80, #aacbff);
+}
+
+.lom-empty-heading {
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-2, 0.5rem);
+    font-size: var(--slds-g-font-scale-1, 1rem);
+    font-weight: var(--slds-g-font-weight-bold, 700);
+    color: var(--slds-g-color-brand-base-30, #014486);
+}
+
+.lom-empty-copy {
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-2, 0.5rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+.lom-empty-next {
+    margin-bottom: 0;
+}
+
+/* ── The load failure ────────────────────────────────────────────────────────────────────────
+   Error-tinted, because this one IS a failure and its remedy is an administrator. */
+.lom-error {
+    min-width: 0;
+    padding: var(--slds-g-spacing-3, 0.75rem);
+    border-radius: var(--slds-g-radius-border-2, 0.25rem);
+    background: var(--slds-g-color-error-base-95, #fef1ee);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-error-base-80, #feb8ab);
+    color: var(--slds-g-color-error-base-30, #8e030f);
+}

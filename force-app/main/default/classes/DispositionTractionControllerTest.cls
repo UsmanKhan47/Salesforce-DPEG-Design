@@ -35,11 +35,14 @@ private class DispositionTractionControllerTest {
         Test.stopTest();
 
         Assert.isNotNull(t, 'getTraction must never return null');
-        Assert.areEqual(DispositionTractionService.Band.CHECKPOINT_DUE.name(), t.band,
-            'Day 35 with no offers is the day-30 checkpoint');
+        Assert.areEqual(DispositionTractionService.Band.WEEK_4.name(), t.band,
+            'Day 35 with no offers sits on the week-4 rung');
         Assert.areEqual(35, t.daysOnMarket, 'The clock must be read off Listing_Date__c');
         Assert.areEqual(0, t.offerCount, 'No offers exist on this fixture');
-        Assert.isTrue(t.isAtRisk, 'CHECKPOINT_DUE is an at-risk state');
+        Assert.isTrue(t.isAtRisk, 'WEEK_4 is an at-risk state');
+        Assert.areEqual(3, t.rungs.size(),
+            'The three rungs must reach the LWC boundary - the panel renders them as real state '
+            + 'rather than as the hardcoded list it once shipped');
     }
 
     /**
@@ -73,12 +76,22 @@ private class DispositionTractionControllerTest {
             'An unresolvable Id renders as not listed');
     }
 
+    /**
+     * 🔴 THE PAUSE AT THE `@AuraEnabled` BOUNDARY. The offers are BACK-DATED deliberately:
+     * `TestDataFactory.createDispositionOffers` dates every offer TODAY, which pauses the clock at
+     * today — indistinguishable from no pause at all. With the dates set explicitly, this test fails
+     * if the controller ever loses the first-offer date on its way to the component.
+     */
     @isTest
-    static void aDispositionWithOffersReportsThemThroughTheController() {
+    static void aDispositionWithOffersReportsThemAndPausesTheClockThroughTheController() {
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
         d.Listing_Date__c = Date.today().addDays(-50);
         update d;
-        TestDataFactory.createDispositionOffers(2, d.Id, true);
+        List<Disposition_Offer__c> offers =
+            TestDataFactory.createDispositionOffers(2, d.Id, false);
+        offers[0].Offer_Date__c = Date.today().addDays(-18);
+        offers[1].Offer_Date__c = Date.today().addDays(-2);
+        insert offers;
 
         Test.startTest();
         DispositionTractionService.Traction t = DispositionTractionController.getTraction(d.Id);
@@ -88,6 +101,9 @@ private class DispositionTractionControllerTest {
         Assert.areEqual(DispositionTractionService.Band.ON_TRACK.name(), t.band,
             'Day 50 WITH offers is On Track - an offer is traction (D28/Q1)');
         Assert.isFalse(t.isAtRisk, 'A listing with offers is not at risk at any day');
+        Assert.isTrue(t.isPaused, 'The first offer paused the clock');
+        Assert.areEqual(32, t.daysOnMarket,
+            'Listed 50 days ago, earliest offer 18 days ago: the clock stopped at day 32, not 50');
     }
 
     /**

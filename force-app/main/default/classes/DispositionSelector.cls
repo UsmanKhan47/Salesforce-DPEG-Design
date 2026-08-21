@@ -18,10 +18,13 @@
  *   - DispositionApprovalAdvanceService.advance -> selectStageAndTypeByIds (redesign, 2026-08-19)
  *   - DispositionDealSummaryService.summarise -> selectNdaCountsById (Tranche 2 Workstream C,
  *                                              2026-08-20)
+ *   - DispositionOfferFormService.getFormContext -> selectBrokerContextById (Log Offer modal,
+ *                                              2026-08-21)
  *
- * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. FIVE
+ * ⚠ MIXED MODES SINCE 2026-08-09 (Tranche 3C) — READ THE METHOD, NEVER THIS HEADER. SIX
  * controller-backed reads are `WITH USER_MODE` (selectMostRecentByPropertyAssetId,
- * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectNdaCountsById);
+ * selectClosingSummaryById, selectOutreachById, selectApprovalContextById, selectNdaCountsById and,
+ * since 2026-08-21, selectBrokerContextById);
  * four are
  * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception (selectStagesByIds,
  * selectListingClockByIds, selectStageRequiredById, selectStageAndTypeByIds), each justified at
@@ -44,13 +47,17 @@
  * implies `without sharing`; it is always a second, separate question.
  *
  * ⚠ THE NEXT SENTENCE USED TO OPEN "MODE (the three USER_MODE reads)" AND HAS BEEN CORRECTED
- * RATHER THAN DELETED — it said THREE while the paragraph above it listed FOUR, and as of
- * 2026-08-20 there are FIVE. Re-count against the method list, never against a sentence; a stale
- * count in this exact position is the defect NdaSelector's header records propagating into
+ * RATHER THAN DELETED — it said THREE while the paragraph above it listed FOUR, then FIVE as of
+ * 2026-08-20, and SIX as of 2026-08-21. Re-count against the method list, never against a sentence;
+ * a stale count in this exact position is the defect NdaSelector's header records propagating into
  * ARCHITECTURE.md twice.
- * MODE (the five USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
+ * MODE (the six USER_MODE reads) — Disposition__c is a custom object; P3 proved the custom-field
  * FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS. USER_MODE also
  * covers the Wires__r relationship subquery (Wire__c is likewise custom, FLS gap 0).
+ * ⚠ `selectBrokerContextById` traverses `Broker__r.Name` to `Contact`, which adds an OBJECT-level
+ * gate no Disposition permission set grants — it comes from `DPEG_Contact_View` / `DPEG_Contact_Edit`
+ * in the same permission-set GROUPS. That is a gate of a different KIND from the custom-field one
+ * P3 measured, so "the FLS gap is 0" does not cover it. Argued at the method.
  *
  * NOT-FOUND CONTRACT is per-caller and encoded in the method shape:
  *   - read-for-display  (selectMostRecentByPropertyAssetId) -> a missing
@@ -579,5 +586,82 @@ public with sharing class DispositionSelector {
             WITH USER_MODE
             LIMIT 1
         ];
+    }
+
+    /**
+     * THE THREE FACTS THE LOG OFFER DIALOG NEEDS ABOUT THE PARENT SALE: which record type it is, and
+     * — on the off-market path — which broker Contact was picked, with a name to display. Backs
+     * `DispositionOfferFormService.getFormContext` -> `c/dispositionLogOfferModal` (2026-08-21).
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT IS A THIRD READ RATHER THAN A REUSE OF `selectApprovalContextById` ABOVE, AND THE REASON
+     *    IS THAT METHOD'S OWN HEADER.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * That method carries `Wire_Verification_Completed__c` and `Selected_Broker__c`, neither of which
+     * this caller uses, and under `WITH USER_MODE` every selected field is an FLS gate — so reusing
+     * it would give the Log Offer dialog two extra ways to fail for a value it never reads. It also
+     * FETCHES FOR USE (a single-row assignment that THROWS on miss), which is right for a Submit
+     * click handed an Id by a record page and wrong here: this read is one of three the dialog makes,
+     * and the dialog degrades rather than refuses. Narrower field list, softer not-found contract,
+     * so a separate method — the same per-caller split `NdaSelector` makes between
+     * `selectLatestByDispositionId` and `selectLatestSummaryByDispositionId`.
+     * ⚠ Do NOT "de-duplicate" the two later. The overlap is two columns; the coupling it prevents is
+     * Submit For Approval on every disposition, at every stage, on both record types.
+     *
+     * ── 🔴 `Selected_Broker__c` IS DELIBERATELY **NOT** SELECTED, AND THIS IS A STANDING RULE ───
+     * `DispositionBrokerStampService`'s header: *"**NO CONSUMER MAY PARSE `Selected_Broker__c`.** It
+     * is a display string only."* It reads `Firm` on on-market rows and `Person - Firm` on off-market
+     * ones, so a parser works on whichever path its author tested and fails silently on the other. It
+     * would be the obvious shortcut here — one field, both paths, no BOV query — and it is exactly
+     * the wrong turn. Not selecting it at all is what makes taking that shortcut impossible without
+     * editing this query first.
+     *
+     * ── WHY `RecordTypeId` AND NOT `Is_On_Market__c` ───────────────────────────────────────────
+     * The caller resolves it through `DispositionDomain.recordTypeNameOf`, the ONE shared helper
+     * whose null/Master fallback answers `On_Market` — the same helper `DispositionApprovalService`
+     * and `DispositionApprovalAdvanceService` use, and whose existence is recorded there as the fix
+     * for two copies of this test disagreeing. `RecordTypeId` is also a standard system field on
+     * which field-level security cannot be configured, so it adds NO FLS surface.
+     * ⚠ `DispositionBrokerStampService` argues AGAINST an `Is_On_Market__c` test for a different but
+     * compatible reason (it would be a second, drifting copy of a FlexiPage visibility rule). Both
+     * arguments land on the same answer; neither is a reason to introduce that field here.
+     *
+     * ── FLS: `WITH USER_MODE`, AND ONE OF THE TWO GATES IS AN OBJECT, NOT A FIELD ──────────────
+     * A human opened the dialog. `SYSTEM_MODE` would be wrong (ARCHITECTURE.md §2) — no trigger to
+     * roll back, no batch to disable. `Disposition__c.Broker__c` is granted read on BOTH
+     * `DPEG_Disposition_View` and `DPEG_Disposition_Edit`, MEASURED in the org via `FieldPermissions`
+     * on 2026-08-21 rather than read off the permission-set XML.
+     * 🔴 `Broker__r.Name` traverses to `Contact` and `USER_MODE` enforces OBJECT-level read on the
+     * related object; that grant is in `DPEG_Contact_View` / `DPEG_Contact_Edit`, separate members of
+     * the same permission-set GROUPS. The name is selected rather than resolved by a second Contact
+     * query because the modal DISPLAYS it read-only, and a broker Id with no name beside it is an
+     * unreadable field. The caller wraps this in a NARROW fail-soft try/catch for exactly this
+     * reason; the grant and the catch are BOTH required and neither substitutes for the other.
+     *
+     * READ-FOR-DISPLAY, null on miss. A missing row means the dialog was opened on an Id the running
+     * user cannot see, which the caller renders as "no broker resolved" rather than as an exception —
+     * the offer itself is still creatable, and §A.3 of the design records a null broker as an
+     * ACCEPTED state for an offer logged before the broker is appointed.
+     *
+     * @param dispositionId Disposition__c Id; null-safe.
+     * @return The Disposition with Id, RecordTypeId, Broker__c and Broker__r.Name populated, or NULL
+     *         when the input is null or no visible row matches.
+     * @throws System.QueryException when the running user lacks read on `Disposition__c.Broker__c` or
+     *         on `Contact`. The caller catches it narrowly and degrades to "no broker resolved".
+     * @example
+     * Disposition__c d = DispositionSelector.selectBrokerContextById(dispositionId);
+     */
+    public static Disposition__c selectBrokerContextById(Id dispositionId) {
+        if (dispositionId == null) {
+            return null;
+        }
+        List<Disposition__c> rows = [
+            SELECT Id, RecordTypeId, Broker__c, Broker__r.Name
+            FROM Disposition__c
+            WHERE Id = :dispositionId
+            WITH USER_MODE
+            LIMIT 1
+        ];
+        return rows.isEmpty() ? null : rows[0];
     }
 }

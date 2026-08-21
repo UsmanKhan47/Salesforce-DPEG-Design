@@ -8,8 +8,16 @@
  *   THE INPUT  — `Broker_Listing__c.Days_On_Market__c` is a hand-keyed Number that NOTHING in the
  *                application writes. Typing a value into it in a test made the ladder look
  *                exercised while proving nothing about a clock that, in production, never moved.
- *   THE LADDER — 21/28/42 was the 6-week clock D27.1 overturned. A suite asserting those strings
- *                was the falsifier for the defect rather than for the feature.
+ *   THE LADDER — the assertions were a SECOND COPY of the thresholds, living here rather than in
+ *                the service.
+ *
+ * ⚠ ONE HALF OF THAT 2026-08-10 REASONING IS RETRACTED (2026-08-21). It said "21/28/42 was the
+ * 6-week clock D27.1 overturned" — the user has since settled the third dispute over these numbers
+ * in favour of a six-week clock with rungs at weeks 1, 4 and 6 (7/28/42), overriding
+ * `DPEG-Stage-by-Stage.docx`. The DURATION objection is dead; the INPUT objection and the
+ * second-copy objection both stand, and they are the ones that shaped this suite. Every band
+ * asserted below is asserted through the controller, and the ladder itself is proven exactly once,
+ * in `DispositionTractionServiceTest`.
  *
  * The clock is now `Disposition__c.Listing_Date__c` on the PARENT, so these tests age the parent's
  * date. `Broker_Listing__c.Days_On_Market__c` is deliberately left at the factory's 0 throughout —
@@ -60,8 +68,39 @@ private class BrokerListingControllerTest {
             + 'engagement that does not exist.');
     }
 
+    /**
+     * ⚠ THIS TEST MOVED FROM DAY 12 TO DAY 3 ON 2026-08-21, AND THAT IS THE THRESHOLD CHANGE MADE
+     * VISIBLE. Under the retired 30/40/60 ladder day 12 was "inside month one, On Track"; under
+     * 7/28/42 day 12 is past the week-1 check-in. The day-12 case now has its own test below
+     * asserting the OPPOSITE band — deliberately, so the pair reads as a moved line rather than a
+     * loosened assertion.
+     */
     @isTest
-    static void testGetListing_insideMonthOne_isOnTrack() {
+    static void testGetListing_insideWeekOne_isOnTrack() {
+        Id dispId = listedDaysAgo(3);
+        TestDataFactory.createBrokerListing(dispId, true);
+
+        Test.startTest();
+        BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
+        Test.stopTest();
+
+        Assert.areEqual(3, row.daysOnMarket,
+            'Days on market is computed from the PARENT listing date, not the hand-keyed field '
+            + '(which the factory left at 0)');
+        Assert.areEqual('ON_TRACK', row.tractionBand, 'Day 3 with no offers is On Track');
+        Assert.isFalse(row.isAtRisk, 'Day 3 is not at risk');
+        Assert.isTrue(row.tractionLabel.contains('3'),
+            'The badge must name the day: ' + row.tractionLabel);
+    }
+
+    /**
+     * ⚠ DAY 12 IS NO LONGER THE QUIET CASE IT WAS. Under the retired 30/40/60 ladder day 12 was
+     * comfortably inside month one; under 7/28/42 the sibling test above sits at the WEEK_1 rung
+     * from day 7. It is kept at 12 on purpose so that a threshold change in either direction moves
+     * a band here.
+     */
+    @isTest
+    static void testGetListing_pastTheWeekOneCheckIn_isWeekOneButNotAtRisk() {
         Id dispId = listedDaysAgo(12);
         TestDataFactory.createBrokerListing(dispId, true);
 
@@ -69,17 +108,14 @@ private class BrokerListingControllerTest {
         BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
         Test.stopTest();
 
-        Assert.areEqual(12, row.daysOnMarket,
-            'Days on market is computed from the PARENT listing date, not the hand-keyed field '
-            + '(which the factory left at 0)');
-        Assert.areEqual('ON_TRACK', row.tractionBand, 'Day 12 with no offers is On Track');
-        Assert.isFalse(row.isAtRisk, 'Day 12 is not at risk');
-        Assert.isTrue(row.tractionLabel.contains('12'),
-            'The badge must name the day: ' + row.tractionLabel);
+        Assert.areEqual('WEEK_1', row.tractionBand,
+            'Day 12 with zero offers is past the week-1 check-in');
+        Assert.isFalse(row.isAtRisk,
+            'The week-1 check-in must NOT drive the amber styling - it is a prompt, not a risk');
     }
 
     @isTest
-    static void testGetListing_pastTheThirtyDayCheckpoint_isAtRisk() {
+    static void testGetListing_pastTheFourWeekMark_isAtRisk() {
         Id dispId = listedDaysAgo(34);
         TestDataFactory.createBrokerListing(dispId, true);
 
@@ -87,14 +123,16 @@ private class BrokerListingControllerTest {
         BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
         Test.stopTest();
 
-        Assert.areEqual('CHECKPOINT_DUE', row.tractionBand,
-            'Day 34 with zero offers is the day-30 traction checkpoint');
-        Assert.isTrue(row.isAtRisk, 'The checkpoint band drives the amber styling');
+        Assert.areEqual('WEEK_4', row.tractionBand,
+            'Day 34 with zero offers is past the four-week mark');
+        Assert.isTrue(row.isAtRisk, 'The week-4 band drives the amber styling');
+        Assert.areEqual('Week 4 — At Risk', row.tractionLabel,
+            'The badge beside the listing facts carries the label the user specified verbatim');
         Assert.isNotNull(row.tractionDetail, 'The badge tooltip copy must be populated');
     }
 
     @isTest
-    static void testGetListing_pastTheSixtyDayPeriod_isHardStop() {
+    static void testGetListing_pastTheSixWeekPeriod_isHardStop() {
         Id dispId = listedDaysAgo(65);
         TestDataFactory.createBrokerListing(dispId, true);
 
@@ -102,8 +140,8 @@ private class BrokerListingControllerTest {
         BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
         Test.stopTest();
 
-        Assert.areEqual('HARD_STOP', row.tractionBand,
-            'Day 65 with zero offers is past the 60-day marketing period');
+        Assert.areEqual('WEEK_6', row.tractionBand,
+            'Day 65 with zero offers is past the six-week marketing period');
         Assert.isTrue(row.isAtRisk, 'Hard Stop is an at-risk state');
         Assert.areEqual(65, row.daysOnMarket, 'The elapsed count is not clamped');
     }
@@ -112,9 +150,18 @@ private class BrokerListingControllerTest {
      * 🔴 THE OFFERS-ONLY RULE, AT THE CONTROLLER BOUNDARY (D28/Q1). The retired ladder had no
      * offers branch at all, so this exact record would have been labelled "Week 6 — Hard Stop"
      * while three buyers were in negotiation.
+     *
+     * ⚠ A THIRD ASSERTION WAS DELETED HERE ON 2026-08-21, NOT WEAKENED. It read
+     * `Assert.areEqual(3, row.offersReceived, ...)` and it can no longer be written: the UAT pass
+     * removed the "Offers Received" tile from `lwc/brokerListing` and `offersReceived` from the DTO
+     * with it. What that assertion actually PROVED — that the controller counts the real
+     * `Disposition_Offer__c` children rather than the hand-keyed
+     * `Broker_Listing__c.Offers_Received__c` (which the factory leaves at 0) — is still proven by
+     * the two assertions below: three real offers are the ONLY thing that can turn a day-65 listing
+     * from WEEK_6 into ON_TRACK, and a count read off the hand-keyed 0 would leave it at WEEK_6.
      */
     @isTest
-    static void testGetListing_offersSuppressTheCheckpointEvenPastDaySixty() {
+    static void testGetListing_offersSuppressTheRungsEvenPastTheSixWeekPeriod() {
         Id dispId = listedDaysAgo(65);
         TestDataFactory.createBrokerListing(dispId, true);
         TestDataFactory.createDispositionOffers(3, dispId, true);
@@ -124,11 +171,44 @@ private class BrokerListingControllerTest {
         Test.stopTest();
 
         Assert.areEqual('ON_TRACK', row.tractionBand,
-            'An offer is traction, so no checkpoint fires at any day');
+            'An offer is traction, so no rung fires at any day. This is also what now proves the '
+            + 'count is read from the real children: the hand-keyed Offers_Received__c is 0 here, '
+            + 'and a 0 would have left this listing at WEEK_6');
         Assert.isFalse(row.isAtRisk, 'A listing in negotiation must not be flagged');
-        Assert.areEqual(3, row.offersReceived,
-            'The count comes from the real Disposition_Offer__c children, not the hand-keyed '
-            + 'Broker_Listing__c.Offers_Received__c (which the factory left at 0)');
+    }
+
+    /**
+     * 🔴 THE PAUSE, ON THIS CARD SPECIFICALLY — and it exists because the failure it guards against
+     * is INVISIBLE. `DispositionTractionService.evaluate` keeps a two-argument overload so older
+     * callers compile; calling it from here would produce a perfectly plausible card that simply
+     * never paused, while the traction panel beside it — reading the same service through a
+     * different controller — did. Two surfaces, one ladder, opposite answers: the exact defect this
+     * shared service exists to prevent.
+     *
+     * ⚠ THE OFFERS ARE BACK-DATED. The factory dates every offer TODAY, which pauses the clock at
+     * today and makes the assertion vacuous.
+     */
+    @isTest
+    static void testGetListing_datedOfferPausesTheClockRatherThanJustSuppressingTheBand() {
+        Id dispId = listedDaysAgo(65);
+        TestDataFactory.createBrokerListing(dispId, true);
+        List<Disposition_Offer__c> offers =
+            TestDataFactory.createDispositionOffers(2, dispId, false);
+        offers[0].Offer_Date__c = Date.today().addDays(-40);
+        offers[1].Offer_Date__c = Date.today().addDays(-9);
+        insert offers;
+
+        Test.startTest();
+        BrokerListingController.ListingRow row = BrokerListingController.getListing(dispId);
+        Test.stopTest();
+
+        Assert.areEqual('ON_TRACK', row.tractionBand, 'A paused listing does not escalate');
+        Assert.areEqual(25, row.daysOnMarket,
+            'Listed 65 days ago, earliest offer 40 days ago: the Days On Market tile must read 25. '
+            + 'A 65 here means this card called the unpaused overload while the panel beside it '
+            + 'paused - one ladder, two answers');
+        Assert.isTrue(row.tractionLabel.contains('paused'),
+            'And the badge says so in words: ' + row.tractionLabel);
     }
 
     /**
@@ -226,7 +306,8 @@ private class BrokerListingControllerTest {
         Assert.isNotNull(row, 'getListing should still resolve exactly one row at volume');
         Assert.areEqual(2, queriesUsed,
             'getListing costs exactly 2 SOQL: the listing (carrying the clock on the grandparent '
-            + 'path it already traversed) and one aggregate for the offer count');
+            + 'path it already traversed) and ONE aggregate carrying both the offer count and the '
+            + 'first offer date. A separate read for the pause date would fail here');
     }
 
     // A bare user with no DPEG access: the Broker_Listing__c custom-object read runs WITH

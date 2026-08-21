@@ -95,6 +95,34 @@
 
         DEPLOY ORDER - LOAD-BEARING. workflows/Disposition__c.workflow-meta.xml and
         objects/Disposition__c/fields/Is_On_Market__c.field-meta.xml must both land FIRST.
+
+        =====================================================================================
+        2026-08-21 - THREE NEW ELEMENTS, PLUS A SECOND ACTION ON finalApprovalActions.
+        =====================================================================================
+        initialSubmissionActions (new) sets Disposition__c.Approval_Pending__c;
+        finalApprovalActions gains Clear_Approval_Pending as a SECOND action;
+        finalRejectionActions (new, this file had none) and recallActions (new) clear it.
+        Set_Approval_Advance_Pending is untouched and stays FIRST. Purpose: hide the
+        Submit_Broker_Selection quick action on Disposition_Record_Page while this approval is
+        genuinely pending.
+
+        🔴 THE FULL ARGUMENT, THE EVIDENCE FOR THE TWO PREVIOUSLY UNPROVEN ELEMENT SHAPES, AND
+        THE MANDATORY SUBMIT-THEN-RECALL READBACK LIVE IN ONE PLACE AND ARE NOT REPEATED HERE:
+        approvalProcesses/Disposition__c.Sale_Decision_Approval.approvalProcess-meta.xml,
+        2026-08-21 entry. That file is deliberately deployed and behaviourally proven FIRST AND
+        ALONE. Do not deploy this file until its recall test has passed, because a recallActions
+        block that deploys green and never fires hides this Submit button PERMANENTLY on an
+        unlocked record with no route to resubmit, and nothing logs it.
+
+        ⚠ THIS PROCESS IS OFF-MARKET ONLY (criterion 2 above), but the flag it writes is shared
+        with the other three Submit actions. That is safe ONLY because the four entry stages are
+        mutually exclusive and each Dynamic Action rule already ANDs its own stage, so one flag
+        is target scoped by construction. Same dependency the "ONE UPDATE SERVES ALL THREE
+        APPROVALS" note in workflows/Disposition__c.workflow-meta.xml records for the semaphore.
+
+        ⚠ Approval_Pending__c AND Approval_Advance_Pending__c ARE OPPOSITES IN TIME AND ARE NOT
+        INTERCHANGEABLE. Read the banner on
+        objects/Disposition__c/fields/Approval_Pending__c.field-meta.xml first.
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -145,11 +173,33 @@
             <name>Set_Approval_Advance_Pending</name>
             <type>FieldUpdate</type>
         </action>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
     </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionActions>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalRejectionActions>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <initialSubmissionActions>
+        <action>
+            <name>Set_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </initialSubmissionActions>
     <label>Broker Selection Approval</label>
     <processOrder>2</processOrder>
+    <recallActions>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

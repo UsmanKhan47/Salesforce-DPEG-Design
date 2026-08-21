@@ -14,25 +14,35 @@
  *   - BovSubmissionSelectionGuardService.enforceSingleSelected, the before-context
  *     single-Selected trigger guard (2026-08-20,
  *     Tranche 2 Workstream A2)                        -> selectSelectedByDispositionIds
+ *   - DispositionOfferFormService.getFormContext, the Log Offer modal's read-only
+ *     broker on the ON-MARKET path (2026-08-21)       -> selectSelectedBrokerByDispositionId
  *
  * ⚠ MIXED MODES SINCE 2026-08-19 — READ THE METHOD, NEVER THIS HEADER. ⚠ CORRECTED 2026-08-20: this
  * paragraph used to say "Two methods are `WITH USER_MODE`; `selectStatusesByDispositionId` is
- * `WITH SYSTEM_MODE`", which was a COUNT and counts decay. It is now TWO of FOUR either way —
+ * `WITH SYSTEM_MODE`", which was a COUNT and counts decay. ⚠ RE-COUNTED 2026-08-21 (the Log Offer
+ * modal added `selectSelectedBrokerByDispositionId`): it is now TWO of **FIVE** —
  * `selectStatusesByDispositionId` and `selectSelectedByDispositionIds` (the trigger guard's read)
  * are `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception, each justified at
  * its OWN declaration, which is where §2 says the authoritative inventory lives. 🔴 DO NOT TRUST A
  * NUMBER IN THIS HEADER — `NdaSelector`'s header records that this repo has already miscounted its
- * own SYSTEM_MODE inventory once. Re-count; do not assert.
+ * own SYSTEM_MODE inventory once, and this line has now decayed twice. Re-count; do not assert.
  * ⚠ AN EARLIER SENTENCE HERE WAS REASONING FROM THE WRONG TEST and is retracted verbatim so nobody
  * re-derives it: "There is no guest path for the Disposition module, so no SYSTEM_MODE appears
  * here." The exception is about reads the running user never asked for, and about fields the running
  * user may not hold — not about anonymous ones.
  *
- * MODE (the two USER_MODE reads) — BOV_Submission__c is a custom object; P3 proved the
- * custom-field FLS gap is 0, so USER_MODE is safe and enforces the running user's sharing + FLS.
- * Neither of those two reads touches `Approval_Status__c`, which is the field that forced
+ * MODE (the THREE USER_MODE reads — `selectByDispositionId`, `selectSelectedByDispositionId` and,
+ * since 2026-08-21, `selectSelectedBrokerByDispositionId`) — BOV_Submission__c is a custom object;
+ * P3 proved the custom-field FLS gap is 0, so USER_MODE is safe and enforces the running user's
+ * sharing + FLS. None of the three touches `Approval_Status__c`, which is the field that forced
  * `selectStatusesByDispositionId` the other way. (`selectSelectedByDispositionIds` is SYSTEM_MODE
  * for a different reason again — the CALLER, not the field. Read it there.)
+ * 🔴 THE THIRD ONE IS NOT AS SAFE AS THE OTHER TWO AND MUST NOT BE READ AS ROUTINE.
+ * `selectSelectedBrokerByDispositionId` selects `Broker__c`, which — measured in the org on
+ * 2026-08-21 — `DPEG_Admin_Access` does NOT grant, and it traverses to `Contact`. Its own header
+ * carries the grant matrix and the reason it is a separate method rather than a widened one. That
+ * is exactly why P3's "the custom-field FLS gap is 0" is a statement about a moment in time, not a
+ * standing licence to widen any `USER_MODE` SELECT in this class.
  *
  * NOT-FOUND CONTRACT — read-for-display: a Disposition with no BOV submissions is
  * a normal state, so EVERY method here returns its natural empty List, never null and
@@ -188,6 +198,88 @@ public with sharing class BovSubmissionSelector {
             WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
             WITH USER_MODE
             ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
+        ];
+    }
+
+    /**
+     * THE APPOINTED BROKER CONTACT on an ON-MARKET disposition — the `Selected` submission's
+     * `Broker__c`. Backs `DispositionOfferFormService.getFormContext` ->
+     * `c/dispositionLogOfferModal`'s read-only Broker field (2026-08-21).
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT IS A SECOND METHOD RATHER THAN `Broker__c` ADDED TO `selectSelectedByDispositionId`
+     *    ABOVE, AND THAT IS THE ENTIRE POINT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Both are `WITH USER_MODE`, and under `USER_MODE` **every added field is another way for the
+     * query to throw**: one persona without read on `BOV_Submission__c.Broker__c` turns the widened
+     * method into `System.QueryException: No such column` — an FLS denial wearing a schema error —
+     * for EVERY caller of it, including Submit Selected Broker.
+     *
+     * 🔴 AND THAT PERSONA EXISTS. MEASURED IN THE ORG (`usman-dpeg`, `FieldPermissions`, 2026-08-21),
+     * not read off the permission-set XML:
+     *
+     *   PERMISSION SET             BOV_Submission__c.Broker__c
+     *   DPEG_Disposition_Edit      read + edit
+     *   DPEG_Disposition_View      read
+     *   DPEG_Junior_Analyst_PSG    read + edit
+     *   DPEG_Principal_PSG         read
+     *   DPEG_Admin_Access          🔴 **NO ROW AT ALL** — not granted.
+     *
+     * `DPEG_Admin_Access` DOES carry `NDA__c.Party_Role__c`, so it is a real, provisioned set that
+     * simply does not include this field. Widening the method above would therefore have broken
+     * Submit Selected Broker for anyone holding only that set, to add a field that caller does not
+     * use. Keeping the reads separate confines that exposure to THIS caller, where it fails soft:
+     * `DispositionOfferFormService` catches it narrowly and the modal renders "no broker appointed
+     * yet" instead of taking the whole dialog down.
+     * ⚠ The fix, if that persona ever needs the Log Offer dialog, is the PERMISSION SET. It is never
+     * `SYSTEM_MODE` here — see `selectSelectedByDispositionId`'s own note on borrowing modes.
+     *
+     * ⚠ `Broker__r.Name` traverses to `Contact` and adds an OBJECT-level gate that no
+     * `BOV_Submission__c` permission set grants; it comes from `DPEG_Contact_View` /
+     * `DPEG_Contact_Edit`, separate members of the same permission-set GROUPS. The full argument is
+     * on `NdaSelector.selectBuyerTimelineByDispositionId`. The name is selected rather than resolved
+     * by a second Contact query because the modal DISPLAYS it — a broker Id with no name beside it is
+     * an unreadable read-only field.
+     *
+     * 🔴 AN EMPTY LIST IS A FIRST-CLASS ANSWER AND MUST STAY ONE — the same contract, and for the
+     * same reason, as `selectSelectedByDispositionId`. "No broker is Selected yet" is the NORMAL
+     * state of an on-market disposition before `Broker_Finalize_Approval` has run, and an offer
+     * logged in that window legitimately carries a null broker with nothing backfilling it later.
+     * A fetch-for-use throw would turn a normal state into a dialog that refuses to open.
+     * ⚠ `Broker__c` ITSELF CAN BE NULL ON A SELECTED ROW — the lookup was added later than the object
+     * and legacy submissions carry only `Broker_Firm__c` / `Contact_Name__c`. The caller treats
+     * "no row" and "row with a null broker" identically; do not assume a returned row implies a
+     * broker.
+     *
+     * ⚠ NO `LIMIT`, and the `CreatedDate ASC, Id ASC` tie-break is deliberate. Exclusivity is a
+     * SERVER invariant maintained by `BovSubmissionService.replaceSelectedBroker`, not a schema
+     * constraint, so two `Selected` rows is a reachable data defect. A `LIMIT 1` would hide it and
+     * pick arbitrarily; returning both lets the caller take `[0]` deterministically while a future
+     * reader can still see the duplicate. ⚠ Unlike `selectSelectedByDispositionId` this does NOT sort
+     * on `BOV_Score__c` — that field is heading for a formula that returns null with no asking price,
+     * so every row ties and the leg decides nothing. Oldest-first is at least meaningful.
+     *
+     * @param dispositionId Disposition__c Id whose Selected submission to read; null-safe.
+     * @return Every Selected BOV_Submission__c on that Disposition with Id, Broker__c,
+     *         Broker__r.Name and Broker_Firm__c populated, oldest first; an EMPTY LIST when it has
+     *         none, or when dispositionId is null (never null).
+     * @throws System.QueryException when the running user lacks read on `BOV_Submission__c`, on
+     *         `Contact`, or on `Broker__c` / `Broker_Firm__c` / `Submission_Status__c`. The caller
+     *         catches it narrowly and degrades to "no broker resolved".
+     * @example
+     * List&lt;BOV_Submission__c&gt; selected =
+     *     BovSubmissionSelector.selectSelectedBrokerByDispositionId(dispId);
+     */
+    public static List<BOV_Submission__c> selectSelectedBrokerByDispositionId(Id dispositionId) {
+        if (dispositionId == null) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Broker__c, Broker__r.Name, Broker_Firm__c
+            FROM BOV_Submission__c
+            WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
+            WITH USER_MODE
+            ORDER BY CreatedDate ASC, Id ASC
         ];
     }
 

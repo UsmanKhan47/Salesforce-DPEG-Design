@@ -6,6 +6,11 @@
  *   1. THE ABSENT-KEY CONTRACT. `GROUP BY` emits no row for an empty group, so a disposition with
  *      no offers is MISSING from the map rather than present with 0. Every caller has to default
  *      the miss, and a test that only ever counted non-empty groups would never notice.
+ *   1b. `MIN(Offer_Date__c)` — added 2026-08-21 with the traction clock's PAUSE. `countByDispositionIds`
+ *      became `selectOfferTractionByDispositionIds` and now returns the count AND the earliest offer
+ *      date from ONE aggregate. ⚠ EVERY DATE-BEARING TEST BELOW SETS THE DATES ITSELF, because
+ *      `TestDataFactory.createDispositionOffers` stamps `Offer_Date__c = Date.today()` on every
+ *      fixture — over which a MIN, a MAX and a hardcoded `Date.today()` are indistinguishable.
  *   2. SCOPING. A count must be scoped to its own disposition — a selector that ignored the WHERE
  *      clause would still "work" on a single-disposition fixture.
  *   3. BULK. `.claude/rules/bulk-test-rule.md` applies in full: Disposition_Offer__c is an
@@ -44,28 +49,32 @@ private class DispositionOfferSelectorTest {
 
     @isTest
     static void nullAndEmptyInputsReturnAnEmptyMap() {
-        Assert.areEqual(0, DispositionOfferSelector.countByDispositionIds(null).size(),
+        Assert.areEqual(0,
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(null).size(),
             'A null input must return an empty map, never a NullPointerException');
-        Assert.areEqual(0, DispositionOfferSelector.countByDispositionIds(new Set<Id>()).size(),
+        Assert.areEqual(0,
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(new Set<Id>()).size(),
             'An empty input must return an empty map');
     }
 
     /**
-     * 🔴 THE ABSENT-KEY CONTRACT. This is the one a caller gets wrong: `containsKey` is required,
-     * because the map does not carry a 0 for an offerless disposition.
+     * 🔴 THE ABSENT-KEY CONTRACT. This is the one a caller gets wrong: the map does not carry a 0
+     * for an offerless disposition, so a caller reading `.offerCount` off the miss would
+     * NullPointer rather than read zero.
      */
     @isTest
     static void aDispositionWithNoOffersIsABSENTFromTheMapRatherThanZero() {
         Disposition__c d = newDisposition();
 
-        Map<Id, Integer> counts =
-            DispositionOfferSelector.countByDispositionIds(new Set<Id>{ d.Id });
+        Map<Id, DispositionOfferSelector.OfferTraction> byId =
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(new Set<Id>{ d.Id });
 
-        Assert.areEqual(0, counts.size(),
+        Assert.areEqual(0, byId.size(),
             'GROUP BY emits no row for an empty group, so the Id must be absent');
-        Assert.isFalse(counts.containsKey(d.Id),
+        Assert.isFalse(byId.containsKey(d.Id),
             'Callers must default a miss to 0 - the map does not do it for them');
-        Assert.isNull(counts.get(d.Id), 'A miss reads null, which is why containsKey is required');
+        Assert.isNull(byId.get(d.Id),
+            'A miss reads null, which is why the callers null-check the wrapper');
     }
 
     @isTest
@@ -73,11 +82,74 @@ private class DispositionOfferSelectorTest {
         Disposition__c d = newDisposition();
         TestDataFactory.createDispositionOffers(3, d.Id, true);
 
-        Map<Id, Integer> counts =
-            DispositionOfferSelector.countByDispositionIds(new Set<Id>{ d.Id });
+        Map<Id, DispositionOfferSelector.OfferTraction> byId =
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(new Set<Id>{ d.Id });
 
-        Assert.areEqual(1, counts.size(), 'One disposition with offers means one entry');
-        Assert.areEqual(3, counts.get(d.Id), 'All three offers must be counted');
+        Assert.areEqual(1, byId.size(), 'One disposition with offers means one entry');
+        Assert.areEqual(3, byId.get(d.Id).offerCount, 'All three offers must be counted');
+    }
+
+    /**
+     * 🔴 `MIN(Offer_Date__c)` IS THE PAUSE POINT — the day `DispositionTractionService` stops the
+     * marketing clock. It must be the EARLIEST date, not the latest and not whichever row the
+     * platform returned first.
+     *
+     * ⚠ THE DATES ARE SET EXPLICITLY BECAUSE THE FACTORY DATES EVERY OFFER TODAY. Three offers
+     * straight from `createDispositionOffers` all carry `Date.today()`, so a MIN over them is
+     * indistinguishable from a MAX, a FIRST, or a hardcoded `Date.today()` in the selector.
+     */
+    @isTest
+    static void theEarliestOfferDateIsReturnedAsThePausePoint() {
+        Disposition__c d = newDisposition();
+        List<Disposition_Offer__c> offers =
+            TestDataFactory.createDispositionOffers(3, d.Id, false);
+        offers[0].Offer_Date__c = Date.today().addDays(-5);
+        offers[1].Offer_Date__c = Date.today().addDays(-40); // the earliest
+        offers[2].Offer_Date__c = Date.today();
+        insert offers;
+
+        Map<Id, DispositionOfferSelector.OfferTraction> byId =
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(new Set<Id>{ d.Id });
+
+        Assert.areEqual(3, byId.get(d.Id).offerCount, 'All three still count');
+        Assert.areEqual(Date.today().addDays(-40), byId.get(d.Id).firstOfferDate,
+            'MIN must return the earliest offer date - it is where the clock stops');
+    }
+
+    /**
+     * `MIN` IGNORES NULLS, and both halves of that matter. An undated offer must not become the
+     * minimum (which would pause the clock at null), and it must not stop a DATED sibling from
+     * being found.
+     */
+    @isTest
+    static void undatedOffersAreIgnoredByTheMinButStillCounted() {
+        Disposition__c bothKinds = newDisposition();
+        List<Disposition_Offer__c> mixed =
+            TestDataFactory.createDispositionOffers(2, bothKinds.Id, false);
+        mixed[0].Offer_Date__c = null;
+        mixed[1].Offer_Date__c = Date.today().addDays(-12);
+
+        Disposition__c allUndated = newDisposition();
+        List<Disposition_Offer__c> undated =
+            TestDataFactory.createDispositionOffers(2, allUndated.Id, false);
+        undated[0].Offer_Date__c = null;
+        undated[1].Offer_Date__c = null;
+
+        List<Disposition_Offer__c> all = new List<Disposition_Offer__c>(mixed);
+        all.addAll(undated);
+        insert all;
+
+        Map<Id, DispositionOfferSelector.OfferTraction> byId =
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(
+                new Set<Id>{ bothKinds.Id, allUndated.Id });
+
+        Assert.areEqual(2, byId.get(bothKinds.Id).offerCount, 'An undated offer is still an offer');
+        Assert.areEqual(Date.today().addDays(-12), byId.get(bothKinds.Id).firstOfferDate,
+            'The dated sibling must still be found - a null must not win the MIN');
+        Assert.areEqual(2, byId.get(allUndated.Id).offerCount,
+            'A disposition whose offers are ALL undated still appears in the map');
+        Assert.isNull(byId.get(allUndated.Id).firstOfferDate,
+            'And its pause point is null - the caller must render "not paused", never invent a date');
     }
 
     /**
@@ -93,14 +165,14 @@ private class DispositionOfferSelectorTest {
         TestDataFactory.createDispositionOffers(5, b.Id, true);
         TestDataFactory.createDispositionOffers(4, untouched.Id, true);
 
-        Map<Id, Integer> counts =
-            DispositionOfferSelector.countByDispositionIds(new Set<Id>{ a.Id, b.Id });
+        Map<Id, DispositionOfferSelector.OfferTraction> byId =
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(new Set<Id>{ a.Id, b.Id });
 
-        Assert.areEqual(2, counts.size(),
+        Assert.areEqual(2, byId.size(),
             'Only the requested dispositions may appear - the third must be filtered out');
-        Assert.areEqual(2, counts.get(a.Id), 'A gets its own 2, not the pooled 11');
-        Assert.areEqual(5, counts.get(b.Id), 'B gets its own 5');
-        Assert.isFalse(counts.containsKey(untouched.Id),
+        Assert.areEqual(2, byId.get(a.Id).offerCount, 'A gets its own 2, not the pooled 11');
+        Assert.areEqual(5, byId.get(b.Id).offerCount, 'B gets its own 5');
+        Assert.isFalse(byId.containsKey(untouched.Id),
             'A disposition outside the requested set must not appear');
     }
 
@@ -128,16 +200,19 @@ private class DispositionOfferSelectorTest {
 
         Test.startTest();
         Integer queriesBefore = Limits.getQueries();
-        Map<Id, Integer> counts = DispositionOfferSelector.countByDispositionIds(ids);
+        Map<Id, DispositionOfferSelector.OfferTraction> byId =
+            DispositionOfferSelector.selectOfferTractionByDispositionIds(ids);
         Integer queriesUsed = Limits.getQueries() - queriesBefore;
         Test.stopTest();
 
-        Assert.areEqual(BULK_N, counts.size(),
+        Assert.areEqual(BULK_N, byId.size(),
             'Every one of the ' + BULK_N + ' dispositions must be counted');
         Assert.areEqual(1, queriesUsed,
-            'The count must be ONE aggregate query for the whole set, never one per record');
-        Assert.areEqual(1, counts.get(dispositions[0].Id), 'Each carries exactly one offer');
-        Assert.areEqual(1, counts.get(dispositions[BULK_N - 1].Id),
+            'BOTH facts must come from ONE aggregate query for the whole set - never one per '
+            + 'record, and never a second query for the first offer date');
+        Assert.areEqual(1, byId.get(dispositions[0].Id).offerCount,
+            'Each carries exactly one offer');
+        Assert.areEqual(1, byId.get(dispositions[BULK_N - 1].Id).offerCount,
             'Including the last one, which is in the second trigger chunk');
     }
 

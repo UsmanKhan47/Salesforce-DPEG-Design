@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+        <CustomField> breaks `sf` deploy at source conversion with a misleading
+        "unable to find matching parent xml file" error.
+
+        NEW 2026-08-21. THE CHILD HALF OF THE "AN APPROVAL IS PENDING" UI FLAG.
+        SYSTEM-WRITTEN ONLY.
+
+        WHAT WRITES IT: approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval, and
+        nothing else.
+            initialSubmissionActions -> Set_Broker_Approval_Pending    writes TRUE
+            finalApprovalActions     -> Clear_Broker_Approval_Pending  writes FALSE
+            finalRejectionActions    -> Clear_Broker_Approval_Pending  writes FALSE
+            recallActions            -> Clear_Broker_Approval_Pending  writes FALSE
+        Its lifetime is EXACTLY that approval's ProcessInstance.Status = 'Pending' window.
+
+        WHAT READS IT: BovSubmissionTriggerHandler ONLY, in after update context, which mirrors
+        the value onto the PARENT Disposition__c.Approval_Pending__c. Nothing in the UI reads
+        this field on this object.
+
+        =====================================================================================
+        WHY THIS FIELD HAS TO EXIST AT ALL, RATHER THAN THE APPROVAL WRITING THE PARENT
+        =====================================================================================
+        Submit_Selected_Broker's approval targets the SUBMISSION, but the FlexiPage visibility
+        rule that has to hide the button can only read a field on the DISPOSITION.
+        BOV_Submission__c.Disposition__c is a LOOKUP, not Master Detail (see that field's own
+        file), which independently rules out BOTH available declarative routes for carrying a
+        child value to a parent: a roll up summary needs Master Detail, and a cross object
+        workflow field update can only write to a Master Detail parent. A trigger mirror is the
+        only route, so the value has to be stored HERE first for the trigger to see it.
+
+        ⚠ THE MIRROR IS SAFE FOR THE SAME REASON handleApprovedSelections' PARENT WRITE IS.
+        Broker_Finalize_Approval's recordEditability = AdminOnly locks THIS SUBMISSION, not the
+        parent, and no Disposition target approval can be pending at BOV Outreach (their entry
+        stages are Disposition Readiness, Broker Selection and Closing). The parent is therefore
+        writable throughout this approval's pending window.
+
+        =====================================================================================
+        🔴 THIS FIELD DELIBERATELY GETS NO FIELD-LEVEL SECURITY IN ANY PERMISSION SET, AND THAT
+        IS NOT AN OVERSIGHT TO "FIX". DO NOT "COMPLETE THE SET" BY ADDING IT.
+        =====================================================================================
+        A Metadata API deployed custom field arrives with no FLS for any profile, System
+        Administrator included, and it is left that way here. Nothing in the UI reads it, no
+        layout carries it, and no flexipage visibility rule tests it. Both its writer (a
+        workflow field update) and its reader (a trigger in system context) bypass FLS entirely.
+        Same decision, same wording and same reason as Disposition__c
+        .Approval_Advance_Pending__c.
+        ⚠ THE COROLLARY: this field is INVISIBLE IN THE UI, including to an admin debugging a
+        stuck submission. Query it rather than looking for it on the page.
+
+        ⚠ IT IS A THIRD FLAG ON THIS OBJECT AND THE OTHER TWO ARE NOT INTERCHANGEABLE WITH IT.
+            Submission_Status__c  the TEAM'S PICK          ('Selected', 'Backup', ...)
+            Approval_Status__c    the PRINCIPALS' OUTCOME  ('Approved' / 'Rejected')
+            Approval_Pending__c   whether a decision is still OUTSTANDING (this field)
+        A submission can be Selected with Approval_Pending__c true and Approval_Status__c blank:
+        that is the normal state of an in flight broker sign off.
+
+        ⚠ ONE KNOWN GAP, DELIBERATELY NOT CLOSED. BovSubmissionTrigger declares no after delete
+        context, so deleting a submission while its approval is pending leaves the parent's
+        mirrored flag stuck TRUE and Submit_Selected_Broker hidden at BOV Outreach. Low
+        probability (a locked record resists deletion by non admins) and recoverable by the
+        detection query on the parent field. Adding an after delete context was NOT requested
+        and is not proposed here.
+
+        DEPLOY ORDER, LOAD BEARING. This file must land BEFORE
+        workflows/BOV_Submission__c.workflow-meta.xml, which must itself land before
+        approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval. The trigger handler mirror
+        should be live before that approval process lands in a real org, or a submission will
+        set a flag nothing reads.
+    -->
+    <fullName>Approval_Pending__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>SYSTEM FIELD - DO NOT HAND-EDIT, AND DO NOT GRANT FLS. TRUE while Broker_Finalize_Approval is pending on this submission. Set by its initialSubmissionActions and cleared by its final approval, final rejection and recall actions. BovSubmissionTriggerHandler mirrors the value onto the parent Disposition, where four Dynamic Actions read it. Nothing in the UI reads this field. See the XML comment in this file.</description>
+    <inlineHelpText>Internal flag showing that this submission has a broker approval awaiting a decision. It is not shown on any page and must not be edited by hand.</inlineHelpText>
+    <label>Approval Pending</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

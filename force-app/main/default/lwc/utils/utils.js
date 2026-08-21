@@ -89,6 +89,58 @@ export function formatMillions(n) {
 }
 
 /**
+ * One radio-option label for the Select / Replace Broker picker, from a
+ * `BovController.BovRow`.
+ *
+ * ── 🔴 IT IS DELIBERATELY LONG, BECAUSE THIS ORG'S DATA IS AMBIGUOUS ─────────
+ * Two data realities are visible on this surface and NEITHER is filtered or
+ * de-duplicated here — that is the user's decision to make, not this helper's:
+ *   - SIX broker Contacts exist TWICE with an identical name AND an identical
+ *     firm (Derek Simmons, Priya Nair, Marcus Whitfield, Katie Osborne, Ryan
+ *     O'Connell, Sofia Delgado). Firm alone — which is all this label carried
+ *     until 2026-08-21 — renders two options as the same string, so the user is
+ *     choosing at random between them.
+ *   - SEVEN Contacts on the Broker record type are not brokers at all (Acme x3,
+ *     Global Media x2, salesforce.com, "Unknown - Via Email"). They are shown,
+ *     because hiding a bad row is how it survives.
+ * The BOV amount and the submission's own auto-number are what actually
+ * separate two otherwise identical lines, so both are in the label. Do not
+ * shorten this back to the firm.
+ *
+ * ⚠ A NULL SCORE RENDERS `—`, NEVER `0`. Every score in the org is null today
+ * (`BOV_Score__c` is a formula returning null until the disposition has an
+ * asking price), and `0` is a real, meaningful, terrible score — printing it
+ * for "not computed" would tell the user something false about every broker on
+ * the list. `== null` rather than a falsy test, so a genuine zero still prints.
+ *
+ * ── 🔴 WHY IT LIVES HERE RATHER THAN IN A COMPONENT (2026-08-21) ─────────────
+ * TWO components now open `c/bovReplaceBrokerModal` and must supply
+ * `backupOptions`: `c/bovComparisonMatrix` (BOV Outreach stage) and
+ * `c/brokerListing` (Active Listing stage — the two are mutually exclusive on
+ * the page, which is why the second entry point exists at all). The modal's own
+ * header records that it does NO formatting *"so the modal and the matrix
+ * behind it cannot disagree about the same broker's numbers"* — a second copy
+ * of this function in the second component would reintroduce exactly the
+ * disagreement that contract prevents. One function, two callers, no drift.
+ *
+ * @param {object} r A `BovController.BovRow`-shaped object.
+ * @returns {string} e.g. `'JLL — John Roe · $11.0M · Score 71 · BOV-0002'`.
+ */
+export function brokerOptionLabel(r) {
+    const who = [r.brokerFirm || 'Unnamed firm', r.contactName]
+        .filter(Boolean)
+        .join(' — ');
+    const facts = [
+        formatMillions(r.bovAmount),
+        `Score ${r.bovScore == null ? '—' : r.bovScore}`
+    ];
+    if (r.name) {
+        facts.push(r.name);
+    }
+    return `${who} · ${facts.join(' · ')}`;
+}
+
+/**
  * Short date `MON D` (no year, no leading zero) from a Salesforce Date string
  * `'YYYY-MM-DD'`. Parsed by hand (not `new Date`) to avoid timezone shifting a
  * date-only value. Null / malformed input renders as an empty string.

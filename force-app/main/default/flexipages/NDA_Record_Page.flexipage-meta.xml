@@ -1,5 +1,60 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS NOTE LIVES IN A COMMENT INSIDE THE ROOT ELEMENT - a comment placed ABOVE
+         <FlexiPage> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error.
+
+         THREE FIELDS ADDED 2026-08-21 (buyer activity timeline follow-up). Record.Disposition__c,
+         Record.Buyer__c and Record.Materials_Released_Date__c were carrying no path to render
+         anywhere on this page - the disposition NDA had no visible link back to its Disposition,
+         and Buyer__c / Materials_Released_Date__c (deployed 2026-08-20 for the buyer activity
+         timeline) had never been added to any page, so nobody could set either one. All three are
+         disposition-module-only fields on a dual-module object (Acquisition_NDA / Disposition_NDA
+         share NDA__c) and are meaningless on an acquisition NDA.
+
+         🔴 GATED ON RECORD TYPE, NOT ON WHETHER Disposition__c IS POPULATED. An analyst opening a
+         brand-new disposition NDA needs to SEE the blank Disposition lookup to fill it in;
+         ISBLANK(Disposition__c) would hide the exact field that needs populating. See
+         objects/NDA__c/fields/Is_Disposition_NDA__c.field-meta.xml for the full reasoning and why
+         it is a new field rather than a reuse of Is_Decline_Allowed__c (that one additionally
+         excludes Declined, which would wrongly hide these three fields on a declined NDA).
+
+         WHY A NEW FORMULA FIELD RATHER THAN {!Record.RecordType.DeveloperName} DIRECTLY IN THE
+         VISIBILITY RULE. LOI_Record_Page's 2026-08-14 amendment names that construct
+         REPO-ASSERTED AND UNMEASURED at the flexipage layer - no flexipage in this repo has ever
+         carried a bare {!Record.RecordType.*} criterion, and this repo has separately measured a
+         DIFFERENT construct (a parenthesised OR) that deploys, survives a retrieve, and is then
+         IGNORED BY THE RENDERER. The formula-checkbox shape, by contrast, is proven: it already
+         gates the Mark Declined button on THIS SAME PAGE (Is_Decline_Allowed__c) and passed this
+         org's check-only validation both there and in All_NDAs_Signed_Before_Progression. This
+         change reuses the proven mechanism for three fields rather than risking the first
+         flexipage-level test of the unproven one.
+
+         🔴 THIS CHANGE INTENTIONALLY LEAVES Record.Opportunity__c UNGATED, EXACTLY AS FOUND. It
+         carries no visibilityRule today and is visible on BOTH record types (Opportunity__c is
+         blank on a disposition NDA, since that side is parented by Disposition__c instead - see
+         Disposition__c's own field comment). Symmetric gating (hiding Opportunity__c on a
+         disposition NDA the same way these three fields are hidden on an acquisition NDA) was
+         NOT applied here - that changes existing, working behaviour on the acquisitions module and
+         was flagged rather than changed, per instruction. RECOMMENDATION: gate it symmetrically
+         with the same {!Record.Is_Disposition_NDA__c} EQUAL false test for visual consistency (an
+         always-blank field on a disposition NDA is confusing whitespace, not a defect), but this is
+         a user decision, not an assumed follow-on to this change.
+
+         FLS IS LOAD-BEARING FOR ALL FOUR FIELDS REFERENCED BY THE NEW VISIBILITY RULES.
+         Disposition__c, Buyer__c and Materials_Released_Date__c already carry read FLS in both
+         DPEG_Disposition_View and DPEG_Disposition_Edit (verified against those files' current
+         state, not assumed). Is_Disposition_NDA__c is a NEW field and its grant ships in the same
+         change - see permissionsets/DPEG_Disposition_View.permissionset-meta.xml and
+         DPEG_Disposition_Edit.permissionset-meta.xml. None of the four is granted on any
+         acquisition permission set, matching this object's existing convention.
+
+         PLACEMENT: Disposition__c sits immediately after Opportunity__c (both are the parent-link
+         pair - one populated per record type). Buyer__c and Materials_Released_Date__c are
+         appended at the tail of the same facet, after OneDrive_URL__c, following this repo's
+         tail-append convention for later additions to an existing field run. uiBehavior is `none`
+         (editable) on all three, matching every other business field in this facet - none of them
+         is a derived/stamped field on this page. -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -193,6 +248,23 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
+                <fieldItem>Record.Disposition__c</fieldItem>
+                <identifier>RecordDisposition_cField</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Is_Disposition_NDA__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>true</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
                 <fieldItem>Record.NDA_Signed__c</fieldItem>
                 <identifier>RecordNDA_Signed_cField</identifier>
             </fieldInstance>
@@ -215,6 +287,40 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.OneDrive_URL__c</fieldItem>
                 <identifier>RecordOneDrive_URL_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Buyer__c</fieldItem>
+                <identifier>RecordBuyer_cField</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Is_Disposition_NDA__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>true</rightValue>
+                    </criteria>
+                </visibilityRule>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Materials_Released_Date__c</fieldItem>
+                <identifier>RecordMaterials_Released_Date_cField</identifier>
+                <visibilityRule>
+                    <criteria>
+                        <leftValue>{!Record.Is_Disposition_NDA__c}</leftValue>
+                        <operator>EQUAL</operator>
+                        <rightValue>true</rightValue>
+                    </criteria>
+                </visibilityRule>
             </fieldInstance>
         </itemInstances>
         <name>Facet-01f7b75f-cac4-40d3-afc9-3891e010cd72</name>

@@ -2,14 +2,42 @@
  * c-listing-alerts — @wire-to-Apex suite.
  * Pattern: brokerListing template (createApexTestWireAdapter + emit/error).
  *
- * ── 🔴 WHAT THE PREVIOUS SUITE PINNED, AND WHY ITS DEATH IS THE POINT ───────
- * The retired suite asserted `['Day 21', 'Week 4', 'Week 6', 'Offer in']` — i.e. it was the
- * FALSIFIER FOR THE WRONG CLOCK, holding the 6-week ladder D27.1 overturned and the two D9-deferred
- * notification promises in place. Deleting those assertions is not "loosening a test"; keeping them
- * would have made the suite defend the defect.
+ * ── 🔴 WHAT THIS SUITE HAS BANNED, AND WHAT IT STOPPED BANNING ──────────────
+ * Four suites have now guarded this component and each drew the line somewhere different:
+ *
+ *   The ORIGINAL asserted `['Day 21', 'Week 4', 'Week 6', 'Offer in']` — it was the falsifier for
+ *   the hardcoded MOCK, holding a fixed table in place.
+ *
+ *   The 2026-08-10 suite banned the strings `week 4`, `week 6` and `pause` outright, because at
+ *   that time the ladder was 30/40/60 and the pause rule had no source at all.
+ *
+ *   The 2026-08-21 suite LIFTED the week and pause bans — the user settled the thresholds at
+ *   Week 1/4/6 and asked for the pause, so those words became TRUE statements about a real
+ *   computation proven in `DispositionTractionServiceTest`.
+ *
+ *   ⚠ THIS SUITE (2026-08-21, UAT) DELETED EVERY ASSERTION ABOUT THE TRACTION MONITOR, because the
+ *   monitor itself was deleted. The user asked for *"automated alerts thats' it"* and for the
+ *   disposition-offer COUNT to go. Gone with it: `.band-badge`, `.band-detail`, `.clock-track` and
+ *   the `.milestone-*` rows, plus the eight assertions that rendered them. 🔴 THOSE ASSERTIONS WERE
+ *   DELETED, NOT SOFTENED — a `toBeNull()` left in place of a `toBe('Week 4 — At Risk')` on an
+ *   element that no longer exists in the template would be a test that can never fail. The ONE
+ *   absence assertion kept below is a deliberate anti-regression pin and is grouped as such.
+ *
+ * What is banned has not changed in substance — a row this panel cannot back with data:
+ *     🔴 THE NOTIFICATION BAN STANDS (`email`, `alert to`, `notif`). Nothing in this org sends any
+ *        of them and the user deferred them AGAIN on 2026-08-21 — in the same conversation that
+ *        retitled this card "Automated Alerts", which makes the ban sharper, not looser.
+ *     🔴 THE FIXED-LIST BAN STANDS, and is asserted positively: `theSameThreeRungsRender
+ *        DIFFERENTLYOnDifferentRecords` fails if the rows ever stop being data.
+ *
+ * ⚠ THE FIXTURES STILL CARRY `band`, `label`, `detail`, `daysOnMarket`, `offerCount` AND
+ * `isPaused`. That is not leftover: the SERVER still computes and returns all of them — the pause
+ * still drives the rung notes, and `c/brokerListing` still renders `label`. The card simply reads
+ * fewer members of the same payload. Trimming the fixtures would make them stop matching what
+ * `DispositionTractionController.getTraction` actually sends.
  *
  * Every assertion below is on SERVER-COMPUTED text. This suite deliberately contains no copy of the
- * 30/60 ladder: the thresholds live once, in DispositionTractionService, and are proven there. A
+ * 7/28/42 ladder: the thresholds live once, in DispositionTractionService, and are proven there. A
  * Jest test that re-derived them would drift from the Apex silently, which is the exact failure the
  * single-service design exists to prevent.
  */
@@ -28,72 +56,127 @@ jest.mock(
     { virtual: true }
 );
 
+/** Rung fixtures mirror the server's shape exactly; the states are what varies between payloads. */
+const rung = (key, label, dueDate, state, note) => ({
+    key,
+    label,
+    days: null,
+    dueDate,
+    state,
+    note,
+    isCurrent: state === 'Current',
+    isReached: state !== 'Ahead'
+});
+
 const ON_TRACK = {
     band: 'ON_TRACK',
-    label: 'Day 12 of 60 — On Track',
-    detail: 'The day-30 traction check is due in 18 days.',
-    daysOnMarket: 12,
+    label: 'Day 3 of 42 — On Track',
+    detail: 'The week-1 check-in is due in 4 days.',
+    daysOnMarket: 3,
     offerCount: 0,
     listingDate: '2026-07-01',
-    checkpointDate: '2026-07-31',
-    hardStopDate: '2026-08-30',
-    daysRemaining: 48,
+    firstOfferDate: null,
+    isPaused: false,
+    daysRemaining: 39,
     isAtRisk: false,
     isListed: true,
     listingStatusValue: 'On Track',
-    marketingPeriodDays: 60,
-    checkpointDays: 30
+    marketingPeriodDays: 42,
+    rungs: [
+        rung('WEEK_1', 'Week 1', '2026-07-08', 'Ahead', 'In 4 days.'),
+        rung('WEEK_4', 'Week 4', '2026-07-29', 'Ahead', 'In 25 days.'),
+        rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'In 39 days.')
+    ]
 };
 
-const CHECKPOINT_DUE = {
+const WEEK_1 = {
     ...ON_TRACK,
-    band: 'CHECKPOINT_DUE',
-    label: 'Day 34 — Traction checkpoint: no offers',
+    band: 'WEEK_1',
+    label: 'Week 1 — Check-in due',
     detail:
-        'Month one has passed with no offers. Review the listing internally and decide whether to change the broker.',
-    daysOnMarket: 34,
-    daysRemaining: 26,
-    isAtRisk: true,
-    listingStatusValue: 'At Risk'
+        'One week on the market with no offers yet. Check in with the broker on interest and showings.',
+    daysOnMarket: 9,
+    daysRemaining: 33,
+    isAtRisk: false,
+    rungs: [
+        rung('WEEK_1', 'Week 1', '2026-07-08', 'Current', 'Current — no offers.'),
+        rung('WEEK_4', 'Week 4', '2026-07-29', 'Ahead', 'In 19 days.'),
+        rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'In 33 days.')
+    ]
 };
 
-const HARD_STOP = {
+const WEEK_4 = {
     ...ON_TRACK,
-    band: 'HARD_STOP',
-    label: 'Day 71 — Hard Stop: no offers',
-    detail: 'The 60-day marketing period has elapsed with no offers.',
-    daysOnMarket: 71,
+    band: 'WEEK_4',
+    label: 'Week 4 — At Risk',
+    detail:
+        'Four weeks on the market with no offers, and 12 days of the marketing period remain.',
+    daysOnMarket: 30,
+    daysRemaining: 12,
+    isAtRisk: true,
+    listingStatusValue: 'At Risk',
+    rungs: [
+        rung('WEEK_1', 'Week 1', '2026-07-08', 'Passed', 'Passed.'),
+        rung('WEEK_4', 'Week 4', '2026-07-29', 'Current', 'Current — no offers.'),
+        rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'In 12 days.')
+    ]
+};
+
+const WEEK_6 = {
+    ...ON_TRACK,
+    band: 'WEEK_6',
+    label: 'Week 6 — Hard Stop',
+    detail:
+        'Six weeks on the market with no offers. The full marketing period has elapsed; decide whether to replace the broker.',
+    daysOnMarket: 51,
     daysRemaining: 0,
     isAtRisk: true,
-    listingStatusValue: 'Hard Stop'
+    listingStatusValue: 'Hard Stop',
+    rungs: [
+        rung('WEEK_1', 'Week 1', '2026-07-08', 'Passed', 'Passed.'),
+        rung('WEEK_4', 'Week 4', '2026-07-29', 'Passed', 'Passed.'),
+        rung('WEEK_6', 'Week 6', '2026-08-12', 'Current', 'Current — no offers.')
+    ]
 };
 
-const WITH_OFFERS = {
+const PAUSED = {
     ...ON_TRACK,
     band: 'ON_TRACK',
-    label: 'Day 44 of 60 — On Track',
-    detail: '2 offers received, so the day-30 traction check does not apply.',
-    daysOnMarket: 44,
+    label: 'Day 12 — Offer received, clock paused',
+    detail:
+        '2 offers received, so the marketing clock stopped at day 12 and no week check-in is due.',
+    daysOnMarket: 12,
     offerCount: 2,
-    daysRemaining: 16,
-    isAtRisk: false
+    firstOfferDate: '2026-07-13',
+    isPaused: true,
+    daysRemaining: 30,
+    isAtRisk: false,
+    rungs: [
+        rung('WEEK_1', 'Week 1', '2026-07-08', 'Passed', 'Passed before the clock paused.'),
+        rung('WEEK_4', 'Week 4', '2026-07-29', 'Ahead', 'Clock paused.'),
+        rung('WEEK_6', 'Week 6', '2026-08-12', 'Ahead', 'Clock paused.')
+    ]
 };
 
 const NOT_LISTED = {
     band: 'NOT_LISTED',
     label: 'Not listed yet',
-    detail: 'The 60-day marketing clock starts when a listing date is set.',
+    detail: 'The 42-day marketing clock starts when a listing date is set.',
     daysOnMarket: null,
     offerCount: 0,
     listingDate: null,
-    checkpointDate: null,
-    hardStopDate: null,
+    firstOfferDate: null,
+    isPaused: false,
     daysRemaining: null,
     isAtRisk: false,
     isListed: false,
     listingStatusValue: 'On Track',
-    marketingPeriodDays: 60,
-    checkpointDays: 30
+    marketingPeriodDays: 42,
+    rungs: [
+        rung('WEEK_1', 'Week 1', null, 'Ahead', 'Not started.'),
+        rung('WEEK_4', 'Week 4', null, 'Ahead', 'Not started.'),
+        rung('WEEK_6', 'Week 6', null, 'Ahead', 'Not started.')
+    ]
 };
 
 describe('c-listing-alerts', () => {
@@ -113,16 +196,10 @@ describe('c-listing-alerts', () => {
         return element;
     }
 
-    function terms(element) {
-        return Array.from(
-            element.shadowRoot.querySelectorAll('.milestone-term')
-        ).map((el) => el.textContent);
-    }
-
-    function values(element) {
-        return Array.from(
-            element.shadowRoot.querySelectorAll('.milestone-primary')
-        ).map((el) => el.textContent);
+    function texts(element, selector) {
+        return Array.from(element.shadowRoot.querySelectorAll(selector)).map(
+            (el) => el.textContent
+        );
     }
 
     it('renders the section header', async () => {
@@ -132,7 +209,7 @@ describe('c-listing-alerts', () => {
 
         expect(
             element.shadowRoot.querySelector('.section-header').textContent
-        ).toBe('Listing Traction');
+        ).toBe('Automated Alerts');
     });
 
     it('shows a loading state until the wire emits', async () => {
@@ -141,110 +218,155 @@ describe('c-listing-alerts', () => {
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.loading-msg')).not.toBeNull();
-        expect(element.shadowRoot.querySelector('.band-badge')).toBeNull();
+        expect(element.shadowRoot.querySelector('.rung')).toBeNull();
     });
 
-    it('DATA BRANCH: renders the server-computed band label and detail', async () => {
+    it('DATA BRANCH: renders the three rungs with their labels, states and due dates', async () => {
         const element = createComponent();
 
-        getTraction.emit(ON_TRACK);
+        getTraction.emit(WEEK_4);
         await Promise.resolve();
 
-        expect(
-            element.shadowRoot.querySelector('.band-badge').textContent
-        ).toBe('Day 12 of 60 — On Track');
-        expect(
-            element.shadowRoot.querySelector('.band-detail').textContent
-        ).toBe('The day-30 traction check is due in 18 days.');
+        expect(texts(element, '.rung-label')).toEqual([
+            'Week 1',
+            'Week 4',
+            'Week 6'
+        ]);
+        expect(texts(element, '.rung-state')).toEqual([
+            'Passed',
+            'Current',
+            'Ahead'
+        ]);
+        expect(texts(element, '.rung-due')).toEqual([
+            'Jul 8, 2026',
+            'Jul 29, 2026',
+            'Aug 12, 2026'
+        ]);
+        expect(texts(element, '.rung-note')).toEqual([
+            'Passed.',
+            'Current — no offers.',
+            'In 12 days.'
+        ]);
         expect(element.shadowRoot.querySelector('.loading-msg')).toBeNull();
     });
 
-    it('DATA BRANCH: renders the four milestone rows with the checkpoint still ahead', async () => {
+    /**
+     * 🔴 THE ANTI-MOCK ASSERTION, AND THE MOST IMPORTANT TEST IN THIS FILE. The component this
+     * replaced rendered four FIXED rows. Here the same three keys are emitted twice with different
+     * server state and the DOM must differ — which no hardcoded table can do.
+     */
+    it('the same three rungs render DIFFERENTLY on different records — the rows are data, not a fixed list', async () => {
         const element = createComponent();
 
         getTraction.emit(ON_TRACK);
         await Promise.resolve();
-
-        expect(terms(element)).toEqual([
-            'Days on market',
-            'Day 30 traction check',
-            'Day 60 marketing period ends',
-            'Offers received'
+        expect(texts(element, '.rung-state')).toEqual([
+            'Ahead',
+            'Ahead',
+            'Ahead'
         ]);
-        expect(values(element)).toEqual([
-            '12 of 60',
-            'Jul 31, 2026',
-            'Aug 30, 2026',
-            '0 offers'
+
+        getTraction.emit(WEEK_6);
+        await Promise.resolve();
+        expect(texts(element, '.rung-state')).toEqual([
+            'Passed',
+            'Passed',
+            'Current'
         ]);
-        const notes = Array.from(
-            element.shadowRoot.querySelectorAll('.milestone-note')
-        ).map((el) => el.textContent);
-        expect(notes[1]).toBe('In 18 days.');
-        expect(notes[2]).toBe('48 days remaining.');
+        // ...and the labels did NOT change, which is what makes the states the variable.
+        expect(texts(element, '.rung-label')).toEqual([
+            'Week 1',
+            'Week 4',
+            'Week 6'
+        ]);
     });
 
-    it('DATA BRANCH: the checkpoint row reads "Reached." once day 30 has passed', async () => {
+    it('DATA BRANCH: the current rung carries the current modifier and only one rung does', async () => {
         const element = createComponent();
 
-        getTraction.emit(CHECKPOINT_DUE);
+        getTraction.emit(WEEK_4);
         await Promise.resolve();
 
-        const notes = Array.from(
-            element.shadowRoot.querySelectorAll('.milestone-note')
-        ).map((el) => el.textContent);
-        expect(notes[1]).toBe('Reached.');
+        const rows = Array.from(element.shadowRoot.querySelectorAll('.rung'));
+        expect(rows.length).toBe(3);
+        expect(rows[0].className).toContain('rung--passed');
+        expect(rows[1].className).toContain('rung--current');
+        expect(rows[2].className).toContain('rung--ahead');
         expect(
-            element.shadowRoot.querySelector('.band-badge').className
-        ).toContain('band--yellow');
+            rows.filter((r) => r.className.includes('rung--current')).length
+        ).toBe(1);
     });
 
-    it('DATA BRANCH: HARD_STOP colours red and reports the period elapsed', async () => {
+    /**
+     * 🔴 WEEK_1 IS A CHECK-IN, NOT A RISK STATE — asserted through the RUNGS now that the band pill
+     * that used to carry it is gone. The server marks the week-1 rung `Current` and leaves the two
+     * above it `Ahead`; no rung is styled as escalated.
+     */
+    it('DATA BRANCH: the week-1 check-in is the current rung and nothing above it has fired', async () => {
         const element = createComponent();
 
-        getTraction.emit(HARD_STOP);
+        getTraction.emit(WEEK_1);
         await Promise.resolve();
 
-        expect(
-            element.shadowRoot.querySelector('.band-badge').className
-        ).toContain('band--red');
-        const notes = Array.from(
-            element.shadowRoot.querySelectorAll('.milestone-note')
-        ).map((el) => el.textContent);
-        expect(notes[2]).toBe('Elapsed.');
+        expect(texts(element, '.rung-state')).toEqual([
+            'Current',
+            'Ahead',
+            'Ahead'
+        ]);
+        expect(texts(element, '.rung-note')[0]).toBe('Current — no offers.');
     });
 
-    it('DATA BRANCH: an offer is traction — day 44 still renders green', async () => {
+    /**
+     * 🔴 THE PAUSE, AS IT SURVIVES ON THIS CARD. The badge that announced it in words was removed at
+     * UAT; the RULE was not, and the rungs are where it is still visible — an "In 30 days." on a
+     * paused listing would be a countdown to a date that will never arrive.
+     */
+    it('DATA BRANCH: a paused clock stops the countdown and no rung is current', async () => {
         const element = createComponent();
 
-        getTraction.emit(WITH_OFFERS);
+        getTraction.emit(PAUSED);
         await Promise.resolve();
 
+        expect(texts(element, '.rung-note')).toEqual([
+            'Passed before the clock paused.',
+            'Clock paused.',
+            'Clock paused.'
+        ]);
+        expect(texts(element, '.rung-state')).toEqual([
+            'Passed',
+            'Ahead',
+            'Ahead'
+        ]);
         expect(
-            element.shadowRoot.querySelector('.band-badge').className
-        ).toContain('band--green');
-        expect(values(element)[3]).toBe('2 offers');
-        const notes = Array.from(
-            element.shadowRoot.querySelectorAll('.milestone-note')
-        ).map((el) => el.textContent);
-        expect(notes[3]).toBe('An offer counts as traction.');
+            element.shadowRoot.querySelectorAll('.rung--current').length
+        ).toBe(0);
     });
 
-    it('DATA BRANCH: NOT_LISTED shows one row and no clock bar — never a healthy-looking day 0', async () => {
+    it('DATA BRANCH: NOT_LISTED still shows the schedule, with no dates it cannot derive', async () => {
         const element = createComponent();
 
         getTraction.emit(NOT_LISTED);
         await Promise.resolve();
 
-        expect(terms(element)).toEqual(['Marketing clock']);
-        expect(values(element)).toEqual(['Not started']);
-        expect(element.shadowRoot.querySelector('.clock-track')).toBeNull();
-        expect(
-            element.shadowRoot.querySelector('.band-badge').textContent
-        ).toBe('Not listed yet');
+        expect(texts(element, '.rung-label')).toEqual([
+            'Week 1',
+            'Week 4',
+            'Week 6'
+        ]);
+        expect(texts(element, '.rung-due')).toEqual(['—', '—', '—']);
+        expect(texts(element, '.rung-state')).toEqual([
+            'Ahead',
+            'Ahead',
+            'Ahead'
+        ]);
+        expect(texts(element, '.rung-note')).toEqual([
+            'Not started.',
+            'Not started.',
+            'Not started.'
+        ]);
     });
 
-    it('ERROR BRANCH: renders an inline alert and no band when the wire errors', async () => {
+    it('ERROR BRANCH: renders an inline alert and no schedule when the wire errors', async () => {
         const element = createComponent();
 
         getTraction.error();
@@ -254,34 +376,96 @@ describe('c-listing-alerts', () => {
         expect(err).not.toBeNull();
         expect(err.getAttribute('role')).toBe('alert');
         expect(err.textContent).toContain('could not be loaded');
-        expect(element.shadowRoot.querySelector('.band-badge')).toBeNull();
-        expect(element.shadowRoot.querySelector('.loading-msg')).toBeNull();
+        expect(element.shadowRoot.querySelector('.rung')).toBeNull();
+        expect(element.shadowRoot.querySelector('.rung-heading')).toBeNull();
     });
 
     /**
-     * 🔴 THE D9 GUARD. This is the assertion that stops the retired mock creeping back: the panel
-     * must never claim that anyone is emailed, alerted or flagged, and must never assert the
-     * unsourced "Clock PAUSES" rule. It is a text-level check on purpose — the defect it prevents
-     * was text, not logic.
+     * 🔴 THE UAT REMOVAL, PINNED AS AN ASSERTION ABOUT ABSENCE. The user asked for the listing
+     * traction display and the disposition-offer count to go; every positive assertion about them
+     * was DELETED rather than weakened, which leaves nothing to fail if someone re-adds the
+     * surfaces. This is that falsifier, and it is the only absence test in the file.
+     *
+     * ⚠ IT ASSERTS ON RENDERED TEXT AS WELL AS ON SELECTORS, because a re-added count would most
+     * likely arrive under a new class name. `offerCount` IS in the payload below (the server still
+     * sends it — the pause needs it), so a component that decided to render it again would pass a
+     * selector-only check.
      */
-    it('never advertises a notification or the unsourced "clock pauses" rule', async () => {
+    it('🔴 renders no traction monitor and no offer count — the UAT removal must not come back', async () => {
         const element = createComponent();
 
-        getTraction.emit(CHECKPOINT_DUE);
+        getTraction.emit(PAUSED);
         await Promise.resolve();
 
+        expect(element.shadowRoot.querySelector('.band-badge')).toBeNull();
+        expect(element.shadowRoot.querySelector('.band-detail')).toBeNull();
+        expect(element.shadowRoot.querySelector('.clock-track')).toBeNull();
+        expect(element.shadowRoot.querySelector('.milestone-list')).toBeNull();
+
         const rendered = element.shadowRoot.textContent.toLowerCase();
-        ['email', 'alert to', 'notif', 'pause', 'week 4', 'week 6'].forEach(
-            (banned) => {
-                expect(rendered).not.toContain(banned);
-            }
-        );
+        expect(rendered).not.toContain('days on market');
+        expect(rendered).not.toContain('offers received');
+        // The payload's own count and day number must not surface anywhere on the card.
+        expect(rendered).not.toContain('2 offers');
+        expect(rendered).not.toContain('day 12');
+    });
+
+    /**
+     * 🔴 THE NOTIFICATION GUARD — the surviving half of the retired mock's ban list. The card must
+     * never claim that anyone is emailed, alerted or flagged, because nothing in this org sends any
+     * of it and the user deferred all of it again on 2026-08-21. It is a text-level check on
+     * purpose: the defect it prevents was text, not logic.
+     *
+     * ⚠ `week 4`, `week 6` and `pause` were on this list until 2026-08-21 and were REMOVED
+     * deliberately — they are now true statements about a real computation. Do not re-add them, and
+     * do not add anything to this list that the payload can actually back.
+     */
+    it('never advertises a notification', async () => {
+        const element = createComponent();
+
+        for (const payload of [WEEK_1, WEEK_4, WEEK_6, PAUSED, NOT_LISTED]) {
+            getTraction.emit(payload);
+            // eslint-disable-next-line no-await-in-loop
+            await Promise.resolve();
+
+            const rendered = element.shadowRoot.textContent.toLowerCase();
+            ['email', 'alert to', 'notif', 'flag to', 'escalate to'].forEach(
+                (banned) => {
+                    expect(rendered).not.toContain(banned);
+                }
+            );
+        }
+    });
+
+    /**
+     * The state must survive as TEXT. A previous incident in this repo deleted accessible content
+     * by swapping text for a coloured badge; here the rung state is the only thing distinguishing
+     * "passed" from "ahead" for a non-sighted reader.
+     */
+    it('renders every rung state as text, not colour alone', async () => {
+        const element = createComponent();
+
+        getTraction.emit(WEEK_4);
+        await Promise.resolve();
+
+        texts(element, '.rung-state').forEach((state) => {
+            expect(['Passed', 'Current', 'Ahead']).toContain(state);
+        });
     });
 
     it('is accessible', async () => {
         const element = createComponent();
 
-        getTraction.emit(CHECKPOINT_DUE);
+        getTraction.emit(WEEK_4);
+        await Promise.resolve();
+
+        await expect(element).toBeAccessible();
+    });
+
+    it('is accessible while paused', async () => {
+        const element = createComponent();
+
+        getTraction.emit(PAUSED);
         await Promise.resolve();
 
         await expect(element).toBeAccessible();

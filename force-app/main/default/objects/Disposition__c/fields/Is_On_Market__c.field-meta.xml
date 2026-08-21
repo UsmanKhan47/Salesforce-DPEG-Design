@@ -9,9 +9,11 @@
         D-4). Five of the nine Dynamic Actions on Disposition_Record_Page are record-type
         specific, and after this redesign the stage value alone no longer identifies the path:
         Broker Selection, Release Materials, Offer Selection and Sale Closes are all on BOTH
-        record types' Disposition_Stage__c value sets. Only BOV Outreach, Active Listing and
-        Call for Offers are still on-market-only, and only Disposition Offer is still
-        off-market-only.
+        record types' Disposition_Stage__c value sets. Only BOV Outreach and Active Listing are
+        still on-market-only. 🔴 UPDATED 2026-08-21 (offer-form-and-stage-retirement.md, Request
+        C): Call for Offers and Disposition Offer are RETIRED, not merely on-market/off-market
+        only - both were deleted from Disposition_Stage__c and no longer appear on either record
+        type. This field's own logic is unaffected; only this comment's prose was stale.
 
         ⚠ TWO ALTERNATIVES WERE REJECTED, AND NEITHER SHOULD BE REINTRODUCED.
           1. {!$User.<field>} IN A VISIBILITY RULE. It evaluates FALSE for any user without FLS

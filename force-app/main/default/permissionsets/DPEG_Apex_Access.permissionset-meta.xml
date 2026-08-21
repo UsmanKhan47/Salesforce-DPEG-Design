@@ -97,6 +97,21 @@
         <apexClass>DispositionDealSummaryController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      LIVE-BREAK FIX 2026-08-21 (third one today). DispositionOfferFormController backs
+      lwc/dispositionLogOfferModal (the "Log Disposition Offer" quick action) and had NO
+      classAccesses grant anywhere in this repo — UAT hit "You do not have access to the Apex
+      class named 'DispositionOfferFormController'". It is a thin, read-only @wire controller
+      (getOfferFormContext) that delegates entirely to DispositionOfferFormService, which in turn
+      calls DispositionSelector, BovSubmissionSelector and NdaSelector — none of those three need
+      a grant of their own, matching this file's established pattern: only the entry-point
+      controller the LWC imports needs classAccesses, everything it calls internally is reached
+      through that already-granted entry point.
+    -->
+    <classAccesses>
+        <apexClass>DispositionOfferFormController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>DispositionTaskController</apexClass>
         <enabled>true</enabled>

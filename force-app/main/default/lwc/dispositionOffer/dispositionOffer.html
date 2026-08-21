@@ -20,16 +20,15 @@
         </template>
         <template if:true={showEmpty}>
             <!--
-              The 60-day marketing clock with a 30-day traction checkpoint (D27.1 / D28-Q2).
-              This string used to read "6-week clock active", which contradicted the document
-              and — after Tranche 5B — would have contradicted the traction panel on the same
-              screen. The numbers are stated once more here only because this component has no
-              server payload of its own; DispositionTractionService remains the single source
-              for every DECISION made from them.
+              ⚠ THE CLOCK NOTE THAT USED TO FOLLOW "No offers yet." WAS REMOVED AT UAT ON
+              2026-08-21 ("we don't need listing traction"), and it was ALSO WRONG by then: it
+              read "60-day marketing clock, traction check at day 30" while
+              DispositionTractionService had moved to 42 days with rungs at 7/28/42. It was the
+              last hardcoded copy of the ladder in any LWC, and this component has no server
+              payload of its own to correct it from. 🔴 DO NOT REINSTATE A NUMBER HERE. The
+              schedule renders once, on c/listingAlerts, from the server.
             -->
-            <div class="empty-msg">
-                No offers yet. 60-day marketing clock, traction check at day 30.
-            </div>
+            <div class="empty-msg">No offers yet.</div>
         </template>
         <div class="log-btn-wrap">
             <button class="log-btn" onclick={handleLogOffer}>+ Log Offer</button>

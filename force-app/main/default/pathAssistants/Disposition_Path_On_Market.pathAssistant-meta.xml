@@ -42,21 +42,29 @@
         Advance button structurally cannot skip an approval-owned or machine-owned one.
 
         Listing_Date__c WAS ADDED to the Active Listing step's fieldNames. Its info text has
-        told the user since 2026-08-10 that "the 60-day marketing clock ... does not start until
-        that date is set", while offering no field to set it from - the same
+        told the user since 2026-08-10 that the marketing clock does not start until that date is
+        set, while offering no field to set it from - the same
         describes-a-workflow-nobody-can-perform defect that Disposition_Record_Page's ndasList
         note records. Both permission sets already carry the field (Edit has it editable).
 
-        THE ACTIVE LISTING TEXT IS COPIED BYTE-IDENTICAL FROM THE PREVIOUS VERSION AND MUST STAY
-        THAT WAY. Every band it names is one DispositionTractionService computes - NOT_LISTED,
-        ON_TRACK, CHECKPOINT_DUE at day 30, REVIEW_OVERDUE at day 40, HARD_STOP at day 60, all
-        short-circuited to ON_TRACK by a single logged offer. That service decides a band nowhere
-        else; this text must never state a threshold it does not hold.
-        ⚠ THE WEEK-NUMBERED MILESTONES OF THE OLD 6-WEEK CLOCK ARE BANNED STRINGS in
-        lwc/listingAlerts/__tests__/listingAlerts.test.js, which asserts the sibling traction
-        panel never renders them. Do not reintroduce them here in any wording.
+        THE ACTIVE LISTING TEXT WAS REWRITTEN 2026-08-21 AND THE RULE THAT FROZE IT IS RETRACTED.
+        RETRACTED - was: "THE ACTIVE LISTING TEXT IS COPIED BYTE-IDENTICAL FROM THE PREVIOUS
+        VERSION AND MUST STAY THAT WAY. Every band it names is one DispositionTractionService
+        computes - NOT_LISTED, ON_TRACK, CHECKPOINT_DUE at day 30, REVIEW_OVERDUE at day 40,
+        HARD_STOP at day 60 ... THE WEEK-NUMBERED MILESTONES OF THE OLD 6-WEEK CLOCK ARE BANNED
+        STRINGS in lwc/listingAlerts/__tests__/listingAlerts.test.js".
+        WHAT CHANGED: the user settled the third dispute over these thresholds on 2026-08-21 in
+        favour of WEEK 1 / WEEK 4 / WEEK 6 (days 7/28/42), overriding DPEG-Stage-by-Stage.docx,
+        and added a rule that a logged offer PAUSES the clock at the offer date. The week wording
+        is therefore no longer banned in the LWC suite - what that suite still bans, and what this
+        text must still never say, is that anyone is EMAILED, ALERTED or FLAGGED.
+        🔴 THE PRINCIPLE THAT DID NOT CHANGE, AND IS THE ONLY REASON THIS NOTE EXISTS: every band
+        named here is one DispositionTractionService computes, and that service decides a band
+        nowhere else. This text must never state a threshold it does not hold. If the ladder moves
+        a fourth time, this string moves in the same commit.
         ⚠ "Escalation to Ali" was dropped from this text in 2026-08-10 and must not come back: it
-        promised a notification nothing sends.
+        promised a notification nothing sends - and the 2026-08-21 change explicitly deferred
+        emails again.
 
         THE CLOSING STEP'S THIRD SENTENCE WAS REWRITTEN, AND ITS TWIN ON
         Disposition_Path_Off_Market CARRIES THE IDENTICAL NEW SENTENCE. These two must stay in
@@ -113,7 +121,7 @@
     <pathAssistantSteps>
         <fieldNames>Selected_Broker__c</fieldNames>
         <fieldNames>Listing_Date__c</fieldNames>
-        <info>The 60-day marketing clock runs from the Listing Date on this Disposition and does not start until that date is set. Traction means logged offers and nothing else. With none: day 30 is the traction checkpoint, where the team discusses internally and decides whether to change the broker; day 40 is review overdue; day 60 is Hard Stop. A single logged offer clears the checkpoint at any point.</info>
+        <info>The six-week marketing clock runs from the Listing Date on this Disposition and does not start until that date is set. Traction means logged offers and nothing else. With none: week 1 is a broker check-in, week 4 is At Risk, and week 6 is Hard Stop, where the team decides internally whether to change the broker. A logged offer clears the check-ins at any point and pauses the clock at the offer date.</info>
         <picklistValueName>Active Listing</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>

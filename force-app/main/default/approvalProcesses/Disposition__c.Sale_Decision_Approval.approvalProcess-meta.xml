@@ -54,6 +54,73 @@
         or this file fails on an unknown field update. DispositionTriggerHandler's semaphore hook
         should be live before this lands in a real org, or an approval will set a flag nothing
         reads.
+
+        =====================================================================================
+        2026-08-21 - THREE NEW ELEMENTS, PLUS A SECOND ACTION ON finalApprovalActions.
+        THIS IS THE FILE THE UNPROVEN SHAPE IS BEING PROVEN ON. READ ALL OF THIS.
+        =====================================================================================
+        WHAT CHANGED: initialSubmissionActions (new), finalRejectionActions (new, this file had
+        none), recallActions (new), and Clear_Approval_Pending appended as a SECOND action inside
+        the EXISTING finalApprovalActions. Set_Approval_Advance_Pending is untouched and stays
+        FIRST; the D-1 semaphore must keep firing exactly as before.
+
+        WHAT IT IS FOR: hiding the Submit_Sale_Decision quick action on Disposition_Record_Page
+        while this approval is genuinely pending. The four actions write and clear
+        Disposition__c.Approval_Pending__c, which four Dynamic Actions on that page read. The
+        server side guard in DispositionApprovalService is UNCHANGED and remains the
+        authoritative check: this is a UX affordance layered over a working refusal.
+
+        🔴 initialSubmissionActions AND recallActions APPEAR NOWHERE ELSE IN THIS REPO. Before
+        this change, a grep across all seven files in force-app/main/default/approvalProcesses/
+        returned ZERO occurrences of either. Only finalApprovalActions and finalRejectionActions
+        were proven here. What the shape below rests on, stated as evidence rather than assumed:
+          1. The Metadata API ApprovalProcess reference types BOTH new elements as
+             ApprovalAction, the SAME type as finalApprovalActions and finalRejectionActions,
+             and defines ApprovalAction as one repeating field `action` of type
+             WorkflowActionReference[]. So the child shape below is not a guess; it is the same
+             child shape already deployed in this repo twice.
+          2. Element ORDER in these files is alphabetical. That was an observation about five
+             files; the Metadata API reference presents the type's fields in the same
+             alphabetical order, which corroborates it independently. initialSubmissionActions
+             therefore sits after finalRejectionRecordLock and before label; recallActions after
+             processOrder and before recordEditability.
+
+        🔴 A GREEN DEPLOY IS NOT PROOF THAT recallActions FIRES, AND THE FAILURE MODE IS THE
+        DANGEROUS DIRECTION. A recallActions block that deploys and never executes leaves
+        Approval_Pending__c stuck TRUE on a record that is no longer locked and no longer has an
+        approval, hiding its Submit button PERMANENTLY with no route to resubmit and nothing
+        logged anywhere. That is strictly worse than the noisy refusal this change replaces.
+        REQUIRED BEHAVIOURAL READBACK, on this process alone, before the other three are
+        deployed:
+            1. submit a test disposition at Disposition Readiness;
+            2. confirm Approval_Pending__c reads TRUE and the Submit button is gone;
+            3. RECALL it from the Approval History component in the page header;
+            4. confirm Approval_Pending__c reads FALSE and the button is back.
+        If step 4 fails, revert this file rather than substituting another mechanism; the
+        alternatives were analysed and rejected, and the safe fallback is today's behaviour.
+
+        WHY RECALL IS NOT A HYPOTHETICAL HERE. allowRecall stays true, recordEditability stays
+        AdminOnly, and the Approval History component was added to Disposition_Record_Page on
+        2026-08-19 (code review C-3) SPECIFICALLY so the Recall button stopped being unreachable
+        from the UI. Recall is now a routine one click operation on this page, so a design that
+        left the button hidden after one would break a workflow that change went out of its way
+        to enable. recallActions is the ONLY hook for the event: a recall fires no rejection
+        action, leaves no ProcessInstance status the record can read, and has no trigger context.
+
+        ⚠ THE REQUIREMENT IS "HIDDEN WHILE PENDING", NOT "HIDDEN UNTIL REJECTED". The flag's
+        lifetime is exactly the ProcessInstance.Status = 'Pending' window, and all four terminal
+        transitions clear it. That is the deliberate difference from a flag whose clearing
+        depends on one specific exit path.
+
+        ⚠ TWO SIMILARLY NAMED FIELDS ARE NOW WRITTEN BY THIS FILE. Approval_Advance_Pending__c
+        (the D-1 semaphore, true on FINAL APPROVAL) and Approval_Pending__c (true while PENDING).
+        They are opposites in time. Read the banner on
+        objects/Disposition__c/fields/Approval_Pending__c.field-meta.xml before editing either.
+
+        DEPLOY ORDER for this change: objects/Disposition__c/fields/Approval_Pending__c
+        .field-meta.xml, then workflows/Disposition__c.workflow-meta.xml, then this file, then
+        the two Disposition permission sets, then the FlexiPage LAST. Reversing the last two
+        hides all four Submit buttons for everyone, silently.
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -97,11 +164,33 @@
             <name>Set_Approval_Advance_Pending</name>
             <type>FieldUpdate</type>
         </action>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
     </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionActions>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalRejectionActions>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <initialSubmissionActions>
+        <action>
+            <name>Set_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </initialSubmissionActions>
     <label>Sale Decision Approval</label>
     <processOrder>1</processOrder>
+    <recallActions>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

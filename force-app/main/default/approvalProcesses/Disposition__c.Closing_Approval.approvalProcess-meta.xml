@@ -71,6 +71,40 @@
         an approver, and removing it would cost information for no gain.
 
         DEPLOY ORDER - LOAD-BEARING. workflows/Disposition__c.workflow-meta.xml must land FIRST.
+
+        =====================================================================================
+        2026-08-21 - THREE NEW ELEMENTS, PLUS A SECOND ACTION ON finalApprovalActions.
+        =====================================================================================
+        initialSubmissionActions (new) sets Disposition__c.Approval_Pending__c;
+        finalApprovalActions gains Clear_Approval_Pending as a SECOND action;
+        finalRejectionActions (new, this file had none) and recallActions (new) clear it.
+        Set_Approval_Advance_Pending is untouched and stays FIRST. Purpose: hide the
+        Submit_Closing_Approval quick action on Disposition_Record_Page while this approval is
+        genuinely pending.
+
+        🔴 THE FULL ARGUMENT, THE EVIDENCE FOR THE TWO PREVIOUSLY UNPROVEN ELEMENT SHAPES, AND
+        THE MANDATORY SUBMIT-THEN-RECALL READBACK LIVE IN ONE PLACE AND ARE NOT REPEATED HERE:
+        approvalProcesses/Disposition__c.Sale_Decision_Approval.approvalProcess-meta.xml,
+        2026-08-21 entry. That file is deliberately deployed and behaviourally proven FIRST AND
+        ALONE. Do not deploy this file until its recall test has passed.
+
+        ⚠ THIS PROCESS HAS THE MOST TO LOSE FROM A recallActions BLOCK THAT DEPLOYS BUT DOES NOT
+        FIRE, AND THE REASON IS TWO PARAGRAPHS UP. The entry criterion above requires
+        Wire_Verification_Completed__c, and the AdminOnly lock already stops
+        Wire_Verification_Rollup writing that field during the pending window. Add a Submit
+        button hidden by a flag that never clears and a recalled Closing deal has NO route
+        forward at all: the button is gone, the wire flag cannot be recomputed by resubmitting,
+        and the record sits at Closing indefinitely. That is why the readback is mandatory and
+        why this file waits for it.
+
+        ⚠ THE RESIDUAL ALREADY RECORDED ABOVE IS NOT MADE WORSE BY THIS. If the wire flag flips
+        false between submission and the Queueable running, Approval_Advance_Pending__c is left
+        TRUE while Approval_Pending__c is correctly FALSE, so the Submit button REAPPEARS and the
+        stuck record stays actionable. Fail open, and identical to today's behaviour.
+
+        ⚠ Approval_Pending__c AND Approval_Advance_Pending__c ARE OPPOSITES IN TIME AND ARE NOT
+        INTERCHANGEABLE. Read the banner on
+        objects/Disposition__c/fields/Approval_Pending__c.field-meta.xml first.
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -123,11 +157,33 @@
             <name>Set_Approval_Advance_Pending</name>
             <type>FieldUpdate</type>
         </action>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
     </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
+    <finalRejectionActions>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </finalRejectionActions>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <initialSubmissionActions>
+        <action>
+            <name>Set_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </initialSubmissionActions>
     <label>Closing Approval</label>
     <processOrder>3</processOrder>
+    <recallActions>
+        <action>
+            <name>Clear_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

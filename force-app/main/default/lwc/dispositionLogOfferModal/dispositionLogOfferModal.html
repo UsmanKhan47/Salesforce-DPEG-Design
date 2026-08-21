@@ -1,0 +1,311 @@
+<template>
+    <lightning-modal-header label="Log Offer"></lightning-modal-header>
+
+    <lightning-modal-body>
+        <div class="lom-body slds-is-relative">
+            <template lwc:if={isBusy}>
+                <lightning-spinner
+                    alternative-text="Loading the offer form"
+                    size="small"
+                ></lightning-spinner>
+            </template>
+
+            <!-- ═══════════════════════════════════════════════════════════════════════════
+                 THE LOAD FAILED. Distinct from the empty state below, because the remedies
+                 are different people: this one is an administrator, that one is the analyst.
+                 ═══════════════════════════════════════════════════════════════════════════ -->
+            <template lwc:if={hasLoadError}>
+                <div class="lom-error" role="alert">{loadErrorMessage}</div>
+            </template>
+
+            <!-- ═══════════════════════════════════════════════════════════════════════════
+                 🔴 THE EMPTY STATE. NO FORM IS RENDERED AT ALL — THIS IS THE POINT.
+                 ═══════════════════════════════════════════════════════════════════════════
+                 `Buyer_Required_On_Offer` is ACTIVE and its formula is `ISBLANK(Buyer_Name__c)`
+                 with NO ISNEW/ISCHANGED guard, so it refuses EVERY save, not merely the first.
+                 With no signed buyer NDA there is nothing the picker can offer, therefore
+                 nothing that can satisfy that rule, therefore no save that can succeed.
+                 Rendering the form anyway would let the analyst type an amount, a date and a
+                 financing type and then be refused by a rule naming a field they were never
+                 shown — an error with no reachable fix on this screen. Explaining it up front
+                 and pointing at the NDA is the only honest option.
+
+                 ══════════════════════════════════════════════════════════════════════════
+                 🔴 THE COPY WAS CUT FROM FIVE SENTENCES TO ONE ON 2026-08-21, AT UAT
+                 ══════════════════════════════════════════════════════════════════════════
+                 The panel was CORRECT and the user still misread it. They hit it on NDA-0114
+                 (`Status__c = Signed`, `Party_Role__c = Buyer`, `Buyer__c = NULL` — verified
+                 against the live record), read the opening sentence *"An offer must name the
+                 buyer who made it…"*, concluded the dialog was wrong because their NDA IS
+                 signed, and stopped reading before the paragraph that said so. A message
+                 nobody finishes is a broken message however true it is, so the general
+                 principle is deleted and the specific cause now leads.
+
+                 🔴 THE SECOND CAUSE — no signed NDA at all — IS STILL COVERED, AND
+                 DELIBERATELY NOT AS AN ALTERNATIVE. "No signed NDA on this sale names a buyer
+                 contact" is true in BOTH shapes: with no signed NDA and with a signed NDA
+                 carrying no Contact. The old wording spelled the two out as a choice
+                 ("Either no NDA has come back signed, or…"), which handed the reader a
+                 diagnosis to perform before they could act. The common case in this org is
+                 the second, and the remedy line names it directly; a reader whose NDA is not
+                 signed learns that the moment they open the NDA related list the line sends
+                 them to.
+                 ⚠ DO NOT RE-ADD THE "why an offer needs a buyer" SENTENCE. That is the exact
+                 sentence the user read and bounced off. The rule it explains
+                 (`Buyer_Required_On_Offer`) is documented above, for developers, which is who
+                 needs the reasoning.
+                 ⚠ THE NO-SAVE-BUTTON BEHAVIOUR AND THE PICKER QUERY ARE UNCHANGED — only the
+                 copy and its layout moved. -->
+            <template lwc:elseif={showEmptyState}>
+                <div class="lom-empty">
+                    <h2 class="lom-empty-heading">No buyer available</h2>
+                    <!-- ⚠ `<strong>` MUST NOT START A LINE. The LWC template compiler drops the
+                         trailing whitespace of a text node that ends a line before an element, so
+                         breaking after "Set the" renders "Set theBuyer" — measured here, caught by
+                         the assertion below on RENDERED text rather than on source. Keep each
+                         inline element on the same line as the word before it. -->
+                    <p class="lom-empty-copy lom-empty-next">
+                        No signed NDA on this sale names a buyer contact.
+                        Set the <strong>Buyer</strong> on the signed NDA, then log the offer.
+                    </p>
+                </div>
+            </template>
+
+            <!-- ═══════════════════════════════════════════════════════════════════════════
+                 THE FORM. Rendered only when at least one buyer is selectable.
+                 🔴 NO `record-id`: this form ONLY EVER CREATES. In create mode
+                 `lightning-record-edit-form` enforces CRUD/FLS for the running user and
+                 surfaces validation-rule refusals through <lightning-messages>, which is why
+                 this component needs no Apex on the WRITE side at all.
+
+                 🔴 THE BRANCH IS `lwc:elseif={canSave}`, NOT `lwc:else`, AND THE DIFFERENCE IS
+                 THE PRE-ANSWER FRAME. `canSave` is false until the wire has answered, so an
+                 `lwc:else` here would render the whole form — including an EMPTY, interactive
+                 buyer combobox — underneath the loading spinner on every open. Measured, not
+                 theorised: the first version of this template used `lwc:else` and the rendered
+                 HTML before the wire answered contained the form. A user who clicked through
+                 the spinner would have been offered a picker with no options in it.
+                 ⚠ There is deliberately NO `lwc:else` on this chain at all. While loading, the
+                 body renders nothing but the spinner — the honest state.
+                 ═══════════════════════════════════════════════════════════════════════════ -->
+            <template lwc:elseif={canSave}>
+                <lightning-record-edit-form
+                    class="lom-form"
+                    object-api-name="Disposition_Offer__c"
+                    onsubmit={handleSubmit}
+                    onsuccess={handleSuccess}
+                    onerror={handleError}
+                >
+                    <!-- ⚠ THE PLATFORM'S OWN ERROR SURFACE, NOT A HAND-ROLLED BANNER. Six
+                         validation rules are active on this object and every one carries an
+                         AUTHORED message naming the field it is about. <lightning-messages>
+                         renders those against the right field; hand-parsing
+                         `error.detail.output.fieldErrors` to rebuild the same thing is how the
+                         attribution gets lost. -->
+                    <lightning-messages></lightning-messages>
+
+                    <p class="lom-intro">
+                        Log an offer against this sale. It is saved here on the
+                        disposition &mdash; you stay on this page and the offers card
+                        refreshes behind this dialog.
+                    </p>
+
+                    <div class="lom-grid">
+                        <!-- ═══════════════════════════════════════════════════════════════
+                             THE PARENT. Shown so the analyst can see what they are logging
+                             against, and DISABLED so a dialog opened on one sale cannot log
+                             an offer against another.
+                             🔴 ITS VALUE IS ALSO FORCED IN JS ON BOTH SUBMIT PATHS. A
+                             disabled control is conventionally excluded from a form
+                             submission, so this input is a DISPLAY, not the transport.
+                             ═══════════════════════════════════════════════════════════════ -->
+                        <lightning-input-field
+                            class="lom-field lom-field-disposition lom-field_full"
+                            field-name="Disposition__c"
+                            value={dispositionId}
+                            disabled
+                        ></lightning-input-field>
+
+                        <!-- ═══════════════════════════════════════════════════════════════
+                             🔴 THE BUYER PICKER. A COMBOBOX, NOT A `lightning-input-field`.
+                             ═══════════════════════════════════════════════════════════════
+                             `Buyer__c` is a Contact lookup with NO lookup filter (deliberately
+                             — see its field metadata), so rendering it as an input-field would
+                             offer EVERY Contact in the org, including the introducing broker
+                             whose NDA sits on this same sale. This narrows it to the buyers
+                             who have signed an NDA on THIS disposition, which is the whole
+                             reason this modal exists rather than a page-layout edit: a classic
+                             page layout cannot express a filtered picker.
+                             ⚠ THE OPTION VALUE IS THE CONTACT ID, not the NDA Id — it is
+                             written straight into `Buyer__c`, the join
+                             `DispositionBuyerTimelineService` matches each buyer's NDA to
+                             their own first offer on.
+                             ⚠ `Buyer_Name__c` IS NOT ON THIS FORM and must not be added:
+                             `DispositionOfferBuyerStampService` derives it from `Buyer__c` in
+                             the before-save trigger, so anything typed there is overwritten
+                             inside the same save. Setting the lookup is what satisfies
+                             `Buyer_Required_On_Offer`.
+                             ═══════════════════════════════════════════════════════════════ -->
+                        <lightning-combobox
+                            class="lom-field lom-field-buyer lom-field_full"
+                            label="Buyer"
+                            placeholder="Select the buyer who made this offer"
+                            options={buyerOptions}
+                            value={buyerId}
+                            onchange={handleBuyerChange}
+                            field-level-help="Only buyers with a signed NDA on this disposition can be selected."
+                            required
+                        ></lightning-combobox>
+
+                        <!-- ═══════════════════════════════════════════════════════════════
+                             🔴 THE BROKER — DISPLAY ONLY, AND NOT AN INPUT OF ANY KIND.
+                             ═══════════════════════════════════════════════════════════════
+                             Resolved server-side per record type: on-market from the SELECTED
+                             `BOV_Submission__c`'s `Broker__c`, off-market from
+                             `Disposition__c.Broker__c`. It is rendered as text rather than as
+                             a `disabled` lookup because a disabled lookup still looks like a
+                             control someone may enable, and there is no case in which this
+                             value should be hand-picked on an offer.
+                             🔴 `Disposition__c.Selected_Broker__c` IS NOT THE SOURCE AND MUST
+                             NEVER BE PARSED — it reads "Firm" on on-market rows and
+                             "Person - Firm" on off-market ones, and its own field metadata
+                             states "NO CONSUMER MAY PARSE THIS FIELD".
+                             ═══════════════════════════════════════════════════════════════ -->
+                        <div class="lom-field lom-field-broker lom-field_full">
+                            <span class="lom-readonly-label">Broker</span>
+                            <template lwc:if={hasBroker}>
+                                <p class="lom-readonly-value">{brokerName}</p>
+                                <p class="lom-readonly-help">{brokerSource}</p>
+                            </template>
+                            <template lwc:else>
+                                <!-- ⚠ A NULL BROKER IS AN ACCEPTED OUTCOME, NOT AN ERROR. The
+                                     broker only exists once the appointment has been approved,
+                                     and an offer logged before that legitimately carries none.
+                                     The hint is worded per record type because the two
+                                     remedies are on two different screens. -->
+                                <p class="lom-readonly-value lom-readonly-value_empty">
+                                    Not appointed yet
+                                </p>
+                                <p class="lom-readonly-help">{brokerEmptyHint}</p>
+                            </template>
+                        </div>
+
+                        <!-- REQUIRED BY A VALIDATION RULE (Offer_Amount_Required_On_Offer).
+                             The amount is the entire point: the offers card ranks on it and
+                             the Select Offer screen chooses between amounts. -->
+                        <lightning-input-field
+                            class="lom-field lom-field-amount"
+                            field-name="Offer_Amount__c"
+                            required
+                        ></lightning-input-field>
+
+                        <lightning-input-field
+                            class="lom-field lom-field-date"
+                            field-name="Offer_Date__c"
+                        ></lightning-input-field>
+
+                        <!-- ═══════════════════════════════════════════════════════════════
+                             🔴 `Offer_Financing_Type__c` IS KEPT ON PURPOSE. THE USER ASKED
+                             FOR IT TO BE HIDDEN AND IT IS STILL HERE. DO NOT REMOVE IT
+                             WITHOUT RE-READING THIS.
+                             ═══════════════════════════════════════════════════════════════
+                             It is not an isolated form field. It is READ on two decision
+                             surfaces, neither of which has any other way to acquire it:
+                               - c/dispositionOfferSelect renders it into the radio label of
+                                 the Select Offer screen action — the screen where DPEG picks
+                                 the winning bid;
+                               - it is an `approvalPageField` on `Offer_Selection_Approval`,
+                                 so the two named approvers see it when they sign off.
+                             Nothing writes it but a human. Drop it from the only entry point
+                             and BOTH surfaces render blank on every offer created afterwards,
+                             permanently, with no error anywhere — all-cash and
+                             financed-with-contingency offers become indistinguishable at the
+                             exact moment someone is choosing between them. The user has been
+                             told; this is reported, not silently overridden.
+                             ═══════════════════════════════════════════════════════════════ -->
+                        <lightning-input-field
+                            class="lom-field lom-field-financing"
+                            field-name="Offer_Financing_Type__c"
+                        ></lightning-input-field>
+
+                        <lightning-input-field
+                            class="lom-field lom-field-earnest"
+                            field-name="Earnest_Money_Proposed__c"
+                        ></lightning-input-field>
+
+                        <lightning-input-field
+                            class="lom-field lom-field-dd"
+                            field-name="Due_Diligence_Days__c"
+                        ></lightning-input-field>
+
+                        <lightning-input-field
+                            class="lom-field lom-field-closing"
+                            field-name="Closing_Period_Days__c"
+                        ></lightning-input-field>
+                    </div>
+
+                    <!-- ═══════════════════════════════════════════════════════════════════
+                         🔴 SIX FIELDS ARE DELIBERATELY ABSENT. EACH EXCLUSION IS ARGUED.
+                         ═══════════════════════════════════════════════════════════════════
+                         `Name`                 AutoNumber. The platform assigns it.
+                         `Buyer_Name__c`        Derived by DispositionOfferBuyerStampService
+                                                from Buyer__c in the before-save trigger.
+                                                Offering it hands the user an input whose value
+                                                is discarded with a success toast. The picker
+                                                above IS this field's input now.
+                         `NDA_Status__c`        User-requested removal, and CLEAN: repo-wide it
+                                                is referenced only by the layout, the two
+                                                permission sets, the object translation and the
+                                                seed script. No Apex, no LWC, no flow, no
+                                                approval page reads it. It keeps its picklist
+                                                default.
+                         `Offer_Status__c`      User-requested removal. ⚠ THIS ONE HAS A REAL
+                                                COST AND IT IS REPORTED, NOT HIDDEN: the layout
+                                                left it editable ON PURPOSE so an analyst could
+                                                log Received / Countered / Under Review as a
+                                                negotiation progresses. Only the 'Accepted'
+                                                transition is machine-written
+                                                (DispositionOfferTriggerHandler). It is still
+                                                editable on the record itself — this dialog
+                                                only CREATES — so the ability is moved, not
+                                                destroyed.
+                         `Is_Selected__c`,
+                         `Approval_Status__c`   The whole Selection and Approval section.
+                                                Machine-written by
+                                                DispositionApprovalService.selectOffer and by
+                                                Offer_Selection_Approval's finalApprovalActions
+                                                respectively; both already Readonly on the
+                                                layout and editable=false in DPEG_Disposition_Edit,
+                                                so rendering either raises an FLS error inside
+                                                the form rather than being silently skipped.
+                         The four counter/close fields (`Buyer_Counter_Price__c`,
+                         `DPEG_Counter_Price__c`, `DPEG_Counter_Date__c`,
+                         `Final_Agreed_Price__c`) are absent because an offer being LOGGED has
+                         by definition not been countered or closed yet. They belong to the
+                         negotiation that follows and are edited on the record.
+                         ═══════════════════════════════════════════════════════════════════ -->
+                </lightning-record-edit-form>
+            </template>
+        </div>
+    </lightning-modal-body>
+
+    <lightning-modal-footer>
+        <lightning-button
+            class="lom-cancel"
+            label={cancelLabel}
+            onclick={handleCancel}
+        ></lightning-button>
+        <!-- 🔴 IN THE EMPTY STATE THERE IS NO SAVE BUTTON AT ALL, not a disabled one. A
+             disabled Save invites a click and then explains nothing; its absence, next to the
+             explanation above, is unambiguous. -->
+        <template lwc:if={canSave}>
+            <lightning-button
+                class="lom-save slds-m-left_x-small"
+                variant="brand"
+                label="Save offer"
+                onclick={handleSave}
+                disabled={isSaving}
+            ></lightning-button>
+        </template>
+    </lightning-modal-footer>
+</template>

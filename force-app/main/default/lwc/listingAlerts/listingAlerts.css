@@ -1,3 +1,12 @@
+/*
+ * c-listing-alerts — the Automated Alerts card.
+ *
+ * ⚠ THE BAND / CLOCK / MILESTONE RULES WERE DELETED 2026-08-21, NOT COMMENTED OUT. The UAT pass
+ * removed the band pill, the band detail line, the marketing-clock progress bar and the two
+ * milestone rows from the template, so `.band-*`, `.clock-*` and `.milestone-*` had no selectors
+ * left to match. Dead CSS that still names a removed feature is how a future reader concludes the
+ * feature is merely hidden.
+ */
 :host {
     display: block;
     font-family: 'Salesforce Sans', Arial, sans-serif;
@@ -30,100 +39,75 @@
     font-size: var(--slds-g-font-scale-neg-1, 12px);
     color: var(--slds-g-color-neutral-base-60, #8a96a3);
 }
-.band-row {
-    padding: var(--slds-g-spacing-4, 16px) 18px var(--slds-g-spacing-1, 4px);
-}
-.band-badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
+/* ── The escalation schedule ────────────────────────────────────────────────
+ * Every state carries TEXT (.rung-state) as well as a colour. The left rail is decorative; deleting
+ * the text and keeping the rail would make the ladder unreadable to a screen reader and to anyone
+ * who cannot separate amber from grey.
+ */
+.rung-heading {
+    padding: var(--slds-g-spacing-3, 12px) 18px var(--slds-g-spacing-1, 4px);
     font-size: 11px;
     font-weight: var(--slds-g-font-weight-7, 700);
-    /* Colour is never the only carrier: the badge TEXT already names the band and the day. */
-    border: 1px solid transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
 }
-.band--muted {
-    color: var(--slds-g-color-neutral-base-30, #444);
-    background: var(--slds-g-color-neutral-base-95, #f3f5f7);
-    border-color: var(--slds-g-color-border-1, #e3e6eb);
-}
-.band--green {
-    color: var(--slds-g-color-success-base-30, #1b7a4b);
-    background: #eaf6ef;
-    border-color: #bfe3cf;
-}
-.band--yellow {
-    color: var(--slds-g-color-warning-base-30, #8a5300);
-    background: #fdf3e3;
-    border-color: #f0d6a8;
-}
-.band--red {
-    color: var(--slds-g-color-error-base-30, #b91c1c);
-    background: #fdeceb;
-    border-color: #f3c5c2;
-}
-.band-detail {
+.rung-list {
     margin: 0;
-    padding: var(--slds-g-spacing-1, 4px) 18px var(--slds-g-spacing-3, 12px);
-    font-size: var(--slds-g-font-scale-neg-1, 12px);
-    color: var(--slds-g-color-palette-cloud-blue-30, #46586a);
-    /* Long band copy must wrap rather than force the card to scroll sideways. */
-    overflow-wrap: anywhere;
+    padding: 0 18px var(--slds-g-spacing-3, 12px);
+    list-style: none;
 }
-.clock-track {
-    height: 6px;
-    margin: 0 18px var(--slds-g-spacing-3, 12px);
-    border-radius: 3px;
-    background: var(--slds-g-color-neutral-base-95, #f3f5f7);
-    overflow: hidden;
-}
-.clock-fill {
-    height: 100%;
-    border-radius: 3px;
-}
-.clock--muted {
-    background: var(--slds-g-color-neutral-base-60, #8a96a3);
-}
-.clock--green {
-    background: var(--slds-g-color-success-base-30, #1b7a4b);
-}
-.clock--yellow {
-    background: var(--slds-g-color-warning-base-30, #b45309);
-}
-.clock--red {
-    background: var(--slds-g-color-error-base-30, #b91c1c);
-}
-.milestone-list {
-    margin: 0;
-    padding: 0 0 var(--slds-g-spacing-1, 4px);
-}
-.milestone-row {
+.rung {
     display: grid;
-    /* min() keeps the term column from forcing horizontal scroll on a narrow region. */
-    grid-template-columns: minmax(min(9rem, 45%), 1fr) 1fr;
-    gap: var(--slds-g-spacing-2, 8px);
+    grid-template-columns: minmax(4.5rem, auto) auto 1fr;
+    gap: 2px var(--slds-g-spacing-2, 8px);
     align-items: baseline;
-    padding: var(--slds-g-spacing-3, 12px) 18px;
-    border-top: 1px solid var(--slds-g-color-border-1, #f3f5f7);
+    padding: var(--slds-g-spacing-2, 8px) 0 var(--slds-g-spacing-2, 8px)
+        var(--slds-g-spacing-3, 12px);
+    border-left: 2px solid var(--slds-g-color-border-1, #e3e6eb);
     font-size: var(--slds-g-font-scale-neg-1, 12px);
 }
-.milestone-term {
-    min-width: 0;
+.rung-label {
     font-weight: var(--slds-g-font-weight-7, 700);
     color: var(--slds-g-color-on-surface-2, #181818);
-    overflow-wrap: anywhere;
 }
-.milestone-value {
-    margin: 0;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    overflow-wrap: anywhere;
+.rung-state {
+    justify-self: start;
+    padding: 1px var(--slds-g-spacing-2, 8px);
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: var(--slds-g-font-weight-7, 700);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
-.milestone-primary {
-    color: var(--slds-g-color-on-surface-2, #181818);
+.rung-due {
+    color: var(--slds-g-color-neutral-base-30, #444);
+    justify-self: end;
 }
-.milestone-note {
+.rung-note {
+    grid-column: 1 / -1;
     color: var(--slds-g-color-neutral-base-60, #8a96a3);
+    overflow-wrap: anywhere;
+}
+.rung--passed {
+    border-left-color: var(--slds-g-color-neutral-base-60, #8a96a3);
+}
+.rung--passed .rung-state {
+    color: var(--slds-g-color-neutral-base-30, #444);
+    background: var(--slds-g-color-neutral-base-95, #f3f5f7);
+}
+.rung--current {
+    border-left-color: var(--slds-g-color-warning-base-30, #b45309);
+}
+.rung--current .rung-state {
+    color: var(--slds-g-color-warning-base-30, #8a5300);
+    background: #fdf3e3;
+}
+.rung--ahead {
+    border-left-style: dashed;
+}
+.rung--ahead .rung-state {
+    color: var(--slds-g-color-neutral-base-60, #8a96a3);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: 1px solid var(--slds-g-color-border-1, #e3e6eb);
 }

@@ -26,6 +26,36 @@
         and path assistants ship in the SAME deploy as this change rather than a later one.
 
         =====================================================================================
+        🔴 RETIREMENT WAVE EXECUTED 2026-08-21 (offer-form-and-stage-retirement.md, Request C).
+        THE THREE DOOMED VALUES ARE NOW REMOVED FROM THIS FILE. READ THE ORDERING BEFORE
+        DEPLOYING ANY OF THE FOUR FILES THIS TOUCHES.
+        =====================================================================================
+        Re-verified before trimming, not just re-quoted: GROUP BY Disposition_Stage__c on
+        usman-dpeg still returns Active Listing = 1 and nothing else. Zero rows on any of the
+        three retired values, zero pending approval instances.
+
+        🔴 THIS FILE, objects/Disposition__c/recordTypes/On_Market.recordType-meta.xml,
+        objects/Disposition__c/recordTypes/Off_Market.recordType-meta.xml and
+        objectTranslations/Disposition__c-en_US/Disposition_Stage__c.fieldTranslation-meta.xml
+        MUST DEPLOY TOGETHER, IN ONE COMMIT. A record type referencing a value this file no
+        longer declares, or a translation masterLabel with no matching value, is a deploy error.
+
+        🔴 DO NOT DEPLOY THIS TRIM UNTIL THE THREE VALUES HAVE BEEN DELETED BY HAND IN SETUP
+        FIRST (Object Manager > Disposition > Fields & Relationships > Disposition Stage > Del
+        next to Call for Offers, Disposition Offer and Completed, then erase all three from the
+        Deleted Values list). Deploying this trim BEFORE that manual step does nothing useful -
+        the org keeps the values regardless of what this file says, and the next retrieve UNIONS
+        them straight back into source, which reads exactly like a failed deploy. Do not retrieve
+        this field between the manual Setup deletion and this file's deploy.
+
+        The post-destructive package at manifest/disposition-redesign-destructive/ must deploy
+        BEFORE the manual Setup deletion above - it removes the one ValidationRule and the one
+        PathAssistant step that would otherwise block the "Del" action on Completed and on
+        Call for Offers / Disposition Offer respectively. Both targets were confirmed to still
+        exist in the org on 2026-08-21 (ValidationRule Disposition__c.Wire_Complete_Before_Completed,
+        Id 03diw0000003CnqAAE; PathAssistant Disposition_Path, last modified 2026-08-10).
+
+        =====================================================================================
         THE ORDERING ARITHMETIC - THIS IS A PER-FIELD CALCULATION AND IT WAS NOT AN APPEND.
         =====================================================================================
         Runtime Path order comes from THIS list's order (sorted = false), filtered by the record
@@ -150,24 +180,6 @@
                 <fullName>Sale Closes</fullName>
                 <default>false</default>
                 <label>Sale Closes</label>
-            </value>
-            <!-- Positions 12 to 14: RETIRED, awaiting the manual Setup deletion wave.
-                 Zero rows hold any of them. Do not remove them from this file before that
-                 wave runs - a retrieve would restore them and mimic a failed deploy. -->
-            <value>
-                <fullName>Call for Offers</fullName>
-                <default>false</default>
-                <label>Call for Offers</label>
-            </value>
-            <value>
-                <fullName>Disposition Offer</fullName>
-                <default>false</default>
-                <label>Disposition Offer</label>
-            </value>
-            <value>
-                <fullName>Completed</fullName>
-                <default>false</default>
-                <label>Completed</label>
             </value>
         </valueSetDefinition>
     </valueSet>

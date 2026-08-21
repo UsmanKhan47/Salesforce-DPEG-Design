@@ -1,6 +1,6 @@
 <template>
     <div class="card">
-        <div class="section-header">Listing Traction</div>
+        <div class="section-header">Automated Alerts</div>
 
         <template if:true={hasError}>
             <div class="wire-error" role="alert">
@@ -9,37 +9,39 @@
                     size="x-small"
                     variant="error"
                 ></lightning-icon>
-                <span>Listing traction could not be loaded: {errorMessage}</span>
+                <span>Automated alerts could not be loaded: {errorMessage}</span>
             </div>
         </template>
 
         <template if:true={isLoading}>
-            <div class="loading-msg">Loading listing traction…</div>
+            <div class="loading-msg">Loading automated alerts…</div>
         </template>
 
         <template if:true={hasTraction}>
-            <div class="band-row">
-                <span class={badgeClass}>{traction.label}</span>
-            </div>
-            <p class="band-detail">{traction.detail}</p>
+            <!--
+                The escalation schedule, and — since the 2026-08-21 UAT pass — the ONLY thing this
+                card renders. The band badge, the band detail sentence, the clock progress bar and
+                the two milestone rows were removed because the user asked for "automated alerts,
+                that's it". 🔴 THE "Week 4 — At Risk" LABEL WAS NOT DELETED WITH THEM: it still
+                renders on `c/brokerListing`, beside the Replace Broker button it is the reason for.
+                Do not re-add a copy of it here — two copies of one server string on one screen is
+                what the shared-service design exists to avoid.
 
-            <template if:true={traction.isListed}>
-                <div class="clock-track">
-                    <div class={clockBarClass} style={clockBarStyle}></div>
-                </div>
-            </template>
-
-            <dl class="milestone-list">
-                <template for:each={milestones} for:item="m">
-                    <div key={m.key} class="milestone-row">
-                        <dt class="milestone-term">{m.term}</dt>
-                        <dd class="milestone-value">
-                            <span class="milestone-primary">{m.value}</span>
-                            <span class="milestone-note">{m.note}</span>
-                        </dd>
-                    </div>
+                An ordered list because the rungs ARE ordered, and the state is rendered as TEXT
+                beside each one - a colour-only marker would delete the only accessible carrier of
+                "passed / current / ahead".
+            -->
+            <div class="rung-heading">Escalation schedule</div>
+            <ol class="rung-list">
+                <template for:each={rungs} for:item="r">
+                    <li key={r.key} class={r.rowClass}>
+                        <span class="rung-label">{r.label}</span>
+                        <span class="rung-state">{r.state}</span>
+                        <span class="rung-due">{r.dueLabel}</span>
+                        <span class="rung-note">{r.note}</span>
+                    </li>
                 </template>
-            </dl>
+            </ol>
         </template>
     </div>
 </template>

@@ -7,7 +7,9 @@
 
         NEW FILE, 2026-08-19. Disposition__c had no workflow metadata before this change.
 
-        🔴 THIS FILE CONTAINS EXACTLY ONE FIELD UPDATE AND NO WORKFLOW RULE, AND THE ABSENCE OF
+        🔴 THIS FILE CONTAINS [CORRECTED 2026-08-21: NO LONGER "EXACTLY ONE FIELD UPDATE". IT
+        NOW HOLDS THREE. THE REST OF THIS SENTENCE STANDS UNCHANGED AND STILL APPLIES TO ALL
+        THREE.] NO WORKFLOW RULE, AND THE ABSENCE OF
         A RULE IS THE POINT. Set_Approval_Advance_Pending is never fired by a criteria-based
         workflow rule. It is fired ONLY as a finalApprovalActions entry by three approval
         processes on this object:
@@ -41,13 +43,100 @@
         DEPLOY ORDER - LOAD-BEARING. This file must land BEFORE the three approval processes: an
         approval process referencing a field update that does not exist fails the deploy. It
         must also land WITH or AFTER Approval_Advance_Pending__c.field-meta.xml.
+
+        =====================================================================================
+        2026-08-21 - TWO MORE FIELD UPDATES, FOR A DIFFERENT FIELD AND A DIFFERENT PURPOSE:
+        Set_Approval_Pending AND Clear_Approval_Pending.
+        =====================================================================================
+        🔴 THEY WRITE Approval_Pending__c, NOT Approval_Advance_Pending__c. Two similarly named
+        fields now live on this object and this file now writes BOTH. Read the disambiguation
+        banner on objects/Disposition__c/fields/Approval_Pending__c.field-meta.xml before
+        editing anything below; the short version is that the D-1 semaphore goes true on FINAL
+        APPROVAL and the new flag is true only WHILE AN APPROVAL IS PENDING.
+
+        WHAT FIRES THEM. The same three approval processes as the semaphore, but on all four
+        transitions rather than one:
+            initialSubmissionActions -> Set_Approval_Pending    (true)
+            finalApprovalActions     -> Clear_Approval_Pending  (false, as a SECOND action
+                                        alongside the untouched Set_Approval_Advance_Pending)
+            finalRejectionActions    -> Clear_Approval_Pending  (false)
+            recallActions            -> Clear_Approval_Pending  (false)
+
+        🔴 CLEARING ON ALL FOUR TERMINAL TRANSITIONS IS THE WHOLE DESIGN, NOT BELT AND BRACES.
+        The flag hides a Submit button, so a path that leaves it true hides that button forever
+        on an unlocked record with no route to resubmit. RECALL is the path that has no other
+        hook: a recall fires no rejection action, leaves no ProcessInstance status the record
+        can see, and produces no trigger context. recallActions is the ONLY mechanism for it,
+        and recall is a routine one click operation on this page since the Approval History
+        component was added to Disposition_Record_Page on 2026-08-19.
+
+        ⚠ A FIELD UPDATE IS USED HERE FOR THE SAME REASON THE SEMAPHORE USES ONE, PLUS ONE MORE.
+        The reason above still applies (an approval triggered Flow with no runInMode runs as the
+        APPROVER). The additional reason is specific to the pending window: recordEditability =
+        AdminOnly LOCKS the Disposition for its entire duration, so no Apex at all can write
+        this field while it matters. AccessLevel.SYSTEM_MODE does not lift a lock and neither
+        does a Queueable, because a pending approval outlives the job. The approval process's
+        own field update is the only writer that is not blocked.
+
+        ⚠ AND WHY NOT SET THE FLAG IN APEX BEFORE Approval.process() INSTEAD. It would work, and
+        it was rejected: DispositionService.initiateAndSubmit submits Sale_Decision_Approval on
+        a route that never touches DispositionApprovalService, and the platform's generic Submit
+        button is still reachable from list views, Classic, mobile and the API even though it
+        was dropped from this object's Lightning page. initialSubmissionActions covers every one
+        of those routes by construction.
+
+        ⚠ ONE FLAG SERVES ALL FOUR SUBMIT BUTTONS ONLY BECAUSE THE FOUR ENTRY STAGES ARE
+        MUTUALLY EXCLUSIVE, exactly as the "ONE UPDATE SERVES ALL THREE APPROVALS" note above
+        argues for the semaphore. A fifth approval sharing an entry stage would break the
+        scoping silently. Do not split these into per approval flags without re reading that.
+
+        🔴 MEASURED 2026-08-21: <description> ON A fieldUpdates ENTRY IS CAPPED AT 255
+        CHARACTERS, AND THE FIRST DRAFT OF Clear_Approval_Pending FAILED VALIDATION AT 256.
+        The org's answer is "Value too long for field: Description maximum length is:255".
+        ⚠ THE CAP IS PER OWNING TYPE, SO DO NOT GENERALISE IT EITHER WAY. Measured in the same
+        dry run: the CustomField descriptions in this change validated at 477 and 409
+        characters, and the approval process files' own comments record descriptions of 442 to
+        617 characters. WorkflowFieldUpdate is the tight one. Keep every description here
+        comfortably under 255, not at 254.
+        ⚠ AND THE FAILURE CASCADES MISLEADINGLY. One over length field update made all three
+        Disposition approval processes fail with "references the workflow action FieldUpdate
+        Clear_Approval_Pending, which doesn't exist for the Disposition__c object" - three
+        errors that look like a missing element or a bad name and are neither. If you see that
+        message, check the field update's description length before touching the approval files.
+
+        reevaluateOnChange stays false on both, for the reason already given above: it
+        re evaluates WORKFLOW RULES, and there are none in this file. Triggers re run regardless.
+        Do not add a <rules> element to activate either one; an active rule writing this flag
+        would hide a Submit button on an ordinary record edit.
     -->
+    <fieldUpdates>
+        <fullName>Clear_Approval_Pending</fullName>
+        <description>Clears the approval pending UI flag. Fired by Sale Decision, Broker Selection and Closing approvals on all three terminal transitions: final approval, final rejection and recall. Clearing on all three stops a Submit button staying hidden.</description>
+        <field>Approval_Pending__c</field>
+        <literalValue>0</literalValue>
+        <name>Clear Approval Pending</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
     <fieldUpdates>
         <fullName>Set_Approval_Advance_Pending</fullName>
         <description>Sets the D-1 auto-advance semaphore. Fired as a final approval action by Sale Decision, Broker Selection and Closing approvals; read and cleared by DispositionApprovalAdvanceQueueable, which writes the next stage.</description>
         <field>Approval_Advance_Pending__c</field>
         <literalValue>1</literalValue>
         <name>Set Approval Advance Pending</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>Set_Approval_Pending</fullName>
+        <description>Sets the approval pending UI flag. Fired as an initialSubmissionActions entry by Sale Decision, Broker Selection and Closing approvals. Four Dynamic Actions on Disposition_Record_Page hide their Submit button while it is true.</description>
+        <field>Approval_Pending__c</field>
+        <literalValue>1</literalValue>
+        <name>Set Approval Pending</name>
         <notifyAssignee>false</notifyAssignee>
         <operation>Literal</operation>
         <protected>false</protected>

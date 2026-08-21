@@ -319,4 +319,99 @@ private class DispositionSelectorTest {
         }
         Test.stopTest();
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // selectBrokerContextById — the Log Offer dialog's parent read (2026-08-21).
+    //
+    // 🔴 ITS NOT-FOUND CONTRACT IS THE **OPPOSITE** OF `selectApprovalContextById`'S, AND THAT
+    // IS THE POINT OF THE LAST TEST BELOW. That method FETCHES FOR USE and throws; this one
+    // READS FOR DISPLAY and returns null, because the dialog degrades to "no broker resolved"
+    // rather than refusing to open. A future "harmonisation" of the two would turn a soft
+    // degrade into a dialog that will not open at all.
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectBrokerContextById_populatesRecordTypeAndBrokerWithName() {
+        Contact broker = TestDataFactory.createBrokerContact(null, true);
+        Disposition__c disposition = TestDataFactory.createDisposition(
+            assetId(),
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET,
+            false
+        );
+        disposition.Broker__c = broker.Id;
+        insert disposition;
+        // 🔴 THE FACTORY'S RETURNED sObject HAS A **NULL** `Name`, AND THAT MADE THE FIRST VERSION
+        // OF THIS TEST VACUOUS. `Contact.Name` is a COMPOUND field the platform derives on save; it
+        // is not populated on the in-memory record the factory hands back, so
+        // `Assert.areEqual(broker.Name, result.Broker__r.Name)` compared null against the real name
+        // and failed — it would equally have PASSED had the traversal also been null. Re-query for
+        // the value being asserted; never re-use the pre-insert variable.
+        Contact expectedBroker = [SELECT Id, Name FROM Contact WHERE Id = :broker.Id LIMIT 1];
+
+        Test.startTest();
+        Disposition__c result = DispositionSelector.selectBrokerContextById(disposition.Id);
+        Test.stopTest();
+
+        Assert.isNotNull(result, 'An existing, visible Disposition should return a row');
+        Assert.areEqual(broker.Id, result.Broker__c, 'Broker__c must be in the SELECT');
+        Assert.isNotNull(expectedBroker.Name, 'FIXTURE PRECONDITION: the Contact has a name');
+        // 🔴 THE TRAVERSAL IS THE FRAGILE PART. `Broker__r.Name` adds an OBJECT-level Contact
+        // gate that no Disposition permission set grants, so if the SELECT is ever narrowed to
+        // the bare lookup the modal renders a broker Id with no name beside it.
+        Assert.isNotNull(result.Broker__r, 'Broker__r must be traversed, not just the Id');
+        Assert.areEqual(
+            expectedBroker.Name,
+            result.Broker__r.Name,
+            'The display name the modal renders comes from the traversal'
+        );
+        Id rt = result.RecordTypeId; // readable without throwing — proves it is in the SELECT
+        Assert.isNotNull(rt, 'RecordTypeId is the on/off-market discriminator');
+    }
+
+    @isTest
+    static void selectBrokerContextById_noBrokerPicked_returnsRowWithNullBroker() {
+        // The @TestSetup row is On_Market with no Broker__c — the live shape of the org's only
+        // disposition on 2026-08-21.
+        Disposition__c disposition = setupDisposition();
+
+        Test.startTest();
+        Disposition__c result = DispositionSelector.selectBrokerContextById(disposition.Id);
+        Test.stopTest();
+
+        // 🔴 A ROW WITH A NULL BROKER IS A NORMAL ANSWER, NOT AN ERROR. An offer logged before
+        // the broker is appointed legitimately carries none, and nothing backfills it later.
+        Assert.isNotNull(result, 'The row exists even though no broker is picked');
+        Assert.isNull(result.Broker__c, 'No broker picked yet is the normal early state');
+    }
+
+    @isTest
+    static void selectBrokerContextById_nullInput_returnsNullWithoutQuerying() {
+        Integer before = Limits.getQueries();
+
+        Test.startTest();
+        Disposition__c result = DispositionSelector.selectBrokerContextById(null);
+        Test.stopTest();
+
+        Assert.isNull(result, 'A null Id must answer null');
+        // The guard is a real short-circuit, not a post-query filter — the modal's wire can fire
+        // before dispositionId is set, and that must not cost a query on every open.
+        Assert.areEqual(before, Limits.getQueries(), 'A null Id must not issue a query');
+    }
+
+    @isTest
+    static void selectBrokerContextById_missingId_returnsNullRatherThanThrowing() {
+        Disposition__c ghost = TestDataFactory.createDisposition(assetId(), true);
+        Id deletedId = ghost.Id;
+        delete ghost;
+
+        Test.startTest();
+        Disposition__c result = DispositionSelector.selectBrokerContextById(deletedId);
+        Test.stopTest();
+
+        // 🔴 THE DIVERGENCE FROM `selectApprovalContextById` IS DELIBERATE AND IS PINNED HERE.
+        // That method throws on the same input (see the test above). This one must not: the
+        // Log Offer dialog makes three reads and degrades on this one, so a throw would take
+        // down a dialog whose central control is the buyer picker.
+        Assert.isNull(result, 'A missing row is a null answer here, never an exception');
+    }
 }

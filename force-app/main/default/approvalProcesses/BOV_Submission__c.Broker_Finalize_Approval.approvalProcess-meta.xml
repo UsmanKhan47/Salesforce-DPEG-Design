@@ -58,6 +58,46 @@
 
         DEPLOY ORDER - LOAD-BEARING. workflows/BOV_Submission__c.workflow-meta.xml and
         objects/BOV_Submission__c/fields/Approval_Status__c.field-meta.xml must both land FIRST.
+
+        =====================================================================================
+        2026-08-21 - TWO NEW ELEMENTS, PLUS A SECOND ACTION ON EACH EXISTING ACTION BLOCK.
+        =====================================================================================
+        initialSubmissionActions (new) sets BOV_Submission__c.Approval_Pending__c;
+        recallActions (new) clears it; and Clear_Broker_Approval_Pending is appended as a SECOND
+        action to BOTH the existing finalApprovalActions and the existing finalRejectionActions.
+        🔴 Set_Broker_Approval_Approved AND Set_Broker_Approval_Rejected ARE UNTOUCHED AND STAY
+        FIRST IN THEIR BLOCKS. Removing either would stop the parent Disposition advancing on
+        approval and stop the rejection being recorded. The clears are ADDITIONS, not swaps.
+
+        WHAT IT IS FOR, AND WHY THIS ONE PROCESS NEEDS APEX WHERE THE OTHER THREE DO NOT. The
+        button being hidden is Submit_Selected_Broker, on the DISPOSITION's Lightning page, but
+        this approval targets the SUBMISSION. A FlexiPage visibility rule can only read a field
+        on the record it renders, and BOV_Submission__c.Disposition__c is a LOOKUP, not Master
+        Detail, which independently rules out a roll up summary AND a cross object field update.
+        So the flag is written HERE and BovSubmissionTriggerHandler mirrors it onto the parent,
+        the same synchronous parent write this file's note above already argues is safe.
+
+        🔴 THE FULL ARGUMENT, THE EVIDENCE FOR THE TWO PREVIOUSLY UNPROVEN ELEMENT SHAPES, AND
+        THE MANDATORY SUBMIT-THEN-RECALL READBACK LIVE IN ONE PLACE AND ARE NOT REPEATED HERE:
+        approvalProcesses/Disposition__c.Sale_Decision_Approval.approvalProcess-meta.xml,
+        2026-08-21 entry. That file is deliberately deployed and behaviourally proven FIRST AND
+        ALONE. Do not deploy this file until its recall test has passed.
+
+        🔴 THIS FILE HAS A SECOND, SEPARATE PREREQUISITE THE OTHER THREE DO NOT: THE TRIGGER
+        HANDLER MIRROR MUST BE LIVE FIRST. If this process gains initialSubmissionActions before
+        BovSubmissionTriggerHandler learns to mirror Approval_Pending__c, a submission sets a
+        child flag nothing reads and the parent's Submit button never hides - the same sequencing
+        argument Sale_Decision_Approval already makes for the D-1 semaphore hook. That direction
+        is FAIL OPEN (the button stays visible and the server still refuses with an authored
+        message), which is why it is a sequencing note and not a blocker, but do it in order.
+
+        ⚠ ONE KNOWN GAP, DELIBERATELY NOT CLOSED. BovSubmissionTrigger declares no after delete
+        context, so deleting a submission while THIS approval is pending leaves the parent's
+        mirrored flag stuck true. Recorded on the child field file with its recovery query.
+
+        ⚠ THREE SIMILARLY NAMED FIELDS NOW LIVE ON THIS OBJECT: Submission_Status__c (the team's
+        pick), Approval_Status__c (the principals' outcome) and Approval_Pending__c (whether a
+        decision is still outstanding). Read the child field file before wiring anything.
     -->
     <active>true</active>
     <allowRecall>true</allowRecall>
@@ -106,6 +146,10 @@
             <name>Set_Broker_Approval_Approved</name>
             <type>FieldUpdate</type>
         </action>
+        <action>
+            <name>Clear_Broker_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
     </finalApprovalActions>
     <finalApprovalRecordLock>false</finalApprovalRecordLock>
     <finalRejectionActions>
@@ -113,10 +157,26 @@
             <name>Set_Broker_Approval_Rejected</name>
             <type>FieldUpdate</type>
         </action>
+        <action>
+            <name>Clear_Broker_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
     </finalRejectionActions>
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
+    <initialSubmissionActions>
+        <action>
+            <name>Set_Broker_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </initialSubmissionActions>
     <label>Broker Finalize Approval</label>
     <processOrder>1</processOrder>
+    <recallActions>
+        <action>
+            <name>Clear_Broker_Approval_Pending</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

@@ -1,6 +1,17 @@
 /**
- * The `@AuraEnabled` boundary for the Active Listing traction monitor — backs `lwc/listingAlerts`,
+ * The `@AuraEnabled` boundary for the Active Listing escalation ladder — backs `lwc/listingAlerts`,
  * which replaced a hardcoded four-row mock (D28/Q4, 2026-08-10).
+ *
+ * ── ⚠ ITS CONSUMER STOPPED BEING A "TRACTION MONITOR" ON 2026-08-21 (UAT) ───
+ * This header called it exactly that until the user said *"we don't need listing traction. We just
+ * need automated alerts thats' it."* `lwc/listingAlerts` was cut back to the three-rung escalation
+ * schedule: it no longer renders the band pill, the band detail, the marketing-clock progress bar
+ * or the offer count. 🔴 NOTHING BELOW OR IN `DispositionTractionService` CHANGED. The payload is
+ * unchanged and every member is still computed — `band`, `label` and `isAtRisk` are read by
+ * `BrokerListingController` for the badge that survives on `lwc/brokerListing`, and `offerCount` /
+ * `firstOfferDate` still decide the band and the pause that the RUNG NOTES ("Clock paused.")
+ * express. Trimming the DTO to "what the card renders today" would break the other consumer and
+ * would delete the pause.
  *
  * ── WHY THIS IS A SEPARATE CONTROLLER FROM `BrokerListingController` ────────
  * Traction is a property of the DISPOSITION (its listing date and its offers), not of the
@@ -20,6 +31,9 @@
  * the strings it returns deliberately never promise that anyone will be told. The deferred half
  * lands as a Schedulable calling `DispositionTractionService.evaluate` + `listingStatusValue` — see
  * that class's header for exactly what it still needs.
+ * ⚠ RE-CONFIRMED 2026-08-21, WHEN THE LADDER ITSELF CHANGED. The user moved the thresholds to
+ * Week 1/4/6 and added the offer PAUSE, and in the same breath deferred the email and the dashboard
+ * flag again, explicitly. So this deferral is now a live decision rather than an inherited one.
  *
  * Layering: thin controller (ARCHITECTURE.md §2) — marshal, delegate, catch, throw
  * `AuraHandledException` with a fixed user-safe message. Zero SOQL of its own.
@@ -38,7 +52,8 @@
  *
  * ── 🔴 A MEASURED, ARGUED COVERAGE GAP: THE `catch` BLOCK IS UNREACHABLE FROM A TEST ────────
  * Both reads behind `getTraction` are `WITH SYSTEM_MODE` by deliberate design
- * (`DispositionSelector.selectListingClockByIds`, `DispositionOfferSelector.countByDispositionIds`),
+ * (`DispositionSelector.selectListingClockByIds`,
+ * `DispositionOfferSelector.selectOfferTractionByDispositionIds`),
  * so the repo's standard technique for covering an `AuraHandledException` catch — `System.runAs` a
  * bare user and let a `USER_MODE` read throw `QueryException` — is STRUCTURALLY UNAVAILABLE here:
  * SYSTEM_MODE is precisely what stops that throw. Two other candidates were tried and measured on
@@ -60,12 +75,18 @@ public with sharing class DispositionTractionController {
 
     // Fixed, generic user-safe message for a failed read (ARCHITECTURE.md §5). Never interpolate
     // platform text or exception detail into it — the detail goes to the debug log (admin-only).
+    //
+    // ⚠ BOTH STRINGS SAID "Listing traction" UNTIL 2026-08-21 AND WERE RETEXTED, NOT REWORDED FOR
+    // STYLE. `lwc/listingAlerts` is titled "Automated Alerts" since the UAT pass removed the
+    // traction monitor from it, and these are the only two strings from this class a USER ever
+    // sees — a toast naming a card that no longer exists sends them looking for it. The class,
+    // the service and the payload keep the word `traction`, which is what they compute.
     private static final String READ_FAILURE_MESSAGE =
-        'Listing traction could not be loaded. Refresh the page or contact your administrator.';
+        'Automated alerts could not be loaded. Refresh the page or contact your administrator.';
 
     /** An Id of the wrong SObject type is a wiring mistake, not a data state. See getTraction. */
     private static final String WRONG_TYPE_MESSAGE =
-        'Listing traction can only be read for a Disposition.';
+        'Automated alerts can only be read for a Disposition.';
 
     private static AuraHandledException ahe(String msg) {
         AuraHandledException ex = new AuraHandledException(msg);

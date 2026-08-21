@@ -91,6 +91,52 @@
         interlock on a user's screen and invite a hand edit that fires a spurious stage advance.
         Do not "complete the set" by adding it.
 
+        =====================================================================================
+        2026-08-21 - ONE NEW READ GRANT: Disposition__c.Approval_Pending__c.
+        🔴 AND IT IS THE EXACT OPPOSITE DECISION FROM THE PARAGRAPH DIRECTLY ABOVE. READ BOTH.
+        =====================================================================================
+        Two similarly named fields now live on Disposition__c and they get OPPOSITE treatment
+        here, deliberately:
+
+            Approval_Advance_Pending__c   NO grant, in any set, ever   (the paragraph above)
+            Approval_Pending__c           READ ONLY, in this set and DPEG_Disposition_Edit,
+                                          and nowhere else
+
+        The difference is that the second one is READ BY THE UI and the first is not. Four
+        Dynamic Actions on Disposition_Record_Page now AND {!Record.Approval_Pending__c} EQUAL
+        false onto their existing criteria, so that a Submit button disappears while its own
+        approval is pending: Submit_Sale_Decision, Submit_Selected_Broker,
+        Submit_Broker_Selection and Submit_Closing_Approval. Named here so the count stays
+        checkable, the same way the Is_On_Market__c four are named below.
+        ⚠ NOTE THAT THE TWO SETS OF FOUR ARE DIFFERENT SETS. Is_On_Market__c is read by
+        Submit_Broker_Selection, Advance_to_NDA, Advance_to_Active_Listing and Select_Offer.
+        Approval_Pending__c is read by the four Submit_* actions. Only Submit_Broker_Selection
+        is in both.
+
+        🔴 THE POLARITY MAKES THIS GRANT LOAD BEARING IN THE DANGEROUS DIRECTION, WHICH IS WHY
+        IT IS NOT OPTIONAL AND WHY IT CANNOT LAG THE FLEXIPAGE. A visibility rule reading a
+        field the running user cannot see evaluates FALSE with no error anywhere. The criterion
+        is EQUAL false, so a MISSING grant does not merely fail to hide a button: it hides ALL
+        FOUR Submit buttons, for EVERY user, on EVERY disposition, silently and permanently.
+        That is the same symptom as the defect the change exists to fix. This file and its
+        sibling must land WITH OR BEFORE flexipages/Disposition_Record_Page.flexipage-meta.xml,
+        never after.
+
+        editable is FALSE and stays false. The field is written only by approval process field
+        updates and by BovSubmissionTriggerHandler's mirror, all system context. Recovery from a
+        stuck flag is anonymous Apex or Data Loader, not a hand edit. Matching Is_On_Market__c.
+
+        ⚠ BOV_Submission__c.Approval_Pending__c GETS NO ENTRY IN EITHER SET, ON PURPOSE. It is
+        the child half of the same flag; nothing in the UI reads it, and both its writer (a
+        workflow field update) and its reader (a trigger in system context) bypass FLS. Same
+        decision and same reason as the semaphore paragraph above. Do not "complete the set" by
+        adding it either.
+
+        ⚠ DPEG_Admin_Access GETS NOTHING. The precedent field Is_On_Market__c is granted in
+        exactly these two sets, and DPEG_Admin_Access does not even grant Disposition_Stage__c,
+        so an Admin-Access-only user already cannot satisfy the stage criterion on any of these
+        four rules. Mirroring Is_On_Market__c exactly is complete.
+
         🔴 Is_On_Market__c IS LOAD-BEARING FOR THE UI, NOT DECORATIVE. FOUR of the twelve
         Dynamic Actions on Disposition_Record_Page test it, and they are named here so the count
         stays checkable: Submit_Broker_Selection, Advance_to_NDA, Advance_to_Active_Listing and
@@ -815,6 +861,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Disposition__c.Approval_Pending__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Disposition__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -910,6 +961,20 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Disposition_Offer__c.Buyer__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-21 - offer-form-and-stage-retirement.md, Request A.
+        Disposition_Offer__c.Broker__c: readable only - this is the read only Principal
+        persona; every other Disposition_Offer__c grant in this file is read only for the same
+        reason. A Metadata API deployed field carries NO FLS for anyone, System Administrator
+        included, so this grant and
+        objects/Disposition_Offer__c/fields/Broker__c.field-meta.xml must deploy together.
+        Appended at the tail of the Disposition_Offer__c run, following this file's convention.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition_Offer__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1075,6 +1140,22 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>NDA__c.Materials_Released_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <!--
+        ADDED 2026-08-21 - NDA_Record_Page needs a record-type discriminator to gate
+        Record.Disposition__c / Record.Buyer__c / Record.Materials_Released_Date__c to disposition
+        NDAs only, without hiding them when blank. NDA__c.Is_Disposition_NDA__c is a formula
+        (readable only - editable is not applicable to a formula field), matching this file's
+        read-only Principal persona. Not granted on DPEG_Acquisition_View or DPEG_Admin_Access,
+        matching this file's convention for every other NDA__c disposition-only field. Must deploy
+        WITH OR BEFORE the flexipage - a visibility rule reading a field the running user cannot
+        see evaluates FALSE and hides the element with no error anywhere. Appended at the tail of
+        the NDA__c run, after Materials_Released_Date__c, following this file's own convention.
+    -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>NDA__c.Is_Disposition_NDA__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

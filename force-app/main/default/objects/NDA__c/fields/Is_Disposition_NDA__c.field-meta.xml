@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY. A comment placed ABOVE
+         <CustomField> breaks `sf` deploy at source conversion with a misleading "unable to find
+         matching parent xml file" error.
+
+         ADDED 2026-08-21 - NDA_Record_Page now needs to show Record.Disposition__c, Record.Buyer__c
+         and Record.Materials_Released_Date__c only on a disposition NDA, and all three must render
+         even when blank (an analyst filling in a brand-new disposition NDA still needs to SEE the
+         empty Disposition lookup to populate it - gating on ISBLANK(Disposition__c) would hide the
+         very field an analyst needs to fill in). The discriminator therefore has to be RECORD TYPE,
+         not field content.
+
+         SAME SHAPE AS NDA__c.Is_Decline_Allowed__c, FOR THE SAME REASON, SEE THAT FIELD'S HEADER.
+         A flexipage visibility rule cannot express a record-type test directly (no flexipage in
+         this repo carries a bare {!Record.RecordType.*} criterion - LOI_Record_Page's 2026-08-14
+         amendment names this as REPO-ASSERTED AND UNMEASURED at the flexipage layer, not proven
+         safe). RecordType.DeveloperName in a FORMULA, by contrast, IS proven in this repo:
+         Is_Decline_Allowed__c and All_NDAs_Signed_Before_Progression both use it and have passed
+         this org's check-only validation. This field reuses that proven mechanism rather than
+         gambling a first attempt at the unproven one on three fields at once.
+
+         DELIBERATELY NOT ISBLANK(Disposition__c) - see the field's own dual-module comment: this
+         object is inert-but-settable on an acquisition NDA, so a data-load or API write of
+         Disposition__c onto an Acquisition_NDA record must not flip this checkbox. RecordType is
+         the authoritative discriminator, matching Is_Decline_Allowed__c's own stated preference.
+
+         🔴 FLS IS LOAD-BEARING. A visibility rule reading a field the running user cannot see
+         evaluates FALSE and hides the element with NO error anywhere - the exact mechanism
+         Is_Decline_Allowed__c's own header warns about. A Metadata API deployed field arrives with
+         NO field permissions for ANY profile, System Administrator included, so the grant ships in
+         the SAME change: DPEG_Disposition_Edit and DPEG_Disposition_View, both read only (it is a
+         formula - editable is not applicable). NOT granted on any acquisition permission set or
+         DPEG_Admin_Access, matching every other NDA__c disposition-only field in this repo.
+
+         NOT REUSING Is_Decline_Allowed__c ITSELF: that field is TRUE on a disposition NDA that is
+         NOT already Declined (three states, not one) - it backs the Mark Declined button's
+         semantics specifically. Reusing it here would silently hide the Disposition/Buyer/Materials
+         Released Date fields the moment a disposition NDA is marked Declined, which is wrong - those
+         fields must stay visible for a declined NDA too. A pure record-type checkbox, with no status
+         term, is the correct and simplest discriminator for "is this page element in the disposition
+         module", independent of any lifecycle state. -->
+    <fullName>Is_Disposition_NDA__c</fullName>
+    <label>Is Disposition NDA</label>
+    <description>True when this NDA is the Disposition_NDA record type. Pure record-type discriminator, no status term - backs the visibility of Record.Disposition__c, Record.Buyer__c and Record.Materials_Released_Date__c on NDA_Record_Page, all three of which must render even when blank. Kept separate from Is_Decline_Allowed__c, which also tests record type but additionally excludes Declined - these three fields must stay visible on a declined disposition NDA too.</description>
+    <inlineHelpText>System field. True on a disposition NDA, regardless of its status - drives which fields NDA_Record_Page shows for the disposition module.</inlineHelpText>
+    <type>Checkbox</type>
+    <formula><![CDATA[RecordType.DeveloperName = "Disposition_NDA"]]></formula>
+    <formulaTreatBlanksAs>BlankAsBlank</formulaTreatBlanksAs>
+</CustomField>

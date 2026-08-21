@@ -45,6 +45,31 @@
         which approval owed it. The Queueable derives the target from (record type, current
         stage), so the same flag serves all three processes; approval history is where "who
         approved what" lives.
+
+        =====================================================================================
+        ADDED 2026-08-21 (ADDITIVE POINTER ONLY. NOTHING ABOVE THIS LINE IS RETRACTED OR
+        CHANGED; every sentence above still holds.)
+        =====================================================================================
+        🔴 A SECOND, SIMILARLY NAMED FIELD NOW EXISTS ON THIS OBJECT:
+        Disposition__c.Approval_Pending__c. DO NOT CONFLATE THEM, and do not wire one to the
+        other's readers. They are opposites in time and have opposite FLS decisions:
+
+            THIS FIELD  Approval_Advance_Pending__c   true on FINAL APPROVAL   NO FLS anywhere
+            THAT FIELD  Approval_Pending__c           true while PENDING       read FLS in the
+                                                                               two Disposition
+                                                                               permission sets
+
+        THAT field is a UI flag: four Dynamic Actions on Disposition_Record_Page hide their
+        Submit button while it is true, which is exactly why it needs read FLS and this one must
+        never be granted any. Read its XML comment before touching either.
+
+        ⚠ AND THE THREE REASONS THIS FIELD COULD NOT SIMPLY BE REUSED FOR THAT JOB ARE WORTH
+        RECORDING HERE, because reuse is the obvious first idea: it fires on the wrong EVENT
+        (approval, not submission); it has no FLS by explicit decision above, and a visibility
+        rule reading an unreadable field evaluates FALSE, which would have hidden all four
+        buttons for everyone; and the paragraph above deliberately LEAVES IT TRUE on a failed
+        advance, which would have hidden a Submit button permanently on exactly the records that
+        most need it.
     -->
     <fullName>Approval_Advance_Pending__c</fullName>
     <defaultValue>false</defaultValue>

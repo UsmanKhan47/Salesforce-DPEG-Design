@@ -264,7 +264,70 @@
          ⚠ VERIFICATION FOR THIS ENTRY IS THE SAME READBACK RULE AS 2026-08-19: a FlexiPage change
          can roll back and still report success. Confirm the twelve-item action list, the relocated
          Approval History component, and the two relocated sidebar components are ALL present in the
-         org after deploying, not just that the deploy command exited clean. -->
+         org after deploying, not just that the deploy command exited clean.
+
+         =====================================================================
+         2026-08-21 - HIDE THE FOUR SUBMIT ACTIONS WHILE THEIR APPROVAL IS PENDING.
+         =====================================================================
+         ONE new criteria block was APPENDED, LAST, to the visibilityRule of each of the four
+         Submit_* entries, and each booleanFilter was renumbered to AND it on:
+
+             Submit_Sale_Decision      1 AND 2       ->  1 AND 2 AND 3
+             Submit_Selected_Broker    1 AND 2       ->  1 AND 2 AND 3
+             Submit_Broker_Selection   1 AND 2 AND 3 ->  1 AND 2 AND 3 AND 4
+             Submit_Closing_Approval   1 AND 2 AND 3 ->  1 AND 2 AND 3 AND 4
+
+         The new criterion is byte identical in all four:
+             {!Record.Approval_Pending__c}  EQUAL  false
+
+         WHY IT IS APPENDED LAST RATHER THAN INSERTED. Every pre existing index keeps its
+         meaning, so the diff is purely additive and no existing criterion moved. In particular
+         the {!$Permission.CustomPermission.Disposition_Deal_Actions} criterion in each of the
+         four is UNTOUCHED, byte for byte; the three segment form is still the only one the
+         Metadata API accepts (measured 2026-08-12) and nothing here re typed it.
+
+         ⚠ EQUAL WITH A LOWERCASE false, NOT NE WITH true. That matches the four existing
+         Is_On_Market__c criteria on this page, which are the proven boolean form here. NE
+         against a boolean has never been exercised on this org and this was not the change to
+         find out on.
+
+         WHAT IT DOES. Disposition__c.Approval_Pending__c is TRUE only while that record's own
+         approval is awaiting a decision. It is set by each approval process's
+         initialSubmissionActions and cleared by its finalApprovalActions, finalRejectionActions
+         AND recallActions, so its lifetime is exactly the pending window. A driver who has
+         already submitted no longer sees the button that would submit again.
+         The server side guard in DispositionApprovalService is UNCHANGED and remains the
+         authoritative check. This is a UX affordance over a working refusal, and any direct
+         @AuraEnabled call still bypasses it, exactly as that class already documents.
+
+         ⚠ ONE FLAG SERVES ALL FOUR BUTTONS, AND THAT IS ONLY CORRECT BECAUSE EACH RULE ALREADY
+         ANDs ITS OWN STAGE. The four approvals' entry stages are mutually exclusive
+         (Disposition Readiness, BOV Outreach, Broker Selection, Closing), so one flag is target
+         scoped by construction rather than by intent. A FIFTH approval sharing one of those
+         stages would make this hide the WRONG button, silently. Recorded here and on the field.
+
+         🔴 THIS PAGE NOW READS A THIRD FLS DEPENDENT FIELD, AND THE POLARITY IS THE DANGEROUS
+         DIRECTION. The 2026-08-19 entry above already warns that a visibility rule on an
+         unreadable field evaluates FALSE and hides the action with no error anywhere. Because
+         the new criterion tests EQUAL false, a MISSING read grant on Approval_Pending__c does
+         not fail to hide one button: it hides ALL FOUR Submit buttons for EVERY user, on EVERY
+         disposition, permanently and silently. Read is granted in DPEG_Disposition_View and
+         DPEG_Disposition_Edit only. THOSE TWO FILES MUST LAND WITH OR BEFORE THIS ONE.
+         ⚠ Acceptance test as a real disposition driver persona, never as an admin: Modify All
+         Data bypasses the gate for an unrelated reason and would hide the regression.
+
+         ⚠ THIS ADDS NO ACTIONS AND REMOVES NONE. The actionNames valueList still holds exactly
+         TWELVE entries. Counted before (12) and after (12) this edit. Adding a criterion adds no
+         entry. The twelve item readback in verification step 1 is unchanged and still mandatory.
+
+         🔴 THIS FILE DEPLOYS LAST IN THIS CHANGE, AND ONLY AFTER THE recallActions BEHAVIOUR
+         HAS BEEN PROVEN IN THE ORG. approvalProcesses/Disposition__c.Sale_Decision_Approval
+         .approvalProcess-meta.xml carries the argument and the mandatory submit then recall
+         readback. initialSubmissionActions and recallActions appeared NOWHERE in this repo
+         before 2026-08-21, and a recallActions block that deploys green and never fires would
+         leave this flag stuck true, hiding a Submit button PERMANENTLY on an unlocked record
+         with no route to resubmit. That is strictly worse than the noisy refusal it replaces.
+         If that readback fails, revert the approval processes and revert this entry with them. -->
 
     <flexiPageRegions>
         <itemInstances>
@@ -275,7 +338,7 @@
                             <valueListItems>
                                 <value>Disposition__c.Submit_Sale_Decision</value>
                                 <visibilityRule>
-                                    <booleanFilter>1 AND 2</booleanFilter>
+                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                     <criteria>
                                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                                         <operator>EQUAL</operator>
@@ -286,12 +349,17 @@
                                         <operator>EQUAL</operator>
                                         <rightValue>true</rightValue>
                                     </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>false</rightValue>
+                                    </criteria>
                                 </visibilityRule>
                             </valueListItems>
                             <valueListItems>
                                 <value>Disposition__c.Submit_Selected_Broker</value>
                                 <visibilityRule>
-                                    <booleanFilter>1 AND 2</booleanFilter>
+                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
                                     <criteria>
                                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                                         <operator>EQUAL</operator>
@@ -302,12 +370,17 @@
                                         <operator>EQUAL</operator>
                                         <rightValue>true</rightValue>
                                     </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>false</rightValue>
+                                    </criteria>
                                 </visibilityRule>
                             </valueListItems>
                             <valueListItems>
                                 <value>Disposition__c.Submit_Broker_Selection</value>
                                 <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                    <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                                     <criteria>
                                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                                         <operator>EQUAL</operator>
@@ -322,6 +395,11 @@
                                         <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                         <operator>EQUAL</operator>
                                         <rightValue>true</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>false</rightValue>
                                     </criteria>
                                 </visibilityRule>
                             </valueListItems>
@@ -433,7 +511,7 @@
                             <valueListItems>
                                 <value>Disposition__c.Submit_Closing_Approval</value>
                                 <visibilityRule>
-                                    <booleanFilter>1 AND 2 AND 3</booleanFilter>
+                                    <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
                                     <criteria>
                                         <leftValue>{!Record.Disposition_Stage__c}</leftValue>
                                         <operator>EQUAL</operator>
@@ -448,6 +526,11 @@
                                         <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
                                         <operator>EQUAL</operator>
                                         <rightValue>true</rightValue>
+                                    </criteria>
+                                    <criteria>
+                                        <leftValue>{!Record.Approval_Pending__c}</leftValue>
+                                        <operator>EQUAL</operator>
+                                        <rightValue>false</rightValue>
                                     </criteria>
                                 </visibilityRule>
                             </valueListItems>

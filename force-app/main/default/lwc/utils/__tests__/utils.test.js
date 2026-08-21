@@ -12,7 +12,8 @@ import {
     formatMoney,
     formatMillions,
     formatShortDate,
-    formatLongDate
+    formatLongDate,
+    brokerOptionLabel
 } from 'c/utils';
 
 describe('c/utils MONTHS', () => {
@@ -36,6 +37,57 @@ describe('c/utils MONTHS', () => {
     it('is zero-indexed (index 0 = Jan, 11 = Dec)', () => {
         expect(MONTHS[0]).toBe('Jan');
         expect(MONTHS[11]).toBe('Dec');
+    });
+});
+
+/**
+ * 🔴 TWO COMPONENTS DEPEND ON THIS EXACT STRING — `c/bovComparisonMatrix` (BOV Outreach) and
+ * `c/brokerListing` (Active Listing) both compose the Replace Broker modal's radio options with it,
+ * and `c/bovComparisonMatrix`'s own suite asserts the full label verbatim. It lives here rather
+ * than in either component precisely so the same broker cannot read differently on the two
+ * surfaces that can open that modal.
+ */
+describe('c/utils brokerOptionLabel (broker picker option line)', () => {
+    const ROW = {
+        id: 'a0X010000000002',
+        name: 'BOV-0002',
+        brokerFirm: 'JLL',
+        contactName: 'John Roe',
+        bovAmount: 11000000,
+        bovScore: 71
+    };
+
+    it('names the firm, the contact, the amount, the score and the auto-number', () => {
+        expect(brokerOptionLabel(ROW)).toBe(
+            'JLL — John Roe · $11.0M · Score 71 · BOV-0002'
+        );
+    });
+
+    /**
+     * 🔴 A NULL SCORE IS `—`, NEVER `0`. Every score in this org is null today, and 0 is a real,
+     * meaningful, terrible score — printing it for "not computed" would say something false about
+     * every broker on the list.
+     */
+    it('renders a null score as an em dash and a genuine zero as 0', () => {
+        expect(brokerOptionLabel({ ...ROW, bovScore: null })).toContain(
+            'Score —'
+        );
+        expect(brokerOptionLabel({ ...ROW, bovScore: null })).not.toContain(
+            'Score 0'
+        );
+        expect(brokerOptionLabel({ ...ROW, bovScore: 0 })).toContain('Score 0');
+    });
+
+    it('falls back to "Unnamed firm" and omits absent parts rather than printing blanks', () => {
+        expect(
+            brokerOptionLabel({
+                bovAmount: null,
+                bovScore: null,
+                brokerFirm: null,
+                contactName: null,
+                name: null
+            })
+        ).toBe('Unnamed firm · — · Score —');
     });
 });
 

@@ -435,4 +435,78 @@ private class BovSubmissionSelectorTest {
         Assert.areEqual(0, queriesUsed,
             'Neither may issue a query — the guard\'s zero-query fast path depends on this');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // selectSelectedBrokerByDispositionId — the Log Offer dialog's ON-MARKET broker read
+    // (2026-08-21).
+    //
+    // 🔴 IT IS A SEPARATE METHOD FROM `selectSelectedByDispositionId` PRECISELY SO THAT
+    // `Broker__c` — which `DPEG_Admin_Access` does NOT grant (measured in the org via
+    // `FieldPermissions`, 2026-08-21) — cannot break Submit Selected Broker. The first test
+    // below is therefore ALSO an assertion about the OTHER method: it proves the two field
+    // lists are genuinely different, which is the whole safety argument. If someone
+    // "de-duplicates" them, that test is what should fail.
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectSelectedBrokerByDispositionId_returnsTheBrokerWithItsName() {
+        Id dispId = dispositionId();
+        List<BOV_Submission__c> submissions =
+            TestDataFactory.createBovSubmissions(2, dispId, true);
+        submissions[1].Submission_Status__c = 'Selected';
+        update submissions[1];
+        Contact expectedBroker = [
+            SELECT Id, Name FROM Contact WHERE Id = :submissions[1].Broker__c LIMIT 1
+        ];
+
+        Test.startTest();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionId(dispId);
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'Only the Selected submission comes back');
+        Assert.areEqual(submissions[1].Id, result[0].Id, 'The Backup row must be filtered out');
+        Assert.areEqual(expectedBroker.Id, result[0].Broker__c, 'Broker__c must be selected');
+        // 🔴 THE TRAVERSAL. Without `Broker__r.Name` the modal renders a broker Id with no name.
+        Assert.areEqual(
+            expectedBroker.Name,
+            result[0].Broker__r.Name,
+            'Broker__r.Name is what the read-only Broker field displays'
+        );
+        // Selected but not asserted-on by the modal today; in the SELECT because a legacy row
+        // carries only the firm.
+        Assert.isNotNull(result[0].Broker_Firm__c, 'Broker_Firm__c must stay in the SELECT');
+    }
+
+    @isTest
+    static void selectSelectedBrokerByDispositionId_noSelectedRow_returnsEmptyNotAThrow() {
+        Id dispId = dispositionId();
+        // Every factory submission defaults to Backup — the normal on-market state before
+        // Broker_Finalize_Approval has run.
+        TestDataFactory.createBovSubmissions(3, dispId, true);
+
+        Test.startTest();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionId(dispId);
+        Test.stopTest();
+
+        // 🔴 A FIRST-CLASS ANSWER. "No broker is Selected yet" is the normal state of an
+        // on-market sale before the appointment is approved, and an offer logged in that window
+        // legitimately carries a null broker. A fetch-for-use throw would turn that into a
+        // dialog that refuses to open.
+        Assert.areEqual(0, result.size(), 'No Selected row means an empty list, never a throw');
+    }
+
+    @isTest
+    static void selectSelectedBrokerByDispositionId_nullInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionId(null);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, result.size(), 'Null input returns an empty list');
+        Assert.areEqual(0, queriesUsed, 'A null Id must not issue a query');
+    }
 }

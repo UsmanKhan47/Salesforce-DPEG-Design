@@ -65,14 +65,49 @@
 
          =====================================================================================
          Buyer__c ADDED 2026-08-20 (Workstream D6.1, buyer activity timeline,
-         disposition-tranche-2-requirements.md §3). Placed directly after Buyer_Name__c in the
-         Information section - this object has NO custom FlexiPage anywhere in force-app (see
-         the "SECOND EXPOSURE" note above), so this layout is the ONLY route to reachability for
-         this field, unlike NDA__c which also has a Dynamic Forms record page. Edit behaviour,
-         matching Buyer_Name__c and Disposition__c in the same section: the field is
-         analyst-entered and carries no machine-only write path. Buyer_Name__c itself is
-         UNCHANGED and UNRETIRED - it stays free Text; this field does not stamp it and the two
-         are independent inputs, see the field's own comment.
+         disposition-tranche-2-requirements.md §3). Placed directly after Name/Disposition__c in
+         the Information section - this object has NO custom FlexiPage anywhere in force-app
+         (see the "SECOND EXPOSURE" note above), so this layout is the ONLY route to
+         reachability for this field, unlike NDA__c which also has a Dynamic Forms record page.
+         Edit behaviour: the field is analyst-entered and carries no machine-only write path.
+
+         =====================================================================================
+         🔴 FORM SIMPLIFICATION, 2026-08-21 (offer-form-and-stage-retirement.md, Request A).
+         REMOVED FROM THIS LAYOUT: Buyer_Name__c, NDA_Status__c, Offer_Status__c, and the whole
+         "Selection and Approval" section (Is_Selected__c, Approval_Status__c).
+         =====================================================================================
+         Buyer_Name__c is removed by explicit user instruction. It is NOT retired and NOT
+         cleared - DispositionOfferBuyerStampService still writes it in before-context
+         in-memory, "NOT FLS-checked" per that class's own header, so layout removal does not
+         disable the stamp. lwc/dispositionOffer's offer table still renders it as a column;
+         removing it from the FORM does not remove it from that read path. Buyer__c ("Buyer
+         Contact") is EXPLICITLY KEPT VISIBLE and Edit, by the same instruction - both fields
+         being on the layout was never required, only Buyer_Name__c specifically was asked to be
+         hidden.
+         NDA_Status__c and Offer_Status__c have no machine writer that a hidden field would
+         disable: NDA_Status__c has none at all (confirmed - no Apex, LWC, flow or approval page
+         field references it), and Offer_Status__c's only writer
+         (DispositionOfferTriggerHandler.stampAcceptedStatus) only ever writes 'Accepted' after
+         approval - hiding the field removes the analyst's ability to log intermediate
+         negotiation states (Received, Countered, etc.) by hand; the user was told and made the
+         call anyway.
+         The "Selection and Approval" section is removed in full, not narrowed - it was a
+         sibling of two other layoutSections, not itself split into hideable pieces. Both fields
+         it carried are already Readonly and editable=false in DPEG_Disposition_Edit and are
+         written only by DispositionApprovalService (Is_Selected__c) and the
+         Offer_Selection_Approval workflow field updates (Approval_Status__c), neither of which
+         reads a layout, so removing the section disables no automation.
+
+         🔴 Offer_Financing_Type__c IS DELIBERATELY NOT HIDDEN, DESPITE BEING ASKED FOR. It is
+         read by lwc/dispositionOfferSelect (the Select Offer screen where DPEG picks the
+         winning bid) and is an approvalPageField on Offer_Selection_Approval, seen by both
+         named approval principals. This layout is the ONLY entry point for this field (no
+         FlexiPage exists for this object) - hiding it would make it permanently unenterable and
+         both downstream screens would render it blank on every offer created after the change,
+         with no error anywhere. The user was told and this field was kept on the form.
+
+         🔴 THE relatedLists BLOCK BELOW IS UNTOUCHED BY THIS CHANGE TOO. It still carries
+         RelatedProcessHistoryList, the only route to Recall Approval Request on this object.
          ===================================================================================== -->
     <layoutSections>
         <customLabel>false</customLabel>
@@ -90,22 +125,10 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
-                <field>Buyer_Name__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
                 <field>Buyer__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Offer_Status__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>NDA_Status__c</field>
-            </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>OwnerId</field>
@@ -171,25 +194,6 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Final_Agreed_Price__c</field>
-            </layoutItems>
-        </layoutColumns>
-        <style>TwoColumnsTopToBottom</style>
-    </layoutSections>
-    <layoutSections>
-        <customLabel>true</customLabel>
-        <detailHeading>true</detailHeading>
-        <editHeading>true</editHeading>
-        <label>Selection and Approval</label>
-        <layoutColumns>
-            <layoutItems>
-                <behavior>Readonly</behavior>
-                <field>Is_Selected__c</field>
-            </layoutItems>
-        </layoutColumns>
-        <layoutColumns>
-            <layoutItems>
-                <behavior>Readonly</behavior>
-                <field>Approval_Status__c</field>
             </layoutItems>
         </layoutColumns>
         <style>TwoColumnsTopToBottom</style>

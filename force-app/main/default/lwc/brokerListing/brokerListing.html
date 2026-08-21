@@ -6,9 +6,22 @@
                     <div class="card-title">{listing.assetName}</div>
                     <div class="card-sub">{listing.brokerFirm} · {listing.contactName}</div>
                 </div>
+                <!--
+                    The escalation label and the Replace Broker button sit together, beside the
+                    listing facts, because the label is the reason anyone presses the button. The
+                    label is TEXT (never a colour-only dot) and the button is a real <button> with
+                    a visible name, not an icon.
+                -->
                 <div class="header-right">
                     <template if:true={hasTractionLabel}>
                         <span class="risk-badge" title={listing.tractionDetail}><span class="risk-dot"></span>{listing.tractionLabel}</span>
+                    </template>
+                    <template if:true={canReplaceBroker}>
+                        <button
+                            type="button"
+                            class="replace-btn"
+                            onclick={handleReplaceBroker}
+                        >Replace Broker</button>
                     </template>
                 </div>
             </div>

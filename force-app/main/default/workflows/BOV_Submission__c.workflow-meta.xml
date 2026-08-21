@@ -7,7 +7,9 @@
 
         NEW FILE, 2026-08-19. BOV_Submission__c had no workflow metadata before this change.
 
-        🔴 TWO FIELD UPDATES, NO WORKFLOW RULE. Both are fired ONLY by
+        🔴 [CORRECTED 2026-08-21: THIS SENTENCE NOW READS "FOUR FIELD UPDATES", NOT TWO. The
+        "NO WORKFLOW RULE" half stands unchanged and applies to all four; so does the prohibition
+        two paragraphs down.] TWO FIELD UPDATES, NO WORKFLOW RULE. Both are fired ONLY by
         approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval - Approved as its
         finalApprovalActions, Rejected as its finalRejectionActions. Do not add a <rules>
         element: an active rule writing Approval_Status__c would advance the parent Disposition
@@ -39,13 +41,80 @@
         approvalProcesses/BOV_Submission__c.Broker_Finalize_Approval, which fails to deploy if a
         field update it names does not exist; and both field updates require
         objects/BOV_Submission__c/fields/Approval_Status__c.field-meta.xml.
+
+        =====================================================================================
+        2026-08-21 - TWO MORE FIELD UPDATES, ON A THIRD FIELD:
+        Set_Broker_Approval_Pending AND Clear_Broker_Approval_Pending.
+        =====================================================================================
+        🔴 THEY WRITE Approval_Pending__c, WHICH IS A THIRD, DISTINCT FIELD FROM BOTH
+        Approval_Status__c AND Submission_Status__c. The paragraph above already warns that the
+        first two are not interchangeable; this makes three. In one line each:
+            Submission_Status__c  the TEAM'S PICK
+            Approval_Status__c    the PRINCIPALS' OUTCOME
+            Approval_Pending__c   whether a decision is still OUTSTANDING (the new one)
+        A Selected submission with a live approval reads Approval_Pending__c = true and
+        Approval_Status__c BLANK. Do not treat a blank Approval_Status__c as "not submitted".
+
+        WHAT FIRES THEM. Broker_Finalize_Approval, on all four transitions:
+            initialSubmissionActions -> Set_Broker_Approval_Pending    (true)
+            finalApprovalActions     -> Clear_Broker_Approval_Pending  (false, as a SECOND
+                                        action alongside Set_Broker_Approval_Approved)
+            finalRejectionActions    -> Clear_Broker_Approval_Pending  (false, as a SECOND
+                                        action alongside Set_Broker_Approval_Rejected)
+            recallActions            -> Clear_Broker_Approval_Pending  (false)
+
+        WHY THE FLAG LIVES ON THIS OBJECT AND NOT DIRECTLY ON THE DISPOSITION. The button being
+        hidden is on the DISPOSITION's page, and a FlexiPage visibility rule can only read a
+        field on the record it is rendering. This approval targets the SUBMISSION, and
+        BOV_Submission__c.Disposition__c is a LOOKUP, not Master Detail, so a cross object field
+        update cannot reach the parent and a roll up summary cannot either. The value is stored
+        here and BovSubmissionTriggerHandler mirrors it up in after update context, the same
+        synchronous parent write shape this file's note above already describes for the
+        approval half.
+
+        ⚠ APPROVED AND REJECTED BOTH FIRE TWO ACTIONS NOW, AND THE PAIRINGS MATTER. Do not
+        replace Set_Broker_Approval_Approved or Set_Broker_Approval_Rejected with the clear;
+        the clear is an ADDITION alongside each. Removing either original would stop the parent
+        Disposition advancing on approval.
+
+        ⚠ BOTH HALVES ARRIVE IN ONE TRIGGER PASS on approval and on rejection, because the two
+        field updates land in the same save. afterUpdate therefore sees Approval_Status__c and
+        Approval_Pending__c change together.
+
+        reevaluateOnChange stays false on both, for the reason already given above. Do not add a
+        <rules> element for these either.
+
+        DEPLOY ORDER for the new pair: objects/BOV_Submission__c/fields/Approval_Pending__c
+        .field-meta.xml must land first, and this file before Broker_Finalize_Approval.
     -->
+    <fieldUpdates>
+        <fullName>Clear_Broker_Approval_Pending</fullName>
+        <description>Clears the broker approval pending flag. Fired by Broker_Finalize_Approval on all three terminal transitions: final approval, final rejection and recall. BovSubmissionTriggerHandler mirrors it onto the parent Disposition.</description>
+        <field>Approval_Pending__c</field>
+        <literalValue>0</literalValue>
+        <name>Clear Broker Approval Pending</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
     <fieldUpdates>
         <fullName>Set_Broker_Approval_Approved</fullName>
         <description>Final approval action of Broker_Finalize_Approval. Sets Approval Status to Approved, which BovSubmissionTriggerHandler reads to move the parent Disposition from BOV Outreach to Broker Selection and stamp Selected Broker.</description>
         <field>Approval_Status__c</field>
         <literalValue>Approved</literalValue>
         <name>Set Broker Approval Approved</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+    <fieldUpdates>
+        <fullName>Set_Broker_Approval_Pending</fullName>
+        <description>Sets the broker approval pending flag. Fired as an initialSubmissionActions entry by Broker_Finalize_Approval. BovSubmissionTriggerHandler mirrors it onto the parent Disposition, where it hides the Submit Selected Broker action.</description>
+        <field>Approval_Pending__c</field>
+        <literalValue>1</literalValue>
+        <name>Set Broker Approval Pending</name>
         <notifyAssignee>false</notifyAssignee>
         <operation>Literal</operation>
         <protected>false</protected>

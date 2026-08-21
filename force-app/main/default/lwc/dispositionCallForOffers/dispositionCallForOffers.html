@@ -2,14 +2,14 @@
     <lightning-card icon-name="standard:event">
         <span slot="title">Call for Offers</span>
 
-        <div slot="actions">
-            <lightning-button
-                class="cfo-log"
-                variant="brand"
-                label="+ Log Offer"
-                onclick={handleLogOffer}
-            ></lightning-button>
-        </div>
+        <!--
+            ⚠ NO `slot="actions"`. A "+ Log Offer" brand button lived here and was REMOVED at UAT on
+            2026-08-21 ("I asked you to remove the log offer button from call for offers lwc"). The
+            dialog it opened is NOT orphaned: `c/dispositionOffer` in the SIDEBAR opens the same
+            `c/dispositionLogOfferModal`, and `dispositionSidebar.isOfferStage` includes
+            'Active Listing' — the only stage this card renders at — so both cards are on screen
+            together and the remaining entry point is one click away.
+        -->
 
         <template lwc:if={hasError}>
             <div class="lv-error slds-p-around_medium slds-text-color_error" role="alert">
@@ -22,9 +22,6 @@
         <dl class="cfo-stats">
             <dt class="cfo-label">Call For Offers Date</dt>
             <dd class="cfo-value">{cfoDateLabel}</dd>
-
-            <dt class="cfo-label">Offers Received</dt>
-            <dd class="cfo-value">{offerCountLabel}</dd>
         </dl>
     </lightning-card>
 </template>

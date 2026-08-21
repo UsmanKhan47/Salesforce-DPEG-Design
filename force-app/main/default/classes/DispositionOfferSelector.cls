@@ -10,6 +10,12 @@
  * selector exists for the one thing LDS cannot express: a COUNT that must be the same number for
  * every viewer.
  *
+ * ⚠ `countByDispositionIds` NO LONGER EXISTS (2026-08-21). It became
+ * `selectOfferTractionByDispositionIds`, returning the count AND the earliest offer date from the
+ * SAME aggregate, because the traction clock now pauses at the first offer. Read that method's
+ * javadoc before reintroducing a count-only read — a second query would break the 2-SOQL budget
+ * `DispositionTractionServiceTest` asserts.
+ *
  * ── 🔴 WHY THE COUNT LIVES IN A `private without sharing` INNER CLASS ────────
  * `Disposition_Offer__c` is `sharingModel = Private` (measured in the object file). The count this
  * class returns feeds `DispositionTractionService`, which turns "zero offers at day 30" into a
@@ -55,7 +61,41 @@
 public with sharing class DispositionOfferSelector {
 
     /**
-     * Offer count per Disposition — the objective half of the traction test.
+     * The two offer facts the traction ladder runs on, for one Disposition.
+     *
+     * ── 🔴 WHY THE COUNT AND THE DATE TRAVEL TOGETHER (2026-08-21) ──────────────
+     * They are read by ONE aggregate, so they cannot disagree, and — decisively —
+     * `DispositionTractionService.evaluateAll`'s budget is asserted at **exactly 2 SOQL for any
+     * number of dispositions** (`DispositionTractionServiceTest
+     * .evaluateAllAt251IsTwoQueriesRegardlessOfCount`). Adding the first-offer date as a SECOND
+     * public selector method would have made that three, failing the one test whose whole purpose is
+     * to keep this service callable from a future batch. A wrapper is not free here: the budget is
+     * the feature.
+     */
+    public class OfferTraction {
+        /** Offers logged against the disposition. Never null — a miss is handled by the caller. */
+        public Integer offerCount;
+        /**
+         * The EARLIEST `Offer_Date__c` on those offers, or null when every offer is undated.
+         *
+         * ⚠ `MIN` IGNORES NULLS, so `offerCount > 0` with a null date here is a real, reachable
+         * state (an offer logged with no date), not a contradiction. It is the reason
+         * `DispositionTractionService` treats "pause the clock" and "suppress the level" as two
+         * separate decisions rather than one.
+         */
+        public Date firstOfferDate;
+    }
+
+    /**
+     * Offer count AND earliest offer date per Disposition — both halves of the traction test, in one
+     * aggregate.
+     *
+     * ── ⚠ THIS REPLACED `countByDispositionIds` ON 2026-08-21, IT DID NOT WRAP IT ────────────────
+     * The retired method returned `Map<Id, Integer>` and every caller now needs the date as well
+     * (the clock PAUSES at the first offer — see `DispositionTractionService`'s §2). Keeping both
+     * would have meant either two queries against one table for one screen, or a public method whose
+     * only remaining caller was its own test. The absent-key contract below is carried over verbatim
+     * because it is the thing callers get wrong.
      *
      * BULK BY CONSTRUCTION: one aggregate query for the whole set, never one per record. A
      * Disposition with no offers is ABSENT from the result map rather than present with 0, because
@@ -68,19 +108,37 @@ public with sharing class DispositionOfferSelector {
      * sets today, but `USER_MODE` THROWS rather than degrades, so any principal outside those sets
      * — an administrator without `DPEG_Acquisitions`, an integration user, a future automated
      * caller — would blank the entire traction panel instead of reading a count.
+     * ⚠ `Offer_Date__c` JOINS THE FLS GATE AS A SECOND SELECTED FIELD, and it is granted on both
+     * disposition permission sets (verified in both files, 2026-08-20, by
+     * `selectEarliestByBuyerIds`, which reads the same field `WITH USER_MODE`). Under SYSTEM_MODE it
+     * cannot blank the panel either way.
      *
-     * @param dispositionIds Disposition__c Ids to count offers for; null/empty safe.
-     * @return Disposition__c Id -> offer count, omitting dispositions with zero offers.
+     * 🔴 THE `without sharing` ARGUMENT COVERS THE DATE FOR THE SAME REASON IT COVERS THE COUNT, AND
+     * THE DIRECTION MATTERS. An offer the running user cannot see is an offer whose date is not
+     * MIN'd — so the clock fails to pause and the listing escalates to "Week 6 — Hard Stop" while a
+     * buyer it cannot see is in negotiation. That is the same silent INVERSION of an automated
+     * verdict the count escapes sharing to avoid, not a degraded read.
+     *
+     * @param dispositionIds Disposition__c Ids to read offer traction for; null/empty safe.
+     * @return Disposition__c Id -> OfferTraction, omitting dispositions with zero offers.
+     * @example
+     * Map&lt;Id, DispositionOfferSelector.OfferTraction&gt; byId =
+     *     DispositionOfferSelector.selectOfferTractionByDispositionIds(ids);
      */
-    public static Map<Id, Integer> countByDispositionIds(Set<Id> dispositionIds) {
+    public static Map<Id, OfferTraction> selectOfferTractionByDispositionIds(
+        Set<Id> dispositionIds
+    ) {
+        Map<Id, OfferTraction> result = new Map<Id, OfferTraction>();
         if (dispositionIds == null || dispositionIds.isEmpty()) {
-            return new Map<Id, Integer>();
+            return result;
         }
-        Map<Id, Integer> counts = new Map<Id, Integer>();
         for (AggregateResult ar : new TractionReads().countRows(dispositionIds)) {
-            counts.put((Id) ar.get('dispositionId'), (Integer) ar.get('offerCount'));
+            OfferTraction ot = new OfferTraction();
+            ot.offerCount = (Integer) ar.get('offerCount');
+            ot.firstOfferDate = (Date) ar.get('firstOfferDate');
+            result.put((Id) ar.get('dispositionId'), ot);
         }
-        return counts;
+        return result;
     }
 
     /**
@@ -310,9 +368,17 @@ public with sharing class DispositionOfferSelector {
      * belongs to a human.
      */
     private without sharing class TractionReads {
+        /**
+         * ⚠ `MIN(Offer_Date__c)` IS AN AGGREGATE, NOT AN `ORDER BY ... LIMIT 1`, and that is what
+         * keeps this ONE query for the whole set. It also means undated offers are ignored rather
+         * than sorting to the top as they would under `ORDER BY Offer_Date__c ASC` (the trap
+         * `selectEarliestByBuyerIds` had to add an explicit `!= NULL` filter for).
+         */
         private List<AggregateResult> countRows(Set<Id> dispositionIds) {
             return [
-                SELECT Disposition__c dispositionId, COUNT(Id) offerCount
+                SELECT Disposition__c dispositionId,
+                       COUNT(Id) offerCount,
+                       MIN(Offer_Date__c) firstOfferDate
                 FROM Disposition_Offer__c
                 WHERE Disposition__c IN :dispositionIds
                 WITH SYSTEM_MODE

@@ -25,15 +25,34 @@
          BEHAVIOUR RULES APPLIED:
          1. NO FORMULA FIELDS EXIST ON THIS OBJECT. All nine custom fields were checked in
             objects/Broker_Listing__c/fields/; none carries a formula element.
-         2. NO MACHINE OWNED FIELD EXISTS ON THIS OBJECT EITHER, so every business field below is
-            Edit. This was verified, not assumed: the only Apex write to any field on this object is
-            DispositionStageEntryService setting Listing_Status__c at creation, and a one time
-            initial value is not the same thing as an automation that owns the field for its
-            lifetime. Days_On_Market__c and Offers_Received__c in particular LOOK derived and are
-            NOT: no Apex, trigger or Flow writes either one, and both are only ever read, so
-            locking them would leave them permanently at their default. Offers_Received__c is a
-            plain Number with defaultValue 0, not a roll up summary.
+         2. 🔴 PARTIALLY SUPERSEDED 2026-08-21 (offer-form-and-stage-retirement.md, Request B).
+            RETRACTED, quoted rather than deleted because it is the reasoning a future reader
+            would otherwise rebuild from: "NO MACHINE OWNED FIELD EXISTS ON THIS OBJECT EITHER,
+            so every business field below is Edit." That is no longer true of
+            Call_For_Offers_Date__c specifically - see its own note below. Every OTHER business
+            field on this object is still Edit for the reasoning originally given here: the only
+            Apex write to any field on this object is DispositionStageEntryService setting
+            Listing_Status__c at creation, and a one time initial value is not the same thing as
+            an automation that owns a field for its lifetime. Days_On_Market__c and
+            Offers_Received__c in particular LOOK derived and are NOT: no Apex, trigger or Flow
+            writes either one, and both are only ever read, so locking them would leave them
+            permanently at their default. Offers_Received__c is a plain Number with defaultValue
+            0, not a roll up summary.
          3. Name stays Readonly. It is an AutoNumber, displayFormat BL-{0000}.
+
+         🔴 Call_For_Offers_Date__c -> Readonly, 2026-08-21 (Request B). NOT YET MACHINE-OWNED -
+         no Apex, trigger or Flow writes it today, so rule 2 above does not literally apply - but
+         it is RESERVED for a future automation the user has explicitly deferred ("will create
+         its proper flow later on"). The field itself has no required=true, no validation rule
+         (this object has none at all), and no reader that breaks on null, so a blank value was
+         always safe; the smallest honest change is this one word, not a validation rule or a
+         stamp. FLS in DPEG_Disposition_Edit is DELIBERATELY LEFT editable=true - flipping it
+         would be a large-blast-radius PermissionSet edit (a PermissionSet deploy replaces its
+         whole fieldPermissions set) for one word of intent, and the deferred automation will
+         need that grant back regardless. Layout behaviour alone expresses "not hand-entered"
+         precisely and reversibly. Seed data already populates this field four times over
+         (scripts/seed-disposition*.apex, TestDataFactory.createBrokerListing) with no change
+         needed here.
 
          THIS OBJECT HAS NO APPROVAL PROCESS, so unlike its two siblings it correctly has no
          relatedLists block and no RelatedProcessHistoryList. Nothing was removed. -->
@@ -83,7 +102,7 @@
                 <field>List_Date__c</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Readonly</behavior>
                 <field>Call_For_Offers_Date__c</field>
             </layoutItems>
             <layoutItems>
