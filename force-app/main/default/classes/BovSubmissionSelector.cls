@@ -35,10 +35,14 @@
  * for a different reason again — the CALLER, not the field. Read it there.)
  *
  * NOT-FOUND CONTRACT — read-for-display: a Disposition with no BOV submissions is
- * a normal state, so the list methods return their natural empty List, never null,
- * and `selectSelectedByDispositionId` returns null rather than throwing (its caller
- * raises the AUTHORED "no broker is marked Selected yet" error, which is the whole
- * reason it must not be a fetch-for-use throw).
+ * a normal state, so EVERY method here returns its natural empty List, never null and
+ * never a throw (the caller of `selectSelectedByDispositionId` raises the AUTHORED
+ * "no broker is marked Selected yet" error, which is the whole reason it must not be
+ * a fetch-for-use throw).
+ * ⚠ CORRECTED 2026-08-21. This paragraph used to end "...and `selectSelectedByDispositionId`
+ * returns null rather than throwing". That method no longer returns a single record at all — it
+ * returns a `List` so that its caller can SEE a second Selected row. The not-found contract is
+ * unchanged in spirit (empty, not an exception); only its shape moved.
  * The dispositionId is bound straight into the WHERE clause, mirroring the exact
  * query semantics of the relocated getSubmissions statement (which had no
  * pre-query null guard).
@@ -69,6 +73,14 @@ public with sharing class BovSubmissionSelector {
      * set BovController.BovRow maps, so narrowing it would reintroduce a
      * "row retrieved via SOQL without querying the requested field" defect.
      *
+     * ⚠ `Name` WAS ADDED 2026-08-21 AND IT IS NOT DECORATION — IT IS A DISAMBIGUATOR. The Select
+     * Broker / Replace Broker picker composes each radio option from this payload, and this org
+     * currently holds SIX broker Contacts that exist TWICE with an identical name AND an identical
+     * firm. Firm + contact name therefore cannot tell two options apart on those brokers; the
+     * submission's own auto-number can. It is FLS-free by construction — a custom object's `Name`
+     * carries no `FieldPermissions` row, so adding it cannot take this `WITH USER_MODE` read down
+     * the way an ordinary custom field would.
+     *
      * ── 🔴 `, CreatedDate ASC, Id ASC` IS NOT POLISH — IT IS THE SORT KEY (added 2026-08-21) ──
      * `BOV_Score__c DESC NULLS LAST` alone has NO TIE-BREAK, and SOQL does not promise a stable
      * order for rows that tie. Every row that ties therefore reshuffles between page loads, and
@@ -91,7 +103,7 @@ public with sharing class BovSubmissionSelector {
      */
     public static List<BOV_Submission__c> selectByDispositionId(Id dispositionId) {
         return [
-            SELECT Id, Broker_Firm__c, Contact_Name__c, BOV_Amount__c,
+            SELECT Id, Name, Broker_Firm__c, Contact_Name__c, BOV_Amount__c,
                    Commission_Rate__c, Days_To_Market__c, Hist_Success_Rate__c,
                    Cap_Rate__c, BOV_Score__c, Submission_Status__c
             FROM BOV_Submission__c
@@ -102,31 +114,49 @@ public with sharing class BovSubmissionSelector {
     }
 
     /**
-     * The ONE submission a Disposition has marked `Selected`, or null when it has none — backs
+     * EVERY submission a Disposition has marked `Selected` — normally exactly one, occasionally
+     * zero, and (the reason this method exists in this shape) possibly more than one. Backs
      * `DispositionApprovalService.submitForApproval`'s `BOV Outreach` branch, which submits THAT
      * RECORD (not the Disposition) into `Broker_Finalize_Approval`.
      *
-     * 🔴 NULL IS A FIRST-CLASS ANSWER HERE AND MUST STAY ONE. "No broker is Selected yet" is the
-     * single most likely reason a Submit Selected Broker click fails, and it is entirely
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT RETURNED A SINGLE RECORD WITH `LIMIT 1` UNTIL 2026-08-21. THE OLD JAVADOC IS QUOTED
+     *    BELOW RATHER THAN DELETED, BECAUSE THE SENTENCE THAT HAD TO GO WAS THE ONE THAT SOUNDED
+     *    MOST REASSURING:
+     *
+     *        RETRACTED: "The `LIMIT 1` therefore reflects a business invariant
+     *        (`BovSubmissionService` demotes the incumbent in the same DML that promotes the
+     *        challenger) rather than an arbitrary cap. If two rows are ever Selected the
+     *        highest-scoring one wins here, which is the same ordering the matrix displays —
+     *        deterministic, and the invariant is repaired by a replace, not by this read."
+     *
+     * That was an accurate description of a SILENT WRONG ANSWER. "The highest-scoring one wins
+     * here" means: on a disposition that has somehow acquired two Selected brokers, this read
+     * picked one of them and the caller submitted it into `Broker_Finalize_Approval` — appointing
+     * a broker nobody chose, with nothing anywhere reporting that a choice had been made. A
+     * `LIMIT 1` cannot express "exactly one", only "at most one", and the difference is precisely
+     * the state the caller now needs to refuse. Making the caller see the second row is a change
+     * to THIS QUERY; no `if` in the service could have detected what the query had already thrown
+     * away.
+     * ══════════════════════════════════════════════════════════════════════════════
+     *
+     * 🔴 AN EMPTY LIST IS A FIRST-CLASS ANSWER AND MUST STAY ONE. "No broker is Selected yet" is
+     * the single most likely reason a Submit Selected Broker click fails, and it is entirely
      * user-actionable: pick a broker in the comparison matrix first. A fetch-for-use throw would
      * turn that into a `System.QueryException` the controller masks as "could not be submitted…
      * contact your administrator" — advice that sends the user to the wrong person. The caller
-     * converts this null into an AUTHORED message naming the fix.
+     * converts empty into an AUTHORED message naming the fix, and size > 1 into a different
+     * authored message naming a different fix.
      *
      * ⚠ `Submission_Status__c` IS RESTRICTED TO {Backup, Selected} (measured in the field
-     * metadata), so "Selected" is not one value among many — it is one of the only two. The
-     * `LIMIT 1` therefore reflects a business invariant (`BovSubmissionService` demotes the
-     * incumbent in the same DML that promotes the challenger) rather than an arbitrary cap. If
-     * two rows are ever Selected the highest-scoring one wins here, which is the same ordering the
-     * matrix displays — deterministic, and the invariant is repaired by a replace, not by this
-     * read.
+     * metadata), so "Selected" is not one value among many — it is one of the only two.
      *
-     * ⚠ THE `, CreatedDate ASC, Id ASC` TIE-BREAK MATTERS MOST ON THIS QUERY, because `LIMIT 1`
-     * turns a tie into a CHOICE. "Highest-scoring wins" only decides anything while scores differ;
-     * once `BOV_Score__c` is a formula returning null with no asking price, every score ties at
-     * null and this read would otherwise pick an arbitrary incumbent — a different one on
-     * different calls, feeding an approval submission. With the tie-break it picks the OLDEST
-     * Selected row, which is both stable and the same row the matrix shows first.
+     * ⚠ THE `, CreatedDate ASC, Id ASC` TIE-BREAK IS KEPT EVEN THOUGH NO `LIMIT` CONSUMES IT NOW.
+     * The caller reads `[0]` on the single-row happy path, so a tie is still a CHOICE — just a
+     * choice among one. It also keeps the two-row REFUSAL reproducible: the same pair of rows
+     * comes back in the same order on every click, so a screenshot of the error matches what the
+     * matrix behind it shows. Once `BOV_Score__c` is a formula returning null with no asking
+     * price, every score ties at null and the score leg decides nothing at all.
      *
      * ⚠ `Approval_Status__c` IS DELIBERATELY NOT SELECTED. It is a 2026-08-19 field, and a
      * Metadata-API-deployed custom field arrives with NO FLS for any profile — so selecting it
@@ -134,25 +164,31 @@ public with sharing class BovSubmissionSelector {
      * lands, on a field this caller does not use. `selectStatusesByDispositionId` needs it, and
      * pays SYSTEM_MODE for it.
      *
-     * @param dispositionId Disposition__c Id whose Selected submission to read; null-safe.
-     * @return The Selected BOV_Submission__c (highest-scoring, if somehow more than one), or null
-     *         when the Disposition has no Selected submission.
+     * ⚠ `WITH USER_MODE` IS CORRECT HERE AND IS NOT THE AUTOMATION-PATH CASE. The running user
+     * clicked Submit Selected Broker; this is the read they asked for, so an FLS throw reports a
+     * real provisioning gap and the fix is a permission set (ARCHITECTURE.md §2). Do NOT reach for
+     * `selectSelectedByDispositionIds` two methods down merely because it has no `LIMIT` — that
+     * one is `WITH SYSTEM_MODE` on grounds that are explicitly about ITS caller (a before-trigger),
+     * and borrowing it here would invalidate its own justification.
+     *
+     * @param dispositionId Disposition__c Id whose Selected submissions to read; null-safe.
+     * @return Every Selected BOV_Submission__c on that Disposition, highest-scoring first then
+     *         oldest first; an empty list when it has none (or when dispositionId is null).
      * @example
-     * BOV_Submission__c selected = BovSubmissionSelector.selectSelectedByDispositionId(dispId);
+     * List&lt;BOV_Submission__c&gt; selected =
+     *     BovSubmissionSelector.selectSelectedByDispositionId(dispId);
      */
-    public static BOV_Submission__c selectSelectedByDispositionId(Id dispositionId) {
+    public static List<BOV_Submission__c> selectSelectedByDispositionId(Id dispositionId) {
         if (dispositionId == null) {
-            return null;
+            return new List<BOV_Submission__c>();
         }
-        List<BOV_Submission__c> selected = [
+        return [
             SELECT Id, Broker_Firm__c, Contact_Name__c, Submission_Status__c
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
             WITH USER_MODE
             ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
-            LIMIT 1
         ];
-        return selected.isEmpty() ? null : selected[0];
     }
 
     /**

@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
     <apiVersion>67.0</apiVersion>
-    <!-- isExposed=false: opened from JS by c/bovComparisonMatrix only. -->
+    <!-- isExposed=false: opened from JS by c/bovComparisonMatrix only, from BOTH
+         its Select Broker and Replace Broker buttons (isFirstAppointment).
+         ⚠ The description element below has a 255-CHARACTER CAP and only a
+         deploy catches a breach - Jest, the SLDS linter and code review all
+         pass a longer one. Measured 2026-08-21: 210 characters. -->
     <isExposed>false</isExposed>
-    <masterLabel>Replace Selected Broker</masterLabel>
-    <description>Promotes a backup BOV submission to Selected and demotes the incumbent. The broker approval is cleared, so a fresh approval is required.</description>
+    <masterLabel>Select or Replace Broker</masterLabel>
+    <description>Appoints a BOV submission as the disposition's Selected broker. On a replacement the incumbent is demoted to Backup. The broker approval is cleared either way, so a fresh approval is always required afterwards.</description>
 </LightningComponentBundle>

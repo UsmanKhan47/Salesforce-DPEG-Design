@@ -1,28 +1,49 @@
 <template>
-    <lightning-modal-header label="Replace Selected Broker"></lightning-modal-header>
+    <lightning-modal-header label={headerLabel}></lightning-modal-header>
 
     <lightning-modal-body>
         <div class="brb-body slds-is-relative">
             <template lwc:if={isSaving}>
                 <lightning-spinner
-                    alternative-text="Replacing the broker"
+                    alternative-text={savingText}
                     size="small"
                 ></lightning-spinner>
             </template>
 
             <template lwc:if={hasOptions}>
-                <div class="brb-note">
-                    <lightning-icon
-                        icon-name="utility:warning"
-                        size="xx-small"
-                        class="slds-m-right_x-small"
-                    ></lightning-icon>
-                    <span>
-                        <strong>{incumbentLabel}</strong> moves back to Backup and
-                        the broker you choose becomes Selected. The broker
-                        approval is cleared by this change.
-                    </span>
-                </div>
+                <!-- Two intro notes, one per mode. The REPLACEMENT note names the
+                     incumbent because it is about to be demoted; the APPOINTMENT
+                     note cannot, because there is no incumbent to name. Both end
+                     on the approval consequence, which is identical either way. -->
+                <template lwc:if={isAppointment}>
+                    <div class="brb-note brb-note_info">
+                        <lightning-icon
+                            icon-name="utility:info"
+                            size="xx-small"
+                            class="slds-m-right_x-small"
+                        ></lightning-icon>
+                        <span>
+                            The broker you choose becomes this sale's
+                            <strong>Selected</strong> broker. They must still be
+                            approved before the sale can proceed, and the
+                            appointment is recorded in the broker change history.
+                        </span>
+                    </div>
+                </template>
+                <template lwc:else>
+                    <div class="brb-note">
+                        <lightning-icon
+                            icon-name="utility:warning"
+                            size="xx-small"
+                            class="slds-m-right_x-small"
+                        ></lightning-icon>
+                        <span>
+                            <strong>{incumbentLabel}</strong> moves back to Backup and
+                            the broker you choose becomes Selected. The broker
+                            approval is cleared by this change.
+                        </span>
+                    </div>
+                </template>
 
                 <lightning-radio-group
                     class="brb-options slds-m-top_small"
@@ -36,17 +57,33 @@
                 ></lightning-radio-group>
 
                 <!-- Reason is REQUIRED and its options come from getPicklistValues — never from a
-                     hardcoded array. See the component header. -->
-                <lightning-combobox
-                    class="brb-reason slds-m-top_small"
-                    name="reason"
-                    label="Reason for the change"
-                    placeholder="Choose a reason"
-                    options={reasonOptions}
-                    value={reason}
-                    onchange={handleReasonChange}
-                    required
-                ></lightning-combobox>
+                     hardcoded array. See the component header.
+
+                     On a FIRST APPOINTMENT the combobox is not rendered at all: every other value
+                     presupposes a predecessor, so there is nothing to choose. What WILL be recorded
+                     is stated instead, so the history value is disclosed rather than applied
+                     silently. -->
+                <template lwc:if={showReasonPicker}>
+                    <lightning-combobox
+                        class="brb-reason slds-m-top_small"
+                        name="reason"
+                        label="Reason for the change"
+                        placeholder="Choose a reason"
+                        options={reasonOptions}
+                        value={reason}
+                        onchange={handleReasonChange}
+                        required
+                    ></lightning-combobox>
+                </template>
+                <template lwc:else>
+                    <!-- Bound, not typed: the literal has ONE home (the module
+                         constant) so the disclosure cannot end up naming a value
+                         different from the one actually sent to Apex. -->
+                    <p class="brb-fixed-reason slds-m-top_small">
+                        Recorded in the broker change history as
+                        <strong>{effectiveReason}</strong>.
+                    </p>
+                </template>
 
                 <template lwc:if={reasonLoadError}>
                     <div
@@ -78,10 +115,7 @@
             </template>
 
             <template lwc:else>
-                <p class="brb-empty">
-                    There are no backup submissions to promote. Log another BOV
-                    response first, then replace the selected broker.
-                </p>
+                <p class="brb-empty">{emptyMessage}</p>
             </template>
         </div>
     </lightning-modal-body>
@@ -96,7 +130,7 @@
             <lightning-button
                 class="brb-confirm slds-m-left_x-small"
                 variant="brand"
-                label="Replace broker"
+                label={confirmLabel}
                 onclick={handleConfirm}
                 disabled={confirmDisabled}
             ></lightning-button>

@@ -67,6 +67,24 @@
         <apexClass>DealMessageController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <!--
+      LIVE-BREAK FIX 2026-08-21 (second one today). DispositionApprovalController backs
+      lwc/dispositionSubmitForApproval and lwc/dispositionOfferSelect (the "Submit Selected
+      Broker" / "Submit Sale Decision" / "Submit Broker Selection" / "Submit Closing Approval"
+      quick actions and the offer-select step) and had NO classAccesses grant in any
+      permission set or profile in this repo — UAT hit "You do not have access to the Apex
+      class named 'DispositionApprovalController'". Its permission QUESTION is answered
+      per-record by RecordStageAdvanceController.hasStageActionAccess (already granted below,
+      via lwc/recordStageGuard) — this class is action-only, exactly like
+      DispositionController/DispositionTaskController/DispositionTractionController above, so it
+      belongs in this broad catch-all, not a capability set. There is no Disposition-specific
+      capability set in this repo (unlike Opportunity_Stage_Actions_Access /
+      Lead_Stage_Actions_Access) to narrow it into.
+    -->
+    <classAccesses>
+        <apexClass>DispositionApprovalController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <classAccesses>
         <apexClass>DispositionBuyerTimelineController</apexClass>
         <enabled>true</enabled>

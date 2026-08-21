@@ -21,6 +21,24 @@
     color: var(--slds-g-color-neutral-base-30, #444444);
 }
 
+/* First-appointment variant of the same note. A first appointment revokes nothing and demotes
+   nobody, so the warning surface would be crying wolf — it is the NEUTRAL container instead,
+   byte-identical to c/dispositionOfferSelect's `.qa-note` (the informational precedent the rule
+   above already names). Only the two colour declarations are overridden; the layout, spacing and
+   type scale stay inherited from `.brb-note` so the two modes cannot drift apart visually. */
+.brb-note_info {
+    background: var(--slds-g-color-surface-container-1, #f3f3f2);
+    border-color: var(--slds-g-color-border-base-1, #e5e5e5);
+}
+
+/* The fixed reason disclosed in place of the combobox on a first appointment. Same type scale and
+   colour as the empty state — it is a statement, not a control. */
+.brb-fixed-reason {
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-neutral-base-30, #444444);
+}
+
 .brb-empty {
     margin: 0;
     font-size: var(--slds-g-font-scale-base, 0.8125rem);

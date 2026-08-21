@@ -31,6 +31,20 @@
  * is the guarantee that history is only written once the swap has actually succeeded. The service's
  * own header carries that instruction; this note records that no test enforces it.
  *
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * 2026-08-21 — THE "SELECT BROKER" ENTRY POINT (first appointment)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * `c/bovComparisonMatrix` gained a second broker button that reaches THIS SAME METHOD. No new
+ * public method, no new signature, and deliberately so — a second server path would duplicate the
+ * exclusivity swap, the approval revocation, the savepoint and the history writer, four invariants
+ * that could each drift. What IS new is behavioural and is covered by four tests below:
+ *   - the returned String branches on `outgoing == null` ("Broker appointed…" vs "Broker
+ *     replaced…"), asserted in BOTH directions on BOTH paths;
+ *   - `Initial Appointment` reaches `Reason__c` and is proven to exist in the restricted picklist;
+ *   - `Initial Appointment` is REFUSED, before any write, when an incumbent actually exists;
+ *   - the converse is deliberately NOT refused, and that trade is pinned by its own test.
+ *
+
  * @see force-app/main/default/classes/BovSubmissionService.cls
  * @author Unit Testing Agent
  */
@@ -125,6 +139,13 @@ private class BovSubmissionServiceTest {
             'The Disposition must be stamped with the new broker\'s firm');
         Assert.isTrue(msg.contains('must be approved'),
             'The confirmation must warn that a fresh approval is required: ' + msg);
+        // The other half of the 2026-08-21 branch — see `noIncumbent_degradesToAnAppointment`.
+        // Asserted here too, in both directions, so a change that collapses the two strings back
+        // into one fails on BOTH paths rather than only the new one.
+        Assert.isTrue(msg.contains('Broker replaced'),
+            'A replacement must say so: ' + msg);
+        Assert.isFalse(msg.contains('appointed'),
+            'and must not read as a first appointment: ' + msg);
     }
 
     /** "Replace" degrades cleanly to "appoint" when there is no incumbent to demote. */
@@ -136,12 +157,22 @@ private class BovSubmissionServiceTest {
         insert challenger;
 
         Test.startTest();
-        BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, null);
+        String msg = BovSubmissionService.replaceSelectedBroker(d.Id, challenger.Id, REASON, null);
         Test.stopTest();
 
         Assert.areEqual('Selected',
             [SELECT Submission_Status__c FROM BOV_Submission__c WHERE Id = :challenger.Id].Submission_Status__c,
             'With nothing to demote, the challenger is simply promoted');
+        // 🔴 THE SENTENCE IS BRANCHED ON WHAT HAPPENED (2026-08-21). "Broker replaced" was wrong
+        // here: nothing was replaced. Asserted in BOTH directions — the presence of "appointed" and
+        // the ABSENCE of "replaced" — because a message containing both words would satisfy a
+        // one-sided check while still telling the user a broker was demoted.
+        Assert.isTrue(msg.contains('Broker appointed'),
+            'A first appointment must say so: ' + msg);
+        Assert.isFalse(msg.contains('replaced'),
+            'and must NOT claim a replacement that did not happen: ' + msg);
+        Assert.isTrue(msg.contains('must be approved'),
+            'while still carrying the fresh-approval consequence, which is identical either way');
 
         // The history row is still written — an appointment IS a change worth recording — and its
         // outgoing columns are blank rather than absent.
@@ -251,6 +282,134 @@ private class BovSubmissionServiceTest {
         Assert.areEqual('Selected',
             submissionsById(d.Id).get(incumbent.Id).Submission_Status__c,
             'And the guard must run BEFORE any write — the incumbent is untouched');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // FIRST APPOINTMENT — the "Select Broker" entry point (2026-08-21)
+    // ═══════════════════════════════════════════════════════════════════════════
+    //
+    // 🔴 THERE IS NO `appointSelectedBroker` AND THESE TESTS ARE PART OF WHY. Both client buttons
+    // reach THIS method; a second server path would be a second implementation of exclusivity, of
+    // the approval revocation, of the savepoint and of the history writer.
+
+    /**
+     * The first appointment produces a history row attributed to `Initial Appointment`.
+     *
+     * ⚠ THE REASON VALUE IS THE POINT, NOT THE SWAP. Every OTHER `Reason__c` value presupposes a
+     * predecessor (`Performance Issue`, `Better BOV Received`, `Broker Withdrew`,
+     * `Company Decision`, `Other`), so before this value existed a first pick could only be logged
+     * as "Other" — the un-attributed row the whole broker-change log exists to prevent.
+     *
+     * ⚠ IT ALSO PROVES THE VALUE IS DEPLOYED. `Reason__c` is a RESTRICTED picklist and restricted
+     * picklists ARE enforced by Apex DML in this org, so if `Initial Appointment` were absent from
+     * the field metadata this insert would fail with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`
+     * rather than quietly storing a stray string. That makes this test the falsifier for the
+     * literal held in `BovSubmissionService.REASON_INITIAL_APPOINTMENT` and its twin in
+     * `c/bovReplaceBrokerModal` — neither can drift from the metadata without failing here.
+     */
+    @isTest
+    static void firstAppointment_recordsInitialAppointmentOnTheHistoryRow() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        Contact broker = TestDataFactory.createBrokerContactWithFirm('JLL - First Pick', true);
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Broker__c = broker.Id;
+        challenger.Submission_Status__c = 'Backup';
+        insert challenger;
+
+        Test.startTest();
+        String msg = BovSubmissionService.replaceSelectedBroker(
+            d.Id, challenger.Id, 'Initial Appointment', 'Chosen from four BOV responses.');
+        Test.stopTest();
+
+        List<BOV_Broker_Change__c> history = historyFor(d.Id);
+        Assert.areEqual(1, history.size(), 'A first appointment is still one history row');
+        Assert.areEqual('Initial Appointment', history[0].Reason__c,
+            '🔴 A RESTRICTED PICKLIST VALUE THAT MUST EXIST IN THE ORG. If this reads back as '
+            + 'anything else the value was never deployed and the DML would have thrown.');
+        Assert.isNull(history[0].Outgoing_Broker__c,
+            'and there is no predecessor to attribute anything to');
+        Assert.areEqual(challenger.Id, history[0].Incoming_BOV_Submission__c, 'incoming submission');
+        Assert.isTrue(msg.contains('Broker appointed'), 'and the appoint wording: ' + msg);
+    }
+
+    /**
+     * 🔴 THE STALE-CLIENT RACE, REFUSED ON THE SERVER (2026-08-21).
+     *
+     * `c/bovComparisonMatrix` decides which of "Select Broker" / "Replace Broker" to render from a
+     * CACHEABLE wire. So an analyst can open Select Broker on a disposition with no incumbent, a
+     * colleague can appoint one in another tab, and the first analyst can then confirm. Without
+     * this guard the swap would succeed as an ordinary replacement while its history row claimed
+     * `Initial Appointment` — a durable, append-only, reportable assertion that this was a first
+     * pick, sitting next to the broker it demoted. Same family of defect as a blank `Reason__c`.
+     *
+     * ⚠ WHAT THIS TEST DOES *NOT* CLAIM. Only ONE direction is enforced: `Initial Appointment` is
+     * refused when there IS an incumbent. A predecessor-presupposing value on a FIRST appointment
+     * is NOT refused, because doing so would require the service to hold a copy of the whole
+     * `Reason__c` value set — the exact divergence-with-the-metadata that
+     * `REASON_REQUIRED_MESSAGE`'s note refuses to create. That asymmetry is deliberate; do not
+     * "complete" it by enumerating the other five values in Apex.
+     */
+    @isTest
+    static void initialAppointmentWithAnIncumbent_isRefusedBeforeAnyWrite() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c incumbent = TestDataFactory.createBovSubmission(d.Id, false);
+        incumbent.Submission_Status__c = 'Selected';
+        incumbent.Approval_Status__c = 'Approved';
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Submission_Status__c = 'Backup';
+        insert new List<BOV_Submission__c>{ incumbent, challenger };
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            BovSubmissionService.replaceSelectedBroker(
+                d.Id, challenger.Id, 'Initial Appointment', 'notes');
+            Assert.fail('An "Initial Appointment" on a disposition WITH an incumbent must be '
+                + 'refused — it would misattribute a replacement');
+        } catch (BovSubmissionService.BovSubmissionException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('Replace Broker'),
+                'The refusal must name the OTHER button, which is the user\'s actual fix: '
+                + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'The misattribution must be refused');
+        // 🔴 THE GUARD RUNS BEFORE ANY WRITE. Without these three lines the test would pass on an
+        // implementation that swapped the brokers and then threw — leaving the invariant changed by
+        // a call the user was told had failed.
+        Assert.areEqual(0, historyFor(d.Id).size(), 'A refused call records nothing');
+        Map<Id, BOV_Submission__c> after = submissionsById(d.Id);
+        Assert.areEqual('Selected', after.get(incumbent.Id).Submission_Status__c,
+            'The incumbent must be untouched');
+        Assert.areEqual('Approved', after.get(incumbent.Id).Approval_Status__c,
+            'and its approval must NOT have been revoked by a refused call');
+    }
+
+    /**
+     * ⚠ THE CONVERSE IS NOT GUARDED, AND THAT IS PINNED HERE SO NOBODY "COMPLETES" IT BY ACCIDENT.
+     * A predecessor-presupposing reason on a first appointment is ACCEPTED, because refusing it
+     * would need a copy of the `Reason__c` value set in Apex. This test is the record of that
+     * trade: if someone adds the reverse check, THIS test fails and they are forced to read the
+     * argument in `FIRST_APPOINTMENT_ONLY_MESSAGE` before deciding.
+     */
+    @isTest
+    static void firstAppointmentWithAReplacementReason_isAcceptedByDesign() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c challenger = TestDataFactory.createBovSubmission(d.Id, false);
+        challenger.Submission_Status__c = 'Backup';
+        insert challenger;
+
+        Test.startTest();
+        String msg = BovSubmissionService.replaceSelectedBroker(
+            d.Id, challenger.Id, 'Better BOV Received', null);
+        Test.stopTest();
+
+        Assert.areEqual('Better BOV Received', historyFor(d.Id)[0].Reason__c,
+            'Accepted as sent — the server does not enumerate the value set, only the ONE value '
+            + 'that has a server-checkable rule attached');
+        Assert.isTrue(msg.contains('Broker appointed'),
+            'and the MESSAGE still comes from what happened, not from the reason: ' + msg);
     }
 
     @isTest

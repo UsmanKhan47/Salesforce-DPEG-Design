@@ -1,7 +1,15 @@
 /**
- * Owns the BOV broker REPLACEMENT — swapping which submission a disposition's broker appointment
- * rests on. Added 2026-08-19 with the disposition flow redesign (DEV-6), backing
- * `BovController.replaceSelectedBroker` and `c/bovReplaceBrokerModal`.
+ * Owns the BOV broker APPOINTMENT — which submission a disposition's broker appointment rests on,
+ * whether that is the first one or the fifth. Added 2026-08-19 with the disposition flow redesign
+ * (DEV-6), backing `BovController.replaceSelectedBroker` and `c/bovReplaceBrokerModal`.
+ *
+ * ⚠ THIS SENTENCE SAID "THE BOV BROKER REPLACEMENT" UNTIL 2026-08-21 AND THE WIDENING IS THE
+ * POINT, NOT A TIDY. The method's name is still `replaceSelectedBroker` — renaming a live
+ * @AuraEnabled-reachable signature to match a header is churn — but its scope is now both entry
+ * points on `c/bovComparisonMatrix` ("Select Broker" and "Replace Broker"). A reader who takes the
+ * old first line literally would go looking for the appointment code somewhere else and not find
+ * it, because there isn't any: see `replaceSelectedBroker`'s own javadoc for why a second server
+ * path was rejected.
  *
  * ⚠ IT IS THE FIRST `Bov*Service` IN THE REPO. Until this change the module had a controller
  * (`BovController`) and a selector (`BovSubmissionSelector`) and no service at all, because every
@@ -127,8 +135,69 @@ public with sharing class BovSubmissionService {
     private static final String REASON_REQUIRED_MESSAGE =
         'Choose a reason for the broker change.';
 
+    /**
+     * The ONE `BOV_Broker_Change__c.Reason__c` value this class names, added 2026-08-21 with the
+     * Select Broker picker.
+     *
+     * 🔴 NAMING ONE VALUE IS NOT THE SAME AS COPYING THE VALUE SET, AND THE DISTINCTION IS THE
+     * WHOLE ARGUMENT. `REASON_REQUIRED_MESSAGE`'s note above refuses to hold a copy of
+     * `Reason__c`'s options in Apex, because a second copy diverges the day an admin adds a value
+     * in Setup and nothing fails to reveal it. That reasoning is unchanged and this constant does
+     * not violate it: this class does not enumerate the options, does not validate membership, and
+     * still lets the platform refuse an off-list value with its own message. It names exactly one
+     * value because exactly one value has a SEMANTIC RULE attached that only the server can check
+     * — see FIRST_APPOINTMENT_ONLY_MESSAGE. If a future value gains its own rule, name that one
+     * too; do not build the array.
+     */
+    @TestVisible
+    private static final String REASON_INITIAL_APPOINTMENT = 'Initial Appointment';
+
+    /**
+     * 🔴 THE ANSWER TO "WHAT HAPPENS IF SOMEONE USES SELECT BROKER ON A DISPOSITION THAT ALREADY
+     * HAS ONE" — AND THE REASON THE TWO CLIENT ENTRY POINTS CANNOT DISAGREE WITH EACH OTHER.
+     *
+     * `c/bovComparisonMatrix` renders EITHER "Select Broker" OR "Replace Broker", never both,
+     * decided from a cacheable wire that can be seconds stale. So the reachable race is: an
+     * analyst opens Select Broker on a disposition with no incumbent, a colleague appoints one in
+     * another tab, and the first analyst confirms. Without this check the swap would succeed as an
+     * ordinary REPLACEMENT while its history row said `Initial Appointment` — a durable,
+     * append-only, reportable claim that this was a first appointment when it demoted somebody.
+     * That is the same class of defect as a blank `Reason__c`: a row that records THAT a broker
+     * changed while answering none of the questions it is read to answer.
+     *
+     * ⚠ ONLY ONE DIRECTION IS ENFORCED, DELIBERATELY. This refuses `Initial Appointment` when
+     * there IS an incumbent. It does NOT refuse the five predecessor-presupposing values when
+     * there is none — doing so would require this class to know which values those are, which is
+     * exactly the value-set copy the class refuses to hold. The asymmetry costs one unattributable
+     * shape (someone hand-crafting a call that logs "Performance Issue" on a first appointment)
+     * and buys zero divergence from the field metadata.
+     *
+     * ⚠ IT NAMES THE OTHER BUTTON, NOT A FIELD OR A STATE. The user's fix is a UI action they can
+     * see, and refreshing is what makes it appear.
+     */
+    private static final String FIRST_APPOINTMENT_ONLY_MESSAGE =
+        'This disposition already has a selected broker, so this is a replacement rather than a '
+        + 'first appointment. Refresh the page and use Replace Broker, which records why the '
+        + 'broker is changing.';
+
     private static final String REPLACED_MESSAGE =
         'Broker replaced. The new broker must be approved before the sale can proceed.';
+
+    /**
+     * 🔴 A DISTINCT SENTENCE, AUTHORED HERE, AND THE CLIENT MUST NOT RE-AUTHOR IT.
+     * `c/bovReplaceBrokerModal`'s header forbids restating the service's returned text at length,
+     * and that argument applies with more force now that there are TWO of them: a client that
+     * picked its own wording would be choosing between "appointed" and "replaced" from the SAME
+     * stale wire that produced the button, and could therefore announce an appointment that was
+     * actually a replacement. The server branches on what it actually did — `outgoing == null` —
+     * which is measured inside the transaction and cannot be stale.
+     *
+     * ⚠ "replaced" was WRONG on a first appointment; the second sentence was always right and is
+     * preserved verbatim in substance. `Approval_Status__c` is cleared on the challenger either
+     * way (see the promote write below), so the fresh-approval consequence is identical.
+     */
+    private static final String APPOINTED_MESSAGE =
+        'Broker appointed. The broker must be approved before the sale can proceed.';
 
     /**
      * Replaces the appointed broker with another submission on the same disposition.
@@ -146,6 +215,24 @@ public with sharing class BovSubmissionService {
      * modal only offers the button when exactly one submission is Selected, but the server must not
      * depend on a client affordance for correctness.
      *
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 THAT DEGRADATION IS NOW A FIRST-CLASS FEATURE, NOT A TOLERATED EDGE (2026-08-21)
+     * ══════════════════════════════════════════════════════════════════════════════
+     * `c/bovComparisonMatrix` gained a "Select Broker" button beside "Replace Broker", and it
+     * reaches THIS METHOD. **There is no `appointSelectedBroker` and there must never be one.** A
+     * second server path would be a second implementation of single-Selected exclusivity, a second
+     * `Approval_Status__c` revocation, a second savepoint and a second history writer — four
+     * invariants that could each drift out of step with these, on an object whose whole point is
+     * that exactly one row is Selected. The two client buttons are two ENTRY POINTS to one
+     * mechanism, which is why "what if a broker is already appointed when Select Broker is used?"
+     * has the answer it has: it IS a replacement, performed by this code, with the same demotion,
+     * the same approval revocation and the same history row — because it is literally the same
+     * method. The only thing the two entry points may differ on is `reason`, and the ONE
+     * server-checkable rule about that is enforced below (FIRST_APPOINTMENT_ONLY_MESSAGE).
+     *
+     * ⚠ TWO RETURN STRINGS, CHOSEN BY `outgoing == null` — see APPOINTED_MESSAGE. The caller does
+     * not tell this method which operation it thinks it is performing.
+     *
      * ── THE HISTORY ROW, AND WHAT IS DELIBERATELY NOT A PARAMETER ────────────────
      * ⚠ THERE IS NO `effectiveDate` PARAMETER, AND ITS ABSENCE IS A DECISION.
      * `BrokerAssignmentService.replaceBroker` — the five-parameter method this signature otherwise
@@ -157,9 +244,11 @@ public with sharing class BovSubmissionService {
      * @param dispositionId    the Disposition__c whose broker is being replaced (required)
      * @param newSubmissionId  the BOV_Submission__c to appoint (required, must be its child)
      * @param reason           a `BOV_Broker_Change__c.Reason__c` picklist value (required — see
-     *                         REASON_REQUIRED_MESSAGE for why the server enforces it too)
+     *                         REASON_REQUIRED_MESSAGE for why the server enforces it too).
+     *                         `Initial Appointment` is accepted ONLY when there is no incumbent.
      * @param notes            free text for the history row (optional; null and blank both fine)
-     * @return an authored confirmation that also WARNS a fresh approval is required
+     * @return an authored confirmation — APPOINTED_MESSAGE when there was no incumbent,
+     *         REPLACED_MESSAGE when there was — that also WARNS a fresh approval is required
      * @throws BovSubmissionException for a user-actionable rule violation, or carrying a platform
      *         block's own message when any of the three writes is refused
      * @throws DispositionActionPermissionService.AccessDeniedException when the running user is not
@@ -227,6 +316,14 @@ public with sharing class BovSubmissionService {
             // Refused rather than treated as a no-op: the user asked for a CHANGE, and silently
             // clearing this broker's own approval status would be a change they did not ask for.
             throw new BovSubmissionException(ALREADY_SELECTED_MESSAGE);
+        }
+        // 🔴 BEFORE ANY WRITE, AND AFTER THE INCUMBENT IS KNOWN — those two together are what make
+        // it correct. The client decides which button to show from a cacheable wire; only this
+        // point in this transaction knows whether there is actually somebody to demote. See
+        // FIRST_APPOINTMENT_ONLY_MESSAGE for the race it closes and for why the converse is
+        // deliberately not enforced.
+        if (outgoing != null && REASON_INITIAL_APPOINTMENT.equals(reason)) {
+            throw new BovSubmissionException(FIRST_APPOINTMENT_ONLY_MESSAGE);
         }
         writes.add(new BOV_Submission__c(
             Id = challenger.Id,
@@ -324,6 +421,9 @@ public with sharing class BovSubmissionService {
             // Raw, for the controller to mask with its fixed generic message.
             throw e;
         }
-        return REPLACED_MESSAGE;
+        // 🔴 BRANCHED ON WHAT HAPPENED, NOT ON WHAT WAS ASKED FOR. `outgoing` is the incumbent this
+        // transaction actually demoted; there is no "which button did you click" parameter and
+        // there must not be one, or the sentence could disagree with the four writes above it.
+        return (outgoing == null) ? APPOINTED_MESSAGE : REPLACED_MESSAGE;
     }
 }

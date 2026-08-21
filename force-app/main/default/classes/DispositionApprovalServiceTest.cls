@@ -144,6 +144,76 @@ private class DispositionApprovalServiceTest {
         Assert.isTrue(msg.contains('broker'), 'The confirmation must name the broker submission: ' + msg);
     }
 
+    /**
+     * 🔴 THE ">1 SELECTED" BACKSTOP (2026-08-21). READ THE SCOPE NOTE BEFORE JUDGING THIS TEST.
+     *
+     * ── WHY THIS BRANCH EXISTS AT ALL ───────────────────────────────────────────
+     * Until 2026-08-21 `BovSubmissionSelector.selectSelectedByDispositionId` carried `LIMIT 1`, so
+     * on a disposition with two Selected responses it returned ONE OF THEM and this service
+     * submitted it into `Broker_Finalize_Approval` — appointing an arbitrary broker with nothing
+     * anywhere reporting that a choice had been made. The fix was to the QUERY, not to an `if`:
+     * a `LIMIT 1` cannot express "exactly one", only "at most one".
+     *
+     * ── AND WHY IT IS NOT REACHABLE THROUGH THE UI ──────────────────────────────
+     * `BovSubmissionSelectionGuardService` refuses any INSERT or UPDATE that would create a second
+     * Selected row. This is a backstop against data that predates that guard (2026-08-20), against
+     * API / data-loader writes, and against the gap this fixture uses.
+     *
+     * ── THE FIXTURE IS THE REAL PATH, NOT A CONTRIVANCE ─────────────────────────
+     * `BovSubmissionTrigger` declares no `after undelete` context and the platform has no BEFORE
+     * undelete context at all, so restoring a previously-Selected submission from the Recycle Bin
+     * onto a disposition that has since appointed someone else creates a second Selected row NO
+     * guard sees. That is residual R-1 in the guard's own header, and it is how this state actually
+     * arises in production. 🔴 NO `@TestVisible` BYPASS WAS ADDED TO THE GUARD, and none should be
+     * — the guard's header records that trade being considered and rejected, because it would put
+     * a production-reachable escape hatch in the class in order to build the state the class exists
+     * to prevent.
+     */
+    @isTest
+    static void submitAtBovOutreach_twoSelectedSubmissions_refusesRatherThanPickingOne() {
+        Disposition__c d = onMarketAt(STAGE_BOV_OUTREACH);
+
+        // ── The undelete gap, step by step. Reordering these breaks the fixture: swap the
+        // second insert and the undelete and the guard correctly refuses the insert.
+        BOV_Submission__c first = TestDataFactory.createBovSubmission(d.Id, false);
+        first.Submission_Status__c = 'Selected';
+        insert first;
+        delete first;                                   // SOQL stops seeing it, so the guard does too
+        BOV_Submission__c second = TestDataFactory.createBovSubmission(d.Id, false);
+        second.Submission_Status__c = 'Selected';
+        insert second;                                  // guard counts ZERO committed Selected rows
+        undelete first;                                 // no undelete context on the trigger at all
+
+        Assert.areEqual(2, [
+            SELECT COUNT() FROM BOV_Submission__c
+            WHERE Disposition__c = :d.Id AND Submission_Status__c = 'Selected'
+        ], 'PREMISE — two committed Selected rows must really exist. If the guard ever gains an '
+            + 'after-undelete context (the right fix for its R-1 residual) this line fails FIRST '
+            + 'and says so, instead of the refusal assertion below looking like a service defect.');
+
+        Test.startTest();
+        Boolean refused = false;
+        try {
+            DispositionApprovalService.submitForApproval(d.Id);
+            Assert.fail('Two Selected responses must refuse the submit, not submit one of them');
+        } catch (DispositionApprovalService.ApprovalException e) {
+            refused = true;
+            Assert.isTrue(e.getMessage().contains('More than one broker response is marked Selected'),
+                'The refusal must NAME the problem: ' + e.getMessage());
+            Assert.isTrue(e.getMessage().contains('Backup'),
+                'and NAME THE FIX in on-screen terms — set all but one to Backup: ' + e.getMessage());
+        }
+        Test.stopTest();
+
+        Assert.isTrue(refused, 'Two Selected submissions must throw');
+        // 🔴 THE FALSIFIER FOR "IT REFUSED RATHER THAN PICKING ONE". Without these two lines the
+        // test would still pass if the service threw AFTER submitting — and the whole defect being
+        // fixed is a broker silently entering an approval nobody chose.
+        Assert.areEqual(0, pendingApprovalsFor(first.Id),
+            'Neither Selected response may have been submitted — not even the first one');
+        Assert.areEqual(0, pendingApprovalsFor(second.Id), 'nor the second');
+    }
+
     @isTest
     static void submitAtBrokerSelection_onMarket_isRefusedWithTheAdvanceToNdaHint() {
         Disposition__c d = onMarketAt(STAGE_BROKER_SELECTION);

@@ -16,6 +16,16 @@ public with sharing class BovController {
 
     public class BovRow {
         @AuraEnabled public String id;
+        /**
+         * `BOV_Submission__c.Name` — the record's own auto-number, added 2026-08-21.
+         *
+         * ⚠ IT IS NOT SHOWN IN THE MATRIX AND THAT IS NOT AN OVERSIGHT. It exists for the
+         * Select/Replace Broker picker, where each option is one line of text and this org holds
+         * SIX broker Contacts that exist twice with an identical name AND an identical firm — so
+         * firm + contact cannot tell two of those options apart and the auto-number can. Adding a
+         * column for it would spend matrix width on a value nobody reads on that surface.
+         */
+        @AuraEnabled public String name;
         @AuraEnabled public String brokerFirm;
         @AuraEnabled public String contactName;
         @AuraEnabled public Decimal bovAmount;
@@ -77,6 +87,7 @@ public with sharing class BovController {
             for (BOV_Submission__c s : subs) {
                 BovRow r = new BovRow();
                 r.id = s.Id;
+                r.name = s.Name;
                 r.brokerFirm = s.Broker_Firm__c;
                 r.contactName = s.Contact_Name__c;
                 r.bovAmount = s.BOV_Amount__c;

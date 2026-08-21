@@ -57,8 +57,9 @@
  *
  * ── EXCEPTION CONTRACT (copied from OpportunityApprovalService, which is the point) ──
  *   - A user-actionable rule violation throws a TYPED {@link ApprovalException} whose message is
- *     authored here and safe to surface VERBATIM (no record, no Selected BOV, blank broker, wire
- *     incomplete, already pending, wrong stage, offer not on this disposition).
+ *     authored here and safe to surface VERBATIM (no record, no Selected BOV, MORE THAN ONE
+ *     Selected BOV, blank broker, wire incomplete, already pending, wrong stage, offer not on this
+ *     disposition).
  *   - A DML BLOCK on the stage advance surfaces the platform's own message verbatim inside an
  *     ApprovalException — that is deliberate and is the same choice `RecordStageAdvanceService
  *     .setStage` makes: a validation rule's text is the ONLY thing that tells the user which gate
@@ -138,6 +139,38 @@ public with sharing class DispositionApprovalService {
 
     private static final String NO_SELECTED_BOV_MESSAGE =
         'No broker is marked Selected yet. Choose a broker in the BOV comparison matrix, '
+        + 'then submit for approval.';
+
+    /**
+     * The `BOV Outreach` branch's SECOND refusal, added 2026-08-21 with the Select Broker picker.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS IS A BACKSTOP, NOT A LIVE BUG, AND IT IS NOT DEAD CODE. DO NOT DELETE IT.
+     * ══════════════════════════════════════════════════════════════════════════════
+     * `BovSubmissionSelectionGuardService` runs at `before insert` AND `before update` on
+     * `BOV_Submission__c` and refuses any save that would leave a disposition with two Selected
+     * responses, so **as of 2026-08-21 this branch is UNREACHABLE THROUGH THE UI.** A reader who
+     * checks that guard and concludes this message can never fire is reading it correctly — and
+     * would still be wrong to remove it, because the guard does not cover every way the state can
+     * arise:
+     *   - `BovSubmissionTrigger` declares no `after undelete` context (and the platform has no
+     *     BEFORE undelete context at all), so restoring a previously-Selected submission from the
+     *     Recycle Bin onto a disposition that has since appointed someone else creates a second
+     *     Selected row NO guard sees. That is the path the test fixture uses, because it is real.
+     *   - rows that predate the guard (2026-08-20) were never validated by it;
+     *   - the guard's sibling read is `with sharing`, so it FAILS OPEN — a Selected row the saving
+     *     user cannot see is absent from its count and the save is permitted.
+     * The cost of keeping this branch is one comparison per Submit click. The cost of removing it
+     * is submitting an arbitrary one of two brokers into `Broker_Finalize_Approval` and appointing
+     * a broker nobody chose.
+     *
+     * ⚠ IT NAMES THE ON-SCREEN LABELS `Selected` AND `Backup`, NOT FIELD API NAMES, per this
+     * class's stated convention. Those are the only two values `Submission_Status__c` is
+     * restricted to, so both are visible to the user doing the fixing.
+     */
+    private static final String MULTIPLE_SELECTED_BOV_MESSAGE =
+        'More than one broker response is marked Selected on this disposition, and exactly one is '
+        + 'required. Set all but the appointed broker to Backup in the BOV comparison matrix, '
         + 'then submit for approval.';
 
     /**
@@ -252,12 +285,22 @@ public with sharing class DispositionApprovalService {
             targetId = disposition.Id;
             successMessage = SUBMITTED_SALE_DECISION_MESSAGE;
         } else if (STAGE_BOV_OUTREACH.equals(stage)) {
-            BOV_Submission__c selected =
+            // 🔴 THREE-WAY, NOT TWO-WAY, AND THE THIRD WAY IS WHY THE SELECTOR LOST ITS `LIMIT 1`
+            // ON 2026-08-21. This read used to return a single record; on a disposition with two
+            // Selected responses it returned ONE OF THEM and this branch submitted it — appointing
+            // an arbitrary broker with nothing reporting that a choice had been made. `LIMIT 1`
+            // cannot express "exactly one", only "at most one", so the >1 case was invisible HERE
+            // no matter what was written in this method. See MULTIPLE_SELECTED_BOV_MESSAGE for why
+            // that branch is a live backstop rather than dead code.
+            List<BOV_Submission__c> selected =
                 BovSubmissionSelector.selectSelectedByDispositionId(disposition.Id);
-            if (selected == null) {
+            if (selected.isEmpty()) {
                 throw new ApprovalException(NO_SELECTED_BOV_MESSAGE);
             }
-            targetId = selected.Id;
+            if (selected.size() > 1) {
+                throw new ApprovalException(MULTIPLE_SELECTED_BOV_MESSAGE);
+            }
+            targetId = selected[0].Id;
             successMessage = SUBMITTED_BROKER_FINALIZE_MESSAGE;
         } else if (STAGE_BROKER_SELECTION.equals(stage)) {
             if (RT_ON_MARKET.equals(recordType)) {

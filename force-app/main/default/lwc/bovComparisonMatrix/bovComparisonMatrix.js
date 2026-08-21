@@ -12,6 +12,42 @@ const BACKUP_BAR = '#2BAFAC';
 const pillWrap = (bg) => `display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:4px;font-weight:600;color:#3e3e3e;background:${bg}`;
 const pillDot = (c) => `width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0`;
 
+/**
+ * One radio-option line for the Select / Replace Broker picker.
+ *
+ * ── 🔴 IT IS DELIBERATELY LONG, BECAUSE THIS ORG'S DATA IS AMBIGUOUS ─────────
+ * Two data realities are visible on this surface and NEITHER is filtered or de-duplicated here —
+ * that is the user's decision to make, not this component's:
+ *   - SIX broker Contacts exist TWICE with an identical name AND an identical firm (Derek Simmons,
+ *     Priya Nair, Marcus Whitfield, Katie Osborne, Ryan O'Connell, Sofia Delgado). Firm alone —
+ *     which is all this label carried until 2026-08-21 — renders two options as the same string,
+ *     so the user is choosing at random between them.
+ *   - SEVEN Contacts on the Broker record type are not brokers at all (Acme x3, Global Media x2,
+ *     salesforce.com, "Unknown - Via Email"). They are shown, because hiding a bad row is how it
+ *     survives.
+ * The BOV amount and the submission's own auto-number are what actually separate two otherwise
+ * identical lines, so both are in the label. Do not shorten this back to the firm.
+ *
+ * ⚠ A NULL SCORE RENDERS `—`, NEVER `0`. Every score in the org is null today (`BOV_Score__c` is
+ * being recreated as a formula that returns null until the disposition has an asking price), and
+ * `0` is a real, meaningful, terrible score — printing it for "not computed" would tell the user
+ * something false about every broker on the list. `== null` rather than a falsy test, so a genuine
+ * zero still prints as `0`.
+ */
+const optionLabel = (r) => {
+    const who = [r.brokerFirm || 'Unnamed firm', r.contactName]
+        .filter(Boolean)
+        .join(' — ');
+    const facts = [
+        formatMillions(r.bovAmount),
+        `Score ${r.bovScore == null ? '—' : r.bovScore}`
+    ];
+    if (r.name) {
+        facts.push(r.name);
+    }
+    return `${who} · ${facts.join(' · ')}`;
+};
+
 const COLUMNS = [
     { label: 'Broker Firm', fieldName: 'recordUrl', type: 'url', typeAttributes: { label: { fieldName: 'brokerFirm' }, target: '_self' } },
     { label: 'Contact', fieldName: 'contactName', type: 'text' },
@@ -37,16 +73,22 @@ const COLUMNS = [
  * ── 🔴 THE WIRE IS HELD AS A WHOLE RESULT, NOT DESTRUCTURED ─────────────────
  * `wiredSubmissions(result)` keeps `result` in `_wired` because `refreshApex` REQUIRES the
  * un-destructured wire result object — it has no way to re-provision a wire from a `{ data, error }`
- * pair. This shape is load-bearing for BOTH header actions below — add-response and
+ * pair. This shape is load-bearing for EVERY header action below — add-response, select-broker and
  * replace-broker each end in `refreshApex(this._wired)` — and a "tidying" edit back to
  * `wired({ data, error })` compiles, passes every render test, and silently turns those refreshes
  * into no-ops, leaving the matrix stale until a page reload.
  *
- * ── 🔴 NEITHER HEADER ACTION NAVIGATES (2026-08-21) ─────────────────────────
- * Both open a `LightningModal` over the disposition page and refresh this wire in place.
+ * ── 🔴 NO HEADER ACTION NAVIGATES (2026-08-21) ──────────────────────────────
+ * All of them open a `LightningModal` over the disposition page and refresh this wire in place.
  * `NavigationMixin` survives on this class for ONE reason only: the "View All" footer link, which
  * genuinely is a page transition. See `handleAddResponse` for the UAT bug that made this the rule
  * rather than a preference.
+ *
+ * ── 🔴 TWO BROKER BUTTONS, ONE MECHANISM (2026-08-21) ───────────────────────
+ * "Select Broker" (`canSelectBroker`) and "Replace Broker" (`canReplaceBroker`) are mutually
+ * exclusive by construction — the second getter is the first's negation — and BOTH open
+ * `c/bovReplaceBrokerModal` and reach `BovSubmissionService.replaceSelectedBroker`. There is no
+ * appoint-only server path and there must not be one; the reasoning is in that service's javadoc.
  */
 export default class BovComparisonMatrix extends NavigationMixin(LightningElement) {
     @api recordId;
@@ -133,17 +175,43 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
     }
 
     /**
-     * Backup submissions as ready-made radio options for the replace modal. Composed HERE, from the
-     * same payload that draws the rows above, so the modal cannot show a different valuation for
-     * the same broker than the matrix behind it does.
+     * "Select Broker" — the FIRST appointment on this disposition (2026-08-21).
+     *
+     * 🔴 EXACTLY ONE OF THE TWO HEADER BUTTONS EVER RENDERS, and this getter is what makes that
+     * true: it is `canReplaceBroker`'s negation, so it inherits that getter's deliberate
+     * "SOME row is Selected" test rather than an "exactly one" test. A disposition that has somehow
+     * acquired two Selected rows therefore shows REPLACE — the button that repairs it — and not
+     * this one.
+     *
+     * ⚠ `count > 0` IS AN ADDITION TO THE DESIGN'S WORDING AND IS NOT COSMETIC. `_selected` is
+     * `undefined` before the wire has emitted anything and on a disposition with no submissions at
+     * all, so the negation alone would render "Select Broker" on an empty matrix — opening a modal
+     * whose only content is its own empty state. Neither button renders until there is something to
+     * appoint. This also covers the wire's ERROR branch, which sets `_data = []`.
+     *
+     * ⚠ `c/bovAddResponseModal` defaults every new submission to `Backup` precisely so that
+     * appointment goes through a deliberate path. THIS is that path — do not add a "make this one
+     * Selected" shortcut to the add-response form.
+     */
+    get canSelectBroker() {
+        return this.count > 0 && this._selected === undefined;
+    }
+
+    /**
+     * The appointable submissions as ready-made radio options. Composed HERE, from the same payload
+     * that draws the rows above, so the modal cannot show a different valuation for the same broker
+     * than the matrix behind it does.
+     *
+     * ⚠ THE `isSelected !== true` FILTER SERVES BOTH BUTTONS WITHOUT A BRANCH. On a replace it
+     * excludes the incumbent (promoting a broker to itself is not an operation, and the server
+     * refuses it). On a first appointment nothing is Selected, so it excludes nothing — every
+     * submission is offered, which is exactly right. The name kept its `_backup` prefix because
+     * that is what the modal's `@api backupOptions` is called; both are about status, not intent.
      */
     get _backupOptions() {
         return (this._data || [])
             .filter((r) => r.isSelected !== true)
-            .map((r) => ({
-                label: `${r.brokerFirm || 'Unnamed firm'} — ${formatMillions(r.bovAmount)}`,
-                value: r.id
-            }));
+            .map((r) => ({ label: optionLabel(r), value: r.id }));
     }
 
     /**
@@ -217,7 +285,62 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
     }
 
     /**
-     * Opens the replace-broker modal and, on success, refreshes THIS component's wire.
+     * "Replace Broker" — swap the appointed broker for one of the backups.
+     *
+     * 🔴 ONE SERVER MECHANISM, TWO CLIENT ENTRY POINTS. This and `handleSelectBroker` open the SAME
+     * modal bundle, which calls the SAME Apex method (`BovController.replaceSelectedBroker` ->
+     * `BovSubmissionService.replaceSelectedBroker`). They differ ONLY in the props below and in the
+     * toast they raise. Do not fork either half: a second modal bundle would have to duplicate the
+     * `getPicklistValues` sourcing, the block-don't-degrade rule on a failed picklist read, the
+     * "the returned message is the product, not a receipt" contract and the stay-open-on-failure
+     * behaviour, and a second Apex path would duplicate four invariants (exclusivity, approval
+     * revocation, the savepoint, the history row).
+     */
+    async handleReplaceBroker() {
+        await this._openBrokerModal({
+            label: 'Replace Selected Broker',
+            description:
+                'Promote a backup BOV submission to Selected and demote the current broker.',
+            isFirstAppointment: false,
+            currentBroker: this._selected && this._selected.brokerFirm,
+            openFailureTitle: 'Could not open the replace dialog',
+            openFailureMessage: 'The replace-broker dialog could not be opened.',
+            successTitle: 'Broker replaced',
+            successVariant: 'warning'
+        });
+    }
+
+    /**
+     * "Select Broker" — the FIRST appointment on a disposition that has none (2026-08-21).
+     *
+     * ⚠ IT DOES NOT ANNOUNCE THE OUTCOME ITSELF. The toast TITLE says "Broker appointed" because
+     * that is what the user just asked for, but the toast BODY is the server's returned sentence
+     * verbatim — and the server chooses between "Broker appointed…" and "Broker replaced…" from
+     * what it actually did inside the transaction. So if a colleague appointed a broker between
+     * this component's last wire emit and this click, the body tells the truth even though the
+     * title reflects the intent. Do not "fix" that by re-authoring the body here; see
+     * `c/bovReplaceBrokerModal`'s header.
+     *
+     * ⚠ NO `currentBroker` PROP — there is no incumbent, which is the whole premise of the button.
+     * The modal's `incumbentLabel` fallback is never reached on this path because the
+     * first-appointment copy does not mention an incumbent at all.
+     */
+    async handleSelectBroker() {
+        await this._openBrokerModal({
+            label: 'Select Broker',
+            description:
+                'Appoint one of this disposition\'s BOV responses as the selected broker.',
+            isFirstAppointment: true,
+            currentBroker: undefined,
+            openFailureTitle: 'Could not open the select dialog',
+            openFailureMessage: 'The select-broker dialog could not be opened.',
+            successTitle: 'Broker appointed',
+            successVariant: 'success'
+        });
+    }
+
+    /**
+     * The one implementation behind both header buttons.
      *
      * 🔴 THE MODAL CANNOT REACH THIS COMPONENT WITH A BUBBLING DOM EVENT, so it does not try.
      * `LightningModal.open()` renders into the PLATFORM'S modal layer, not into this component's
@@ -225,27 +348,30 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
      * composed — has no path back here. The promise returned by `open()` is the channel, and this
      * component awaiting it is what keeps the wire's owner and its refresher the same object.
      *
-     * The service's returned text already carries the "a fresh approval is required" warning. It is
-     * shown VERBATIM and STICKY: it describes a consequence the user must act on, and an
-     * auto-dismissing toast is exactly how that gets missed.
+     * 🔴 THE TOAST IS STICKY ON BOTH PATHS. The service's returned text carries "must be approved
+     * before the sale can proceed" either way — `Approval_Status__c` is cleared on the challenger
+     * whether or not there was an incumbent — and that is a consequence the user has to act on. An
+     * auto-dismissing toast is exactly how it gets missed, which is why `mode` is passed
+     * explicitly here rather than left to `_toast`'s variant-derived default (that default would
+     * make the appointment's `success` variant dismissable).
      */
-    async handleReplaceBroker() {
+    async _openBrokerModal(config) {
         let result;
         try {
             result = await BovReplaceBrokerModal.open({
                 size: 'small',
-                label: 'Replace Selected Broker',
-                description:
-                    'Promote a backup BOV submission to Selected and demote the current broker.',
+                label: config.label,
+                description: config.description,
                 dispositionId: this.recordId,
                 backupOptions: this._backupOptions,
-                currentBroker: this._selected && this._selected.brokerFirm
+                currentBroker: config.currentBroker,
+                isFirstAppointment: config.isFirstAppointment
             });
         } catch (error) {
             this._toast(
-                'Could not open the replace dialog',
+                config.openFailureTitle,
                 (error && error.body && error.body.message) ||
-                    'The replace-broker dialog could not be opened.',
+                    config.openFailureMessage,
                 'error'
             );
             return;
@@ -255,19 +381,30 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
         if (!result || !result.message) {
             return;
         }
-        this._toast('Broker replaced', result.message, 'warning');
+        this._toast(
+            config.successTitle,
+            result.message,
+            config.successVariant,
+            'sticky'
+        );
         // The swap is imperative Apex DML on records this cacheable wire already holds, so LDS has
-        // no idea they changed. Without this the matrix keeps showing the old Selected broker.
+        // no idea they changed. Without this the matrix keeps showing the old Selected broker —
+        // and, on a first appointment, keeps offering "Select Broker" for a broker already chosen.
         refreshApex(this._wired);
     }
 
-    _toast(title, message, variant) {
+    /**
+     * ⚠ `mode` IS OPTIONAL AND ITS DEFAULT IS THE ORIGINAL EXPRESSION, unchanged, so the
+     * add-response call sites below behave exactly as they did. It exists because ONE caller needs
+     * a `success` variant that does NOT auto-dismiss — see `_openBrokerModal`.
+     */
+    _toast(title, message, variant, mode) {
         this.dispatchEvent(
             new ShowToastEvent({
                 title,
                 message,
                 variant,
-                mode: variant === 'success' ? 'dismissable' : 'sticky'
+                mode: mode || (variant === 'success' ? 'dismissable' : 'sticky')
             })
         );
     }

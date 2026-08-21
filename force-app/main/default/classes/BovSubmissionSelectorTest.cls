@@ -99,6 +99,15 @@ private class BovSubmissionSelectorTest {
             'BOV_Score__c should be selected — and null, because nothing writes it and the '
             + 'formula that will replace it returns null with no asking price on the parent');
         Assert.areEqual('Backup', s.Submission_Status__c, 'Submission_Status__c should be selected');
+        // 🔴 `Name` (added 2026-08-21). Compared against a fresh read rather than a literal because
+        // it is an AUTO-NUMBER (measured in usman-dpeg: type string, autoNumber true, nillable
+        // false) — the sequence value is the org's to choose, not this test's. What the assertion
+        // pins is that the field is IN THE SELECT LIST: drop it and `s.Name` throws
+        // `System.SObjectException: SObject row was retrieved via SOQL without querying the
+        // requested field` before any comparison happens. It is what tells two identically-named,
+        // identically-firmed brokers apart in the Select/Replace Broker picker.
+        Assert.areEqual([SELECT Name FROM BOV_Submission__c WHERE Id = :s.Id].Name, s.Name,
+            'Name should be selected — the picker\'s only disambiguator for duplicate brokers');
     }
 
     /**
@@ -147,17 +156,58 @@ private class BovSubmissionSelectorTest {
         Assert.areEqual(subs[0].Id, result[2].Id, 'then the newest');
     }
 
-    // ⚠ THE SAME TIE-BREAK ON `selectSelectedByDispositionId` IS DELIBERATELY NOT PINNED BY A TEST,
-    // AND THE GAP IS STRUCTURAL RATHER THAN AN OVERSIGHT. That query is `LIMIT 1`, so a tie there is
-    // a CHOICE of which incumbent is submitted into `Broker_Finalize_Approval` — worth more
-    // coverage, not less. But reaching it needs TWO Selected rows on one disposition, and since
-    // 2026-08-20 `BovSubmissionSelectionGuardService` makes that state unsavable: such a fixture
-    // fails at `insert`, not at the assertion. That service's own header records that a
-    // `@TestVisible` bypass switch for exactly this purpose "was considered and rejected", because
-    // it would put a production-reachable escape hatch in the guard to build a state the guard
-    // exists to prevent. That trade is still the right one, so the `LIMIT 1` tie-break is covered
-    // by the argument in the selector's javadoc and by the sibling test above (same clause, same
-    // query planner, observable parent), not by a fixture. Do not add the seam.
+    // ══════════════════════════════════════════════════════════════════════════════
+    // ⚠ THE PARAGRAPH THAT WAS HERE UNTIL 2026-08-21 SAID THE TWO-SELECTED STATE WAS UNREACHABLE
+    //   FROM A TEST. IT IS QUOTED RATHER THAN DELETED, BECAUSE ITS CONCLUSION WAS RIGHT AND ITS
+    //   PREMISE WAS TOO BROAD, AND ONLY THE PREMISE CHANGED:
+    //
+    //       RETRACTED: "reaching it needs TWO Selected rows on one disposition, and since
+    //       2026-08-20 `BovSubmissionSelectionGuardService` makes that state unsavable: such a
+    //       fixture fails at `insert`, not at the assertion… the `LIMIT 1` tie-break is covered by
+    //       the argument in the selector's javadoc… not by a fixture. Do not add the seam."
+    //
+    // WHAT STAYS TRUE: **do not add the seam.** `BovSubmissionSelectionGuardService`'s header
+    // records that a `@TestVisible` bypass switch was considered and rejected, because it would put
+    // a production-reachable escape hatch in the guard in order to build the state the guard exists
+    // to prevent. No seam has been added and none should be.
+    //
+    // WHAT WAS TOO BROAD: "unsavable" was measured against the guard's TWO CONTEXTS
+    // (`before insert`, `before update`) and then generalised to every path. `BovSubmissionTrigger`
+    // declares NO `after undelete` context, and the platform has no BEFORE undelete context at all
+    // — a gap the guard's own residual list names (R-1). So the state is reachable, in production
+    // and in a test, by deleting a Selected row and restoring it after another has been appointed.
+    // `twoSelectedViaUndelete` below does exactly that, which is why it is a HONEST fixture rather
+    // than a contrivance: it is the real way this org can acquire two Selected brokers.
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Two genuinely `Selected` submissions on one disposition, built through the ONE path
+     * `BovSubmissionSelectionGuardService` cannot see.
+     *
+     * 🔴 EVERY STEP IS LORE-BEARING; DO NOT REORDER THEM.
+     *   1. insert row A as Selected  — permitted, nothing is committed-Selected yet;
+     *   2. DELETE row A             — SOQL does not see Recycle Bin rows, so the guard's sibling
+     *                                 read stops counting it;
+     *   3. insert row B as Selected — the guard counts ZERO committed Selected rows and permits it;
+     *   4. UNDELETE row A           — `BovSubmissionTrigger` has no undelete context, so no guard
+     *                                 runs at all and the second Selected row simply appears.
+     * Swap 3 and 4 and the insert is refused, which is the guard working correctly.
+     *
+     * @return {A, B} in that order, both Selected, both committed.
+     */
+    private static List<BOV_Submission__c> twoSelectedViaUndelete(Id dispId) {
+        BOV_Submission__c first = TestDataFactory.createBovSubmission(dispId, false);
+        first.Submission_Status__c = 'Selected';
+        insert first;
+        delete first;
+
+        BOV_Submission__c second = TestDataFactory.createBovSubmission(dispId, false);
+        second.Submission_Status__c = 'Selected';
+        insert second;
+
+        undelete first;
+        return new List<BOV_Submission__c>{ first, second };
+    }
 
     @isTest
     static void selectByDispositionId_noSubmissions_returnsEmpty() {
@@ -187,16 +237,18 @@ private class BovSubmissionSelectorTest {
     // ═══════════════════════════════════════════════════════════════════════════
 
     @isTest
-    static void selectSelectedByDispositionId_noSelected_returnsNull() {
+    static void selectSelectedByDispositionId_noSelected_returnsEmptyList() {
         Id dispId = dispositionId();
         TestDataFactory.createBovSubmission(dispId, true); // Backup only
 
         Test.startTest();
-        BOV_Submission__c result = BovSubmissionSelector.selectSelectedByDispositionId(dispId);
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedByDispositionId(dispId);
         Test.stopTest();
 
-        Assert.isNull(result,
-            'NULL IS A FIRST-CLASS ANSWER — "no broker is Selected yet" is user-actionable, not an error');
+        Assert.isTrue(result.isEmpty(),
+            'EMPTY IS A FIRST-CLASS ANSWER — "no broker is Selected yet" is user-actionable, not '
+            + 'an error, and the caller turns it into an authored message naming the fix');
     }
 
     @isTest
@@ -211,16 +263,70 @@ private class BovSubmissionSelectorTest {
         insert new List<BOV_Submission__c>{ backup, selected };
 
         Test.startTest();
-        BOV_Submission__c result = BovSubmissionSelector.selectSelectedByDispositionId(dispId);
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedByDispositionId(dispId);
         Test.stopTest();
 
-        Assert.areEqual(selected.Id, result.Id, 'Only the Selected submission must be returned');
-        Assert.areEqual('CBRE - The Winner', result.Broker_Firm__c);
+        Assert.areEqual(1, result.size(),
+            'Exactly one row is Selected, so exactly one comes back — the Backup sibling must NOT');
+        Assert.areEqual(selected.Id, result[0].Id, 'Only the Selected submission must be returned');
+        // Re-read from the database rather than trusting the in-memory fixture: the firm is written
+        // by a BEFORE trigger (BovSubmissionBrokerStampService) and Apex does NOT write before-trigger
+        // values back onto the variable that was inserted.
+        Assert.areEqual('CBRE - The Winner', result[0].Broker_Firm__c,
+            'Broker_Firm__c must be selected');
     }
 
     @isTest
-    static void selectSelectedByDispositionId_nullInput_returnsNullWithoutQuerying() {
-        Assert.isNull(BovSubmissionSelector.selectSelectedByDispositionId(null));
+    static void selectSelectedByDispositionId_nullInput_returnsEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedByDispositionId(null);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.isTrue(result.isEmpty(), 'A null input returns an empty list, never null');
+        Assert.areEqual(0, queriesUsed, 'and issues no query at all');
+    }
+
+    /**
+     * 🔴 THE POINT OF DROPPING `LIMIT 1` (2026-08-21). THIS TEST IS THE WHOLE JUSTIFICATION FOR A
+     * SELECTOR SIGNATURE CHANGE, SO READ IT BEFORE RESTORING THE LIMIT.
+     *
+     * With `LIMIT 1` this query answered a two-Selected disposition with ONE ROW and no signal —
+     * and `DispositionApprovalService`'s BOV Outreach branch then submitted that arbitrary row into
+     * `Broker_Finalize_Approval`, appointing a broker nobody chose. The old javadoc described that
+     * behaviour approvingly ("the highest-scoring one wins here"). No `if` in the service could
+     * have detected it, because the second row had already been discarded by the database.
+     *
+     * ⚠ THE PREMISE ASSERTION IS NOT DECORATION. If the guard ever gains an undelete context — the
+     * right fix for its own R-1 residual — this fixture stops being able to build the state, and
+     * the premise line is what will say so plainly instead of leaving `result.size() == 1` to look
+     * like a selector regression.
+     */
+    @isTest
+    static void selectSelectedByDispositionId_twoSelected_returnsBOTH() {
+        Id dispId = dispositionId();
+        List<BOV_Submission__c> pair = twoSelectedViaUndelete(dispId);
+
+        Test.startTest();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedByDispositionId(dispId);
+        Test.stopTest();
+
+        Assert.areEqual(2, [
+            SELECT COUNT() FROM BOV_Submission__c
+            WHERE Disposition__c = :dispId AND Submission_Status__c = 'Selected'
+        ], 'PREMISE — the undelete gap must really have produced two committed Selected rows, or '
+            + 'this test proves nothing about the selector');
+        Assert.areEqual(2, result.size(),
+            '🔴 BOTH ROWS MUST COME BACK. A `LIMIT 1` here returns one of them with no signal, and '
+            + 'the caller submits an arbitrary broker into Broker_Finalize_Approval. The ">1" '
+            + 'refusal is not an `if` the service could have written — it is this query.');
+        Set<Id> ids = new Map<Id, BOV_Submission__c>(result).keySet();
+        Assert.isTrue(ids.contains(pair[0].Id), 'the restored row');
+        Assert.isTrue(ids.contains(pair[1].Id), 'and the one appointed while it was deleted');
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

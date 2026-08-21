@@ -12,6 +12,17 @@
                     label="Add Broker Response"
                     onclick={handleAddResponse}
                 ></lightning-button>
+                <!-- EXACTLY ONE of the next two renders, never both and never
+                     neither-when-there-are-rows: canSelectBroker is
+                     canReplaceBroker's negation, additionally gated on the
+                     matrix having at least one row. See the getters. -->
+                <template lwc:if={canSelectBroker}>
+                    <lightning-button
+                        class="matrix-select"
+                        label="Select Broker"
+                        onclick={handleSelectBroker}
+                    ></lightning-button>
+                </template>
                 <!-- Only rendered once a broker is Selected — there is nothing
                      to replace before that. -->
                 <template lwc:if={canReplaceBroker}>

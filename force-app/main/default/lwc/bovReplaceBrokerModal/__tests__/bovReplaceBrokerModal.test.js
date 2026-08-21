@@ -27,6 +27,12 @@
  *    "simplified" the wire into a constant array: a hardcoded list keeps passing an equality check
  *    against a fixture built from the same list.
  * 5. A FAILED PICKLIST READ BLOCKS THE ACTION, it does not degrade it into an unattributed swap.
+ * 6. 🔴 ONE BUNDLE SERVES BOTH "Replace Broker" AND "Select Broker" (2026-08-21). `@api
+ *    isFirstAppointment` switches the heading, the intro copy, the confirm label, the empty state
+ *    and the reason — and NOTHING else. The `describe('first-appointment mode')` block at the
+ *    bottom re-asserts the SAME Apex method and the SAME four parameter names, which is what makes
+ *    "one mechanism, two entry points" a tested claim rather than a comment. Point 5's block is
+ *    deliberately NOT inherited by that mode, and the reason is asserted there.
  *
  * ⚠ THE PICKLIST FIXTURE IS THE PLATFORM'S REAL PAYLOAD SHAPE, not a convenient one. `data.values`
  * entries carry `attributes` / `validFor` alongside `label` / `value`; the component passes the
@@ -131,11 +137,24 @@ describe('c-bov-replace-broker-modal', () => {
         return element;
     }
 
+    /** Mounts in FIRST-APPOINTMENT mode, with both wires driven as usual. */
+    function createAppointmentComponent(overrides = {}) {
+        return createComponent({
+            dispositionId: DISPOSITION_ID,
+            backupOptions: PROPS.backupOptions,
+            isFirstAppointment: true,
+            ...overrides
+        });
+    }
+
     const radio = (el) => el.shadowRoot.querySelector('lightning-radio-group');
     const reasonBox = (el) => el.shadowRoot.querySelector('.brb-reason');
+    const fixedReason = (el) => el.shadowRoot.querySelector('.brb-fixed-reason');
     const notesBox = (el) => el.shadowRoot.querySelector('.brb-notes');
     const confirmBtn = (el) => el.shadowRoot.querySelector('.brb-confirm');
     const cancelBtn = (el) => el.shadowRoot.querySelector('.brb-cancel');
+    const header = (el) => el.shadowRoot.querySelector('lightning-modal-header');
+    const note = (el) => el.shadowRoot.querySelector('.brb-note');
 
     function chooseBackup(element, value) {
         radio(element).dispatchEvent(
@@ -394,5 +413,212 @@ describe('c-bov-replace-broker-modal', () => {
         await Promise.resolve();
 
         await expect(element).toBeAccessible();
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // FIRST-APPOINTMENT MODE (@api isFirstAppointment, 2026-08-21)
+    // ═════════════════════════════════════════════════════════════════════════
+    //
+    // 🔴 THE MODE CHANGES COPY AND THE REASON. IT DOES NOT CHANGE THE MECHANISM.
+    // Every test below that reaches Apex asserts the SAME method with the SAME
+    // four parameter names as the replacement tests above — because there is one
+    // server path, and a second one would duplicate the exclusivity swap, the
+    // approval revocation, the savepoint and the history writer.
+    describe('first-appointment mode', () => {
+        it('relabels the heading, the confirm button and the empty state', async () => {
+            const element = createAppointmentComponent();
+
+            await Promise.resolve();
+
+            expect(header(element).label).toBe('Select Broker');
+            expect(confirmBtn(element).label).toBe('Appoint broker');
+
+            const empty = createAppointmentComponent({ backupOptions: [] });
+            await Promise.resolve();
+            // "No BACKUP submissions to promote" is wrong on a disposition that
+            // has no broker at all — there is nothing to promote FROM.
+            expect(empty.shadowRoot.textContent).toContain(
+                'no broker responses on this disposition yet'
+            );
+            expect(empty.shadowRoot.textContent).not.toContain(
+                'backup submissions to promote'
+            );
+        });
+
+        it('does NOT name an incumbent — there is none, not even a generic one', async () => {
+            const element = createAppointmentComponent();
+
+            await Promise.resolve();
+
+            // The replacement note falls back to "the current broker" when no name
+            // is supplied. On a first appointment that fallback would ASSERT an
+            // incumbent that does not exist, so the copy is different rather than
+            // merely blank-tolerant.
+            expect(note(element).textContent).not.toContain('the current broker');
+            expect(note(element).textContent).not.toContain('moves back to Backup');
+            expect(element.shadowRoot.textContent).not.toContain('undefined');
+        });
+
+        it('🔴 hides the reason combobox and DISCLOSES the value it will record', async () => {
+            const element = createAppointmentComponent();
+
+            await Promise.resolve();
+
+            // Hidden, not disabled: a disabled combobox invites a click and
+            // announces as a dead form field.
+            expect(reasonBox(element)).toBeNull();
+            // But the value is stated, so nothing is written to the append-only
+            // history that the user was not shown.
+            expect(fixedReason(element)).not.toBeNull();
+            expect(fixedReason(element).textContent).toContain(
+                'Initial Appointment'
+            );
+        });
+
+        it('🔴 sends `Initial Appointment` as the reason, with the SAME four parameter names', async () => {
+            replaceSelectedBroker.mockResolvedValue(
+                'Broker appointed. The broker must be approved before the sale can proceed.'
+            );
+
+            const element = createAppointmentComponent();
+            const closeHandler = jest.fn();
+            element.addEventListener('close', closeHandler);
+
+            // No reason is chosen — there is no control to choose one with. The
+            // gate reduces to "pick a broker", which is the only choice this path
+            // offers.
+            await chooseBackup(element, SUB_B);
+            expect(confirmBtn(element).disabled).toBe(false);
+            confirmBtn(element).click();
+            await flushPromises();
+
+            expect(replaceSelectedBroker).toHaveBeenCalledWith({
+                dispositionId: DISPOSITION_ID,
+                newSubmissionId: SUB_B,
+                reason: 'Initial Appointment',
+                notes: undefined
+            });
+            expect(closeHandler).toHaveBeenCalledTimes(1);
+        });
+
+        it('GATE: with no broker chosen, confirm stays disabled and calls no Apex', async () => {
+            const element = createAppointmentComponent();
+
+            await Promise.resolve();
+
+            expect(confirmBtn(element).disabled).toBe(true);
+            confirmBtn(element).click();
+            await flushPromises();
+            expect(replaceSelectedBroker).not.toHaveBeenCalled();
+        });
+
+        it('🔴 a failed picklist read does NOT block an appointment (it DOES block a replacement)', async () => {
+            const element = createComponentWithFailedReasons({
+                dispositionId: DISPOSITION_ID,
+                backupOptions: PROPS.backupOptions,
+                isFirstAppointment: true
+            });
+            replaceSelectedBroker.mockResolvedValue('Broker appointed.');
+
+            await Promise.resolve();
+
+            // The block above exists to prevent an UNATTRIBUTED history row. On a
+            // first appointment the attribution is fixed and known without reading
+            // the picklist, so blocking here would refuse a safe action for a
+            // reason that cannot occur on it. No banner, and the action proceeds.
+            expect(element.shadowRoot.querySelector('.lv-error')).toBeNull();
+            await chooseBackup(element, SUB_B);
+            confirmBtn(element).click();
+            await flushPromises();
+            expect(replaceSelectedBroker).toHaveBeenCalledTimes(1);
+            expect(
+                replaceSelectedBroker.mock.calls[0][0].reason
+            ).toBe('Initial Appointment');
+        });
+
+        it('🔴 passes the SERVER\'s appointment sentence back untouched', async () => {
+            const APPOINTED =
+                'Broker appointed. The broker must be approved before the sale can proceed.';
+            replaceSelectedBroker.mockResolvedValue(APPOINTED);
+
+            const element = createAppointmentComponent();
+            const closeHandler = jest.fn();
+            element.addEventListener('close', closeHandler);
+
+            await chooseBackup(element, SUB_B);
+            confirmBtn(element).click();
+            await flushPromises();
+
+            // CHARACTER FOR CHARACTER, exactly as on the replacement path. The
+            // appoint-vs-replace wording is the SERVER's, decided from whether it
+            // actually demoted anyone — a client copy would be deciding from the
+            // same stale wire that chose the button.
+            expect(closeHandler.mock.calls[0][0].detail).toEqual({
+                message: APPOINTED
+            });
+        });
+
+        it('🔴 surfaces the server\'s stale-mode refusal INLINE and stays open', async () => {
+            // The reachable race: a colleague appoints a broker between this modal
+            // opening and Confirm. The server refuses `Initial Appointment` when an
+            // incumbent exists rather than logging a misattributed history row.
+            replaceSelectedBroker.mockRejectedValue({
+                body: {
+                    message:
+                        'This disposition already has a selected broker, so this is a replacement rather than a first appointment. Refresh the page and use Replace Broker, which records why the broker is changing.'
+                }
+            });
+
+            const element = createAppointmentComponent();
+            const closeHandler = jest.fn();
+            element.addEventListener('close', closeHandler);
+
+            await chooseBackup(element, SUB_B);
+            confirmBtn(element).click();
+            await flushPromises();
+
+            const banner = element.shadowRoot.querySelector('.lv-error');
+            expect(banner).not.toBeNull();
+            expect(banner.textContent).toContain('Replace Broker');
+            expect(banner.getAttribute('role')).toBe('alert');
+            expect(closeHandler).not.toHaveBeenCalled();
+        });
+
+        it('falls back to an APPOINT-shaped generic message when the error has no body', async () => {
+            replaceSelectedBroker.mockRejectedValue(new Error('network'));
+
+            const element = createAppointmentComponent();
+
+            await chooseBackup(element, SUB_B);
+            confirmBtn(element).click();
+            await flushPromises();
+
+            // "could not be replaced" would send the reader looking for a broker
+            // that never existed.
+            expect(
+                element.shadowRoot.querySelector('.lv-error').textContent
+            ).toContain('The broker could not be appointed.');
+        });
+
+        it('an ABSENT isFirstAppointment prop reads as a REPLACEMENT, the safer default', async () => {
+            // `=== true`, not truthiness: the matrix passes an explicit boolean, but
+            // a caller that forgot the prop must not silently get appointment
+            // semantics — that would send `Initial Appointment` on a replacement.
+            const element = createComponent();
+
+            await Promise.resolve();
+
+            expect(header(element).label).toBe('Replace Selected Broker');
+            expect(reasonBox(element)).not.toBeNull();
+            expect(fixedReason(element)).toBeNull();
+        });
+
+        it('is accessible', async () => {
+            const element = createAppointmentComponent();
+
+            await Promise.resolve();
+
+            await expect(element).toBeAccessible();
+        });
     });
 });

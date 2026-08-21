@@ -5,8 +5,38 @@ import BOV_BROKER_CHANGE_OBJECT from '@salesforce/schema/BOV_Broker_Change__c';
 import REASON_FIELD from '@salesforce/schema/BOV_Broker_Change__c.Reason__c';
 import replaceSelectedBroker from '@salesforce/apex/BovController.replaceSelectedBroker';
 
-/** Fallback when the Apex error carries no readable body. */
-const GENERIC_ERROR = 'The selected broker could not be replaced.';
+/**
+ * Fallbacks when the Apex error carries no readable body — one per mode, because "could not be
+ * replaced" on a disposition that had no broker to replace sends the reader looking for a broker
+ * that never existed. Every FORESEEABLE refusal arrives with a body and is surfaced verbatim; these
+ * two only cover a bodyless failure (a dropped connection, a platform error with no message).
+ */
+const GENERIC_ERROR_REPLACE = 'The selected broker could not be replaced.';
+const GENERIC_ERROR_APPOINT = 'The broker could not be appointed.';
+
+/**
+ * The `BOV_Broker_Change__c.Reason__c` value recorded for a FIRST appointment (2026-08-21).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * 🔴 YES, THIS IS A PICKLIST VALUE HARDCODED IN THE FILE WHOSE HEADER SAYS NEVER TO DO THAT.
+ *    READ WHY BEFORE "FIXING" IT.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * The rule below is about the OPTIONS ARRAY the user chooses from, and the failure it prevents is
+ * a value added in Setup being silently unreachable because this file's list is one short. Neither
+ * half applies here: on a first appointment the user chooses nothing, so there is no list to fall
+ * behind, and no value can become unreachable. What is hardcoded is a single CONSTANT ANSWER to a
+ * question with only one correct answer — every other `Reason__c` value presupposes a predecessor
+ * (`Performance Issue`, `Better BOV Received`, `Broker Withdrew`, `Company Decision`, `Other`),
+ * and `Initial Appointment` exists precisely because a first pick had nowhere honest to go.
+ *
+ * ⚠ IT IS NOT UNVALIDATED. `Reason__c` is a RESTRICTED picklist and restricted picklists ARE
+ * enforced by Apex DML in this org, so if this string ever stops matching the metadata the insert
+ * is refused with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` and the platform's own message is
+ * surfaced verbatim through the existing catch — loudly, on the first click, not silently forever.
+ * `BovSubmissionService.REASON_INITIAL_APPOINTMENT` is the server's own copy of the same literal,
+ * and it is what refuses this value when there IS an incumbent.
+ */
+const REASON_INITIAL_APPOINTMENT = 'Initial Appointment';
 
 /**
  * Shown when the reason picklist itself cannot be read. It BLOCKS the action rather than degrading
@@ -16,8 +46,18 @@ const REASON_LOAD_ERROR =
     'The list of reasons could not be loaded, so the broker cannot be replaced right now. Contact your administrator.';
 
 /**
- * c-bov-replace-broker-modal — promotes one of the BACKUP BOV submissions to Selected, demoting the
- * incumbent (design DEV-15 / DEV-6).
+ * c-bov-replace-broker-modal — appoints a BOV submission as this disposition's Selected broker,
+ * demoting the incumbent if there is one (design DEV-15 / DEV-6).
+ *
+ * ── 🔴 ONE BUNDLE, TWO MODES (2026-08-21) ────────────────────────────────────
+ * `@api isFirstAppointment` switches the heading, the intro copy, the confirm label, the empty
+ * state and the reason — and NOTHING else. The Apex call, the exclusivity swap, the approval
+ * revocation, the savepoint and the history row are identical, because they are the same server
+ * method. The bundle was NOT forked into `bovSelectBrokerModal` deliberately: the five contracts
+ * listed below are non-obvious, load-bearing and would have to be duplicated verbatim into a
+ * second file that would then drift from this one. ⚠ The file name still says "replace" — renaming
+ * an LWC bundle is a delete-and-recreate against every reference to it, which is churn bought with
+ * risk for a word.
  *
  * ── 🔴 THE RETURNED MESSAGE IS THE PRODUCT, NOT A RECEIPT ───────────────────
  * `BovSubmissionService.replaceSelectedBroker` clears the outgoing submission's
@@ -74,8 +114,27 @@ export default class BovReplaceBrokerModal extends LightningModal {
      * about the same broker's numbers.
      */
     @api backupOptions;
-    /** Display name of the incumbent, for the prompt copy. */
+    /** Display name of the incumbent, for the prompt copy. Absent on a first appointment. */
     @api currentBroker;
+    /**
+     * TRUE when this disposition has no appointed broker yet, so the modal is performing a FIRST
+     * APPOINTMENT rather than a replacement (2026-08-21).
+     *
+     * 🔴 IT SWITCHES COPY AND THE REASON, NOT THE MECHANISM. The same Apex method runs either way
+     * — see `c/bovComparisonMatrix`'s header and `BovSubmissionService.replaceSelectedBroker`'s
+     * javadoc for why a second server path was rejected. A second MODAL bundle was rejected for the
+     * matching reason: this file's four non-obvious contracts (options sourced from
+     * `getPicklistValues`, block-don't-degrade on a failed picklist read, "the returned message is
+     * the product, not a receipt", stay-open-on-failure) would have to be duplicated verbatim and
+     * would drift.
+     *
+     * ⚠ THIS FLAG IS THE CLIENT'S BELIEF, NOT A FACT, and the server does not trust it. It is
+     * derived from a cacheable wire that can be seconds stale, so a colleague can appoint a broker
+     * between the button rendering and the Confirm click. The server re-derives the truth inside
+     * the transaction and refuses `Initial Appointment` if an incumbent turns out to exist. Do not
+     * add a client-side re-check to "help" — it would be the same stale data asked twice.
+     */
+    @api isFirstAppointment;
 
     newSubmissionId;
     /** Selected `BOV_Broker_Change__c.Reason__c` value. Required before Confirm enables. */
@@ -123,22 +182,72 @@ export default class BovReplaceBrokerModal extends LightningModal {
     get reasonOptions() {
         return this._reasonOptions;
     }
-    get reasonLoadError() {
-        return this._reasonLoadFailed ? REASON_LOAD_ERROR : undefined;
-    }
     get incumbentLabel() {
         return this.currentBroker || 'the current broker';
     }
     get isSaving() {
         return this._saving;
     }
+
+    // ── First-appointment mode. Copy and the reason differ; nothing else does. ──
+
+    /** `=== true`, so an absent or string-ish prop is read as "replacement", the safer default. */
+    get isAppointment() {
+        return this.isFirstAppointment === true;
+    }
+    /** The visible heading. `open()`'s `label` sets the ACCESSIBLE name; both must agree. */
+    get headerLabel() {
+        return this.isAppointment ? 'Select Broker' : 'Replace Selected Broker';
+    }
+    get confirmLabel() {
+        return this.isAppointment ? 'Appoint broker' : 'Replace broker';
+    }
+    get savingText() {
+        return this.isAppointment ? 'Appointing the broker' : 'Replacing the broker';
+    }
+    /**
+     * ⚠ THE REASON COMBOBOX IS HIDDEN, NOT DISABLED-WITH-A-VALUE. Rendering a control the user
+     * cannot change invites them to try; and a disabled combobox announces as a dead form field.
+     * The static line rendered in its place says what WILL be recorded, so the history value is
+     * disclosed rather than silently applied.
+     */
+    get showReasonPicker() {
+        return !this.isAppointment;
+    }
+    /**
+     * 🔴 THE ONE VALUE SENT TO APEX, and it is a getter rather than an assignment so that no code
+     * path can leave a stale `this.reason` from a mode switch in the field.
+     */
+    get effectiveReason() {
+        return this.isAppointment ? REASON_INITIAL_APPOINTMENT : this.reason;
+    }
+    /**
+     * ⚠ A FAILED PICKLIST READ BLOCKS A REPLACEMENT AND DOES NOT BLOCK A FIRST APPOINTMENT, AND
+     * THAT IS NOT AN INCONSISTENCY. The block exists to prevent an UNATTRIBUTED history row — the
+     * one row this workstream exists to prevent. On a first appointment the attribution is fixed
+     * and known without reading the picklist at all, so blocking there would refuse a safe action
+     * for a reason that cannot occur on it.
+     */
+    get reasonLoadError() {
+        return !this.isAppointment && this._reasonLoadFailed
+            ? REASON_LOAD_ERROR
+            : undefined;
+    }
+    /** Copy for the empty state — there is nothing to PROMOTE vs nothing to APPOINT. */
+    get emptyMessage() {
+        return this.isAppointment
+            ? 'There are no broker responses on this disposition yet. Log a BOV response first, then select a broker.'
+            : 'There are no backup submissions to promote. Log another BOV response first, then replace the selected broker.';
+    }
+
     /**
      * 🔴 THE REASON IS PART OF THE GATE. Confirm stays disabled until a backup AND a reason are
      * chosen — the same rule the server enforces, so a user can never reach a refusal they could
-     * have been shown as a disabled button.
+     * have been shown as a disabled button. On a first appointment `effectiveReason` is a constant,
+     * so the gate reduces to "choose a broker", which is the only choice that path has.
      */
     get confirmDisabled() {
-        return this._saving || !this.newSubmissionId || !this.reason;
+        return this._saving || !this.newSubmissionId || !this.effectiveReason;
     }
 
     handleSelection(event) {
@@ -174,12 +283,16 @@ export default class BovReplaceBrokerModal extends LightningModal {
             const message = await replaceSelectedBroker({
                 dispositionId: this.dispositionId,
                 newSubmissionId: this.newSubmissionId,
-                reason: this.reason,
+                reason: this.effectiveReason,
                 notes: this.notes
             });
             this.close({ message });
         } catch (error) {
-            this.error = (error && error.body && error.body.message) || GENERIC_ERROR;
+            this.error =
+                (error && error.body && error.body.message) ||
+                (this.isAppointment
+                    ? GENERIC_ERROR_APPOINT
+                    : GENERIC_ERROR_REPLACE);
         } finally {
             this._saving = false;
         }

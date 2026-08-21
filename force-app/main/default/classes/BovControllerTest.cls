@@ -127,6 +127,23 @@ private class BovControllerTest {
         Assert.isNull(winnerRow.bovScore,
             'bovScore passes through as null while nothing can write or derive a score');
         Assert.isNull(backupRow.bovScore, 'and likewise for the other row');
+        // 🔴 `BovRow.name` (added 2026-08-21) — the Select/Replace Broker picker's ONLY
+        // disambiguator when two options share a firm AND a contact name, which six broker
+        // Contacts in this org genuinely do. Compared against a fresh read because `Name` is an
+        // AUTO-NUMBER (measured: type string, autoNumber true) — the sequence value belongs to the
+        // org, not to this fixture. What the assertion pins is the MAPPING: point `r.name` at the
+        // wrong record, or drop `Name` from the selector's SELECT list, and it fails (the latter as
+        // an SObjectException the controller masks into READ_FAILURE_MESSAGE, so the whole test
+        // fails rather than this line).
+        Map<Id, BOV_Submission__c> named = new Map<Id, BOV_Submission__c>([
+            SELECT Id, Name FROM BOV_Submission__c WHERE Disposition__c = :d.Id
+        ]);
+        Assert.areEqual(named.get(winner.Id).Name, winnerRow.name,
+            'The submission auto-number must map onto ITS OWN row');
+        Assert.areEqual(named.get(backup.Id).Name, backupRow.name, 'and likewise for the other');
+        Assert.areNotEqual(winnerRow.name, backupRow.name,
+            'PREMISE — two submissions really do carry different auto-numbers, which is the whole '
+            + 'reason the picker can lean on this field to separate duplicate brokers');
     }
 
     /**
