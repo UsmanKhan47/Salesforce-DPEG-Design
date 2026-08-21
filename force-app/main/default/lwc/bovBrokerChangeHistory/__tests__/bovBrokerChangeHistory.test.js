@@ -29,10 +29,38 @@
  * through `createApexTestWireAdapter`. Nothing hand-builds a platform component's `detail` payload
  * — this repo has shipped a dead button whose tests all passed because they fabricated a
  * `lightning-datatable` rowaction shape the platform never sends.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 🔴 THE TWO-COLUMN ROW IS GONE AND MUST NOT COME BACK (2026-08-21).
+ * ─────────────────────────────────────────────────────────────────────────────
+ * This card moved to the ~340px record-page sidebar, where the old layout (swap + notes left,
+ * timestamp + reason + logger right-aligned, held apart by `justify-content: space-between`)
+ * collides. It is now a <ul>/<li> of self-labelling tiles. T-NARROW / T-CSS below are
+ * anti-regression pins for that, modelled on the identical pair in
+ * c/competingBrokerSubmissions, which solved the same problem on Lead_Record_Page.
+ *
+ * EVERY BEHAVIOURAL ASSERTION FROM THE OLD LAYOUT SURVIVES IN MEANING. Three things moved:
+ *   - `.bbc-row` -> `.bbc-tile`;
+ *   - `.bbc-reason` / `.bbc-loggedby` now hold BARE VALUES ('Better BOV Received', 'Avery Chen')
+ *     with the wording promoted to a real <dt> beside them. The tests assert BOTH halves, so a
+ *     regression that drops the label is caught as well as one that drops the value;
+ *   - the empty and unavailable states gained an icon and a centred layout. `.bbc-empty` is
+ *     still the <p> carrying EXACTLY 'No broker changes recorded', so the falsifier that pins
+ *     the two states' wording apart is unchanged.
  */
 import { createElement } from 'lwc';
 import BovBrokerChangeHistory from 'c/bovBrokerChangeHistory';
 import getHistory from '@salesforce/apex/BovBrokerChangeController.getHistory';
+
+// The stylesheet, read once, WITH ITS COMMENTS STRIPPED. Stripping first is not cosmetic: T-CSS's
+// assertions are deliberately broad, so a comment that merely NAMED a banned value would fail
+// them — which is what forces a stylesheet to describe its own rules in circumlocutions.
+const CSS_SOURCE = require('fs')
+    .readFileSync(
+        require('path').join(__dirname, '..', 'bovBrokerChangeHistory.css'),
+        'utf8'
+    )
+    .replace(/\/\*[\s\S]*?\*\//g, '');
 
 jest.mock(
     '@salesforce/apex/BovBrokerChangeController.getHistory',
@@ -104,24 +132,49 @@ describe('c-bov-broker-change-history', () => {
         return element;
     }
 
-    const rows = (el) => el.shadowRoot.querySelectorAll('.bbc-row');
+    const rows = (el) => el.shadowRoot.querySelectorAll('.bbc-tile');
     const empty = (el) => el.shadowRoot.querySelector('.bbc-empty');
     const unavailable = (el) => el.shadowRoot.querySelector('.bbc-unavailable');
     const text = (el) => el.shadowRoot.textContent;
+    const title = (el) =>
+        el.shadowRoot.querySelector('span[slot="title"]').textContent.trim();
+
+    /** Every dt label on one tile, in template order. */
+    const labels = (tile) =>
+        [...tile.querySelectorAll('dt')].map((d) => d.textContent.trim());
 
     it('BEFORE THE WIRE ANSWERS: renders no rows, no empty state and — crucially — no spinner', async () => {
         const element = createComponent();
 
         await Promise.resolve();
 
+        // The card CHROME is unconditional — an untitled fragment of text floating between two
+        // proper cards is the UAT defect this rework fixed.
+        expect(element.shadowRoot.querySelector('lightning-card')).not.toBeNull();
+
         expect(rows(element).length).toBe(0);
         // 🔴 The empty sentence must NOT appear before the wire has answered: it is a claim about
         // the sale, and nothing is known about the sale yet.
         expect(empty(element)).toBeNull();
         expect(unavailable(element)).toBeNull();
+        // 🔴 ...and neither must a "(0)" in the TITLE, which is the same claim in fewer words and
+        // is the one place the state templates cannot guard.
+        expect(title(element)).toBe('Broker Change History');
         // 🔴 NO SPINNER, EVER. A spinner is the only element on this card capable of hanging
         // forever, which is the specific failure the design forbids.
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
+    });
+
+    it('HEADER: the card carries a title and an icon once the wire answers', async () => {
+        const element = createComponent();
+
+        getHistory.emit(HISTORY);
+        await Promise.resolve();
+
+        expect(
+            element.shadowRoot.querySelector('lightning-card').iconName
+        ).toBe('standard:record_update');
+        expect(title(element)).toBe('Broker Change History (2)');
     });
 
     it('DATA: renders one row per recorded change, with both stamped firm snapshots', async () => {
@@ -139,12 +192,19 @@ describe('c-bov-broker-change-history', () => {
         expect(first.querySelector('.bbc-incoming').textContent).toBe(
             'Cushman & Wakefield'
         );
-        expect(first.querySelector('.bbc-reason').textContent).toBe(
-            'Reason: Better BOV Received'
+
+        // 🔴 VALUE AND LABEL ARE ASSERTED SEPARATELY. These used to be one pre-composed string
+        // ("Reason: Better BOV Received"); the wording is now a real <dt>, so a regression that
+        // drops the label is a DIFFERENT failure from one that drops the value and each needs
+        // its own assertion. Asserting only the value would let the labels vanish silently —
+        // which in a 340px tile leaves an unidentifiable bare date and a bare name.
+        expect(first.querySelector('.bbc-reason').textContent.trim()).toBe(
+            'Better BOV Received'
         );
-        expect(first.querySelector('.bbc-loggedby').textContent).toBe(
-            'Logged by Avery Chen'
+        expect(first.querySelector('.bbc-loggedby').textContent.trim()).toBe(
+            'Avery Chen'
         );
+        expect(labels(first)).toEqual(['When', 'Reason', 'Logged by', 'Notes']);
         // The DateTime is rendered by the platform's own formatter, which is stubbed in Jest — so
         // the assertion is that the RAW value was handed to it, not how it renders.
         expect(
@@ -181,9 +241,12 @@ describe('c-bov-broker-change-history', () => {
         // renders the literal string "undefined".
         expect(text(element)).not.toContain('undefined');
         expect(text(element)).not.toContain('null');
-        // A null loggedBy / notes must simply omit those lines, not print an empty label.
+        // A null loggedBy / notes must simply omit those PAIRS — value AND label — not print an
+        // empty one. An absent reason and a blank reason look identical on screen and mean
+        // different things, so the <dt> has to go too.
         expect(rows(element)[0].querySelector('.bbc-loggedby')).toBeNull();
         expect(rows(element)[0].querySelector('.bbc-notes')).toBeNull();
+        expect(labels(rows(element)[0])).toEqual(['When', 'Reason']);
     });
 
     it('🔴 EMPTY: says "No broker changes recorded" — with no alert and no spinner anywhere near it', async () => {
@@ -194,6 +257,9 @@ describe('c-bov-broker-change-history', () => {
 
         expect(rows(element).length).toBe(0);
         expect(empty(element)).not.toBeNull();
+        // 🔴 EXACTLY this sentence and nothing else in this element. The explanatory line lives
+        // in a SIBLING <p> precisely so this assertion stays a tight pin on the wording that
+        // separates "empty" from "unavailable".
         expect(empty(element).textContent).toBe('No broker changes recorded');
         // 🔴 The design's actual requirement is as much about what must NOT be here. Most
         // dispositions land in this state, so an alert or a spinner here would be visible across
@@ -201,6 +267,22 @@ describe('c-bov-broker-change-history', () => {
         expect(element.shadowRoot.querySelector('[role="alert"]')).toBeNull();
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
         expect(unavailable(element)).toBeNull();
+
+        // Structure, not a bare grey sentence: a status region with an icon and the explanatory
+        // line. The intro wording is kept VERBATIM because "nothing is deleted" is the point of
+        // an audit log — an empty audit log that does not say what it would have contained is
+        // indistinguishable from a broken one.
+        const state = element.shadowRoot.querySelector('.bbc-state');
+        expect(state.getAttribute('role')).toBe('status');
+        expect(state.querySelector('lightning-icon').iconName).toBe(
+            'utility:change_record_type'
+        );
+        expect(state.querySelector('.bbc-state-sub').textContent).toBe(
+            'Every broker ever appointed to this sale — nothing is deleted.'
+        );
+        // The count IS shown once the wire has answered, even at zero — at that point it is a
+        // fact about the sale rather than a guess.
+        expect(title(element)).toBe('Broker Change History (0)');
     });
 
     it('🔴 UNAVAILABLE: a failed read is its OWN state — never the empty sentence, never an alert', async () => {
@@ -221,6 +303,17 @@ describe('c-bov-broker-change-history', () => {
         // enough to raise an alert, and the realistic cause is an admin-side FLS gap.
         expect(element.shadowRoot.querySelector('[role="alert"]')).toBeNull();
         expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
+        // 🔴 AND NOT THE SHARED ERROR LOOK EITHER. `.lv-error` is this repo's cross-bundle red
+        // banner; adopting it here would dress an administrator's provisioning gap up as this
+        // user's incident, on a card they did not ask to interact with.
+        expect(element.shadowRoot.querySelector('.lv-error')).toBeNull();
+
+        // 🔴 NO COUNT IN THE TITLE. "Broker Change History (0)" is the empty state's claim in
+        // fewer words, and it is the one place the state templates cannot guard.
+        expect(title(element)).toBe('Broker Change History');
+        // The intro sentence is a COMPLETENESS claim ("every broker ever appointed"), and this
+        // is exactly the state in which the card cannot make one.
+        expect(text(element)).not.toContain('nothing is deleted');
     });
 
     it('NOTES: clips a long note to a 60-character preview and offers View; a short note gets neither', async () => {
@@ -273,6 +366,80 @@ describe('c-bov-broker-change-history', () => {
         await Promise.resolve();
 
         expect(element.shadowRoot.querySelector('.slds-modal')).toBeNull();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Narrow-column anti-regression pins (2026-08-21)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // T-NARROW — the direct pin. A test that merely renders would not catch a revert to the
+    // two-column row; this does, in four lines.
+    it('T-NARROW: renders a labelled tile list, no table and no scroll wrapper', async () => {
+        const element = createComponent();
+
+        getHistory.emit(HISTORY);
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelector('table')).toBeNull();
+        // `.bbc-right` was the right-aligned second column of the old flex row, and
+        // `.lv-scroll` is this repo's retired horizontal-overflow wrapper.
+        expect(element.shadowRoot.querySelector('.bbc-right')).toBeNull();
+        expect(element.shadowRoot.querySelector('.lv-scroll')).toBeNull();
+
+        const list = element.shadowRoot.querySelector('.bbc-list');
+        expect(list).not.toBeNull();
+        // role="list" is NOT redundant: `list-style: none` makes WebKit drop the implicit list
+        // role, and aria-label is only exposed on an element whose role supports naming. axe has
+        // no rule for it, so `is accessible with rows` passing is not evidence against it.
+        expect(list.getAttribute('role')).toBe('list');
+        expect(list.getAttribute('aria-label')).toBe('Broker changes');
+        expect(list.querySelectorAll('li').length).toBe(2);
+    });
+
+    // T-CSS — the stylesheet pin, deliberately a SOURCE-TEXT assertion rather than a
+    // measurement. WHY (do not "improve" this into a measurement): jsdom performs NO LAYOUT.
+    // scrollWidth, clientWidth, offsetWidth and getBoundingClientRect() all return 0, so
+    // `expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth)` is `0 <= 0` and passes
+    // vacuously WHETHER OR NOT the component overflows.
+    it('T-CSS: the stylesheet cannot produce sideways scroll at 340px', () => {
+        // --- BANNED --------------------------------------------------------
+        // Matches the `overflow` SHORTHAND as well as `overflow-x`.
+        expect(CSS_SOURCE).not.toMatch(/overflow(-x)?\s*:\s*(auto|scroll)/);
+
+        // No fixed pixel width on content. `min-width` / `max-width` are not matched (the char
+        // before "width" is a hyphen, not a boundary).
+        expect(CSS_SOURCE).not.toMatch(/(^|[\s;{])width\s*:\s*\d+px/);
+
+        // The old two-column row was held apart by this. Named outright so a revert is caught
+        // even if the class names are kept.
+        expect(CSS_SOURCE).not.toMatch(/justify-content\s*:\s*space-between/);
+
+        // ⚠ `nowrap` IS ALLOWED IN EXACTLY ONE PLACE — the long-note preview clip, whose full
+        // text is one click away behind the View button. This is the narrowest assertion that
+        // still bans it everywhere else: it fails if a SECOND occurrence appears.
+        expect(CSS_SOURCE.match(/nowrap/g)).toHaveLength(1);
+        expect(CSS_SOURCE).toMatch(
+            /\.bbc-notes--clip\s+\.bbc-notes-txt\s*\{[^}]*white-space\s*:\s*nowrap/
+        );
+
+        // --- REQUIRED, and every one SELECTOR-ANCHORED ----------------------
+        // An unanchored /min-width:\s*0/ passes while ANY ONE of the many occurrences survives.
+        // The LOAD-BEARING one is on the grid item.
+        expect(CSS_SOURCE).toMatch(/\.bbc-tile\s*\{[^}]*min-width\s*:\s*0/);
+
+        // overflow-wrap must be on :host, not .bbc-tile — that is what makes it reach the
+        // full-note popup and the two centred states, not just the tiles.
+        expect(CSS_SOURCE).toMatch(/:host\s*\{[^}]*overflow-wrap\s*:\s*anywhere/);
+
+        // The grid minimum. A bare `minmax(18rem, 1fr)` bursts any container narrower than
+        // 288px — invisible at desktop width, and the ONLY place it shows is the sidebar this
+        // rework exists for.
+        expect(CSS_SOURCE).toMatch(/minmax\(\s*min\(\s*18rem\s*,\s*100%\s*\)/);
+
+        // The swap must WRAP. At 340px "No previous broker → Marcus & Millichap" legitimately
+        // needs two lines, and a firm name clipped to an ellipsis is worse than a wrapped one —
+        // the firm is the fact the whole tile exists to record.
+        expect(CSS_SOURCE).toMatch(/\.bbc-swap\s*\{[^}]*flex-wrap\s*:\s*wrap/);
     });
 
     it('is accessible with rows', async () => {

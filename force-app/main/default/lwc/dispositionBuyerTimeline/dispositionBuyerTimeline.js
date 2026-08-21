@@ -60,7 +60,25 @@
  * The controller throws `AuraHandledException` rather than returning an empty
  * list, because an empty timeline on a sale with three engaged buyers is a
  * confident wrong answer nothing on the page contradicts. This component
- * therefore renders a visible inline error and NO card — never a silent blank.
+ * therefore renders a visible inline alert — never a silent blank.
+ *
+ * ⚠ AMENDED 2026-08-21. This paragraph used to end "...and NO card". That was
+ * literally true of the old markup, which had no card chrome at all and emitted
+ * a bare <div> per branch. The card chrome is now UNCONDITIONAL and the alert
+ * renders inside it. The requirement the sentence was protecting is unchanged
+ * and is still pinned by the tests: on the error branch there are NO TILES and
+ * NO EMPTY STATE. What has changed is that the failing panel now says which
+ * panel it is.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * 🔴 DESIGNED FOR A ~340px SIDEBAR COLUMN. DO NOT REINTRODUCE COLUMNS.
+ * ══════════════════════════════════════════════════════════════════════════
+ * The rendered unit is a self-labelling TILE, not a row in a shared grid — see
+ * the long note in the template. The five values below are still produced in
+ * the same order and still flattened to em-dashes in exactly the same cases;
+ * only their arrangement changed. The three "step class" getters added below
+ * drive a decorative milestone rail and carry NO information that is not
+ * already in the value cell beside them.
  */
 import { LightningElement, api, wire } from 'lwc';
 import getTimeline from '@salesforce/apex/DispositionBuyerTimelineController.getTimeline';
@@ -137,6 +155,23 @@ export default class DispositionBuyerTimeline extends LightningElement {
     }
 
     /**
+     * The card's visible title, with the buyer count appended ONLY once the wire
+     * has answered.
+     *
+     * 🔴 A PREMATURE "(0)" IS A CLAIM THIS CARD IS NOT ENTITLED TO MAKE. Before
+     * the wire settles, `rows` is undefined and nothing is known about the sale;
+     * "Buyer Activity Timeline (0)" would state, in the same words it uses for a
+     * genuinely empty sale, that no buyer has been engaged. The same reasoning
+     * keeps the EMPTY STATE out of the pre-wire render, and it is the one thing
+     * that must survive any future re-titling of this card.
+     */
+    get cardTitle() {
+        return this.hasRows || this.isEmpty
+            ? `Buyer Activity Timeline (${this.rows.length})`
+            : 'Buyer Activity Timeline';
+    }
+
+    /**
      * The rendered rows, in SERVER ORDER (see the class header — no sort here).
      *
      * A declined row is flattened to em-dashes in ALL FIVE value columns right
@@ -146,6 +181,15 @@ export default class DispositionBuyerTimeline extends LightningElement {
     get timelineRows() {
         return (this.rows || []).map((row) => {
             const declined = row.isDeclined === true;
+            const ndaSigned = declined
+                ? EM_DASH
+                : this.formatDate(row.ndaSignedDate);
+            const materialsReleased = declined
+                ? EM_DASH
+                : this.formatDate(row.materialsReleasedDate);
+            const firstOffer = declined
+                ? EM_DASH
+                : this.formatDate(row.firstOfferDate);
             return {
                 id: row.ndaId,
                 buyerName: row.buyerName || EM_DASH,
@@ -153,20 +197,28 @@ export default class DispositionBuyerTimeline extends LightningElement {
                 // ⚠ Never `undefined`: a getter bound to a custom element's
                 // attribute is written UNCONDITIONALLY, so `undefined` would
                 // render the literal string "undefined" in the DOM.
-                rowClass: declined ? 'dbt-row dbt-row--declined' : 'dbt-row',
-                // The accessible name for the whole row group. Colour and the
+                tileClass: declined ? 'dbt-tile dbt-tile--declined' : 'dbt-tile',
+                // The accessible name for the whole tile group. Colour and the
                 // badge are reinforcement; THIS is the state a screen reader
                 // announces.
                 rowLabel: declined
                     ? `${row.buyerName} — NDA declined; no dates recorded`
                     : `${row.buyerName} — ${row.status || 'in progress'}`,
-                ndaSigned: declined ? EM_DASH : this.formatDate(row.ndaSignedDate),
-                materialsReleased: declined
-                    ? EM_DASH
-                    : this.formatDate(row.materialsReleasedDate),
-                firstOffer: declined ? EM_DASH : this.formatDate(row.firstOfferDate),
+                ndaSigned,
+                materialsReleased,
+                firstOffer,
                 daysToRelease: declined ? EM_DASH : this.formatDays(row.daysToRelease),
                 daysToRespond: declined ? EM_DASH : this.formatDays(row.daysToRespond),
+                // ── Milestone rail (DECORATION ONLY — see the class header) ──
+                // Derived from the RENDERED value, not from the raw payload, so
+                // the marker and the text beside it cannot disagree: a declined
+                // party's retained signature date is already em-dashed above, so
+                // its marker is correctly hollow without a second `declined`
+                // test here. `--end` suppresses the connector below the third
+                // milestone; the two duration rows that follow are not steps.
+                ndaSignedStepClass: stepClass(ndaSigned),
+                materialsStepClass: stepClass(materialsReleased),
+                firstOfferStepClass: `${stepClass(firstOffer)} dbt-step--end`,
                 // The anomaly flag is suppressed on a declined row too — it has
                 // no dates to be inconsistent with, so a warning there would be
                 // noise pointing at nothing.
@@ -174,4 +226,18 @@ export default class DispositionBuyerTimeline extends LightningElement {
             };
         });
     }
+}
+
+/**
+ * The CSS class for one milestone label in the vertical rail.
+ *
+ * ⚠ Takes the FORMATTED value, deliberately. "Has this milestone happened?" must
+ * mean exactly "does the cell beside it show a date?" — deriving it from the raw
+ * DTO instead would give the declined-party case two independent answers, and
+ * the one on screen would be the wrong one.
+ */
+function stepClass(formattedValue) {
+    return formattedValue === EM_DASH
+        ? 'dbt-label dbt-step dbt-step--pending'
+        : 'dbt-label dbt-step dbt-step--done';
 }

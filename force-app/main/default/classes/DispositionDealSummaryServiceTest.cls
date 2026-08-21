@@ -638,6 +638,141 @@ private class DispositionDealSummaryServiceTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // Row Ids — the card's click-through targets (added 2026-08-21 with the restyle)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * `ndaId` / `loiId` / `psaId` back the row-label links on `c/dispositionDealSummary` after the
+     * 2026-08-21 restyle. Two things are proven at once, and the second is the interesting one:
+     *
+     *   1. Each Id is populated when the child exists.
+     *   2. 🔴 EACH ID IS THE SAME ROW THE REST OF THAT ROW'S DATA CAME FROM. A link pointing at a
+     *      DIFFERENT record from the status beside it would be worse than no link — the reader
+     *      would open a record that does not say what the card just said. Two children per object
+     *      are inserted and forced to an IDENTICAL CreatedDate, so the Id-DESC tie-break decides
+     *      the winner, and the expected winner is established independently by querying for the
+     *      max Id rather than assumed from list-insertion order. The status assertions are
+     *      alongside the Id assertions on purpose: they must agree.
+     *
+     * ⚠ No new SOQL was added to any selector for this. `Id` is returned by every SOQL query
+     * whether or not it is named in the SELECT list, and it has no `FieldPermissions` row on any
+     * permission set, so there is no new `WITH USER_MODE` FLS gate to trip.
+     */
+    @isTest
+    static void summarise_rowIds_matchTheSameRecordEachRowsDataCameFrom() {
+        Disposition__c d = newDisposition();
+
+        List<NDA__c> ndas = TestDataFactory.createDispositionNdas(2, d.Id, false);
+        ndas[0].Status__c = 'Not Sent';
+        ndas[1].Status__c = 'Signed';
+        insert ndas;
+        List<LOI__c> lois = TestDataFactory.createDispositionLois(2, d.Id, false);
+        lois[0].Stage__c = 'Received';
+        lois[1].Stage__c = 'Under Review';
+        insert lois;
+        List<Contract_Review__c> reviews = TestDataFactory.createDispositionContractReviews(2, d.Id, false);
+        reviews[0].Negotiation_Status__c = 'Initial Draft';
+        reviews[1].Negotiation_Status__c = 'Revised';
+        insert reviews;
+
+        DateTime tiedMoment = System.now();
+        for (NDA__c n : ndas) {
+            Test.setCreatedDate(n.Id, tiedMoment);
+        }
+        for (LOI__c l : lois) {
+            Test.setCreatedDate(l.Id, tiedMoment);
+        }
+        for (Contract_Review__c r : reviews) {
+            Test.setCreatedDate(r.Id, tiedMoment);
+        }
+
+        NDA__c expectedNda = [
+            SELECT Id, Status__c FROM NDA__c WHERE Disposition__c = :d.Id ORDER BY Id DESC LIMIT 1
+        ];
+        LOI__c expectedLoi = [
+            SELECT Id, Stage__c FROM LOI__c WHERE Disposition__c = :d.Id ORDER BY Id DESC LIMIT 1
+        ];
+        Contract_Review__c expectedPsa = [
+            SELECT Id, Negotiation_Status__c FROM Contract_Review__c
+            WHERE Disposition__c = :d.Id ORDER BY Id DESC LIMIT 1
+        ];
+
+        Test.startTest();
+        DispositionDealSummaryService.DealSummary summary = DispositionDealSummaryService.summarise(d.Id);
+        Test.stopTest();
+
+        Assert.areEqual(String.valueOf(expectedNda.Id), summary.ndaId,
+            'ndaId must be the Id-DESC tie-break winner — the same NDA whose status the card shows');
+        Assert.areEqual(expectedNda.Status__c, summary.ndaStatus,
+            'and its status must be the one that travelled with it');
+        Assert.areEqual(String.valueOf(expectedLoi.Id), summary.loiId,
+            'loiId must be the Id-DESC tie-break winner');
+        Assert.areEqual(expectedLoi.Stage__c, summary.loiStage,
+            'and its stage must be the one that travelled with it');
+        Assert.areEqual(String.valueOf(expectedPsa.Id), summary.psaId,
+            'psaId must be the Id-DESC tie-break winner');
+        Assert.areEqual(expectedPsa.Negotiation_Status__c, summary.psaStatus,
+            'and its negotiation status must be the one that travelled with it');
+    }
+
+    /** No child, no Id — the client renders a muted, unlinked label rather than a dead link. */
+    @isTest
+    static void summarise_rowIds_nullOnAFreshDispositionWithNoChildren() {
+        Disposition__c d = newDisposition();
+
+        Test.startTest();
+        DispositionDealSummaryService.DealSummary summary = DispositionDealSummaryService.summarise(d.Id);
+        Test.stopTest();
+
+        Assert.isNull(summary.ndaId, 'There is no NDA to link to');
+        Assert.isNull(summary.loiId, 'There is no LOI to link to');
+        Assert.isNull(summary.psaId, 'There is no PSA to link to');
+    }
+
+    /**
+     * 🔴 A DEGRADED ROW MUST NOT LEAK AN ID. The card turns a non-null Id into a clickable link,
+     * so an Id surviving a REFUSED read would offer the reader a link to a record they were just
+     * denied — a link that can only end in a second permission error, presented as though the
+     * card had successfully read the record. The guarantee is structural rather than conditional:
+     * `applyLatestLoi` assigns `summary.loiId` INSIDE its try, after the selector returns, so a
+     * throw leaves it at its null default. This test is what fails if that assignment is ever
+     * hoisted out of the try or defaulted to something non-null.
+     *
+     * ⚠ A REAL LOI IS INSERTED FIRST, so what is proven is that the DENIAL suppresses the Id, not
+     * merely that there was no record to take one from.
+     */
+    @isTest
+    static void summarise_loiReadDenied_loiIdIsNullSoNoLinkCanBeOffered() {
+        Disposition__c d = newDisposition();
+        NDA__c nda = TestDataFactory.createDispositionNda(d.Id, false);
+        nda.Status__c = 'Signed';
+        insert nda;
+        // Stage__c stays at its seeded default — this test is about the Id, not the stage.
+        LOI__c loi = TestDataFactory.createDispositionLoi(d.Id, true);
+        Assert.isNotNull(loi.Id, 'A real LOI exists — the denial, not an absence, must null the Id');
+
+        User restricted = userDeniedAccessTo('LOI__c');
+
+        DispositionDealSummaryService.DealSummary summary;
+        System.runAs(restricted) {
+            Test.startTest();
+            summary = DispositionDealSummaryService.summarise(d.Id);
+            Test.stopTest();
+        }
+
+        Assert.isTrue(summary.loiUnavailable, 'The LOI read was refused for this persona');
+        Assert.isNull(summary.loiId,
+            'A DEGRADED row must carry no Id: the card would render it as a link to a record this '
+            + 'reader was just refused, which can only end in a second permission error dressed up '
+            + 'as a successful read.');
+
+        // The granted rows keep theirs — the Id suppression is per row, like every other flag here.
+        Assert.isFalse(summary.ndaUnavailable, 'The NDA read was fully granted');
+        Assert.areEqual(String.valueOf(nda.Id), summary.ndaId,
+            'The NDA row keeps its Id and therefore its link');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // Disposition not found — the read-for-display null contract, not an error
     // ═══════════════════════════════════════════════════════════════════════════
 

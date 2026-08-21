@@ -12,10 +12,19 @@
  *   - getSubmissions.error()     -> error branch
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * TWO HEADER ACTIONS WERE ADDED (disposition flow redesign, DEV-15)
+ * TWO HEADER ACTIONS (disposition flow redesign, DEV-15)
  * ─────────────────────────────────────────────────────────────────────────────
- * "Add Broker Response" navigates to the platform's own create screen with
- * `Disposition__c` defaulted; "Replace Broker" opens c/bovReplaceBrokerModal.
+ * "Add Broker Response" opens c/bovAddResponseModal; "Replace Broker" opens
+ * c/bovReplaceBrokerModal. NEITHER NAVIGATES.
+ *
+ * 🔴 "ADD BROKER RESPONSE" USED TO NAVIGATE, AND THAT WAS THE UAT BUG
+ * (2026-08-21). It called NavigationMixin.Navigate with `actionName: 'new'` on
+ * BOV_Submission__c, and the platform's post-save behaviour for a record created
+ * that way is to navigate TO the new record — so saving a response threw the
+ * user off the Disposition page. `ADD RESPONSE: never navigates` below is the
+ * anti-regression pin, and it is deliberately an assertion about ABSENCE:
+ * asserting only that the modal opened would stay green if a Navigate call were
+ * added back beside it.
  *
  * 🔴 THE WIRE IS NOW HELD AS A WHOLE RESULT so `refreshApex` can re-provision it
  * after a replace. A "tidying" edit back to `wired({ data, error })` compiles,
@@ -28,14 +37,15 @@
  * which is the only assertion that actually catches that regression.
  *
  * 🔴 `LightningModal.open()` IS A STATIC ON A CLASS and cannot be driven like a
- * wire adapter, so c/bovReplaceBrokerModal is mocked wholesale here. Its own
- * behaviour is proved in lwc/bovReplaceBrokerModal/__tests__.
+ * wire adapter, so both modals are mocked wholesale here. Their own behaviour is
+ * proved in lwc/bovReplaceBrokerModal/__tests__ and
+ * lwc/bovAddResponseModal/__tests__.
  */
 import { createElement } from 'lwc';
 import BovComparisonMatrix from 'c/bovComparisonMatrix';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 import { refreshApex } from '@salesforce/apex';
-import { encodeDefaultFieldValues } from 'lightning/pageReferenceUtils';
+import BovAddResponseModal from 'c/bovAddResponseModal';
 import BovReplaceBrokerModal from 'c/bovReplaceBrokerModal';
 
 jest.mock('lightning/navigation', () => {
@@ -69,6 +79,11 @@ jest.mock(
 );
 
 jest.mock('c/bovReplaceBrokerModal', () => ({
+    __esModule: true,
+    default: { open: jest.fn() }
+}));
+
+jest.mock('c/bovAddResponseModal', () => ({
     __esModule: true,
     default: { open: jest.fn() }
 }));
@@ -115,11 +130,7 @@ const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe('c-bov-comparison-matrix', () => {
     beforeEach(() => {
         BovReplaceBrokerModal.open.mockResolvedValue(undefined);
-        encodeDefaultFieldValues.mockImplementation((fields) =>
-            Object.entries(fields)
-                .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-                .join(',')
-        );
+        BovAddResponseModal.open.mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -227,7 +238,26 @@ describe('c-bov-comparison-matrix', () => {
     // Header actions
     // ─────────────────────────────────────────────────────────────────────────
 
-    it('ADD RESPONSE: navigates to the create screen with Disposition__c defaulted', async () => {
+    it('ADD RESPONSE: opens the in-place dialog for THIS disposition', async () => {
+        const element = createComponent();
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        addBtn(element).click();
+        await flushPromises();
+
+        expect(BovAddResponseModal.open).toHaveBeenCalledTimes(1);
+        const args = BovAddResponseModal.open.mock.calls[0][0];
+        expect(args.dispositionId).toBe(RECORD_ID);
+        // A label and a description are what LightningModal exposes to assistive
+        // tech; a dialog with neither announces as an unnamed region.
+        expect(args.label).toBe('Add Broker Response');
+        expect(typeof args.description).toBe('string');
+        expect(args.description.length).toBeGreaterThan(0);
+    });
+
+    it('🔴 ADD RESPONSE: never navigates — this is the UAT redirect regression pin', async () => {
         const element = createComponent();
         const navHandler = jest.fn();
         element.addEventListener('navigate', navHandler);
@@ -236,19 +266,92 @@ describe('c-bov-comparison-matrix', () => {
         await Promise.resolve();
 
         addBtn(element).click();
+        await flushPromises();
 
-        expect(navHandler).toHaveBeenCalledTimes(1);
-        const pageRef = navHandler.mock.calls[0][0].detail;
-        expect(pageRef.type).toBe('standard__objectPage');
-        expect(pageRef.attributes.objectApiName).toBe('BOV_Submission__c');
-        expect(pageRef.attributes.actionName).toBe('new');
-        // Built with encodeDefaultFieldValues, not string concatenation: the util
-        // URL-encodes the values, and a hand-built string breaks the moment a
-        // defaulted value contains a reserved character.
-        expect(encodeDefaultFieldValues).toHaveBeenCalledWith({
-            Disposition__c: RECORD_ID
+        // 🔴 THE ASSERTION IS ABOUT ABSENCE, DELIBERATELY. The previous
+        // implementation navigated to `standard__objectPage` / `actionName:
+        // 'new'`, and the platform's post-save behaviour for a record created
+        // that way is to navigate TO the new record — so the user was thrown off
+        // the Disposition page. A test that only asserted "the modal opened"
+        // would stay green if a Navigate call were reinstated beside it.
+        expect(navHandler).not.toHaveBeenCalled();
+    });
+
+    it('🔴 ADD RESPONSE SUCCESS: toasts, then refreshes THIS wire in place', async () => {
+        BovAddResponseModal.open.mockResolvedValue({
+            recordId: 'a0X010000000009AAA',
+            name: 'BOV-0021'
         });
-        expect(pageRef.state.defaultFieldValues).toContain(RECORD_ID);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        const navHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        element.addEventListener('navigate', navHandler);
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        addBtn(element).click();
+        await flushPromises();
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        const toast = toastHandler.mock.calls[0][0].detail;
+        expect(toast.variant).toBe('success');
+        expect(toast.message).toContain('BOV-0021');
+        // Nothing to act on later, so this one may auto-dismiss — unlike the
+        // replace flow's "a fresh approval is required" warning.
+        expect(toast.mode).toBe('dismissable');
+
+        // 🔴 The record was created by a form this cacheable wire knows nothing
+        // about, so LDS has no idea the list changed. Asserted with the WIRE
+        // RESULT OBJECT, which is what pins the un-destructured
+        // `wiredSubmissions(result)` shape — the only thing refreshApex can
+        // re-provision.
+        expect(refreshApex).toHaveBeenCalledTimes(1);
+        expect(refreshApex.mock.calls[0][0]).toHaveProperty('data');
+
+        // Still on the disposition page. This is the whole point of the change.
+        expect(navHandler).not.toHaveBeenCalled();
+    });
+
+    it('ADD RESPONSE CANCELLED: no toast and no refresh', async () => {
+        BovAddResponseModal.open.mockResolvedValue(undefined);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        addBtn(element).click();
+        await flushPromises();
+
+        expect(toastHandler).not.toHaveBeenCalled();
+        expect(refreshApex).not.toHaveBeenCalled();
+    });
+
+    it('ADD RESPONSE: a modal that fails to OPEN toasts and does not refresh', async () => {
+        BovAddResponseModal.open.mockRejectedValue(
+            new Error('modal layer unavailable')
+        );
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+
+        getSubmissions.emit(SUBMISSIONS);
+        await Promise.resolve();
+
+        addBtn(element).click();
+        await flushPromises();
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.title).toBe(
+            'Could not open the response dialog'
+        );
+        expect(refreshApex).not.toHaveBeenCalled();
     });
 
     it('REPLACE BROKER is HIDDEN until a submission is Selected', async () => {

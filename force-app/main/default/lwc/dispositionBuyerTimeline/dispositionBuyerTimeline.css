@@ -1,37 +1,281 @@
-:host { display:block; }
+/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom value below is a global styling
+   hook with its canonical literal fallback — a bare var(--hook) renders as NOTHING in the
+   Salesforce environments where hooks are unavailable, which is why the repo gate
+   `slds/no-slds-var-without-fallback` warns on one.
 
-/* Shared card chrome — matches c/brokerAssignmentHistory and c/dispositionDealSummary so the
-   Disposition record page reads as one surface. */
-.dbt-card { background:var(--slds-g-color-surface-container-1, #fff); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); box-shadow:0 1px 2px rgba(7,20,40,0.06); }
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 NOTHING IN THIS COMPONENT MAY SCROLL SIDEWAYS AT ANY CONTAINER WIDTH.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   This card moved from a ~800px main region to a ~340px record-page SIDEBAR, and the six-column
+   grid it used to be (`minmax(0, 2fr) repeat(5, minmax(0, 1fr))`) gave each value column ~35px
+   there. The stacked-tile replacement copies the six load-bearing declarations
+   c/competingBrokerSubmissions documents for the same problem:
+     1. no `overflow-x` and no `overflow` shorthand set to auto/scroll anywhere — clipping the
+        content instead of reflowing it only hides the burst, and the shorthand restores the
+        horizontal scrollbar just as effectively as the longhand;
+     2. no `nowrap` anywhere — neither `white-space: nowrap` nor `flex-wrap: nowrap` on the tile
+        head, whose badge must be free to drop beneath a long buyer name;
+     3. `min-width: 0` on every flex/grid child holding text. A flex/grid item defaults to
+        `min-width: auto` and then REFUSES to shrink below its longest unbreakable token, so one
+        long buyer name would force a tile wider than its container. The LOAD-BEARING one is on
+        `.dbt-tile` (the grid item); the rest are defensive;
+     4. `overflow-wrap: anywhere` on :host — `anywhere`, not `break-word`, because only
+        `anywhere` affects min-content sizing, which is what lets rule 3 take effect. It sits on
+        :host so it also covers the `.lv-error` banner, whose text is a server message this
+        component neither controls nor can pre-wrap;
+     5. grid minimum `min(18rem, 100%)`, NEVER a bare 18rem — a bare 18rem minimum bursts any
+        container narrower than 288px. This is the rule that looks over-complicated and invites a
+        "simplifying" edit; its failure mode is invisible at desktop width and shows only in the
+        sidebar;
+     6. no fixed pixel widths on content.
+   The grid uses `auto-fill` and NO media queries on purpose: a media query measures the
+   VIEWPORT, but the constraint here is CONTAINER width — the same viewport yields a ~340px
+   sidebar or a ~900px main region. Placed in a wide region this card lays the same tiles out in
+   two or three columns with no code change.
 
-/* Tabular numerals so the date and duration columns align down the card. */
-.dbt-mono { font-variant-numeric:tabular-nums; }
+   ⚠ --slds-g-color-on-surface-1 is the GREY one (#757575); -2 (#2e2e2e) and -3 (#181818) are
+   progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse,
+   so secondary text takes -1 and primary text takes -2/-3. Do not reach for
+   --slds-g-color-neutral-base-60 for muted text either: it is #939393, which is roughly 3.5:1 on
+   white and fails WCAG AA for body copy. */
 
-.dbt-error { display:flex; align-items:center; gap:8px; padding:var(--slds-g-spacing-3, 12px) var(--slds-g-spacing-5, 24px); color:var(--slds-g-color-error-container-1, #8B1A1A); font-size:var(--slds-g-font-scale-neg-1, 13px); }
-.dbt-empty { padding:var(--slds-g-spacing-4, 16px) var(--slds-g-spacing-5, 24px); color:var(--slds-g-color-on-surface-1, #757575); font-size:var(--slds-g-font-scale-neg-1, 13px); }
+:host {
+    display: block;
+    overflow-wrap: anywhere;
+}
 
-.dbt-body { padding:10px var(--slds-g-spacing-5, 24px) 18px; }
-/* ⚠ --slds-g-color-on-surface-1 is the GREY one (#757575); -2 and -3 are progressively darker.
-   The numbering reads like an ascending emphasis scale and is the reverse, so secondary text takes
-   -1 and primary text takes -2. */
-.dbt-intro { font-size:var(--slds-g-font-scale-neg-1, 12px); color:var(--slds-g-color-on-surface-1, #757575); margin:6px 0 10px; }
+/* Tabular numerals so dates and durations align down a tile and across tiles. */
+.dbt-mono {
+    font-variant-numeric: tabular-nums;
+}
 
-.dbt-row { display:grid; grid-template-columns:minmax(0, 2fr) repeat(5, minmax(0, 1fr)); align-items:center; gap:12px; padding:10px var(--slds-g-spacing-4, 16px); margin-top:6px; border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); border-radius:var(--slds-g-radius-border-2, 8px); background:var(--slds-g-color-surface-container-1, #fff); }
+/* ===== Intro ===== */
+.dbt-intro {
+    min-width: 0;
+    margin: 0;
+    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem) 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
 
-.dbt-head { margin-top:0; padding-top:var(--slds-g-spacing-1, 4px); padding-bottom:var(--slds-g-spacing-1, 4px); border:none; background:none; font-size:var(--slds-g-font-scale-neg-2, 11px); font-weight:var(--slds-g-font-weight-7, 700); letter-spacing:0.04em; text-transform:uppercase; color:var(--slds-g-color-on-surface-1, #757575); }
+/* ===== Tile list ===== */
+.dbt-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-3, 0.75rem);
+    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
+    margin: 0;
+    list-style: none;
+}
 
-/* TERMINATED ROW. Muted rather than red: a party who declined is a normal, recorded outcome, not an
-   error state. The accessible signal is the badge text and the row's aria-label — never this colour.
-   ⚠ --slds-g-color-disabled-container-1 is WHITE and --slds-g-color-on-disabled-1 is pale grey, so
-   the natural-looking "disabled" pairing would be near-invisible on this white card. */
-.dbt-row--declined { background:var(--slds-g-color-neutral-base-95, #f3f3f3); border-style:dashed; }
-.dbt-row--declined .dbt-buyer { color:var(--slds-g-color-on-surface-1, #757575); }
-.dbt-row--declined .dbt-c { color:var(--slds-g-color-on-surface-1, #757575); }
+.dbt-item {
+    min-width: 0;
+}
 
-.dbt-c { font-size:var(--slds-g-font-scale-neg-1, 12px); color:var(--slds-g-color-on-surface-2, #2e2e2e); min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.dbt-c-buyer { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.dbt-buyer { font-weight:var(--slds-g-font-weight-6, 600); font-size:var(--slds-g-font-scale-1, 14px); color:var(--slds-g-color-on-surface-3, #181818); overflow:hidden; text-overflow:ellipsis; }
+.dbt-tile {
+    min-width: 0;
+    padding: var(--slds-g-spacing-3, 0.75rem);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-3, 0.5rem);
+    background: var(--slds-g-color-surface-container-1, #fff);
+}
 
-.dbt-badge { display:inline-flex; align-items:center; font-size:var(--slds-g-font-scale-neg-2, 10px); font-weight:var(--slds-g-font-weight-7, 700); letter-spacing:0.04em; text-transform:uppercase; border-radius:9999px; padding:1px var(--slds-g-spacing-2, 8px); white-space:nowrap; }
-.dbt-badge--declined { color:var(--slds-g-color-on-surface-2, #2e2e2e); background:var(--slds-g-color-neutral-base-95, #f3f3f3); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #E2E0DB); }
-.dbt-badge--anomaly { color:var(--slds-g-color-error-container-1, #8B1A1A); background:var(--slds-g-color-surface-container-1, #fff); border:var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-error-base-40, #BA0517); }
+/* TERMINATED TILE. Muted rather than red: a party who declined is a normal, recorded outcome,
+   not an error state. The accessible signal is the badge TEXT and the tile's aria-label — never
+   this colour and never this dashed border.
+   ⚠ --slds-g-color-disabled-container-1 is WHITE and --slds-g-color-on-disabled-1 is pale grey,
+   so the natural-looking "disabled" pairing would be near-invisible on this white card. */
+.dbt-tile--declined {
+    background: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    border-style: dashed;
+}
+.dbt-tile--declined .dbt-buyer,
+.dbt-tile--declined .dbt-c {
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* Tile head: buyer name left, badges right; a badge wraps beneath the name at extreme narrow
+   widths rather than pushing the tile wider. */
+.dbt-tile-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
+}
+
+.dbt-buyer {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+/* ===== Labelled facts: the three journey milestones, then the two durations ===== */
+.dbt-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+    align-items: baseline;
+    min-width: 0;
+    margin: 0;
+}
+
+.dbt-label {
+    grid-column: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.dbt-c {
+    grid-column: 2;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+/* Rule between the journey and the two derived durations — the second half of the tile is
+   arithmetic ABOUT the first half, not more of the same kind of fact. */
+.dbt-sep {
+    padding-top: var(--slds-g-spacing-2, 0.5rem);
+    border-top: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+}
+
+/* ===== Milestone rail =====
+   PURELY DECORATIVE. Every fact it conveys is already stated in words in the cell beside it (a
+   date, or an em-dash), so a user who cannot perceive the marker loses nothing — which is the
+   only reason a colour/shape signal is permitted on this card at all. */
+/* ⚠ THE MARKER IS A FLEX ITEM, NOT AN ABSOLUTELY POSITIONED DOT WITH AN `em` OFFSET.
+   The obvious implementation — `position: absolute; top: 0.3em` — needs a font-relative magic
+   number to sit on the label's optical centre, which drifts the moment the font scale changes
+   AND is reported by the SLDS linter as a hardcoded value with no replacement hook. Making the
+   dot a flex item and centring it costs one declaration and needs no magic number at all. */
+.dbt-step {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+}
+
+/* The marker. FILLED = this milestone has a date; HOLLOW = still to come.
+   `z-index` lifts it above the connector below, which is painted later in tree order and would
+   otherwise draw a line straight through the middle of every dot. */
+.dbt-step::before {
+    content: '';
+    flex: none;
+    z-index: 1;
+    width: var(--slds-g-sizing-3, 0.5rem);
+    height: var(--slds-g-sizing-3, 0.5rem);
+    border-radius: var(--slds-g-radius-border-circle, 100%);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-on-surface-1, #757575);
+    box-sizing: border-box;
+}
+.dbt-step--done::before {
+    background: var(--slds-g-color-on-surface-2, #2e2e2e);
+    border-color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+.dbt-step--pending::before {
+    background: var(--slds-g-color-surface-container-1, #fff);
+}
+
+/* Connector between consecutive markers. It runs the full height of its own row and into the row
+   gap below, so consecutive segments meet and read as one continuous rail; `left` is half the
+   marker's diameter, which is what puts it through the dots' centres. Suppressed below the LAST
+   milestone — the two duration rows that follow are not steps in the journey. */
+.dbt-step::after {
+    content: '';
+    position: absolute;
+    left: var(--slds-g-sizing-2, 0.25rem);
+    top: 0;
+    bottom: calc(-1 * var(--slds-g-spacing-2, 0.5rem));
+    border-left: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+}
+.dbt-step--end::after {
+    content: none;
+}
+
+/* ===== Badges =====
+   The label text IS the state (see the component header). These are pills around words, never a
+   replacement for them. */
+.dbt-badge {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-radius: var(--slds-g-radius-border-pill, 15rem);
+    padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-2, 0.5rem);
+}
+
+.dbt-badge--declined {
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+}
+
+.dbt-badge--anomaly {
+    color: var(--slds-g-color-error-base-40, #ba0517);
+    background: var(--slds-g-color-surface-container-1, #fff);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-error-base-40, #ba0517);
+}
+
+/* ===== Empty state =====
+   Centred icon + headline + explanation, rather than the bare grey sentence this used to be.
+   It is a STATUS, not an alert: no buyer having signed an NDA yet is the ordinary early state of
+   a disposition, not a problem. */
+.dbt-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    padding: var(--slds-g-spacing-5, 1.5rem) var(--slds-g-spacing-4, 1rem);
+}
+
+.dbt-empty-icon {
+    --slds-c-icon-color-foreground-default: var(
+        --slds-g-color-on-surface-1,
+        #757575
+    );
+    margin-bottom: var(--slds-g-spacing-1, 0.25rem);
+}
+
+.dbt-empty-text {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+.dbt-empty-sub {
+    min-width: 0;
+    /* A measure, not a width: keeps the explanatory line from running edge-to-edge in a wide
+       region while still shrinking freely in the sidebar. `ch` (not px) so it tracks the font. */
+    max-width: var(--slds-g-sizing-content-2, 45ch);
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ===== Error banner (cross-bundle class — keep the name) ===== */
+.lv-error {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+}

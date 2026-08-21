@@ -47,6 +47,18 @@
  * person who can fix it. ⚠ Do not "simplify" these three booleans away — they are the difference
  * between a card that reports a permissions bug and a card that impersonates an empty sale.
  *
+ * ═══ ⚠ THE THREE ROW IDs COST NOTHING AND CHANGED NO SELECTOR (2026-08-21) ═══
+ * The DTO carries `ndaId` / `loiId` / `psaId` so the card's row labels can be click-through links.
+ * No selector field list moved, and that is a MEASURED property of SOQL rather than a lucky
+ * coincidence: **`Id` is returned by every SOQL query whether or not it appears in the SELECT
+ * list**, and all three `selectLatest…ByDispositionId` methods list it explicitly anyway. So there
+ * is no new field on any `WITH USER_MODE` read — which matters, because every field added to such
+ * a SELECT is an FLS gate that THROWS rather than degrades. `Id` is not FLS-gated at all (it has
+ * no `FieldPermissions` row on any permission set, verified against `usman-dpeg` 2026-08-21), so
+ * there is nothing to grant and nothing new that can fail.
+ * 🔴 The Ids are assigned INSIDE each try, after the selector returns. A degraded row therefore
+ * carries a null Id and the client cannot render a link to a record the reader was just refused.
+ *
  * ═══ WHY FOUR CATCHES FOR THREE ROWS ═══
  * The NDA row is fed by TWO reads — the parent's maintained counters and the latest child NDA —
  * which live on different objects with independent FLS. One catch across both would let a missing
@@ -87,6 +99,15 @@ public with sharing class DispositionDealSummaryService {
         @AuraEnabled public Boolean hasNda = false;
         /** True when the latest-NDA read failed. */
         @AuraEnabled public Boolean ndaUnavailable = false;
+        /**
+         * The latest `NDA__c`'s Id — the click-through target for the card's NDA row label.
+         * 🔴 NULL ON A DEGRADED ROW, AND THAT IS PART OF THE THREE-STATE CONTRACT, NOT AN
+         * OVERSIGHT. It is assigned only inside `applyLatestNda`'s try, AFTER the selector has
+         * returned, so a read that threw leaves it null and the client renders a muted,
+         * unlinked label beside the `Unavailable` pill. A degraded row must never offer a link
+         * to a record the reader was just refused.
+         */
+        @AuraEnabled public String ndaId;
 
         // ── LOI row ────────────────────────────────────────────────────────────────────────
         /**
@@ -112,6 +133,13 @@ public with sharing class DispositionDealSummaryService {
         @AuraEnabled public Boolean hasLoi = false;
         /** True when the LOI read failed. */
         @AuraEnabled public Boolean loiUnavailable = false;
+        /**
+         * The latest `LOI__c`'s Id — the click-through target for the card's LOI row label.
+         * Null on a degraded row, for the reason spelled out on `ndaId`.
+         * ⚠ This is an Id, NOT a re-opening of the C-10 / C-11 exclusions above. It carries no
+         * status, no date and no vocabulary; it is the row's address, not its content.
+         */
+        @AuraEnabled public String loiId;
 
         // ── PSA row ────────────────────────────────────────────────────────────────────────
         /**
@@ -128,6 +156,11 @@ public with sharing class DispositionDealSummaryService {
         @AuraEnabled public Boolean hasPsa = false;
         /** True when the PSA read failed. */
         @AuraEnabled public Boolean psaUnavailable = false;
+        /**
+         * The latest `Contract_Review__c`'s Id — the click-through target for the PSA row label.
+         * Null on a degraded row, for the reason spelled out on `ndaId`.
+         */
+        @AuraEnabled public String psaId;
     }
 
     /**
@@ -209,6 +242,7 @@ public with sharing class DispositionDealSummaryService {
                 return;
             }
             summary.hasNda = true;
+            summary.ndaId = nda.Id;
             summary.ndaStatus = nda.Status__c;
             summary.ndaSignedDate = nda.Date_Signed__c;
         } catch (Exception e) {
@@ -231,6 +265,7 @@ public with sharing class DispositionDealSummaryService {
                 return;
             }
             summary.hasLoi = true;
+            summary.loiId = loi.Id;
             summary.loiStage = loi.Stage__c;
             summary.loiOfferPrice = loi.Offer_Price__c;
             summary.loiBallInCourt = loi.Ball_In_Court__c;
@@ -255,6 +290,7 @@ public with sharing class DispositionDealSummaryService {
                 return;
             }
             summary.hasPsa = true;
+            summary.psaId = psa.Id;
             summary.psaStatus = psa.Negotiation_Status__c;
             summary.psaExecutionDate = psa.Execution_Date__c;
             summary.psaLatestVersion = (psa.Latest_Version__c == null)

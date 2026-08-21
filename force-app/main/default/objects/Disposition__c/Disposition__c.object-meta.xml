@@ -141,7 +141,24 @@
         <type>Default</type>
     </actionOverrides>
     <allowInChatterGroups>false</allowInChatterGroups>
-    <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
+    <!--
+        2026-08-21: compactLayoutAssignment switched from SYSTEM to Disposition_Compact_Layput.
+        This drives the highlights panel at the top of the Disposition record page (the field
+        strip directly under the record name/breadcrumb), not the record body.
+
+        ⚠ API-NAME TYPO IS DELIBERATE, DO NOT "FIX" IT. The compact layout's real fullName is
+        Disposition_Compact_Layput (missing the 'o'), created by the user in Setup on
+        2026-08-20T19:44:53Z. A future reader searching the repo for "Disposition_Compact_Layout"
+        will find nothing and may wrongly conclude the file is missing - it lives at
+        force-app/main/default/objects/Disposition__c/compactLayouts/Disposition_Compact_Layput.compactLayout-meta.xml
+        with fullName/label matching the typo exactly. Renaming it here would desync from the
+        org's actual API name and break the assignment below.
+
+        Neither On_Market nor Off_Market recordType-meta.xml carries its own
+        compactLayoutAssignment, so this single object-level assignment governs BOTH record
+        types - there is no per-record-type override to also update.
+    -->
+    <compactLayoutAssignment>Disposition_Compact_Layput</compactLayoutAssignment>
     <deploymentStatus>Deployed</deploymentStatus>
     <enableActivities>true</enableActivities>
     <enableBulkApi>true</enableBulkApi>

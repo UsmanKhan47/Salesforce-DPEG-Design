@@ -1,144 +1,248 @@
-/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom colour below is a token with a
-   literal fallback, matching c/brokerAssignmentHistory's shape — that component is this one's
-   PRESENTATION model, so the two are kept visually interchangeable on purpose. */
+/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom value below is a global styling
+   hook with its canonical literal fallback — a bare var(--hook) renders as NOTHING in the
+   Salesforce environments where hooks are unavailable, which is why the repo gate
+   `slds/no-slds-var-without-fallback` warns on one.
 
-:host { display: block; }
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   🔴 NOTHING IN THIS COMPONENT MAY SCROLL SIDEWAYS AT ANY CONTAINER WIDTH.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   This card moved to a ~340px record-page SIDEBAR. It used to be a two-column flex row —
+   swap + notes on the left, timestamp + reason + logger right-aligned on the right, held apart
+   by `justify-content: space-between` — which collides at that width. It is now a stacked tile,
+   the same shape c/competingBrokerSubmissions and c/dispositionBuyerTimeline use, and it relies
+   on the same load-bearing declarations:
+     1. no `overflow-x` and no `overflow` shorthand set to auto/scroll — clipping the content
+        instead of reflowing it only hides the burst;
+     2. no `nowrap` anywhere. ⚠ THE ONE EXCEPTION IS `.bbc-notes--clip .bbc-notes-txt`, which
+        deliberately clips a LONG NOTE to one line, because the full text is one click away
+        behind the View button. That is a deliberate truncation of an optional preview, not a
+        layout that refuses to reflow — and it is the only element on the card whose content is
+        unbounded free text;
+     3. `min-width: 0` on every flex/grid child holding text. A flex/grid item defaults to
+        `min-width: auto` and REFUSES to shrink below its longest unbreakable token, so one long
+        firm name would force a tile wider than its container. The LOAD-BEARING one is on
+        `.bbc-tile` (the grid item);
+     4. `overflow-wrap: anywhere` on :host — `anywhere`, not `break-word`, because only
+        `anywhere` affects min-content sizing, which is what lets rule 3 take effect;
+     5. grid minimum `min(18rem, 100%)`, NEVER a bare 18rem — a bare 18rem minimum bursts any
+        container narrower than 288px, which is invisible at desktop width and shows only in the
+        sidebar;
+     6. no fixed pixel widths on content.
+   The grid uses `auto-fill` and NO media queries: a media query measures the VIEWPORT, but the
+   constraint here is CONTAINER width — the same viewport yields a ~340px sidebar or a ~900px
+   main region.
 
-.bbc-card {
-    background: var(--slds-g-color-surface-container-1, #fff);
-    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e2e0db);
-    border-radius: var(--slds-g-radius-border-2, 8px);
-    box-shadow: 0 1px 2px rgba(7, 20, 40, 0.06);
-    overflow: hidden;
+   ⚠ --slds-g-color-on-surface-1 is the GREY one (#757575); -2 (#2e2e2e) and -3 (#181818) are
+   progressively DARKER. The numbering reads like an ascending emphasis scale and is the reverse.
+   Do not reach for --slds-g-color-neutral-base-60 for muted text either: it is #939393, roughly
+   3.5:1 on white, which fails WCAG AA for body copy. */
+
+:host {
+    display: block;
+    overflow-wrap: anywhere;
 }
 
-.bbc-body {
-    padding: 10px var(--slds-g-spacing-5, 24px) 18px;
+.bbc-mono {
+    font-variant-numeric: tabular-nums;
 }
 
+/* ===== Intro ===== */
 .bbc-intro {
-    font-size: var(--slds-g-font-scale-neg-1, 12px);
-    color: var(--slds-g-color-neutral-base-30, #524f4a);
-    margin: 6px 0 2px;
+    min-width: 0;
+    margin: 0;
+    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem) 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
 }
 
-.bbc-mono { font-variant-numeric: tabular-nums; }
+/* ===== Tile list ===== */
+.bbc-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-3, 0.75rem);
+    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
+    margin: 0;
+    list-style: none;
+}
 
-/* ===== a recorded change ===== */
-.bbc-row {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px var(--slds-g-spacing-4, 16px);
-    margin-top: 10px;
-    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e2e0db);
+.bbc-item {
+    min-width: 0;
+}
+
+.bbc-tile {
+    min-width: 0;
+    padding: var(--slds-g-spacing-3, 0.75rem);
+    border: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-1, #e5e5e5);
+    border-radius: var(--slds-g-radius-border-3, 0.5rem);
     background: var(--slds-g-color-surface-container-1, #fff);
-    border-radius: var(--slds-g-radius-border-2, 8px);
 }
 
-.bbc-left { min-width: 0; }
-
+/* ===== The swap: "this became that" =====
+   WRAPS rather than truncates. At 340px "No previous broker → Marcus & Millichap" legitimately
+   needs two lines, and a firm name clipped to an ellipsis is worse than a wrapped one — the firm
+   is the fact the whole tile exists to record. */
 .bbc-swap {
     display: flex;
     align-items: center;
-    gap: var(--slds-g-spacing-2, 8px);
     flex-wrap: wrap;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-3, 0.75rem);
 }
 
-/* The replaced firm is de-emphasised and the appointed firm is not — the row reads
-   left-to-right as "this became that". */
+/* The replaced firm is de-emphasised and the appointed firm is not. The strike-through is
+   reinforcement only — the arrow's `alternative-text` and the reading order carry the meaning. */
 .bbc-outgoing {
-    font-size: var(--slds-g-font-scale-1, 14px);
-    color: var(--slds-g-color-neutral-base-60, #8a8680);
+    min-width: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    font-weight: var(--slds-g-font-weight-4, 400);
+    color: var(--slds-g-color-on-surface-1, #757575);
     text-decoration: line-through;
 }
 
 .bbc-incoming {
-    font-weight: var(--slds-g-font-weight-6, 600);
-    font-size: var(--slds-g-font-scale-1, 14px);
-    color: var(--slds-g-color-on-surface-2, #1a1714);
+    min-width: 0;
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
 }
 
-.bbc-arrow { --slds-c-icon-color-foreground-default: var(--slds-g-color-neutral-base-60, #8a8680); }
+.bbc-arrow {
+    flex: none;
+    --slds-c-icon-color-foreground-default: var(
+        --slds-g-color-on-surface-1,
+        #757575
+    );
+}
 
-/* ===== notes ===== */
+/* ===== Labelled facts: When / Reason / Logged by / Notes ===== */
+.bbc-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+    align-items: baseline;
+    min-width: 0;
+    margin: 0;
+}
+
+.bbc-label {
+    grid-column: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.bbc-value {
+    grid-column: 2;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+/* ===== Notes =====
+   The preview and its View button share one grid cell; the button never shrinks, so the text is
+   what gives way. */
 .bbc-notes {
     display: flex;
     align-items: baseline;
-    gap: 6px;
-    font-size: var(--slds-g-font-scale-neg-1, 12px);
-    color: var(--slds-g-color-neutral-base-30, #524f4a);
-    margin-top: 5px;
+    gap: var(--slds-g-spacing-2, 0.5rem);
 }
-.bbc-notes--clip { max-width: 100%; }
-.bbc-notes-lbl {
-    font-weight: var(--slds-g-font-weight-6, 600);
-    color: var(--slds-g-color-neutral-base-30, #3e3b37);
-    flex-shrink: 0;
+
+.bbc-notes-txt {
+    min-width: 0;
 }
-.bbc-notes-txt { min-width: 0; }
+
+/* See rule 2 in the header: this is the ONE deliberate single-line clip on the card, and it is
+   safe only because the full text is one click away behind View. */
 .bbc-notes--clip .bbc-notes-txt {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
 .bbc-notes-view {
-    flex-shrink: 0;
+    flex: none;
     border: none;
     background: none;
-    color: var(--slds-g-color-brand-base-50, #1565c0);
-    font-size: var(--slds-g-font-scale-neg-1, 12px);
-    font-weight: var(--slds-g-font-weight-6, 600);
-    cursor: pointer;
     padding: 0;
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    cursor: pointer;
 }
-.bbc-notes-view:hover { text-decoration: underline; }
-
-/* ===== right column ===== */
-.bbc-right { text-align: right; flex-shrink: 0; }
-.bbc-when {
-    font-size: var(--slds-g-font-scale-neg-1, 12px);
-    color: var(--slds-g-color-neutral-base-30, #524f4a);
-}
-.bbc-reason {
-    font-size: 11px;
-    color: var(--slds-g-color-neutral-base-60, #8a8680);
-    margin-top: 3px;
-}
-.bbc-loggedby {
-    font-size: 11px;
-    color: var(--slds-g-color-neutral-base-60, #8a8680);
-    margin-top: 2px;
+.bbc-notes-view:hover {
+    text-decoration: underline;
 }
 
-/* ===== empty vs unavailable =====
-   🔴 TWO STATES, TWO CLASSES, NEITHER OF THEM AN ERROR STYLE. Empty is the majority state of this
-   card and must look completely ordinary; unavailable is rarer and is only ITALICISED, not coloured
-   red and not given an error surface — see the component header for why a secondary informational
-   card does not get to raise an alarm. Do NOT restyle either of these using the shared `.lv-error`
-   look used elsewhere in this repo. */
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   EMPTY vs UNAVAILABLE — TWO STATES, ONE NEUTRAL TREATMENT, NEITHER OF THEM AN ERROR STYLE.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+   Empty is the MAJORITY state of this card (most sales never replace a broker) and must look
+   completely ordinary. Unavailable is rarer and is distinguished by its WORDING and by italics
+   only — never coloured red, never given an error surface.
+   🔴 DO NOT restyle either of these using the shared `.lv-error` look used elsewhere in this
+   repo. A secondary informational card cannot read the situation well enough to raise an alarm,
+   and the realistic cause of a failed read here is a missing FLS grant — an administrator's
+   problem, not this user's emergency. */
+.bbc-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--slds-g-spacing-1, 0.25rem);
+    padding: var(--slds-g-spacing-5, 1.5rem) var(--slds-g-spacing-4, 1rem);
+}
+
+.bbc-state-icon {
+    --slds-c-icon-color-foreground-default: var(
+        --slds-g-color-on-surface-1,
+        #757575
+    );
+    margin-bottom: var(--slds-g-spacing-1, 0.25rem);
+}
+
 .bbc-empty {
-    font-size: var(--slds-g-font-scale-base, 13px);
-    color: var(--slds-g-color-neutral-base-60, #8a8680);
-    padding: var(--slds-g-spacing-3, 12px) 0 var(--slds-g-spacing-1, 4px);
-}
-.bbc-unavailable {
-    font-size: var(--slds-g-font-scale-base, 13px);
-    color: var(--slds-g-color-neutral-base-60, #8a8680);
-    font-style: italic;
-    padding: var(--slds-g-spacing-3, 12px) 0 var(--slds-g-spacing-1, 4px);
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
 }
 
-/* ===== full-note popup ===== */
-.bbc-note-sub {
-    font-size: var(--slds-g-font-scale-base, 13px);
-    color: var(--slds-g-color-neutral-base-60, #8a8680);
-    margin-top: var(--slds-g-spacing-1, 4px);
+.bbc-unavailable {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    font-style: italic;
+    color: var(--slds-g-color-on-surface-1, #757575);
 }
+
+.bbc-state-sub {
+    min-width: 0;
+    /* A measure, not a width: keeps the explanatory line from running edge-to-edge in a wide
+       region while still shrinking freely in the sidebar. `ch` (not px) so it tracks the font. */
+    max-width: var(--slds-g-sizing-content-2, 45ch);
+    margin: 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* ===== Full-note popup ===== */
+.bbc-note-sub {
+    font-size: var(--slds-g-font-scale-base, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+}
+
 .bbc-note-full {
-    font-size: var(--slds-g-font-scale-1, 14px);
-    color: var(--slds-g-color-on-surface-2, #1a1714);
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
     line-height: var(--slds-g-font-line-height-4, 1.5);
     white-space: pre-wrap;
     word-break: break-word;

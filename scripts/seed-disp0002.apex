@@ -93,26 +93,32 @@ delete [SELECT Id FROM BOV_Submission__c WHERE Disposition__c = :disp.Id];
 // the FIRM each row represents and is a RESOLUTION KEY, not a field value; the loop below turns
 // it into `Broker__c` and the before-save stamp writes the two Text fields from the Contact it
 // resolved to. Add a row here and you MUST add its firm in the same position below.
+//
+// ⚠ `BOV_Score__c` IS NO LONGER SEEDED (removed 2026-08-21) AND MUST NOT BE ADDED BACK — it is
+// being recreated as a FORMULA and cannot be assigned. Anonymous Apex is not compile-checked by a
+// deploy, so an assignment here would fail only when someone RUNS this script. See the fuller
+// note in `seed-disposition.apex`; the score derives from the inputs already set below plus the
+// parent disposition's asking price.
 List<BOV_Submission__c> bovs = new List<BOV_Submission__c>{
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 31200000, Commission_Rate__c = 2.8, Days_To_Market__c = 42,
-        Hist_Success_Rate__c = 88, BOV_Score__c = 94, Submission_Status__c = 'Selected'
+        Hist_Success_Rate__c = 88, Submission_Status__c = 'Selected'
     ),
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 30500000, Commission_Rate__c = 3.0, Days_To_Market__c = 48,
-        Hist_Success_Rate__c = 83, BOV_Score__c = 87, Submission_Status__c = 'Backup'
+        Hist_Success_Rate__c = 83, Submission_Status__c = 'Backup'
     ),
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 29800000, Commission_Rate__c = 2.5, Days_To_Market__c = 55,
-        Hist_Success_Rate__c = 79, BOV_Score__c = 81, Submission_Status__c = 'Backup'
+        Hist_Success_Rate__c = 79, Submission_Status__c = 'Backup'
     ),
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 28900000, Commission_Rate__c = 3.2, Days_To_Market__c = 60,
-        Hist_Success_Rate__c = 72, BOV_Score__c = 74, Submission_Status__c = 'Backup'
+        Hist_Success_Rate__c = 72, Submission_Status__c = 'Backup'
     )
 };
 List<String> bovBrokerFirm = new List<String>{

@@ -4,10 +4,18 @@
         THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition__c.field-meta.xml
         in this folder for why a comment above the root breaks `sf` deploy.
 
-        🔴 OPEN DECISION - THE USER HAS NOT CONFIRMED THIS VALUE SET (design D4.2 / O-2).
-        The five values below are a PROPOSED DEFAULT ONLY: Performance Issue, Better BOV
-        Received, Broker Withdrew, Company Decision, Other. Do NOT treat this list as settled
-        without a user confirmation - flag it again before this deploys anywhere but a dry run.
+        2026-08-21 - VALUE SET CONFIRMED BY THE USER (was design D4.2 / O-2, flagged OPEN in
+        every prior deploy of this file - now closed). Six values, "Initial Appointment" added
+        FIRST: Initial Appointment, Performance Issue, Better BOV Received, Broker Withdrew,
+        Company Decision, Other. This is the FINAL value set; do not re-flag it as open.
+
+        WHY "Initial Appointment" WAS ADDED (design doc agent-output/bov-scoring-and-selection.md
+        §4.2): every one of the five original values presupposes a predecessor broker being
+        replaced. BovSubmissionService.replaceSelectedBroker already degrades cleanly to an
+        "appoint" when there is no current incumbent and still writes a history row
+        unconditionally - so a first appointment was always going to produce a row here, and
+        without this value it could only be logged as "Other", the un-attributed row this whole
+        workstream exists to prevent.
 
         WHY NOT Broker_Assignment__c.Reason_Ended__c's VALUE SET, DELIBERATELY: that field is
         {Leased Up, Performance Issue, Company Decision, Other}. "Leased Up" is leasing
@@ -17,11 +25,15 @@
 
         restricted=true, matching Submission_Status__c on BOV_Submission__c and this repo's
         general practice for closed-set reason/status fields - it stops a hand-typed value the
-        five proposed options do not cover, which is also why "Other" exists as the escape hatch
-        until the value set is confirmed and finalized.
+        six confirmed options do not cover, which is also why "Other" still exists as the escape
+        hatch. ⚠ Restricted picklists ARE enforced by Apex DML in this org (measured twice on
+        this project) - an off-list value throws INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST, so
+        "Initial Appointment" must exist in metadata and be deployed BEFORE any code sends it.
+        Adding a value is safe under a restricted picklist; removing or relabelling one would
+        fail at DML rather than at an assertion - not attempted here, only an addition.
     -->
     <fullName>Reason__c</fullName>
-    <description>Why the broker was replaced. PROVISIONAL VALUE SET - not yet confirmed by the user. See the XML comment in this file before treating this list as final.</description>
+    <description>Why the broker was replaced or first appointed. Six confirmed values; see the XML comment in this file for why "Initial Appointment" was added.</description>
     <inlineHelpText>Pick the closest reason. Use Other if none fit, and add detail in Notes.</inlineHelpText>
     <label>Reason</label>
     <required>false</required>
@@ -32,6 +44,11 @@
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
+            <value>
+                <fullName>Initial Appointment</fullName>
+                <default>false</default>
+                <label>Initial Appointment</label>
+            </value>
             <value>
                 <fullName>Performance Issue</fullName>
                 <default>false</default>

@@ -221,56 +221,63 @@ delete [
 // Contact it resolved to. That is why neither Text field is set here any more (see the header).
 // If you add a BOV row, add its firm on the very next line or every row after it resolves to the
 // wrong broker.
+//
+// ⚠ `BOV_Score__c` IS NO LONGER SEEDED ON ANY OF THESE 14 ROWS (removed 2026-08-21) AND MUST NOT
+// BE ADDED BACK — it is being recreated as a FORMULA and cannot be assigned. Anonymous Apex is
+// not compile-checked by a deploy, so an assignment here would fail only when someone RUNS this
+// script, which is exactly the class of defect the parallel-list guard below exists to catch.
+// See the fuller note in `seed-disposition.apex`. The score derives from the five broker-side
+// inputs already set on each row plus the parent disposition's asking price.
 List<BOV_Submission__c> bovs = new List<BOV_Submission__c>();
 List<String> bovBrokerFirm = new List<String>();
 
 bovs.add(new BOV_Submission__c(Disposition__c = dBov1.Id,
     BOV_Amount__c = 23400000, Commission_Rate__c = 2.5, Days_To_Market__c = 42, Cap_Rate__c = 6.5,
-    Hist_Success_Rate__c = 85, BOV_Score__c = 90, Submission_Status__c = 'Selected'));
+    Hist_Success_Rate__c = 85, Submission_Status__c = 'Selected'));
 bovBrokerFirm.add('Newmark');
 bovs.add(new BOV_Submission__c(Disposition__c = dBov1.Id,
     BOV_Amount__c = 22900000, Commission_Rate__c = 2.75, Days_To_Market__c = 48, Cap_Rate__c = 6.6,
-    Hist_Success_Rate__c = 81, BOV_Score__c = 86, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 81, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('CBRE');
 bovs.add(new BOV_Submission__c(Disposition__c = dBov1.Id,
     BOV_Amount__c = 22100000, Commission_Rate__c = 3.0, Days_To_Market__c = 55, Cap_Rate__c = 6.8,
-    Hist_Success_Rate__c = 74, BOV_Score__c = 77, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 74, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('Cushman & Wakefield');
 
 bovs.add(new BOV_Submission__c(Disposition__c = dBov2.Id,
     BOV_Amount__c = 33800000, Commission_Rate__c = 2.6, Days_To_Market__c = 50, Cap_Rate__c = 6.4,
-    Hist_Success_Rate__c = 82, BOV_Score__c = 91, Submission_Status__c = 'Selected'));
+    Hist_Success_Rate__c = 82, Submission_Status__c = 'Selected'));
 bovBrokerFirm.add('CBRE');
 bovs.add(new BOV_Submission__c(Disposition__c = dBov2.Id,
     BOV_Amount__c = 32950000, Commission_Rate__c = 2.5, Days_To_Market__c = 58, Cap_Rate__c = 6.6,
-    Hist_Success_Rate__c = 79, BOV_Score__c = 85, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 79, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('JLL');
 bovs.add(new BOV_Submission__c(Disposition__c = dBov2.Id,
     BOV_Amount__c = 32100000, Commission_Rate__c = 2.85, Days_To_Market__c = 62, Cap_Rate__c = 6.7,
-    Hist_Success_Rate__c = 71, BOV_Score__c = 76, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 71, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('Colliers');
 
 bovs.add(new BOV_Submission__c(Disposition__c = dList1.Id,
     BOV_Amount__c = 27300000, Commission_Rate__c = 2.9, Days_To_Market__c = 40, Cap_Rate__c = 6.1,
-    Hist_Success_Rate__c = 88, BOV_Score__c = 93, Submission_Status__c = 'Selected'));
+    Hist_Success_Rate__c = 88, Submission_Status__c = 'Selected'));
 bovBrokerFirm.add('Marcus & Millichap');
 bovs.add(new BOV_Submission__c(Disposition__c = dList1.Id,
     BOV_Amount__c = 26400000, Commission_Rate__c = 3.0, Days_To_Market__c = 46, Cap_Rate__c = 6.3,
-    Hist_Success_Rate__c = 80, BOV_Score__c = 83, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 80, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('CBRE');
 
 bovs.add(new BOV_Submission__c(Disposition__c = dList2.Id,
     BOV_Amount__c = 19850000, Commission_Rate__c = 2.7, Days_To_Market__c = 44, Cap_Rate__c = 6.2,
-    Hist_Success_Rate__c = 84, BOV_Score__c = 89, Submission_Status__c = 'Selected'));
+    Hist_Success_Rate__c = 84, Submission_Status__c = 'Selected'));
 bovBrokerFirm.add('JLL');
 bovs.add(new BOV_Submission__c(Disposition__c = dList2.Id,
     BOV_Amount__c = 18900000, Commission_Rate__c = 2.95, Days_To_Market__c = 52, Cap_Rate__c = 6.4,
-    Hist_Success_Rate__c = 73, BOV_Score__c = 78, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 73, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('Avison Young');
 
 bovs.add(new BOV_Submission__c(Disposition__c = dClose1.Id,
     BOV_Amount__c = 9100000, Commission_Rate__c = 3.2, Days_To_Market__c = 70, Cap_Rate__c = 7.4,
-    Hist_Success_Rate__c = 68, BOV_Score__c = 79, Submission_Status__c = 'Selected'));
+    Hist_Success_Rate__c = 68, Submission_Status__c = 'Selected'));
 // ⚠ WAS 'Stream Realty Partners' (with contact 'Alex Whitfield'). No Contact at that firm exists
 // in the roster seed-broker-contacts.apex creates, so it would have taken the fallback path on
 // every run. Substituted for a real roster firm so this row resolves deterministically. The
@@ -279,16 +286,16 @@ bovs.add(new BOV_Submission__c(Disposition__c = dClose1.Id,
 bovBrokerFirm.add('Eastdil Secured');
 bovs.add(new BOV_Submission__c(Disposition__c = dClose1.Id,
     BOV_Amount__c = 8700000, Commission_Rate__c = 3.0, Days_To_Market__c = 75, Cap_Rate__c = 7.6,
-    Hist_Success_Rate__c = 65, BOV_Score__c = 71, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 65, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('Cushman & Wakefield');
 
 bovs.add(new BOV_Submission__c(Disposition__c = dClose2.Id,
     BOV_Amount__c = 15400000, Commission_Rate__c = 2.8, Days_To_Market__c = 48, Cap_Rate__c = 6.85,
-    Hist_Success_Rate__c = 83, BOV_Score__c = 88, Submission_Status__c = 'Selected'));
+    Hist_Success_Rate__c = 83, Submission_Status__c = 'Selected'));
 bovBrokerFirm.add('Newmark');
 bovs.add(new BOV_Submission__c(Disposition__c = dClose2.Id,
     BOV_Amount__c = 14900000, Commission_Rate__c = 3.1, Days_To_Market__c = 54, Cap_Rate__c = 7.0,
-    Hist_Success_Rate__c = 70, BOV_Score__c = 75, Submission_Status__c = 'Backup'));
+    Hist_Success_Rate__c = 70, Submission_Status__c = 'Backup'));
 bovBrokerFirm.add('Colliers');
 
 // ── Resolve a broker Contact per BOV row (code-review C2) ───────────────────────────

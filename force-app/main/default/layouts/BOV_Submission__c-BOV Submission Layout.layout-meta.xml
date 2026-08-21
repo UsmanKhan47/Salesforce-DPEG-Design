@@ -99,6 +99,35 @@
             object has no FlexiPage, so deleting it would strand every submitted BOV with no
             route to Recall Approval Request. It survived this edit verbatim. -->
 
+    <!-- =================================================================================
+         RETRIEVED FROM ORG usman-dpeg ON 2026-08-21. FOUR ORG-SIDE CHANGES WERE ACCEPTED INTO
+         THIS FILE, AND TWO SENTENCES ABOVE ARE NOW STALE BECAUSE OF THEM. Recorded here rather
+         than edited into the prose above, so the original rationale stays readable as written.
+         =================================================================================
+         The org copy (Layout.LastModifiedDate 2026-08-20T19:20:05Z, Usman Khan) differed from the
+         committed file. The org's structure was kept; only these comments were merged back.
+
+         1. SIX FIELDS WENT behavior=Edit -> behavior=Required, AT THE LAYOUT LEVEL:
+            Disposition__c, Broker__c, BOV_Amount__c, Cap_Rate__c, Commission_Rate__c and
+            Days_To_Market__c. Hist_Success_Rate__c, Submission_Status__c and OwnerId stayed Edit.
+            ⚠ THIS IS NOT THE PLATFORM ECHOING FIELD LEVEL REQUIREDNESS. Every one of the six is
+            IsNillable=true in the org (verified by FieldDefinition query on 2026-08-21) and
+            required=false in objects/BOV_Submission__c/fields/, so these are genuine layout
+            editor settings and they will now be enforced on the standard create and edit screens.
+
+         2. BOV_Score__c WAS REMOVED FROM THE "BOV Terms" SECTION. 🔴 THE FIELD STILL EXISTS -
+            it is present in the org as Number(4,0) and its field file is untouched, so this is a
+            DISPLAY ONLY removal exactly like the removals described above. Nothing that reads it
+            is affected, and BovSubmissionSelector's ORDER BY still works.
+            ⚠ STALE SENTENCE: rule 4 above says "BOV_Score__c is likewise left editable". It is no
+            longer on this layout at all, so there is nothing here to be editable. The reasoning
+            (nothing writes it, only reads it) still holds and is why removing it is safe.
+
+         3. The CustomLinks section gained customLabel=true and label "Custom Links".
+         4. A <summaryLayout> block appeared. Both are artifacts of the layout having been opened
+            and saved in the Setup layout editor, which is consistent with change 1 and 2 above
+            having been made by hand in Setup rather than deployed. -->
+
     <layoutSections>
         <customLabel>false</customLabel>
         <detailHeading>false</detailHeading>
@@ -110,11 +139,11 @@
                 <field>Name</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>Disposition__c</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>Broker__c</field>
             </layoutItems>
         </layoutColumns>
@@ -137,30 +166,26 @@
         <label>BOV Terms</label>
         <layoutColumns>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>BOV_Amount__c</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>Cap_Rate__c</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>Commission_Rate__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>
             <layoutItems>
-                <behavior>Edit</behavior>
+                <behavior>Required</behavior>
                 <field>Days_To_Market__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Hist_Success_Rate__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>BOV_Score__c</field>
             </layoutItems>
         </layoutColumns>
         <style>TwoColumnsTopToBottom</style>
@@ -185,9 +210,10 @@
         <style>TwoColumnsTopToBottom</style>
     </layoutSections>
     <layoutSections>
-        <customLabel>false</customLabel>
+        <customLabel>true</customLabel>
         <detailHeading>false</detailHeading>
         <editHeading>true</editHeading>
+        <label>Custom Links</label>
         <layoutColumns/>
         <layoutColumns/>
         <layoutColumns/>
@@ -203,7 +229,9 @@
          which is layout driven. Adding the list here is sufficient and is the only route.
          RelatedProcessHistoryList IS Approval History: the live describeLayout for Opportunity
          returns this list as name "ProcessSteps", label "Approval History". The five columns are
-         the standard set copied from layouts/Opportunity-Opportunity Layout.layout-meta.xml. -->
+         the standard set copied from layouts/Opportunity-Opportunity Layout.layout-meta.xml.
+         ✅ VERIFIED INTACT IN THE ORG on 2026-08-21: this block survived the Setup edit described
+         in the reconciliation note at the top of this file, byte for byte. -->
     <relatedLists>
         <fields>CreatedDate</fields>
         <fields>StepStatus</fields>
@@ -217,4 +245,10 @@
     <showInteractionLogPanel>false</showInteractionLogPanel>
     <showRunAssignmentRulesCheckbox>false</showRunAssignmentRulesCheckbox>
     <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
+    <summaryLayout>
+        <masterLabel>00hiw000000BN9N</masterLabel>
+        <sizeX>4</sizeX>
+        <sizeY>0</sizeY>
+        <summaryLayoutStyle>Default</summaryLayoutStyle>
+    </summaryLayout>
 </Layout>

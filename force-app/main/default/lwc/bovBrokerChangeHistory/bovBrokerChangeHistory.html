@@ -1,15 +1,46 @@
 <template>
-    <div class="bbc-card">
-        <div class="bbc-body">
-            <div class="bbc-intro">{intro}</div>
+    <!-- 🔴 THE CARD CHROME IS UNCONDITIONAL. Every one of the four states below renders INSIDE
+         it. Before 2026-08-21 this template emitted a bare, title-less <div> — on the record
+         page it read as an unlabelled sentence floating between two proper cards, which is the
+         UAT complaint that produced this rework. A titled card that is briefly empty tells the
+         user WHICH panel they are looking at; an untitled blob tells them nothing.
+         The count is appended only once the wire has answered — see `cardTitle` in the JS. -->
+    <lightning-card icon-name="standard:record_update">
+        <span slot="title">{cardTitle}</span>
 
-            <!-- ROWS. Ordering is the SERVER's (Entry_DateTime__c DESC, Name DESC) and is not
-                 re-sorted here — see the component header. -->
-            <template lwc:if={hasRows}>
+        <!-- ═══════════════════════════════════════════════════════════════════════════════
+             DATA — one self-labelling TILE per recorded change.
+             ═══════════════════════════════════════════════════════════════════════════════
+             🔴 DESIGNED FOR A ~340px SIDEBAR COLUMN. This used to be a two-column flex row
+             (swap + notes on the left, timestamp + reason + logger right-aligned on the
+             right) with `justify-content: space-between`, which collapses into a collision at
+             sidebar width. Each fact is now its own labelled dt/dd pair stacked down the tile,
+             the same shape c/competingBrokerSubmissions adopted for the same problem.
+
+             ORDERING IS THE SERVER'S (Entry_DateTime__c DESC, Name DESC) and is not re-sorted
+             here — see the component header.
+
+             role="list" is NOT redundant: `list-style: none` makes WebKit drop the implicit
+             list role, and aria-label is only exposed on an element whose role supports
+             naming. axe has no rule for it, so a passing toBeAccessible() is not evidence
+             against it. -->
+        <template lwc:if={hasRows}>
+            <p class="bbc-intro" id="bbc-intro">{intro}</p>
+
+            <ul
+                class="bbc-list"
+                role="list"
+                aria-label="Broker changes"
+                aria-describedby="bbc-intro"
+            >
                 <template for:each={historyRows} for:item="row">
-                    <div key={row.id} class="bbc-row">
-                        <div class="bbc-left">
-                            <div class="bbc-swap">
+                    <li key={row.id} class="bbc-item">
+                        <div class="bbc-tile">
+                            <!-- The swap reads left-to-right as "this became that". It WRAPS
+                                 rather than truncating: at 340px "No previous broker →
+                                 Marcus & Millichap" legitimately needs two lines, and a firm
+                                 name clipped to an ellipsis is worse than a wrapped one. -->
+                            <h3 class="bbc-swap">
                                 <span class="bbc-outgoing">{row.outgoing}</span>
                                 <lightning-icon
                                     icon-name="utility:forward"
@@ -18,62 +49,111 @@
                                     alternative-text="replaced by"
                                 ></lightning-icon>
                                 <span class="bbc-incoming">{row.incoming}</span>
-                            </div>
-                            <template lwc:if={row.hasNotes}>
-                                <div class={row.notesClass}>
-                                    <span class="bbc-notes-lbl">Notes:</span>
-                                    <span class="bbc-notes-txt">{row.notesPreview}</span>
-                                    <template lwc:if={row.notesLong}>
-                                        <button
-                                            class="bbc-notes-view"
-                                            data-id={row.id}
-                                            onclick={openNote}
-                                            title="View full note"
-                                        >
-                                            View
-                                        </button>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
+                            </h3>
 
-                        <div class="bbc-right">
-                            <div class="bbc-mono bbc-when">
-                                <lightning-formatted-date-time
-                                    value={row.entryDateTime}
-                                    year="numeric"
-                                    month="short"
-                                    day="2-digit"
-                                    hour="2-digit"
-                                    minute="2-digit"
-                                ></lightning-formatted-date-time>
-                            </div>
-                            <template lwc:if={row.hasReason}>
-                                <div class="bbc-reason">{row.reasonDisp}</div>
-                            </template>
-                            <template lwc:if={row.hasLoggedBy}>
-                                <div class="bbc-loggedby">{row.loggedByDisp}</div>
-                            </template>
+                            <!-- dt/dd ONLY, in order and with no wrapper divs — axe's
+                                 `definition-list` rule is strict, so the two-track layout is
+                                 done entirely in CSS. A pair is OMITTED, never rendered with
+                                 an empty value: an absent reason and a blank reason look
+                                 identical on screen and mean different things. -->
+                            <dl class="bbc-facts">
+                                <dt class="bbc-label">When</dt>
+                                <dd class="bbc-value bbc-mono">
+                                    <lightning-formatted-date-time
+                                        value={row.entryDateTime}
+                                        year="numeric"
+                                        month="short"
+                                        day="2-digit"
+                                        hour="2-digit"
+                                        minute="2-digit"
+                                    ></lightning-formatted-date-time>
+                                </dd>
+
+                                <template lwc:if={row.hasReason}>
+                                    <dt class="bbc-label">Reason</dt>
+                                    <dd class="bbc-value bbc-reason">{row.reason}</dd>
+                                </template>
+
+                                <template lwc:if={row.hasLoggedBy}>
+                                    <dt class="bbc-label">Logged by</dt>
+                                    <dd class="bbc-value bbc-loggedby">
+                                        {row.loggedBy}
+                                    </dd>
+                                </template>
+
+                                <template lwc:if={row.hasNotes}>
+                                    <dt class="bbc-label">Notes</dt>
+                                    <dd class={row.notesClass}>
+                                        <span class="bbc-notes-txt">
+                                            {row.notesPreview}
+                                        </span>
+                                        <template lwc:if={row.notesLong}>
+                                            <button
+                                                class="bbc-notes-view"
+                                                data-id={row.id}
+                                                onclick={openNote}
+                                                title="View full note"
+                                            >
+                                                View
+                                            </button>
+                                        </template>
+                                    </dd>
+                                </template>
+                            </dl>
                         </div>
-                    </div>
+                    </li>
                 </template>
-            </template>
+            </ul>
+        </template>
 
-            <!-- 🔴 EMPTY. The MAJORITY state of this card. A plain sentence — never an alert,
-                 never a spinner. -->
-            <template lwc:if={isEmpty}>
-                <div class="bbc-empty">No broker changes recorded</div>
-            </template>
+        <!-- ═══════════════════════════════════════════════════════════════════════════════
+             🔴 EMPTY. THE MAJORITY STATE OF THIS CARD.
+             ═══════════════════════════════════════════════════════════════════════════════
+             Most dispositions never replace a broker, so this is what most disposition record
+             pages in the org will render. It is a STATUS, never an alert and never a spinner.
+             The explanatory line beneath is the intro sentence, kept verbatim because "nothing
+             is deleted" is the POINT of an audit log — an empty audit log that does not say
+             what it would have contained is indistinguishable from a broken one. -->
+        <template lwc:if={isEmpty}>
+            <div class="bbc-state" role="status">
+                <lightning-icon
+                    icon-name="utility:change_record_type"
+                    size="small"
+                    class="bbc-state-icon"
+                ></lightning-icon>
+                <p class="bbc-empty">No broker changes recorded</p>
+                <p class="bbc-state-sub">{intro}</p>
+            </div>
+        </template>
 
-            <!-- UNAVAILABLE. A THIRD state, muted rather than alarming, and deliberately NOT
-                 worded like the empty state — see the component header. -->
-            <template lwc:if={isUnavailable}>
-                <div class="bbc-unavailable">{unavailableText}</div>
-            </template>
-        </div>
-    </div>
+        <!-- ═══════════════════════════════════════════════════════════════════════════════
+             UNAVAILABLE. A THIRD STATE, NOT A FLAVOUR OF EMPTY.
+             ═══════════════════════════════════════════════════════════════════════════════
+             Same neutral, centred treatment as the empty state above and deliberately NOT the
+             shared `.lv-error` look used elsewhere in this repo: a secondary informational card
+             cannot read the situation well enough to raise an alarm, and the realistic cause is
+             a missing FLS grant, which is an administrator's problem rather than this user's
+             emergency. The wording is what separates the two states, plus the italics.
+             ⚠ THE INTRO SENTENCE IS DELIBERATELY ABSENT HERE. "Every broker ever appointed to
+             this sale" is a completeness claim, and this is precisely the state in which the
+             card cannot make one. -->
+        <template lwc:if={isUnavailable}>
+            <div class="bbc-state" role="status">
+                <lightning-icon
+                    icon-name="utility:info"
+                    size="small"
+                    class="bbc-state-icon"
+                ></lightning-icon>
+                <p class="bbc-unavailable">{unavailableText}</p>
+            </div>
+        </template>
+    </lightning-card>
 
-    <!-- Full-note popup -->
+    <!-- Full-note popup. Left as a hand-rolled SLDS modal rather than migrated to
+         lightning/modal: it displays text this component already holds, opens and closes
+         entirely within one component, and returns nothing to a caller — none of which is what
+         LightningModal exists for (contrast c/bovReplaceBrokerModal and c/bovAddResponseModal,
+         which both resolve a value back to their opener). -->
     <template lwc:if={showNoteModal}>
         <section
             role="dialog"

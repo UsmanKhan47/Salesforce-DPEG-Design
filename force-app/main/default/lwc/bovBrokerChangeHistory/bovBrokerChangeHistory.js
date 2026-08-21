@@ -37,9 +37,23 @@ const UNAVAILABLE =
  * this user's emergency.
  *
  * ⚠ NO SPINNER, DELIBERATELY. Before the wire settles, `_loaded` is false and the component renders
- * nothing at all. A spinner would be the only element on screen able to hang forever if the wire
- * never emitted — which is the exact symptom the design forbids — and it would flash on every page
- * load of a card that is usually empty anyway.
+ * an EMPTY CARD BODY. A spinner would be the only element on screen able to hang forever if the
+ * wire never emitted — which is the exact symptom the design forbids — and it would flash on every
+ * page load of a card that is usually empty anyway.
+ *
+ * ⚠ AMENDED 2026-08-21: that paragraph used to say "renders nothing at all", which was literally
+ * true of the old markup — it had no card chrome, so the whole component was invisible pre-wire.
+ * The `lightning-card` is now UNCONDITIONAL and only the BODY is empty pre-wire. The requirement
+ * the sentence protected is unchanged and still pinned by the tests: no rows, no empty state, no
+ * unavailable state and no spinner until the wire has answered.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 DESIGNED FOR A ~340px SIDEBAR COLUMN. DO NOT REINTRODUCE THE TWO-COLUMN ROW.
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * The rendered unit is a self-labelling TILE — see the long note in the template. `reason` and
+ * `loggedBy` below are now BARE VALUES rather than the pre-composed "Reason: X" / "Logged by X"
+ * strings they used to be, because the label is now a real <dt> beside them. Do not put the word
+ * back into the value: it would render as "Reason  Reason: Better BOV Received".
  *
  * ⚠ THE ROWS ARE NOT RE-SORTED HERE. `BovBrokerChangeSelector` orders them
  * `Entry_DateTime__c DESC, Name DESC`, tie-break included; a client-side sort would be a second,
@@ -73,8 +87,34 @@ export default class BovBrokerChangeHistory extends LightningElement {
         }
     }
 
+    /**
+     * The card's one-line explanation of what it contains.
+     *
+     * 🔴 KEPT VERBATIM. "nothing is deleted" is the POINT of an audit log, and it is the single
+     * most useful sentence on the card in its majority (empty) state — an empty audit log that
+     * does not say what it WOULD have contained is indistinguishable from a broken one. It is
+     * rendered above the tiles in the data state and as the explanatory line inside the empty
+     * state, and it is deliberately ABSENT from the unavailable state (see the template).
+     */
     get intro() {
         return 'Every broker ever appointed to this sale — nothing is deleted.';
+    }
+
+    /**
+     * The card's visible title, with the change count appended ONLY once the wire has answered
+     * successfully.
+     *
+     * 🔴 THE UNAVAILABLE STATE MUST NOT SHOW A COUNT, AND NEITHER MUST THE PRE-WIRE RENDER.
+     * "Broker Change History (0)" is a claim about the SALE — that no broker was ever replaced —
+     * in exactly the words a genuinely empty card uses. On a failed read the card knows nothing
+     * about the sale, which is the whole reason `isUnavailable` exists as a state separate from
+     * `isEmpty`; leaking a "(0)" into the title would reintroduce the collapse that state was
+     * created to prevent, in the one place the state templates below cannot guard.
+     */
+    get cardTitle() {
+        return this.hasRows || this.isEmpty
+            ? `Broker Change History (${this._rows.length})`
+            : 'Broker Change History';
     }
 
     /** True only once the wire has actually answered, which is what keeps the empty state honest. */
@@ -105,18 +145,22 @@ export default class BovBrokerChangeHistory extends LightningElement {
                 outgoing: row.outgoingBrokerFirm || 'No previous broker',
                 incoming: row.incomingBrokerFirm || '—',
                 entryDateTime: row.entryDateTime,
+                // ⚠ BARE VALUES — the "Reason:" / "Logged by" wording now lives in the <dt>
+                // beside them (see the class header). A pair with no value is OMITTED from the
+                // markup entirely rather than rendered empty: an absent reason and a blank
+                // reason look identical on screen and mean different things.
                 hasReason: !!row.reason,
-                reasonDisp: row.reason ? `Reason: ${row.reason}` : '',
+                reason: row.reason || '',
                 hasLoggedBy: !!row.loggedBy,
-                loggedByDisp: row.loggedBy ? `Logged by ${row.loggedBy}` : '',
+                loggedBy: row.loggedBy || '',
                 hasNotes: !!notes,
                 notesPreview: notesLong
                     ? `${notes.slice(0, NOTE_PREVIEW).trimEnd()}…`
                     : notes,
                 notesLong,
                 notesClass: notesLong
-                    ? 'bbc-notes bbc-notes--clip'
-                    : 'bbc-notes'
+                    ? 'bbc-value bbc-notes bbc-notes--clip'
+                    : 'bbc-value bbc-notes'
             };
         });
     }

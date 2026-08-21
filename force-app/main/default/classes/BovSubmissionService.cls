@@ -185,11 +185,21 @@ public with sharing class BovSubmissionService {
         // 🔴 THE FIRST DEMOTED SUBMISSION, KEPT ONLY FOR THE HISTORY ROW'S "OUTGOING" COLUMNS.
         // The swap itself needs no such reference — it demotes EVERY Selected row (see this
         // method's self-healing note above). The history row has one Outgoing slot, so in the
-        // abnormal two-incumbents case it records the HIGHEST-SCORING one, which is the first row
-        // the selector returns (ORDER BY BOV_Score__c DESC NULLS LAST) and therefore deterministic
-        // rather than arbitrary. That case is a repair of a broken invariant, not a normal
-        // replacement; recording the top-scored incumbent is better than recording none, and both
-        // demotions remain visible on the submissions themselves.
+        // abnormal two-incumbents case it records whichever row the selector returns FIRST, and
+        // that row is fully determined rather than arbitrary. That case is a repair of a broken
+        // invariant, not a normal replacement; recording one incumbent is better than recording
+        // none, and both demotions remain visible on the submissions themselves.
+        //
+        // ⚠ CORRECTED 2026-08-21 — THE OLD SENTENCE IS QUOTED SO NOBODY RE-DERIVES IT: "it records
+        // the HIGHEST-SCORING one, which is the first row the selector returns (ORDER BY
+        // BOV_Score__c DESC NULLS LAST) and therefore deterministic rather than arbitrary." The
+        // CONCLUSION (deterministic) is still true; the REASON given for it stopped being
+        // sufficient. `BOV_Score__c` is being recreated as a formula that returns null until the
+        // disposition has an asking price, so in practice every score TIES AT NULL — and a SOQL
+        // sort whose only key ties does not promise an order at all. `selectStatusesByDispositionId`
+        // now orders `BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC`, so the row recorded
+        // here is the highest-scoring incumbent when scores differ and the OLDEST one when they do
+        // not. Read that method's header before changing either half.
         BOV_Submission__c outgoing;
         List<BOV_Submission__c> writes = new List<BOV_Submission__c>();
         for (BOV_Submission__c submission : submissions) {

@@ -1169,6 +1169,26 @@
         .replaceSelectedBroker and the trigger handler still read them. Same rule as above:
         DPEG_Admin_Access is NOT widened, and it grants no BOV_Submission__c field today.
     -->
+    <!--
+        AMENDED 2026-08-21 (design doc agent-output/bov-scoring-and-selection.md, Items 1 and 2).
+        TWO CHANGES:
+
+        1. ADDED: Disposition__c.Asking_Price__c, editable + readable, at its alphabetical
+           position in the Disposition__c run (immediately after Accepted_Offer_Price__c, before
+           Brokers_Contacted__c). This persona (the analyst) captures it at Disposition
+           Readiness. See the field's own XML comment for the accepted BOV-Outreach-invisibility
+           caveat - this grant is unaffected by that; FLS and page visibility are independent.
+
+        2. CHANGED: BOV_Submission__c.BOV_Score__c, editable true -> false (readable stays
+           true). This field is about to be recreated as a formula field in a separately
+           sequenced wave (design Item 1) - a formula field cannot carry an editable=true grant,
+           it is a hard deploy error. DPEG_Disposition_View already carried editable=false on
+           this field; the two sets now agree. THIS EDIT DOES NOT DELETE OR RECREATE THE FIELD
+           ITSELF - that conversion is a separate, later change; this is only the grant fix that
+           unblocks it.
+
+        Diffed against HEAD: purely additive plus one flag flip, zero deletions elsewhere.
+    -->
     <customPermissions>
         <enabled>true</enabled>
         <name>Disposition_Deal_Actions</name>
@@ -1180,7 +1200,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>BOV_Submission__c.BOV_Score__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1382,6 +1402,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Disposition__c.Accepted_Offer_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Disposition__c.Asking_Price__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

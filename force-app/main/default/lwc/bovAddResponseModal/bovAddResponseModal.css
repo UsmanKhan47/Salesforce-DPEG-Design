@@ -1,0 +1,49 @@
+/* SLDS 2 design tokens only (ARCHITECTURE.md §5). Every custom value is a global styling hook
+   with its canonical literal fallback — a bare var(--hook) renders as NOTHING in the Salesforce
+   environments where hooks are unavailable. */
+
+:host {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.bar-body {
+    min-width: 0;
+    padding: var(--slds-g-spacing-1, 0.25rem) 0;
+}
+
+.bar-intro {
+    min-width: 0;
+    margin: 0 0 var(--slds-g-spacing-4, 1rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+/* Two-up where there is room, one-up where there is not.
+   ⚠ `auto-fit` + `min(…, 100%)` and NO media query, for the same reason the disposition cards
+   document: a media query measures the VIEWPORT, but the constraint here is the MODAL's width,
+   which a `size="medium"` dialog sets and a phone shrinks independently. A bare `minmax(14rem,
+   1fr)` bursts any container narrower than 224px. */
+.bar-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-4, 1rem);
+    min-width: 0;
+}
+
+.bar-field {
+    min-width: 0;
+}
+
+/* The parent lookup and the broker lookup each take the full width: a lookup's result pill is a
+   record NAME, which is the longest thing on this form and the one most worth reading whole. */
+.bar-field_full {
+    grid-column: 1 / -1;
+}
+
+.bar-note {
+    min-width: 0;
+    margin: var(--slds-g-spacing-4, 1rem) 0 0;
+    font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}

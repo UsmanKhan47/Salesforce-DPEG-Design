@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THIS COMMENT SITS INSIDE THE ROOT ELEMENT DELIBERATELY - see Disposition_Stage__c.field-meta.xml
+        in this folder for why a comment above the root breaks `sf` deploy at conversion.
+
+        2026-08-21 - NEW FIELD (design doc agent-output/bov-scoring-and-selection.md, Item 2).
+        Captured at Disposition Readiness - the very next stage is BOV Outreach, where each
+        broker's BOV_Amount__c is compared against this number to compute the Value dimension of
+        BOV_Submission__c.BOV_Score__c. No BOV score can be calculated until this is set.
+
+        precision 18 / scale 0 matches Disposition__c.Accepted_Offer_Price__c on THIS SAME
+        object, deliberately diverging from Property__c.Asking_Price__c (scale 2) - same-object
+        consistency wins, and a sale price on this object is never quoted in cents.
+
+        required=false, and MUST STAY false. 8 dispositions exist today with this blank; a
+        required=true would refuse the very NEXT edit of every one of them. No validation rule
+        requiring it either - see the 🔴 block below, this is not an oversight.
+
+        🔴 KNOWN AND ACCEPTED (design Q-3) - THIS FIELD IS INVISIBLE AT THE 'BOV Outreach' STAGE.
+        It is placed in the Details fieldSection (Facet-0a494558) on
+        flexipages/Disposition_Record_Page.flexipage-meta.xml, and that section's own
+        visibilityRule is STAGE gated: "Disposition_Stage__c NE 'BOV Outreach' AND NE
+        'Active Listing' AND NE 'Closing' AND NE 'Sale Closes'". So the field is correctly
+        editable at Disposition Readiness (where it is captured) but the whole section - and
+        this field with it - disappears from the page at BOV Outreach, which is exactly the
+        stage where an analyst reads the BOV scores this field feeds. The user has accepted this
+        for now. THIS IS NOT A BUG - do not "fix" it by moving the field or widening the
+        visibilityRule without re-confirming with the user first.
+
+        ⚠ ALL 8 DISPOSITIONS THAT EXIST TODAY WILL HAVE THIS BLANK ON DEPLOY. Until an analyst
+        backfills it on each one, every BOV_Submission__c row on every one of those 8
+        dispositions loses the Value dimension of its BOV_Score__c entirely (the formula's guard
+        returns null, not zero - see BOV_Submission__c/fields/BOV_Score__c.field-meta.xml once
+        that field is converted to a formula in its own sequenced wave). The remedy is data
+        entry, not code.
+
+        🔴 DO NOT ADD A VALIDATION RULE REQUIRING THIS FIELD (design F-4 - answer is NO VR).
+        DispositionApprovalAdvanceService writes the stage change off of Disposition Readiness
+        via Database.update(..., AccessLevel.SYSTEM_MODE), which lifts CRUD/FLS but NEVER a
+        validation rule - VALIDATION RULES STILL EVALUATE under SYSTEM_MODE. A VR here would
+        fire on that stage-change save, refuse it, and leave Approval_Advance_Pending__c = true
+        with NO error shown to the approver - a silently stranded approved disposition. The
+        guard belongs in DispositionApprovalService.submitForApproval's STAGE_READINESS branch
+        instead (developer-owned, tracked separately - not built by this change).
+    -->
+    <fullName>Asking_Price__c</fullName>
+    <description>Asking price for this sale, captured at Disposition Readiness. Feeds BOV_Submission__c.BOV_Score__c's value dimension; a blank or zero value makes every BOV score on this sale blank.</description>
+    <inlineHelpText>The list price this sale is being marketed at. Enter it here during Disposition Readiness - this field lives only on this page at this stage and will not be shown after the sale advances, including at BOV Outreach where BOV scores are reviewed.</inlineHelpText>
+    <label>Asking Price</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

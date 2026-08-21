@@ -53,6 +53,42 @@
  * `BLANKVALUE(...,0)`; this component does the same with `?? 0`, and it is the ONLY place the
  * coalescing happens — Apex passes the raw nulls through so the wire cannot hide a real null.
  *
+ * ═══ 🔴 RESTYLED 2026-08-21 TO MATCH `c/dealDocStatus`, WITH ONE STATE IT DOES NOT HAVE ═══
+ * The user's requirement was that this card "give the same feel" as the Opportunity page's
+ * `c/dealDocStatus`: a `lightning-card` with a `standard:document` icon, a tinted round icon chip
+ * per document type, the row name as a click-through link, and a soft-tinted status pill.
+ * All of that is now here. THREE THINGS WERE DELIBERATELY NOT COPIED:
+ *
+ *   1. 🔴 `dealDocStatus` HAS TWO ROW STATES; THIS CARD HAS THREE. It renders "has record" and
+ *      "no record", and nothing else. This card must additionally render "exists, but the read
+ *      was refused" — see the block below, and design §0 C-1 for the live provisioning gap that
+ *      hid behind exactly that collapse for months. So the borrowed visual language gained a
+ *      state rather than losing one: the `Unavailable` pill is the ONLY pill on this card that
+ *      stays SOLID-FILLED rather than soft-tinted, its icon chip is error-toned, and its hint is
+ *      non-italic and semibold. Three visual axes, so it cannot read as "just another status".
+ *   2. 🔴 NO INLINE `style` AND NO AUTHORED HEX. `dealDocStatus` sets its icon colours with an
+ *      inline `style="--slds-c-icon-color-foreground-default:#2E86DE"` on every `lightning-icon`,
+ *      and hard-codes every pill colour. ARCHITECTURE.md §5 requires SLDS 2 design tokens, and
+ *      this bundle lints at ZERO violations. The chip colour is set on the WRAPPING SPAN from the
+ *      stylesheet instead — custom properties inherit across the shadow boundary into
+ *      `lightning-icon`'s own root, which is what makes that work.
+ *   3. 🔴 NO `<a onclick>` WITHOUT AN `href`. `dealDocStatus` uses `<a class="doc-name"
+ *      onclick={openNda}>` with no `href`, which is not keyboard-focusable and is not announced
+ *      as a link. The in-repo accessible precedent is `c/bovComparisonMatrix`'s "View All" footer
+ *      (`NavigationMixin.GenerateUrl` populating a real `href`, plus `preventDefault()` in the
+ *      click handler so in-app navigation stays a SPA transition). That shape is used here.
+ *
+ * ⚠ URL GENERATION IS ASYNCHRONOUS, WHICH IS WHY `hasLink` EXISTS SEPARATELY FROM `exists`.
+ * `GenerateUrl` returns a Promise, and unlike `bovComparisonMatrix` — whose one link target is a
+ * static list page resolvable in `connectedCallback` — this card's targets are record Ids that
+ * only arrive with the wire. Until the promise settles (and if it rejects) the row renders as a
+ * muted, unlinked label: never a bare `<a>` with no destination, and never the literal string
+ * "undefined" in an `href`.
+ *
+ * ⚠ THE CARD IS IN THE ~340px SIDEBAR of `Disposition_Record_Page`, not the wide main column
+ * `dealDocStatus` occupies. `.row-head` wraps and the pill drops to its own line rather than
+ * overflowing — see the stylesheet. Do not re-tighten that.
+ *
  * ═══ FAIL-SOFT IS PER ROW, AND A DEGRADED ROW SAYS SO ═══
  * The service catches per read and flags the row (`ndaUnavailable`, `loiUnavailable`,
  * `psaUnavailable`, `ndaCountsUnavailable`) instead of failing the card, because this card is
@@ -65,6 +101,7 @@
  * with nothing on screen to suggest a permissions problem. This card keeps them distinct.
  */
 import { LightningElement, api, wire } from 'lwc';
+import { NavigationMixin } from 'lightning/navigation';
 import { formatLongDate, formatMoney } from 'c/utils';
 import getDealSummary from '@salesforce/apex/DispositionDealSummaryController.getDealSummary';
 
@@ -114,21 +151,87 @@ const PSA_TONE = {
 const UNAVAILABLE_LABEL = 'Unavailable';
 const UNAVAILABLE_HINT = 'Not readable with your current permissions — contact your administrator.';
 
-export default class DispositionDealSummary extends LightningElement {
+/**
+ * The per-document-type icon chip class. The type colour is kept on an EMPTY row as well as a
+ * populated one — the chip identifies which document the row is about, which is true whether or
+ * not the document exists. Only a DEGRADED row overrides it (`row-icon_blocked`), which is one of
+ * the three axes that keep the third state from reading as a fourth status value.
+ */
+const ICON_CLASS = {
+    nda: 'row-icon row-icon_nda',
+    loi: 'row-icon row-icon_loi',
+    psa: 'row-icon row-icon_psa'
+};
+
+/**
+ * @param {string} recordId A record Id to open.
+ * @returns {object} The `standard__recordPage` page reference for it.
+ */
+function recordPageRef(recordId) {
+    return {
+        type: 'standard__recordPage',
+        attributes: { recordId, actionName: 'view' }
+    };
+}
+
+export default class DispositionDealSummary extends NavigationMixin(LightningElement) {
     @api recordId;
 
     summary;
     loadError;
+
+    /**
+     * Resolved record-page URLs, keyed by the RECORD Id rather than by row key.
+     *
+     * ⚠ Keying by Id is what makes this self-invalidating. If the wire re-emits with a different
+     * latest NDA, the new Id is simply not in the map yet, so the row falls back to its unlinked
+     * rendering for one tick instead of pointing at the previous record — the stale-link bug a
+     * row-keyed cache would have to be explicitly cleared to avoid.
+     *
+     * Reassigned wholesale (never mutated in place) because LWC's reactivity tracks field
+     * ASSIGNMENT; `this._urlsById[id] = url` would resolve the URL and render nothing.
+     */
+    _urlsById = {};
 
     @wire(getDealSummary, { dispositionId: '$recordId' })
     wired({ data, error }) {
         if (data) {
             this.summary = data;
             this.loadError = undefined;
+            this.resolveRecordUrls(data);
         } else if (error) {
             this.loadError = "Couldn't load the deal summary.";
             this.summary = undefined;
         }
+    }
+
+    /**
+     * Generates a record-page URL for each row that has a record behind it.
+     *
+     * ⚠ A row with no Id is skipped entirely, and that covers BOTH the empty state (nothing to
+     * link to) and the degraded state (the service leaves the Id null when the read threw, on
+     * purpose — see `DispositionDealSummaryService.DealSummary.ndaId`). Neither can therefore
+     * acquire a link by accident.
+     *
+     * ⚠ A rejected `GenerateUrl` is swallowed: the row keeps rendering with a muted label. A
+     * navigation convenience failing must not take out a status card that has to survive on all
+     * 11 disposition stages — the same reasoning as the service's per-row catches.
+     *
+     * @param {object} data The wire payload.
+     */
+    resolveRecordUrls(data) {
+        [data.ndaId, data.loiId, data.psaId].forEach((id) => {
+            if (!id || this._urlsById[id]) {
+                return;
+            }
+            this[NavigationMixin.GenerateUrl](recordPageRef(id))
+                .then((url) => {
+                    this._urlsById = { ...this._urlsById, [id]: url };
+                })
+                .catch(() => {
+                    // Leave the row unlinked. See the note above.
+                });
+        });
     }
 
     get hasError() {
@@ -140,12 +243,32 @@ export default class DispositionDealSummary extends LightningElement {
     }
 
     /**
+     * Opens the record behind a row label.
+     *
+     * `preventDefault()` + `NavigationMixin.Navigate` keeps an in-app click a SPA transition while
+     * the real `href` on the anchor keeps it keyboard-focusable, middle-clickable and announced as
+     * a link — the `c/bovComparisonMatrix` "View All" shape, and the reason this card does not copy
+     * `c/dealDocStatus`'s href-less `<a onclick>`.
+     *
+     * @param {Event} event The click, whose `data-record-id` carries the target.
+     */
+    handleOpenRecord(event) {
+        event.preventDefault();
+        const targetId = event.currentTarget.dataset.recordId;
+        if (!targetId) {
+            return;
+        }
+        this[NavigationMixin.Navigate](recordPageRef(targetId));
+    }
+
+    /**
      * The three rows, in deal order (NDA -> LOI -> PSA), each fully resolved for the template.
      * Building them here rather than in markup keeps the template flat and makes every rendered
      * string assertable from Jest without reaching into private state.
      *
-     * @returns {Array<object>} Row descriptors: `{ key, label, statusLabel, pillClass, metaLines,
-     *   isUnavailable, hintText }`.
+     * @returns {Array<object>} Row descriptors: `{ key, label, statusLabel, pillClass, iconClass,
+     *   metaLines, isUnavailable, hintText, hintClass, hasLink, recordUrl, recordIdForLink,
+     *   linkTitle }`.
      */
     get rows() {
         const s = this.summary || {};
@@ -158,6 +281,7 @@ export default class DispositionDealSummary extends LightningElement {
                 toneMap: NDA_TONE,
                 exists: s.hasNda === true,
                 unavailable: s.ndaUnavailable === true,
+                recordId: s.ndaId,
                 emptyLabel: 'No NDA',
                 emptyHint: 'No NDA on this sale yet',
                 metaLines: this.ndaMetaLines
@@ -170,6 +294,7 @@ export default class DispositionDealSummary extends LightningElement {
                 toneMap: LOI_TONE,
                 exists: s.hasLoi === true,
                 unavailable: s.loiUnavailable === true,
+                recordId: s.loiId,
                 emptyLabel: 'No LOI',
                 emptyHint: 'No LOI on this sale yet',
                 metaLines: this.loiMetaLines
@@ -182,6 +307,7 @@ export default class DispositionDealSummary extends LightningElement {
                 toneMap: PSA_TONE,
                 exists: s.hasPsa === true,
                 unavailable: s.psaUnavailable === true,
+                recordId: s.psaId,
                 emptyLabel: 'No PSA',
                 emptyHint: 'No PSA on this sale yet',
                 metaLines: this.psaMetaLines
@@ -196,23 +322,36 @@ export default class DispositionDealSummary extends LightningElement {
      * never fall through to the empty-state wording, because "No LOI on this sale yet" is a claim
      * about the data rather than about the reader's access (design §0 C-1).
      *
+     * ⚠ ONLY THE THIRD BRANCH CAN PRODUCE A LINK. `hasLink` is false in both the unavailable and
+     * the empty branch by construction — not by a condition that a later edit could invert — and
+     * `recordUrl` is `''` there, never `undefined`, because a getter bound to an element's
+     * attribute is written UNCONDITIONALLY and `undefined` renders as the literal text
+     * "undefined" in the `href`.
+     *
      * @param {object} cfg Row configuration.
      * @returns {object} The rendered row descriptor. Every string member is a string — never
-     *   undefined — because a getter bound to a custom element's attribute is written
-     *   unconditionally and `undefined` would render as the literal text "undefined".
+     *   undefined — for the reason above.
      */
     buildRow(cfg) {
+        const iconClass = ICON_CLASS[cfg.key];
         if (cfg.unavailable) {
             return {
                 key: cfg.key,
                 label: cfg.label,
                 iconName: cfg.iconName,
+                // The error-toned chip is the second of the three axes that separate a DEGRADED
+                // row from an empty one (solid pill, error chip, non-italic alert hint).
+                iconClass: 'row-icon row-icon_blocked',
                 statusLabel: UNAVAILABLE_LABEL,
                 pillClass: 'pill pill_blocked',
                 metaLines: [],
                 isUnavailable: true,
                 hintText: UNAVAILABLE_HINT,
-                hintClass: 'row-hint row-hint_alert'
+                hintClass: 'row-hint row-hint_alert',
+                hasLink: false,
+                recordUrl: '',
+                recordIdForLink: '',
+                linkTitle: ''
             };
         }
         if (!cfg.exists) {
@@ -220,26 +359,37 @@ export default class DispositionDealSummary extends LightningElement {
                 key: cfg.key,
                 label: cfg.label,
                 iconName: cfg.iconName,
+                iconClass: iconClass,
                 statusLabel: cfg.emptyLabel,
                 pillClass: 'pill pill_neutral',
                 metaLines: [],
                 isUnavailable: false,
                 hintText: cfg.emptyHint,
-                hintClass: 'row-hint'
+                hintClass: 'row-hint',
+                hasLink: false,
+                recordUrl: '',
+                recordIdForLink: '',
+                linkTitle: ''
             };
         }
         const status = cfg.status || '—';
         const tone = cfg.toneMap[cfg.status] || 'neutral';
+        const url = cfg.recordId ? this._urlsById[cfg.recordId] : undefined;
         return {
             key: cfg.key,
             label: cfg.label,
             iconName: cfg.iconName,
+            iconClass: iconClass,
             statusLabel: status,
             pillClass: `pill pill_${tone}`,
             metaLines: cfg.metaLines,
             isUnavailable: false,
             hintText: '',
-            hintClass: 'row-hint'
+            hintClass: 'row-hint',
+            hasLink: !!url,
+            recordUrl: url || '',
+            recordIdForLink: cfg.recordId || '',
+            linkTitle: `Open ${cfg.label}`
         };
     }
 

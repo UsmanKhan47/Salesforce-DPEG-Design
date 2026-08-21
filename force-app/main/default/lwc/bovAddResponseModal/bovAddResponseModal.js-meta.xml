@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE DESCRIPTION BELOW IS CAPPED AT 255 CHARACTERS AND ONLY A DEPLOY CATCHES A BREACH -
+        Jest, the SLDS linter and code review have all passed a 258-character one in this repo.
+        It was counted before this file was written; count it again before editing it.
+
+        NOTE ALSO: this comment must sit INSIDE the root element. A comment placed ABOVE
+        <LightningComponentBundle> breaks `sf` deploy at conversion with a misleading "unable to
+        find matching parent xml file" error.
+
+        isExposed=false because there is nothing for an admin to place: the component has no
+        lightning__RecordPage target and is opened from JS by c/bovComparisonMatrix only, the
+        same way c/bovReplaceBrokerModal is. Exposing it would offer App Builder a dialog with no
+        way to supply dispositionId.
+    -->
+    <apiVersion>67.0</apiVersion>
+    <isExposed>false</isExposed>
+    <masterLabel>Add Broker Response</masterLabel>
+    <description>Creates a BOV Submission against the disposition the user is already viewing, without navigating away from it. Opened from the BOV comparison matrix, which refreshes in place from the new record Id this dialog returns.</description>
+</LightningComponentBundle>

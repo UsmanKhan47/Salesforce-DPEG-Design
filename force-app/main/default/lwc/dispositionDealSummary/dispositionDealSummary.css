@@ -2,6 +2,14 @@
  * SLDS 2 GLOBAL STYLING HOOKS ONLY — every colour, space, radius and font size is a `--slds-g-*`
  * hook (ARCHITECTURE.md §5). There is not one authored hex or px value in this file.
  *
+ * 🔴 THAT IS THE ONE THING THIS RESTYLE COULD NOT BORROW FROM `c/dealDocStatus` (2026-08-21).
+ * dealDocStatus produces the look this card was asked to match, but it does so with hard-coded
+ * hex — `background: #e6f4ea`, `box-shadow: inset 0 0 0 1px #b6e0c6`, and an inline
+ * `style="--slds-c-icon-color-foreground-default:#2E86DE"` on every `lightning-icon`. Copying any
+ * of that would take this bundle from ZERO SLDS violations to a dozen. The same look is rebuilt
+ * below from the `*-base-95 / -80 / -30` token scales, which is where SLDS 2 keeps the tint,
+ * ring and text tones of exactly this pill pattern.
+ *
  * ⚠ THE `var(--hook, <value>)` FALLBACKS WERE WRITTEN BY `npx slds-linter lint --fix`, NOT BY
  * HAND, AND THAT MATTERS. This file was first authored bare (`var(--hook)` with no second
  * argument) on the reasoning that a fallback is a hard-coded colour smuggled into a stylesheet.
@@ -27,39 +35,55 @@
 
 :host {
     display: block;
+    /*
+     * `anywhere` (not `break-word`) is the only value that affects MIN-CONTENT sizing, and it is
+     * on `:host` so it inherits across the shadow boundary into `lightning-card`'s own root. This
+     * card lives in the ~340px sidebar; a long unbroken picklist value must wrap, not widen the
+     * column.
+     */
+    overflow-wrap: anywhere;
 }
 
-.card {
-    background: var(--slds-g-color-surface-container-1, #ffffff);
-    border: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
-    border-radius: var(--slds-g-radius-border-3, 0.5rem);
-    overflow: hidden;
-}
-
-.card-header {
-    padding: var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-2, 0.5rem);
-    border-bottom: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
-}
-
+/*
+ * ── THE CARD CHROME IS NOW `lightning-card` ─────────────────────────────────────────────────
+ * The hand-rolled `.card` / `.card-header` wrapper is gone: matching dealDocStatus means
+ * `<lightning-card icon-name="standard:document">`, which brings its own border, radius, padding
+ * and header rule. `.body` only re-establishes the horizontal padding and the header separator,
+ * the same two jobs `dealDocStatus.css` gives its own `.body`.
+ */
 .card-title {
-    margin: 0;
     font-size: var(--slds-g-font-scale-1, 0.875rem);
     font-weight: var(--slds-g-font-weight-7, 700);
     color: var(--slds-g-color-on-surface-3, #181818);
 }
 
+.body {
+    padding: 0 var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-2, 0.5rem);
+    border-top: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
+}
+
 .card-sub {
     margin: 0;
-    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    padding-top: var(--slds-g-spacing-2, 0.5rem);
     font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
     color: var(--slds-g-color-on-surface-1, #757575);
 }
 
+/*
+ * The whole-card error. Softened to the same tint model as the pills below rather than the solid
+ * red banner it used to be — it now sits inside a lightning-card, and a full-bleed red block under
+ * the card header read as a platform crash rather than as one failed read.
+ */
 .error-line {
-    padding: var(--slds-g-spacing-4, 1rem);
+    margin-top: var(--slds-g-spacing-2, 0.5rem);
+    padding: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+    border-radius: var(--slds-g-radius-border-2, 0.25rem);
     font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
-    color: var(--slds-g-color-on-error-1, #ffffff);
-    background: var(--slds-g-color-error-container-1, #ba0517);
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-error-base-30, #8e030f);
+    background: var(--slds-g-color-error-base-95, #fef1ee);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-error-base-80, #feb8ab);
 }
 
 .rows {
@@ -69,7 +93,7 @@
 }
 
 .row {
-    padding: var(--slds-g-spacing-3, 0.75rem) var(--slds-g-spacing-4, 1rem);
+    padding: var(--slds-g-spacing-3, 0.75rem) 0;
     border-bottom: var(--slds-g-sizing-border-1, 1px) solid var(--slds-g-color-border-1, #e5e5e5);
 }
 
@@ -77,8 +101,19 @@
     border-bottom: none;
 }
 
+/*
+ * 🔴 `flex-wrap: wrap` IS LOAD-BEARING AT ~340px — DO NOT REMOVE IT.
+ * Content width in the Disposition record page sidebar is roughly 276px. The chip (1.75rem), its
+ * gap and the label leave ~210px for the pill, and the longest real pill string on this card is
+ * `Counter Received from Buyer` (27 characters, from LOI_TONE) — which fits with almost no margin,
+ * and would not fit at all if a longer picklist value were added later. Wrapping drops the pill
+ * onto its own line instead of bursting the column. The pill itself keeps `white-space: nowrap`
+ * (see `.pill`) because a two-line pill looks broken; the wrap happens between the label and the
+ * pill, not inside it.
+ */
 .row-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--slds-g-spacing-2, 0.5rem);
@@ -91,9 +126,75 @@
     min-width: 0;
 }
 
+/* ── the per-type icon chip ────────────────────────────────────────────────────────────────── */
+.row-icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--slds-g-sizing-8, 1.75rem);
+    height: var(--slds-g-sizing-8, 1.75rem);
+    border-radius: var(--slds-g-radius-border-3, 0.5rem);
+}
+
+/*
+ * `--slds-c-icon-color-foreground-default` is a COMPONENT hook, set here on the WRAPPING SPAN
+ * rather than inline on the `lightning-icon`. Custom properties inherit across the shadow
+ * boundary, so the icon inside picks it up — which is what lets the colour live in a stylesheet
+ * instead of in a `style` attribute full of hex, the way `dealDocStatus.html` does it.
+ */
+.row-icon_nda {
+    background: var(--slds-g-color-brand-base-95, #eef4ff);
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-brand-base-30, #014486);
+}
+
+.row-icon_loi {
+    background: var(--slds-g-color-success-base-95, #ebf7e6);
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-success-base-30, #194e31);
+}
+
+.row-icon_psa {
+    background: var(--slds-g-color-palette-purple-95, #f6f2fb);
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-palette-purple-30, #5a1ba9);
+}
+
+/*
+ * 🔴 THE THIRD ROW STATE, AXIS 2 OF 3. A degraded row's chip is error-toned, its pill stays SOLID
+ * (`.pill_blocked`) while every other pill is a soft tint, and its hint is non-italic and
+ * semibold (`.row-hint_alert`). `c/dealDocStatus` has no equivalent — it renders only "has" and
+ * "hasn't" — and collapsing this state back into the empty one is what hid a live provisioning
+ * gap behind the BOV NDA pill for months (design §0 C-1).
+ */
+.row-icon_blocked {
+    background: var(--slds-g-color-error-base-95, #fef1ee);
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-error-base-40, #ba0517);
+}
+
+/* ── the row label ─────────────────────────────────────────────────────────────────────────── */
 .row-label {
     font-size: var(--slds-g-font-scale-neg-1, 0.75rem);
     font-weight: var(--slds-g-font-weight-7, 700);
+    /*
+     * Truncation defence for the narrow column. `min-width: 0` on `.row-left` above is the half
+     * that makes this work at all — without it a flex item refuses to shrink below its content.
+     */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.row-label_link {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+    text-decoration: none;
+}
+
+.row-label_link:hover,
+.row-label_link:focus {
+    text-decoration: underline;
+}
+
+/* An empty or degraded row's label is dark, not brand-coloured: there is nothing to open. */
+.row-label_muted {
     color: var(--slds-g-color-on-surface-3, #181818);
 }
 
@@ -114,7 +215,7 @@
 
 /*
  * A DEGRADED row is tinted, an EMPTY row is not. The distinction is functional, not decorative —
- * see the template comment and design §0 C-1.
+ * see the template comment and design §0 C-1. Axis 3 of 3.
  */
 .row-hint_alert {
     font-style: normal;
@@ -122,30 +223,44 @@
     color: var(--slds-g-color-error-base-40, #ba0517);
 }
 
-/* ── status pills ──────────────────────────────────────────────────────────────────────── */
+/* ── status pills ──────────────────────────────────────────────────────────────────────────
+ * SOFT TINT + DARK TEXT + A 1px INSET RING, which is the `dealDocStatus` pill model and the
+ * reason this card now reads as its sibling. The previous solid-fill-plus-white-text pills were
+ * the single largest reason the two cards did not look related.
+ * 🔴 `.pill_blocked` IS THE ONE EXCEPTION AND STAYS SOLID. It is not a status; it is a report
+ * that the row could not be read, and it must not sit visually alongside "Signed" and "Executed"
+ * as though it were one more stage. Axis 1 of 3.
+ */
 .pill {
     display: inline-flex;
     align-items: center;
     padding: var(--slds-g-spacing-1, 0.25rem) var(--slds-g-spacing-3, 0.75rem);
-    border-radius: var(--slds-g-radius-border-4, 1rem);
+    border-radius: var(--slds-g-radius-border-pill, 15rem);
     font-size: var(--slds-g-font-scale-neg-2, 0.625rem);
     font-weight: var(--slds-g-font-weight-7, 700);
+    /* Kept on purpose — the wrap happens in `.row-head`, never inside a pill. */
     white-space: nowrap;
 }
 
 .pill_complete {
-    background: var(--slds-g-color-success-container-1, #2e844a);
-    color: var(--slds-g-color-on-success-1, #ffffff);
+    background: var(--slds-g-color-success-base-95, #ebf7e6);
+    color: var(--slds-g-color-success-base-30, #194e31);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-success-base-80, #91db8b);
 }
 
 .pill_progress {
-    background: var(--slds-g-color-accent-container-1, #0b5cab);
-    color: var(--slds-g-color-on-accent-1, #ffffff);
+    background: var(--slds-g-color-brand-base-95, #eef4ff);
+    color: var(--slds-g-color-brand-base-30, #014486);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-brand-base-80, #aacbff);
 }
 
 .pill_attention {
-    background: var(--slds-g-color-warning-container-1, #dd7a01);
-    color: var(--slds-g-color-on-warning-1, #181818);
+    background: var(--slds-g-color-warning-base-95, #fff1ea);
+    color: var(--slds-g-color-warning-base-40, #825101);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-warning-base-80, #ffba90);
 }
 
 .pill_blocked {
@@ -162,4 +277,6 @@
 .pill_neutral {
     background: var(--slds-g-color-neutral-base-95, #f3f3f3);
     color: var(--slds-g-color-on-surface-2, #2e2e2e);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-neutral-base-90, #e5e5e5);
 }

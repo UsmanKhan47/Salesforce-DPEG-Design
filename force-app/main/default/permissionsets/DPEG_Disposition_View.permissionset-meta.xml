@@ -463,6 +463,25 @@
         Broker_Firm__c and Contact_Name__c KEEP their read grants above: they left the LAYOUT,
         not the schema, and the comparison matrix still renders both.
     -->
+    <!--
+        AMENDED 2026-08-21 (design doc agent-output/bov-scoring-and-selection.md, Items 1 and 2).
+        ONE CHANGE HERE (the other Item-1 grant fix was already correct on this file):
+
+        1. ADDED: Disposition__c.Asking_Price__c, readable only (editable stays FALSE - this is
+           the read-only Principal/approver persona). At its alphabetical position in the
+           Disposition__c run, immediately after Accepted_Offer_Price__c, before
+           Brokers_Contacted__c. See the field's own XML comment for the accepted
+           BOV-Outreach-invisibility caveat - unaffected by this grant, FLS and page visibility
+           are independent questions.
+
+        BOV_Submission__c.BOV_Score__c is UNCHANGED here: this file already carried
+        editable=false on it (confirmed by reading the file before this edit), so the deploy
+        blocker that forced the editable-true -> false fix on DPEG_Disposition_Edit does not
+        apply to this set. Recorded here only so a future reader does not wonder why one file
+        changed and this one didn't.
+
+        Diffed against HEAD: purely additive, zero deletions.
+    -->
     <description>Read-only Disposition module access for the Principal persona: Read + View All on the 4 DISP objects, Counter_Offer__c and PSA_Version__c, no Create/Edit/Delete. NDA__c, LOI__c and Contract_Review__c read is sharing-rule scoped.</description>
     <fieldPermissions>
         <editable>false</editable>
@@ -672,6 +691,11 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Disposition__c.Accepted_Offer_Price__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Disposition__c.Asking_Price__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

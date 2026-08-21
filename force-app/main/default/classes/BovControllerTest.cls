@@ -1,10 +1,28 @@
 /**
  * @description Test class for BovController.
  * Migrated onto TestDataFactory (Phase 2 conformance program, Disposition module).
- * Read-only class (no DML), already at 100% reported coverage; adds a
- * NULLS-LAST ordering test, an empty-list scenario, a below-threshold
+ * Read-only class (no DML), already at 100% reported coverage; adds an ordering
+ * determinism test, an empty-list scenario, a below-threshold
  * matrixGenerated boundary, a delete-based negative scenario, and a 251-record
  * data-volume read test per .claude/rules/bulk-test-rule.md.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * 🔴 `BOV_Score__c` BECOMES A FORMULA — WHAT THIS CLASS CAN NO LONGER PROVE (2026-08-21)
+ * ─────────────────────────────────────────────────────────────────────────────────────
+ * Two tests here used to assign `BOV_Score__c` directly (91/84 and 70/null). A formula field
+ * cannot be assigned in Apex, so those assignments are removed AHEAD of the conversion and both
+ * tests are re-authored below with the reasoning kept at each one.
+ *
+ * ⚠ ONE LINE OF PRODUCTION CODE LOSES ITS COVERAGE AS A RESULT, AND IT IS NAMED HERE RATHER THAN
+ * LEFT TO SHOW UP AS AN UNEXPLAINED PERCENTAGE DROP. `BovController.cls:87` is
+ * `r.bovScore = s.BOV_Score__c != null ? s.BOV_Score__c.intValue() : null;`. The null leg stays
+ * covered; the `.intValue()` leg is now UNREACHABLE FROM ANY TEST, because nothing can write a
+ * score and the formula that will derive one returns null until `Disposition__c.Asking_Price__c`
+ * exists — and that field ships in a later wave. This is a genuine, temporary gap, not a branch
+ * that "cannot be covered": it becomes coverable the moment the asking price does, and
+ * `BovSubmissionSelectorTest`'s header lists it as item 4 of what is owed then.
+ * 🔴 Do NOT close it by adding a @TestVisible seam or by making `bovScore` writable — the whole
+ * point of the conversion is that the score is derived and nothing can write it.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────
  * DISPOSITION FOUNDATIONS: OutreachSummary.ndaStatus
@@ -42,8 +60,22 @@ private class BovControllerTest {
         insert d;
     }
 
+    /**
+     * ── RENAMED FROM `..._ordersByScoreDescending` (re-authored 2026-08-21) ──────────────────
+     * The old name and its `rows[0].brokerFirm == 'CBRE'` assertion were carried entirely by two
+     * hard-coded `BOV_Score__c` assignments (91 and 84). `BOV_Score__c` is being recreated as a
+     * FORMULA and cannot be assigned in Apex, so the fixture could no longer produce two different
+     * scores and the ordering claim became unprovable — see this class's header for what is owed
+     * once `Disposition__c.Asking_Price__c` and the formula ship.
+     *
+     * 🔴 WHAT SURVIVED IS THE PART THAT WAS NEVER ABOUT THE SCORE: that `getSubmissions` maps every
+     * BovRow member off the right record. Those assertions are now keyed BY RECORD ID instead of by
+     * list position, which makes them STRICTER, not looser — the old positional form would have
+     * passed if the mapping were correct and the order wrong, or if two rows' fields were swapped
+     * consistently. Ordering is proved separately, by the test below.
+     */
     @isTest
-    static void testGetSubmissions_positiveScenario_ordersByScoreDescending() {
+    static void testGetSubmissions_mapsEveryRowFieldToTheRightRecord() {
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
         // 🔴 Broker_Firm__c IS PINNED VIA Broker__c, NOT A HAND-TYPED LITERAL, AS OF 2026-08-20
         // (Tranche 2, requirements §3 D1). BovSubmissionBrokerStampService overwrites any
@@ -55,7 +87,6 @@ private class BovControllerTest {
         winner.Commission_Rate__c = 3.0;
         winner.Days_To_Market__c = 45;
         winner.Hist_Success_Rate__c = 82;
-        winner.BOV_Score__c = 91;
         winner.Submission_Status__c = 'Selected';
         BOV_Submission__c backup = TestDataFactory.createBovSubmission(d.Id, false);
         backup.Broker__c = TestDataFactory.createBrokerContactWithFirm('JLL', true).Id;
@@ -63,7 +94,6 @@ private class BovControllerTest {
         backup.Commission_Rate__c = 2.5;
         backup.Days_To_Market__c = 52;
         backup.Hist_Success_Rate__c = 78;
-        backup.BOV_Score__c = 84;
         backup.Submission_Status__c = 'Backup';
         insert new List<BOV_Submission__c>{ winner, backup };
 
@@ -72,28 +102,66 @@ private class BovControllerTest {
         Test.stopTest();
 
         System.assertEquals(2, rows.size(), 'Two submissions should be returned');
-        System.assertEquals('CBRE', rows[0].brokerFirm, 'Higher BOV_Score__c should sort first');
-        System.assertEquals(true, rows[0].isSelected, 'Selected status should map to isSelected = true');
-        System.assertEquals(91, rows[0].bovScore, 'Score should pass through as an Integer');
-        System.assertEquals(false, rows[1].isSelected, 'Backup status should map to isSelected = false');
+        // Keyed by String, not Id: BovRow.id is declared `String` (BovController.cls:18) because it
+        // crosses the @AuraEnabled boundary. Using a Map<Id,...> here would not compile.
+        Map<String, BovController.BovRow> byId = new Map<String, BovController.BovRow>();
+        for (BovController.BovRow r : rows) {
+            byId.put(r.id, r);
+        }
+        BovController.BovRow winnerRow = byId.get(String.valueOf(winner.Id));
+        BovController.BovRow backupRow = byId.get(String.valueOf(backup.Id));
+        Assert.isNotNull(winnerRow, 'The Selected submission must be returned');
+        Assert.isNotNull(backupRow, 'The Backup submission must be returned');
+        Assert.areEqual('CBRE', winnerRow.brokerFirm,
+            'The stamped firm must map onto ITS OWN row, not merely appear somewhere in the list');
+        Assert.areEqual('JLL', backupRow.brokerFirm, 'and likewise for the other row');
+        Assert.areEqual(28500000, winnerRow.bovAmount, 'BOV_Amount__c maps through');
+        Assert.areEqual(45, winnerRow.daysToMarket, 'Days_To_Market__c maps through as an Integer');
+        Assert.areEqual(true, winnerRow.isSelected, 'Selected status should map to isSelected = true');
+        Assert.areEqual(false, backupRow.isSelected, 'Backup status should map to isSelected = false');
+        // 🔴 NULL IS THE ONLY REACHABLE ANSWER AND THIS IS NOT A WEAKENED ASSERTION — it pins the
+        // ternary's null leg at BovController.cls:87. The NON-null leg (`.intValue()`) is currently
+        // unreachable from any test, because nothing can produce a non-null score until the formula
+        // and its asking-price input exist. That gap is named in this class's header; it is a
+        // consequence of the field conversion, not something this test chose to stop checking.
+        Assert.isNull(winnerRow.bovScore,
+            'bovScore passes through as null while nothing can write or derive a score');
+        Assert.isNull(backupRow.bovScore, 'and likewise for the other row');
     }
 
+    /**
+     * ── REPLACES `testGetSubmissions_nullScore_sortsLast` (re-authored 2026-08-21) ───────────
+     * The old test set one score to 70 and one to null and asserted NULLS LAST pushed the unscored
+     * row to the end. Both assignments are gone with the formula conversion, and — more to the
+     * point — the situation it modelled has INVERTED: it is no longer one null among scored rows,
+     * it is ALL rows null, on every disposition in the org, until an asking price exists.
+     *
+     * 🔴 THAT MAKES THIS THE HIGHER-VALUE TEST OF THE TWO, because with every score tied at null
+     * `ORDER BY BOV_Score__c DESC NULLS LAST` had no effective key left and the matrix reordered
+     * between page loads. It pins the fix — `, CreatedDate ASC, Id ASC` — at the CONTROLLER
+     * boundary, which is where the LWC actually consumes the order, rather than only in the
+     * selector's own test. CreatedDates are set in the reverse of insert order so that insert
+     * order cannot masquerade as a passing sort.
+     */
     @isTest
-    static void testGetSubmissions_nullScore_sortsLast() {
+    static void testGetSubmissions_tiedScores_orderIsDeterministicOldestFirst() {
         Disposition__c d = [SELECT Id FROM Disposition__c LIMIT 1];
-        BOV_Submission__c scored = TestDataFactory.createBovSubmission(d.Id, false);
-        scored.BOV_Score__c = 70;
-        BOV_Submission__c unscored = TestDataFactory.createBovSubmission(d.Id, false);
-        unscored.BOV_Score__c = null;
-        insert new List<BOV_Submission__c>{ unscored, scored };
+        List<BOV_Submission__c> subs = TestDataFactory.createBovSubmissions(3, d.Id, true);
+        Test.setCreatedDate(subs[0].Id, System.now().addMinutes(-10));
+        Test.setCreatedDate(subs[1].Id, System.now().addMinutes(-20));
+        Test.setCreatedDate(subs[2].Id, System.now().addMinutes(-30));
 
         Test.startTest();
         List<BovController.BovRow> rows = BovController.getSubmissions(d.Id);
         Test.stopTest();
 
-        System.assertEquals(2, rows.size(), 'Two submissions should be returned');
-        System.assertEquals(70, rows[0].bovScore, 'The scored submission should sort first');
-        System.assertEquals(null, rows[1].bovScore, 'NULLS LAST should push the unscored submission to the end');
+        Assert.areEqual(3, rows.size(), 'Three submissions should be returned');
+        Assert.isNull(rows[0].bovScore, 'PREMISE — every score ties at null, so DESC decides nothing');
+        Assert.areEqual(String.valueOf(subs[2].Id), rows[0].id,
+            'The oldest submission must reach the LWC first — with every score tied, CreatedDate '
+            + 'ASC is the only key left and without it the matrix reshuffles between page loads');
+        Assert.areEqual(String.valueOf(subs[1].Id), rows[1].id, 'then the next-oldest');
+        Assert.areEqual(String.valueOf(subs[0].Id), rows[2].id, 'then the newest');
     }
 
     @isTest

@@ -124,26 +124,35 @@ System.debug('Created Disposition: ' + disp.Id);
 // the FIRM each row represents and is a RESOLUTION KEY, not a field value; the loop below turns
 // it into `Broker__c` and the before-save stamp writes the two Text fields from the Contact it
 // resolved to. Add a row here and you MUST add its firm in the same position below.
+//
+// ⚠ `BOV_Score__c` IS NO LONGER SEEDED (removed 2026-08-21) AND MUST NOT BE ADDED BACK. It is
+// being recreated as a FORMULA, and a formula field cannot be assigned — anonymous Apex is not
+// compile-checked by a deploy, so an assignment here would not fail until someone RUNS this
+// script against a converted org. The score is derived from the five broker-side inputs already
+// set below (`BOV_Amount__c`, `Commission_Rate__c`, `Days_To_Market__c`, `Hist_Success_Rate__c`,
+// `Cap_Rate__c`) plus the parent's asking price. Until `Disposition__c.Asking_Price__c` exists
+// and is set on `disp` above, every seeded row will display an em dash in the comparison matrix
+// — that is the honest rendering of "not scorable", not a broken seed.
 List<BOV_Submission__c> bovs = new List<BOV_Submission__c>{
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 28500000, Commission_Rate__c = 3.0, Days_To_Market__c = 45,
-        Hist_Success_Rate__c = 82, BOV_Score__c = 91, Submission_Status__c = 'Selected'
+        Hist_Success_Rate__c = 82, Submission_Status__c = 'Selected'
     ),
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 27900000, Commission_Rate__c = 2.5, Days_To_Market__c = 52,
-        Hist_Success_Rate__c = 78, BOV_Score__c = 84, Submission_Status__c = 'Backup'
+        Hist_Success_Rate__c = 78, Submission_Status__c = 'Backup'
     ),
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 26800000, Commission_Rate__c = 2.8, Days_To_Market__c = 60,
-        Hist_Success_Rate__c = 71, BOV_Score__c = 73, Submission_Status__c = 'Backup'
+        Hist_Success_Rate__c = 71, Submission_Status__c = 'Backup'
     ),
     new BOV_Submission__c(
         Disposition__c = disp.Id,
         BOV_Amount__c = 26200000, Commission_Rate__c = 3.2, Days_To_Market__c = 55,
-        Hist_Success_Rate__c = 69, BOV_Score__c = 68, Submission_Status__c = 'Backup'
+        Hist_Success_Rate__c = 69, Submission_Status__c = 'Backup'
     )
 };
 // ⚠ Row 4 was 'Cushman'. Substituted for 'Cushman & Wakefield', the name the broker roster

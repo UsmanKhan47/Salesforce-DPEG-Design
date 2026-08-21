@@ -208,7 +208,11 @@ public with sharing class NdaSelector {
      * @param dispositionId Parent Disposition__c Id; null-safe.
      * @return The latest related NDA with Id, Status__c and Date_Signed__c populated
      *         (ORDER BY CreatedDate DESC, Id DESC LIMIT 1), or null when the input is null or the
-     *         Disposition has no NDA.
+     *         Disposition has no NDA. ⚠ `Id` IS CONSUMED, not incidental — since 2026-08-21 it
+     *         becomes `DealSummary.ndaId` and backs the card's click-through link on the NDA row
+     *         label. It costs no FLS (`Id` has no `FieldPermissions` row on any permission set)
+     *         and SOQL returns it whether or not it is listed, so it cannot be lost by editing
+     *         this SELECT — but a reader wondering why it is here now has the answer.
      * @example
      * NDA__c nda = NdaSelector.selectLatestSummaryByDispositionId(dispositionId);
      */

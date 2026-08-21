@@ -69,10 +69,22 @@ public with sharing class BovSubmissionSelector {
      * set BovController.BovRow maps, so narrowing it would reintroduce a
      * "row retrieved via SOQL without querying the requested field" defect.
      *
+     * ── 🔴 `, CreatedDate ASC, Id ASC` IS NOT POLISH — IT IS THE SORT KEY (added 2026-08-21) ──
+     * `BOV_Score__c DESC NULLS LAST` alone has NO TIE-BREAK, and SOQL does not promise a stable
+     * order for rows that tie. Every row that ties therefore reshuffles between page loads, and
+     * the matrix reorders under a user who has not changed anything. That was already true for two
+     * equal scores; it is about to become true for EVERY ROW IN THE ORG, because `BOV_Score__c` is
+     * being recreated as a formula that returns null until the parent disposition has an asking
+     * price — which no disposition has yet. `NULLS LAST` with nothing but nulls is not a sort.
+     * `CreatedDate ASC` (oldest submission first, the order they arrived) then `Id ASC` (a total
+     * order, so the result is fully determined even for two rows created in the same transaction)
+     * closes it. All THREE queries in this class carry the same tie-break — see the note on
+     * `selectStatusesByDispositionId`, where it also fixes a documented determinism claim.
+     *
      * @param dispositionId Disposition__c Id whose submissions to read.
      * @return The matching BOV_Submission__c records ordered by BOV_Score__c
-     *         DESC NULLS LAST; an empty list when the Disposition has none (or
-     *         when dispositionId is null).
+     *         DESC NULLS LAST, then CreatedDate ASC, Id ASC; an empty list when
+     *         the Disposition has none (or when dispositionId is null).
      * @example
      * List<BOV_Submission__c> subs =
      *     BovSubmissionSelector.selectByDispositionId(dispId);
@@ -85,7 +97,7 @@ public with sharing class BovSubmissionSelector {
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
             WITH USER_MODE
-            ORDER BY BOV_Score__c DESC NULLS LAST
+            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
         ];
     }
 
@@ -109,6 +121,13 @@ public with sharing class BovSubmissionSelector {
      * matrix displays — deterministic, and the invariant is repaired by a replace, not by this
      * read.
      *
+     * ⚠ THE `, CreatedDate ASC, Id ASC` TIE-BREAK MATTERS MOST ON THIS QUERY, because `LIMIT 1`
+     * turns a tie into a CHOICE. "Highest-scoring wins" only decides anything while scores differ;
+     * once `BOV_Score__c` is a formula returning null with no asking price, every score ties at
+     * null and this read would otherwise pick an arbitrary incumbent — a different one on
+     * different calls, feeding an approval submission. With the tie-break it picks the OLDEST
+     * Selected row, which is both stable and the same row the matrix shows first.
+     *
      * ⚠ `Approval_Status__c` IS DELIBERATELY NOT SELECTED. It is a 2026-08-19 field, and a
      * Metadata-API-deployed custom field arrives with NO FLS for any profile — so selecting it
      * here would take this `WITH USER_MODE` read down for everyone until the permission-set deploy
@@ -130,7 +149,7 @@ public with sharing class BovSubmissionSelector {
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
             WITH USER_MODE
-            ORDER BY BOV_Score__c DESC NULLS LAST
+            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
             LIMIT 1
         ];
         return selected.isEmpty() ? null : selected[0];
@@ -183,6 +202,16 @@ public with sharing class BovSubmissionSelector {
      * USER_MODE sibling. `Broker__c` was confirmed present in usman-dpeg (live describe) before it
      * was added.
      *
+     * ⚠ THIS QUERY'S ORDER IS CONSUMED, NOT DECORATIVE, AND THAT IS WHY IT GAINED
+     * `, CreatedDate ASC, Id ASC` ON 2026-08-21. `BovSubmissionService.replaceSelectedBroker` takes
+     * the FIRST Selected row this returns as the history row's single `Outgoing` slot when a
+     * disposition has somehow acquired two incumbents, and its own comment called that choice
+     * "deterministic rather than arbitrary" on the strength of this ORDER BY. Score alone stops
+     * being able to carry that claim once `BOV_Score__c` is a formula returning null without an
+     * asking price: two null scores tie, and an untied SOQL sort may return either row first. The
+     * tie-break restores it — highest score first, then the OLDEST submission — and the service's
+     * comment has been corrected to name the second key rather than only the first.
+     *
      * @param dispositionId Disposition__c Id whose submissions to read; null-safe.
      * @return All submissions with Id, Broker__c, Broker_Firm__c, Submission_Status__c and
      *         Approval_Status__c populated; an empty list when the Disposition has none or the
@@ -201,7 +230,7 @@ public with sharing class BovSubmissionSelector {
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId
             WITH SYSTEM_MODE
-            ORDER BY BOV_Score__c DESC NULLS LAST
+            ORDER BY BOV_Score__c DESC NULLS LAST, CreatedDate ASC, Id ASC
         ];
     }
 

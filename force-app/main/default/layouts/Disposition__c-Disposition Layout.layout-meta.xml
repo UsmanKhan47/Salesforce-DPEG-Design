@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Layout xmlns="http://soap.sforce.com/2006/04/metadata">
     <excludeButtons>OpenSlackRecordChannel</excludeButtons>
+    <!-- ASKING PRICE (added 2026-08-21, design item 2). This classic layout still backs the
+         New/Edit modal and the approval pages, so the field must be here to be enterable from
+         the standard create path, in addition to its Dynamic Forms placement on
+         Disposition_Record_Page.flexipage-meta.xml's Details fieldSection. See the field's own
+         XML comment (objects/Disposition__c/fields/Asking_Price__c.field-meta.xml) for the
+         accepted BOV-Outreach-invisibility caveat and the "no validation rule" decision. -->
     <layoutSections>
         <customLabel>false</customLabel>
         <detailHeading>false</detailHeading>
@@ -10,6 +16,10 @@
             <layoutItems>
                 <behavior>Readonly</behavior>
                 <field>Name</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Asking_Price__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>

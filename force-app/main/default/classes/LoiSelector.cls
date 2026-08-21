@@ -299,7 +299,11 @@ public with sharing class LoiSelector {
      * @param dispositionId Parent Disposition__c Id; null-safe.
      * @return The latest related LOI with Id, Stage__c, Offer_Price__c and Ball_In_Court__c
      *         populated (ORDER BY CreatedDate DESC, Id DESC LIMIT 1), or null when the input is
-     *         null or the Disposition has no LOI.
+     *         null or the Disposition has no LOI. ⚠ `Id` IS CONSUMED — since 2026-08-21 it becomes
+     *         `DealSummary.loiId` and backs the card's click-through link on the LOI row label. It
+     *         costs no FLS and SOQL returns it regardless of the SELECT list. 🔴 It is NOT a
+     *         re-opening of the two field exclusions above: an Id carries no status, no date and
+     *         no vocabulary.
      * @example
      * LOI__c loi = LoiSelector.selectLatestByDispositionId(dispositionId);
      */

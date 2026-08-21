@@ -20,11 +20,45 @@
  * Also pinned: server ordering is preserved (the component must NOT sort), a
  * negative duration never renders (the service nulls it and raises
  * `hasDateAnomaly`, which surfaces as a "Check dates" badge), and the error
- * branch renders a visible alert with NO card rather than a silent blank.
+ * branch renders a visible alert rather than a silent blank.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE SIX-COLUMN TABLE IS GONE AND MUST NOT COME BACK (2026-08-21).
+ * ═══════════════════════════════════════════════════════════════════════════
+ * This card moved to the ~340px record-page sidebar, where the old grid
+ * (`minmax(0, 2fr) repeat(5, minmax(0, 1fr))` plus a shared heading row) gave
+ * every value column ~35px. It is now a <ul>/<li> of self-labelling tiles, and
+ * T-NARROW / T-CSS below are anti-regression pins for that — modelled on the
+ * identical pair in c/competingBrokerSubmissions, which solved the same problem
+ * on Lead_Record_Page.
+ *
+ * EVERY BEHAVIOURAL ASSERTION FROM THE TABLE ERA SURVIVES UNCHANGED IN MEANING.
+ * Only two selectors moved: `.dbt-row` -> `.dbt-tile` (there is no longer a
+ * heading row to filter out, because each tile carries its own labels), and the
+ * value cells are now the five <dd> elements rather than five <span>s. In
+ * particular the declined-row falsifiers — em-dashes in all five value cells,
+ * and the word "Declined" as READABLE TEXT plus an aria-label — are asserted
+ * exactly as before.
  */
 import { createElement } from 'lwc';
 import DispositionBuyerTimeline from 'c/dispositionBuyerTimeline';
 import getTimeline from '@salesforce/apex/DispositionBuyerTimelineController.getTimeline';
+
+// The stylesheet, read once, WITH ITS COMMENTS STRIPPED. Stripping first is not
+// cosmetic: T-CSS's assertions are deliberately broad (e.g. /nowrap/), so a
+// comment that merely NAMED a banned value would fail them — which is what
+// forces a stylesheet to describe its own rules in circumlocutions. With the
+// strip in place the .css above says `overflow-x` and `nowrap` plainly.
+const CSS_SOURCE = require('fs')
+    .readFileSync(
+        require('path').join(
+            __dirname,
+            '..',
+            'dispositionBuyerTimeline.css'
+        ),
+        'utf8'
+    )
+    .replace(/\/\*[\s\S]*?\*\//g, '');
 
 jest.mock(
     '@salesforce/apex/DispositionBuyerTimelineController.getTimeline',
@@ -122,26 +156,56 @@ describe('c-disposition-buyer-timeline', () => {
         return element;
     }
 
-    /** Data rows only — the static heading row shares `.dbt-row` and must be excluded. */
+    /**
+     * One element per buyer. There is no longer a shared heading row to filter
+     * out — each tile carries its own <dt> labels, which is exactly what makes
+     * it readable at 340px.
+     */
     function dataRows(element) {
-        return [...element.shadowRoot.querySelectorAll('.dbt-row')].filter(
-            (row) => !row.classList.contains('dbt-head')
+        return [...element.shadowRoot.querySelectorAll('.dbt-tile')];
+    }
+
+    /** The five value cells of a tile, in template order, as text. */
+    function valueCells(row) {
+        return [...row.querySelectorAll('.dbt-c')].map((cell) =>
+            cell.textContent.trim()
         );
     }
 
-    /** The five value columns of a row, in template order, as text. */
-    function valueCells(row) {
-        return [...row.querySelectorAll('.dbt-c')]
-            .filter((cell) => !cell.classList.contains('dbt-c-buyer'))
-            .map((cell) => cell.textContent.trim());
-    }
+    const title = (element) =>
+        element.shadowRoot.querySelector('span[slot="title"]').textContent.trim();
 
-    it('renders nothing before the wire emits', async () => {
+    it('BEFORE THE WIRE ANSWERS: the titled card renders, but it claims nothing', async () => {
         const element = createComponent();
 
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.dbt-card')).toBeNull();
+        // 🔴 The card CHROME is unconditional — an untitled fragment of text
+        // floating between two proper cards is the UAT defect this rework fixed.
+        expect(element.shadowRoot.querySelector('lightning-card')).not.toBeNull();
+
+        // 🔴 ...but the card says nothing about the sale yet. No tiles, no empty
+        // state, and NO "(0)" in the title: "Buyer Activity Timeline (0)" would
+        // state, in the same words it uses for a genuinely empty sale, that no
+        // buyer has been engaged — before anything is known.
+        expect(dataRows(element).length).toBe(0);
+        expect(element.shadowRoot.querySelector('.dbt-empty')).toBeNull();
+        expect(element.shadowRoot.querySelector('.dbt-error')).toBeNull();
+        expect(title(element)).toBe('Buyer Activity Timeline');
+        // No spinner either — a spinner is the only element on this card capable
+        // of hanging forever if the wire never emits.
+        expect(element.shadowRoot.querySelector('lightning-spinner')).toBeNull();
+    });
+
+    it('HEADER: the card carries a title and an icon once the wire answers', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        const card = element.shadowRoot.querySelector('lightning-card');
+        expect(card.iconName).toBe('standard:buyer_group');
+        expect(title(element)).toBe('Buyer Activity Timeline (4)');
     });
 
     it('EMPTY BRANCH: an empty list renders an empty state, not an error', async () => {
@@ -150,9 +214,28 @@ describe('c-disposition-buyer-timeline', () => {
         getTimeline.emit([]);
         await Promise.resolve();
 
-        expect(element.shadowRoot.querySelector('.dbt-empty')).not.toBeNull();
+        const empty = element.shadowRoot.querySelector('.dbt-empty');
+        expect(empty).not.toBeNull();
         expect(element.shadowRoot.querySelector('.dbt-error')).toBeNull();
         expect(dataRows(element).length).toBe(0);
+
+        // The empty state is a STATUS, not an alert: no buyer having signed an
+        // NDA yet is the ordinary early state of a disposition, not a problem.
+        expect(empty.getAttribute('role')).toBe('status');
+        expect(element.shadowRoot.querySelector('[role="alert"]')).toBeNull();
+
+        // An icon AND the explanatory line — the UAT complaint was that this
+        // state was a bare grey sentence with no structure. The wording's INTENT
+        // is preserved: rows appear as buyers are engaged.
+        expect(
+            empty.querySelector('lightning-icon').iconName
+        ).toBe('utility:groups');
+        expect(empty.querySelector('.dbt-empty-text').textContent.trim()).toBe(
+            'No buyer NDAs yet'
+        );
+        expect(empty.querySelector('.dbt-empty-sub').textContent).toContain(
+            'as buyers are engaged on this disposition'
+        );
     });
 
     it('DATA BRANCH: one row per buyer, in the order the server returned', async () => {
@@ -204,7 +287,9 @@ describe('c-disposition-buyer-timeline', () => {
             EM_DASH
         ]);
         // It is ACTIVE, so it must not be styled or announced as terminated.
-        expect(dataRows(element)[1].classList.contains('dbt-row--declined')).toBe(false);
+        expect(dataRows(element)[1].classList.contains('dbt-tile--declined')).toBe(
+            false
+        );
     });
 
     it('🔴 DECLINED: em-dashes in ALL FIVE value columns, including the retained signed date', async () => {
@@ -247,7 +332,7 @@ describe('c-disposition-buyer-timeline', () => {
         expect(declinedRow.getAttribute('aria-label')).toContain('declined');
 
         // 3. Colour/style is reinforcement only — present, but never the sole signal.
-        expect(declinedRow.classList.contains('dbt-row--declined')).toBe(true);
+        expect(declinedRow.classList.contains('dbt-tile--declined')).toBe(true);
     });
 
     it('ANOMALY: out-of-order dates render no duration and raise a visible flag', async () => {
@@ -302,7 +387,7 @@ describe('c-disposition-buyer-timeline', () => {
         expect(valueCells(dataRows(element)[0])[0]).toBe('Jan 1, 2026');
     });
 
-    it('ERROR BRANCH: a visible alert and NO card — never a silent blank', async () => {
+    it('ERROR BRANCH: a visible alert — never a silent blank', async () => {
         const element = createComponent();
 
         getTimeline.error();
@@ -311,10 +396,154 @@ describe('c-disposition-buyer-timeline', () => {
         const alert = element.shadowRoot.querySelector('.dbt-error');
         expect(alert).not.toBeNull();
         expect(alert.getAttribute('role')).toBe('alert');
-        // An empty timeline would be a confident wrong answer. Neither the rows
+        // Uses the cross-bundle banner class shared with recentLeads /
+        // recentOpportunities / renewalList / competingBrokerSubmissions.
+        expect(alert.classList.contains('lv-error')).toBe(true);
+        // An empty timeline would be a confident wrong answer. Neither the tiles
         // nor the "no buyers yet" empty state may appear on the error branch.
         expect(dataRows(element).length).toBe(0);
         expect(element.shadowRoot.querySelector('.dbt-empty')).toBeNull();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Narrow-column anti-regression pins (2026-08-21)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // T-NARROW — the direct pin. A test that merely renders would not catch a
+    // revert to the six-column table; this does, in four lines.
+    it('T-NARROW: renders no table, no shared heading row and no scroll wrapper', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        expect(element.shadowRoot.querySelector('table')).toBeNull();
+        expect(element.shadowRoot.querySelector('thead')).toBeNull();
+        // `.dbt-head` was the shared column-heading row of the old grid, and
+        // `.lv-scroll` is this repo's retired horizontal-overflow wrapper.
+        expect(element.shadowRoot.querySelector('.dbt-head')).toBeNull();
+        expect(element.shadowRoot.querySelector('.lv-scroll')).toBeNull();
+
+        // The tile list is what replaced it, and it keeps the label + explicit
+        // role="list" the <ul> needs (list-style:none makes WebKit drop the
+        // implicit list role, and aria-label is only exposed on an element whose
+        // role supports naming; axe has no rule for this, so `is accessible`
+        // passing is not evidence against it).
+        const list = element.shadowRoot.querySelector('.dbt-list');
+        expect(list).not.toBeNull();
+        expect(list.getAttribute('role')).toBe('list');
+        expect(list.getAttribute('aria-label')).toBe('Buyer activity timeline');
+    });
+
+    // T-LABELS — proves the old <th scope="col"> semantics were REPLACED, not
+    // deleted. In a 340px tile a bare date is unidentifiable without a label,
+    // and the labels are now per-tile visible text rather than a heading row
+    // sitting far away at the top of the card.
+    it('T-LABELS: every value keeps a visible label on its own tile', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        const labels = [...dataRows(element)[0].querySelectorAll('dt')].map((d) =>
+            d.textContent.trim()
+        );
+        expect(labels).toEqual([
+            'NDA signed',
+            'Materials released',
+            'First offer',
+            'Days to release',
+            'Days to respond'
+        ]);
+        // ...on EVERY tile, not just the first — that is the whole point of
+        // dropping the shared heading row.
+        dataRows(element).forEach((tile) => {
+            expect(tile.querySelectorAll('dt').length).toBe(5);
+            expect(tile.querySelectorAll('dd').length).toBe(5);
+        });
+    });
+
+    // T-RAIL — the milestone marker is DECORATION and must be derived from the
+    // rendered value, never from the raw payload. The declined fixture is the
+    // falsifier: it carries a real ndaSignedDate, so a marker computed from the
+    // DTO would show "done" beside an em-dash.
+    it('T-RAIL: milestone markers agree with the cell beside them, declined rows included', async () => {
+        const element = createComponent();
+
+        getTimeline.emit(TIMELINE);
+        await Promise.resolve();
+
+        const stepState = (tile) =>
+            [...tile.querySelectorAll('.dbt-step')].map((dt) =>
+                dt.classList.contains('dbt-step--done') ? 'done' : 'pending'
+            );
+
+        // COMPLETE_ROW — all three dates present.
+        expect(stepState(dataRows(element)[0])).toEqual(['done', 'done', 'done']);
+        // IN_FLIGHT_ROW — nothing recorded yet.
+        expect(stepState(dataRows(element)[1])).toEqual([
+            'pending',
+            'pending',
+            'pending'
+        ]);
+        // 🔴 DECLINED_ROW — carries a RETAINED ndaSignedDate in the payload. The
+        // cell is em-dashed, so the marker must be pending too.
+        expect(stepState(dataRows(element)[3])).toEqual([
+            'pending',
+            'pending',
+            'pending'
+        ]);
+
+        // The connector is suppressed below the LAST milestone only.
+        const ends = [
+            ...dataRows(element)[0].querySelectorAll('.dbt-step--end')
+        ];
+        expect(ends.length).toBe(1);
+        expect(ends[0].textContent.trim()).toBe('First offer');
+    });
+
+    // T-CSS — the stylesheet pin, and it is deliberately a SOURCE-TEXT assertion
+    // rather than a measurement. WHY (do not "improve" this into a measurement):
+    // jsdom performs NO LAYOUT. scrollWidth, clientWidth, offsetWidth and
+    // getBoundingClientRect() all return 0, so the obvious test —
+    // expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth) — is `0 <= 0`
+    // and passes vacuously WHETHER OR NOT the component overflows. A source-text
+    // assertion is coarse but falsifiable.
+    it('T-CSS: the stylesheet cannot produce sideways scroll at 340px', () => {
+        // --- BANNED --------------------------------------------------------
+        // Matches the `overflow` SHORTHAND as well as `overflow-x`. An
+        // /overflow-x/-only assertion is a hole: `.dbt-list { overflow: auto }`
+        // restores exactly the horizontal scrollbar this rework removed.
+        expect(CSS_SOURCE).not.toMatch(/overflow(-x)?\s*:\s*(auto|scroll)/);
+
+        // Deliberately broader than /white-space:\s*nowrap/: the value that
+        // actually threatens this layout is `flex-wrap: nowrap` on
+        // .dbt-tile-head, which the white-space-specific form does not see.
+        expect(CSS_SOURCE).not.toMatch(/nowrap/);
+
+        // No fixed pixel width on content. `min-width` / `max-width` are not
+        // matched (the char before "width" is a hyphen, not a boundary), and
+        // neither is the decorative marker's `width: var(--slds-g-sizing-3,…)`.
+        expect(CSS_SOURCE).not.toMatch(/(^|[\s;{])width\s*:\s*\d+px/);
+
+        // The old six-column track list, named outright so a revert is caught
+        // even if the class names are kept.
+        expect(CSS_SOURCE).not.toMatch(/repeat\(\s*5\s*,/);
+
+        // --- REQUIRED, and every one SELECTOR-ANCHORED ----------------------
+        // An unanchored /min-width:\s*0/ passes while ANY ONE of the many
+        // occurrences survives. The LOAD-BEARING one is on the grid item.
+        expect(CSS_SOURCE).toMatch(/\.dbt-tile\s*\{[^}]*min-width\s*:\s*0/);
+
+        // overflow-wrap must be on :host, not .dbt-tile — that is what makes it
+        // reach the .lv-error banner (a server message this component cannot
+        // pre-wrap) and the empty state, not just the tiles.
+        expect(CSS_SOURCE).toMatch(/:host\s*\{[^}]*overflow-wrap\s*:\s*anywhere/);
+
+        // The grid minimum. A bare `minmax(18rem, 1fr)` bursts any container
+        // narrower than 288px — invisible at desktop width, and the ONLY place
+        // it shows is the sidebar this rework exists for.
+        expect(CSS_SOURCE).toMatch(/minmax\(\s*min\(\s*18rem\s*,\s*100%\s*\)/);
     });
 
     it('is accessible', async () => {

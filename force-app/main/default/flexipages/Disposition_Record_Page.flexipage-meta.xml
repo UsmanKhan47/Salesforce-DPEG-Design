@@ -210,7 +210,61 @@
          follow up, and it is reversible.
 
          ⚠ THIS ADDS NO ACTIONS. The actionNames valueList above is untouched and still holds
-         TWELVE entries. The twelve item readback in verification step 1 is unchanged. -->
+         TWELVE entries. The twelve item readback in verification step 1 is unchanged.
+
+         =====================================================================
+         2026-08-21 - APP BUILDER HAND-EDIT REVERTED; THREE OF ITS FOUR CHANGES KEPT.
+         =====================================================================
+         At 19:18 on 2026-08-19 this page was hand-edited directly in App Builder. That save
+         SILENTLY DROPPED Edit, Clone and Delete from the actionNames valueList above - the org
+         sat at NINE valueListItems where this file (and the repo) carries TWELVE, confirmed by a
+         Tooling API query against both the org and this file. With enableActionsConfiguration
+         TRUE that list IS the entire action bar (see the 2026-08-19 entry above), so every
+         Disposition record in the org had NO Edit, Clone or Delete button until this fix. This is
+         a second, independent instance of the exact failure mode the 2026-08-19 entry already
+         warns about: a FlexiPage deploy - or here, a save - can roll back part of its own intent
+         and report success, and App Builder is now confirmed capable of doing that TOO, not just
+         a metadata deploy. Root cause: opening this page in App Builder at all is what triggers
+         the regression (Dynamic Actions handling), which is why the standing instruction is to
+         never open this page there and never enable Dynamic Actions from the UI - re-stated at
+         the top of the 2026-08-19 entry and repeated here because it was violated once already.
+
+         The org's 19:18 save carried FOUR changes, not one. Three were reviewed and kept; the
+         fourth is discarded:
+           1. KEPT - dispositionPath (runtime_sales_pathassistant:pathAssistant, subheader region)
+              hideUpdateButton flipped false -> true.
+           2. KEPT - the Approval History force:relatedListContainer (identifier relatedLists) was
+              relocated from the main region into the header region. All three of its properties -
+              relatedListComponentOverride, rowsToDisplay, showActionBar - travel with it UNCHANGED.
+              showActionBar stays true: Recall is reachable ONLY from this component's action bar
+              (see the 2026-08-19 Approval History entry above), and a locked, AdminOnly-editability
+              record has no other route to it, so losing showActionBar here would re-open the exact
+              gap that entry closed.
+           3. DISCARDED - flexipage_tabset (sidebar region) gained a label of "Tabs". Not applied.
+           4. RESTORED SEPARATELY - the dropped Edit/Clone/Delete valueListItems, per this whole
+              entry.
+
+         BOV BROKER CHANGE HISTORY AND BUYER ACTIVITY TIMELINE WERE ALSO MOVED, main -> sidebar,
+         IN THIS SAME PASS - NOT PART OF THE APP BUILDER INCIDENT, A SEPARATE, DELIBERATE CHANGE.
+         Both now sit in the sidebar region directly after dispositionSidebar rather than after
+         contractReviewsList in main. dispositionSidebar is the component confirmed to render the
+         BOV Outreach card - its .html renders <c-bov-outreach> when its own isBovOutreach getter
+         is true - so placing the two moved components immediately below it keeps them adjacent to
+         the BOV Outreach surface they relate to. dispositionDealSummary stays FIRST in the sidebar
+         and gained no visibilityRule - it is still the one ungated, every-stage glance surface, per
+         the Tranche 2 A6/C entry above, and that requirement did not change. Neither moved
+         component gained a visibilityRule either; both stay ungated exactly as the Tranche 2 A6/B
+         entries above already documented. The individual comments on each moved component (a few
+         lines above and below this one, marked "Placed after contractReviewsList") are LEFT
+         VERBATIM rather than rewritten, per this repo's own precedent for retracting a stale claim
+         in place instead of deleting it (see the 2026-08-20 RECONCILED/CORRECTED entry above) - the
+         short "MOVED main -> sidebar 2026-08-21" note prepended to each one is the correction; read
+         it as superseding the placement sentence that follows it, not the rest of that comment.
+
+         ⚠ VERIFICATION FOR THIS ENTRY IS THE SAME READBACK RULE AS 2026-08-19: a FlexiPage change
+         can roll back and still report success. Confirm the twelve-item action list, the relocated
+         Approval History component, and the two relocated sidebar components are ALL present in the
+         org after deploying, not just that the deploy command exited clean. -->
 
     <flexiPageRegions>
         <itemInstances>
@@ -432,6 +486,31 @@
                 <identifier>highlightsPanel</identifier>
             </componentInstance>
         </itemInstances>
+        <!-- APPROVAL HISTORY (C-3). Renders the layout's related lists, one of which is
+             RelatedProcessHistoryList. The three property values below are copied verbatim from
+             the Opportunity_Record_Page and Portfolio_Deal_Record_Page instances of this same
+             component, so none of them is a guess. showActionBar matters most: Recall Approval
+             Request is a LIST LEVEL button on Approval History, so suppressing the action bar
+             would put the page back in the exact state C-3 describes.
+             MOVED main -> header 2026-08-21 (see the root comment's 2026-08-21 entry above for why). -->
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>relatedListComponentOverride</name>
+                    <value>NONE</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>rowsToDisplay</name>
+                    <value>10</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>showActionBar</name>
+                    <value>true</value>
+                </componentInstanceProperties>
+                <componentName>force:relatedListContainer</componentName>
+                <identifier>relatedLists</identifier>
+            </componentInstance>
+        </itemInstances>
         <name>header</name>
         <type>Region</type>
     </flexiPageRegions>
@@ -440,7 +519,7 @@
             <componentInstance>
                 <componentInstanceProperties>
                     <name>hideUpdateButton</name>
-                    <value>false</value>
+                    <value>true</value>
                 </componentInstanceProperties>
                 <componentName>runtime_sales_pathassistant:pathAssistant</componentName>
                 <identifier>dispositionPath</identifier>
@@ -512,6 +591,26 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Disposition_Stage__c</fieldItem>
                 <identifier>FieldDispositionStage</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <!-- ASKING PRICE (added 2026-08-21, design item 2). Placed in this Details fieldSection
+             alongside Disposition_Stage__c/Broker__c/Selected_Broker__c per design §2.3. 🔴 THIS
+             SECTION'S OWN visibilityRule (further down this facet's parent flexipage_fieldSection,
+             a few hundred lines below) hides the WHOLE section - and this field with it - at BOV
+             Outreach, Active Listing, Closing and Sale Closes. That is an ACCEPTED, KNOWN
+             consequence (design Q-3), not a bug: see the field's own XML comment
+             (objects/Disposition__c/fields/Asking_Price__c.field-meta.xml) for the full writeup.
+             No field-level visibilityRule is added here - none is needed; the field should be
+             visible/editable at every stage this section already renders at, unlike Broker__c
+             below which needs a record-type-scoped rule of its own. -->
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Asking_Price__c</fieldItem>
+                <identifier>FieldAskingPrice</identifier>
             </fieldInstance>
         </itemInstances>
         <!-- BROKER LOOKUP (added 2026-08-20). The off-market broker pick becomes a validated
@@ -716,30 +815,6 @@
                 </visibilityRule>
             </componentInstance>
         </itemInstances>
-        <!-- APPROVAL HISTORY (C-3). Renders the layout's related lists, one of which is
-             RelatedProcessHistoryList. The three property values below are copied verbatim from
-             the Opportunity_Record_Page and Portfolio_Deal_Record_Page instances of this same
-             component, so none of them is a guess. showActionBar matters most: Recall Approval
-             Request is a LIST LEVEL button on Approval History, so suppressing the action bar
-             would put the page back in the exact state C-3 describes. -->
-        <itemInstances>
-            <componentInstance>
-                <componentInstanceProperties>
-                    <name>relatedListComponentOverride</name>
-                    <value>NONE</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>rowsToDisplay</name>
-                    <value>10</value>
-                </componentInstanceProperties>
-                <componentInstanceProperties>
-                    <name>showActionBar</name>
-                    <value>true</value>
-                </componentInstanceProperties>
-                <componentName>force:relatedListContainer</componentName>
-                <identifier>relatedLists</identifier>
-            </componentInstance>
-        </itemInstances>
         <itemInstances>
             <componentInstance>
                 <componentInstanceProperties>
@@ -780,35 +855,6 @@
                 </componentInstanceProperties>
                 <componentName>force:relatedListSingleContainer</componentName>
                 <identifier>contractReviewsList</identifier>
-            </componentInstance>
-        </itemInstances>
-        <!-- BOV BROKER CHANGE HISTORY (Tranche 2, A6/B). Placed after contractReviewsList per the
-             brief's named slot. Ungated - the component's own description confirms an empty card
-             (no broker replacement) is the normal state and renders as plain text, so no
-             visibilityRule is needed to avoid an awkward empty state.
-             NO recordId componentInstanceProperties HERE - MEASURED, NOT STYLE. This bundle's
-             js-meta.xml declares no targetConfigs/property at all, so a `recordId`
-             componentInstanceProperties entry deploys as "Invalid property [recordId] in
-             component [c:bovBrokerChangeHistory]" (confirmed via dry-run 2026-08-20). recordId
-             still reaches the component - it is a lightning__RecordPage implicit input and the
-             JS exposes `@api recordId` - the platform injects it automatically without a
-             FlexiPage-side declaration. -->
-        <itemInstances>
-            <componentInstance>
-                <componentName>bovBrokerChangeHistory</componentName>
-                <identifier>bovBrokerChangeHistory</identifier>
-            </componentInstance>
-        </itemInstances>
-        <!-- BUYER ACTIVITY TIMELINE (Tranche 2, A6/B). Placed after bovBrokerChangeHistory,
-             ungated, same rationale as its sibling above.
-             NO recordId componentInstanceProperties HERE, SAME MEASURED REASON: this bundle's
-             targetConfig declares only <objects><object>Disposition__c</object></objects>, no
-             `recordId` property, so declaring it here fails the same way bovBrokerChangeHistory
-             did. recordId is still supplied implicitly (JS has `@api recordId`). -->
-        <itemInstances>
-            <componentInstance>
-                <componentName>dispositionBuyerTimeline</componentName>
-                <identifier>dispositionBuyerTimeline</identifier>
             </componentInstance>
         </itemInstances>
         <name>main</name>
@@ -926,6 +972,40 @@
             <componentInstance>
                 <componentName>dispositionSidebar</componentName>
                 <identifier>dispositionSidebar</identifier>
+            </componentInstance>
+        </itemInstances>
+        <!-- BOV BROKER CHANGE HISTORY (Tranche 2, A6/B). MOVED main -> sidebar 2026-08-21 (see the
+             root comment's 2026-08-21 entry above for why). Placed directly after
+             dispositionSidebar, not after contractReviewsList as the original comment below still
+             says - dispositionSidebar is the component confirmed (by reading its .js/.html, not
+             guessed) to render the BOV Outreach card (c-bov-outreach) at the BOV Outreach stage,
+             which is the named slot for this pairing. Still ungated - the component's own
+             description confirms an empty card (no broker replacement) is the normal state and
+             renders as plain text, so no visibilityRule is needed to avoid an awkward empty state.
+             NO recordId componentInstanceProperties HERE - MEASURED, NOT STYLE. This bundle's
+             js-meta.xml declares no targetConfigs/property at all, so a `recordId`
+             componentInstanceProperties entry deploys as "Invalid property [recordId] in
+             component [c:bovBrokerChangeHistory]" (confirmed via dry-run 2026-08-20). recordId
+             still reaches the component - it is a lightning__RecordPage implicit input and the
+             JS exposes `@api recordId` - the platform injects it automatically without a
+             FlexiPage-side declaration. -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>bovBrokerChangeHistory</componentName>
+                <identifier>bovBrokerChangeHistory</identifier>
+            </componentInstance>
+        </itemInstances>
+        <!-- BUYER ACTIVITY TIMELINE (Tranche 2, A6/B). MOVED main -> sidebar 2026-08-21, same
+             reason and same 2026-08-21 root comment entry as bovBrokerChangeHistory immediately
+             above. Placed directly after it, ungated, same rationale as its sibling.
+             NO recordId componentInstanceProperties HERE, SAME MEASURED REASON: this bundle's
+             targetConfig declares only <objects><object>Disposition__c</object></objects>, no
+             `recordId` property, so declaring it here fails the same way bovBrokerChangeHistory
+             did. recordId is still supplied implicitly (JS has `@api recordId`). -->
+        <itemInstances>
+            <componentInstance>
+                <componentName>dispositionBuyerTimeline</componentName>
+                <identifier>dispositionBuyerTimeline</identifier>
             </componentInstance>
         </itemInstances>
         <itemInstances>

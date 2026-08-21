@@ -1,9 +1,38 @@
 /**
  * Tests for BovSubmissionSelector (P4 cleanup wave E — Disposition module).
  *
- * Covers the one relocated query: field population, BOV_Score__c DESC NULLS LAST
- * ordering, the empty-result contract, and a 251-record data-volume read
+ * Covers the one relocated query: field population, ORDER BY determinism, the
+ * empty-result contract, and a 251-record data-volume read
  * (.claude/rules/bulk-test-rule.md).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 DEFERRED COVERAGE — `BOV_Score__c` ORDERING IS NOT PROVABLE IN APEX RIGHT NOW (2026-08-21)
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * This class used to prove `ORDER BY BOV_Score__c DESC NULLS LAST` by ASSIGNING scores of 90 / 80
+ * / null to three fixtures. `BOV_Score__c` is being recreated as a FORMULA, and a formula field
+ * cannot be assigned in Apex, so those assignments are gone — and with them the only mechanism
+ * this repo had for producing two submissions with DIFFERENT scores.
+ *
+ * There is no substitute available yet, and that is worth stating plainly rather than papering
+ * over: the formula's value dimension is gated on `Disposition__r.Asking_Price__c`, which returns
+ * null for the whole score when the parent has no asking price. `Asking_Price__c` DOES NOT EXIST
+ * ON `Disposition__c` YET (it ships in the same sequenced wave as the formula). Until it does,
+ * every submission in every test — and every submission in the org — scores null, so no fixture
+ * can make the DESC leg of that ORDER BY do anything observable.
+ *
+ * ⚠ WHAT IS OWED WHEN `Asking_Price__c` AND THE FORMULA LAND, and must not be quietly dropped:
+ *   1. a test that gives ONE disposition an asking price and two submissions with different
+ *      `BOV_Amount__c`, asserting the higher-valuing broker sorts FIRST (the DESC leg);
+ *   2. a test mixing a scored disposition's submissions with an unscored one's, asserting the
+ *      nulls fall to the BOTTOM (the `NULLS LAST` leg, which is currently dead syntax because
+ *      everything is null);
+ *   3. the derived VALUE itself asserted at least once against the published band table, so the
+ *      formula is pinned by a test rather than only by its own `<description>`;
+ *   4. `BovController`'s `s.BOV_Score__c.intValue()` branch (BovController.cls:87), whose non-null
+ *      leg becomes UNREACHABLE from any test in the meantime — see `BovControllerTest`'s header.
+ * The tie-break test below covers the half that IS provable today, and is the half that was
+ * actually broken.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
  *
  * @TestSetup builds the Property -> Property_Asset -> Disposition scaffold with
  * explicit parent Ids (never default*()), and every test queries for that
@@ -57,28 +86,78 @@ private class BovSubmissionSelectorTest {
         Assert.areEqual(30, s.Days_To_Market__c, 'Days_To_Market__c should be selected');
         Assert.areEqual(75, s.Hist_Success_Rate__c, 'Hist_Success_Rate__c should be selected');
         Assert.areEqual(6.25, s.Cap_Rate__c, 'Cap_Rate__c should be selected');
-        Assert.areEqual(80, s.BOV_Score__c, 'BOV_Score__c should be selected');
+        // 🔴 THE VALUE CHANGED, THE CLAIM DID NOT. This line used to read
+        // `Assert.areEqual(80, s.BOV_Score__c, ...)`, where the 80 came from a hard-coded
+        // TestDataFactory assignment that has been removed (a formula field cannot be assigned in
+        // Apex). Asserting NULL is NOT a weaker test of the same claim, because the claim this line
+        // makes is "BOV_Score__c is in the SELECT list" — and what falsifies THAT is the read
+        // itself: touching a field omitted from a SOQL SELECT throws
+        // `System.SObjectException: SObject row was retrieved via SOQL without querying the
+        // requested field`, whatever value is asserted afterwards. Drop the field from the query
+        // and this line still fails.
+        Assert.isNull(s.BOV_Score__c,
+            'BOV_Score__c should be selected — and null, because nothing writes it and the '
+            + 'formula that will replace it returns null with no asking price on the parent');
         Assert.areEqual('Backup', s.Submission_Status__c, 'Submission_Status__c should be selected');
     }
 
+    /**
+     * ── REPLACES `selectByDispositionId_ordersByScoreDescNullsLast` (re-authored 2026-08-21) ──
+     * The old test assigned scores 90 / 80 / null to three fixtures and asserted they came back in
+     * that order. Those three assignments cannot exist once `BOV_Score__c` is a formula, so the
+     * test had to change; what it is REPLACED WITH is chosen to prove the thing that is actually
+     * at risk, not to be an easier version of the old test.
+     *
+     * 🔴 WHAT IS AT RISK IS THE TIE-BREAK, AND IT IS A LIVE BUG, NOT A FUTURE ONE.
+     * `ORDER BY BOV_Score__c DESC NULLS LAST` has no secondary key. Two rows that tie may come back
+     * in either order, and once the score is a formula returning null for any disposition without
+     * an asking price — which is every disposition today — EVERY row ties, leaving the query with
+     * no effective sort key at all and the broker matrix reordering between page loads. This test
+     * pins the fix: `, CreatedDate ASC, Id ASC`.
+     *
+     * The three fixtures are given EXPLICIT, DISTINCT CreatedDates in the REVERSE of their insert
+     * order, which is what makes this falsifying rather than accidental — if the `CreatedDate ASC`
+     * key were dropped the rows would fall back to insert/Id order and every assertion below would
+     * fail. `Id ASC` is deliberately NOT asserted: it exists as a total-order backstop for two rows
+     * created in the same transaction, and pinning it would be asserting the platform's Id
+     * allocation order rather than anything this repo controls.
+     */
     @isTest
-    static void selectByDispositionId_ordersByScoreDescNullsLast() {
+    static void selectByDispositionId_tiedScores_ordersOldestFirstDeterministically() {
         Id dispId = dispositionId();
-        List<BOV_Submission__c> subs = TestDataFactory.createBovSubmissions(3, dispId, false);
-        subs[0].BOV_Score__c = 90;
-        subs[1].BOV_Score__c = 80;
-        subs[2].BOV_Score__c = null;
-        insert subs;
+        List<BOV_Submission__c> subs = TestDataFactory.createBovSubmissions(3, dispId, true);
+        // Reverse of insert order, so insert order cannot masquerade as a passing sort.
+        Test.setCreatedDate(subs[0].Id, System.now().addMinutes(-10));
+        Test.setCreatedDate(subs[1].Id, System.now().addMinutes(-20));
+        Test.setCreatedDate(subs[2].Id, System.now().addMinutes(-30));
 
         Test.startTest();
         List<BOV_Submission__c> result = BovSubmissionSelector.selectByDispositionId(dispId);
         Test.stopTest();
 
         Assert.areEqual(3, result.size(), 'All three submissions should return');
-        Assert.areEqual(90, result[0].BOV_Score__c, 'Highest score should sort first');
-        Assert.areEqual(80, result[1].BOV_Score__c, 'Middle score should sort second');
-        Assert.isNull(result[2].BOV_Score__c, 'A null score should sort last (NULLS LAST)');
+        // The premise: with nothing writing a score, the primary key decides nothing at all.
+        Assert.isNull(result[0].BOV_Score__c, 'PREMISE — every fixture score ties at null');
+        Assert.isNull(result[1].BOV_Score__c, 'PREMISE — every fixture score ties at null');
+        Assert.isNull(result[2].BOV_Score__c, 'PREMISE — every fixture score ties at null');
+        Assert.areEqual(subs[2].Id, result[0].Id,
+            'The OLDEST submission must come first — CreatedDate ASC is the key that survives when '
+            + 'every score ties at null');
+        Assert.areEqual(subs[1].Id, result[1].Id, 'then the next-oldest');
+        Assert.areEqual(subs[0].Id, result[2].Id, 'then the newest');
     }
+
+    // ⚠ THE SAME TIE-BREAK ON `selectSelectedByDispositionId` IS DELIBERATELY NOT PINNED BY A TEST,
+    // AND THE GAP IS STRUCTURAL RATHER THAN AN OVERSIGHT. That query is `LIMIT 1`, so a tie there is
+    // a CHOICE of which incumbent is submitted into `Broker_Finalize_Approval` — worth more
+    // coverage, not less. But reaching it needs TWO Selected rows on one disposition, and since
+    // 2026-08-20 `BovSubmissionSelectionGuardService` makes that state unsavable: such a fixture
+    // fails at `insert`, not at the assertion. That service's own header records that a
+    // `@TestVisible` bypass switch for exactly this purpose "was considered and rejected", because
+    // it would put a production-reachable escape hatch in the guard to build a state the guard
+    // exists to prevent. That trade is still the right one, so the `LIMIT 1` tie-break is covered
+    // by the argument in the selector's javadoc and by the sibling test above (same clause, same
+    // query planner, observable parent), not by a fixture. Do not add the seam.
 
     @isTest
     static void selectByDispositionId_noSubmissions_returnsEmpty() {

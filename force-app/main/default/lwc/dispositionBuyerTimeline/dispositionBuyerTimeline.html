@@ -1,62 +1,155 @@
 <template>
-    <!-- ERROR: visible and loud. The controller throws rather than returning an empty list
-         precisely so this branch exists — a silent blank card would be a confident wrong answer. -->
-    <template if:true={hasError}>
-        <div class="dbt-card dbt-error" role="alert">
-            <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
-            <span>{loadError}</span>
-        </div>
-    </template>
+    <!-- 🔴 THE CARD CHROME IS UNCONDITIONAL. Every branch below renders INSIDE it.
+         Before 2026-08-21 this template emitted a bare, title-less <div> per branch and
+         nothing at all before the wire answered, which read on the record page as an
+         unlabelled fragment of text floating between two proper cards. A titled card that
+         is briefly empty tells the user WHICH panel is still thinking; an untitled blob
+         tells them nothing. The count is appended only once the wire has answered — see
+         `cardTitle` in the JS for why a premature "(0)" is a claim this card may not make. -->
+    <lightning-card icon-name="standard:buyer_group">
+        <span slot="title">{cardTitle}</span>
 
-    <template if:true={isEmpty}>
-        <div class="dbt-card dbt-empty">
-            <p>No buyer NDAs yet. Rows appear here as buyers are engaged on this disposition.</p>
-        </div>
-    </template>
+        <!-- ERROR: visible and loud. The controller throws rather than returning an empty
+             list precisely so this branch exists — a silent blank card would be a confident
+             wrong answer. `lv-error` is the ONE genuinely cross-bundle class in this repo
+             (shared with recentLeads / recentOpportunities / renewalList /
+             competingBrokerSubmissions) — do not rename it. -->
+        <template lwc:if={hasError}>
+            <div
+                class="lv-error dbt-error slds-p-around_medium slds-text-color_error"
+                role="alert"
+            >
+                {loadError}
+            </div>
+        </template>
 
-    <template if:true={hasRows}>
-        <div class="dbt-card">
-            <div class="dbt-body">
+        <template lwc:else>
+            <!-- DATA: ONE STACKED TILE PER BUYER.
+                 ═══════════════════════════════════════════════════════════════════════
+                 🔴 THIS WAS A SIX-COLUMN TABLE AND MUST NEVER BECOME ONE AGAIN.
+                 ═══════════════════════════════════════════════════════════════════════
+                 The previous markup was a CSS grid of
+                 `minmax(0, 2fr) repeat(5, minmax(0, 1fr))` with a shared heading row —
+                 buyer, NDA signed, materials released, first offer, days to release, days
+                 to respond. That is a fine shape in the ~800px main region it was designed
+                 for and an unusable one in the ~340px record-page SIDEBAR this card now
+                 lives in: five value columns at ~35px each, every date clipped to an
+                 ellipsis.
+
+                 The replacement is the same shape c/competingBrokerSubmissions adopted for
+                 the same reason: a <ul>/<li> of self-labelling tiles, each carrying its own
+                 <dl>, so no column has to be shared across rows and nothing scrolls
+                 sideways at ANY container width. The dt/dd pairs are the single-record
+                 equivalent of the <th scope="col"> -> <td> association the table provided;
+                 the labels are now VISIBLE TEXT on every tile rather than a heading row far
+                 away at the top, which is what makes a tile readable on its own.
+
+                 role="list" is NOT redundant: `list-style: none` makes WebKit drop the
+                 implicit list role, and aria-label is only exposed on an element whose role
+                 supports naming. axe has no rule for it, so a passing toBeAccessible() is
+                 not evidence against it. -->
+            <template lwc:if={hasRows}>
                 <p class="dbt-intro" id="dbt-intro">
-                    Every buyer engaged on this disposition, in order. Parties who declined are kept
-                    as a record and shown last.
+                    Every buyer engaged on this disposition, in order. Parties who
+                    declined are kept as a record and shown last.
                 </p>
 
-                <!-- Column headings. A real header row rather than per-cell labels, so the table
-                     reads once and every row below is scannable against it. -->
-                <div class="dbt-row dbt-head" aria-hidden="true">
-                    <span class="dbt-c dbt-c-buyer">Buyer</span>
-                    <span class="dbt-c">NDA signed</span>
-                    <span class="dbt-c">Materials released</span>
-                    <span class="dbt-c">First offer</span>
-                    <span class="dbt-c">Days to release</span>
-                    <span class="dbt-c">Days to respond</span>
-                </div>
+                <ul
+                    class="dbt-list"
+                    role="list"
+                    aria-label="Buyer activity timeline"
+                    aria-describedby="dbt-intro"
+                >
+                    <template for:each={timelineRows} for:item="row">
+                        <li key={row.id} class="dbt-item">
+                            <!-- ⚠ THE GROUP ROLE SITS ON THIS INNER DIV, NOT ON THE <li>.
+                                 role="group" on the <li> would replace its implicit
+                                 `listitem` role, and axe's `list` rule then reports the
+                                 <ul> as having a disallowed child — so the accessible
+                                 name would cost the list semantics it was added to
+                                 complement.
+                                 ⚠ ACCESSIBILITY: the tile's state travels as READABLE
+                                 TEXT — the visible "Declined" badge below AND this
+                                 aria-label. Colour alone is not a state. -->
+                            <div
+                                class={row.tileClass}
+                                role="group"
+                                aria-label={row.rowLabel}
+                            >
+                                <div class="dbt-tile-head">
+                                    <h3 class="dbt-buyer">{row.buyerName}</h3>
+                                    <template lwc:if={row.isDeclined}>
+                                        <span class="dbt-badge dbt-badge--declined">
+                                            Declined
+                                        </span>
+                                    </template>
+                                    <template lwc:if={row.hasAnomaly}>
+                                        <span
+                                            class="dbt-badge dbt-badge--anomaly"
+                                            title="These dates are out of order, so the durations cannot be shown."
+                                        >
+                                            Check dates
+                                        </span>
+                                    </template>
+                                </div>
 
-                <template for:each={timelineRows} for:item="row">
-                    <!-- ⚠ ACCESSIBILITY: the row's state travels as READABLE TEXT — the visible
-                         "Declined" badge below AND this aria-label. Colour alone is not a state. -->
-                    <div key={row.id} class={row.rowClass} role="group" aria-label={row.rowLabel}>
-                        <span class="dbt-c dbt-c-buyer">
-                            <span class="dbt-buyer">{row.buyerName}</span>
-                            <template if:true={row.isDeclined}>
-                                <span class="dbt-badge dbt-badge--declined">Declined</span>
-                            </template>
-                            <template if:true={row.hasAnomaly}>
-                                <span class="dbt-badge dbt-badge--anomaly"
-                                      title="These dates are out of order, so the durations cannot be shown.">
-                                    Check dates
-                                </span>
-                            </template>
-                        </span>
-                        <span class="dbt-c dbt-mono">{row.ndaSigned}</span>
-                        <span class="dbt-c dbt-mono">{row.materialsReleased}</span>
-                        <span class="dbt-c dbt-mono">{row.firstOffer}</span>
-                        <span class="dbt-c dbt-mono">{row.daysToRelease}</span>
-                        <span class="dbt-c dbt-mono">{row.daysToRespond}</span>
-                    </div>
-                </template>
-            </div>
-        </div>
-    </template>
+                                <!-- dt/dd ONLY, in order and with no wrapper divs — axe's
+                                     `definition-list` rule is strict, so the two-track
+                                     layout and the milestone rail are done entirely in
+                                     CSS. The first three pairs are the buyer JOURNEY
+                                     (rendered as a compact vertical timeline: a filled
+                                     marker for a milestone that has a date, a hollow one
+                                     for a milestone still to come); the last two are the
+                                     DURATIONS between them, separated by a rule.
+                                     ⚠ THE MARKER IS REINFORCEMENT ONLY. The date cell
+                                     already states the milestone's status in words (a
+                                     date, or an em-dash), so a user who cannot see the
+                                     marker loses nothing. -->
+                                <dl class="dbt-facts">
+                                    <dt class={row.ndaSignedStepClass}>NDA signed</dt>
+                                    <dd class="dbt-c dbt-mono">{row.ndaSigned}</dd>
+
+                                    <dt class={row.materialsStepClass}>
+                                        Materials released
+                                    </dt>
+                                    <dd class="dbt-c dbt-mono">
+                                        {row.materialsReleased}
+                                    </dd>
+
+                                    <dt class={row.firstOfferStepClass}>First offer</dt>
+                                    <dd class="dbt-c dbt-mono">{row.firstOffer}</dd>
+
+                                    <dt class="dbt-label dbt-sep">Days to release</dt>
+                                    <dd class="dbt-c dbt-mono dbt-sep">
+                                        {row.daysToRelease}
+                                    </dd>
+
+                                    <dt class="dbt-label">Days to respond</dt>
+                                    <dd class="dbt-c dbt-mono">{row.daysToRespond}</dd>
+                                </dl>
+                            </div>
+                        </li>
+                    </template>
+                </ul>
+            </template>
+
+            <!-- EMPTY. Centred icon + headline + the explanatory line, rather than the
+                 bare grey sentence this used to be. The wording's INTENT is unchanged: it
+                 says the rows appear as buyers are engaged, so an empty card reads as
+                 "nothing has happened yet" and never as "something is broken". -->
+            <template lwc:elseif={isEmpty}>
+                <div class="dbt-empty" role="status">
+                    <lightning-icon
+                        icon-name="utility:groups"
+                        size="small"
+                        class="dbt-empty-icon"
+                    ></lightning-icon>
+                    <p class="dbt-empty-text">No buyer NDAs yet</p>
+                    <p class="dbt-empty-sub">
+                        Rows appear here as buyers are engaged on this disposition.
+                    </p>
+                </div>
+            </template>
+        </template>
+    </lightning-card>
 </template>

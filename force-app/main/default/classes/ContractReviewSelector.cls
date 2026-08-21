@@ -295,7 +295,9 @@ public with sharing class ContractReviewSelector {
      * @param dispositionId Parent Disposition__c Id; null-safe.
      * @return The latest related Contract Review with Id, Negotiation_Status__c, Execution_Date__c
      *         and Latest_Version__c populated (ORDER BY CreatedDate DESC, Id DESC LIMIT 1), or
-     *         null when the input is null or the Disposition has none.
+     *         null when the input is null or the Disposition has none. ⚠ `Id` IS CONSUMED — since
+     *         2026-08-21 it becomes `DealSummary.psaId` and backs the card's click-through link on
+     *         the PSA row label. It costs no FLS and SOQL returns it regardless of the SELECT list.
      * @example
      * Contract_Review__c psa = ContractReviewSelector.selectLatestByDispositionId(dispositionId);
      */

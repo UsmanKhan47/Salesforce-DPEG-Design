@@ -2678,6 +2678,26 @@ public with sharing class TestDataFactory {
      * without also pointing Broker__c at a Contact carrying the value it expects
      * (`createBrokerContactWithFirm`). They still matter for the UNSAVED (`doInsert = false`) state
      * a caller may inspect before performing its own insert.
+     *
+     * ── 🔴 `BOV_Score__c` IS DELIBERATELY NOT SET, REMOVED 2026-08-21 ─────────────────────────
+     * This factory used to write `BOV_Score__c = 80` on EVERY submission it built. The field is
+     * being recreated as a FORMULA, and a formula field CANNOT BE ASSIGNED IN APEX — that one line
+     * was a compile error waiting to happen in the single class every other test class depends on,
+     * i.e. the whole suite and every `RunLocalTests` deploy. It is removed AHEAD of the conversion
+     * so the cutover is a metadata-only change.
+     *
+     * ⚠ WHAT REPLACES IT: THE FORMULA'S INPUTS, WHICH THIS FACTORY ALREADY SET. `BOV_Amount__c`,
+     * `Cap_Rate__c`, `Commission_Rate__c`, `Days_To_Market__c` and `Hist_Success_Rate__c` are the
+     * five broker-side dimensions the score is derived from and are all populated above. The SIXTH
+     * input is `Disposition__r.Asking_Price__c`, which does not exist on `Disposition__c` yet.
+     *
+     * 🔴 SO EVERY FIXTURE'S SCORE IS NULL — TODAY AND AFTER THE CONVERSION — AND A TEST MUST NOT
+     * ASSUME OTHERWISE. Today it is null because nothing writes it; afterwards it is null because
+     * the formula returns null when the parent has no asking price (that null is a designed answer,
+     * not a gap — it is what keeps `ORDER BY … DESC NULLS LAST` meaningful). A test that needs
+     * DIFFERING scores cannot be written until `Asking_Price__c` ships; see the deferred-coverage
+     * note in `BovSubmissionSelectorTest`'s header. Do not reintroduce an assignment here to make
+     * such a test possible — it will not compile once the field is a formula.
      */
     public static List<BOV_Submission__c> createBovSubmissions(Integer count, Id dispositionId, Boolean doInsert) {
         requirePositive(count);
@@ -2694,7 +2714,6 @@ public with sharing class TestDataFactory {
                 Cap_Rate__c = 6.25,
                 Commission_Rate__c = 2.5,
                 Days_To_Market__c = 30,
-                BOV_Score__c = 80,
                 Hist_Success_Rate__c = 75
             ));
         }

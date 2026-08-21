@@ -1,9 +1,9 @@
 import { LightningElement, api, wire } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
-import { encodeDefaultFieldValues } from 'lightning/pageReferenceUtils';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { refreshApex } from '@salesforce/apex';
 import { formatMillions } from 'c/utils';
+import BovAddResponseModal from 'c/bovAddResponseModal';
 import BovReplaceBrokerModal from 'c/bovReplaceBrokerModal';
 import getSubmissions from '@salesforce/apex/BovController.getSubmissions';
 
@@ -37,9 +37,16 @@ const COLUMNS = [
  * ── 🔴 THE WIRE IS HELD AS A WHOLE RESULT, NOT DESTRUCTURED ─────────────────
  * `wiredSubmissions(result)` keeps `result` in `_wired` because `refreshApex` REQUIRES the
  * un-destructured wire result object — it has no way to re-provision a wire from a `{ data, error }`
- * pair. This shape is load-bearing for the replace-broker flow below; a "tidying" edit back to
- * `wired({ data, error })` compiles, passes every render test, and silently turns the post-replace
- * refresh into a no-op, leaving the matrix showing the OLD Selected broker until a page reload.
+ * pair. This shape is load-bearing for BOTH header actions below — add-response and
+ * replace-broker each end in `refreshApex(this._wired)` — and a "tidying" edit back to
+ * `wired({ data, error })` compiles, passes every render test, and silently turns those refreshes
+ * into no-ops, leaving the matrix stale until a page reload.
+ *
+ * ── 🔴 NEITHER HEADER ACTION NAVIGATES (2026-08-21) ─────────────────────────
+ * Both open a `LightningModal` over the disposition page and refresh this wire in place.
+ * `NavigationMixin` survives on this class for ONE reason only: the "View All" footer link, which
+ * genuinely is a page transition. See `handleAddResponse` for the UAT bug that made this the rule
+ * rather than a preference.
  */
 export default class BovComparisonMatrix extends NavigationMixin(LightningElement) {
     @api recordId;
@@ -140,21 +147,73 @@ export default class BovComparisonMatrix extends NavigationMixin(LightningElemen
     }
 
     /**
-     * "Add Broker Response" — the platform's own create screen for a BOV_Submission__c with the
-     * parent pre-filled, rather than a hand-built form. `encodeDefaultFieldValues` is used instead
-     * of a hand-assembled `Disposition__c=<id>` string because it URL-encodes the values; a raw
-     * concatenation breaks the moment a defaulted value contains a reserved character.
+     * "Add Broker Response" — opens `c/bovAddResponseModal` over this page and, on success,
+     * refreshes THIS component's wire.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THIS USED TO NAVIGATE, AND THAT WAS THE BUG. DO NOT PUT IT BACK.
+     * ══════════════════════════════════════════════════════════════════════════════════════
+     * Until 2026-08-21 this method called
+     *
+     *     this[NavigationMixin.Navigate]({ type: 'standard__objectPage',
+     *         attributes: { objectApiName: 'BOV_Submission__c', actionName: 'new' },
+     *         state: { defaultFieldValues: encodeDefaultFieldValues({ Disposition__c: … }) } });
+     *
+     * The platform's post-save behaviour for a record created through `actionName: 'new'` is to
+     * NAVIGATE TO THE NEW RECORD, so saving a response threw the user off the disposition they
+     * were working on and onto a BOV Submission detail page. Reported in UAT as "once we save
+     * broker response it redirects to that record page instead of staying on the same page".
+     *
+     * ⚠ THAT IS NOT A BUG IN THE CALL — IT IS WHAT `actionName: 'new'` DOES, and no state
+     * parameter on `NavigationMixin` turns it off. `navigationLocation` belongs to the Aura
+     * `force:createRecord` event, not here; `state.backgroundContext` at best swaps one full page
+     * transition for another and would still rebuild this matrix from a page load rather than
+     * refresh it in place. The only fix is to stop navigating.
+     *
+     * The modal is `await`ed for the same reason the replace flow is — see `handleReplaceBroker`
+     * below: `LightningModal.open()` renders into the PLATFORM'S modal layer, so the dialog
+     * shares no ancestor with this component and a bubbling `CustomEvent` has no path back here.
+     * The promise IS the channel.
      */
-    handleAddResponse() {
-        this[NavigationMixin.Navigate]({
-            type: 'standard__objectPage',
-            attributes: { objectApiName: 'BOV_Submission__c', actionName: 'new' },
-            state: {
-                defaultFieldValues: encodeDefaultFieldValues({
-                    Disposition__c: this.recordId
-                })
-            }
-        });
+    async handleAddResponse() {
+        let result;
+        try {
+            result = await BovAddResponseModal.open({
+                size: 'medium',
+                label: 'Add Broker Response',
+                description:
+                    'Log a broker opinion of value against this disposition without leaving the page.',
+                dispositionId: this.recordId
+            });
+        } catch (error) {
+            this._toast(
+                'Could not open the response dialog',
+                (error && error.body && error.body.message) ||
+                    'The add-response dialog could not be opened.',
+                'error'
+            );
+            return;
+        }
+
+        // Cancelled or dismissed — nothing changed, so say nothing.
+        // ⚠ A dismissed LightningModal resolves `undefined`, and the repo's Jest stub for it
+        // resolves `null` (CustomEvent coerces an absent `detail` to null). Both are falsy and
+        // both must take this branch.
+        if (!result || !result.recordId) {
+            return;
+        }
+
+        this._toast(
+            'Broker response logged',
+            result.name
+                ? `${result.name} was added to this disposition.`
+                : 'The response was added to this disposition.',
+            'success'
+        );
+        // The record was created by a form this cacheable wire knows nothing about, so LDS has no
+        // idea the submission list changed. Without this the matrix keeps showing the old set —
+        // and the whole point of the rework is that the user is still looking at it.
+        refreshApex(this._wired);
     }
 
     /**
