@@ -203,6 +203,11 @@
         <field>Lead.Referred_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <!-- ⚠ ADDED 2026-08-21 - "Add" sorts before "Lead" alphabetically, hence first. -->
+    <flowAccesses>
+        <enabled>true</enabled>
+        <flow>IR_Add_Investor_Investing_Entity</flow>
+    </flowAccesses>
     <flowAccesses>
         <enabled>true</enabled>
         <flow>IR_Lead_Assignment_to_User</flow>
@@ -214,6 +219,10 @@
     <flowAccesses>
         <enabled>true</enabled>
         <flow>IR_Lead_Under_Review_Flow</flow>
+    </flowAccesses>
+    <flowAccesses>
+        <enabled>true</enabled>
+        <flow>IR_Manage_Investing_Entity</flow>
     </flowAccesses>
     <hasActivationRequired>false</hasActivationRequired>
     <label>DPEG IR Default Access</label>

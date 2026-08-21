@@ -165,6 +165,62 @@
             <quickActionName>NewTask</quickActionName>
         </quickActionListItems>
     </quickActionList>
+    <!--
+        ⚠ ADDED 2026-08-21 (post-deploy UX request) - "Related Accounts" related list, surfacing
+        every Investing Entity Account linked to this investor Contact via AccountContactRelation
+        (both direct and indirect), with the relationship-detail columns.
+
+        ⚠ REWORKED 2026-08-21 (discovery, after the first guess `RelatedAccountRelationList` was
+        REJECTED: "Cannot find related list:RelatedAccountRelationList"). No further inference was
+        attempted - the real token was DISCOVERED by a narrow, manifest-based retrieve (never a
+        parent-level/wildcard retrieve) of exact named Contact layouts into the scratchpad
+        directory (not force-app), then grepped for the ACR related list:
+          1. Queried `Layout WHERE TableEnumOrId='Contact'` via Tooling API (PowerShell `sf data
+             query` with the tooling-api flag - Bash's `sf` is broken in this environment, same
+             'C:\Program' PATH issue seen earlier in this project; PowerShell works) to enumerate
+             every Contact layout in the org: B2B Contact Layout, Contact (Marketing/Sales/
+             Support) Layout, Contact Layout, Investor Layout, SDO - Contact, SDO - Partner
+             Contact.
+          2. Narrow-retrieved exactly 3 candidates NOT already in this repo (`Layout:Contact-B2B
+             Contact Layout`, `Layout:Contact-SDO - Contact`, `Layout:Contact-SDO - Partner
+             Contact`) into scratchpad/layout-discovery/ via `sf project retrieve start`, with
+             the metadata and output-dir flags targeting exactly those 3 named components.
+          3. FOUND in `Contact-SDO - Contact.layout-meta.xml`:
+             `<relatedList>RelatedContactAccountRelationList</relatedList>` (NOT
+             RelatedAccountRelationList - the real token has an extra "Contact" in it), with
+             `<fields>ACCOUNT.NAME</fields>` and `<fields>ACCCONRELATION.ROLES</fields>` as its
+             two existing columns (Account Name and the standard Roles multipicklist).
+          4. The SAME retrieved layout set separately confirmed, in a DIFFERENT relatedList
+             (`Contact-SDO - Partner Contact.layout-meta.xml`, the
+             `SDO_ChannelPartner_Certification__c.Contact__c` related list), that CUSTOM fields in
+             this metadata type are referenced by their PLAIN, real field API name
+             (`Status__c`, `Score__c` - mixed case, `__c` suffix, no object prefix, no ALL-CAPS
+             transform) - the ALL-CAPS "OBJECT.FIELD" SOAP-style tokens (ACCOUNT.NAME,
+             ACCCONRELATION.ROLES) are specific to STANDARD fields, which have those legacy
+             aliases; custom fields don't get one and are referenced as-is.
+        Combining both confirmed facts: `ACCOUNT.NAME` copied verbatim for the entity name column,
+        and the three custom ACR fields referenced by their real plain API names
+        (Is_Primary_Contact__c, Is_Required_Signer__c, Signing_Order__c) - NOT the ALL-CAPS
+        ACCCONRELATION-prefixed guess this comment originally proposed before finding the
+        Status__c/Score__c counter-example. This is now an evidence-based construction, not an
+        inference - the relatedList token and the standard-field convention are copied verbatim
+        from a real org example, and the custom-field convention is confirmed from a second real
+        example in the same retrieved set. The scratchpad copies used for this discovery were
+        deleted after extraction; nothing from the discovery retrieve was added to force-app/.
+
+        FOURTH COLUMN FLAGGED: only Account/Entity Name, Is Primary Contact and Is Required
+        Signer were explicitly requested. Signing Order (Signing_Order__c) was added as a fourth
+        column since it's the one remaining relationship field on AccountContactRelation and is
+        clearly useful alongside the other two - flagging this addition so the user can veto it
+        if unwanted.
+    -->
+    <relatedLists>
+        <fields>ACCOUNT.NAME</fields>
+        <fields>Is_Primary_Contact__c</fields>
+        <fields>Is_Required_Signer__c</fields>
+        <fields>Signing_Order__c</fields>
+        <relatedList>RelatedContactAccountRelationList</relatedList>
+    </relatedLists>
     <relatedLists>
         <fields>TASK.SUBJECT</fields>
         <fields>ACTIVITY.TASK</fields>
