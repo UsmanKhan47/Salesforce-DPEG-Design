@@ -45,13 +45,17 @@ const GENERIC_ERROR = 'The broker response could not be saved.';
  * behind it were four-field stubs, so the exclusions below are each argued rather than assumed.
  * The layout's Information + BOV Terms sections give: Disposition__c, Broker__c,
  * Submission_Status__c, OwnerId, BOV_Amount__c, Cap_Rate__c, Commission_Rate__c,
- * Days_To_Market__c, Hist_Success_Rate__c.
+ * Days_To_Market__c, Hist_Success_Rate__c, BOV_Score__c.
  *
  * ⚠ READ AGAINST THE 2026-08-21 RETRIEVED COPY OF THAT LAYOUT, NOT THE OLDER COMMITTED ONE. The
  * layout was edited by hand in Setup on 2026-08-20 and reconciled into the repo the next day;
  * that edit made six fields layout-Required and REMOVED `BOV_Score__c` from the screen entirely.
- * Both facts shape this form — see the `required` attributes and the BOV_Score__c note in the
- * template. Re-derive from the layout file rather than from this paragraph if it has moved again.
+ * 🔴 RETRACTED 2026-08-21 (later the same day): `BOV_Score__c` is back on that layout — the
+ * formula-conversion effort the removal was clearing the way for is deferred, and the field is
+ * restored per the layout file's own reconciliation comment. The layout-Required point still
+ * holds — see the `required` attributes below and the BOV_Score__c note in the template for its
+ * (unrelated) history. Re-derive from the layout file rather than from this paragraph if it has
+ * moved again.
  *
  * OMITTED, WITH REASONS:
  *   - `Name` — AutoNumber (`BOV-{0000}`). It cannot be typed and the platform assigns it.
@@ -69,9 +73,12 @@ const GENERIC_ERROR = 'The broker response could not be saved.';
  *     the form.
  *   - The three formula fields (`Broker_Display__c`, `Property_Name__c`, `Selected_Broker__c`)
  *     are read-only by construction.
- *   - `BOV_Score__c` — 🔴 REMOVED FROM THE LAYOUT BY HAND ON 2026-08-20, so it is omitted here
- *     for the same reason. See the template: the consequence (rows sort NULLS LAST in the
- *     matrix until someone scores them) is documented there rather than quietly fixed.
+ *   - `BOV_Score__c` — 🔴 RETRACTED 2026-08-21 (later the same day). This used to read "REMOVED
+ *     FROM THE LAYOUT BY HAND ON 2026-08-20, so it is omitted here for the same reason." That
+ *     removal was part of a formula-conversion effort now EVALUATED AND DEFERRED (cancelled for
+ *     now, user instruction). The field is now RENDERED here, OPTIONAL, and is back on the page
+ *     layout too (see that file's own reconciliation comment). See the template for the same
+ *     retraction in place.
  *
  * NOTHING IS ADDED BEYOND THE LAYOUT. Every field on this form is one the platform's own New
  * screen offers, which is the property that makes this dialog a drop-in replacement for it.

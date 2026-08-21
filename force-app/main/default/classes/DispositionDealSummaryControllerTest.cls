@@ -134,7 +134,11 @@ private class DispositionDealSummaryControllerTest {
         loi.Ball_In_Court__c = 'Buyer';
         insert loi;
         Contract_Review__c cr = TestDataFactory.createDispositionContractReview(d.Id, false);
-        cr.Negotiation_Status__c = 'Ready for Execution';
+        // ⚠ REPOINTED 2026-08-21 from 'Ready for Execution', which the user removed from the
+        // Disposition_PSA record type. 'Signed' is that record type's terminal now, and because
+        // Negotiation_Status__c is a restricted picklist the old value is refused by Apex DML —
+        // this line was a hard failure, not a stale-but-passing fixture.
+        cr.Negotiation_Status__c = 'Signed';
         insert cr;
 
         Test.startTest();
@@ -149,7 +153,7 @@ private class DispositionDealSummaryControllerTest {
         Assert.areEqual(1500000, summary.loiOfferPrice, 'LOI offer price must pass through unmodified');
         Assert.areEqual('Buyer', summary.loiBallInCourt, 'LOI ball-in-court must pass through unmodified');
         Assert.isTrue(summary.hasPsa, 'PSA row must be populated through the controller');
-        Assert.areEqual('Ready for Execution', summary.psaStatus, 'PSA status must pass through unmodified');
+        Assert.areEqual('Signed', summary.psaStatus, 'PSA status must pass through unmodified');
         Assert.isFalse(summary.ndaCountsUnavailable, 'No degrade expected on a fully-granted read');
         Assert.isFalse(summary.ndaUnavailable, 'No degrade expected on a fully-granted read');
         Assert.isFalse(summary.loiUnavailable, 'No degrade expected on a fully-granted read');

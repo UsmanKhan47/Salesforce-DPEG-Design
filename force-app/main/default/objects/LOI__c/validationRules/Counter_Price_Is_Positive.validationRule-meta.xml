@@ -19,16 +19,20 @@
         FIRES ON ACQUISITION LOIs TOO. THAT IS ASSESSED, NOT OVERLOOKED.
         =====================================================================================
         Acquisition_LOI runs Draft, Under Review, Submitted, Negotiation, Signed.
-        Disposition_LOI runs Received, Under Review, Countered by DPEG, Counter Received from
-        Buyer, Executed.
+        Disposition_LOI runs Received, Under Review, Negotiation, Signed (narrowed 2026-08-21;
+        was Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed -
+        see that record type's own header).
 
         THIS RULE AND THE TWO DAY COUNT RULES ARE SAFE ON BOTH PATHS BECAUSE THEY ARE
         ARITHMETIC INVARIANTS, not workflow gates: a counter price of zero and a negative day
         count are wrong whether DPEG is buying or selling. They need no record type scoping
         and deliberately have none.
-        Final_Price_Required_Before_Executed is the one rule here that IS path specific, and
-        it achieves that by NAMING A VALUE ('Executed', which only Disposition_LOI reaches)
-        rather than by testing a record type. Its own header explains why that is stronger.
+        Final_Price_Required_Before_Executed is the one rule here that IS path specific.
+        🔴 AMENDED 2026-08-21: it no longer achieves that by naming a value - both record types'
+        terminals are now 'Signed', so a value-named test can no longer distinguish them. It is
+        scoped instead by a lookup discriminator, NOT(ISBLANK(Disposition__c)). See that rule's
+        own header for the full retraction and reasoning; its API name is unchanged despite no
+        longer literally matching 'Executed'.
 
         🔴 DO NOT ADD A RecordType.DeveloperName TEST TO ANY OF THESE FOUR "FOR SAFETY".
         Two in repo arguments say why: Broker_Lookup_Is_Off_Market_Only's Master record type

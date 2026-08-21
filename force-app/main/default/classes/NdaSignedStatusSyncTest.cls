@@ -218,6 +218,14 @@ private class NdaSignedStatusSyncTest {
      * .Stage__c / Contract_Review__c.Negotiation_Status__c, which RecordStageAdvanceService's own
      * header discusses) — those were not re-measured here and their own tests are the place to
      * verify or correct that claim if it matters there.
+     * ✅ UPDATE 2026-08-21 — THOSE TWO WERE SUBSEQUENTLY MEASURED AND BEHAVE IDENTICALLY.
+     * `LOI__c.Stage__c` ('Signed' on a Disposition_LOI: refused while the record type lacked it,
+     * ACCEPTED once the record type was deployed carrying it) and
+     * `Contract_Review__c.Negotiation_Status__c` ('Revised' on a Disposition_PSA: active on the
+     * master value set, refused off the record type). Reproductions live in
+     * RecordStageAdvanceService's class header. Four restricted fields, four refusals — the
+     * "UI-only" claim has now been corrected across `classes/`; remaining sites are in
+     * `objects/` and `quickActions/` metadata descriptions and belong to the admin agent.
      */
     @isTest
     static void acquisitionNdaDeclinedViaApiResidual_isRefusedByThePicklistRestrictionItself() {

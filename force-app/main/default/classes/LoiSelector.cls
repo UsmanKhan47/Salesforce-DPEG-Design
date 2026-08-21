@@ -142,8 +142,11 @@ public with sharing class LoiSelector {
      * in the class header.
      *
      * 🔴 RecordTypeId WAS ADDED 2026-08-09 (Tranche 3B) AND IS NOT OPTIONAL. From it
-     * RecordStageAdvanceService picks THREE things: the stage sequence (Draft -> … -> Completed vs
-     * Received -> … -> Executed), the explicit-target allow-list, and the permission gate
+     * RecordStageAdvanceService picks THREE things: the stage sequence (Draft -> … -> Signed vs
+     * Received -> … -> Signed — ⚠ this read "Draft -> … -> Completed vs Received -> … -> Executed"
+     * until 2026-08-21; BOTH SEQUENCES NOW END AT 'Signed', which makes RecordTypeId MORE
+     * load-bearing, not less: the terminal no longer identifies the side), the explicit-target
+     * allow-list (empty on Disposition_LOI since 2026-08-21), and the permission gate
      * (DEAL_DRIVER vs DISPOSITION_DRIVER). Omitting it degrades every disposition LOI to the
      * acquisition sequence SILENTLY — the service reads it through getPopulatedFieldsAsMap(),
      * which cannot distinguish "not selected" from "selected and null". Same contract
@@ -262,13 +265,24 @@ public with sharing class LoiSelector {
      *   - `LOI_Status__c` — the `LOI_Signed_Status_Sync` flow's own header states this is "a
      *     separate approval/deal vocabulary field that NO AUTOMATION EVER SETS". On a disposition
      *     LOI it holds its default, `Draft`, forever, so selecting it would put "Draft" on the
-     *     card beside a `Stage__c` of "Executed" (design §0 C-10).
-     *   - `LOI_Signed_Date__c` — `LOI_Signed_Status_Sync` keys on `Stage__c = 'Signed'`, which is
-     *     the ACQUISITION terminal. The disposition terminal is `Executed`, so that flow can never
-     *     fire on a sale and the field is STRUCTURALLY always blank here (design §0 C-11). It
-     *     would render a permanent em-dash that reads as missing data.
-     * ⚠ Adding either later is not a widening, it is a regression. If a future change makes one of
-     * them live on the sell side, the thing to change first is the automation, then this list.
+     *     card beside a real `Stage__c` (design §0 C-10). ⚠ UNCHANGED by the 2026-08-21 stage
+     *     change — no automation sets it on either side.
+     *   - `LOI_Signed_Date__c` — 🔴 STILL EXCLUDED, BUT ITS STATED REASON IS RETRACTED AS OF
+     *     2026-08-21. Verbatim, what stood here: "`LOI_Signed_Status_Sync` keys on
+     *     `Stage__c = 'Signed'`, which is the ACQUISITION terminal. The disposition terminal is
+     *     `Executed`, so that flow can never fire on a sale and the field is STRUCTURALLY always
+     *     blank here (design §0 C-11). It would render a permanent em-dash that reads as missing
+     *     data."
+     *     The user's new sell-side sequence is Received -> Under Review -> Negotiation -> Signed,
+     *     so `Signed` IS the disposition terminal now. `LOI_Signed_Status_Sync` is a before-save
+     *     flow on `LOI__c` with no record-type and no lookup criterion, so it fires on disposition
+     *     LOIs reaching Signed and stamps this field — the value will be REAL, not blank. The
+     *     exclusion is retained as a product decision (the card does not show it), not as a
+     *     structural inevitability. Do not repeat the old justification.
+     * ⚠ Adding either later is not a widening, it is a regression against a decision. The
+     * PRECONDITION that used to protect `LOI_Signed_Date__c` ("the thing to change first is the
+     * automation") has already happened by side-effect; if the card should show it, that is now
+     * purely a design question.
      *
      * ⚠ `Ball_In_Court__c` IS SELECTED AND ITS VOCABULARY INVERTS BETWEEN THE TWO SIDES —
      * 'Seller' names the counterparty on a purchase and names DPEG on a sale (see

@@ -65,7 +65,7 @@
     <approvalPageFields>
         <field>Name</field>
         <field>Owner</field>
-        <field>Buyer_Name__c</field>
+        <field>Broker__c</field>
         <field>Offer_Amount__c</field>
         <field>Offer_Date__c</field>
         <field>Earnest_Money_Proposed__c</field>

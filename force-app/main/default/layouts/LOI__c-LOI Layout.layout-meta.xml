@@ -19,6 +19,19 @@
         emits the token on retrieve even though it rejects it on deploy - a platform asymmetry).
         Whoever hits that should re-apply this same removal rather than re-investigate from
         scratch.
+
+        ADDED 2026-08-21 (UAT unblock): Final_Agreed_Price__c to column 1, after Counter_Cap_Rate__c.
+        Final_Price_Required_Before_Executed (objects/LOI__c/validationRules) blocks a disposition
+        LOI moving Negotiation -> Signed with this field blank, but the field was on NEITHER this
+        layout NOR LOI_Record_Page's Details tab (which renders via force:detailPanel, i.e. THIS
+        layout, so fixing it here is sufficient - no flexipage edit needed). Users had no UI path
+        to satisfy the rule. DPEG_Disposition_Edit already grants
+        <editable>true</editable> on LOI__c.Final_Agreed_Price__c (pre-existing, confirmed in git
+        history before this change - not part of this edit). This is the ONLY LOI layout, shared by
+        both record types, so the field is now also visible on acquisition LOIs; it renders
+        read-only there (no acquisition permission set grants it editable), which is a visibility
+        change only, not a behaviour change - flagged here per standing convention, not applied
+        conditionally, because a static Layout cannot express a record-type-conditional field.
     -->
     <excludeButtons>OpenSlackRecordChannel</excludeButtons>
     <layoutSections>
@@ -74,6 +87,10 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Counter_Cap_Rate__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Final_Agreed_Price__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>

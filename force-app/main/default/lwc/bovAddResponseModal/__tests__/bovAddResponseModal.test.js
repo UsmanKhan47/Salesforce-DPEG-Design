@@ -86,6 +86,7 @@ describe('c-bov-add-response-modal', () => {
             'Commission_Rate__c',
             'Days_To_Market__c',
             'Hist_Success_Rate__c',
+            'BOV_Score__c',
             'Submission_Status__c'
         ]);
 
@@ -95,18 +96,29 @@ describe('c-bov-add-response-modal', () => {
         expect(form(element).recordId).toBeUndefined();
     });
 
+    it('🔴 T-FIELDS: BOV_Score__c is rendered and OPTIONAL (2026-08-21, formula conversion deferred)', () => {
+        const element = createComponent();
+        const rendered = inputs(element);
+        const score = rendered.find((i) => i.fieldName === 'BOV_Score__c');
+
+        // 🔴 RETRACTED 2026-08-21 (later the same day). This test used to pin
+        // BOV_Score__c as ABSENT, on the grounds that it was removed from `BOV
+        // Submission Layout` by hand in Setup on 2026-08-20 and this dialog
+        // replaces that screen. The formula conversion that removal was clearing
+        // the way for is now evaluated and deferred (cancelled for now); the
+        // user's explicit instruction is to make the field hand-enterable here.
+        // The field is back on the layout too — see that file's own
+        // reconciliation comment.
+        expect(score).toBeDefined();
+        // Optional, not required — a broker response with no score must still
+        // save. No validation rule names this field, so nothing server-side
+        // would refuse an empty one either.
+        expect(score.required).toBeFalsy();
+    });
+
     it('🔴 T-FIELDS: the stamped / derived / withdrawn fields are NOT offered', () => {
         const element = createComponent();
         const rendered = fieldNames(element);
-
-        // 🔴 BOV_Score__c WAS REMOVED FROM `BOV Submission Layout` BY HAND IN SETUP ON
-        // 2026-08-20 (retrieved into the repo 2026-08-21). This dialog replaces that
-        // screen, so reinstating the field here would silently overturn a recent,
-        // deliberate decision. Pinned as ABSENT precisely because the argument FOR
-        // adding it is superficially good — nothing writes it, and
-        // BovSubmissionSelector orders every query by it — and would otherwise be
-        // made again by the next reader.
-        expect(rendered).not.toContain('BOV_Score__c');
 
         // Broker_Firm__c and Contact_Name__c are written by
         // BovSubmissionBrokerStampService in the before-save trigger, from the

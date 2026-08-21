@@ -4,6 +4,10 @@
         The SELL-SIDE LOI path, for the Disposition_LOI record type.
         Five steps: Received -> Under Review -> Countered by DPEG -> Counter Received from
         Buyer -> Executed (Part 2 lines 55-74).
+        🔴 SUPERSEDED 2026-08-21. NOW FOUR STEPS: Received -> Under Review -> Negotiation ->
+        Signed. See the dated retraction block below for the full change and reasoning; this top
+        summary is left as history rather than rewritten in place because everything below it
+        depends on knowing what it used to say.
 
         NONE OF THIS TEXT IS CARRIED FORWARD, and that is correct rather than a lapse of the
         copy-byte-identical discipline: the two stage sets are FULLY DISJOINT, so there is no
@@ -19,12 +23,28 @@
         the tranche's. Adding key fields here would make the two LOI paths asymmetric for no
         requested reason and would introduce an FLS dependency this path does not have today.
 
-        THE MIDDLE OF THIS PATH IS A LOOP, NOT A LINE, WHICH IS WHY THERE ARE TWO COUNTER
-        STAGES WHERE THE ACQUISITION SIDE HAS ONE. We counter (Countered by DPEG), the buyer
-        counters back (Counter Received from Buyer), "and it goes round until both sides are
-        agreed". A Path renders steps in one order, so the loop-back reads as a step going
-        backwards; that is expected. The forward exit from Counter Received from Buyer is
-        Executed and the loop-back is Countered by DPEG - two named actions, not one Advance.
+        =====================================================================
+        🔴 RETRACTED 2026-08-21 (user request: "Received, under review, negotiations, Signed" as
+        the disposition LOI sequence). THE PARAGRAPH DIRECTLY BELOW IS FALSE - THE LOOP IS
+        RETIRED. RETAINED VERBATIM PER STANDING CONVENTION.
+        =====================================================================
+
+        RETRACTED, verbatim: "THE MIDDLE OF THIS PATH IS A LOOP, NOT A LINE, WHICH IS WHY THERE
+        ARE TWO COUNTER STAGES WHERE THE ACQUISITION SIDE HAS ONE. We counter (Countered by DPEG),
+        the buyer counters back (Counter Received from Buyer), 'and it goes round until both sides
+        are agreed'. A Path renders steps in one order, so the loop-back reads as a step going
+        backwards; that is expected. The forward exit from Counter Received from Buyer is Executed
+        and the loop-back is Countered by DPEG - two named actions, not one Advance."
+
+        THIS PATH IS NOW LINEAR, NOT A LOOP: Received -> Under Review -> Negotiation -> Signed,
+        four steps, one Advance Stage action moving forward through all of them. 'Countered by
+        DPEG' and 'Counter Received from Buyer' are REMOVED from this record type (they remain
+        active on the master Stage__c value set but sit on no record type - see that field's own
+        header). The two named counter quick actions (Mark_Countered_By_DPEG,
+        Mark_Counter_Received) and their LWC bundles are RETIRED in the same change. Negotiation
+        - any number of rounds, in either direction - is now recorded entirely on Counter History
+        (Counter_Offer__c / c/loiCounterOffer) while the record sits at the single 'Negotiation'
+        stage; there is no longer a stage-per-round.
 
         STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THIS FILE. Runtime display order
         comes from Stage__c's picklist value order (sorted=false) filtered by this record type;
@@ -79,13 +99,26 @@
         DIFFERENT prose - correct, because a Path is per record type, but no longer an instance of
         "no shared step exists".
 
-        ⚠ WHAT DID NOT CHANGE, AND WHY THIS FILE STILL NEEDED NO EDIT. The three new acquisition
-        values were APPENDED to Stage__c, and 'Under Review' already sat at position 7, so this
-        path still renders Received(6) -> Under Review(7) -> Countered by DPEG(8) ->
-        Counter Received from Buyer(9) -> Executed(10), byte-identical to before. The ordering was
-        re-checked against the master value set rather than assumed; the arithmetic is in
-        LOI__c/fields/Stage__c's comment. The terminal values remain disjoint ('Signed' vs
-        'Executed'), which is why no terminal-state test needed a record-type guard.
+        ⚠ WHAT DID NOT CHANGE, AND WHY THIS FILE STILL NEEDED NO EDIT [TRUE FROM 2026-08-14 TO
+        2026-08-21 ONLY - SEE THE 2026-08-21 RETRACTION ABOVE FOR THE CURRENT STATE]. The three
+        new acquisition values were APPENDED to Stage__c, and 'Under Review' already sat at
+        position 7, so this path still renders Received(6) -> Under Review(7) ->
+        Countered by DPEG(8) -> Counter Received from Buyer(9) -> Executed(10), byte-identical to
+        before. The ordering was re-checked against the master value set rather than assumed; the
+        arithmetic is in LOI__c/fields/Stage__c's comment. The terminal values remain disjoint
+        ('Signed' vs 'Executed'), which is why no terminal-state test needed a record-type guard.
+
+        🔴 2026-08-21: THIS FILE NOW NEEDS AN EDIT, AND DID GET ONE. New rendering, re-derived
+        from the master Stage__c order (positions unchanged by this pass - see that field's own
+        header): Received(6) -> Under Review(7) -> Negotiation(12) -> Signed(13). Still strictly
+        monotonic, so no master re-order was needed or performed - only this record type's
+        inclusion list changed. 🔴 THE TERMINALS ARE NO LONGER DISJOINT. 'Signed' is now this
+        record type's terminal AND Acquisition_LOI's terminal - the property the retracted
+        sentence above relied on ("no terminal-state test needed a record-type guard") no longer
+        holds in general. It happens to still be FINE for this specific object's one terminal-
+        adjacent guard, Is_Advance_Allowed__c, because that field's own clause excluding 'Signed'
+        is already record-type-agnostic - see that field's header for why no edit was needed
+        there despite the shared terminal.
 
         COUNTERS ARE RECORDED ON Counter_Offer__c, WHICH IS INHERITED FROM THE ACQUISITION SIDE
         (decision D6) - that reuse is what makes "every round is recorded" achievable at all.
@@ -117,16 +150,12 @@
         <picklistValueName>Under Review</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>We have countered the buyer's terms. Log the counter in the Counter History so our price and the date it went out are recorded - every round of this negotiation is kept, not just the final number.</info>
-        <picklistValueName>Countered by DPEG</picklistValueName>
+        <info>The negotiation is underway. Record every round - ours and the buyer's - by logging it in the Counter History on this record; the named counter-round buttons are retired, so every exchange is logged the same way regardless of who sent it. Stay on this step for as long as the negotiation runs. Advance only once both sides are agreed.</info>
+        <picklistValueName>Negotiation</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>The buyer has countered back. Log their counter in the Counter History, then take one of two routes: counter again to keep the negotiation going, or execute if the terms are now agreed. It goes round until both sides align.</info>
-        <picklistValueName>Counter Received from Buyer</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>Both sides are agreed and the LOI is signed. Attach the executed document, then move the disposition on to PSA - on a sale our own legal team prepares the contract and issues the first draft.</info>
-        <picklistValueName>Executed</picklistValueName>
+        <info>Both sides are agreed and the LOI is signed. Attach the executed document, then move the disposition on with Advance to PSA - on a sale our own legal team prepares the contract and issues the first draft.</info>
+        <picklistValueName>Signed</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>Disposition_LOI</recordTypeName>
 </PathAssistant>

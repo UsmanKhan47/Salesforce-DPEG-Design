@@ -110,9 +110,17 @@
                     ></lightning-input-field>
 
                     <!-- ═══════════════════════════════════════════════════════════════
-                         🔴 `BOV_Score__c` IS DELIBERATELY ABSENT. DO NOT ADD IT BACK
-                         WITHOUT ASKING.
+                         🔴 RETRACTED 2026-08-21 (later the same day). THE NOTE BELOW USED TO
+                         SAY `BOV_Score__c` IS DELIBERATELY ABSENT — DO NOT ADD IT BACK WITHOUT
+                         ASKING. It is retained here, not deleted, so both decisions stay
+                         visible: the field was removed from this screen on 2026-08-20 as part
+                         of a formula-conversion effort that has since been EVALUATED AND
+                         DEFERRED (cancelled for now). The user's explicit instruction is to
+                         make BOV_Score__c hand-enterable here until it is replaced by a
+                         formula. It is added below as OPTIONAL — no validation rule names it,
+                         and a broker response with no score still must save.
                          ═══════════════════════════════════════════════════════════════
+                         ORIGINAL NOTE, KEPT FOR CONTEXT:
                          It was on `BOV Submission Layout` and was REMOVED BY HAND in Setup
                          on 2026-08-20 (retrieved into this repo 2026-08-21, see the
                          reconciliation comment in the layout file). That is a recent,
@@ -126,6 +134,10 @@
                          comparison matrix until someone scores it. The field still exists,
                          is still granted editable in DPEG_Disposition_Edit, and is one
                          `lightning-input-field` away if that is not what the user wants. -->
+                    <lightning-input-field
+                        class="bar-field bar-field-score"
+                        field-name="BOV_Score__c"
+                    ></lightning-input-field>
 
                     <!-- ⚠ DEFAULTED TO Backup, AND THAT DEFAULT IS LOAD-BEARING.
                          "Selected" exclusivity is a SERVER invariant maintained by

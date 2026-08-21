@@ -1,6 +1,17 @@
 /**
  * PSA execution handoff (called from ContractReviewTrigger, after update). When a
- * Contract Review's Negotiation_Status__c just became 'Executed':
+ * Contract Review's Negotiation_Status__c just reached ITS OWN TERMINAL:
+ *
+ *   ACQUISITION (Opportunity__c set)  terminal 'Executed'   ← unchanged
+ *   DISPOSITION (Disposition__c set)  terminal 'Signed'     ← 2026-08-21, user harmonisation
+ *
+ * ⚠ THIS SENTENCE READ "just became 'Executed'" UNTIL 2026-08-21. There is no longer a single
+ * terminal: the user removed 'Executed' from the `Disposition_PSA` record type. See
+ * ACQUISITION_TERMINAL / DISPOSITION_TERMINAL for the measurement, the reason the sell-side handoff
+ * was silently unreachable in between, and why repointing one shared constant would have shifted
+ * every deadline in every acquisition transaction.
+ *
+ * On that arrival:
  *
  *   1. Stamps the parent Opportunity: Contract_Signed__c, Contract_Executed_Date__c
  *      (Day 0), Deal_Status__c = 'Contract Signed'. The deal stays at the coarse
@@ -28,10 +39,14 @@
  *
  * ── 🔴 handleExecution NOW HAS TWO ARMS, ONE PER SIDE OF THE HOUSE (Tranche 3C, 2026-08-09) ──
  * `Contract_Review__c` gained an `Acquisition_PSA` / `Disposition_PSA` record-type pair (D6/D16.3),
- * so one `Executed` event now means two different things:
+ * so one execution event meant two different things:
  *
  *   ACQUISITION  (Opportunity__c set)   -> stamp the Opportunity (Contract Signed, Day 0) + notify
  *   DISPOSITION  (Disposition__c set)   -> move Disposition__c.Disposition_Stage__c to 'Closing'
+ *
+ * ⚠ AND SINCE 2026-08-21 IT IS NOT EVEN ONE EVENT. This block said "one `Executed` event now means
+ * two different things"; the two arms now watch two DIFFERENT VALUES, so they are two events that
+ * happen to share a method. The arms themselves are otherwise unchanged.
  *
  * ── 🔴 THE NOTIFICATION CPU BUDGET — READ THIS BEFORE ADDING A FIFTH RECIPIENT ──
  * `GroupNotifier`'s MEASURED cost model (its own header, measured on `usman-dpeg`
@@ -75,6 +90,12 @@
  *   3. The two arms are then independent by construction rather than by an else-branch: a
  *      malformed row carrying BOTH parents runs both arms, and a row carrying neither runs
  *      neither. An if/else on record type would have had to invent an answer for both cases.
+ *   4. ➕ ADDED 2026-08-21, AND IT IS NOW THE DECISIVE ONE. The TERMINAL is per side too, and a
+ *      lookup-keyed arm paired with a record-type-keyed terminal could DISAGREE about a row — on
+ *      Master, or on a row carrying both parents. The disagreement is silent: no exception, just a
+ *      handoff that does nothing or stamps the wrong parent. Deriving arm and terminal from the
+ *      SAME expression makes that unrepresentable, which is why the terminal test now sits inside
+ *      each arm's own `if` rather than in a shared pre-filter above them.
  */
 public with sharing class ContractExecutionService {
 
@@ -97,7 +118,73 @@ public with sharing class ContractExecutionService {
     @TestVisible
     private static List<GroupNotifier.Request> lastRunNotifications = new List<GroupNotifier.Request>();
 
-    @TestVisible private static final String EXECUTED = 'Executed';
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE PSA TERMINAL IS PER SIDE OF THE HOUSE AS OF 2026-08-21. THERE IS NO LONGER ONE.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ⚠ RETRACTED, verbatim: `@TestVisible private static final String EXECUTED = 'Executed';` —
+     * one constant, tested once, feeding both arms.
+     *
+     * The user harmonised `Contract_Review__c.Negotiation_Status__c` on the `Disposition_PSA`
+     * record type. LIVE, measured via the UI API on 2026-08-21 (see the note on the channel below):
+     *
+     *   Acquisition_PSA   Draft (default) | Negotiation | Signed | Executed      ← UNCHANGED
+     *   Disposition_PSA   Initial Draft (default) | Negotiation | Signed         ← 'Executed' GONE
+     *
+     * 🔴 SO THE SELL-SIDE HANDOFF WAS SILENTLY UNREACHABLE BETWEEN THAT CHANGE AND THIS ONE. A
+     * disposition PSA can no longer HOLD 'Executed' — `Negotiation_Status__c` is a restricted
+     * picklist and Apex DML enforces the record type's subset (measured three separate ways; see
+     * RecordStageAdvanceService's class header) — so `justExecuted` could never be true on a sale.
+     * `Disposition_Stage__c` would have stayed on 'PSA' forever, with no error and no test failure
+     * on the acquisition side. That is the failure mode this split exists to close.
+     *
+     * ── 🔴 WHY THE DISCRIMINATOR IS THE PARENT LOOKUP AND NOT THE RECORD TYPE ────
+     * The class header already argues the lookup for the two ARMS (field metadata mandates it; it
+     * survives the Master-row migration window; it keeps the arms independent rather than
+     * else-branched). Those three transfer here unchanged. A FOURTH reason is specific to the
+     * TERMINAL and is the decisive one:
+     *
+     *   🔴 A LOOKUP-KEYED ARM PAIRED WITH A RECORD-TYPE-KEYED TERMINAL CAN DISAGREE, AND THE
+     *   DISAGREEMENT IS SILENT. A row on Master (or a malformed row carrying BOTH parents) would be
+     *   classified one way for "which terminal counts?" and the other way for "which arm runs?".
+     *   The result is a row that either does nothing at all or stamps the wrong parent, with no
+     *   exception to trace. Deriving BOTH from the same expression makes that class of bug
+     *   unrepresentable — the terminal test now lives INSIDE each arm's own `if`, so an arm cannot
+     *   run against a terminal it did not choose.
+     *
+     * ⚠ THIS IS NOT THE SAME REASONING AS THE LOI PRICE RULE, though it reaches the same answer.
+     * `Final_Price_Required_Before_Executed` picked `NOT(ISBLANK(Disposition__c))` because a
+     * VALIDATION RULE cannot scope on a record type without excluding Master rows and without
+     * breaking on a record-type rename. Neither of those applies to Apex. The argument here is
+     * arm/terminal agreement; do not cite one as precedent for the other.
+     *
+     * ⚠ ON THE MEASUREMENT CHANNEL, because the obvious ones are worthless here: Metadata API
+     * retrieve, Tooling `RecordType.Metadata` and `PicklistValueInfo` all return EMPTY for every
+     * record type on this object, so their silence proves nothing. The only channel that reports
+     * record-type-scoped picklist values is the UI API:
+     *   /services/data/v67.0/ui-api/object-info/Contract_Review__c/picklist-values/<rtId>
+     */
+    @TestVisible private static final String ACQUISITION_TERMINAL = 'Executed';
+
+    /**
+     * The sell-side PSA terminal, 2026-08-21. 'Signed' is the LAST value on `Disposition_PSA`.
+     *
+     * 🔴 'Signed' IS ALSO ON Acquisition_PSA, AND IT IS NOT TERMINAL THERE — it is the immediate
+     * PREDECESSOR of 'Executed' (CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE: Draft -> Negotiation ->
+     * Signed -> Executed). THE TWO TERMINALS ARE NO LONGER DISJOINT VALUES, which is exactly why a
+     * single shared predicate cannot express this and why repointing one constant globally would be
+     * a live acquisition defect rather than a refactor:
+     *
+     *   Every acquisition PSA passes THROUGH 'Signed' on its way to 'Executed'. A global repoint
+     *   would fire the Day-0 stamp, the four notifications and the Offering shell ONE HOP EARLY —
+     *   at signature instead of at execution — and `Contract_Executed_Date__c` dates the entire
+     *   ~75-task Day-0 checklist by offset. Every deadline in every acquisition transaction would
+     *   shift. Pinned by executingAnAcquisitionPsaThroughSignedDoesNotFireTheHandoff.
+     *
+     * ⚠ Do not "simplify" the two constants back into one, and do not add 'Signed' to the
+     * acquisition side "for symmetry".
+     */
+    @TestVisible private static final String DISPOSITION_TERMINAL = 'Signed';
 
     /** The Opportunity stage that opens the transaction. */
     @TestVisible private static final String ABOUT_TO_CLOSE = 'About to Close';
@@ -210,23 +297,55 @@ public with sharing class ContractExecutionService {
         Set<Id> executedDispositionIds = new Set<Id>();
         for (Contract_Review__c cr : newCrs) {
             Contract_Review__c prior = (oldMap == null) ? null : oldMap.get(cr.Id);
-            Boolean justExecuted = cr.Negotiation_Status__c == EXECUTED
-                && (prior == null || prior.Negotiation_Status__c != EXECUTED);
-            if (!justExecuted) {
-                continue;
-            }
+            // ⚠ THE TERMINAL TEST MOVED INSIDE THE TWO ARMS ON 2026-08-21 AND THE SHARED
+            // `justExecuted` / `if (!justExecuted) continue;` PRE-FILTER IS GONE. It read:
+            //     Boolean justExecuted = cr.Negotiation_Status__c == EXECUTED
+            //         && (prior == null || prior.Negotiation_Status__c != EXECUTED);
+            //     if (!justExecuted) { continue; }
+            // One terminal fed both arms because both record types ended at 'Executed'. The user
+            // harmonised Disposition_PSA to end at 'Signed', so there are now two terminals and
+            // they are NOT disjoint values — 'Signed' is a mid-sequence stage on the acquisition
+            // side. A shared predicate can no longer answer "did this just reach ITS end?".
+            // See DISPOSITION_TERMINAL for what a global repoint would have cost.
+            //
             // Two independent `if`s, never if/else — see the discriminator note in the class
             // header. A row with both parents runs both arms; a row with neither runs neither.
-            if (cr.Opportunity__c != null) {
+            // That property is UNCHANGED: each arm still tests only its own lookup, and now also
+            // its own terminal, so the arm and the terminal cannot disagree about a row.
+            if (cr.Opportunity__c != null && justReached(cr, prior, ACQUISITION_TERMINAL)) {
                 executedOppIds.add(cr.Opportunity__c);
             }
-            if (cr.Disposition__c != null) {
+            if (cr.Disposition__c != null && justReached(cr, prior, DISPOSITION_TERMINAL)) {
                 executedDispositionIds.add(cr.Disposition__c);
             }
         }
 
         stampOpportunities(executedOppIds);
         advanceDispositionsToClosing(executedDispositionIds);
+    }
+
+    /**
+     * True when this save is the EDGE onto `terminal` — the value is there now and was not before.
+     *
+     * Extracted 2026-08-21 so the two arms share the edge-detection SHAPE while each supplies its
+     * own terminal. Keeping one expression is the point: the acquisition and disposition arms must
+     * differ ONLY in which value they watch for, never in how they decide "just arrived".
+     *
+     * 🔴 EDGE, NOT LEVEL, AND THAT IS LOAD-BEARING ON BOTH SIDES. `prior == null` (an INSERT)
+     * counts as an arrival, which is how a row created directly at its terminal is handled; every
+     * other save must show a CHANGE. Without the `prior` half, any later edit to an already-executed
+     * PSA — a version bump, a ball-in-court change, a re-parent — would re-stamp Day 0 and re-send
+     * four notifications on the acquisition side, and would re-drive an already-Closing sale
+     * backwards through `advanceDispositionsToClosing` on the disposition side.
+     *
+     * @param cr       the row as saved
+     * @param prior    the row as it was, or null on insert
+     * @param terminal the terminal for THIS row's side of the house
+     */
+    private static Boolean justReached(
+            Contract_Review__c cr, Contract_Review__c prior, String terminal) {
+        return cr.Negotiation_Status__c == terminal
+            && (prior == null || prior.Negotiation_Status__c != terminal);
     }
 
     /**
@@ -343,9 +462,14 @@ public with sharing class ContractExecutionService {
      * corrected there. It is NOT corrected in this change: `objects/` was out of scope for the
      * Tranche 3C Apex build, so it is carried as a handoff rather than silently left to rot.
      *
-     * ── 🔴 THREE THINGS CAN BLOCK THIS WRITE, AND ONLY ONE OF THEM IS A PERMISSION ──
+     * ── 🔴 FOUR THINGS CAN BLOCK THIS WRITE, AND ONLY TWO OF THEM ARE PERMISSIONS ──
+     * ⚠ THIS HEADING READ "THREE THINGS … ONLY ONE OF THEM IS A PERMISSION" UNTIL 2026-08-21 AND IS
+     * CORRECTED IN PLACE RATHER THAN REWRITTEN — items 1-3 are unchanged and still correct. Item 4
+     * was MISSING, not wrong, and the omission is the shape that cost a UAT cycle one module over
+     * (`DispositionOfferTriggerHandler`, `DISP-0011`): a list of obstacles that looks exhaustive is
+     * how a fourth one stays invisible.
      * This is the D16.2 / Tranche-2-C1 decision applied deliberately. Each obstacle needs its own
-     * mechanism; none of the three substitutes for another:
+     * mechanism; none of the four substitutes for another:
      *
      *  1. CRUD / FLS — whoever executes a PSA (Legal, a deal driver) is not necessarily an EDITOR
      *     of `Disposition__c`. Answered by `AccessLevel.SYSTEM_MODE`, the same justification the
@@ -360,6 +484,26 @@ public with sharing class ContractExecutionService {
      *     OFF-MARKET disposition until every non-Declined NDA is Signed. That rule is CORRECT and
      *     must keep firing here: an executed PSA does not entitle a sale to skip the release gate.
      *     Also answered by `allOrNone = false`.
+     *
+     *  4. 🔴 RECORD-LEVEL SHARING — ADDED 2026-08-21, AND IT IS A DIFFERENT REFUSAL FROM ITEM 1.
+     *     `Disposition__c` is OWD **Private** (`InternalSharingModel = Private`, measured via
+     *     Tooling `EntityDefinition` 2026-08-21) and the sale is owned by whoever created it, not by
+     *     whoever executes the PSA. Item 1's `AccessLevel.SYSTEM_MODE` lifts CRUD and FLS and
+     *     **never sharing** (ARCHITECTURE.md §2), so it does not reach this one.
+     *     ⚠ THE READ CANNOT WARN YOU. The comment at the selector call below says an unseen
+     *     disposition "is simply absent from this result … skip rather than guess" — TRUE, and it is
+     *     why this never writes a WRONG row. But it is not a filter that keeps unwritable rows out
+     *     of the DML, because BOTH disposition permission sets carry `viewAllRecords = true` and
+     *     NEITHER carries `modifyAllRecords`. The population that can READ every sale and EDIT
+     *     almost none is therefore the NORMAL case, not an edge: the read succeeds, the row reaches
+     *     the update, and the update is refused. That is precisely how the sibling defect presented
+     *     (`DispositionOfferTriggerHandler`, `DISP-0011` / `OFFER-0007`, measured
+     *     `HasReadAccess = true, HasEditAccess = false` for the running principal).
+     *     Answered by the `private without sharing ClosingStageWrites` inner class below.
+     *     ⚠ NO PRODUCTION INCIDENT IS RECORDED FOR *THIS* SITE, and that is stated rather than
+     *     implied. It was fixed on the strength of the sibling's measurement plus the permission-set
+     *     shape above, both of which apply here unchanged. The honest version of the argument is
+     *     "the same refusal is reachable here by the same mechanism", not "this broke".
      *
      * ── WHY allOrNone = false, STATED AS A TRADE RATHER THAN AS A SAFETY FEATURE ──
      * An all-or-none update would roll back THE PSA EXECUTION ITSELF — the Contract Review's
@@ -420,11 +564,98 @@ public with sharing class ContractExecutionService {
             return;
         }
 
-        // allOrNone = false + SYSTEM_MODE. Both are load-bearing and neither covers the other's
-        // obstacle — see the header. The results are deliberately NOT inspected: there is no
-        // recovery action available in an after-update trigger, and the residual is visible on the
-        // records themselves.
-        Database.update(stageUpdates, false, AccessLevel.SYSTEM_MODE);
+        // allOrNone = false + SYSTEM_MODE + `without sharing`. All three are load-bearing and no one
+        // of them covers another's obstacle — see the four-item list in the header.
+        // ⚠ THE CLAUSE THAT USED TO END THIS COMMENT — *"the results are deliberately NOT inspected:
+        // there is no recovery action available in an after-update trigger"* — IS RETRACTED IN PLACE
+        // 2026-08-21. The premise holds (nothing below rethrows or retries, for exactly that
+        // reason); the conclusion did not follow. "Cannot recover" is not "must not report", and an
+        // un-inspected soft DML is what let the sibling handler's identical statement fail in
+        // production while every surface a person can see read as success.
+        recordStageWriteFailures(new ClosingStageWrites().apply(stageUpdates), stageUpdates);
+    }
+
+    /**
+     * Every `Closing` stage-write failure from the most recent `advanceDispositionsToClosing` call,
+     * as `<dispositionId> -> <STATUS_CODE> | <message>`. Empty on a clean run and reset at the top
+     * of every `recordStageWriteFailures` call, so it describes ONE trigger chunk.
+     *
+     * ⚠ IT EXISTS TO BE ASSERTED ON. `ContractExecutionServiceTest`'s non-owner executor test
+     * asserts it is EMPTY, so removing the sharing escape fails with the actual `StatusCode` rather
+     * than with an opaque "expected Closing, was PSA".
+     */
+    @TestVisible
+    private static List<String> lastRunStageWriteFailures = new List<String>();
+
+    /**
+     * Sends every refused row to the debug log at ERROR and to `lastRunStageWriteFailures`.
+     *
+     * Report, never recovery: nothing here rethrows or retries, because both would roll back the PSA
+     * execution — the legal state this method is forbidden to endanger. Shape copied from
+     * `DealFolderService.stampAll`.
+     *
+     * @param results   Parallel to `attempted`, in input order; never null.
+     * @param attempted The rows handed to the DML, used only for their Ids.
+     */
+    private static void recordStageWriteFailures(
+        List<Database.SaveResult> results,
+        List<Disposition__c> attempted
+    ) {
+        lastRunStageWriteFailures = new List<String>();
+        for (Integer i = 0; i < results.size(); i++) {
+            if (results[i].isSuccess()) {
+                continue;
+            }
+            List<Database.Error> errors = results[i].getErrors();
+            String detail = errors.isEmpty()
+                ? 'no error detail returned'
+                : errors[0].getStatusCode() + ' | ' + errors[0].getMessage();
+            lastRunStageWriteFailures.add(attempted[i].Id + ' -> ' + detail);
+            System.debug(LoggingLevel.ERROR,
+                'ContractExecutionService.advanceDispositionsToClosing: LOST STAGE ADVANCE on '
+                + 'Disposition__c ' + attempted[i].Id + ' -> ' + detail
+                + ' | the sell-side PSA reads Executed and its sale did NOT move to Closing. '
+                + 'Running user: ' + UserInfo.getUserId() + '.');
+        }
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ONE STATEMENT IN THIS CLASS THAT ESCAPES SHARING. ADDED 2026-08-21.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHO RUNS THIS CODE: whoever saved the sell-side `Contract_Review__c` to `Executed` — Legal, a
+     * transaction coordinator, a deal driver. Not, in general, the OWNER of the Disposition, which
+     * is created by the acquisitions/disposition analyst who opened the sale.
+     *
+     * WHY THEY PREDICTABLY LACK RECORD-LEVEL EDIT ON THE TARGET: obstacle 4 in this method's header,
+     * in full. In one line: `Disposition__c` is OWD Private, the object's only Edit-granting sharing
+     * rule is `Disposition_Team_RW` (Acquisitions_Analyst + subordinates -> `DPEG_Acquisitions_Team`),
+     * and both disposition permission sets grant `viewAllRecords` without `modifyAllRecords` — so
+     * "can read every sale, can edit almost none" is the ordinary shape of a DPEG persona.
+     *
+     * 🔴 `AccessLevel.SYSTEM_MODE` WAS NOT SUFFICIENT AND COULD NEVER HAVE BEEN. ARCHITECTURE.md §2:
+     * *"🔴 `SYSTEM_MODE` bypasses CRUD/FLS ONLY — it does NOT bypass sharing."* Obstacle 1 and
+     * obstacle 4 are two different refusals that happen to sound alike when both are described as
+     * "this user is not an editor of `Disposition__c`"; one is an object permission and one is a row.
+     *
+     * WHY THE ESCAPE IS BOUNDED TO THIS ONE WRITE: this class stays `with sharing` and its OTHER two
+     * DMLs — `stampOpportunities`'s Opportunity update and the `Transaction__c` insert — do NOT use
+     * it and must not be moved into it. `Opportunity` is OWD **ReadWrite** internally (measured
+     * 2026-08-21), so no sharing refusal is reachable there and an escape would be an unargued
+     * widening. This inner class holds ONE statement over a list `advanceDispositionsToClosing`
+     * built from rows a `with sharing` selector returned, so an invisible sale is still never
+     * written. ARCHITECTURE.md §2 prescribes this exact shape; repo precedents are
+     * `DispositionOfferSelector.TractionReads` (read) and `NdaExpiryAlertBatch.stampMarkers` (write).
+     */
+    private without sharing class ClosingStageWrites {
+        /**
+         * @param stageUpdates Disposition shells built by `advanceDispositionsToClosing` from rows a
+         *                     `with sharing` selector returned; never null, never empty.
+         * @return One `Database.SaveResult` per row, in input order. The caller inspects them.
+         */
+        private List<Database.SaveResult> apply(List<Disposition__c> stageUpdates) {
+            return Database.update(stageUpdates, false, AccessLevel.SYSTEM_MODE);
+        }
     }
 
     /**

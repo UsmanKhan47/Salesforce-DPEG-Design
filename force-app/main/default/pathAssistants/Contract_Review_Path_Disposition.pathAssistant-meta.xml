@@ -79,6 +79,47 @@
 
         POST-DEPLOY: this path renders nothing until the Disposition_PSA record type is assigned
         in the profiles in use and a disposition Contract Review actually carries it.
+
+        =====================================================================
+        🔴 AMENDED 2026-08-21. FOUR STEPS BECOME THREE. THE USER CHANGED
+        Disposition_PSA.Negotiation_Status__c DIRECTLY IN SETUP; THIS FILE IS HAND-MIRRORED FROM
+        THAT LIVE CHANGE, NOT A RETRIEVE (`sf project retrieve` strips record-type-scoped
+        picklistValues silently - see the record type file's own header for the measurement).
+        =====================================================================
+
+        RETRACTED, verbatim: "Four steps: Initial Draft -> Revised -> Ready for Execution ->
+        Executed." Confirmed live via the UI API against this record type's Id
+        (012iw0000009yeUAAQ): Initial Draft (default), Negotiation, Signed. 'Revised' and 'Ready
+        for Execution' are gone from this record type; so is 'Executed' - the sell-side terminal
+        is now 'Signed'.
+
+        THE THREE STEPS BELOW ARE NEW PROSE, NOT CARRIED FROM THE RETIRED STEPS. 'Negotiation'
+        replaces 'Revised' as the redline-and-counter step (Log Version / Ball In Court behaviour
+        is unchanged - only the status name and step count changed, not what a user does at that
+        step). 'Signed' replaces both 'Ready for Execution' and 'Executed' as a single terminal
+        step: there is no longer an intermediate "routed for signature" status distinct from
+        "signed" on the sell side, and no longer a separate execution step after it - the deal
+        moves straight to Closing from Signed. The retired steps' <info> text described that
+        two-step sequence and does not carry forward.
+
+        🔴 Acquisition_PSA is UNCHANGED (Draft, Negotiation, Signed, Executed) and
+        Contract_Review_Path_Acquisition is NOT part of this edit - the user's "do not change
+        anything on acquisition" constraint holds. This path and that one now genuinely diverge in
+        VALUES again (previously they diverged only in wording per the 2026-08-14 retraction
+        above); they share only 'Negotiation' and 'Signed', and this record type stops one step
+        short of Acquisition_PSA's 'Executed'.
+
+        ⚠ STEP ORDER STILL COMES FROM THE MASTER PICKLIST, NOT FROM THIS FILE, and still needed
+        no re-sequencing: on Negotiation_Status__c the three retained/added values sit at master
+        positions 1 (Initial Draft), 5 (Negotiation) and 6 (Signed) - monotonic, so this record
+        type's inclusion list alone determines correct step order.
+
+        ⚠ SEE THE RECORD TYPE FILE'S 2026-08-21 RETRACTION BLOCK for two related findings NOT
+        fixed here: flows/PSA_Ready_Notify now also fires its "PSA ready for execution"
+        notification when a disposition PSA reaches 'Signed' (gate-G2-shaped widening, flagged not
+        changed), and flows/Contract_Review_Stage_Sync still projects 'Signed' to coarse
+        Stage__c = 'Review' for this record type even though 'Signed' is now this record type's
+        terminal (flagged, needs a record-type-scoped branch, not built here).
     -->
     <active>true</active>
     <entityName>Contract_Review__c</entityName>
@@ -89,16 +130,12 @@
         <picklistValueName>Initial Draft</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>The buyer has come back. Work the redlines here: log every exchange with Log Version — each one records who sent it and flips Ball In Court between Us and Buyer — and stay on this step for as long as the negotiation runs. Advance only once the document is final.</info>
-        <picklistValueName>Revised</picklistValueName>
+        <info>The buyer has come back. Work the redlines here: log every exchange with Log Version — each one records who sent it and flips Ball In Court between Us and Buyer — and stay on this step for as long as the negotiation runs. Advance only once both sides are ready to sign.</info>
+        <picklistValueName>Negotiation</picklistValueName>
     </pathAssistantSteps>
     <pathAssistantSteps>
-        <info>Terms are locked and the document is final. Route for signature by both parties. Advancing from here executes the contract and commits the sale, so confirm every contingency, price and date is agreed first.</info>
-        <picklistValueName>Ready for Execution</picklistValueName>
-    </pathAssistantSteps>
-    <pathAssistantSteps>
-        <info>PSA fully executed — the sale is committed and the deal moves into Closing. Confirm the Disposition has advanced to the Closing stage, then coordinate the closing wire and the disposition checklist from there.</info>
-        <picklistValueName>Executed</picklistValueName>
+        <info>Signed by both parties — the sale is committed and the deal moves into Closing. Confirm the Disposition has advanced to the Closing stage, then coordinate the closing wire and the disposition checklist from there.</info>
+        <picklistValueName>Signed</picklistValueName>
     </pathAssistantSteps>
     <recordTypeName>Disposition_PSA</recordTypeName>
 </PathAssistant>

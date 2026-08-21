@@ -55,6 +55,18 @@
  *   designed out rather than one that is present. Same shape and same reasoning as
  *   `ContractExecutionService.advanceDispositionsToClosing`.
  *
+ * 🔴 AMENDED 2026-08-21. BOTH NUMBERED CLAIMS ABOVE SURVIVE UNCHANGED — NO LOCK APPLIES HERE. What
+ * did NOT survive is the unwritten premise underneath them: that "not locked" means "writable".
+ * `Disposition__c` is OWD **Private**, this runs as the APPROVER, and the parent is owned by the
+ * SUBMITTER — so the write is refused for lack of record-level EDIT with nothing locked at all. That
+ * exact failure was MEASURED in production on the sibling path (`DispositionOfferTriggerHandler`,
+ * `DISP-0011` / `OFFER-0007`, 2026-08-21: `HasReadAccess = true, HasEditAccess = false` for the
+ * approver). ⚠ THIS SITE WAS FIXED ON THE STRENGTH OF THAT MEASUREMENT RATHER THAN ITS OWN INCIDENT
+ * REPORT — stated plainly so nobody looks for a `BOV-xxxx` ticket that does not exist. The two
+ * handlers are structurally identical on the point that matters (approver-run after-update DML
+ * against a Private parent it does not own), and waiting for the second UAT cycle to prove it
+ * separately would have been a choice, not a rigour. See `handleApprovedSelections`.
+ *
  * ══════════════════════════════════════════════════════════════════════════════
  * 🔴 THE CURRENT-STAGE GUARD IS THE REPLACE-BROKER FEATURE, NOT A SAFETY NET
  * ══════════════════════════════════════════════════════════════════════════════
@@ -104,6 +116,10 @@
  * ZERO inline SOQL either way — the parent read goes to `DispositionSelector.selectStagesByIds`.
  * (`BovSubmissionService` DOES exist, and owns the broker REPLACEMENT, which is user-driven
  * cross-object work; that is the line.)
+ * ⚠ SHARING: the class is `with sharing` and stays that way. EXACTLY ONE statement escapes it — the
+ * parent `Database.update`, in the `private without sharing ParentAdvanceWrites` inner class, whose
+ * declaration carries the full justification (ARCHITECTURE.md §2's prescribed shape). The escape is
+ * not inherited by anything else in this file.
  *
  * 🔴 THE BEFORE CONTEXTS ROUTE TO A SERVICE, AND THAT IS CONSISTENT WITH THE PARAGRAPH ABOVE
  * RATHER THAN A VIOLATION OF IT (design D-3). The precedent that keeps `handleApprovedSelections`
@@ -277,10 +293,13 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
             return;
         }
 
-        // ── allOrNone = false + SYSTEM_MODE. Both load-bearing, neither covering the other. ──
+        // ── THREE SEPARATE DECISIONS ON ONE STATEMENT. NONE COVERS ANOTHER'S OBSTACLE. ──
         // SYSTEM_MODE: this runs as the APPROVER, a read-only persona on `Disposition__c`; CRUD and
         //   FLS would refuse the write outright. It does NOT bypass validation rules, which is
         //   correct — the NDA gate and the wire backstop must still evaluate.
+        // without sharing: ⚠ ADDED 2026-08-21 AND NOT INTERCHANGEABLE WITH THE LINE ABOVE. CRUD/FLS
+        //   and RECORD-LEVEL access are two different refusals; SYSTEM_MODE lifts the first only.
+        //   See `ParentAdvanceWrites` below for who runs this and why they lack the second.
         // allOrNone = false: an all-or-none failure would roll back THE APPROVAL ITSELF — the
         //   submission's own `Approved` status — to protect a stage advance. The approval is the
         //   irreplaceable half; the stage is derivable.
@@ -289,9 +308,113 @@ public with sharing class BovSubmissionTriggerHandler extends TriggerHandler {
         // Approved while the disposition still sits at `BOV Outreach` with no Selected Broker. What
         // makes it ACCEPTABLE is that it is VISIBLE — both records are on the same page, they
         // disagree, and a user can advance by hand once the block clears. Identical trade, identical
-        // wording, to `ContractExecutionService.advanceDispositionsToClosing`; the results are
-        // deliberately NOT inspected because there is no recovery action available inside an
-        // after-update trigger.
-        Database.update(parentUpdates, false, AccessLevel.SYSTEM_MODE);
+        // wording, to `ContractExecutionService.advanceDispositionsToClosing`.
+        // ⚠ THE CLAUSE THAT USED TO END THIS PARAGRAPH — *"the results are deliberately NOT inspected
+        // because there is no recovery action available inside an after-update trigger"* — IS
+        // RETRACTED IN PLACE 2026-08-21. Its premise is still true (there IS no recovery action, and
+        // nothing below rethrows or retries) but its CONCLUSION did not follow: "cannot recover" is
+        // not "must not report". Un-inspected results are what let the sibling handler's identical
+        // statement fail in production and look exactly like success. Now inspected — see
+        // `recordParentWriteFailures`.
+        recordParentWriteFailures(
+            new ParentAdvanceWrites().apply(parentUpdates),
+            parentUpdates
+        );
+    }
+
+    /**
+     * Every parent-write failure from the most recent `handleApprovedSelections` call, as
+     * `<dispositionId> -> <STATUS_CODE> | <message>`. Empty on a clean run and reset at the top of
+     * every `recordParentWriteFailures` call, so it describes ONE trigger chunk and not a session.
+     *
+     * ⚠ IT EXISTS TO BE ASSERTED ON. `BovSubmissionTriggerHandlerTest`'s non-owner approver test
+     * asserts it is EMPTY, which is what makes a removed sharing escape fail with the actual
+     * `StatusCode` rather than with an opaque "expected Broker Selection, was BOV Outreach".
+     */
+    @TestVisible
+    private static List<String> lastRunParentWriteFailures = new List<String>();
+
+    /**
+     * Sends every refused row to the debug log at ERROR and to `lastRunParentWriteFailures`.
+     *
+     * Report, never recovery: nothing here rethrows or retries, because both would roll back the
+     * approval this code is riding on. Shape copied from `DealFolderService.stampAll`; twin of
+     * `DispositionOfferTriggerHandler.recordParentWriteFailures`.
+     *
+     * @param results   Parallel to `attempted`, in input order; never null.
+     * @param attempted The rows handed to the DML, used only for their Ids.
+     */
+    private void recordParentWriteFailures(
+        List<Database.SaveResult> results,
+        List<Disposition__c> attempted
+    ) {
+        lastRunParentWriteFailures = new List<String>();
+        for (Integer i = 0; i < results.size(); i++) {
+            if (results[i].isSuccess()) {
+                continue;
+            }
+            List<Database.Error> errors = results[i].getErrors();
+            String detail = errors.isEmpty()
+                ? 'no error detail returned'
+                : errors[0].getStatusCode() + ' | ' + errors[0].getMessage();
+            lastRunParentWriteFailures.add(attempted[i].Id + ' -> ' + detail);
+            // NOT debug output — this is the failure channel; see lastRunParentWriteFailures.
+            // `allOrNone = false` means a refused parent write throws nothing, so removing this
+            // line restores the silent no-op this handler exists to close. A lint pass will flag
+            // it; leave it.
+            System.debug(LoggingLevel.ERROR,
+                'BovSubmissionTriggerHandler.handleApprovedSelections: LOST BROKER APPOINTMENT on '
+                + 'Disposition__c ' + attempted[i].Id + ' -> ' + detail
+                + ' | the submission is Approved and its sale did NOT move to Broker Selection or '
+                + 'take a Selected Broker. Running user: ' + UserInfo.getUserId() + '.');
+        }
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ONE STATEMENT THAT ESCAPES SHARING, AND WHY IT HAS TO. ADDED 2026-08-21.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHO RUNS THIS CODE: the APPROVER of `Broker_Finalize_Approval`. This handler's after-update
+     * context is reached by that approval's `finalApprovalActions` field update writing
+     * `Approval_Status__c` on the SUBMISSION, so the running user is whoever clicked Approve.
+     *
+     * WHY THEY PREDICTABLY LACK RECORD-LEVEL EDIT ON THE TARGET — three composing facts:
+     *   1. `Disposition__c` is OWD **Private** (`InternalSharingModel = Private`, measured via
+     *      Tooling `EntityDefinition` 2026-08-21).
+     *   2. The parent is owned by whoever created the sale, not by the approver. The object's only
+     *      Edit-granting sharing rule is `Disposition_Team_RW` (Acquisitions_Analyst + subordinates
+     *      -> `DPEG_Acquisitions_Team`), which an approving Principal is outside of.
+     *   3. `DPEG_Disposition_View`, the set the Principal persona carries, grants
+     *      `viewAllRecords = true` and NO `modifyAllRecords`. THAT COMBINATION IS THE TRAP: the
+     *      idempotency read above returns the row (read access exists) and the write is then refused
+     *      (edit access does not). A read that succeeds is not evidence a write will.
+     *
+     * 🔴 `AccessLevel.SYSTEM_MODE` WAS NOT SUFFICIENT AND COULD NEVER HAVE BEEN — and the comment at
+     * the call site above shows the author believed otherwise, because it justifies SYSTEM_MODE by
+     * naming the approver's read-only persona. Per ARCHITECTURE.md §2: *"🔴 `SYSTEM_MODE` bypasses
+     * CRUD/FLS ONLY — it does NOT bypass sharing."* SYSTEM_MODE removes the OBJECT-level refusal and
+     * leaves the RECORD-level one standing, which is why the sibling defect presented as a silent
+     * no-op rather than a `TypeException`: the write reached a `SaveResult` and nobody read it.
+     *
+     * WHY THE ESCAPE IS BOUNDED TO THIS ONE WRITE: this class stays `with sharing`, the selector
+     * stays `with sharing`, and this inner class holds ONE statement over a list the CALLER built.
+     * It cannot query, cannot choose rows and cannot widen — every Id in `parentUpdates` came back
+     * from a `with sharing` selector read, so a disposition the approver cannot SEE is still never
+     * written. ARCHITECTURE.md §2 prescribes this exact shape; repo precedents are
+     * `DispositionOfferSelector.TractionReads` (read) and `NdaExpiryAlertBatch.stampMarkers` (write).
+     *
+     * ⚠ DO NOT PROMOTE THIS TO THE OUTER CLASS. `BovSubmissionBrokerStampService` and
+     * `BovSubmissionSelectionGuardService` are deliberately sharing-scoped and argue for it in their
+     * own headers; `without sharing` on the handler would silently re-authorise both.
+     */
+    private without sharing class ParentAdvanceWrites {
+        /**
+         * @param parentUpdates Disposition shells built by `handleApprovedSelections` from rows a
+         *                      `with sharing` selector returned; never null, never empty.
+         * @return One `Database.SaveResult` per row, in input order. The caller inspects them.
+         */
+        private List<Database.SaveResult> apply(List<Disposition__c> parentUpdates) {
+            return Database.update(parentUpdates, false, AccessLevel.SYSTEM_MODE);
+        }
     }
 }

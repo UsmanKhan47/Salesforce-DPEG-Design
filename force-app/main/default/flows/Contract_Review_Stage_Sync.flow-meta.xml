@@ -40,12 +40,18 @@
         'Review'. 🔴 DO NOT "improve" this by projecting 'Signed' to 'Contract Execution' - that
         would move the Transactions handoff a step early. ONLY 'Executed' reaches
         Contract Execution, and ContractExecutionService keys on 'Executed' too.
+        🔴 THIS PARAGRAPH IS PARTIALLY RETRACTED 2026-08-21 - see the dated block below. It
+        remains fully correct for ACQUISITION_PSA. It stopped being correct for Disposition_PSA
+        the moment that record type's terminal became 'Signed' rather than 'Executed'.
 
         ⚠ RULE ORDER MATTERS - the first matching rule wins. Is_Draft is placed immediately after
         Is_Initial_Draft and before the two Executed rules; the values are mutually exclusive, so
         the placement is for readability rather than correctness, but keep the two Executed rules
         LAST in that relative order (the date-stamping one before the date-kept one) because
-        THOSE two overlap and their order IS load-bearing.
+        THOSE two overlap and their order IS load-bearing. The new Is_Disposition_Signed rule
+        added 2026-08-21 is placed AFTER both Executed rules and does not reorder them; it cannot
+        overlap either (Negotiation_Status__c cannot simultaneously equal 'Executed' and 'Signed'),
+        so its position relative to them is for readability only, same as Is_Draft's.
 
         ⚠ THIS FIX MUST BE DEPLOYED BEFORE THE PHASE 3 ROW MIGRATION, not with the Apex. The
         migration writes Initial Draft -> Draft on every acquisition Contract Review, and this is
@@ -53,6 +59,62 @@
         'Draft', the migration itself stamps coarse Stage__c = 'Review' across the whole live
         acquisition population - a data defect, not just a rendering one. The edit is purely
         additive and is correct on both sides of the migration, so it ships at P3-D1.
+
+        =====================================================================================
+        🔴 AMENDED 2026-08-21. THE USER CHANGED Disposition_PSA.Negotiation_Status__c DIRECTLY IN
+        SETUP THE SAME DAY (full measurement in the record type file's own header). DISPOSITION_
+        PSA'S TERMINAL IS NOW 'Signed', NOT 'Executed', AND THE "LEAVE 'Signed' TO THE DEFAULT"
+        PARAGRAPH ABOVE - WRITTEN WHEN 'Signed' WAS NEVER A TERMINAL FOR EITHER RECORD TYPE - NO
+        LONGER COVERS THAT CASE CORRECTLY.
+        =====================================================================================
+
+        RETRACTED, in part, from the paragraph above: "'Negotiation' AND 'Signed' ARE DELIBERATELY
+        LEFT TO THE DEFAULT CONNECTOR. They are the exact analogues of 'Revised' and 'Ready for
+        Execution', which also fall to it." That was true of 'Signed' only while Disposition_PSA
+        could never hold it. It can now, and it is that record type's TERMINAL, not its analogue
+        of a mid-sequence status - so 'Signed' is no longer one thing for the purposes of this
+        decision, it is two, depending on which record type carries it.
+
+        NOT RETRACTED - STILL BINDING FOR ACQUISITION_PSA: "DO NOT 'improve' this by projecting
+        'Signed' to 'Contract Execution' - that would move the Transactions handoff a step early."
+        On Acquisition_PSA, 'Signed' still precedes 'Executed', which is still the only value that
+        triggers ContractExecutionService's handoff. A blanket edit that made 'Signed' project to
+        'Contract Execution' for BOTH record types would be wrong for acquisition and is NOT what
+        was built.
+
+        THE FIX - A NEW, NARROWLY-SCOPED RULE, NOT A CHANGE TO THE DEFAULT. Is_Disposition_Signed
+        tests Negotiation_Status__c = 'Signed' AND Disposition__c IS NOT NULL, and routes to the
+        EXISTING Set_Stage_Executed_Only assignment (Stage__c = 'Contract Execution', no other
+        field touched). Reusing that assignment rather than adding a new one is deliberate: its
+        behaviour - set the coarse stage, stamp nothing else - is exactly what this case needs,
+        and 'Signed' is not literally 'Executed' so Execution_Date__c must NOT be stamped here (
+        that stays owned by the acquisition-only Set_Stage_Executed / Is_Executed_Needs_Date pair,
+        which this new rule does not touch). Acquisition rows never match the new rule's second
+        condition (Opportunity__c is what OpportunityReviewService stamps on them; Disposition__c
+        stays blank, per Disposition_PSA's own record type header), so 'Signed' still falls to the
+        unchanged default connector for every acquisition row, exactly as before.
+
+        🔴 THE DISCRIMINATOR IS Disposition__c, NOT RecordType.DeveloperName - DECIDED ON THE
+        MERITS, NOT BY DEFAULT. 'Signed' cannot be exempted by NAMING A VALUE the way
+        flows/NDA_Signed_Status_Sync exempts the acquisition NDA terminal (its 'Declined' is
+        exposed on Disposition_NDA only; this object's 'Signed' is exposed on BOTH record types
+        now, so no value-naming trick is available - see that flow's own header for why a
+        value-named exemption is preferred WHEN one exists). Absent that option, the lookup is
+        still preferred over RecordType.DeveloperName for the same two measured reasons that flow
+        and flows/PSA_Ready_Notify both record: (1) a record-type test silently skips MASTER-type
+        Contract Reviews, the shape TestDataFactory produces when a record type is absent from or
+        unavailable in a scratch org - RecordStageAdvanceService still carries a null/Master
+        fallback for this exact object; (2) a record-type test breaks on a record type rename,
+        a value/lookup test does not. Contract_Review__c.Disposition__c's sibling field
+        Opportunity__c is not this object's own header's words, but the identical rule is already
+        stated for this object family on Contract_Review__c.Disposition__c's own field header:
+        "THE LOOKUP, NOT THE RECORD TYPE, IS THE DISCRIMINATOR anything outside the record page
+        should test."
+
+        CONSERVATIVE BY CONSTRUCTION: this is an ADDITIVE rule appended after the two existing
+        Executed rules. No existing rule, connector, assignment or the default connector was
+        edited, removed or reordered. Is_Initial_Draft, Is_Draft, Is_Executed_Needs_Date and
+        Is_Executed_Dated are BYTE-IDENTICAL to before this change.
     -->
     <apiVersion>67.0</apiVersion>
     <assignments>
@@ -189,6 +251,28 @@
                 <targetReference>Set_Stage_Executed_Only</targetReference>
             </connector>
             <label>Executed - date kept</label>
+        </rules>
+        <rules>
+            <name>Is_Disposition_Signed</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Negotiation_Status__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Signed</stringValue>
+                </rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>$Record.Disposition__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>false</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Set_Stage_Executed_Only</targetReference>
+            </connector>
+            <label>Signed (Disposition_PSA terminal)</label>
         </rules>
     </decisions>
     <environments>Default</environments>

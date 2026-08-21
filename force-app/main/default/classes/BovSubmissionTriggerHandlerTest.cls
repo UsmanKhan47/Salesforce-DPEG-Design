@@ -217,4 +217,144 @@ private class BovSubmissionTriggerHandlerTest {
         Assert.areEqual('BOV Outreach', reread(d.Id).Disposition_Stage__c,
             'An edit unrelated to Approval_Status__c must never advance the parent');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE NON-OWNER APPROVER (2026-08-21) — see DispositionOfferTriggerHandlerTest for the
+    //    measured incident this fixture generalises from (`DISP-0011` / `OFFER-0007`).
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // ⚠ EVERY TEST ABOVE THIS LINE PASSED AGAINST THE BROKEN CODE. They run as the admin test user,
+    // who OWNS every fixture record, and an owner of an OWD-Private record always holds record-level
+    // edit — so the `with sharing` `Database.update` in `handleApprovedSelections` was never asked
+    // the question that fails in production. Here the PARENT stays with the admin and the RUNNING
+    // USER is a Minimum-Access principal with `DPEG_Disposition_View`: sees every disposition,
+    // owns and can edit none.
+    //
+    // ⚠ THE SUBMISSION'S OWNERSHIP IS TRANSFERRED TO THE APPROVER AND THE PARENT'S IS NOT. That is
+    // scaffolding so the simulated `Set_Broker_Approval_Approved` field update is performable in the
+    // persona's context; in production the platform performs it. The parent's ownership is the
+    // subject.
+
+    private static User approverOwning(String aliasSeed, List<Id> submissionIds) {
+        User approver = TestDataFactory.createNonOwnerDispositionApprover(aliasSeed);
+        List<BOV_Submission__c> transfers = new List<BOV_Submission__c>();
+        for (Id submissionId : submissionIds) {
+            transfers.add(new BOV_Submission__c(Id = submissionId, OwnerId = approver.Id));
+        }
+        update transfers;
+        return approver;
+    }
+
+    /**
+     * 🔴 KEEPS EVERY TEST BELOW HONEST. Run INSIDE `System.runAs` against `UserInfo.getUserId()`, so
+     * it needs no "View All Data" and cannot answer for the wrong principal. `RecordId` must be in
+     * the SELECT — `UserRecordAccess` rejects a query without it at compile time.
+     */
+    private static void assertReadableButNotEditable(Id dispositionId) {
+        UserRecordAccess access = [
+            SELECT RecordId, HasReadAccess, HasEditAccess
+            FROM UserRecordAccess
+            WHERE UserId = :UserInfo.getUserId() AND RecordId = :dispositionId
+        ];
+        Assert.isTrue(access.HasReadAccess,
+            'FIXTURE PRECONDITION: the approver must be able to READ the parent — that is what '
+            + '`DPEG_Disposition_View.viewAllRecords` grants, and it is why the idempotency read '
+            + 'succeeds and hides the write failure.');
+        Assert.isFalse(access.HasEditAccess,
+            '🔴 FIXTURE PRECONDITION: the approver must NOT be able to EDIT the parent. That is the '
+            + 'whole defect. If this is true the persona gained record-level edit from somewhere '
+            + '(modifyAllRecords, a role, a widened Disposition_Team_RW) and every assertion after '
+            + 'it is vacuous. Investigate the org; do NOT delete this assertion.');
+    }
+
+    /**
+     * Fails RED against the pre-2026-08-21 code, in which `handleApprovedSelections` ended with a
+     * bare `Database.update(parentUpdates, false, AccessLevel.SYSTEM_MODE)` inside this
+     * `with sharing` class. `SYSTEM_MODE` lifts CRUD and FLS and NEVER sharing (ARCHITECTURE.md §2).
+     */
+    @isTest
+    static void nonOwnerApprover_advancesTheParentAndStampsTheBroker() {
+        Disposition__c d = dispositionAt('BOV Outreach');
+        BOV_Submission__c sub = TestDataFactory.createBovSubmission(d.Id, false);
+        sub.Broker__c = TestDataFactory.createBrokerContactWithFirm('CBRE - Mark Chen', true).Id;
+        sub.Submission_Status__c = 'Selected';
+        insert sub;
+        User approver = approverOwning('bva1', new List<Id>{ sub.Id });
+
+        System.runAs(approver) {
+            assertReadableButNotEditable(d.Id);
+            Test.startTest();
+            // 🔴 `AccessLevel.SYSTEM_MODE`, NOT A PLAIN `update`. MEASURED: a plain `update` fails
+            // with `System.DmlException: Operation failed due to fields being inaccessible on
+            // Sobject BOV_Submission__c` — no persona has FLS EDIT on `Approval_Status__c`. In
+            // production this write is `Broker_Finalize_Approval`'s `finalApprovalActions` FIELD
+            // UPDATE, which runs in system context and consults no FLS.
+            // ⚠ IT DOES NOT WEAKEN THE TEST: SYSTEM_MODE lifts CRUD and FLS and NEVER sharing, so
+            // the parent write below is still refused unless `ParentAdvanceWrites` escapes it.
+            Database.update(
+                new BOV_Submission__c(Id = sub.Id, Approval_Status__c = 'Approved'),
+                AccessLevel.SYSTEM_MODE);
+            Test.stopTest();
+        }
+
+        Assert.areEqual(new List<String>(),
+            BovSubmissionTriggerHandler.lastRunParentWriteFailures,
+            '🔴 THE PARENT WRITE WAS REFUSED. This list carries the platform StatusCode — read it in '
+            + 'the message above. INSUFFICIENT_ACCESS_OR_READONLY means the `without sharing` escape '
+            + '(ParentAdvanceWrites) has been removed or bypassed.');
+        Disposition__c after = reread(d.Id);
+        Assert.areEqual('Broker Selection', after.Disposition_Stage__c,
+            'An approver who can SEE but not EDIT the sale must still appoint the broker on it. '
+            + 'Still reading BOV Outreach means the parent update was swallowed by '
+            + 'allOrNone = false, exactly as the sibling handler did in production.');
+        Assert.isNotNull(after.Selected_Broker__c,
+            'and the broker firm must be stamped by the same write');
+    }
+
+    /**
+     * The 251-record twin, per `.claude/rules/bulk-test-rule.md`.
+     *
+     * ⚠ NOT A DUPLICATE of `bulk251ApprovesAtConstantCost`, which proves the second chunk is not
+     * dropped as the OWNER. This proves the sharing escape survives BOTH chunks.
+     */
+    @isTest
+    static void nonOwnerApproverAt251_advancesEveryParent() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N, assetId(), TestDataFactory.DISPOSITION_RT_ON_MARKET, false);
+        for (Disposition__c d : dispositions) {
+            d.Disposition_Stage__c = 'BOV Outreach';
+        }
+        insert dispositions;
+
+        Id brokerId = TestDataFactory.createBrokerContactWithFirm('JLL - Bulk Broker', true).Id;
+        List<BOV_Submission__c> subs = new List<BOV_Submission__c>();
+        for (Disposition__c d : dispositions) {
+            BOV_Submission__c s = TestDataFactory.createBovSubmission(d.Id, false);
+            s.Broker__c = brokerId;
+            s.Submission_Status__c = 'Selected';
+            subs.add(s);
+        }
+        insert subs;
+
+        List<Id> subIds = new List<Id>();
+        List<BOV_Submission__c> approvals = new List<BOV_Submission__c>();
+        for (BOV_Submission__c s : subs) {
+            subIds.add(s.Id);
+            approvals.add(new BOV_Submission__c(Id = s.Id, Approval_Status__c = 'Approved'));
+        }
+        User approver = approverOwning('bva2', subIds);
+
+        System.runAs(approver) {
+            assertReadableButNotEditable(dispositions[0].Id);
+            Test.startTest();
+            // SYSTEM_MODE for the FLS reason argued at the single-record twin. Sharing is untouched.
+            Database.update(approvals, AccessLevel.SYSTEM_MODE); // 251 rows -> TWO trigger chunks
+            Test.stopTest();
+        }
+
+        Assert.areEqual(BULK_N,
+            [SELECT COUNT() FROM Disposition__c
+             WHERE Id IN :dispositions AND Disposition_Stage__c = 'Broker Selection'],
+            'Every one of the 251 parents must advance for a NON-OWNER approver. Zero means the '
+            + 'sharing escape is gone; between 1 and 250 means it did not survive the second chunk.');
+    }
 }

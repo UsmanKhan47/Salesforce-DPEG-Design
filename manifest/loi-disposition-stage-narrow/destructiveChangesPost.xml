@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Disposition LOI stage narrowing (user request, 2026-08-21): "Received, under review,
+    negotiations, Signed" replaces the five-stage Received -> Under Review -> Countered by
+    DPEG -> Counter Received from Buyer -> Executed sequence on the Disposition_LOI record
+    type. See agent-output/disposition-loi-stages.md for the full design and
+    objects/LOI__c/recordTypes/Disposition_LOI.recordType-meta.xml's 2026-08-21 retraction
+    block for the live change record.
+
+    STATUS: PREPARED, NOT AUTHORISED. Do not deploy without the user's explicit go-ahead.
+    This file only DESCRIBES a deletion; it performs nothing on its own.
+
+    Retires the two-quick-action negotiation LOOP the old sequence needed (we counter, the
+    buyer counters back) and is no longer needed now the loop is retired: negotiation rounds,
+    in either direction, are recorded on Counter History (Counter_Offer__c / c/loiCounterOffer,
+    UNCHANGED) while the record sits at a single 'Negotiation' stage.
+
+    DELETES 2 QUICK ACTIONS AND 2 LWC BUNDLES:
+      QuickAction:
+        - LOI__c.Mark_Countered_By_DPEG   (LWC: loiMarkCounteredByDpeg)
+        - LOI__c.Mark_Counter_Received    (LWC: loiMarkCounterReceived)
+      LightningComponentBundle:
+        - loiMarkCounteredByDpeg
+        - loiMarkCounterReceived
+
+    POST-destructive (not pre-): flexipages/LOI_Record_Page.flexipage-meta.xml's two
+    <valueListItems> entries referencing these quick actions are already removed in the
+    companion constructive payload, so by the time this file's deletions run, nothing in the
+    constructive payload still references the components being deleted. Deleting a quick
+    action that is still referenced by a live FlexiPage <valueListItems> block fails the
+    delete - POST ordering is what avoids that, exactly as manifest/portfolio-deal-b4's
+    destructiveChangesPost.xml already established for this repo's LWC-bundle-rename pattern.
+
+    NOT deleted here, and deliberately so: 'Countered by DPEG' and 'Counter Received from
+    Buyer' stay ACTIVE on the master LOI__c.Stage__c picklist (orphaned, on no record type -
+    see that field's own 2026-08-21 retraction) - deactivating them is a further, separate
+    decision this wave does not make. Counter_Offer__c, c/loiCounterOffer, and every other
+    LOI__c quick action (Advance_Stage, Edit_LOI, Mark_Completed, Mark_Countered,
+    Submit_for_Approval) are unaffected.
+
+    THE package.xml IN THIS SAME FOLDER IS A TEST HARNESS ONLY, NOT THE REAL DEPLOY MANIFEST.
+    sf's --post-destructive-changes flag requires --manifest to be passed alongside it (cannot
+    be combined with a plain --source-dir deploy), so this folder's package.xml is an
+    intentionally EMPTY constructive manifest (<types> omitted entirely) whose only job is to
+    let this destructive file be check-only validated in isolation. Per the design doc's §5.2,
+    the REAL deploy ships this as ONE atomic payload with the whole constructive change set
+    (A1-A10 declarative, D1-D12 Apex/LWC) via --source-dir, paired with this same
+    --post-destructive-changes file. The master manifest/package.xml is also updated in this
+    same wave (four <members> lines removed: the two LWC bundle names and the two QuickAction
+    fullNames this file deletes) so a future retrieve does not resurrect them.
+
+    Deploy (only once authorised by the user; devops runs a validation-only dry-run first per
+    standing project practice):
+      sf project deploy start \
+        --source-dir force-app \
+        --post-destructive-changes manifest/loi-disposition-stage-narrow/destructiveChangesPost.xml \
+        --target-org usman-dpeg \
+        --test-level RunLocalTests --wait 30
+
+    Do NOT pass --purge-on-delete - documented elsewhere in this repo as non-functional on
+    production orgs and fails silently rather than erroring (see manifest/portfolio-deal-a3).
+
+    Rollback: deleted QuickActions and LWC bundles are recoverable from git history (this same
+    wave removes them from force-app/main/default), but are NOT recoverable from any org-side
+    recycle bin the way custom fields are - QuickAction/LWC deletions are not soft-deleted by
+    the platform. Re-deploying the old source and restoring flexipages/LOI_Record_Page's two
+    <valueListItems> entries would restore function.
+    -->
+    <types>
+        <members>LOI__c.Mark_Countered_By_DPEG</members>
+        <members>LOI__c.Mark_Counter_Received</members>
+        <name>QuickAction</name>
+    </types>
+    <types>
+        <members>loiMarkCounteredByDpeg</members>
+        <members>loiMarkCounterReceived</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <version>67.0</version>
+</Package>

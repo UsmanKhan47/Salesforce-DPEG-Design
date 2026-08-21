@@ -1,83 +1,89 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Sell Meter seed — UPDATE-based, band-spread (canonical Sell Meter seed).
+// Sell Meter seed — UPDATE-based, band-spread. Rewritten 2026-08-19 for the
+// current 6-record Property_Asset__c pool (previously targeted a 12-record pick
+// list against a larger, now-superseded portfolio).
 //
-// Populates a curated set of EXISTING Property_Asset__c records so the
-// Disposition "Sell Meter" showcases a clean spread across the GREEN / YELLOW /
-// RED readiness bands. It NEVER inserts and NEVER deletes — inserting is how the
-// ~48-record junk pile accumulated, and Property_Asset__c is the parent of Units /
-// Onboarding / Leases / Work Orders, so deletes would cascade.
+// Populates the 6 EXISTING, Property__c-parented Property_Asset__c records so the
+// Disposition "Sell Meter" shows a clean 2/2/2 spread across GREEN / YELLOW / RED
+// readiness bands. It NEVER inserts and NEVER deletes.
 //
 // The selector filter (PropertyAssetSelector) is:
 //     Property__c != null AND Peak_Sell_Date__c != null
 // so ONLY the records this script stamps with a Peak_Sell_Date__c appear on the
-// meter; every other (junk / un-parented) Property_Asset__c stays hidden.
+// meter. All 6 current records already carry a Property__c lookup.
 //
 // Band = days until Peak_Sell_Date__c (SellMeterController.bandForPeak):
 //     <= 30 days -> GREEN | 31-90 -> YELLOW | > 90 (or null) -> RED
 //
-// Idempotent-ish: it re-selects the first N Property-parented assets by Name
-// (deduped by Name), then re-stamps the same values, so re-running never creates
-// new rows — it just re-sets the same curated set.
+// NOI / cap rate are chosen so implied fair value (NOI / (cap/100)) roughly
+// matches each asset's Argus_Value__c (set by seed-sell-readiness.apex). Target
+// sits a few % below fair value so the portfolio-upside tile (implied - target)
+// shows a real, positive number; projected sits a bit above target.
 // ─────────────────────────────────────────────────────────────────────────────
 
-final Integer TARGET_COUNT = 12;
-
-// 1. Candidate pool: existing assets that already have a Property lookup.
 List<Property_Asset__c> pool = [
     SELECT Id, Name
     FROM Property_Asset__c
     WHERE Property__c != null
-    ORDER BY Name NULLS LAST
+    ORDER BY Name
 ];
 
-// 2. Dedupe by Name (avoid two same-named rows on the meter); preserve order.
-Map<String, Property_Asset__c> byName = new Map<String, Property_Asset__c>();
-for (Property_Asset__c a : pool) {
-    String key = (a.Name == null ? 'unnamed' : a.Name);
-    if (!byName.containsKey(key)) {
-        byName.put(key, a);
-    }
-}
-List<Property_Asset__c> distinctNamed = byName.values();
-List<Property_Asset__c> picks = new List<Property_Asset__c>();
-for (Integer i = 0; i < distinctNamed.size() && picks.size() < TARGET_COUNT; i++) {
-    picks.add(distinctNamed[i]);
-}
-
-// 3. Band spread — parallel arrays, one entry per pick (12 max):
-//      4 GREEN (<=30d), 4 YELLOW (31-90d), 4 RED (>90d).
-//    daysOut drives the band; noi/cap drive the money; uplift sits above target.
-List<Integer> daysOut = new List<Integer>{  10,  18,  25,  28,   45,  60,  75,  85,   150, 250, 330, 400 };
-List<Decimal> noiList = new List<Decimal>{ 1800000, 2400000, 3100000, 1250000,
-                                           2900000, 4200000, 1650000, 3600000,
-                                           980000,  2000000, 5200000, 1400000 };
-List<Decimal> capList = new List<Decimal>{ 5.5, 6.0, 6.25, 5.75,
-                                           6.5, 5.8, 6.75, 6.1,
-                                           7.1, 6.9, 5.6, 7.0 };
-List<Decimal> upliftPct = new List<Decimal>{ 1.08, 1.10, 1.06, 1.12,
-                                             1.07, 1.09, 1.05, 1.11,
-                                             1.04, 1.06, 1.08, 1.05 };
-// Target sits a few % BELOW the fair implied value (NOI/cap), so each asset is
-// "in the money" and the portfolio-upside tile (implied - target) shows a real,
-// realistic number instead of ~$0. Still "target ~ NOI/(cap/100)" (within ~10%).
-List<Decimal> targetDiscount = new List<Decimal>{ 0.94, 0.90, 0.93, 0.95,
-                                                  0.92, 0.88, 0.96, 0.91,
-                                                  0.97, 0.93, 0.89, 0.95 };
+// Parallel data keyed by Name — daysOut drives the band (2 GREEN, 2 YELLOW, 2 RED).
+Map<String, Integer> daysOutByName = new Map<String, Integer>{
+    'Copperfield Town Center'     => 15,   // GREEN
+    'Universal City Retail Row'   => 25,   // GREEN
+    'Lakeline Corporate Center'   => 55,   // YELLOW
+    'Windcrest Business Park'     => 75,   // YELLOW
+    'Canyon Lake Land Holdings'   => 180,  // RED
+    'Terrell Hills Medical Plaza' => 280   // RED
+};
+Map<String, Decimal> noiByName = new Map<String, Decimal>{
+    'Copperfield Town Center'     => 1608000,
+    'Universal City Retail Row'   => 1212500,
+    'Lakeline Corporate Center'   => 2223000,
+    'Windcrest Business Park'     => 1559250,
+    'Canyon Lake Land Holdings'   => 712500,
+    'Terrell Hills Medical Plaza' => 1076400
+};
+Map<String, Decimal> capByName = new Map<String, Decimal>{
+    'Copperfield Town Center'     => 6.0,
+    'Universal City Retail Row'   => 6.25,
+    'Lakeline Corporate Center'   => 6.5,
+    'Windcrest Business Park'     => 6.75,
+    'Canyon Lake Land Holdings'   => 7.5,
+    'Terrell Hills Medical Plaza' => 6.9
+};
+Map<String, Decimal> targetDiscountByName = new Map<String, Decimal>{
+    'Copperfield Town Center'     => 0.93,
+    'Universal City Retail Row'   => 0.95,
+    'Lakeline Corporate Center'   => 0.90,
+    'Windcrest Business Park'     => 0.92,
+    'Canyon Lake Land Holdings'   => 0.88,
+    'Terrell Hills Medical Plaza' => 0.90
+};
+Map<String, Decimal> upliftPctByName = new Map<String, Decimal>{
+    'Copperfield Town Center'     => 1.08,
+    'Universal City Retail Row'   => 1.06,
+    'Lakeline Corporate Center'   => 1.10,
+    'Windcrest Business Park'     => 1.07,
+    'Canyon Lake Land Holdings'   => 1.05,
+    'Terrell Hills Medical Plaza' => 1.06
+};
 
 Date today = Date.today();
 List<Property_Asset__c> toUpdate = new List<Property_Asset__c>();
 Integer g = 0, y = 0, r = 0;
 
-for (Integer i = 0; i < picks.size(); i++) {
-    Property_Asset__c a = picks[i];
-    Decimal noi = noiList[i];
-    Decimal cap = capList[i];
-    // Fair implied value = NOI / (cap%) ; multiply-first avoids a tiny-divisor intermediate.
+for (Property_Asset__c a : pool) {
+    if (!daysOutByName.containsKey(a.Name)) {
+        continue; // not one of the 6 known demo assets — leave untouched
+    }
+    Decimal noi = noiByName.get(a.Name);
+    Decimal cap = capByName.get(a.Name);
     Decimal impliedFair = noi * 100 / cap;
-    // Target a few % below fair value -> positive upside; projected a bit above target.
-    Decimal target = (impliedFair * targetDiscount[i]).setScale(0);
-    Decimal projected = (target * upliftPct[i]).setScale(0);
-    Integer d = daysOut[i];
+    Decimal target = (impliedFair * targetDiscountByName.get(a.Name)).setScale(0);
+    Decimal projected = (target * upliftPctByName.get(a.Name)).setScale(0);
+    Integer d = daysOutByName.get(a.Name);
 
     a.NOI__c = noi;
     a.Market_Cap_Rate__c = cap;
@@ -92,5 +98,4 @@ for (Integer i = 0; i < picks.size(); i++) {
 update toUpdate;
 
 System.debug(LoggingLevel.ERROR, 'SELL_METER_SEED updated=' + toUpdate.size()
-    + ' green=' + g + ' yellow=' + y + ' red=' + r
-    + ' (pool_with_Property=' + pool.size() + ', distinct_names=' + byName.size() + ')');
+    + ' green=' + g + ' yellow=' + y + ' red=' + r);

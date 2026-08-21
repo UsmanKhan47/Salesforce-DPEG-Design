@@ -56,30 +56,69 @@
  * 'Prepare/Review' to 'Under Review', which the DISPOSITION sequence already carried. The
  * equivalent test is therefore both possible and needed, and it now exists:
  * underReviewIsSharedByBothLoiRecordTypesAndStillRoutesByRecordType, the LOI twin of the NDA one.
- * What LOI__c ALSO has, and NDA__c does not, is the ALLOW-LIST leak in BOTH directions
- * (dispositionLoiRefusesTheAcquisitionExplicitTargets /
- * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget), because its acquisition record type
- * is the one object in the repo that shipped with an object-level explicit-target set.
- * ⚠ THE TWO ALLOW-LISTS REMAIN DISJOINT even though the two SEQUENCES no longer are — the shared
- * 'Under Review' is on neither list, deliberately (listing it would skip the approval gate). Those
- * refusal tests therefore still measure what they always did; do not read the disjointness break as
- * having weakened them.
+ *
+ * 🔴 AND THE OVERLAP WIDENED AGAIN ON 2026-08-21 — FROM ONE SHARED VALUE TO THREE. The user
+ * replaced the disposition sequence with Received -> Under Review -> Negotiation -> Signed, so
+ * 'Negotiation' and 'Signed' joined 'Under Review' on both value sets. Only 'Received' (disposition)
+ * and 'Draft'/'Submitted' (acquisition) are still side-identifying. underReviewIsSharedBy... is
+ * therefore no longer a nice-to-have twin: it is the ONLY test that can tell the two maps apart,
+ * because dispositionLoiWalksReceivedToSigned's hops two through four are all shared vocabulary.
+ *
+ * ⚠ THE ALLOW-LIST PARAGRAPH BELOW IS RETRACTED IN PART. It read: "What LOI__c ALSO has, and NDA__c
+ * does not, is the ALLOW-LIST leak in BOTH directions (dispositionLoiRefusesTheAcquisitionExplicit-
+ * Targets / acquisitionLoiRefusesADispositionStageAsAnExplicitTarget) ... ⚠ THE TWO ALLOW-LISTS
+ * REMAIN DISJOINT even though the two SEQUENCES no longer are — the shared 'Under Review' is on
+ * neither list, deliberately (listing it would skip the approval gate). Those refusal tests
+ * therefore still measure what they always did; do not read the disjointness break as having
+ * weakened them."
+ * The leak is now ONE-DIRECTIONAL. Disposition_LOI's allow-list is EMPTY (the negotiation loop was
+ * retired and LOI_DISPOSITION_EXPLICIT_TARGETS deleted), so:
+ *   - dispositionLoiRefusesTheAcquisitionExplicitTargets is the real one, and it got SHARPER: both
+ *     values it probes are now legal disposition STAGES, so a leak would be undetectable downstream.
+ *   - acquisitionExplicitTargetListHasNotWidenedToTheUnion (RENAMED 2026-08-21 from
+ *     acquisitionLoiRefusesADispositionStageAsAnExplicitTarget, whose name outlived its subject)
+ *     stayed green and went VACUOUS as a
+ *     leak test — all three of its probes are allow-listed nowhere and no deployed bundle sends
+ *     them. It is kept as a "has the acquisition list widened to the union?" control ONLY. Its own
+ *     header says so at length; do not cite it as proof that a live leak is closed.
+ * "The two allow-lists remain disjoint" is still TRUE, but it is now true trivially (one of them is
+ * empty), which is a different and much weaker statement than it was.
  *
  * ⚠ AND Contract_Review__c JOINED THE OVERLAP LIST FROM THE OTHER DIRECTION. Its two sequences used
- * to be IDENTICAL (one shared map object); observation 7 split them so they now share only
- * 'Executed', which is terminal on both. psaSequencesAreSplitPerRecordType is that object's
- * equivalent proof.
+ * to be IDENTICAL (one shared map object); observation 7 split them.
+ * 🔴 THE OVERLAP THEN GREW BACK, 2026-08-21 — this used to end "...so they now share only
+ * 'Executed', which is terminal on both." BOTH HALVES OF THAT ARE NOW FALSE. The user harmonised
+ * the Disposition_PSA record type to Initial Draft -> Negotiation -> Signed, so:
+ *   - the two sequences share 'Negotiation' AND 'Signed', not 'Executed';
+ *   - 'Executed' is GONE from Disposition_PSA entirely — it is acquisition-only now;
+ *   - and 'Signed', the value they share at the tail, is TERMINAL on disposition but MID-SEQUENCE
+ *     on acquisition. A shared value that means "stop" on one side and "one more hop" on the other
+ *     is the sharpest form this overlap has taken on any object.
+ * psaSequencesAreSplitPerRecordType is still that object's equivalent proof, but its probe had to
+ * MOVE to the shared 'Signed' value — repointing its old own-seed expectations would have left it
+ * green and vacuous. Read its header before editing it.
  *
- * ── 🔴 AND THE THIRD SHAPE: A LOOP (Tranche 3B close-out) ────────────────────
- * dispositionLoiAcceptsTheNegotiationLoopTargets. The disposition LOI is neither a line (like the
- * acquisition NDA), nor a branch (like the acquisition LOI at 'Submitted'), nor an off-ramp (like
- * disposition NDA's 'Declined') — it is a CYCLE: 'Countered by DPEG' <-> 'Counter Received from
- * Buyer', because the document says the negotiation "goes round until both sides are agreed". A
- * Map<String, String> holds one value per key, so the BACK-edge is provably inexpressible in
- * LOI_DISPOSITION_NEXT_STAGE — the key already maps forward to 'Executed'. That test walks the
- * cycle and then keeps advancing to 'Executed', which is what falsifies the tempting wrong build:
- * editing the NEXT_STAGE map to point 'Counter Received from Buyer' back at 'Countered by DPEG'
- * would make advance() loop forever and the sell-side path could never terminate.
+ * ── ⚠ THE THIRD SHAPE, A LOOP, IS RETIRED (2026-08-21) — RETRACTED IN FULL ───
+ * This block read, verbatim:
+ *   "── 🔴 AND THE THIRD SHAPE: A LOOP (Tranche 3B close-out) ────────────────────
+ *    dispositionLoiAcceptsTheNegotiationLoopTargets. The disposition LOI is neither a line (like
+ *    the acquisition NDA), nor a branch (like the acquisition LOI at 'Submitted'), nor an off-ramp
+ *    (like disposition NDA's 'Declined') — it is a CYCLE: 'Countered by DPEG' <-> 'Counter Received
+ *    from Buyer', because the document says the negotiation 'goes round until both sides are
+ *    agreed'. A Map<String, String> holds one value per key, so the BACK-edge is provably
+ *    inexpressible in LOI_DISPOSITION_NEXT_STAGE — the key already maps forward to 'Executed'. That
+ *    test walks the cycle and then keeps advancing to 'Executed', which is what falsifies the
+ *    tempting wrong build: editing the NEXT_STAGE map to point 'Counter Received from Buyer' back
+ *    at 'Countered by DPEG' would make advance() loop forever and the sell-side path could never
+ *    terminate."
+ * THERE IS NO THIRD SHAPE. The user replaced the sell-side sequence with the LINEAR
+ * Received -> Under Review -> Negotiation -> Signed; counter rounds are recorded on Counter History
+ * (Counter_Offer__c / c/loiCounterOffer), not by cycling Stage__c. The named test was DELETED (see
+ * the marker where it stood, just before loiGateIsResolvedPerRecordTypeNotPerObject) and
+ * LOI_DISPOSITION_EXPLICIT_TARGETS was deleted with it — Disposition_LOI now supplies an EMPTY
+ * explicit-target set, which makes advanceTo() structurally unreachable on it.
+ * ⇒ Two shapes remain in this class: the acquisition LOI's BRANCH at 'Submitted' and the
+ *   disposition NDA's 'Declined' OFF-RAMP.
  *
  * 🔴 CONSEQUENCE OF LOI__c BECOMING MULTI-RECORD-TYPE, worth knowing before editing any gate test:
  * resolving an LOI's gate now LOADS the row, so a bare Standard User cannot reach the gate at all
@@ -145,8 +184,9 @@
  * ── ✅ Contract_Review__c GATE COVERAGE CLOSED (Tranche 3C, gap fill) ─────────
  * This class had ZERO Contract_Review__c coverage before this pass — handed back explicitly by the
  * 3C developer as a known, deliberate gap: "compile-verified only." Closed with
- * acquisitionPsaWalksDraftToExecuted / dispositionPsaWalksInitialDraftToExecuted (the walk, on both
- * record types), contractReviewGateIsResolvedPerRecordTypeNotPerObject (the falsifier for the gate
+ * acquisitionPsaWalksDraftToExecuted / dispositionPsaWalksInitialDraftToSigned (the walk, on both
+ * record types; the second was named ...ToExecuted until the 2026-08-21 harmonisation),
+ * contractReviewGateIsResolvedPerRecordTypeNotPerObject (the falsifier for the gate
  * split — see its own header for why the walk tests alone cannot catch a reverted GATE), and
  * Contract_Review__c's addition to adminPassesTheGateOnEveryObject and
  * gateResolutionLoadsTheRecordOnlyForAMultiRecordTypeObject.
@@ -157,11 +197,16 @@
  * from a regression to the old single-gate config." That was TRUE of Tranche 3C and is FALSE since
  * observation 7 (2026-08-14), which split the shared map into
  * CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE (Draft -> Negotiation -> Signed -> Executed) and
- * CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE (Initial Draft -> Revised -> Ready for Execution ->
- * Executed). It is corrected rather than deleted so nobody restores the shared map on the strength
- * of the old sentence. Contract_Review__c now differs per record type on BOTH axes — sequence AND
- * gate — so the two walks are NOT byte-identical and DO falsify a reverted map split
- * (psaSequencesAreSplitPerRecordType states that as one direct claim). What survives verbatim is
+ * CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE, which the user then harmonised on 2026-08-21 to
+ * (Initial Draft -> Negotiation -> Signed). ⚠ That second map read
+ * (Initial Draft -> Revised -> Ready for Execution -> Executed) in between; the intermediate value
+ * is recorded because the git history reads oddly without it. It is corrected rather than deleted
+ * so nobody restores the shared map on the strength of the old sentence. Contract_Review__c differs
+ * per record type on BOTH axes — sequence AND gate.
+ * 🔴 BUT "the two walks are NOT byte-identical and DO falsify a reverted map split" IS NO LONGER
+ * ENOUGH ON ITS OWN. Since the harmonisation the two walks share their first two hops, so a UNION
+ * map satisfies both; only the SHARED-'Signed' probe inside psaSequencesAreSplitPerRecordType
+ * still falsifies a merge. What survives verbatim is
  * the GATE half: a build that reverted only the gate to a single DEAL_DRIVER config would still
  * pass both walks, so contractReviewGateIsResolvedPerRecordTypeNotPerObject remains the only test
  * that can catch it.
@@ -207,10 +252,16 @@
  * FALSE. Two of the six now carry validation rules: LOI__c gained four (Tranche 2 Workstream A4,
  * including Final_Price_Required_Before_Executed) and Contract_Review__c gained one
  * (Execution_Date_Not_In_Future). The gap this block describes is CLOSED — see
- * dispositionLoiExecutedWithBlankFinalPrice_surfacesValidationRuleMessage below, which advances a
- * disposition LOI to 'Executed' with a blank Final_Agreed_Price__c through this exact service and
+ * dispositionLoiSignedWithBlankFinalPrice_surfacesValidationRuleMessage below, which advances a
+ * disposition LOI to its terminal with a blank Final_Agreed_Price__c through this exact service and
  * asserts the rule's own errorMessage reaches the caller verbatim, exactly as the closing
- * sentence of the retracted block anticipated. The other four of the six (NDA__c,
+ * sentence of the retracted block anticipated.
+ * ⚠ RENAMED 2026-08-21 from dispositionLoiExecutedWithBlankFinalPrice_surfacesValidationRuleMessage:
+ * the sell-side terminal moved from 'Executed' to 'Signed'. That test also had to acquire a REAL
+ * Disposition__c parent, because Final_Price_Required_Before_Executed is now scoped by
+ * NOT(ISBLANK(Disposition__c)) rather than by naming a disposition-only stage value — both
+ * terminals are 'Signed' now, so the old value-naming technique cannot scope anything. Read that
+ * method's header before touching its fixture. The other four of the six (NDA__c,
  * Underwriting__c, Construction_Feasibility_Review__c, Development_Feasibility_Review__c) still
  * carry no validationRules directory, so the reasoning below remains correct for THEM.
  *
@@ -240,7 +291,8 @@
  *   rule's own errorMessage reaches the caller verbatim — that is the behaviour the whole
  *   Apex-not-LDS write decision was made to obtain, and until then it is unproven.
  *   ✅ DONE for LOI__c / Final_Price_Required_Before_Executed, 2026-08-20 — see the retraction note
- *   above this block and the new test immediately after dispositionLoiWalksReceivedToExecuted.
+ *   above this block and the test immediately after dispositionLoiWalksReceivedToSigned (that walk
+ *   was itself named ...ReceivedToExecuted until 2026-08-21).
  *   The remaining four objects are still open; add their tests here the day each gets its first rule.
  *
  * @see force-app/main/default/classes/RecordStageAdvanceService.cls
@@ -827,7 +879,11 @@ private class RecordStageAdvanceServiceTest {
             + 'sets are no longer disjoint. This walk staying correct is what proves the service '
             + 'resolves its sequence from the RECORD TYPE and not from the stage value — a build '
             + 'that derived the map from the current stage would route this row into the sell-side '
-            + 'sequence at hop two and go to "Countered by DPEG" instead of "Submitted"');
+            + 'sequence at hop two and go to "Negotiation" instead of "Submitted", SKIPPING the '
+            + 'approval gate at Submitted entirely. ⚠ That named value was "Countered by DPEG" '
+            + 'until 2026-08-21; the wrong answer is now a stage this record type also carries, '
+            + 'which is why the assertion has to be on the whole ORDERED list and not on '
+            + 'membership');
         Assert.areEqual('Signed', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
             'The walk must leave the LOI at its terminal stage');
     }
@@ -856,8 +912,14 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual('LOI moved to Submitted.', acquisitionMessage,
             'From the SHARED stage "Under Review", an ACQUISITION LOI must advance to Submitted');
-        Assert.areEqual('LOI moved to Countered by DPEG.', dispositionMessage,
-            'From the SAME shared stage, a DISPOSITION LOI must advance to Countered by DPEG. Two '
+        // ⚠ REPOINTED 2026-08-21. This asserted 'LOI moved to Countered by DPEG.' until the user
+        // replaced the sell-side sequence with Received -> Under Review -> Negotiation -> Signed.
+        // The CLAIM is unchanged and the test is, if anything, sharper now: 'Negotiation' is on the
+        // ACQUISITION value set too, so a build that resolved the sequence from the stage value
+        // would produce a target that looks entirely legitimate on either side. The only thing that
+        // distinguishes right from wrong here is which record type answered.
+        Assert.areEqual('LOI moved to Negotiation.', dispositionMessage,
+            'From the SAME shared stage, a DISPOSITION LOI must advance to Negotiation. Two '
             + 'record types, one stage value, two different answers — that is the whole claim');
         Assert.areNotEqual(acquisitionMessage, dispositionMessage,
             'Stated as an inequality as well as two equalities on purpose: a future build that '
@@ -866,21 +928,39 @@ private class RecordStageAdvanceServiceTest {
     }
 
     @isTest
-    static void dispositionLoiWalksReceivedToExecuted() {
-        // The sell-side sequence is a DIFFERENT LENGTH and shares NOT ONE VALUE with the
-        // acquisition one — it starts at 'Received', which the acquisition record type does not
-        // carry at all. So if record-type resolution broke and this fell back to the acquisition
-        // map, the very first hop would be refused with "no next step available from the Received
-        // stage" rather than producing a subtly wrong walk.
+    static void dispositionLoiWalksReceivedToSigned() {
+        // ⚠ RENAMED AND REPOINTED 2026-08-21 from dispositionLoiWalksReceivedToExecuted. The user
+        // replaced the sell-side sequence with Received -> Under Review -> Negotiation -> Signed
+        // (design agent-output/disposition-loi-stages.md); the retired walk was
+        // Received -> Under Review -> Countered by DPEG -> Counter Received from Buyer -> Executed.
+        //
+        // 🔴 THE OLD COMMENT'S FALSIFIER ARGUMENT IS RETRACTED, NOT CARRIED FORWARD. It read: "The
+        // sell-side sequence is a DIFFERENT LENGTH and shares NOT ONE VALUE with the acquisition
+        // one — it starts at 'Received', which the acquisition record type does not carry at all.
+        // So if record-type resolution broke and this fell back to the acquisition map, the very
+        // first hop would be refused..." Only the START of that survives: 'Received' is still
+        // acquisition-absent, so a fallback to the acquisition map still fails LOUDLY at hop one.
+        // But the two sequences are now the SAME LENGTH (four stages each on this stretch) and
+        // share THREE values — 'Under Review', 'Negotiation' and 'Signed'. Hops two through four of
+        // this walk are values the acquisition record type also carries, so from hop two onward
+        // this walk no longer distinguishes the two maps by vocabulary at all. That job now belongs
+        // entirely to underReviewIsSharedByBothLoiRecordTypesAndStillRoutesByRecordType, which
+        // starts at the SHARED stage and is therefore the only test that can still tell them apart.
         LOI__c loi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Received');
-        // 🔴 Final_Agreed_Price__c MUST BE SET BEFORE THE WALK REACHES 'Executed', ADDED 2026-08-20
-        // (Tranche 2 D1 validation rules). Final_Price_Required_Before_Executed fires on
-        // OR(ISNEW(), ISCHANGED(Stage__c)) AND TEXT(Stage__c) = 'Executed' AND
+        // 🔴 Final_Agreed_Price__c MUST BE SET BEFORE THE WALK REACHES ITS TERMINAL, ADDED
+        // 2026-08-20 (Tranche 2 D1 validation rules), TERMINAL REPOINTED 2026-08-21.
+        // Final_Price_Required_Before_Executed now fires on OR(ISNEW(), ISCHANGED(Stage__c)) AND
+        // NOT(ISBLANK(Disposition__c)) AND TEXT(Stage__c) = 'Signed' AND
         // ISBLANK(Final_Agreed_Price__c) — advanceUntilBlocked only catches
         // RecordStageAdvanceService.RecordStageAdvanceException, so an unhandled DmlException from
         // this rule would escape the walk uncaught rather than producing a clean assertion failure.
-        // Set here, at 'Received', where TEXT(Stage__c) <> 'Executed' so the rule cannot fire on
-        // THIS update either.
+        // Set here, at 'Received', where TEXT(Stage__c) <> 'Signed' so the rule cannot fire on THIS
+        // update either.
+        // ⚠ THIS FIXTURE IS PARENTED TO NOTHING (see insertLoiOnRecordType's header), so
+        // Disposition__c IS BLANK and the rule's new discriminator term is FALSE on it — the rule
+        // is unreachable here whatever the price is. The pre-set is RETAINED deliberately: it costs
+        // one field, and it is what keeps this walk green if the fixture is ever parented, which is
+        // exactly the change someone will make when adding a sell-side assertion.
         loi.Final_Agreed_Price__c = 1250000;
         update loi;
         Id loiId = loi.Id;
@@ -892,18 +972,26 @@ private class RecordStageAdvanceServiceTest {
         Assert.areEqual(
             new List<String>{
                 'LOI moved to Under Review.',
-                'LOI moved to Countered by DPEG.',
-                'LOI moved to Counter Received from Buyer.',
-                'LOI moved to Executed.',
-                'BLOCKED: There is no next step available from the Executed stage.'
+                'LOI moved to Negotiation.',
+                'LOI moved to Signed.',
+                'BLOCKED: There is no next step available from the Signed stage.'
             },
             messages,
-            'The Disposition_LOI map must be exactly Received -> Under Review -> Countered by '
-            + 'DPEG -> Counter Received from Buyer -> Executed. The direction is REVERSED from the '
-            + 'acquisition path (the LOI arrives from the buyer rather than being drafted by us), '
-            + 'which is why there is no Draft, no Prepare/Review and no Sent');
-        Assert.areEqual('Executed', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
+            'The Disposition_LOI map must be exactly Received -> Under Review -> Negotiation -> '
+            + 'Signed. The direction is REVERSED from the acquisition path (the LOI arrives from '
+            + 'the buyer rather than being drafted by us), which is why there is no Draft and no '
+            + 'Submitted — those two, plus the START at "Received", are now the ONLY vocabulary '
+            + 'difference between the two sequences');
+        Assert.areEqual('Signed', [SELECT Stage__c FROM LOI__c WHERE Id = :loiId].Stage__c,
             'The walk must leave the disposition LOI at its terminal stage');
+        // 🔴 THE REFUSAL AT THE END IS NOW LOAD-BEARING IN A WAY IT WAS NOT. 'Signed' is the
+        // terminal on BOTH record types, so a build that folded the two maps together would still
+        // stop here and still print the same message. What it would NOT do is stop after THREE
+        // hops: the acquisition map takes five stages to reach 'Signed'. The message LIST above —
+        // its length as much as its contents — is what carries that.
+        Assert.areEqual(4, messages.size(),
+            'Three hops plus one refusal. Asserted separately from the list because the LENGTH is '
+            + 'the half of this test that survives both sequences sharing a terminal');
     }
 
     /**
@@ -911,34 +999,70 @@ private class RecordStageAdvanceServiceTest {
      * setStage's DmlException catch exists to surface a validation rule's own message through the
      * Advance Stage LWC, and until Final_Price_Required_Before_Executed landed there was no rule on
      * any of the six stage-controlled objects that could trip it. This LOI is walked straight to
-     * 'Counter Received from Buyer' (the last stage before the derived hop to 'Executed') WITHOUT
-     * ever setting Final_Agreed_Price__c, so advance()'s next hop is exactly the write the rule
-     * refuses.
+     * the stage BEFORE the terminal WITHOUT ever setting Final_Agreed_Price__c, so advance()'s next
+     * hop is exactly the write the rule refuses.
      *
      * This is also the A4 regression pin the rule's own header calls for: "THE MOST LIKELY WAY A
      * USER MEETS THIS RULE is clicking Advance Stage on a disposition LOI" — that sentence was
      * previously unproven by any test.
+     *
+     * ── ⚠ REPOINTED 2026-08-21, AND THE FIXTURE CHANGED FOR A REASON THE DESIGN DID NOT PREDICT ──
+     * Renamed from dispositionLoiExecutedWithBlankFinalPrice_surfacesValidationRuleMessage. Two
+     * things moved, and only the first was foreseen:
+     *   1. The pre-advance stage moved from 'Counter Received from Buyer' to 'Negotiation' and the
+     *      refused target from 'Executed' to 'Signed', because the user's new sell-side sequence is
+     *      Received -> Under Review -> Negotiation -> Signed.
+     *   2. 🔴 THE FIXTURE MUST NOW BE PARENTED TO A REAL Disposition__c, AND IT WAS NOT BEFORE.
+     *      The rule's old formula named a value only the disposition record type carried
+     *      (TEXT(Stage__c) = "Executed"), which is what scoped it off the acquisition path. Both
+     *      terminals are 'Signed' now, so that technique is dead and the rule is re-scoped by
+     *      NOT(ISBLANK(Disposition__c)) instead (design gate G1, option A — the ONLY option that
+     *      does not block a live acquisition LOI reaching Signed).
+     *      insertLoiOnRecordType builds an LOI "parented to NOTHING" by design, so the rule's new
+     *      discriminator would be FALSE on that fixture and the rule could never fire. THE TEST
+     *      WOULD HAVE GONE RED AT Assert.fail — loudly, not silently — but "make it green" here
+     *      must mean parenting the fixture, NEVER weakening the assertion or dropping the
+     *      discriminator. A disposition-parented LOI is also the only fixture that HONESTLY
+     *      represents the record a user meets this rule on.
+     * ⚠ DO NOT REVERT THIS TO insertLoiOnRecordType. That helper's header explains why it parents
+     * to nothing (it keeps loi() unambiguous and keeps Tranche 2's isAvailable() guard out of a
+     * sequence test); both reasons are fine for every OTHER LOI test in this class and are simply
+     * incompatible with a rule scoped by the parent lookup.
      */
     @isTest
-    static void dispositionLoiExecutedWithBlankFinalPrice_surfacesValidationRuleMessage() {
-        LOI__c loi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Counter Received from Buyer');
+    static void dispositionLoiSignedWithBlankFinalPrice_surfacesValidationRuleMessage() {
+        Property__c prop = TestDataFactory.createProperty(true);
+        Property_Asset__c asset = TestDataFactory.createPropertyAsset(prop.Id, true);
+        Disposition__c disposition = TestDataFactory.createDisposition(asset.Id, true);
+
+        LOI__c loi = TestDataFactory.createDispositionLoi(disposition.Id, false);
+        loi.Stage__c = 'Negotiation';
         // Final_Agreed_Price__c is deliberately left blank — that is the whole test.
+        insert loi;
+
+        Assert.isNotNull(loi.Disposition__c,
+            'PRECONDITION, not an assertion about the service: the fixture must carry a '
+            + 'Disposition__c or Final_Price_Required_Before_Executed\'s NOT(ISBLANK(Disposition__c)) '
+            + 'discriminator is FALSE and this test proves nothing at all');
 
         Test.startTest();
         try {
             RecordStageAdvanceService.advance(loi.Id);
-            Assert.fail('Advancing a disposition LOI to Executed with a blank Final_Agreed_Price__c '
-                + 'must be blocked by Final_Price_Required_Before_Executed');
+            Assert.fail('Advancing a disposition LOI to Signed with a blank Final_Agreed_Price__c '
+                + 'must be blocked by Final_Price_Required_Before_Executed (the rule keeps its '
+                + '_Before_Executed API NAME on purpose — renaming a ValidationRule is a '
+                + 'delete-and-recreate; see the rule file\'s header and the Completed_LOI_Before_PSA '
+                + 'precedent)');
         } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
             Assert.isTrue(
-                e.getMessage().contains('Enter the Final Agreed Price before marking this LOI Executed'),
+                e.getMessage().contains('Enter the Final Agreed Price before marking this LOI Signed'),
                 'setStage\'s DmlException catch must surface the validation rule\'s own errorMessage '
                 + 'verbatim to the Advance Stage caller — this is the entire reason stage writes route '
                 + 'through Apex instead of LDS. Got: ' + e.getMessage());
         }
         Test.stopTest();
 
-        Assert.areEqual('Counter Received from Buyer',
+        Assert.areEqual('Negotiation',
             [SELECT Stage__c FROM LOI__c WHERE Id = :loi.Id].Stage__c,
             'A refused advance must leave the LOI at its pre-advance stage — the DML rolled back, '
             + 'it did not partially apply');
@@ -1003,10 +1127,15 @@ private class RecordStageAdvanceServiceTest {
     //
     // ✅ AND THAT CHANGES WHAT THESE WALKS ARE WORTH. The old banner correctly warned that they
     // "cannot distinguish a correct build from one that reverted the gate split, since the sequence
-    // never changed either way", so the gate test alone carried the 3C change. The two walks now
-    // differ in every value, so they DO falsify a reverted MAP split — and
+    // never changed either way", so the gate test alone carried the 3C change. The two walks then
+    // differed in every value, so they DID falsify a reverted MAP split — and
     // psaSequencesAreSplitPerRecordType below states that as a single, direct claim rather than
     // leaving it to be inferred from two separate expectations.
+    // ⚠ 2026-08-21: "the two walks now differ in every value" EXPIRED. After the user's
+    // harmonisation they share hops one and two ('Negotiation', then 'Signed') and diverge only at
+    // the tail, where 'Signed' is terminal on disposition and mid-sequence on acquisition. The
+    // walks alone no longer falsify a merge; psaSequencesAreSplitPerRecordType's shared-'Signed'
+    // probe is what does.
     // ═════════════════════════════════════════════════════════════════════════
 
     @isTest
@@ -1082,19 +1211,37 @@ private class RecordStageAdvanceServiceTest {
     }
 
     @isTest
-    static void dispositionPsaWalksInitialDraftToExecuted() {
-        // 🔴 THE SELL SIDE IS UNTOUCHED BY OBSERVATION 7, AND THIS TEST IS WHERE THAT IS PROVED.
-        // Its four values are byte-identical to what they were before the split — that is the
-        // point, not an oversight. The acquisition-only rename must not leak across, and the three
-        // values it retires from Acquisition_PSA (Initial Draft / Revised / Ready for Execution)
-        // must stay ACTIVE on the field because this record type still runs on them (O3, a hard
-        // stop).
+    static void dispositionPsaWalksInitialDraftToSigned() {
+        // ⚠ RENAMED AND REPOINTED 2026-08-21 from dispositionPsaWalksInitialDraftToExecuted. The
+        // USER harmonised the Disposition_PSA record type directly in Setup: its
+        // Negotiation_Status__c values are now Initial Draft (default) | Negotiation | Signed.
+        // 'Revised', 'Ready for Execution' and 'Executed' are off this record type (still ACTIVE on
+        // the master value set — measured via the UI API, the only channel that reports
+        // record-type-scoped values on this object).
         //
-        // ⚠ THIS TEST'S JOB INVERTED WITHOUT ITS BODY CHANGING. It used to prove the two maps were
-        // THE SAME OBJECT ("A divergent message list here would mean the map was duplicated rather
-        // than shared"). It now proves they are DIFFERENT objects and that only one of them moved.
-        // A build that renamed this sequence along with the acquisition one — the natural mistake
-        // when a value-rename sweep is string-scoped rather than record-type-scoped — reds here.
+        // 🔴 RETRACTED IN FULL, because this test's entire comment was an argument that the sell
+        // side would never move:
+        //   "🔴 THE SELL SIDE IS UNTOUCHED BY OBSERVATION 7, AND THIS TEST IS WHERE THAT IS PROVED.
+        //    Its four values are byte-identical to what they were before the split — that is the
+        //    point, not an oversight. The acquisition-only rename must not leak across, and the
+        //    three values it retires from Acquisition_PSA (Initial Draft / Revised / Ready for
+        //    Execution) must stay ACTIVE on the field because this record type still runs on them
+        //    (O3, a hard stop).
+        //    ⚠ THIS TEST'S JOB INVERTED WITHOUT ITS BODY CHANGING. It used to prove the two maps
+        //    were THE SAME OBJECT ... It now proves they are DIFFERENT objects and that only one of
+        //    them moved. A build that renamed this sequence along with the acquisition one — the
+        //    natural mistake when a value-rename sweep is string-scoped rather than
+        //    record-type-scoped — reds here."
+        // O3's hard stop was overtaken by the user, and "only one of them moved" is now false —
+        // both have. The three values remain active on the FIELD, so nothing was deleted; they are
+        // simply no longer on this record type, and Apex DML enforces that.
+        //
+        // 🔴 WHAT THIS TEST NO LONGER PROVES, STATED SO IT IS NOT OVER-CLAIMED: hops one and two are
+        // now IDENTICAL to the acquisition map's ('Initial Draft'/'Draft' both derive 'Negotiation';
+        // 'Negotiation' derives 'Signed' on both). A UNION map holding all of both sides' entries
+        // would satisfy every assertion below. The split-detector moved to
+        // psaSequencesAreSplitPerRecordType, which now probes the SHARED terminal 'Signed' — the
+        // only place the two sequences still disagree.
         Id crId = insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Initial Draft').Id;
 
         Test.startTest();
@@ -1103,18 +1250,24 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual(
             new List<String>{
-                'Contract Review moved to Revised.',
-                'Contract Review moved to Ready for Execution.',
-                'Contract Review moved to Executed.',
-                'BLOCKED: There is no next step available from the Executed stage.'
+                'Contract Review moved to Negotiation.',
+                'Contract Review moved to Signed.',
+                'BLOCKED: There is no next step available from the Signed stage.'
             },
             messages,
-            'The Disposition_PSA map must remain exactly Initial Draft -> Revised -> Ready for '
-            + 'Execution -> Executed. Observation 7 is an ACQUISITION-ONLY change');
-        Assert.areEqual('Executed',
+            'The Disposition_PSA map must be exactly Initial Draft -> Negotiation -> Signed. '
+            + '🔴 The REFUSAL is the load-bearing line: "Signed" is TERMINAL here and MID-SEQUENCE '
+            + 'on Acquisition_PSA, so a build that merged the two maps would advance this row on to '
+            + '"Executed" — a value this record type cannot even hold');
+        Assert.areEqual('Signed',
             [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :crId]
                 .Negotiation_Status__c,
             'The walk must leave the Contract Review at its terminal status');
+        // 🔴 AND THE TERMINAL IS THE SELL-SIDE HANDOFF TRIGGER AS OF 2026-08-21. Reaching 'Signed'
+        // on a Disposition__c-parented PSA is what fires
+        // ContractExecutionService.advanceDispositionsToClosing. This fixture is parented to
+        // NOTHING (see insertContractReviewOnRecordType), so no handoff runs here and this walk
+        // stays a pure sequence test — ContractExecutionServiceTest owns the handoff.
     }
 
     @isTest
@@ -1168,17 +1321,56 @@ private class RecordStageAdvanceServiceTest {
         // old security hole becomes real again and this test goes red to say so — at which point
         // the cross-fed DIRECTION 2 must be restored from git history.
         // ═══════════════════════════════════════════════════════════════════════════════════════
+        // ═══ 🔴 REWRITTEN AGAIN 2026-08-21, AND THIS TIME THE TEST WOULD HAVE GONE VACUOUS WHILE
+        // STAYING GREEN IF ONLY THE EXPECTED STRINGS HAD BEEN REPOINTED. Read before editing.
+        //
+        // The USER harmonised Disposition_PSA to Initial Draft -> Negotiation -> Signed. The old
+        // DIRECTION 1 / DIRECTION 2 pair probed each record type's OWN SEED:
+        //     acquisition 'Draft'         -> expected 'Contract Review moved to Negotiation.'
+        //     disposition 'Initial Draft' -> expected 'Contract Review moved to Revised.'
+        // After the harmonisation BOTH seeds derive 'Negotiation'. Mechanically repointing the
+        // second expectation to 'Contract Review moved to Negotiation.' would have left two
+        // assertions that a UNION MAP — one shared map holding all of both sides' entries —
+        // satisfies perfectly. The test would have passed and detected nothing, which is the exact
+        // failure mode its own header calls "unsatisfiable by any single-map build".
+        //
+        // 🔴 THE PROBE THEREFORE MOVED TO THE SHARED VALUE 'Signed', THE ONLY PLACE THE TWO
+        // SEQUENCES STILL DISAGREE:
+        //     ACQUISITION  Signed -> Executed        (mid-sequence; 'Executed' is its terminal)
+        //     DISPOSITION  Signed -> REFUSED         ('Signed' IS its terminal)
+        // One value, two record types, an advance and a refusal. A union map holding
+        // 'Signed' => 'Executed' would advance the disposition row too, so no single-map build
+        // satisfies this pair. Same shape as the LOI's
+        // underReviewIsSharedByBothLoiRecordTypesAndStillRoutesByRecordType, and adopted for the
+        // same reason: once two sequences share values, only a shared KEY can discriminate them.
+        //
+        // ⚠ The own-seed hops are KEPT below as supporting assertions, but they no longer
+        // discriminate and are labelled so nobody re-promotes them to the headline claim.
+        // ═══════════════════════════════════════════════════════════════════════════════════════
         Id acquisitionId = insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Draft').Id;
         Id dispositionId =
             insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Initial Draft').Id;
+        // The two fixtures for the SHARED-KEY probe. Both seeded directly at 'Signed', which both
+        // record types carry — that is what makes the divergence expressible at all.
+        Id acquisitionAtSigned =
+            insertContractReviewOnRecordType(RT_ACQUISITION_PSA, 'Signed').Id;
+        Id dispositionAtSigned =
+            insertContractReviewOnRecordType(RT_DISPOSITION_PSA, 'Signed').Id;
 
         Test.startTest();
-        // DIRECTION 1: from ITS OWN seed, the acquisition record type resolves the acquisition map.
+        // SUPPORTING (no longer discriminating — see the block above): each record type resolves a
+        // map from its own seed. Both now derive 'Negotiation'.
         String acquisitionFirstHop = RecordStageAdvanceService.advance(acquisitionId);
-        // DIRECTION 2: from ITS OWN seed, the disposition record type resolves a DIFFERENT map.
-        // Asserted together with DIRECTION 1, this is unsatisfiable by any build that resolves one
-        // sequence for both record types.
         String dispositionFirstHop = RecordStageAdvanceService.advance(dispositionId);
+
+        // 🔴 THE HEADLINE PAIR. Same stage value, two record types, two different answers.
+        String acquisitionFromSigned = RecordStageAdvanceService.advance(acquisitionAtSigned);
+        String dispositionFromSigned;
+        try {
+            dispositionFromSigned = RecordStageAdvanceService.advance(dispositionAtSigned);
+        } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
+            dispositionFromSigned = 'BLOCKED: ' + e.getMessage();
+        }
 
         // DIRECTION 3 — the platform canary described above.
         String platformRefusal;
@@ -1199,12 +1391,32 @@ private class RecordStageAdvanceServiceTest {
         }
         Test.stopTest();
 
+        // 🔴 THE HEADLINE PAIR — assert these two together or not at all.
+        Assert.areEqual('Contract Review moved to Executed.', acquisitionFromSigned,
+            'From the SHARED status "Signed", an ACQUISITION PSA must advance to Executed — '
+            + '"Signed" is mid-sequence on that record type');
+        Assert.areEqual(
+            'BLOCKED: There is no next step available from the Signed stage.', dispositionFromSigned,
+            'From the SAME shared status, a DISPOSITION PSA must be REFUSED — "Signed" is its '
+            + 'TERMINAL since the 2026-08-21 harmonisation. One value, two record types, an '
+            + 'advance and a refusal: no union map satisfies both, because a union map holding '
+            + '"Signed" => "Executed" would advance this row onto a value its record type cannot '
+            + 'even hold');
+        Assert.areNotEqual(acquisitionFromSigned, dispositionFromSigned,
+            'Stated as an inequality as well as two equalities on purpose: a build that made the '
+            + 'two answers accidentally equal is the specific regression this names');
+
+        // SUPPORTING. ⚠ These two were the headline claim until 2026-08-21 and are now satisfied by
+        // a union map as well as by the split — they are kept because they pin each map's HEAD
+        // (a reversion to the pre-harmonisation sell-side map reds the second one), not because
+        // they prove the split.
         Assert.areEqual('Contract Review moved to Negotiation.', acquisitionFirstHop,
             'The acquisition map must derive Negotiation from Draft');
-        Assert.areEqual('Contract Review moved to Revised.', dispositionFirstHop,
-            'The disposition map must derive Revised from Initial Draft. Taken together with the '
-            + 'assertion above, the SAME service call resolves two different sequences purely on '
-            + 'record type — which no single-sequence build satisfies');
+        Assert.areEqual('Contract Review moved to Negotiation.', dispositionFirstHop,
+            'The disposition map must derive Negotiation from Initial Draft. ⚠ This expected '
+            + 'nothing but "Contract Review moved to Revised." until 2026-08-21, and note that it '
+            + 'now MATCHES the acquisition answer above — which is exactly why the discriminating '
+            + 'probe moved to the "Signed" pair. Do not restore this pair as the headline claim');
         Assert.isTrue(platformRefusal != null
                 && platformRefusal.contains('INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST'),
             'The database — not the service — is what refuses an acquisition-only status on a '
@@ -1432,10 +1644,21 @@ private class RecordStageAdvanceServiceTest {
     static void acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget() {
         // 🔴 THE FALSIFIER FOR THE SHARPEST DESIGN POINT IN TRANCHE 3A.
         //
-        // Record-type picklist restrictions are enforced by the UI ONLY. Apex DML does not enforce
+        // ⚠ RETRACTED 2026-08-21 — MECHANISM FALSE, TEST INTACT. This paragraph used to read:
+        // "Record-type picklist restrictions are enforced by the UI ONLY. Apex DML does not enforce
         // them, so `nda.Status__c = 'Declined'` on an Acquisition_NDA COMMITS — the platform will
         // not stop it. The only thing standing between class access and a disposition-only value on
-        // an acquisition record is this allow-list being keyed by record type.
+        // an acquisition record is this allow-list being keyed by record type."
+        // `NDA__c.Status__c` is `restricted = true`, so DML DOES enforce the record type's subset
+        // (measured; see this class's header and psaSequencesAreSplitPerRecordType). What the
+        // allow-list buys is therefore NOT "the only refusal" but three things the platform does
+        // not supply, all three of which this test asserts below:
+        //   1. the refusal is a typed RecordStageAdvanceException with a user-safe message, not an
+        //      opaque INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST;
+        //   2. it happens BEFORE any DML (pinned by the unchanged-status assertion);
+        //   3. it does not depend on Acquisition_NDA continuing to omit 'Declined' — a declarative
+        //      decision made in a file this suite does not own, and one the user has already
+        //      revised twice on other record types.
         //
         // The fixture sits on 'Sent' deliberately: that is the exact status the Mark Declined
         // action's visibility rule keys on, and it is SHARED by both record types. So this is not a
@@ -1450,9 +1673,9 @@ private class RecordStageAdvanceServiceTest {
             RecordStageAdvanceService.advanceTo(acquisitionNda.Id, 'Declined');
             Assert.fail('advanceTo MUST refuse a disposition-only stage on an acquisition NDA. '
                 + 'Returning normally means the allow-list is keyed by OBJECT rather than by RECORD '
-                + 'TYPE — a build that passes every stage-map walk and still writes Declined onto '
-                + 'an acquisition record, because Apex DML does not enforce record-type picklist '
-                + 'restrictions');
+                + 'TYPE — a build that passes every stage-map walk and then hands the user a raw '
+                + 'INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST from a button that should have refused '
+                + 'cleanly, and a silent bad write the moment Acquisition_NDA is given Declined');
         } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
             refused = true;
             message = e.getMessage();
@@ -1519,34 +1742,101 @@ private class RecordStageAdvanceServiceTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 🔴 THE SAME ALLOW-LIST HOLE ON LOI__c, TESTED IN BOTH DIRECTIONS (Tranche 3B)
+    // 🔴 THE ALLOW-LIST HOLE ON LOI__c (Tranche 3B) — ONE REAL DIRECTION SINCE 2026-08-21
     //
     // LOI__c inherited an OBJECT-level LOI_EXPLICIT_TARGETS = {Counter, Completed} (renamed to
     // {Negotiation, Signed} by observation 5, 2026-08-14) from the
-    // 2026-08-05 branch work. Tranche 3B splits it per record type. Both leaks are real and
-    // neither is caught by any stage-map walk, because Apex DML does not enforce record-type
-    // picklist restriction — a walk only proves what advance() DERIVES, never what advanceTo()
-    // will WRITE.
+    // 2026-08-05 branch work. Tranche 3B splits it per record type. The leak is real and is not
+    // caught by any stage-map walk — a walk only proves what advance() DERIVES, never what
+    // advanceTo() will WRITE.
+    //
+    // ⚠ RETRACTED 2026-08-21: this sentence used to give its reason as "because Apex DML does not
+    // enforce record-type picklist restriction". THAT IS FALSE for a restricted value set, and
+    // `LOI__c.Stage__c` is restricted — MEASURED in this very suite (see RecordStageAdvanceService's
+    // class header for the full write-up: an insert of 'Signed' on a Disposition_LOI was refused
+    // with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST while the record type lacked the value, and
+    // accepted the moment it carried it).
+    // THE LEAK IS STILL REAL, and on the disposition side it is MORE real than the false premise
+    // implied: after 2026-08-21 'Negotiation' and 'Signed' ARE on Disposition_LOI's value set, so
+    // DML will happily accept them and the allow-list is the only refusal. What changed is the
+    // ACQUISITION direction, where the platform now supplies a second, opaque backstop.
     //
     // ⚠ The complement that stops the acquisition refusal passing vacuously already exists:
     // RecordStageAdvanceControllerTest.advanceToWritesAnAllowedExplicitTarget writes 'Signed'
     // on an acquisition LOI and asserts it lands. Do not delete it.
     //
-    // 🔴 AT THE 3B CLOSE-OUT THE SECOND DIRECTION BECAME REAL. Until the negotiation-loop actions
-    // landed, Disposition_LOI supplied NO explicit targets, so
+    // ⚠ RETRACTED 2026-08-21. The paragraph that used to close this block read: "🔴 AT THE 3B
+    // CLOSE-OUT THE SECOND DIRECTION BECAME REAL. Until the negotiation-loop actions landed,
+    // Disposition_LOI supplied NO explicit targets, so
     // acquisitionLoiRefusesADispositionStageAsAnExplicitTarget could only prove that the
     // acquisition list had not widened to the union of both value sets — it used 'Executed', a
     // stage no allow-list anywhere carries. It now aims the two REAL disposition-only targets at an
     // acquisition LOI, which is the leak the split exists to close, and
-    // dispositionLoiAcceptsTheNegotiationLoopTargets is its complement.
+    // dispositionLoiAcceptsTheNegotiationLoopTargets is its complement."
+    //
+    // THE SECOND DIRECTION HAS STOPPED BEING REAL AGAIN. The user retired the sell-side negotiation
+    // loop on 2026-08-21; counter rounds moved to Counter History (Counter_Offer__c /
+    // c/loiCounterOffer), the two quick actions and their two LWC bundles are deleted, and
+    // LOI_DISPOSITION_EXPLICIT_TARGETS is gone — Disposition_LOI now takes the two-arg
+    // StageTypeConfig and supplies an EMPTY set. Consequences, stated so neither test below
+    // masquerades as something it is not:
+    //   - dispositionLoiAcceptsTheNegotiationLoopTargets was DELETED. Its subject no longer exists,
+    //     and its assertions ('LOI moved to Countered by DPEG.', the back-edge, the derived hop to
+    //     'Executed') describe a machine that has been dismantled. It is not replaceable by a
+    //     rewrite: there is no disposition explicit target left to accept.
+    //   - acquisitionExplicitTargetListHasNotWidenedToTheUnion (renamed 2026-08-21 from
+    //     acquisitionLoiRefusesADispositionStageAsAnExplicitTarget) is back to being the pure
+    //     "has the acquisition list widened to the union?" control it was BEFORE the 3B close-out.
+    //     It stays green and it is now VACUOUS as a cross-type leak test. Read its own comment.
+    //   - dispositionLoiRefusesTheAcquisitionExplicitTargets is now the ONLY test in this class
+    //     with real content on the LOI allow-list split — and it got SHARPER, not weaker, because
+    //     both values it probes are now LEGAL disposition stages. Read its comment too.
     // ═════════════════════════════════════════════════════════════════════════
 
     @isTest
     static void dispositionLoiRefusesTheAcquisitionExplicitTargets() {
-        // DIRECTION 1: acquisition-only stages must not be writable onto a sale.
-        // 'Signed' is on the ACQUISITION allow-list and is not a Disposition_LOI value at all.
-        // Held at object level this call SUCCEEDS and silently parks a sale on a buy-side stage
-        // that matches neither the disposition Path nor any flexipage rule keyed on it.
+        // DIRECTION 1: values on the ACQUISITION allow-list must not be writable onto a sale.
+        //
+        // ═════════════════════════════════════════════════════════════════════
+        // 🔴 THIS TEST STAYED GREEN THROUGH THE 2026-08-21 CHANGE AND ITS RATIONALE INVERTED.
+        // READ THIS BEFORE TRUSTING IT — a green test whose stated reason has died is worse than a
+        // red one, and this repo has measured that failure mode repeatedly.
+        // ═════════════════════════════════════════════════════════════════════
+        // RETRACTED, verbatim, the comment this test used to carry:
+        //   "'Signed' is on the ACQUISITION allow-list and is not a Disposition_LOI value at all.
+        //    Held at object level this call SUCCEEDS and silently parks a sale on a buy-side stage
+        //    that matches neither the disposition Path nor any flexipage rule keyed on it."
+        // THE SECOND CLAUSE IS NOW FALSE IN EVERY PART. The user's new sell-side sequence is
+        // Received -> Under Review -> Negotiation -> Signed, so BOTH probed values are legal
+        // Disposition_LOI values, BOTH render on the disposition Path, and neither is "a buy-side
+        // stage" any more.
+        //
+        // WHAT THIS TEST PROVES NOW — narrower in mechanism, SHARPER in consequence:
+        //   The refusal no longer follows from the two VALUE SETS being disjoint (they are not:
+        //   they share 'Under Review', 'Negotiation' and 'Signed'). It follows ONLY from the two
+        //   ALLOW-LISTS being disjoint — Disposition_LOI now supplies an EMPTY explicit-target set,
+        //   so advanceTo() is structurally unreachable on it. That is a WEAKER premise and a
+        //   STRONGER reason to keep the test:
+        //     - Before: a leaked advanceTo(dispositionLoiId, 'Signed') had TWO independent
+        //       refusals. This allow-list was one; the PLATFORM was the other — 'Signed' was off
+        //       Disposition_LOI's value set and `Stage__c` is a restricted picklist, whose
+        //       record-type subset Apex DML DOES enforce (measured 2026-08-21; see
+        //       RecordStageAdvanceService's class header, and note this contradicts ~20 stale
+        //       "UI-only" assertions across this repo).
+        //     - Now: ONE. The record type carries 'Signed', so DML accepts it. The same leaked call
+        //       would land a value the record type carries and the Path renders, having SKIPPED
+        //       'Negotiation' entirely, and no downstream reader could tell it from a legitimate
+        //       sell-side Signed. 'Signed' is the exact literal the ACQUISITION quick action
+        //       LOI__c.Mark_Completed hardcodes, so a copy-paste of that bundle's payload aimed at
+        //       a disposition LOI Id is the realistic route in.
+        //   ⇒ THIS REFUSAL IS THE ONLY DETECTION THAT EXISTS FOR THAT WRITE. It is now the only
+        //     test in this class carrying real content on the LOI allow-list split (its former
+        //     mirror, acquisitionExplicitTargetListHasNotWidenedToTheUnion, went vacuous in the
+        //     same change). Do not delete it and do not "simplify" it to one target.
+        //
+        // ⚠ THE FIXTURE STAGE 'Under Review' IS UNCHANGED AND IS DELIBERATELY THE SHARED ONE: a
+        // build that resolved the allow-list from the STAGE rather than the RECORD TYPE would find
+        // the acquisition list from here and let both writes through.
         LOI__c dispositionLoi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Under Review');
 
         Test.startTest();
@@ -1554,9 +1844,15 @@ private class RecordStageAdvanceServiceTest {
         Boolean refusedNegotiation = false;
         try {
             RecordStageAdvanceService.advanceTo(dispositionLoi.Id, 'Signed');
-            Assert.fail('advanceTo MUST refuse the acquisition-only stage "Signed" on a '
-                + 'disposition LOI. Returning normally means LOI__c\'s allow-list is still keyed '
-                + 'by OBJECT rather than by RECORD TYPE.');
+            Assert.fail('advanceTo MUST refuse "Signed" on a disposition LOI. ⚠ NOT because the '
+                + 'value is acquisition-only — since 2026-08-21 it is the disposition TERMINAL too '
+                + '— but because Disposition_LOI supplies an EMPTY explicit-target set, so NOTHING '
+                + 'is writable through advanceTo there. Returning normally means either the '
+                + 'allow-list has been keyed by OBJECT rather than by RECORD TYPE, or somebody '
+                + '"harmonised" the disposition config with the acquisition one on the grounds '
+                + 'that both record types now carry this value. Both are the same defect: this '
+                + 'call would SKIP "Negotiation" and land a Signed nobody could tell from a real '
+                + 'one.');
         } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
             refusedSigned = true;
             Assert.areEqual('That stage is not available from this action.', e.getMessage(),
@@ -1564,15 +1860,19 @@ private class RecordStageAdvanceServiceTest {
         }
         try {
             RecordStageAdvanceService.advanceTo(dispositionLoi.Id, 'Negotiation');
-            Assert.fail('advanceTo MUST refuse "Negotiation" too — BOTH acquisition explicit targets '
-                + 'leak, not just the terminal one');
+            Assert.fail('advanceTo MUST refuse "Negotiation" too — BOTH acquisition explicit '
+                + 'targets leak, not just the terminal one. This one is the DERIVED hop out of '
+                + '"Under Review" on the disposition map, so a build that let it through would '
+                + 'look correct in this one instance and be wrong everywhere else');
         } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
             refusedNegotiation = true;
         }
         Test.stopTest();
 
         Assert.isTrue(refusedSigned && refusedNegotiation,
-            'Both acquisition explicit targets must be refused on a disposition LOI');
+            'Both acquisition explicit targets must be refused on a disposition LOI, even though '
+            + 'both are now legal disposition STAGES — legality on the value set is not membership '
+            + 'of the allow-list, and this test is the only thing asserting the difference');
         Assert.areEqual('Under Review',
             [SELECT Stage__c FROM LOI__c WHERE Id = :dispositionLoi.Id].Stage__c,
             'A refused advanceTo must not write. Note the allow-list check runs AFTER load(), so '
@@ -1580,23 +1880,72 @@ private class RecordStageAdvanceServiceTest {
     }
 
     @isTest
-    static void acquisitionLoiRefusesADispositionStageAsAnExplicitTarget() {
-        // DIRECTION 2: the mirror, and since the 3B close-out it is the SHARPER of the two.
+    static void acquisitionExplicitTargetListHasNotWidenedToTheUnion() {
+        // DIRECTION 2: the mirror.
         //
-        // 'Executed' is the control: it is on NO allow-list anywhere, so refusing it only proves
-        // the acquisition list has not widened to the union of both value sets.
+        // ⚠ RENAMED 2026-08-21 from acquisitionLoiRefusesADispositionStageAsAnExplicitTarget. The
+        // old name is what the method actually stopped doing: none of the three values probed below
+        // is a "disposition stage" in any sense that matters — all three are on NO allow-list
+        // anywhere. The name appears in test output and in the design doc's §8.6 regression list,
+        // neither of which shows this comment, so the name was the only thing most readers saw and
+        // it claimed a cross-type leak test this no longer is. The new name states the one fact the
+        // method still establishes. Earlier verbatim RETRACTED quotes in this file and in
+        // RecordStageAdvanceService still spell the old name — deliberately; a quote is not edited.
         //
-        // 🔴 The two that matter are 'Countered by DPEG' and 'Counter Received from Buyer'. Those
-        // ARE allow-listed — on Disposition_LOI — and are the exact literals c/loiMarkCounteredBy-
-        // Dpeg and c/loiMarkCounterReceived send. Held at OBJECT level, aiming either bundle's
-        // payload at an acquisition LOI's Id would SUCCEED and park a purchase on a sell-side
-        // stage, because Apex DML does not enforce record-type picklist restriction. This test is
-        // the only thing in the system that refuses it — the picklist itself will not.
+        // ═════════════════════════════════════════════════════════════════════
+        // 🔴 THIS TEST STAYED GREEN THROUGH THE 2026-08-21 CHANGE AND BECAME VACUOUS AS A
+        // CROSS-TYPE LEAK TEST. IT IS KEPT ON PURPOSE, AND THIS COMMENT IS THE REASON IT IS SAFE
+        // TO KEEP. DO NOT CITE IT AS EVIDENCE THAT A REAL LEAK IS CLOSED.
+        // ═════════════════════════════════════════════════════════════════════
+        // RETRACTED, verbatim, the comment this test used to carry:
+        //   "DIRECTION 2: the mirror, and since the 3B close-out it is the SHARPER of the two.
+        //    'Executed' is the control: it is on NO allow-list anywhere, so refusing it only proves
+        //    the acquisition list has not widened to the union of both value sets.
+        //    🔴 The two that matter are 'Countered by DPEG' and 'Counter Received from Buyer'.
+        //    Those ARE allow-listed — on Disposition_LOI — and are the exact literals
+        //    c/loiMarkCounteredByDpeg and c/loiMarkCounterReceived send. Held at OBJECT level,
+        //    aiming either bundle's payload at an acquisition LOI's Id would SUCCEED and park a
+        //    purchase on a sell-side stage, because Apex DML does not enforce record-type picklist
+        //    restriction. This test is the only thing in the system that refuses it — the picklist
+        //    itself will not."
+        //
+        // EVERY LOAD-BEARING CLAIM IN THAT PARAGRAPH IS DEAD — INCLUDING ITS MECHANISM, WHICH WAS
+        // NEVER TRUE:
+        //   - 🔴 "the picklist itself will not [refuse it]" IS FALSE, AND WAS FALSE WHEN WRITTEN.
+        //     `LOI__c.Stage__c` is a RESTRICTED picklist, and a restricted value set's record-type
+        //     subset IS enforced by Apex DML — MEASURED by this very suite on 2026-08-21; see
+        //     RecordStageAdvanceService's class header for the reproduction. Aiming a sell-side
+        //     literal at an Acquisition_LOI raises INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST from the
+        //     platform. So this test was never "the only thing in the system that refuses it": it
+        //     refuses FIRST, and with wording a user can read instead of a platform error code.
+        //     That is worth having and is a far smaller claim than the one it made.
+        //   - 'Countered by DPEG' and 'Counter Received from Buyer' are allow-listed NOWHERE.
+        //     LOI_DISPOSITION_EXPLICIT_TARGETS was deleted on 2026-08-21 and Disposition_LOI now
+        //     takes the two-arg StageTypeConfig (empty set).
+        //   - "the exact literals c/loiMarkCounteredByDpeg and c/loiMarkCounterReceived send" —
+        //     BOTH BUNDLES AND BOTH QUICK ACTIONS ARE DELETED. Nothing sends these literals.
+        //   - "this is the SHARPER of the two" is now exactly backwards; see
+        //     dispositionLoiRefusesTheAcquisitionExplicitTargets, which is the sharp one.
+        //
+        // WHAT THIS TEST PROVES NOW, AND IT IS ONLY THIS:
+        //   All three probed values are on NO allow-list anywhere in the class, so all three
+        //   refusals are the SAME degenerate control the old comment said 'Executed' ALONE used to
+        //   be — "LOI_ACQUISITION_EXPLICIT_TARGETS has not widened to the union of both value
+        //   sets". That is a genuine regression pin (a future edit that pastes sell-side values
+        //   into the acquisition set fails here) and it is NOT a proof that a live leak is closed,
+        //   because there is no longer a live sender to leak from. It also pins the refusal WORDING
+        //   and the no-write-on-refusal property, both of which are real and record-type-agnostic.
+        //
+        // ⚠ KEEP IT AND DO NOT UPGRADE IT BY SWAPPING IN 'Negotiation'/'Signed'. Those ARE on the
+        // acquisition allow-list, so aiming them at an acquisition LOI is a LEGAL write — the test
+        // would invert into a mutation of RecordStageAdvanceControllerTest.advanceToWritesAnAllowed-
+        // ExplicitTarget and stop testing anything about record types at all.
         //
         // ⚠ THE FIXTURE STAGE MOVED FROM 'Sent' TO 'Submitted' (observation 5) — a rename of the
-        // acquisition branch point, not a change of scenario. The three targets probed below are
-        // sell-side values and were NOT renamed: observation 5 touched only the acquisition
-        // sequence, which is precisely why this cross-type refusal is still expressible.
+        // acquisition branch point, not a change of scenario. 'Submitted' remains acquisition-only
+        // after 2026-08-21 (design A1-note: 'Submitted' was deliberately NOT added to
+        // Disposition_LOI, because LOI_Record_Page self-limits Mark_Countered and Mark_Completed
+        // with {!Record.Stage__c} EQUAL Submitted), so this fixture is still unambiguous.
         LOI__c acquisitionLoi = insertLoiOnRecordType(RT_ACQUISITION_LOI, 'Submitted');
 
         Test.startTest();
@@ -1607,13 +1956,13 @@ private class RecordStageAdvanceServiceTest {
             refusedByTarget.put(target, false);
             try {
                 RecordStageAdvanceService.advanceTo(acquisitionLoi.Id, target);
-                Assert.fail('advanceTo MUST refuse the disposition-only stage "' + target
-                    + '" on an acquisition LOI. Returning normally means LOI__c\'s allow-list has '
-                    + 'been moved back to OBJECT level, or the disposition loop targets were added '
-                    + 'to LOI_ACQUISITION_EXPLICIT_TARGETS. Note this is NOT protected by the two '
-                    + 'value sets being disjoint — since observation 5 they share "Under Review". '
-                    + 'It is protected by the ALLOW-LISTS being disjoint, which is a separate '
-                    + 'property and the only one still holding.');
+                Assert.fail('advanceTo MUST refuse "' + target + '" on an acquisition LOI. ⚠ Since '
+                    + '2026-08-21 all three probed values are allow-listed NOWHERE, so this is a '
+                    + 'has-the-acquisition-list-widened control, NOT a proof that a live cross-type '
+                    + 'leak is closed — read this method\'s header before quoting it. Returning '
+                    + 'normally means sell-side values were pasted into '
+                    + 'LOI_ACQUISITION_EXPLICIT_TARGETS, or the allow-list was moved back to '
+                    + 'OBJECT level.');
             } catch (RecordStageAdvanceService.RecordStageAdvanceException e) {
                 refusedByTarget.put(target, true);
                 Assert.areEqual('That stage is not available from this action.', e.getMessage(),
@@ -1628,60 +1977,35 @@ private class RecordStageAdvanceServiceTest {
             'Countered by DPEG' => true,
             'Counter Received from Buyer' => true
         }, refusedByTarget,
-            'Every disposition-only stage must be refused on an acquisition LOI — the two loop '
-            + 'targets especially, since those are the ones a real deployed bundle can send');
+            'Every one of these three orphaned stages must be refused on an acquisition LOI. ⚠ The '
+            + 'clause that used to end this message — "the two loop targets especially, since those '
+            + 'are the ones a real deployed bundle can send" — is RETRACTED as of 2026-08-21: '
+            + 'c/loiMarkCounteredByDpeg and c/loiMarkCounterReceived are deleted, so no bundle '
+            + 'sends them and no allow-list carries them');
         Assert.areEqual('Submitted',
             [SELECT Stage__c FROM LOI__c WHERE Id = :acquisitionLoi.Id].Stage__c,
             'A refused advanceTo must not write. Note the allow-list check runs AFTER load(), so '
             + '"refused instead of written" is a property worth asserting rather than assuming');
     }
 
-    @isTest
-    static void dispositionLoiAcceptsTheNegotiationLoopTargets() {
-        // THE COMPLEMENT to the refusal above. Without it, that test could pass simply because
-        // these two values were configured NOWHERE at all — a build that deleted
-        // LOI_DISPOSITION_EXPLICIT_TARGETS entirely would look identical from there.
-        //
-        // 🔴 THE FIRST HALF IS THE BACK-EDGE, AND IT IS THE WHOLE REASON THIS SET EXISTS.
-        // 'Counter Received from Buyer' -> 'Countered by DPEG' is the one transition
-        // LOI_DISPOSITION_NEXT_STAGE provably CANNOT express: that key already maps forward to
-        // 'Executed', and a Map<String, String> holds one value per key. So advance() can never
-        // reach it, at any price — which the second assertion pins by walking advance() from the
-        // same stage and watching it go the OTHER way.
-        LOI__c loi = insertLoiOnRecordType(RT_DISPOSITION_LOI, 'Counter Received from Buyer');
-        // 🔴 Final_Agreed_Price__c MUST BE SET BEFORE advance() REACHES 'Executed' BELOW, ADDED
-        // 2026-08-20 (Tranche 2 D1 validation rules) — see the identical note on
-        // dispositionLoiWalksReceivedToExecuted. Set here, before the stage moves at all, so
-        // Final_Price_Required_Before_Executed cannot fire on THIS update either.
-        loi.Final_Agreed_Price__c = 1250000;
-        update loi;
-
-        Test.startTest();
-        String backEdge = RecordStageAdvanceService.advanceTo(loi.Id, 'Countered by DPEG');
-        // ...and round again: the forward edge, which OVERLAPS advance() deliberately. Doing both
-        // in sequence is what proves the cycle is traversable more than once, i.e. that the
-        // negotiation can genuinely "go round until both sides are agreed" (Part 2 line 244).
-        String forwardEdge =
-            RecordStageAdvanceService.advanceTo(loi.Id, 'Counter Received from Buyer');
-        String derived = RecordStageAdvanceService.advance(loi.Id);
-        Test.stopTest();
-
-        Assert.areEqual('LOI moved to Countered by DPEG.', backEdge,
-            'The loop BACK-EDGE must be reachable through advanceTo — it is unreachable by any '
-            + 'other route in the system');
-        Assert.areEqual('LOI moved to Counter Received from Buyer.', forwardEdge,
-            'The loop FORWARD edge is allow-listed too, deliberately, even though advance() can '
-            + 'also derive it — see LOI_DISPOSITION_EXPLICIT_TARGETS for the symmetry and '
-            + 'independence reasons. Removing it would silently drop the named button');
-        Assert.areEqual('LOI moved to Executed.', derived,
-            'advance() must still derive Executed from Counter Received from Buyer. If the loop '
-            + 'had been built by editing LOI_DISPOSITION_NEXT_STAGE instead of adding explicit '
-            + 'targets, this hop would have been overwritten and the sell-side path could never '
-            + 'terminate');
-        Assert.areEqual('Executed',
-            [SELECT Stage__c FROM LOI__c WHERE Id = :loi.Id].Stage__c,
-            'and the final write must actually land');
-    }
+    // ⚠ dispositionLoiAcceptsTheNegotiationLoopTargets WAS DELETED HERE ON 2026-08-21, AND ITS
+    // ABSENCE IS DELIBERATE — DO NOT RE-ADD IT.
+    // It was the complement to dispositionLoiRefusesTheAcquisitionExplicitTargets: it walked the
+    // back-edge ('Counter Received from Buyer' -> 'Countered by DPEG') through advanceTo, then the
+    // forward edge, then let advance() derive 'Executed', proving the sell-side cycle was
+    // traversable more than once and that LOI_DISPOSITION_NEXT_STAGE had not been edited to build
+    // the loop.
+    // Its subject was DISMANTLED, not renamed: the loop is retired (counter rounds moved to Counter
+    // History — Counter_Offer__c / c/loiCounterOffer), LOI_DISPOSITION_EXPLICIT_TARGETS is deleted,
+    // and Disposition_LOI's explicit-target set is now EMPTY by construction. There is no
+    // disposition explicit target left for a complement to accept, so this test has no rewrite —
+    // only a deletion. The "empty set" claim it would have guarded is instead asserted from the
+    // other side by dispositionLoiRefusesTheAcquisitionExplicitTargets (nothing is writable) and by
+    // dispositionLoiWalksReceivedToSigned (every hop is DERIVABLE, which is why nothing needs to be
+    // writable).
+    // ⚠ Anyone re-introducing a disposition explicit target must restore a complement of this shape
+    // in the same change — see LOI_DISPOSITION_NEXT_STAGE's header for why an empty set is the
+    // stronger position.
 
     @isTest
     static void loiGateIsResolvedPerRecordTypeNotPerObject() {
@@ -1887,11 +2211,20 @@ private class RecordStageAdvanceServiceTest {
 
         Assert.areEqual('Disposition moved to PSA.', onMarketToPsa, 'On_Market LOI -> PSA is manual');
         Assert.areEqual('Disposition moved to PSA.', offMarketToPsa, 'Off_Market LOI -> PSA is manual too');
+        // ⚠ THE HINT'S LAST WORD MOVED 2026-08-21: '...Advance the Contract Review to Executed.'
+        // became '...to Signed.' The user removed 'Executed' from the Disposition_PSA record type,
+        // so the old hint instructed the user to set a value the platform would refuse. This
+        // assertion is a STRING PIN on user-facing wording — it is supposed to red when the wording
+        // moves, and it did exactly that. See NO_NEXT_STEP_HINTS['Disposition|PSA'].
+        // ⚠ NOTE ON SCOPE, because this method's name misleads: "bothRecordTypes" here means
+        // Disposition__c's On_Market / Off_Market pair, NOT Acquisition/Disposition. Every fixture
+        // in this test is a sale. Nothing an acquisition record can reach is asserted here.
         Assert.areEqual(
             'This disposition advances to Closing when the sell-side PSA is executed. '
-            + 'Advance the Contract Review to Executed.',
+            + 'Advance the Contract Review to Signed.',
             onMarketBlocked,
-            'The hint must name the Contract Review as the real route to Closing');
+            'The hint must name the Contract Review as the real route to Closing, and must name '
+            + 'the status the sell-side record type can actually HOLD');
     }
 
     /**

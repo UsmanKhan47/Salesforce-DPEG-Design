@@ -65,6 +65,18 @@
  *      `Closing` + wire-verified. None enters at `Offer Selection`.
  * ⇒ Synchronous is safe, and a Queueable would assert a hazard that is not present.
  *
+ * 🔴 AMENDED 2026-08-21 (UAT DEFECT — `DISP-0011` / `OFFER-0007`). BOTH NUMBERED CLAIMS ABOVE ARE
+ * STILL TRUE AND ARE RETAINED. What was FALSE was never written down: the IMPLICIT premise that a
+ * lock is the only thing that can refuse this write. It is not. `Disposition__c` is OWD **Private**,
+ * and this code runs as the APPROVER, who does not own the parent — the submitter does. Measured on
+ * the live org: `UserRecordAccess` for the approver on `DISP-0011` returned
+ * `HasReadAccess = true, HasEditAccess = false`. So the selector read SUCCEEDED (both disposition
+ * permission sets carry `viewAllRecords = true`) and the `Database.update` was REFUSED for lack of
+ * record-level EDIT, `allOrNone = false` swallowed it, and the offer read `Accepted` beside a parent
+ * that never moved. Nothing was locked. See `advanceParents` for the fix and for why
+ * `AccessLevel.SYSTEM_MODE` — which the original author reached for precisely to solve this — could
+ * never have done so.
+ *
  * 🔴 STEP 2 IS ABOUT `Offer Selection`, AND IT DOES NOT COVER THE PRICE WRITE. AMENDED 2026-08-19
  * (code review S-1). The stage write is guarded to parents still sitting on `Offer Selection`, so
  * for THAT write step 2 is the whole story. `Accepted_Offer_Price__c` is written UNCONDITIONALLY,
@@ -86,6 +98,19 @@
  * Queueable would not help either, because unlike the D-1 advance path THIS transaction is not the
  * one releasing the lock — it is the `DispositionNdaStampQueueable` case, where review D20/W1
  * established that a pending approval OUTLIVES the job.
+ *
+ * 🔴 CORRECTED IN PLACE 2026-08-21. THE PARAGRAPH ABOVE IS ACCURATE ABOUT `ENTITY_IS_LOCKED` AND IS
+ * KEPT. IT IS WRONG BY OMISSION, AND THE OMISSION IS WHAT COST A UAT CYCLE: it names a lock as THE
+ * cause of a silent residual on the very statement whose ACTUAL production failure was a SHARING
+ * refusal (`INSUFFICIENT_ACCESS_OR_READONLY` on a record the approver may read and may not edit).
+ * A reader trusting this paragraph would have checked `ProcessInstanceWorkitem`, found none, and
+ * concluded the write must have succeeded. THE LOCK IS ONE OF (at least) THREE REFUSALS THIS
+ * STATEMENT CAN TAKE — a lock, a validation rule, and record-level sharing — and until 2026-08-21
+ * the third was neither handled nor written down. It is handled now (`ParentAdvanceWrites`, below);
+ * the other two remain genuine, remain soft, and are the reason `allOrNone = false` stays.
+ * ⚠ AND THE RESIDUAL IS NO LONGER UNINSPECTED. Every failure now reaches the debug log at ERROR and
+ * `lastRunParentWriteFailures`. "Self-heals on the next save" is still true of the LOCK case and was
+ * never true of the sharing case — that one recurred on every retry, by the same principal, forever.
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * 🔴 THE CURRENT-STAGE GUARD, AND WHY THE PRICE STAMP IS NOT GUARDED
@@ -115,6 +140,10 @@
  * cross-object orchestration to own. ZERO inline SOQL — the parent read goes to
  * `DispositionSelector.selectStagesByIds`. The moment that logic needs a second object or a
  * non-trigger caller, it moves to a service.
+ * ⚠ SHARING: the class is `with sharing` and stays that way. EXACTLY ONE statement escapes it — the
+ * parent `Database.update`, in the `private without sharing ParentAdvanceWrites` inner class, whose
+ * own declaration carries the full justification (ARCHITECTURE.md §2's prescribed shape). Read it
+ * before touching either keyword; the escape is not inherited by anything else in this file.
  * ⚠ THE SINGLE-SELECTED GUARD IS ALREADY ON THE OTHER SIDE OF THAT LINE, AND THAT IS CONSISTENT
  * RATHER THAN CONTRADICTORY. The precedent above is CONDITIONED on the logic having "ZERO inline
  * SOQL"; the guard needs a SIBLING READ, which `.claude/rules/apex-layering-rule.md` forbids in a
@@ -287,17 +316,135 @@ public with sharing class DispositionOfferTriggerHandler extends TriggerHandler 
             return;
         }
 
-        // ── allOrNone = false + SYSTEM_MODE — the same trade, and the same residual, as the BOV
-        // sibling. SYSTEM_MODE because this runs as the APPROVER (read-only on `Disposition__c`);
-        // allOrNone = false because an all-or-none failure would roll back THE APPROVAL ITSELF to
-        // protect a stage advance.
+        // ── THREE SEPARATE DECISIONS ON ONE STATEMENT. NONE COVERS ANOTHER'S OBSTACLE. ──
+        // SYSTEM_MODE      lifts CRUD + FLS — the approver holds neither on `Disposition__c`.
+        // without sharing  lifts RECORD-LEVEL access — see `ParentAdvanceWrites` below. This is the
+        //                  2026-08-21 fix and it is the one the original author thought SYSTEM_MODE
+        //                  was providing.
+        // allOrNone=false  keeps a refusal from rolling back THE APPROVAL ITSELF.
         //
-        // 🔴 THE RESIDUAL, NAMED: the offer reads Accepted while the disposition still sits at
-        // `Offer Selection` with no accepted price — and, because the `LOI` hop never happened, with
-        // no sell-side LOI either. VISIBLE (both records are on the same page and disagree) and
-        // recoverable by hand. Results are deliberately not inspected: there is no recovery action
-        // available inside an after-update trigger.
-        Database.update(parentUpdates, false, AccessLevel.SYSTEM_MODE);
+        // 🔴 THE RESIDUAL, NAMED AND NARROWED: a lock or a validation rule can still refuse a row,
+        // leaving the offer reading Accepted while the disposition sits at `Offer Selection` with no
+        // accepted price and no sell-side LOI. VISIBLE (both records are on the same page and
+        // disagree) and recoverable by hand. ⚠ THE RESULTS ARE NOW INSPECTED — see
+        // `recordParentWriteFailures`. There is still no recovery ACTION available inside an
+        // after-update trigger, which is why nothing is rethrown; what changed is that the failure is
+        // no longer invisible, because "invisible" is what turned this into a UAT defect.
+        recordParentWriteFailures(
+            new ParentAdvanceWrites().apply(parentUpdates),
+            parentUpdates
+        );
+    }
+
+    /**
+     * Every parent-write failure from the most recent `advanceParents` call, as
+     * `<dispositionId> -> <STATUS_CODE> | <message>`. Empty on a clean run and reset at the top of
+     * every `recordParentWriteFailures` call, so it describes ONE trigger chunk and not a session.
+     *
+     * ⚠ IT EXISTS TO BE ASSERTED ON, not merely to be read. `DispositionOfferTriggerHandlerTest`'s
+     * non-owner approver test asserts it is EMPTY — which is what makes that test fail loudly with
+     * the actual `StatusCode` if the sharing escape below is ever removed, instead of failing with
+     * an opaque "expected LOI, was Offer Selection".
+     */
+    @TestVisible
+    private static List<String> lastRunParentWriteFailures = new List<String>();
+
+    /**
+     * Sends every refused row to the debug log at ERROR and to `lastRunParentWriteFailures`.
+     *
+     * 🔴 THIS IS THE HALF OF THE 2026-08-21 FIX THAT SURVIVES THE NEXT UNKNOWN CAUSE. The sharing
+     * escape closes the cause we measured; this closes the CLASS of defect — a soft DML whose
+     * `SaveResult` nobody looked at, which is how a refusal became a silent no-op that read exactly
+     * like success from every surface a person can see. Shape copied deliberately from
+     * `DealFolderService.stampAll`, which had already learned it.
+     *
+     * ⚠ NOTHING IS RETHROWN AND NOTHING IS RETRIED. Both would roll back the approval — see the
+     * `allOrNone = false` argument at the call site — and this method must be incapable of doing
+     * that. It is a report, not a recovery.
+     *
+     * @param results Parallel to `attempted`, in input order; never null (a `Database.update`
+     *                always returns one result per row).
+     * @param attempted The rows handed to the DML, used only for their Ids.
+     */
+    private void recordParentWriteFailures(
+        List<Database.SaveResult> results,
+        List<Disposition__c> attempted
+    ) {
+        lastRunParentWriteFailures = new List<String>();
+        for (Integer i = 0; i < results.size(); i++) {
+            if (results[i].isSuccess()) {
+                continue;
+            }
+            List<Database.Error> errors = results[i].getErrors();
+            String detail = errors.isEmpty()
+                ? 'no error detail returned'
+                : errors[0].getStatusCode() + ' | ' + errors[0].getMessage();
+            lastRunParentWriteFailures.add(attempted[i].Id + ' -> ' + detail);
+            // NOT debug output — this is the failure channel; see lastRunParentWriteFailures.
+            // `allOrNone = false` means a refused parent write throws nothing, so removing this
+            // line restores the silent no-op this handler exists to close. A lint pass will flag
+            // it; leave it.
+            System.debug(LoggingLevel.ERROR,
+                'DispositionOfferTriggerHandler.advanceParents: LOST PARENT ADVANCE on '
+                + 'Disposition__c ' + attempted[i].Id + ' -> ' + detail
+                + ' | the offer is Accepted and its sale did NOT move to LOI or take an accepted '
+                + 'price. Running user: ' + UserInfo.getUserId() + '.');
+        }
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ONE STATEMENT THAT ESCAPES SHARING, AND WHY IT HAS TO. ADDED 2026-08-21.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHO RUNS THIS CODE: the APPROVER of `Offer_Selection_Approval`. This handler's after-update
+     * context is reached by that approval's own `finalApprovalActions` field update writing
+     * `Approval_Status__c`, so the running user is whoever clicked Approve — never the analyst who
+     * submitted, and never (in the DPEG model) the owner of the parent Disposition.
+     *
+     * WHY THEY PREDICTABLY LACK RECORD-LEVEL EDIT ON THE TARGET — three facts that compose:
+     *   1. `Disposition__c` is OWD **Private** (`InternalSharingModel = Private`, measured via
+     *      Tooling `EntityDefinition` 2026-08-21).
+     *   2. The record is owned by the SUBMITTER. The only Edit-granting sharing rule on the object
+     *      is `Disposition_Team_RW` (Acquisitions_Analyst + subordinates -> `DPEG_Acquisitions_Team`),
+     *      which an approving Principal is outside of.
+     *   3. `DPEG_Disposition_View` — the set the Principal persona actually carries — grants
+     *      `viewAllRecords = true` and NO `modifyAllRecords`. That combination is the trap: the
+     *      approver can READ every disposition and EDIT almost none, so the guard read above returns
+     *      the row and the write is then refused. Measured on `DISP-0011`:
+     *      `HasReadAccess = true, HasEditAccess = false`.
+     *
+     * 🔴 `AccessLevel.SYSTEM_MODE` WAS NOT SUFFICIENT AND COULD NEVER HAVE BEEN. This class's own
+     * header attributed the SYSTEM_MODE argument to the approver being "read-only on
+     * `Disposition__c`" — i.e. the author reached for it to solve EXACTLY this problem. Per
+     * ARCHITECTURE.md §2: *"🔴 `SYSTEM_MODE` bypasses CRUD/FLS ONLY — it does NOT bypass sharing."*
+     * SYSTEM_MODE removed the OBJECT-level refusal and left the RECORD-level one standing, which is
+     * why the defect presented as a silent no-op rather than as a `TypeException` — the write got
+     * far enough to produce a `SaveResult`, and nobody read it.
+     *
+     * WHY THE ESCAPE IS BOUNDED TO THIS ONE WRITE: this class stays `with sharing`, the selector
+     * stays `with sharing`, and this inner class holds ONE statement against a list the CALLER
+     * built. It cannot query, cannot choose rows, and cannot widen: every Id in `parentUpdates` came
+     * back from a `with sharing` selector read, so a disposition the approver genuinely cannot SEE
+     * is still never written. The escape converts "may read, may not edit" into "may write the two
+     * fields this approval decides" and nothing else. ARCHITECTURE.md §2 prescribes exactly this
+     * shape — *"a narrow `private without sharing` inner class holding only that query… never
+     * `without sharing` on a whole selector"* — and the repo precedents are
+     * `DispositionOfferSelector.TractionReads` (read) and `NdaExpiryAlertBatch.stampMarkers` (write).
+     *
+     * ⚠ DO NOT PROMOTE THIS TO THE OUTER CLASS. The before-context work
+     * (`DispositionOfferSelectionGuardService`, `DispositionOfferBuyerStampService`) is deliberately
+     * sharing-scoped and its own headers argue for that; `without sharing` on the handler would
+     * silently re-authorise it.
+     */
+    private without sharing class ParentAdvanceWrites {
+        /**
+         * @param parentUpdates Disposition shells built by `advanceParents` from rows a
+         *                      `with sharing` selector returned; never null, never empty.
+         * @return One `Database.SaveResult` per row, in input order. The caller inspects them.
+         */
+        private List<Database.SaveResult> apply(List<Disposition__c> parentUpdates) {
+            return Database.update(parentUpdates, false, AccessLevel.SYSTEM_MODE);
+        }
     }
 
     /**

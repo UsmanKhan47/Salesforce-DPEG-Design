@@ -120,9 +120,65 @@
 
         ⇒ RULE: never inherit a disjointness claim across this object pair. Re-derive it from the
         two record type files at the moment you need it. It has already inverted once.
+
+        =====================================================================================
+        🔴 RETRACTED 2026-08-21. THE USER CHANGED Disposition_PSA.Negotiation_Status__c DIRECTLY
+        IN SETUP (full measurement: objects/Contract_Review__c/recordTypes/
+        Disposition_PSA.recordType-meta.xml's own header). SIX CLAIMS IN THIS FILE'S EARLIER TEXT
+        ARE NOW FALSE. RETRACTED HERE, VERBATIM, RATHER THAN DELETED, PER STANDING CONVENTION.
+        =====================================================================================
+
+        Disposition_PSA now runs Initial Draft -&gt; Negotiation -&gt; Signed. 'Revised' and
+        'Ready for Execution' are removed from it; so is 'Executed' - the terminal is 'Signed'.
+        Acquisition_PSA is CONFIRMED UNCHANGED (re-verified live via the UI API immediately before
+        this edit).
+
+        RETRACTED (1), verbatim: "Disposition_PSA runs Initial Draft -&gt; Revised -&gt; Ready
+        for Execution -&gt; Executed, COMPLETELY UNCHANGED." It changed.
+
+        RETRACTED (2), verbatim, from the "NOTHING IS DEACTIVATED" paragraph: "'Initial Draft',
+        'Revised' and 'Ready for Execution' are being retired from the ACQUISITION RECORD TYPE
+        ONLY. They remain ACTIVE on the field because Disposition_PSA still runs on all three."
+        Disposition_PSA now runs on only ONE of the three ('Initial Draft'). 'Revised' and 'Ready
+        for Execution' sit on the field but on NO record type as of this change - the same
+        orphaned-value shape LOI__c.Stage__c calls out under its own gate G3. NOT deactivated in
+        this pass either; that is still a decision for whoever revisits decision O3, not implied
+        by this retraction.
+
+        RETRACTED (3), verbatim, from the ordering-arithmetic diagram: "Disposition_PSA -&gt;
+        Initial Draft, Revised, Ready for Execution, Executed [UNCHANGED]." It is now Initial
+        Draft, Negotiation, Signed - master positions 1, 5, 6, still monotonic, so no re-order was
+        needed to fix this file's own valueSet (which did not change) or the record type's
+        inclusion list (which did, in the record type file only).
+
+        RETRACTED (4), verbatim, from the DOWNSTREAM READERS list: "'Negotiation' and 'Signed' are
+        deliberately left to the default - they are the exact analogues of 'Revised' and 'Ready
+        for Execution', which also fall to it." True for Acquisition_PSA only, now. For
+        Disposition_PSA, 'Signed' is the terminal, not a mid-sequence analogue, and FIXED
+        2026-08-21: flows/Contract_Review_Stage_Sync gained a new rule, Is_Disposition_Signed
+        (Negotiation_Status__c = 'Signed' AND Disposition__c IS NOT NULL), routing that case to
+        Stage__c = 'Contract Execution' instead of the default 'Review'. Acquisition's mapping is
+        byte-identical to before - the new rule cannot match an acquisition row.
+
+        RETRACTED (5), verbatim, from the flows/PSA_Ready_Notify bullet: "entry criterion
+        Negotiation_Status__c = 'Ready for Execution', no record-type criterion... FIXED in this
+        change: it now fires on 'Ready for Execution' OR 'Signed'." That was the 2026-08-14 fix,
+        and it stopped being sufficient the moment 'Signed' became reachable by Disposition_PSA
+        too. FIXED AGAIN 2026-08-21: the flow gained a third entry filter, Opportunity__c IS NOT
+        NULL, AND'd with the existing OR, restoring (not changing) its acquisition-only-in-practice
+        behaviour now that the premise which made it acquisition-only BY ACCIDENT is gone. See
+        that flow's own header for the full reasoning, including why the discriminator is the
+        lookup and not RecordType.DeveloperName.
+
+        RETRACTED (6), verbatim, from the flexipages/Contract_Review_Record_Page bullet: "both
+        Advance Stage entries gate on Negotiation_Status__c NE 'Executed'. UNCHANGED AND CORRECT:
+        unlike LOI__c, the PSA TERMINAL DID NOT MOVE, so the test still names the right value on
+        both record types." The PSA terminal DID move, for Disposition_PSA. FIXED 2026-08-21: that
+        page's Disposition_Deal_Actions-gated Advance_Stage entry now tests NE 'Signed'; the
+        Acquisition_Deal_Actions entry is untouched and still correctly tests NE 'Executed'.
     -->
     <fullName>Negotiation_Status__c</fullName>
-    <description>PSA lifecycle, and it is PER RECORD TYPE from 2026-08-14. Acquisition_PSA runs Draft -&gt; Negotiation -&gt; Signed -&gt; Executed; Disposition_PSA runs Initial Draft -&gt; Revised -&gt; Ready for Execution -&gt; Executed, unchanged. Executed is the ONLY shared value and is the terminal on both. NOTHING on this field is deactivated - the three sell-side values stay ACTIVE because Disposition_PSA still runs on them. Moved ONLY by the deal driver via Advance Stage. Synced to the coarse Stage__c by Contract_Review_Stage_Sync, drives the Contract Review Paths, and Executed triggers the transaction handoff. See the XML comment in this file.</description>
+    <description>PSA lifecycle, PER RECORD TYPE from 2026-08-14 and amended again 2026-08-21 (hand-mirrored Setup edit). Acquisition_PSA runs Draft -&gt; Negotiation -&gt; Signed -&gt; Executed. Disposition_PSA now runs Initial Draft -&gt; Negotiation -&gt; Signed - terminal is Signed, not Executed, not the old Ready for Execution -&gt; Executed pair. Revised and Ready for Execution stay ACTIVE on the field (decision O3) but are on no record type. Moved ONLY by the deal driver via Advance Stage. Synced to the coarse Stage__c by Contract_Review_Stage_Sync, which gained a Disposition_PSA-scoped branch for Signed on 2026-08-21; drives the Contract Review Paths. See the XML comment in this file.</description>
     <label>Negotiation Status</label>
     <required>false</required>
     <trackHistory>false</trackHistory>

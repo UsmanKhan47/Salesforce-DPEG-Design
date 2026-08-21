@@ -35,8 +35,17 @@
  * ── HOW THE SIDE IS DECIDED: isSaleSide(), AUTHORITATIVE-THEN-FALLBACK ──────
  * The label is ALWAYS derived from the parent LOI and NEVER taken from the caller. That is
  * what makes a cross-record-type picklist write structurally impossible here — the same
- * property RecordStageAdvanceService's per-record-type allow-list gives the stage field, and
- * necessary for the same reason: Apex DML does not enforce record-type picklist restriction.
+ * property RecordStageAdvanceService's per-record-type allow-list gives the stage field.
+ * ⚠ RETRACTED 2026-08-21 — the reason given here was "necessary for the same reason: Apex DML does
+ * not enforce record-type picklist restriction." That is false for a `restricted` value set, and
+ * `LOI__c.Ball_In_Court__c` is restricted (measured on the stage fields; see
+ * RecordStageAdvanceService's class header). The derivation is necessary anyway, and for a reason
+ * DML cannot supply at all: the two record types SHARE 'Ours' and 'Seller'. A caller-supplied
+ * 'Seller' on a disposition LOI is a value that record type carries, so the platform accepts it
+ * silently and the badge names the wrong counterparty. DML can only refuse the ONE combination
+ * where the value is off the record type ('Buyer' on an acquisition LOI), and it does so with an
+ * opaque INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST. Deriving from the parent is what makes the
+ * SHARED-value error unexpressible, and that is the error DML is blind to.
  *
  * ── THE `direction` ARGUMENT IS A ROLE, NOT A LABEL. ────────────────────────
  *   'Ours'    -> DPEG countered.             Accepted on both record types.

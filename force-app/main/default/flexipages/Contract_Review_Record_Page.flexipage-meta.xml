@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        AMENDED 2026-08-21. The Disposition_Deal_Actions Advance_Stage visibilityRule below
+        tested Negotiation_Status__c NE 'Executed', copied from the Acquisition_Deal_Actions
+        entry above it when both were written against Disposition_PSA's then-terminal value
+        'Executed'. The user changed Disposition_PSA's sequence directly in Setup the same day
+        (see objects/Contract_Review__c/recordTypes/Disposition_PSA.recordType-meta.xml for the
+        full record): the sell-side terminal is now 'Signed', and this record type can never
+        equal 'Executed' again, which made the old criterion always-true on a disposition row -
+        Advance Stage would have kept rendering past this record type's real terminal.
+        FIXED: the Disposition_Deal_Actions entry now tests NE 'Signed'.
+        ⚠ The Acquisition_Deal_Actions entry directly above is UNCHANGED and correctly still
+        tests NE 'Executed' - Acquisition_PSA's terminal did not move.
+    -->
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
@@ -34,7 +47,7 @@
                                 <criteria>
                                     <leftValue>{!Record.Negotiation_Status__c}</leftValue>
                                     <operator>NE</operator>
-                                    <rightValue>Executed</rightValue>
+                                    <rightValue>Signed</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

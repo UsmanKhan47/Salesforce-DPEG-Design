@@ -73,9 +73,18 @@
  *   have not deployed rather than turning every affected test red.
  *
  *   ⚠ ALL FOUR CUSTOM OBJECTS SEED A PER-RECORD-TYPE STARTING PICKLIST VALUE, and that is not
- *   cosmetic: record-type picklist restriction is enforced by the UI ONLY, so Apex DML
- *   would happily insert an off-set value and produce a fixture RecordStageAdvanceService
- *   cannot advance. NDA__c: 'Pending' vs 'Not Sent'. LOI__c: 'Draft' vs 'Received' (no shared
+ *   cosmetic.
+ *   ⚠ RETRACTED 2026-08-21 — the reason given was "record-type picklist restriction is enforced
+ *   by the UI ONLY, so Apex DML would happily insert an off-set value and produce a fixture
+ *   RecordStageAdvanceService cannot advance." All four fields are `restricted`, so DML enforces
+ *   the record type's subset (measured; RecordStageAdvanceService's class header). A wrong seed
+ *   therefore does NOT produce a quietly-broken fixture — it fails the INSERT with
+ *   INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST and reds every test using that factory method, which
+ *   is a better failure and an easier one to read. The per-type seeds are still mandatory; only
+ *   the predicted symptom changes. 🔴 One consequence is NOT cosmetic: because this factory is
+ *   shared, a seed that names a value a record type has not been DEPLOYED with takes the whole
+ *   suite down at once. Deploy order (record type before factory) is a hard requirement here.
+ *   NDA__c: 'Pending' vs 'Not Sent'. LOI__c: 'Draft' vs 'Received' (no shared
  *   STARTING value to fall back on — ⚠ this said "fully disjoint sets" until 2026-08-14, which
  *   observation 5 ended by renaming 'Prepare/Review' to 'Under Review', a value the disposition
  *   sequence already carried; the sets now OVERLAP there, and only the seeds are still
@@ -1519,10 +1528,13 @@ public with sharing class TestDataFactory {
      *
      * 🔴 THE SEED STATUS IS CHOSEN BY RECORD TYPE, AND IT HAS TO BE. The two value sets OVERLAP
      * but are not equal: 'Pending' exists only on Acquisition_NDA and 'Not Sent' only on
-     * Disposition_NDA. Record-type picklist restriction is UI-only — Apex DML does NOT enforce
-     * it — so a shared seed value would insert happily and produce a fixture whose status is off
-     * its own record type's value set, which RecordStageAdvanceService would then refuse to
-     * advance for reasons no test message would explain.
+     * Disposition_NDA, so no shared seed value exists.
+     * ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. This used to continue: "Record-type picklist
+     * restriction is UI-only — Apex DML does NOT enforce it — so a shared seed value would insert
+     * happily and produce a fixture whose status is off its own record type's value set, which
+     * RecordStageAdvanceService would then refuse to advance for reasons no test message would
+     * explain." `NDA__c.Status__c` is `restricted`; a shared seed fails at the INSERT instead. See
+     * this class's header for the one consequence that is not merely cosmetic (deploy order).
      *
      * ⚠ Party_Role__c is seeded ONLY on the disposition type. On an acquisition DPEG is itself
      * the buyer, so 'Buyer' would name US — the meaning inversion the Acquisition_NDA record type
@@ -1722,10 +1734,14 @@ public with sharing class TestDataFactory {
      * value SETS were "FULLY DISJOINT ... with no overlap at all". That ended on 2026-08-14, when
      * observation 5 renamed 'Prepare/Review' to 'Under Review' — a value the disposition sequence
      * already carried — so the sets now overlap there. The seeds do not, which is all this method
-     * needs. Record-type picklist restriction is UI-only (Apex DML does NOT enforce it), so a
-     * hardcoded 'Draft' would insert happily onto a disposition LOI and produce a fixture whose
-     * stage is off its own record type's value set, which RecordStageAdvanceService would then
-     * refuse to advance for reasons no test message would explain.
+     * needs.
+     * ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. This used to continue: "Record-type picklist
+     * restriction is UI-only (Apex DML does NOT enforce it), so a hardcoded 'Draft' would insert
+     * happily onto a disposition LOI and produce a fixture whose stage is off its own record type's
+     * value set, which RecordStageAdvanceService would then refuse to advance for reasons no test
+     * message would explain." `LOI__c.Stage__c` is `restricted` and this exact refusal was MEASURED
+     * on this field on 2026-08-21 (RecordStageAdvanceService's class header): a hardcoded 'Draft'
+     * fails the INSERT. See this class's header for the deploy-order consequence.
      *
      * ⚠ Submitted_Date__c is seeded ONLY on the acquisition type. It is acquisition-directional
      * (DPEG submits the LOI on a purchase; on a sale the LOI ARRIVES from the buyer), and the
@@ -1970,11 +1986,17 @@ public with sharing class TestDataFactory {
      * 🔴 THIS FIXES THE TEST-SIDE TWIN OF THE DEFECT `OpportunityReviewService`'s C3 FIX JUST
      * CLOSED IN PRODUCTION. This method seeded NO Negotiation_Status__c at all, so every fixture
      * fell to the FIELD-LEVEL default — 'Initial Draft' — while the method stamped Acquisition_PSA,
-     * which after phase 3 does not carry that value. Record-type picklist restriction is UI-ONLY
-     * and Apex DML does not enforce it, so the row COMMITTED SILENTLY and produced a fixture whose
-     * status is off its own record type's value set: `RecordStageAdvanceService` finds no entry for
-     * it in the acquisition map and refuses the first Advance Stage click, for a reason no test
-     * message would explain.
+     * which after phase 3 does not carry that value.
+     * ⚠ RETRACTED 2026-08-21 — THIS ONE IS A CLAIM ABOUT WHAT WAS OBSERVED, AND IT CANNOT HAVE
+     * BEEN. It read: "Record-type picklist restriction is UI-ONLY and Apex DML does not enforce it,
+     * so the row COMMITTED SILENTLY and produced a fixture whose status is off its own record
+     * type's value set: `RecordStageAdvanceService` finds no entry for it in the acquisition map
+     * and refuses the first Advance Stage click, for a reason no test message would explain."
+     * `Negotiation_Status__c` is `restricted` and 'Initial Draft' on an Acquisition_PSA was MEASURED
+     * being refused (RecordStageAdvanceService's class header). A silent commit was therefore not
+     * possible; the unseeded fixture would have failed at the insert. Do NOT read the old sentence
+     * as evidence of a real observation — it is a prediction from the false premise, written before
+     * the measurement. The per-type seed is still required and this method still needs it.
      *
      * 🔴 DO NOT "FIX" THIS BY MOVING THE FIELD-LEVEL DEFAULT. It is 'Initial Draft' because
      * Disposition_PSA still runs on it (O3). Changing the default would relocate the identical
@@ -2028,9 +2050,10 @@ public with sharing class TestDataFactory {
             Contract_Review__c cr = new Contract_Review__c(
                 Opportunity__c = opportunityId,
                 // 🔴 SEEDED EXPLICITLY, PER RECORD TYPE — see this method's header. Leaving it to the
-                // field-level default ('Initial Draft') put every ACQUISITION fixture on a value
-                // that record type no longer carries, silently, because Apex DML does not enforce
-                // record-type picklist restriction.
+                // field-level default ('Initial Draft') aimed every ACQUISITION fixture at a value
+                // that record type no longer carries. ⚠ 2026-08-21: this comment used to end
+                // "silently, because Apex DML does not enforce record-type picklist restriction" —
+                // false for this restricted field; the insert is refused. See the method header.
                 Negotiation_Status__c = isDisposition ? 'Initial Draft' : 'Draft',
                 // ⚠ Stage__c is a DERIVED PROJECTION — Contract_Review_Stage_Sync recomputes it from
                 // Negotiation_Status__c on every save, so this seed is replaced on insert by the
@@ -2105,9 +2128,12 @@ public with sharing class TestDataFactory {
      * PERSONA may drive it." Observation 7 split the sequences, so both types no longer share one,
      * and createContractReviews now seeds per type. A name that slipped past this guard would
      * therefore degrade to the platform default record type WHILE TAKING THE ACQUISITION SEED — a
-     * row whose status and record type disagree, inserted silently because Apex DML does not enforce
-     * record-type picklist restriction, and refused by RecordStageAdvanceService on its first
-     * advance for a reason no test message would explain. A mis-typed NDA or LOI record type still
+     * row whose status and record type disagree. ⚠ 2026-08-21: this used to continue "inserted
+     * silently because Apex DML does not enforce record-type picklist restriction, and refused by
+     * RecordStageAdvanceService on its first advance for a reason no test message would explain" —
+     * false for this restricted field. The disagreeing row is refused AT THE INSERT, so the guard's
+     * value is that it names the typo instead of letting a platform error code stand in for it.
+     * That is a smaller claim than the old one and it is the true one. A mis-typed NDA or LOI record type still
      * produces a fixture whose stage is off its own value set and whose walk test fails.
      * TestDataFactoryTest.createContractReviews_caseTypoRecordTypeName_throwsAndNamesTheOffendingValue
      * carries this same argument.
@@ -2460,6 +2486,120 @@ public with sharing class TestDataFactory {
     public static final String DISPOSITION_RT_OFF_MARKET = 'Off_Market';
 
     /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE NON-OWNER APPROVER PERSONA. ADDED 2026-08-21 FOR THE `DISP-0011` SHARING DEFECT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * A user who can SEE every Disposition and OWN none of them — the exact principal whose parent
+     * write was silently refused in production while every disposition test in this repo stayed
+     * green. Those tests ran as the admin test-running user, who OWNS every fixture record they
+     * insert, so record-level sharing was never consulted and the defect was unreachable by
+     * construction. **A test that cannot fail on a defect is not a test of it**; this fixture is
+     * what makes it reachable.
+     *
+     * ── 🔴 WHY `Minimum Access - Salesforce` AND NOT `Standard User` ─────────────────────────
+     * `.claude/rules` and this repo's own history (`denial-tests-need-minimum-access-profile`):
+     * `Standard User` carries broad standard-object grants that mask a denial and make a permission
+     * test pass for the wrong reason. Everything this persona can do must come from an assigned
+     * permission set that a real DPEG principal also holds — nothing from the base profile.
+     *
+     * ── 🔴 WHY `DPEG_Disposition_Edit` AND NOT THE REAL APPROVER'S `DPEG_Disposition_View` ────
+     * MEASURED, NOT CHOSEN: a first version of this fixture assigned `DPEG_Disposition_View` — the
+     * set the live Principal approver actually holds — and all five tests built on it failed with
+     * `System.TypeException: DML operation UPDATE not allowed on Disposition_Offer__c` before ever
+     * reaching the code under test. **Apex DML enforces OBJECT-level access even in a test's own
+     * system-context DML**: an object the running user has NO Update permission on throws
+     * `TypeException` regardless of `AccessLevel`, which is a harder stop than FLS and is not
+     * bypassable (`TaskFanoutService`'s header records the same mechanism in production). The
+     * persona has to be able to save the CHILD record in order for its trigger to run at all.
+     *
+     * ⚠ SO THIS PERSONA IS DELIBERATELY GIVEN **MORE** ACCESS THAN THE REAL APPROVER, AND THAT
+     * MAKES THE TEST STRONGER RATHER THAN WEAKER. `DPEG_Disposition_Edit` carries
+     * `allowEdit = true` AND `viewAllRecords = true` AND — decisively — `modifyAllRecords = false`
+     * on `Disposition__c`, `Disposition_Offer__c` and `BOV_Submission__c`. Object-level CRUD is
+     * therefore satisfied, so `AccessLevel.SYSTEM_MODE` has nothing left to contribute, and the
+     * ONLY thing that can still refuse the parent write is RECORD-LEVEL SHARING. That is exactly
+     * the dimension the 2026-08-21 fix addresses, isolated. A test that passes here can only be
+     * passing because of the `without sharing` escape.
+     *
+     * ⚠ `DPEG_Acquisition_Edit` IS ADDED FOR ONE CALLER ONLY — `ContractExecutionServiceTest`, whose
+     * trigger entry point is a `Contract_Review__c` save. NO disposition set grants edit on that
+     * object (`DPEG_Disposition_Edit` gives it `allowEdit = false`); `DPEG_Acquisition_Edit` is the
+     * only set that does. It grants `viewAllRecords` on Contract_Review__c and Opportunity but adds
+     * NO `modifyAllRecords` anywhere, so it cannot rescue the Disposition write either.
+     *
+     * ⚠ THE GROUP `DPEG_Principal_PSG` IS DELIBERATELY NOT ASSIGNED INSTEAD. A `PermissionSetGroup`
+     * must be in `Updated` status before it can be assigned, and recalculation is asynchronous and
+     * org-state-dependent — a fixture that fails intermittently for a reason unrelated to the thing
+     * under test is worse than one that is deliberately, documentedly over-provisioned.
+     *
+     * ⚠ MIXED_DML. `User` and `PermissionSetAssignment` are SETUP objects and callers always have
+     * non-setup fixture DML in the same transaction, so both inserts run inside
+     * `System.runAs(currentUser)` — the workaround used throughout this suite.
+     *
+     * ⚠ THIS USER HAS NO ROLE, DELIBERATELY. A role would expose the fixture to "Grant Access Using
+     * Hierarchies" and to `Disposition_Team_RW` (Acquisitions_Analyst + subordinates ->
+     * `DPEG_Acquisitions_Team`), either of which could hand the persona record-level edit and turn
+     * the test green for a reason that has nothing to do with the code under test. The
+     * `UserRecordAccess` precondition each caller asserts is what detects that if it ever happens.
+     *
+     * @param aliasSeed 1-4 lowercase characters identifying the calling test, so a failure names
+     *                  which fixture produced the user. Required.
+     * @return The inserted User. Callers must assert `UserRecordAccess` themselves — see
+     *         `DispositionOfferTriggerHandlerTest.assertReadableButNotEditable` for the precondition
+     *         assertions that keep this fixture honest.
+     * @example
+     * User approver = TestDataFactory.createNonOwnerDispositionApprover('doth');
+     * System.runAs(approver) { update new Disposition_Offer__c(Id = o.Id, Approval_Status__c = 'Approved'); }
+     */
+    public static User createNonOwnerDispositionApprover(String aliasSeed) {
+        if (String.isBlank(aliasSeed)) {
+            throw new TestDataFactoryException('aliasSeed is required and cannot be blank.');
+        }
+        Profile minimumAccess = [
+            SELECT Id FROM Profile WHERE Name = 'Minimum Access - Salesforce' LIMIT 1
+        ];
+        List<PermissionSet> sets = [
+            SELECT Id, Name
+            FROM PermissionSet
+            WHERE Name IN ('DPEG_Base_Access', 'DPEG_Disposition_Edit', 'DPEG_Acquisition_Edit')
+        ];
+        if (sets.size() != 3) {
+            throw new TestDataFactoryException(
+                'FIXTURE PRECONDITION FAILED: expected DPEG_Base_Access, DPEG_Disposition_Edit and '
+                + 'DPEG_Acquisition_Edit to exist in this org; found ' + sets.size()
+                + '. Without them this persona cannot save the child record whose trigger is under '
+                + 'test, and every test built on it fails with System.TypeException before '
+                + 'reaching the code. Deploy the permission sets first.');
+        }
+        String unique = aliasSeed + String.valueOf(DateTime.now().getTime())
+            + String.valueOf(Math.abs(Crypto.getRandomInteger()));
+        User approver = new User(
+            FirstName = 'NonOwner',
+            LastName = 'Approver',
+            Alias = aliasSeed,
+            Email = 'dpeg.approver@example.invalid',
+            Username = unique + '@example.invalid.dpeg',
+            ProfileId = minimumAccess.Id,
+            TimeZoneSidKey = 'America/Chicago',
+            LocaleSidKey = 'en_US',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US'
+        );
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert approver;
+            List<PermissionSetAssignment> assignments = new List<PermissionSetAssignment>();
+            for (PermissionSet ps : sets) {
+                assignments.add(new PermissionSetAssignment(
+                    AssigneeId = approver.Id,
+                    PermissionSetId = ps.Id
+                ));
+            }
+            insert assignments;
+        }
+        return approver;
+    }
+
+    /**
      * @param count           Number of Dispositions.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
      * @param doInsert        Insert when true.
@@ -2686,18 +2826,24 @@ public with sharing class TestDataFactory {
      * i.e. the whole suite and every `RunLocalTests` deploy. It is removed AHEAD of the conversion
      * so the cutover is a metadata-only change.
      *
-     * ⚠ WHAT REPLACES IT: THE FORMULA'S INPUTS, WHICH THIS FACTORY ALREADY SET. `BOV_Amount__c`,
-     * `Cap_Rate__c`, `Commission_Rate__c`, `Days_To_Market__c` and `Hist_Success_Rate__c` are the
-     * five broker-side dimensions the score is derived from and are all populated above. The SIXTH
-     * input is `Disposition__r.Asking_Price__c`, which does not exist on `Disposition__c` yet.
+     * ⚠ WHAT REPLACES IT: THE FORMULA'S INPUTS, WHICH THIS FACTORY ALREADY SET. THE FORMULA IS
+     * THREE DIMENSIONS, NOT FIVE (user-approved weights, 2026-08-21): `BOV_Amount__c` (Price,
+     * 50 pts, measured against `Disposition__r.Asking_Price__c`), `Commission_Rate__c`
+     * (Commission, 25 pts, lower is better) and `Days_To_Market__c` (Speed, 25 pts, lower is
+     * better). `Cap_Rate__c` and `Hist_Success_Rate__c` are still populated above for other
+     * consumers of this fixture but carry NO WEIGHT in `BOV_Score__c` — `Hist_Success_Rate__c` is
+     * null on every row in the org today, and giving it weight would collapse every score to null.
      *
-     * 🔴 SO EVERY FIXTURE'S SCORE IS NULL — TODAY AND AFTER THE CONVERSION — AND A TEST MUST NOT
-     * ASSUME OTHERWISE. Today it is null because nothing writes it; afterwards it is null because
-     * the formula returns null when the parent has no asking price (that null is a designed answer,
-     * not a gap — it is what keeps `ORDER BY … DESC NULLS LAST` meaningful). A test that needs
-     * DIFFERING scores cannot be written until `Asking_Price__c` ships; see the deferred-coverage
-     * note in `BovSubmissionSelectorTest`'s header. Do not reintroduce an assignment here to make
-     * such a test possible — it will not compile once the field is a formula.
+     * 🔴 RETRACTED: this comment used to say `Disposition__r.Asking_Price__c` "does not exist on
+     * `Disposition__c` yet." IT EXISTS NOW
+     * (`objects/Disposition__c/fields/Asking_Price__c.field-meta.xml`). What is still true, and is
+     * why every fixture built here still scores null: the Dispositions this factory builds do not
+     * set `Asking_Price__c`, so the formula's guard returns null regardless of the other five
+     * fields above (a designed answer, not a gap — it is what keeps `ORDER BY … DESC NULLS LAST`
+     * meaningful). A test that needs DIFFERING scores must give its OWN disposition fixture an
+     * `Asking_Price__c`; see the deferred-coverage note in `BovSubmissionSelectorTest`'s header.
+     * Do not reintroduce a `BOV_Score__c` assignment here to make such a test possible — it will
+     * not compile once the field is a formula.
      */
     public static List<BOV_Submission__c> createBovSubmissions(Integer count, Id dispositionId, Boolean doInsert) {
         requirePositive(count);

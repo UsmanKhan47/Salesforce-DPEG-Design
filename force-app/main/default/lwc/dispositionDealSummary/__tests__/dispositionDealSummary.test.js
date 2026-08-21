@@ -129,12 +129,28 @@ const FULL_SUMMARY = {
     ndaSignedDate: '2026-03-14',
     hasNda: true,
     ndaId: NDA_RECORD_ID,
-    loiStage: 'Countered by DPEG',
+    // ⚠ REPOINTED 2026-08-21 from 'Countered by DPEG'. That value was removed from the
+    // Disposition_LOI record type when the user replaced the sell-side sequence with
+    // Received -> Under Review -> Negotiation -> Signed, so no disposition LOI can carry it.
+    // 🔴 THIS FIXTURE WAS GREEN BEFORE AND WOULD HAVE STAYED GREEN AFTER. It is a JS literal fed
+    // to a mocked wire adapter — nothing here is ever validated against the org's picklist, so a
+    // dead value survives indefinitely and quietly turns this test into a demonstration that the
+    // component renders a state production cannot produce. Repointed for that reason, not because
+    // anything failed.
+    loiStage: 'Negotiation',
     loiOfferPrice: 9800000,
     loiBallInCourt: 'Buyer',
     hasLoi: true,
     loiId: LOI_RECORD_ID,
-    psaStatus: 'Ready for Execution',
+    // ⚠ REPOINTED 2026-08-21 from 'Ready for Execution'. The user removed that value (and
+    // 'Revised' and 'Executed') from the Disposition_PSA record type; its sequence is now
+    // Initial Draft -> Negotiation -> Signed. Same stale-JS-literal trap as loiStage above: this
+    // fixture never touches the org's picklist, so the dead value would have stayed green forever.
+    // 🔴 'Negotiation' AND NOT 'Signed', DELIBERATELY. 'Signed' is the sell-side TERMINAL now, and
+    // this fixture pairs psaStatus with psaExecutionDate: null — a combination that would be
+    // self-contradictory at the terminal and would make the "no psa-date line" assertion below read
+    // as a bug rather than as the mid-negotiation state it is testing.
+    psaStatus: 'Negotiation',
     psaExecutionDate: null,
     psaLatestVersion: 2,
     hasPsa: true,
@@ -213,7 +229,8 @@ describe('c-disposition-deal-summary', () => {
         getDealSummary.emit(FULL_SUMMARY);
         await Promise.resolve();
 
-        expect(textOf(element, '[data-pill="loi"]')).toBe('Countered by DPEG');
+        // ⚠ REPOINTED 2026-08-21 with FULL_SUMMARY.loiStage — see the fixture's own note.
+        expect(textOf(element, '[data-pill="loi"]')).toBe('Negotiation');
         expect(textOf(element, '[data-meta="loi-price"]')).toBe('$9.8M');
         expect(textOf(element, '[data-meta="loi-court"]')).toBe('Ball in court: Buyer');
     });
@@ -224,7 +241,7 @@ describe('c-disposition-deal-summary', () => {
         getDealSummary.emit(FULL_SUMMARY);
         await Promise.resolve();
 
-        expect(textOf(element, '[data-pill="psa"]')).toBe('Ready for Execution');
+        expect(textOf(element, '[data-pill="psa"]')).toBe('Negotiation');
         expect(textOf(element, '[data-meta="psa-version"]')).toBe('Version 2');
         // Execution_Date__c is null until the PSA is executed — the line is absent, not an em-dash.
         expect(element.shadowRoot.querySelector('[data-meta="psa-date"]')).toBeNull();
@@ -306,7 +323,7 @@ describe('c-disposition-deal-summary', () => {
         // the per-read catches back into one outer catch.
         expect(textOf(element, '[data-pill="nda"]')).toBe('Signed');
         expect(textOf(element, '[data-meta="nda-counts"]')).toBe('3 of 4 signed');
-        expect(textOf(element, '[data-pill="psa"]')).toBe('Ready for Execution');
+        expect(textOf(element, '[data-pill="psa"]')).toBe('Negotiation');
     });
 
     /**
@@ -584,9 +601,16 @@ describe('c-disposition-deal-summary', () => {
     /**
      * 🔴 SOURCE-TEXT FENCE ON THE ~340px SIDEBAR LAYOUT. This card sits in the record page's
      * narrow sidebar, not the wide main column `c/dealDocStatus` occupies. `flex-wrap: wrap` on
-     * `.row-head` is what lets a 27-character pill (`Counter Received from Buyer`) drop to its own
-     * line instead of bursting the column, and `min-width: 0` on `.row-left` is what lets the
-     * label shrink at all.
+     * `.row-head` is what lets a long pill drop to its own line instead of bursting the column,
+     * and `min-width: 0` on `.row-left` is what lets the label shrink at all.
+     * ⚠ 2026-08-21: this used to say "a 27-character pill (`Counter Received from Buyer`)". That
+     * value was removed from the Disposition_LOI record type — and in the same day's second wave
+     * `Ready for Execution` (19) went off Disposition_PSA too, so the longest string a sell-side
+     * row can normally render dropped again, to `Initial Draft` / `Under Review` (13 and 12).
+     * THE ASSERTIONS BELOW ARE UNCHANGED and the CSS rules must stay: both retired values are still
+     * ACTIVE on their master value sets and still mapped in LOI_TONE / PSA_TONE, so a data load can
+     * still render them, and the margin was always thin. See the matching note in
+     * dispositionDealSummary.css.
      * ⚠ This is a SOURCE assertion rather than a measurement on purpose: jsdom does no layout, so
      * `scrollWidth` and `clientWidth` are both 0 and `expect(scrollWidth).toBeLessThanOrEqual(
      * clientWidth)` is `0 <= 0` — green whether or not the component overflows.

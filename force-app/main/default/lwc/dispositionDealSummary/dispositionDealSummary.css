@@ -104,12 +104,31 @@
 /*
  * 🔴 `flex-wrap: wrap` IS LOAD-BEARING AT ~340px — DO NOT REMOVE IT.
  * Content width in the Disposition record page sidebar is roughly 276px. The chip (1.75rem), its
- * gap and the label leave ~210px for the pill, and the longest real pill string on this card is
- * `Counter Received from Buyer` (27 characters, from LOI_TONE) — which fits with almost no margin,
- * and would not fit at all if a longer picklist value were added later. Wrapping drops the pill
- * onto its own line instead of bursting the column. The pill itself keeps `white-space: nowrap`
- * (see `.pill`) because a two-line pill looks broken; the wrap happens between the label and the
- * pill, not inside it.
+ * gap and the label leave ~210px for the pill. Wrapping drops the pill onto its own line instead
+ * of bursting the column. The pill itself keeps `white-space: nowrap` (see `.pill`) because a
+ * two-line pill looks broken; the wrap happens between the label and the pill, not inside it.
+ *
+ * ⚠ THE WORKED EXAMPLE MOVED 2026-08-21 — THE RULE DID NOT. This comment named
+ * `Counter Received from Buyer` (27 characters, from LOI_TONE) as "the longest real pill string on
+ * this card ... which fits with almost no margin, and would not fit at all if a longer picklist
+ * value were added later". That value was removed from the Disposition_LOI record type when the
+ * user replaced the sell-side sequence with Received -> Under Review -> Negotiation -> Signed, so
+ * no disposition LOI can render it any more. `Ready for Execution` (19) went the same way in the
+ * same day's second wave — the user harmonised Disposition_PSA to Initial Draft -> Negotiation ->
+ * Signed. The longest string a sell-side row can now show is `Initial Draft` (13); the LOI row tops
+ * out at `Under Review` (12).
+ *
+ * 🔴 KEEP `flex-wrap: wrap` AND `min-width: 0` ANYWAY. Three reasons, in order of force:
+ *   1. A Jest test asserts BOTH by source match (`NARROW COLUMN: the row head wraps...`). Deleting
+ *      either reds the suite.
+ *   2. The margin was always thin and the headroom is a windfall, not a design change — the next
+ *      picklist value anyone adds re-consumes it silently, and nothing measures this in CI (jsdom
+ *      does no layout).
+ *   3. `Counter Received from Buyer` is still ACTIVE on the master `Stage__c` value set (design
+ *      gate G3 deliberately did NOT deactivate it) and LOI_TONE still maps it, so a direct write or
+ *      data load can still put those 27 characters on this card. The same is true of
+ *      `Ready for Execution` on `Negotiation_Status__c` / PSA_TONE — measured 2026-08-21, all seven
+ *      values still active on that master value set.
  */
 .row-head {
     display: flex;

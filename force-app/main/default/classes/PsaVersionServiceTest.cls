@@ -30,9 +30,14 @@
  * types' Negotiation_Status__c sequences, so the field default 'Initial Draft' — which
  * Disposition_PSA still runs on (decision O3, a hard stop) — is no longer a value Acquisition_PSA
  * carries; the factory therefore seeds each type explicitly. Reverting either expectation to the
- * field default would put an acquisition fixture back on an off-record-type value, which Apex DML
- * accepts SILENTLY (record-type picklist restriction is UI-only) and which
- * RecordStageAdvanceService then refuses to advance.
+ * field default would put an acquisition fixture back on an off-record-type value.
+ * ⚠ RETRACTED 2026-08-21 — that sentence used to end "which Apex DML accepts SILENTLY (record-type
+ * picklist restriction is UI-only) and which RecordStageAdvanceService then refuses to advance."
+ * `Contract_Review__c.Negotiation_Status__c` is `restricted`, and this exact combination — 'Revised'
+ * on a Disposition_PSA, active on the master value set, absent from the record type — was MEASURED
+ * being refused with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on 2026-08-21. So the reversion fails
+ * at the FIXTURE INSERT, loudly, not at the advance. Still do not revert it; the failure is just a
+ * different and better one than this paragraph promised.
  *
  * ── 🔴 WHAT THE 3C FIX PASS ADDED, AND WHY IT IS THE MOST IMPORTANT PART OF THIS CLASS ──
  * `Ball_In_Court__c = 'Seller'` names the COUNTERPARTY on a purchase and names DPEG on a SALE. The

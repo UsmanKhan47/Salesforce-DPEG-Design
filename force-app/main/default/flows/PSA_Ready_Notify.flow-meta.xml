@@ -35,15 +35,80 @@
         ⚠ THE TWO VALUES ARE MUTUALLY EXCLUSIVE IN PRACTICE - no record type exposes both - so
         the OR cannot double-notify. Disposition_PSA's behaviour is byte-for-byte unchanged: it
         can never reach 'Signed'.
+        🔴 BOTH SENTENCES IN THIS PARAGRAPH ARE RETRACTED 2026-08-21 - see the dated block below.
+        They were true from 2026-08-14 until a live Setup edit on 2026-08-21 changed the premise.
 
         ⚠ THE NOTIFICATION TITLE IS DELIBERATELY NOT REWORDED. "PSA ready for execution" reads
         correctly for 'Signed' as well as for 'Ready for Execution', and it is shared by both
         record types; rewording it to name one sequence's vocabulary would make it wrong for the
         other. Same reasoning as the Stage__c labels (PSA Drafting / Review / Contract Execution)
         being left buy-side-shaped in Disposition_PSA's own header.
+        ⚠ AMENDED 2026-08-21: "shared by both record types" is no longer true in practice - see
+        below - but the title itself is UNCHANGED and this reasoning still explains why it was
+        never record-type-flavoured wording to begin with.
 
         ⚠ 'Executed' IS DELIBERATELY NOT ADDED HERE. It is the handoff, owned by
         ContractExecutionService, and it already has its own downstream notifications.
+
+        =====================================================================
+        🔴 AMENDED 2026-08-21. THE USER CHANGED Disposition_PSA.Negotiation_Status__c DIRECTLY IN
+        SETUP THE SAME DAY (see the record type file's own header for the full measurement). THE
+        PREMISE THIS FLOW'S SHARED-'Signed'-VALUE DESIGN RESTED ON IS GONE, AND THE USER HAS
+        EXPLICITLY DECLINED A SELL-SIDE REPLACEMENT NOTIFICATION FOR NOW.
+        =====================================================================
+
+        RETRACTED, verbatim, from the paragraph above: "Disposition_PSA STILL RUNS ON 'Ready for
+        Execution'" and "Disposition_PSA's behaviour is byte-for-byte unchanged: it can never
+        reach 'Signed'." Disposition_PSA now runs Initial Draft -> Negotiation -> Signed. It no
+        longer reaches 'Ready for Execution' at all, and 'Signed' is now its TERMINAL, shared with
+        Acquisition_PSA's pre-terminal 'Signed'. Left alone, every disposition PSA reaching
+        'Signed' would trigger this exact notification - "PSA ready for execution", to
+        Acquisitions_Team - which is wrong on both counts for a sell-side deal: the recipient
+        group is the buy-side team, and "ready for execution" describes a step that no longer
+        exists on this record type (the deal moves straight to Closing from Signed).
+
+        THE FIX, RESTORING RATHER THAN CHANGING ACQUISITION BEHAVIOUR. Before 2026-08-21 a
+        disposition PSA could never reach 'Signed', so in PRACTICE this flow only ever fired for
+        acquisition rows despite having no explicit scope. A third filter was added -
+        Opportunity__c IS NOT NULL - AND'd with the existing OR, making that practice explicit
+        rather than accidental: `(1 OR 2) AND 3`. The Acquisitions Team's observable behaviour is
+        UNCHANGED - it still receives exactly the notifications it received before this edit,
+        because every row that previously matched (1 OR 2) already had Opportunity__c populated
+        (OpportunityReviewService is the only creator of acquisition Contract Reviews and always
+        stamps it; Disposition_PSA rows never carry it - Disposition_PSA's own record type header
+        states "Opportunity__c stays blank, and that blank is load-bearing"). No sell-side
+        notification was added, per explicit user decision.
+
+        🔴 THE DISCRIMINATOR IS THE LOOKUP, NOT RecordType.DeveloperName, AND THAT IS DELIBERATE,
+        NOT THE DEFAULT. Two considerations, weighed on the merits for this file specifically:
+        (a) precedent - Contract_Review__c.Disposition__c's own field header already states the
+        house rule for this exact object family: "THE LOOKUP, NOT THE RECORD TYPE, IS THE
+        DISCRIMINATOR anything outside the record page should test" - flows/Counter_Offer_Notify
+        and flows/PSA_Version_Notify both already key on the lookup for the same reason, on child
+        objects of this one; (b) the field IS a zero-hop, direct field on the SAME object this
+        flow triggers on (Contract_Review__c itself carries Opportunity__c), so - unlike those two
+        precedents, which were forced into <filterFormula> by a two-hop limitation - the plain
+        <filters>/<filterLogic> builder syntax already used by this file could express it directly
+        with no new element type. Kept the existing shape rather than switching to
+        <filterFormula>, which is the more conservative edit of the two. RecordType.DeveloperName
+        was considered and rejected: it has zero precedent anywhere in flows/ (even as a filter
+        field on the triggering object itself, not just via a relationship hop) and would exclude
+        Master-type Contract Reviews, which decision O3 deliberately keeps eligible for
+        'Ready for Execution' - see the next paragraph.
+
+        ⚠ THE 'Ready for Execution' FILTER BRANCH IS KEPT, NOT REMOVED, AND THIS WAS A CLOSE CALL.
+        Live-checked via the UI API before this edit: neither Acquisition_PSA
+        (Draft, Negotiation, Signed, Executed) nor Disposition_PSA (Initial Draft, Negotiation,
+        Signed) exposes 'Ready for Execution' any more, so in the CURRENT org this branch is dead
+        for both record types. It is NOT removed because the value stays ACTIVE on the field
+        permanently under decision O3 (Disposition_PSA's record type header, unchanged by this
+        pass), and a MASTER-type Contract Review - the shape TestDataFactory produces when a
+        record type is absent or unavailable, e.g. in a fresh scratch org - is not constrained by
+        either record type's allow-list and can still legitimately be written with
+        'Ready for Execution' today. Removing the branch would silently stop notifying on that one
+        remaining population for zero benefit; keeping it costs nothing, since it can never
+        double-fire with 'Signed' (still mutually exclusive against any row this flow's Opportunity
+        gate now admits). Revisit if decision O3 is ever revisited.
     -->
     <actionCalls>
         <name>Notify_Ready</name>
@@ -91,7 +156,7 @@
             <targetReference>Notify_Ready</targetReference>
         </connector>
         <doesRequireRecordChangedToMeetCriteria>true</doesRequireRecordChangedToMeetCriteria>
-        <filterLogic>or</filterLogic>
+        <filterLogic>(1 OR 2) AND 3</filterLogic>
         <filters>
             <field>Negotiation_Status__c</field>
             <operator>EqualTo</operator>
@@ -104,6 +169,13 @@
             <operator>EqualTo</operator>
             <value>
                 <stringValue>Signed</stringValue>
+            </value>
+        </filters>
+        <filters>
+            <field>Opportunity__c</field>
+            <operator>IsNull</operator>
+            <value>
+                <booleanValue>false</booleanValue>
             </value>
         </filters>
         <object>Contract_Review__c</object>

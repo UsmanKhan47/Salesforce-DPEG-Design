@@ -258,9 +258,15 @@ public with sharing class OpportunityReviewService {
      * 'Initial Draft', which after observation 7 belongs to Disposition_PSA ONLY. This constant
      * pairs with ACQUISITION_PSA_RECORD_TYPE the same way 'Pending' pairs with
      * ACQUISITION_NDA_RECORD_TYPE in ensureNda and 'Draft' pairs with ACQUISITION_LOI_RECORD_TYPE
-     * in the LOI block: three record-typed children, three seed values this class owns, because
-     * Apex DML does not enforce record-type picklist restriction and the platform will happily
-     * commit a value the record type does not carry.
+     * in the LOI block: three record-typed children, three seed values this class owns.
+     * ⚠ RETRACTED 2026-08-21 — the reason used to be "because Apex DML does not enforce record-type
+     * picklist restriction and the platform will happily commit a value the record type does not
+     * carry." All three fields are `restricted`, so DML DOES enforce the record type's subset
+     * (measured on Negotiation_Status__c and Stage__c; see RecordStageAdvanceService's class
+     * header). 🔴 THAT MAKES OWNING THESE CONSTANTS MORE URGENT, NOT LESS: these inserts run inside
+     * an Opportunity TRIGGER, so a mis-paired seed does not produce a bad child row, it throws
+     * INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST and ROLLS BACK THE USER'S OWN OPPORTUNITY SAVE with
+     * an error naming a child object they never touched.
      *
      * ⚠ It COINCIDES with the LOI block's seed stage ('Draft') and with nothing else. They are two
      * unrelated values on two different fields that happen to share a word; do not extract a shared
@@ -407,13 +413,19 @@ public with sharing class OpportunityReviewService {
             // replaces the buy-side sequence with Draft -> Negotiation -> Signed -> Executed, so
             // the default is now a value this record type does not carry.
             //
-            // 🔴 THAT FAILS SILENTLY, WHICH IS WHY IT HAD TO BE FIXED HERE RATHER THAN LEFT TO THE
-            // PLATFORM. Apex DML does not enforce record-type picklist restriction, so the insert
-            // COMMITS on the off-set value — no exception, no error, a green deploy. The record is
-            // then unusable from birth: its Path renders blank, and
-            // RecordStageAdvanceService.CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE has no entry for
-            // 'Initial Draft', so Advance Stage refuses on the very first click. Every deal
-            // entering 'Under Contract (PSA)' would produce one.
+            // 🔴 IT HAD TO BE FIXED HERE RATHER THAN LEFT TO THE PLATFORM.
+            // ⚠ RETRACTED 2026-08-21 — THE FAILURE MODE DESCRIBED HERE WAS WRONG, AND THE REAL ONE
+            // IS WORSE. This paragraph used to read: "🔴 THAT FAILS SILENTLY ... Apex DML does not
+            // enforce record-type picklist restriction, so the insert COMMITS on the off-set value
+            // — no exception, no error, a green deploy. The record is then unusable from birth: its
+            // Path renders blank, and RecordStageAdvanceService.CONTRACT_REVIEW_ACQUISITION_NEXT_-
+            // STAGE has no entry for 'Initial Draft', so Advance Stage refuses on the very first
+            // click." `Negotiation_Status__c` is `restricted` and 'Initial Draft' absent from
+            // Acquisition_PSA was MEASURED being refused (class header of
+            // RecordStageAdvanceService). So the unfixed code does not create an unusable record —
+            // it throws INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST inside this trigger and rolls back
+            // the Opportunity save that entered 'Under Contract (PSA)'. Every deal entering that
+            // stage would be BLOCKED, not quietly damaged.
             //
             // ⚠ DO NOT "FIX" THIS BY MOVING THE FIELD-LEVEL DEFAULT. Disposition_PSA still runs on
             // 'Initial Draft' — DispositionStageEntryService seeds it deliberately, and O3 of the
@@ -533,10 +545,15 @@ public with sharing class OpportunityReviewService {
                     Property__c = propertyByOpp.get(oppId),
                     OwnerId = loiOwnerId,
                     // ⚠ 'Draft' is Acquisition_LOI's starting stage and is NOT on Disposition_LOI's
-                    // value set (which starts at 'Received'). Record-type picklist restriction is
-                    // UI-only and Apex DML does not enforce it, so pairing the record type with the
-                    // right seed stage is this method's responsibility, not the platform's — the
-                    // same pairing ensureNda makes between Acquisition_NDA and 'Pending'.
+                    // value set (which starts at 'Received'). Pairing the record type with the
+                    // right seed stage is this method's responsibility — the same pairing ensureNda
+                    // makes between Acquisition_NDA and 'Pending'.
+                    // ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. This used to justify itself with
+                    // "Record-type picklist restriction is UI-only and Apex DML does not enforce
+                    // it, so [the pairing] is this method's responsibility, not the platform's."
+                    // LOI__c.Stage__c is `restricted` and DML DOES enforce the subset; a mis-pair
+                    // therefore ROLLS BACK the Opportunity save rather than creating a bad LOI.
+                    // See ACQUISITION_PSA_STATUS's header for the full re-derivation.
                     Stage__c = 'Draft',
                     LOI_Status__c = 'Draft');
                 // 🔴 GUARDED, and the guard was RE-ARGUED for this block rather than inherited from
@@ -592,9 +609,12 @@ public with sharing class OpportunityReviewService {
      * loudness lives instead.
      *
      * ⚠ 'Pending' below is Acquisition_NDA's default and is NOT a valid value on
-     * Disposition_NDA. Record-type picklist restriction is UI-only and Apex DML does not
-     * enforce it, so the pairing of record type and seed status is this method's
-     * responsibility, not the platform's.
+     * Disposition_NDA. The pairing of record type and seed status is this method's
+     * responsibility.
+     * ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. This used to add "Record-type picklist restriction
+     * is UI-only and Apex DML does not enforce it, so ... not the platform's." NDA__c.Status__c is
+     * `restricted`; DML enforces the subset and a mis-pair rolls back the Opportunity save. See
+     * ACQUISITION_PSA_STATUS's header.
      */
     public static void ensureNda(List<Opportunity> newOpps, Map<Id, Opportunity> oldMap) {
         if (oldMap != null) {

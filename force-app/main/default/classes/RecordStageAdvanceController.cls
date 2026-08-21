@@ -149,9 +149,14 @@ public with sharing class RecordStageAdvanceController {
      *
      * ⚠ PER RECORD TYPE, not per object, since 2026-08-09 — and that is the security half of the
      * Tranche 3A change rather than a tidy-up. `Declined` belongs to `Disposition_NDA`, its Mark
-     * Declined action keys on `Status__c = 'Sent'` which BOTH NDA record types carry, and
-     * record-type picklist restriction is enforced by the UI ONLY. An object-level allow-list would
-     * therefore write a disposition-only value onto an acquisition NDA.
+     * Declined action keys on `Status__c = 'Sent'` which BOTH NDA record types carry. An
+     * object-level allow-list would therefore aim a disposition-only value at an acquisition NDA.
+     * ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. This used to read "and record-type picklist
+     * restriction is enforced by the UI ONLY. An object-level allow-list would therefore WRITE a
+     * disposition-only value onto an acquisition NDA." `NDA__c.Status__c` is `restricted`, so DML
+     * enforces the record type's subset; the leak surfaces as an opaque platform error rather than
+     * a bad write, and only while Acquisition_NDA omits 'Declined'. See
+     * RecordStageAdvanceService.NDA_DISPOSITION_EXPLICIT_TARGETS for the full re-derivation.
      *
      * @param recordId the stage-controlled record to move
      * @param target   the destination stage; must be on the object's allow-list

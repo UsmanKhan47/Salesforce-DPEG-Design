@@ -64,11 +64,24 @@
  *                     ⚠ RENAMED THROUGHOUT 2026-08-14 (observation 5) from
  *                       Draft -> Prepare/Review -> Sent -> Counter -> Completed. Same SHAPE, new
  *                       labels; 'Draft' is the only surviving literal.
- *   Disposition_LOI   Received -> Under Review -> Countered by DPEG
- *                       -> Counter Received from Buyer -> Executed
- *                     explicit targets: {Countered by DPEG,       gate: DISPOSITION_DRIVER
- *                       Counter Received from Buyer} — the negotiation LOOP, added at the
- *                       Tranche 3B close-out (2026-08-09)
+ *   Disposition_LOI   Received -> Under Review -> Negotiation -> Signed
+ *                     explicit targets: NONE                      gate: DISPOSITION_DRIVER
+ *                     ⚠ RETRACTED 2026-08-21 (user request, design agent-output/
+ *                       disposition-loi-stages.md). This block used to read:
+ *                         "Disposition_LOI   Received -> Under Review -> Countered by DPEG
+ *                            -> Counter Received from Buyer -> Executed
+ *                          explicit targets: {Countered by DPEG,
+ *                            Counter Received from Buyer} — the negotiation LOOP, added at the
+ *                            Tranche 3B close-out (2026-08-09)"
+ *                       The user replaced the sell-side sequence with four stages. The
+ *                       negotiation LOOP IS RETIRED: counter rounds are now recorded by editing
+ *                       Counter History on the LOI (Counter_Offer__c / c/loiCounterOffer), which
+ *                       is unchanged by this wave. The two named quick actions and their two LWC
+ *                       bundles are deleted, so the two explicit targets have no sender left.
+ *                     🔴 THE SELL-SIDE SEQUENCE NOW SHARES **TWO** VALUES WITH THE ACQUISITION
+ *                       ONE — 'Negotiation' and 'Signed', on top of 'Under Review'. Only the
+ *                       first three of the acquisition sequence are now acquisition-only. See the
+ *                       explicit-target hazard note further down this header.
  *
  *   Contract_Review__c (Tranche 3C, 2026-08-09 for the GATE; observation 7, 2026-08-14 for the
  *                      SEQUENCE)
@@ -146,9 +159,13 @@
  *     `Draft -> Negotiation -> Signed -> Executed`; the disposition PSA keeps its four values
  *     verbatim, and O3 of the requirements doc makes that a HARD STOP — those three values stay
  *     ACTIVE on the field precisely because Disposition_PSA still runs on them. A shared map would
- *     have to hold BOTH sides' values, and Apex DML does not enforce record-type picklist
- *     restriction, so `advance()` itself would then write an acquisition-only status onto a sale.
- *     Two maps is the only shape in which that is unexpressible.
+ *     have to hold BOTH sides' values, so `advance()` itself would then aim an acquisition-only
+ *     status at a sale. Two maps is the only shape in which that is unexpressible.
+ *     ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. This bullet used to say "and Apex DML does not
+ *     enforce record-type picklist restriction, so `advance()` itself would then WRITE an
+ *     acquisition-only status onto a sale." False for a `restricted` value set — see the measured
+ *     block at the END OF THIS HEADER, and CONFIG_BY_TYPE's Contract_Review__c entry for the
+ *     re-derived (and stronger) reason the two maps still may not be collapsed.
  * ⇒ THE 3C LESSON STILL STANDS AND IS NOW JOINED BY ITS CONVERSE. Sharing a sequence is not
  *   sharing a gate (3C: someone who checks only the picklists ships a dead feature). And sharing
  *   an OBJECT is not sharing a sequence (observation 7: someone who edits one map and assumes the
@@ -213,37 +230,110 @@
  *   2. the EXPLICIT-TARGET allow-list is checked against a caller-supplied string, so deriving the
  *      allow-list from the record's current stage would let a row parked on a shared/unknown stage
  *      inherit the wrong list;
- *   3. Apex DML does not enforce record-type picklist restriction, so a row CAN carry an off-set
- *      stage — at which point "the sets are disjoint" is an assumption about data, not a fact.
+ *   3. a row CAN carry an off-set stage — at which point "the sets are disjoint" is an assumption
+ *      about data, not a fact.
+ *      ⚠ RETRACTED 2026-08-21 — MECHANISM REPLACED, CONCLUSION STRENGTHENED. This reason used to
+ *      open "Apex DML does not enforce record-type picklist restriction, so ...", which is false
+ *      for a `restricted` value set (measured block at the end of this header). The true mechanism
+ *      is that DML validates the record-type subset AT WRITE TIME ONLY — nothing revalidates rows
+ *      that already exist. Removing a value from a record type, or changing a row's record type,
+ *      leaves live rows parked on a stage their type no longer carries. The user did exactly that
+ *      twice on 2026-08-21 (Disposition_PSA dropped Revised / Ready for Execution / Executed;
+ *      Disposition_LOI dropped the counter loop), so this is a fact about THIS org's data, not a
+ *      hypothetical. Deriving the sequence from the stage value would mis-route every such row.
  * ✅ AND THE SENTENCE THAT USED TO CLOSE THIS BLOCK WAS A PREDICTION THAT CAME TRUE: "Deriving the
  * sequence from the stage value would also silently break the day any LOI stage is shared, with no
  * compile error and no failing walk test." That day was 2026-08-14. Because the sequence is derived
  * from the record type, nothing broke.
  *
  * 🔴 THE EXPLICIT-TARGET ALLOW-LIST IS PER RECORD TYPE TOO, AND THAT IS THE SECURITY HALF OF THIS
- * CHANGE — NOT A TIDY-UP. Record-type picklist restrictions are enforced by the UI ONLY; Apex DML
- * does not enforce them. So an object-level allow-list containing 'Declined' (for the disposition
+ * CHANGE — NOT A TIDY-UP. An object-level allow-list containing 'Declined' (for the disposition
  * NDA's Mark Declined action) would let a hand-crafted advanceTo(acquisitionNdaId, 'Declined')
- * write a disposition-only value onto an acquisition NDA — the exact hole the allow-list exists to
+ * attempt a disposition-only value on an acquisition NDA — the exact hole the allow-list exists to
  * close, re-opened one layer up. Making only nextStage record-type-aware LOOKS finished and is not.
  * Pinned by RecordStageAdvanceServiceTest.acquisitionNdaRefusesTheDispositionOnlyDeclinedTarget.
  *
- * ⚠ THE SAME HOLE EXISTS IN BOTH DIRECTIONS ON LOI__c, WHICH IS WHY THE 3B CONFIG SPLITS
- * LOI_EXPLICIT_TARGETS RATHER THAN SHARING IT. Held at object level, {Negotiation, Signed} would be
- * writable onto a DISPOSITION LOI — a value set that record type does not carry at all — and the
- * disposition type's own {Countered by DPEG, Counter Received from Buyer} would be writable onto an
- * ACQUISITION LOI, which carries neither. ⚠ The acquisition pair was {Counter, Completed} until
- * observation 5 renamed it; the two ALLOW-LISTS remain fully disjoint even though the two SEQUENCES
- * no longer are (they share 'Under Review', which is on neither list, deliberately). Pinned in both
- * directions by
- * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget /
- * dispositionLoiRefusesTheAcquisitionExplicitTargets.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 RETRACTED 2026-08-21 — MEASURED, NOT REASONED. THIS BLOCK USED TO ASSERT, AND ~20 OTHER
+ * PLACES IN THIS REPO STILL ASSERT: "Record-type picklist restrictions are enforced by the UI
+ * ONLY; Apex DML does not enforce them."  THAT IS FALSE FOR A RESTRICTED VALUE SET.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * MEASUREMENT (usman-dpeg, 2026-08-21, from a check-only validation running this class's own test
+ * suite — reproducible, not anecdotal):
+ *   - `Contract_Review__c.Negotiation_Status__c` has `restrictedPicklist: true`, and the value
+ *     'Revised' is ACTIVE on its master value set (confirmed by REST describe). The org's
+ *     `Disposition_PSA` record type had 'Revised' removed from it by a concurrent change.
+ *   - A plain Apex `insert` of a Disposition_PSA row carrying `Negotiation_Status__c = 'Revised'`
+ *     was REFUSED: `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST, bad value for restricted picklist
+ *     field: Revised`.
+ *   - Independently, an insert of a `Disposition_LOI` row carrying `Stage__c = 'Signed'` — active
+ *     on the master `Stage__c` value set, which is also `restricted` — was refused identically
+ *     while that value was absent from the record type, and ACCEPTED in the same test the moment
+ *     the record type was deployed carrying it.
+ * ⇒ FOR A `restricted` VALUE SET, THE RECORD TYPE'S SUBSET *IS* ENFORCED BY APEX DML. Both stage
+ *   fields this class writes (`LOI__c.Stage__c`, `Contract_Review__c.Negotiation_Status__c`) are
+ *   restricted. This repo has separately measured that a restricted value set rejects values off
+ *   the MASTER list; the new fact is that the RECORD-TYPE subset is enforced too.
  *
- * 🔴 THAT SECOND DIRECTION STOPPED BEING HYPOTHETICAL AT THE 3B CLOSE-OUT. Until the loop actions
- * landed, Disposition_LOI supplied NO explicit targets, so the acquisition-side test could only
- * prove "the acquisition list has not silently widened to the union". It now has two real
- * disposition-only values to leak, and both are refused — which is the shape the test was written
- * in advance for.
+ * ── WHAT THIS CHANGES, AND WHAT IT POINTEDLY DOES NOT ────────────────────────
+ * ✅ THE PER-RECORD-TYPE ALLOW-LIST IS STILL LOAD-BEARING AND MUST NOT BE COLLAPSED. Do not read
+ *    "DML enforces it after all" as licence to move the allow-list back to object level. DML only
+ *    refuses a value the target record type does not CARRY. The allow-list refuses a value the
+ *    record type carries but the ACTION has no business writing — and after 2026-08-21 that is the
+ *    live case on LOI__c: 'Negotiation' and 'Signed' are on BOTH record types, so DML would accept
+ *    advanceTo(dispositionLoiId, 'Signed') and the allow-list is the ONLY refusal left. See the
+ *    hazard note below and LOI_ACQUISITION_EXPLICIT_TARGETS.
+ * ⚠  WHAT IT DOWNGRADES is the *wording* of the older NDA/PSA arguments: where they say a leak
+ *    "would SUCCEED and park a value on the wrong record type", the truer statement is that it
+ *    would be refused by DML with an opaque restricted-picklist error instead of by this service
+ *    with a user-safe message. A worse failure than a refusal, still not a silent bad write.
+ * 🔴 IT MAKES DEPLOY ORDER A HARD REQUIREMENT, NOT A PREFERENCE: a record type must carry a value
+ *    BEFORE any map or allow-list here can name it, or the first click writes a DML error. This was
+ *    an unmeasured "nicety" in the 2026-08-21 design (§5.2, gate U1) and is now proven mandatory.
+ *
+ * ⚠ THE SAME HOLE EXISTS ON LOI__c, WHICH IS WHY THE 3B CONFIG SPLITS LOI_EXPLICIT_TARGETS RATHER
+ * THAN SHARING IT. Held at object level, {Negotiation, Signed} would be writable onto a DISPOSITION
+ * LOI by a hand-crafted advanceTo. Pinned by dispositionLoiRefusesTheAcquisitionExplicitTargets.
+ *
+ * ⚠ RETRACTED 2026-08-21. The two paragraphs that used to sit here read:
+ *   "⚠ THE SAME HOLE EXISTS IN BOTH DIRECTIONS ON LOI__c ... Held at object level, {Negotiation,
+ *    Signed} would be writable onto a DISPOSITION LOI — a value set that record type does not carry
+ *    at all — and the disposition type's own {Countered by DPEG, Counter Received from Buyer} would
+ *    be writable onto an ACQUISITION LOI, which carries neither. ⚠ The acquisition pair was
+ *    {Counter, Completed} until observation 5 renamed it; the two ALLOW-LISTS remain fully disjoint
+ *    even though the two SEQUENCES no longer are (they share 'Under Review', which is on neither
+ *    list, deliberately). Pinned in both directions by
+ *    acquisitionLoiRefusesADispositionStageAsAnExplicitTarget /
+ *    dispositionLoiRefusesTheAcquisitionExplicitTargets."
+ *   "🔴 THAT SECOND DIRECTION STOPPED BEING HYPOTHETICAL AT THE 3B CLOSE-OUT. Until the loop
+ *    actions landed, Disposition_LOI supplied NO explicit targets, so the acquisition-side test
+ *    could only prove 'the acquisition list has not silently widened to the union'. It now has two
+ *    real disposition-only values to leak, and both are refused — which is the shape the test was
+ *    written in advance for."
+ * BOTH premises died on 2026-08-21. Disposition_LOI supplies NO explicit targets again, so there is
+ * no second direction to leak: the SECOND direction has reverted to exactly the "has the acquisition
+ * list widened to the union?" control it was before the 3B close-out, and that test's own comments
+ * now say so rather than claiming to refuse literals a deployed bundle can send. There are no such
+ * bundles any more. ⚠ IT WAS ALSO RENAMED ON 2026-08-21, to
+ * acquisitionExplicitTargetListHasNotWidenedToTheUnion — the verbatim quote above still carries the
+ * old name acquisitionLoiRefusesADispositionStageAsAnExplicitTarget because a quote is not edited,
+ * and that name will not resolve against the current suite.
+ * The first clause of the old paragraph — "{Negotiation, Signed} would be writable onto a
+ * DISPOSITION LOI" — SURVIVES, but its parenthetical ("a value set that record type does not carry
+ * at all") does NOT; see the next paragraph, which is the reason this retraction is not cosmetic.
+ *
+ * 🔴 A NEW HAZARD, CREATED 2026-08-21, THAT DID NOT EXIST BEFORE — READ BEFORE TOUCHING
+ * LOI_ACQUISITION_EXPLICIT_TARGETS. 'Negotiation' and 'Signed' are now on BOTH record types' value
+ * sets. THE PER-RECORD-TYPE ALLOW-LIST SPLIT IS THEREFORE THE ONLY THING PREVENTING
+ * LOI__c.Mark_Completed — an ACQUISITION quick action that sends the hardcoded literal 'Signed' —
+ * from writing a *legal* disposition value onto a sale via a hand-crafted
+ * advanceTo(dispositionLoiId, 'Signed'). Before this change such a write produced an off-set value
+ * that at least LOOKED wrong to anyone reading the row, the Path or a flexipage rule keyed on it;
+ * now it would look entirely normal and no downstream reader could tell it apart from a legitimate
+ * sell-side Signed. The allow-list refusal is the only detection there is.
+ * ⇒ DO NOT MOVE THE ALLOW-LIST BACK TO OBJECT LEVEL, and do not add 'Signed' or 'Negotiation' to
+ * LOI_DISPOSITION_* on the grounds that "the record type carries them now". They are reached on the
+ * sell side by advance() deriving them, never by an explicit target.
  *
  * ── ⚠ THE CALL ORDER CHANGED, AND advanceTo's CHANGE IS THE LOAD-BEARING ONE ──
  * configFor() resolves from Id.getSObjectType() alone, so it still runs FIRST — it is what proves
@@ -294,8 +384,20 @@
  *
  * ⚠ A REAL, NAMED record type with no map is a different case and is REFUSED, not defaulted. A
  * silent fallback there would apply the acquisition sequence to a record the acquisition sequence
- * does not describe — and, because DML does not enforce record-type picklist restrictions, would
- * happily write an off-set value. Failing loudly is also what makes a typo in a map key falsifiable
+ * does not describe.
+ * ⚠ RETRACTED 2026-08-21 — the MECHANISM this sentence used to cite is false; the CONCLUSION is
+ * not. It used to read: "— and, because DML does not enforce record-type picklist restrictions,
+ * would happily write an off-set value." See the measured retraction block above
+ * (`INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`): both stage fields this class writes are
+ * `restricted`, so DML DOES enforce the target record type's subset and an off-set value is
+ * refused, not written. The correct reason to fail loudly here is that BOTH outcomes of a silent
+ * fallback are worse than a refusal, and which one you get depends on data nobody controls:
+ *   - the acquisition value the fallback picks is SHARED with the unmapped type's value set
+ *     ('Under Review' on LOI__c, 'Signed'/'Sent' on NDA__c) ⇒ DML accepts it, and the row is
+ *     parked on the wrong module's sequence SILENTLY — the bad write, still fully live;
+ *   - it is NOT shared ⇒ DML refuses it with an opaque restricted-picklist error surfaced from a
+ *     write the user did not ask for, instead of this service's user-safe "no next step" message.
+ * Failing loudly is also what makes a typo in a map key falsifiable
  * (Apex Map<String,...> keys are case-SENSITIVE while getDeveloperName() returns the metadata
  * casing, so a mis-cased key would otherwise degrade in silence).
  *
@@ -307,15 +409,26 @@
  *   RecordStageAdvanceService  — THIS CLASS. The eight objects above, carrying TWELVE
  *                                StageTypeConfigs since Disposition__c joined 2026-08-19 (NDA 2,
  *                                LOI 2, Contract Review 2, Disposition 2, plus one each for the
- *                                FOUR record-type-free objects). THREE
+ *                                FOUR record-type-free objects). TWO
  *                                of the twelve are not straight lines, and each is a
- *                                DIFFERENT shape: the ACQUISITION LOI BRANCHES at 'Submitted', the
- *                                DISPOSITION NDA has the 'Declined' OFF-RAMP, and the DISPOSITION
- *                                LOI is a LOOP (Countered by DPEG <-> Counter Received from Buyer).
- *                                All three reach their extra stages through a per-record-type
+ *                                DIFFERENT shape: the ACQUISITION LOI BRANCHES at 'Submitted' and
+ *                                the DISPOSITION NDA has the 'Declined' OFF-RAMP.
+ *                                ⚠ RETRACTED 2026-08-21 — THE COUNT WAS THREE AND THIS SENTENCE
+ *                                USED TO READ: "THREE of the twelve are not straight lines, and
+ *                                each is a DIFFERENT shape: the ACQUISITION LOI BRANCHES at
+ *                                'Submitted', the DISPOSITION NDA has the 'Declined' OFF-RAMP, and
+ *                                the DISPOSITION LOI is a LOOP (Countered by DPEG <-> Counter
+ *                                Received from Buyer)." The disposition LOI's negotiation loop was
+ *                                retired by the user on 2026-08-21; that sequence is now the
+ *                                LINEAR Received -> Under Review -> Negotiation -> Signed, its
+ *                                allow-list is empty, and counter rounds moved to Counter History
+ *                                (Counter_Offer__c). Do not restore the loop as a tidy-up.
+ *                                Both remaining exceptions reach their extra stages through a
+ *                                per-record-type
  *                                allow-list rather than a free-form write. ⚠ Every exception is
  *                                RECORD-TYPE-scoped, never object-scoped — the ACQUISITION NDA,
- *                                BOTH PSA types and BOTH DISPOSITION types are genuinely linear
+ *                                BOTH PSA types, BOTH Disposition__c types and (since 2026-08-21)
+ *                                the DISPOSITION LOI are genuinely linear
  *                                within what they own and offer no explicit target at all.
  *                                🔴 THE DISPOSITION TYPES ARE LINEAR FOR A DIFFERENT REASON THAN
  *                                THE OTHERS, AND THE DIFFERENCE MATTERS: the PSA types are linear
@@ -336,10 +449,11 @@
  * A generic explicit-target write across eight objects would re-open exactly the hole
  * StageAdvanceService.ALLOWED_EXPLICIT_TARGETS was created to close: any holder of class access
  * could write any stage on any of eight objects, skipping every hop. advance() derives the target
- * from the map, so it CANNOT skip a hop. advanceTo() exists only for the three
- * branch / off-ramp / loop cases and writes NOTHING that is not on the allow-list FOR THAT RECORD
- * TYPE. Adding a branch action means adding its stage to that record type's set — never widening
- * the check.
+ * from the map, so it CANNOT skip a hop. advanceTo() exists only for the two
+ * branch / off-ramp cases (⚠ this read "the three branch / off-ramp / loop cases" until 2026-08-21,
+ * when the disposition LOI's loop was retired) and writes NOTHING that is not on the allow-list FOR
+ * THAT RECORD TYPE. Adding a branch action means adding its stage to that record type's set — never
+ * widening the check.
  *
  * ── WHY THE MAPS ARE APEX AND NOT CUSTOM METADATA ────────────────────────────
  * A Stage_Map__mdt would let an admin change a stage map with no deploy and no review, which is the
@@ -675,8 +789,17 @@ public with sharing class RecordStageAdvanceService {
      * 🔴 THIS SET IS THE REASON THE ALLOW-LIST HAD TO BECOME RECORD-TYPE-AWARE. The Mark Declined
      * action keys on Status__c = 'Sent', a value SHARED by both NDA record types (§3.2 of the
      * design). Held at object level, this set would make advanceTo(acquisitionNdaId, 'Declined')
-     * succeed, because Apex DML does not enforce record-type picklist restrictions. The acquisition
-     * NDA supplies NO explicit targets at all, so advanceTo cannot move it.
+     * reachable. The acquisition NDA supplies NO explicit targets at all, so advanceTo cannot move
+     * it.
+     * ⚠ RETRACTED 2026-08-21 — MECHANISM FALSE, CONCLUSION INTACT. This used to read "would make
+     * advanceTo(acquisitionNdaId, 'Declined') SUCCEED, because Apex DML does not enforce
+     * record-type picklist restrictions." `NDA__c.Status__c` is `restricted` (see the measured
+     * block in the class header), so an object-level list would not produce a silent bad write —
+     * it would produce an opaque `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` for as long as
+     * Acquisition_NDA omits 'Declined'. That is a WORSE failure than this set's user-safe refusal,
+     * not a substitute for it, and it is a backstop on loan: it disappears the day someone adds
+     * 'Declined' to the acquisition type for an unrelated reason, at which point the split is the
+     * only control and the original sentence becomes literally true.
      *
      * The action itself is `quickActions/NDA__c.Mark_Declined` -> `c/ndaMarkDeclined`, which
      * passes this exact literal as a module constant. It is no longer "a future action".
@@ -730,88 +853,50 @@ public with sharing class RecordStageAdvanceService {
     };
 
     /**
-     * LOI__c.Stage__c / Disposition_LOI — Received -> Under Review -> Countered by DPEG ->
-     * Counter Received from Buyer -> Executed. 'Executed' is terminal.
+     * LOI__c.Stage__c / Disposition_LOI — Received -> Under Review -> Negotiation -> Signed.
+     * 'Signed' is terminal.
      *
      * 🔴 THE DIRECTION IS REVERSED, WHICH IS WHY THIS IS A SECOND MAP RATHER THAN A LONGER ONE.
      * On a purchase DPEG DRAFTS the LOI and SENDS it, so the path starts at 'Draft'. On a sale the
      * LOI ARRIVES from the buyer through the appointed broker, so it starts at 'Received' — there
-     * is no Draft and no Submitted.
+     * is no Draft and no Submitted. That is unchanged and is still the whole reason for two maps.
      *
-     * 🔴 THE SENTENCE THAT USED TO END THAT PARAGRAPH — "Not one value is shared with the
-     * acquisition map" — IS FALSE SINCE 2026-08-14 and is the single most quotable casualty of
-     * observation 5. 'Under Review' is now on BOTH maps: it is the acquisition sequence's second
-     * stage (renamed from 'Prepare/Review') and this map's second stage. This map itself is
-     * UNCHANGED — the sell side was not touched by observation 5 — but anything that inferred
-     * "which side is this?" from an LOI stage value alone is now wrong, and the LOI record-type
-     * files, the LOI record page's visibility rules and LOI__c.Is_Advance_Allowed__c all did
-     * exactly that (design collision C1). This service does not, and never did.
+     * ⚠ RETRACTED 2026-08-21 (user request; design agent-output/disposition-loi-stages.md). This
+     * map read:
+     *     'Received' => 'Under Review',
+     *     'Under Review' => 'Countered by DPEG',
+     *     'Countered by DPEG' => 'Counter Received from Buyer',
+     *     'Counter Received from Buyer' => 'Executed'
+     * and this doc-comment carried two paragraphs that are now false and are recorded rather than
+     * deleted:
+     *   (a) "🔴 THE SENTENCE THAT USED TO END THAT PARAGRAPH — 'Not one value is shared with the
+     *       acquisition map' — IS FALSE SINCE 2026-08-14 ... 'Under Review' is now on BOTH maps ...
+     *       This map itself is UNCHANGED — the sell side was not touched by observation 5".
+     *       Still true about 'Under Review', but "this map itself is UNCHANGED" expired today, and
+     *       the sharing is now WIDER: 'Negotiation' and 'Signed' are shared too. THREE of this
+     *       map's four keys/values are also acquisition values. Anything inferring "which side is
+     *       this?" from an LOI stage value alone was already wrong and is now wrong three ways over.
+     *   (b) "✅ THE 'OPEN' NOTE THAT USED TO SIT HERE IS CLOSED — see LOI_DISPOSITION_EXPLICIT_-
+     *       TARGETS immediately below. This map stays exactly as it was: it is the LINE through the
+     *       loop, and the two loop edges are reached by advanceTo() instead. The line is what
+     *       advance() walks, so 'Counter Received from Buyer' still derives 'Executed' and never
+     *       derives a cycle."
+     *       THERE IS NO LOOP ANY MORE and LOI_DISPOSITION_EXPLICIT_TARGETS NO LONGER EXISTS. The
+     *       sell-side negotiation is recorded by editing Counter History on the LOI
+     *       (Counter_Offer__c / c/loiCounterOffer, unchanged by this wave), not by cycling the
+     *       stage field. This map is now the WHOLE sequence, not a line through a cycle.
      *
-     * ✅ THE "OPEN" NOTE THAT USED TO SIT HERE IS CLOSED — see LOI_DISPOSITION_EXPLICIT_TARGETS
-     * immediately below. This map stays exactly as it was: it is the LINE through the loop, and the
-     * two loop edges are reached by advanceTo() instead. The line is what advance() walks, so
-     * 'Counter Received from Buyer' still derives 'Executed' and never derives a cycle.
+     * ⇒ This sequence is now LINEAR and every hop is derivable, so Disposition_LOI supplies NO
+     * explicit targets at all and advanceTo() is STRUCTURALLY UNREACHABLE on it — see the
+     * two-arg StageTypeConfig in CONFIG_BY_TYPE. That is a strengthening, not a loss.
+     *
+     * 🔴 'Signed' IS NOT A KEY HERE AND MUST NOT BECOME ONE. It is the terminal on BOTH record
+     * types now; adding a hop out of it would move a sale past its own end state.
      */
     private static final Map<String, String> LOI_DISPOSITION_NEXT_STAGE = new Map<String, String>{
         'Received' => 'Under Review',
-        'Under Review' => 'Countered by DPEG',
-        'Countered by DPEG' => 'Counter Received from Buyer',
-        'Counter Received from Buyer' => 'Executed'
-    };
-
-    /**
-     * The sell-side NEGOTIATION LOOP, reached by two named quick actions rather than by advance().
-     *
-     * 🔴 THIS SET EXISTS BECAUSE A Map<String, String> CANNOT HOLD A CYCLE. The document (Part 2
-     * line 244) says the negotiation "goes round until both sides are agreed", so
-     * 'Countered by DPEG' <-> 'Counter Received from Buyer' is a two-edge cycle. LOI_DISPOSITION_-
-     * NEXT_STAGE holds ONE value per key, so it can express at most one of those edges; the other
-     * — the BACK-edge from 'Counter Received from Buyer' to 'Countered by DPEG' — is provably
-     * unreachable through advance() at any price. That is what an explicit target is for.
-     *
-     * ⚠ BOTH EDGES ARE LISTED, NOT JUST THE BACK-EDGE, AND THAT IS DELIBERATE.
-     * 'Counter Received from Buyer' IS the derived hop from 'Countered by DPEG', so listing it here
-     * makes c/loiMarkCounterReceived overlap c/advanceRecordStage at that one stage. Two reasons
-     * that beat the tidier one-edge version, both recorded on
-     * quickActions/LOI__c.Mark_Counter_Received:
-     *   1. SYMMETRY — a user driving a loop should see the same shape of control at both of its
-     *      stages; naming one direction and leaving the other as an anonymous "advance" invites a
-     *      guess about which button does what.
-     *   2. INDEPENDENCE — if a later change re-points the derived hop out of 'Countered by DPEG',
-     *      a page relying on Advance Stage for that edge silently loses it. An explicit target
-     *      cannot drift that way.
-     * The cost is one redundant button on one stage. Do not "tidy" this down to one entry without
-     * moving the other edge somewhere it can be expressed, which today is nowhere.
-     *
-     * 🔴 IT IS PER RECORD TYPE, AND THAT IS THE SECURITY HALF — NOT A TIDY-UP. Neither value exists
-     * on Acquisition_LOI's value set, and Apex DML DOES NOT ENFORCE record-type picklist
-     * restriction, so an object-level list would let advanceTo(acquisitionLoiId, 'Countered by
-     * DPEG') park a purchase on a sell-side stage that matches neither the acquisition Path nor any
-     * flexipage rule keyed on it. Exactly the hole NDA__c's 'Declined' target opened one tranche
-     * earlier. Pinned by acquisitionLoiRefusesADispositionStageAsAnExplicitTarget (the refusal) and
-     * dispositionLoiAcceptsTheNegotiationLoopTargets (its complement — without which the refusal
-     * could pass simply because these values were configured nowhere at all).
-     *
-     * ⚠ NEITHER VALUE IS A DERIVABLE FORWARD HOP OUT OF ITS OWN SOURCE STAGE IN THE SENSE THAT
-     * MATTERS: adding an explicit target never lets a caller SKIP a hop here, because both stages
-     * sit adjacent in the sequence. Contrast LOI_ACQUISITION_EXPLICIT_TARGETS, which deliberately
-     * excludes 'Under Review' and 'Submitted' precisely because listing them WOULD skip the
-     * approval gate (those two were 'Prepare/Review' and 'Sent' until observation 5 renamed them;
-     * the exclusion is unchanged). There is no equivalent gate on the sell side — the disposition
-     * LOI has no approval process — so no transition is bypassed by these two entries.
-     *
-     * The actions are `quickActions/LOI__c.Mark_Countered_By_DPEG` -> `c/loiMarkCounteredByDpeg`
-     * and `quickActions/LOI__c.Mark_Counter_Received` -> `c/loiMarkCounterReceived`; each passes
-     * its value as a hardcoded module constant, which is the property that makes this list
-     * meaningful.
-     *
-     * ⚠ 'Executed' is deliberately NOT here. It is the derived hop from 'Counter Received from
-     * Buyer' and belongs to advance(); listing it would add a second route to the terminal stage
-     * for no gain. 'Received' and 'Under Review' are absent for the same reason.
-     */
-    private static final Set<String> LOI_DISPOSITION_EXPLICIT_TARGETS = new Set<String>{
-        'Countered by DPEG',
-        'Counter Received from Buyer'
+        'Under Review' => 'Negotiation',
+        'Negotiation' => 'Signed'
     };
 
     /**
@@ -856,11 +941,42 @@ public with sharing class RecordStageAdvanceService {
      * status values differ:
      *
      *   ACQUISITION (this map)          DISPOSITION (CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE)
-     *   Draft       -> 'PSA Drafting'   Initial Draft       -> 'PSA Drafting'
-     *   Negotiation -> 'Review'         Revised             -> 'Review'
-     *   Signed      -> 'Review'         Ready for Execution -> 'Review'
-     *   Executed    -> 'Contract        Executed            -> 'Contract Execution'
+     *   Draft       -> 'PSA Drafting'   Initial Draft -> 'PSA Drafting'
+     *   Negotiation -> 'Review'         Negotiation   -> 'Review'
+     *   Signed      -> 'Review'         Signed        -> 'Review'   🔴 SEE BELOW
+     *   Executed    -> 'Contract        (no 'Executed' on this record type since 2026-08-21)
      *                   Execution'
+     *
+     * ⚠ THE DISPOSITION COLUMN READ `Revised -> 'Review'` / `Ready for Execution -> 'Review'` /
+     * `Executed -> 'Contract Execution'` until 2026-08-21, when the user harmonised the record type.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ✅ A DECLARATIVE GAP OPENED AND WAS CLOSED IN THIS SAME WAVE — RECORDED BECAUSE THE APEX
+     * SIDE CANNOT SEE IT AND NO APEX TEST WOULD HAVE CAUGHT IT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `Contract_Review_Stage_Sync`'s decision routed BOTH its 'Contract Execution' branches on the
+     * literal 'Executed'. A DISPOSITION PSA can no longer HOLD 'Executed', so for as long as that
+     * flow was unchanged, a sell-side PSA sitting at its own terminal 'Signed' fell to the DEFAULT
+     * connector and projected `Stage__c = 'Review'` — reading as still-in-review forever on every
+     * surface driven by `Stage__c`.
+     *
+     * ⚠ IT NEVER BROKE THE HANDOFF, WHICH IS PRECISELY WHY IT WAS INVISIBLE.
+     * `ContractExecutionService` keys on `Negotiation_Status__c`, never on `Stage__c`, so
+     * `Disposition_Stage__c -> 'Closing'` fired correctly at 'Signed' throughout. The damage was
+     * display-only, and `Stage__c` is a derived projection — writing it from Apex commits and is
+     * silently discarded (measured 2026-08-05 on CTR-0000) — so nothing in this class or its tests
+     * could have detected or repaired it.
+     *
+     * ✅ FIXED 2026-08-21 in the declarative half of this wave: a new `Is_Disposition_Signed` rule
+     * testing `Negotiation_Status__c = 'Signed' AND Disposition__c != null`, routing to the EXISTING
+     * `Set_Stage_Executed_Only` assignment. 🔴 NOTE THE DISCRIMINATOR IS THE PARENT LOOKUP, matching
+     * `ContractExecutionService`'s two arms and its terminal split — the same choice, made
+     * independently on both sides of the wave, and the reason the two halves agree about which rows
+     * are sell-side. A blanket 'Signed' -> 'Contract Execution' edit would have been wrong for
+     * ACQUISITION (where 'Signed' still precedes 'Executed' and is genuinely still in review) and
+     * is explicitly NOT what was built.
+     * ⚠ The 'Draft' row below (design collision C4) is a DIFFERENT, still-OPEN gap of the same
+     * class. Do not read this ✅ as covering it.
      *
      * 🔴 THE 'Draft' ROW IS A DEPENDENCY ON A FLOW THIS CLASS DOES NOT OWN, AND IT FAILS QUIETLY.
      * `Contract_Review_Stage_Sync` is a before-save flow with an explicit rule for 'Initial Draft'
@@ -876,14 +992,26 @@ public with sharing class RecordStageAdvanceService {
      *    acquisition map, Revised -> Ready for Execution on the disposition one; all four project
      *    to 'Review'), so the user sees a success toast and a stationary Path. That is correct, not
      *    a repeat of the defect above — the status genuinely advanced.
-     * 2. The final hop into 'Executed' is NOT just a status write, on EITHER map. It fires
+     * 2. The final hop is NOT just a status write, on EITHER map. It fires
      *    ContractReviewTrigger -> ContractExecutionService, and since Tranche 3C that service has
      *    TWO ARMS keyed on which parent lookup is populated:
-     *      Opportunity__c set -> stamps the Opportunity (Contract Signed, Day 0) + 3 notifications
+     *      Opportunity__c set -> stamps the Opportunity (Contract Signed, Day 0) + 4 notifications
      *      Disposition__c set -> moves Disposition__c.Disposition_Stage__c to 'Closing'
-     *    Adding or reordering entries around 'Executed' changes when BOTH handoffs fire. ⚠ Note the
-     *    PREDECESSOR of that hop now differs by side ('Signed' vs 'Ready for Execution'), which is
-     *    the one place the split changes the shape of the handoff rather than just its labels.
+     *    Adding or reordering entries around either terminal changes when the matching handoff
+     *    fires.
+     *    🔴 REWRITTEN 2026-08-21 — THE HOP IS NO LONGER "INTO 'Executed'" ON BOTH SIDES. This item
+     *    read: "The final hop into 'Executed' is NOT just a status write, on EITHER map ... ⚠ Note
+     *    the PREDECESSOR of that hop now differs by side ('Signed' vs 'Ready for Execution'), which
+     *    is the one place the split changes the shape of the handoff rather than just its labels."
+     *    The user harmonised Disposition_PSA to Initial Draft -> Negotiation -> Signed, so it is
+     *    the TERMINAL ITSELF that differs by side now, not merely its predecessor:
+     *      ACQUISITION  ... -> Signed -> Executed      handoff fires on 'Executed'
+     *      DISPOSITION  ... -> Negotiation -> Signed   handoff fires on 'Signed'
+     *    ⚠ AND 'Signed' IS ON BOTH SEQUENCES, mid-sequence on one and terminal on the other — so
+     *    `ContractExecutionService` had to split its single `EXECUTED` constant into
+     *    ACQUISITION_TERMINAL / DISPOSITION_TERMINAL. A shared constant repointed to 'Signed' would
+     *    fire the acquisition handoff one hop early and re-date the whole Day-0 checklist. Read
+     *    that class's two constants before touching either map's tail.
      *    ⚠ The sentence here used to say this hop "CREATES THE Transaction__c". That has been
      *    FALSE since 2026-08-05 — creation moved to ContractExecutionService
      *    .openTransactionsOnAboutToClose, keyed on Opportunity.StageName = 'About to Close'. The
@@ -904,29 +1032,55 @@ public with sharing class RecordStageAdvanceService {
         };
 
     /**
-     * Contract_Review__c.Negotiation_Status__c / Disposition_PSA — Initial Draft -> Revised ->
-     * Ready for Execution -> Executed. 'Executed' is terminal.
+     * Contract_Review__c.Negotiation_Status__c / Disposition_PSA — Initial Draft -> Negotiation ->
+     * Signed. 'Signed' is terminal.
      *
-     * 🔴 THIS MAP IS THE OLD SHARED ONE, VERBATIM AND UNCHANGED. Observation 7 is an ACQUISITION-
-     * ONLY change: `Disposition_PSA`'s own record type file records that these four values are
-     * already exactly the states the client document names for the sell-side PSA, and O3 of the
-     * requirements doc states as a HARD STOP that `Initial Draft` / `Revised` /
-     * `Ready for Execution` remain ACTIVE on the field precisely because this record type still
-     * runs on them. Nothing is deactivated on `Negotiation_Status__c` by this pack.
+     * ⚠ RETRACTED 2026-08-21 (user harmonisation, done directly in Setup). This map read:
+     *     'Initial Draft' => 'Revised',
+     *     'Revised' => 'Ready for Execution',
+     *     'Ready for Execution' => 'Executed'
+     * and its doc-comment asserted, verbatim: "🔴 THIS MAP IS THE OLD SHARED ONE, VERBATIM AND
+     * UNCHANGED. Observation 7 is an ACQUISITION-ONLY change: `Disposition_PSA`'s own record type
+     * file records that these four values are already exactly the states the client document names
+     * for the sell-side PSA, and O3 of the requirements doc states as a HARD STOP that
+     * `Initial Draft` / `Revised` / `Ready for Execution` remain ACTIVE on the field precisely
+     * because this record type still runs on them."
      *
-     * ⚠ SO THE COST OF THE SPLIT LANDS ENTIRELY HERE, AND IT IS THE COST THE OLD SHARED-REFERENCE
-     * COMMENT WARNED ABOUT: there are now two things that must be maintained separately, and a
-     * change made to the acquisition sequence will NOT reach this one. That is the requirement now
-     * rather than the hazard — but a future editor adding a stage to one map must consciously
-     * decide about the other rather than getting it for free. `DispositionStageEntryService`'s
-     * `DISPOSITION_PSA_INITIAL_STATUS = 'Initial Draft'` is this map's entry point and is the thing
-     * to check first; `DispositionStageEntryServiceTest` pins it.
+     * 🔴 THE "HARD STOP" WAS OVERTAKEN BY THE USER, NOT BY THIS CODE. Measured live on 2026-08-21
+     * via the UI API (the ONLY channel that reports record-type-scoped picklist values on this
+     * object — Metadata API retrieve, Tooling `RecordType.Metadata` and `PicklistValueInfo` all
+     * return empty here, so their silence is not evidence):
+     *
+     *   Acquisition_PSA   Draft (default) | Negotiation | Signed | Executed     ← UNCHANGED
+     *   Disposition_PSA   Initial Draft (default) | Negotiation | Signed
+     *
+     * `Revised`, `Ready for Execution` and `Executed` are all still ACTIVE on the master value set;
+     * they are simply off this record type. Because `Negotiation_Status__c` is `restricted`, Apex
+     * DML enforces that subset (see the class header's measurement block), so every entry in the
+     * old map was writing a value the platform now refuses — the sell-side Advance Stage button was
+     * dead at the first hop.
+     *
+     * ⚠ ZERO ROWS MIGRATED, VERIFIED AT THE TIME OF THE CHANGE rather than cited: a GROUP BY over
+     * `Contract_Review__c` returned only Acquisition_PSA rows (4 Executed, 4 Draft, 1 Negotiation)
+     * and NO Disposition_PSA rows at all. Re-run it before deploying; the LOI equivalent went stale
+     * within an hour on the same day.
+     *
+     * 🔴 THE TWO SEQUENCES NOW OVERLAP ON 'Negotiation' AND 'Signed', where before observation 7
+     * they shared only 'Executed'. So the "one value shared, and it is terminal on both" property
+     * that several comments on this object lean on is GONE, and 'Signed' in particular is TERMINAL
+     * on disposition and MID-SEQUENCE on acquisition. Nothing in this class regressed — it has
+     * always resolved the sequence from the record type — but `ContractExecutionService` had to
+     * split its terminal constant in the same wave, and that is where the real cost landed.
+     *
+     * ⚠ `DispositionStageEntryService`'s `DISPOSITION_PSA_INITIAL_STATUS = 'Initial Draft'` is this
+     * map's entry point and is UNAFFECTED — 'Initial Draft' survives as the record type's default.
+     * `DispositionStageEntryServiceTest` pins it. That is the thing to check first if this map is
+     * ever re-pointed at its head rather than its tail.
      */
     private static final Map<String, String> CONTRACT_REVIEW_DISPOSITION_NEXT_STAGE =
         new Map<String, String>{
-            'Initial Draft' => 'Revised',
-            'Revised' => 'Ready for Execution',
-            'Ready for Execution' => 'Executed'
+            'Initial Draft' => 'Negotiation',
+            'Negotiation' => 'Signed'
         };
 
     /**
@@ -954,25 +1108,57 @@ public with sharing class RecordStageAdvanceService {
      * onto an acquisition-scoped allow-list, which is precisely the shape of leak the per-record-
      * type split exists to prevent. The two allow-lists remain fully disjoint even though the two
      * SEQUENCES no longer are, and that disjointness is what
-     * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget /
-     * dispositionLoiRefusesTheAcquisitionExplicitTargets still measure.
+     * acquisitionExplicitTargetListHasNotWidenedToTheUnion (renamed 2026-08-21 from
+     * acquisitionLoiRefusesADispositionStageAsAnExplicitTarget) /
+     * dispositionLoiRefusesTheAcquisitionExplicitTargets still measure. ⚠ Only the SECOND of those
+     * two still measures a live leak; the first is a widening control. See both test comments.
      *
-     * 🔴 THIS SET WAS OBJECT-LEVEL UNTIL TRANCHE 3B AND IS NOW PER RECORD TYPE. Neither value
-     * exists on Disposition_LOI's value set, and Apex DML does not enforce record-type picklist
-     * restriction — so an object-level list would let advanceTo(dispositionLoiId, 'Signed')
-     * write an acquisition-only stage onto a sale, exactly the hole the NDA's 'Declined' target
-     * opened one tranche earlier.
+     * 🔴 THIS SET WAS OBJECT-LEVEL UNTIL TRANCHE 3B AND IS NOW PER RECORD TYPE, AND SINCE
+     * 2026-08-21 THE SPLIT IS THE *ONLY* THING STOPPING A LEAK ONTO A SALE. An object-level list
+     * would let advanceTo(dispositionLoiId, 'Signed') write this set's values onto a sale.
+     * ⚠ RETRACTED 2026-08-21, TWO SEPARATE ERRORS IN ONE SENTENCE. It read: "Neither value exists
+     * on Disposition_LOI's value set, and Apex DML does not enforce record-type picklist
+     * restriction — so an object-level list would let advanceTo(dispositionLoiId, 'Signed') write
+     * an acquisition-only stage onto a sale."
+     *   1. BOTH VALUES NOW EXIST ON THAT VALUE SET. The user's new sell-side sequence is
+     *      Received -> Under Review -> Negotiation -> Signed, so 'Negotiation' and 'Signed' are
+     *      legal disposition stages that advance() derives.
+     *   2. "Apex DML does not enforce record-type picklist restriction" IS FALSE for a restricted
+     *      value set — MEASURED 2026-08-21, see the class header. `Stage__c` IS restricted.
+     * 🔴 THOSE TWO ERRORS USED TO CANCEL OUT AND NOW DO NOT, WHICH IS WHY THIS MATTERS. Before the
+     * change the belief "DML won't stop it" was wrong but harmless, because the record type did not
+     * carry the values and DML WOULD have stopped it. After the change the record type DOES carry
+     * them, so DML will NOT stop it — and the sentence that was accidentally safe is now the exact
+     * description of a real, reachable write. The SPLIT IS NOT WEAKENED BY THIS; it is the only
+     * control left. See the next paragraph.
      *
-     * ⚠ 'Signed' IS A PARTICULARLY BAD VALUE TO LEAK ONTO A SALE, which the pre-observation-5
-     * 'Completed' was not: a sell-side reader seeing 'Signed' on a disposition LOI has no reason to
-     * doubt it — the word is plausible on either side of a deal — whereas 'Completed' at least read
-     * as vocabulary from the other module. The refusal is the only thing that catches it.
+     * 🔴 THE LEAK GOT WORSE, NOT BETTER, ON 2026-08-21 — THIS IS THE HAZARD NOTE THE CLASS HEADER
+     * CROSS-REFERENCES. 'Signed' was already "a particularly bad value to leak onto a sale" because
+     * the word is plausible on either side of a deal (the pre-observation-5 'Completed' at least
+     * read as vocabulary from the other module). It is now WORSE THAN PLAUSIBLE — IT IS CORRECT
+     * SELL-SIDE VOCABULARY. A hand-crafted advanceTo(dispositionLoiId, 'Signed'), carrying the
+     * literal that the ACQUISITION quick action LOI__c.Mark_Completed hardcodes, would previously
+     * have been REFUSED BY THE PLATFORM — 'Signed' was not on Disposition_LOI's value set and
+     * `Stage__c` is a restricted picklist, so DML raised INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST
+     * (measured 2026-08-21; see the class header). Today it would LAND: a value the record type
+     * carries, the Path renders and every reader accepts — while skipping 'Negotiation' entirely.
+     * ⇒ A PLATFORM-LEVEL BACKSTOP WAS REMOVED BY THIS CHANGE AND NOBODY ASKED FOR IT TO BE. That is
+     * not an argument against the change (the user's sequence is right); it is the reason this
+     * allow-list stopped being belt-and-braces.
+     * ⇒ THE PER-RECORD-TYPE ALLOW-LIST IS THE ONLY REMAINING DETECTION. Do not move this set back
+     * to object level; do not "harmonise" it with the disposition config on the grounds that both
+     * record types now carry these two values. Pinned by
+     * dispositionLoiRefusesTheAcquisitionExplicitTargets, which is now the ONLY cross-type
+     * allow-list guard in this class with real content on LOI__c.
      *
      * ⚠ THE SENTENCE THAT USED TO END THIS BLOCK — "the disposition type supplies NO explicit
-     * targets at all, which makes advanceTo() structurally unreachable for it" — WAS TRUE ONLY
-     * UNTIL THE 3B CLOSE-OUT AND IS NOW FALSE. Disposition_LOI has its own two-value set
-     * (LOI_DISPOSITION_EXPLICIT_TARGETS, the negotiation loop). The leak is therefore live in BOTH
-     * directions and both are tested.
+     * targets at all, which makes advanceTo() structurally unreachable for it" — WAS TRUE UNTIL THE
+     * 3B CLOSE-OUT, WAS FALSE FROM THEN UNTIL 2026-08-21, AND IS TRUE AGAIN NOW. It is restored,
+     * not resurrected in ignorance: the negotiation loop that made it false was retired with the
+     * user's decision to move counter rounds onto Counter History. The intervening retraction ("
+     * Disposition_LOI has its own two-value set (LOI_DISPOSITION_EXPLICIT_TARGETS, the negotiation
+     * loop). The leak is therefore live in BOTH directions and both are tested.") is recorded here
+     * so the git history reads correctly and so nobody re-adds the set believing it was lost.
      */
     private static final Set<String> LOI_ACQUISITION_EXPLICIT_TARGETS = new Set<String>{
         'Negotiation',
@@ -1129,13 +1315,20 @@ public with sharing class RecordStageAdvanceService {
      *                                         `DispositionApprovalAdvanceService` write the stage.
      *                                         Listing it here would be a one-click approval bypass.
      *   `Release Materials -> Active Listing` OMITTED because `Active Listing` IS NOT ON THIS
-     *                                         RECORD TYPE'S VALUE SET. Apex DML does NOT enforce
-     *                                         record-type picklist restriction, so a shared map
-     *                                         would have `advance()` ITSELF park a direct sale on a
+     *                                         RECORD TYPE'S VALUE SET, so a shared map would have
+     *                                         `advance()` ITSELF try to move a direct sale onto a
      *                                         broker-listing stage it does not carry — exactly the
      *                                         failure the per-record-type split exists to make
      *                                         unexpressible (see CONTRACT_REVIEW_ACQUISITION_NEXT_-
      *                                         STAGE's header for the same argument on that object).
+     * ⚠ RETRACTED 2026-08-21 — the omission bullet above used to justify itself with "Apex DML does
+     * NOT enforce record-type picklist restriction, so a shared map would ... PARK a direct sale on
+     * a broker-listing stage". That mechanism is false for a `restricted` value set (class header,
+     * measured). 🔴 `Disposition__c.Disposition_Stage__c` IS `restricted` but has NOT itself been
+     * measured, so treat the platform refusal as UNVERIFIED here: on the measured fields the write
+     * is refused with an opaque `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` rather than parked. The
+     * omission stands either way — a stage `advance()` should never offer must not be in the map,
+     * whether the consequence is a bad write or a platform error the user cannot act on.
      *
      * ⚠ `Release Materials` IS THE OFFER-COLLECTION STAGE ON THIS TYPE, so it has NO hop at all
      * here: it leaves via `DispositionApprovalService.selectOffer`. The hint says so — a stage that
@@ -1243,9 +1436,16 @@ public with sharing class RecordStageAdvanceService {
             'This disposition advances when an offer is selected. Use Select Offer.',
         'Disposition|Offer Selection' =>
             'This disposition advances when the selected offer is approved.',
+        // ⚠ REPOINTED 2026-08-21. This read '...Advance the Contract Review to Executed.' —
+        // instructions for a value the Disposition_PSA record type no longer carries, so the hint
+        // was telling the user to do something the platform would refuse. The sell-side PSA
+        // terminal is now 'Signed' (ContractExecutionService.DISPOSITION_TERMINAL).
+        // 🔴 THIS KEY IS SAFE TO REPOINT BECAUSE IT IS ALREADY SCOPED: the key is the DISPOSITION
+        // object at its PSA stage, so no acquisition surface reads it. Contrast the LOI entries
+        // this map's own header forbids, which would need the record type folded into the key.
         'Disposition|PSA' =>
             'This disposition advances to Closing when the sell-side PSA is executed. '
-            + 'Advance the Contract Review to Executed.'
+            + 'Advance the Contract Review to Signed.'
     };
 
     /**
@@ -1403,10 +1603,13 @@ public with sharing class RecordStageAdvanceService {
                         StageActionGate.DISPOSITION_DRIVER,
                         NDA_DISPOSITION_NEXT_STAGE, NDA_DISPOSITION_EXPLICIT_TARGETS)
                 }),
-            // Tranche 3B (D6). ⚠ The two stage sets are DISJOINT, unlike NDA__c's — but that buys
-            // nothing here; see the class header for the three reasons this service still needs the
-            // record type. defaultTypeKey is Acquisition_LOI: every LOI in the org today is
-            // buy-side by construction, because the Disposition__c lookup arrives in this tranche.
+            // Tranche 3B (D6). ⚠ The comment that used to open this block — "The two stage sets are
+            // DISJOINT, unlike NDA__c's" — was already false from observation 5 ('Under Review')
+            // and is emphatically false from 2026-08-21: the two sets now share 'Under Review',
+            // 'Negotiation' and 'Signed'. The record type is what resolves the sequence, and that
+            // has never depended on disjointness; see the class header. defaultTypeKey is
+            // Acquisition_LOI: every LOI in the org today is buy-side by construction, because the
+            // Disposition__c lookup arrives in this tranche.
             LOI__c.SObjectType => new StageConfig(
                 'LOI', 'Stage__c',
                 RT_ACQUISITION_LOI,
@@ -1414,14 +1617,22 @@ public with sharing class RecordStageAdvanceService {
                     RT_ACQUISITION_LOI => new StageTypeConfig(
                         StageActionGate.DEAL_DRIVER,
                         LOI_ACQUISITION_NEXT_STAGE, LOI_ACQUISITION_EXPLICIT_TARGETS),
-                    // ⚠ The sell-side path is a LOOP, not a line: its two explicit targets are the
-                    // two edges of the Countered by DPEG <-> Counter Received from Buyer cycle,
-                    // which a Map<String,String> cannot hold. This set is ALSO what refuses
-                    // 'Negotiation' and 'Signed' here — see LOI_ACQUISITION_EXPLICIT_TARGETS — and
-                    // is what stops its own two values being written onto an acquisition LOI.
+                    // 🔴 TWO-ARG CONSTRUCTOR, 2026-08-21 — DELIBERATE STRENGTHENING, NOT AN
+                    // OMISSION. It supplies an EMPTY explicit-target set, which makes advanceTo()
+                    // STRUCTURALLY UNREACHABLE on Disposition_LOI: there is no target it will
+                    // write, so no hand-crafted call can skip a hop or park a sale on 'Signed'.
+                    // ⚠ THIS LINE USED TO PASS LOI_DISPOSITION_EXPLICIT_TARGETS (a three-arg call)
+                    // and carried the comment "The sell-side path is a LOOP, not a line: its two
+                    // explicit targets are the two edges of the Countered by DPEG <-> Counter
+                    // Received from Buyer cycle, which a Map<String,String> cannot hold." The loop
+                    // is retired — counter rounds moved to Counter History (Counter_Offer__c /
+                    // c/loiCounterOffer) — the constant is deleted, and the sequence is a line.
+                    // The refusal of 'Negotiation'/'Signed' here is now produced by the EMPTY set
+                    // rather than by a non-empty set that happened to exclude them. Same outcome,
+                    // stronger reason.
                     RT_DISPOSITION_LOI => new StageTypeConfig(
                         StageActionGate.DISPOSITION_DRIVER,
-                        LOI_DISPOSITION_NEXT_STAGE, LOI_DISPOSITION_EXPLICIT_TARGETS)
+                        LOI_DISPOSITION_NEXT_STAGE)
                 }),
             // ⚠ 'Negotiation_Status__c', NOT 'Stage__c' — Stage__c is derived and unwritable here.
             // See CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE above before changing this (renamed from
@@ -1441,9 +1652,32 @@ public with sharing class RecordStageAdvanceService {
             //     persona that owns it. ⚠ The mechanism named here was FLS on User.Deal_Driver__c
             //     until 2026-08-12; the flag is retired, the argument is not.
             //   - the SEQUENCE, because sharing one map after observation 7 would require the
-            //     acquisition-only values to sit on a map the disposition type also walks, and
-            //     Apex DML does not enforce record-type picklist restriction — advance() itself
-            //     would then park a sale on an acquisition-only status.
+            //     acquisition-only values to sit on a map the disposition type also walks.
+            //     ⚠ RETRACTED 2026-08-21 — THE MECHANISM, NOT THE CONCLUSION. This bullet used to
+            //     end: "and Apex DML does not enforce record-type picklist restriction —
+            //     advance() itself would then park a sale on an acquisition-only status." That is
+            //     false as stated: `Negotiation_Status__c` is `restricted`, so DML DOES enforce
+            //     the record type's subset (see the measured retraction in the class header).
+            //     The two maps may still not be collapsed, for a reason that survives the
+            //     correction and is in fact harder to argue away:
+            //       (a) The union map is `{Draft, Initial Draft} => Negotiation, Negotiation =>
+            //           Signed, Signed => Executed`. A DISPOSITION PSA sitting on 'Signed' — its
+            //           TERMINAL — stops being terminal and tries to write 'Executed'.
+            //           Disposition_PSA has not carried 'Executed' since 2026-08-21, so today the
+            //           user gets an opaque `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` from a
+            //           button the service should never have offered, instead of this service's
+            //           user-safe "There is no next step available from the Signed stage."
+            //           A broken feature reported as a platform error is not an acceptable
+            //           substitute for a refusal.
+            //       (b) 🔴 AND THAT PLATFORM BACKSTOP IS ON LOAN FROM A DECLARATIVE DECISION MADE
+            //           OUTSIDE THIS FILE. It exists only while Disposition_PSA omits 'Executed'.
+            //           The user harmonised that record type by hand once already (2026-08-21,
+            //           dropping Revised / Ready for Execution / Executed); a future harmonisation
+            //           that ADDS 'Executed' back — the natural thing to do the day sell-side
+            //           execution is wanted — silently removes the refusal, and the collapsed map
+            //           WOULD then park a sale on an acquisition-only status exactly as the old
+            //           wording claimed. Two maps is the only shape in which that outcome is
+            //           unexpressible without depending on a picklist nobody here owns.
             //
             // ── 🔴 defaultTypeKey WAS RE-CHOSEN DELIBERATELY, NOT LEFT ALONE (design C9) ──
             // It STAYS Acquisition_PSA — but the ARGUMENT for it is completely different and the
@@ -1629,18 +1863,27 @@ public with sharing class RecordStageAdvanceService {
      *
      * Added 2026-08-05 for the LOI 'Sent' branch — a broker either counters or accepts, so the deal
      * driver needs two named buttons where advance() can only derive one. Extended 2026-08-09 for
-     * the disposition NDA's 'Declined' off-ramp, and again at the Tranche 3B close-out for the
-     * DISPOSITION LOI'S NEGOTIATION LOOP — the sharpest case of the three, because its back-edge
-     * ('Counter Received from Buyer' -> 'Countered by DPEG') is not merely inconvenient to derive,
-     * it is PROVABLY inexpressible in a Map<String, String> that already maps that key forward. It
-     * mirrors StageAdvanceService.advanceTo, including the reason that method exists at all.
+     * the disposition NDA's 'Declined' off-ramp. It mirrors StageAdvanceService.advanceTo,
+     * including the reason that method exists at all.
+     *
+     * ⚠ RETRACTED 2026-08-21. This paragraph continued: "...and again at the Tranche 3B close-out
+     * for the DISPOSITION LOI'S NEGOTIATION LOOP — the sharpest case of the three, because its
+     * back-edge ('Counter Received from Buyer' -> 'Countered by DPEG') is not merely inconvenient
+     * to derive, it is PROVABLY inexpressible in a Map<String, String> that already maps that key
+     * forward." That third case is GONE: the user retired the sell-side loop and counter rounds now
+     * live on Counter History (Counter_Offer__c), so Disposition_LOI's allow-list is empty and this
+     * method is unreachable on it. Two callers remain, both acquisition-or-NDA.
      *
      * 🔴 THE ALLOW-LIST IS THE WHOLE POINT AND IS PER RECORD TYPE. Without it, any holder of
      * controller access could write ANY stage on ANY of eight objects, skipping every hop and every
      * gate — the exact hole StageAdvanceService.ALLOWED_EXPLICIT_TARGETS was created to close. Held
-     * at OBJECT level it would be only half closed: 'Declined' belongs to the disposition NDA, but
-     * Apex DML does not enforce record-type picklist restrictions, so an object-level list would
-     * write it onto an acquisition NDA just as happily. Adding a branch action means adding its
+     * at OBJECT level it would be only half closed: 'Declined' belongs to the disposition NDA, and
+     * an object-level list would offer it on an acquisition NDA just as readily.
+     * ⚠ RETRACTED 2026-08-21 — MECHANISM ONLY. The clause "but Apex DML does not enforce
+     * record-type picklist restrictions, so an object-level list would write it onto an acquisition
+     * NDA just as happily" is false for a `restricted` value set; see the class header and
+     * NDA_DISPOSITION_EXPLICIT_TARGETS for what the platform does instead (an opaque refusal, on
+     * loan from a record type this file does not own). Adding a branch action means adding its
      * stage to that RECORD TYPE's set; do NOT add derivable forward hops, which belong to advance()
      * and therefore cannot skip a step.
      *

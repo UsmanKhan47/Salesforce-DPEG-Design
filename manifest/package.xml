@@ -1813,9 +1813,7 @@
         <members>listingAlerts</members>
         <members>loiCounterOffer</members>
         <members>loiMarkCompleted</members>
-        <members>loiMarkCounterReceived</members>
         <members>loiMarkCountered</members>
-        <members>loiMarkCounteredByDpeg</members>
         <members>ndaMarkDeclined</members>
         <members>onboardingCardChild</members>
         <members>onboardingChecklist</members>
@@ -2247,9 +2245,7 @@
         <members>LOI__c.Advance_Stage</members>
         <members>LOI__c.Edit_LOI</members>
         <members>LOI__c.Mark_Completed</members>
-        <members>LOI__c.Mark_Counter_Received</members>
         <members>LOI__c.Mark_Countered</members>
-        <members>LOI__c.Mark_Countered_By_DPEG</members>
         <members>LOI__c.Submit_for_Approval</members>
         <members>LogACall</members>
         <members>NDA__c.Advance_Stage</members>

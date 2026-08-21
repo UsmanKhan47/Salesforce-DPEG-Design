@@ -21,6 +21,7 @@
         =====================================================================================
         🔴 'Executed', NOT 'Signed'. NAMING THE VALUE IS WHAT SCOPES THIS RULE TO THE
         DISPOSITION PATH, AND IT IS STRONGER THAN A RECORD TYPE TEST.
+        [SUPERSEDED 2026-08-21 - SEE THE RETRACTION BLOCK AFTER THIS SECTION. RETAINED VERBATIM.]
         =====================================================================================
         LOI__c is dual record type. 'Executed' is the DISPOSITION terminal; 'Signed' is the
         ACQUISITION terminal. An acquisition LOI can never carry 'Executed', so this rule is
@@ -39,6 +40,60 @@
         old "fully disjoint" claim). The TERMINALS did not move and remain distinct, which is
         exactly what this rule relies on. Anyone re-reading Stage__c's retraction should not
         conclude this rule is now unscoped: check which value is shared before assuming.
+
+        =====================================================================================
+        🔴 RETRACTED 2026-08-21 (user request: "Received, under review, negotiations, Signed" as
+        the disposition LOI sequence). BOTH BANNERED PARAGRAPHS ABOVE ARE RETRACTED, VERBATIM,
+        WITH THE REASON THEIR SHARED PREMISE DIED. RETAINED, NOT DELETED, PER STANDING CONVENTION.
+        =====================================================================================
+
+        RETRACTED (1), verbatim: "🔴 'Executed', NOT 'Signed'. NAMING THE VALUE IS WHAT SCOPES
+        THIS RULE TO THE DISPOSITION PATH, AND IT IS STRONGER THAN A RECORD TYPE TEST... An
+        acquisition LOI can never carry 'Executed', so this rule is structurally unreachable from
+        the acquisition path without any record type criterion at all."
+
+        RETRACTED (2), verbatim: "🔴 DO NOT 'HARMONISE' THIS WITH THE ACQUISITION TERMINAL BY
+        ADDING 'Signed' TO THE TEST. Acquisition LOIs reach 'Signed' through an approval process
+        that this rule has never gated, and adding it would block a live acquisition workflow."
+
+        THE PREMISE BOTH RESTED ON: Disposition_LOI's terminal was 'Executed' and Acquisition_LOI's
+        was 'Signed' - two DISTINCT values, so naming one scoped the rule to one record type with
+        no further test needed. THAT PREMISE IS GONE. Disposition_LOI's terminal is now 'Signed'
+        too (objects/LOI__c/recordTypes/Disposition_LOI.recordType-meta.xml), by explicit user
+        request - the two terminals are the SAME value, so a value-named rule can no longer
+        distinguish them. Repointing the naked test to 'Signed' with no further change, as
+        RETRACTION (2) forbade, WOULD have blocked every acquisition LOI reaching Signed without
+        a Final Agreed Price, exactly the live-workflow harm that paragraph warned against - which
+        is why the fix below is NOT that naive repoint.
+
+        THE FIX: a LOOKUP discriminator, NOT(ISBLANK(Disposition__c)), added as the rule's first
+        real term (after the existing transition guard). DispositionStageEntryService.
+        openDispositionLois sets Disposition__c and deliberately leaves Opportunity__c NULL on
+        every disposition LOI; every acquisition LOI has a blank Disposition__c. The term is FALSE
+        on every acquisition LOI in the org today, making the rule unreachable from the
+        acquisition path - the same structural guarantee the retracted value-naming technique
+        provided, achieved a different way now that the value itself can no longer do it alone.
+        This is the identical technique, for the identical reason, that
+        Contract_Review__c.Negotiation_Status__c's sibling PSA object used the same day for
+        exactly the same failure mode (its terminal also became shared - see that object's
+        validation-rule and record-type headers).
+
+        WHY THE LOOKUP AND NOT RecordType.DeveloperName. This object's own Is_Advance_Allowed__c
+        header already ran this exact argument for the sibling clause on this field and reached
+        the same answer: RecordType.DeveloperName excludes Master-typed rows (TestDataFactory's
+        established scratch-org fallback shape) and breaks on a record-type rename; a lookup test
+        does neither. Also survives the Master-record-type objection Counter_Price_Is_Positive's
+        header raises against a RecordType.DeveloperName test on this object family generally.
+
+        THE RULE'S API NAME IS DELIBERATELY NOT CHANGED. It still reads
+        Final_Price_Required_Before_Executed while testing 'Signed'. Renaming a ValidationRule's
+        fullName is a delete-and-recreate against a live production control; this repo already
+        ruled on the identical question on the sibling rule Completed_LOI_Before_PSA, whose header
+        states: "the API name deliberately still reads _Before_PSA - renaming a ValidationRule is
+        a delete-and-recreate, and the new value still contains 'PSA'." That rule has tested
+        'Signed' under a name saying 'Completed' since 2026-08-14 without incident. The name is
+        not the contract; &lt;description&gt; and &lt;errorMessage&gt; are what a user reads, and
+        both are repointed below.
 
         =====================================================================================
         TEXT(Stage__c), NEVER ISPICKVAL. RecordStageAdvanceService's class header is the
@@ -79,12 +134,13 @@
     -->
     <fullName>Final_Price_Required_Before_Executed</fullName>
     <active>true</active>
-    <description>Blocks an LOI moving to Executed with a blank Final Agreed Price, which would propagate a null into the Opportunity Amount and the Transaction price. Names the value Executed, so it is disposition-only by construction; acquisition ends at Signed.</description>
+    <description>Blocks an LOI moving to Signed with a blank Final Agreed Price, which would propagate a null into the Opportunity Amount and the Transaction price. Scoped to disposition only via NOT(ISBLANK(Disposition__c)); acquisition is unaffected.</description>
     <errorConditionFormula>AND(
     OR(ISNEW(), ISCHANGED(Stage__c)),
-    TEXT(Stage__c) = &quot;Executed&quot;,
+    NOT(ISBLANK(Disposition__c)),
+    TEXT(Stage__c) = &quot;Signed&quot;,
     ISBLANK(Final_Agreed_Price__c)
 )</errorConditionFormula>
-    <errorMessage>Enter the Final Agreed Price before marking this LOI Executed. The executed price is what feeds the Opportunity amount and the transaction, so it cannot be left blank at execution.</errorMessage>
+    <errorMessage>Enter the Final Agreed Price before marking this LOI Signed. The agreed price is what feeds the Opportunity amount and the transaction, so it cannot be left blank at signing.</errorMessage>
     <errorDisplayField>Final_Agreed_Price__c</errorDisplayField>
 </ValidationRule>

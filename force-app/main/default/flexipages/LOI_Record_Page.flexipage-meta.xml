@@ -130,14 +130,31 @@
            DISPOSITION Advance Stage button at step 2 of 5. That is a real sell-side outage
            averted in the formula, not on this page; see that field's header.
 
-         🔴 OPEN RESIDUAL - Submit for Approval IS NO LONGER SELF-LIMITING, AND IT IS NOT CLOSED
+         =====================================================================
+         🔴 THIS RESIDUAL IS CLOSED, 2026-08-21, BY REMEDY (a). EVERYTHING FROM THE NEXT
+         PARAGRAPH DOWN TO THE END OF REMEDY (c) IS HISTORY, NOT LIVE STATE. Every sentence
+         below that says the residual "IS NOT CLOSED" or "WAS NOT CLOSED" is SUPERSEDED. Read
+         the CLOSURE block that follows remedy (c) before acting on any of it. The three-remedy
+         analysis is kept in full because it is the record of WHY (a) was chosen over (b) and (c),
+         and because two of its stated premises turned out to be wrong in ways worth keeping.
+         =====================================================================
+
+         [SUPERSEDED 2026-08-21, KEPT VERBATIM] 🔴 OPEN RESIDUAL - Submit for Approval IS NO
+         LONGER SELF-LIMITING, AND IT IS NOT CLOSED
          HERE. 'Under Review' is carried by BOTH record types, so an acquisition driver opening a
          DISPOSITION LOI at 'Under Review' will now see Submit for Approval. Clicking it targets
          Opportunity.LOI_Approval, and a disposition LOI has no Opportunity__c, so it fails
          LOUDLY rather than doing something wrong.
 
-         WHY IT WAS NOT CLOSED, STATED SO THE NEXT READER DOES NOT ASSUME IT WAS MISSED:
-           - A FLEXIPAGE VISIBILITY RULE CANNOT EXPRESS A RECORD-TYPE TEST DIRECTLY. That is
+         [SUPERSEDED 2026-08-21] WHY IT WAS NOT CLOSED, STATED SO THE NEXT READER DOES NOT
+         ASSUME IT WAS MISSED:
+           - 🔴 THIS FIRST BULLET IS FALSIFIED. ITS OPENING SENTENCE, "A FLEXIPAGE VISIBILITY RULE
+             CANNOT EXPRESS A RECORD-TYPE TEST DIRECTLY", IS FALSE AT THE METADATA LAYER AND WAS
+             MEASURED FALSE IN THIS ORG ON 2026-08-21. Do not quote it. Its sweep claim was TRUE
+             when written and is now merely STALE. Both are dealt with in the closure block after
+             remedy (c). Retained verbatim below only so the correction has something to point at.
+           - [FALSIFIED, KEPT VERBATIM] A FLEXIPAGE VISIBILITY RULE CANNOT EXPRESS A RECORD-TYPE
+             TEST DIRECTLY. That is
              asserted in NDA__c.Is_Decline_Allowed__c's header ("so the discriminator has to be a
              field on the record") and no flexipage in this repo carries a {!Record.RecordType.*}
              criterion - a sweep of every flexipage found zero. ⚠ REPO-ASSERTED AND UNMEASURED:
@@ -172,6 +189,130 @@
                that formula would break this button silently. Recorded because it is genuinely
                the cheapest and someone will find it.
 
+         =====================================================================
+         ✅ CLOSURE, 2026-08-21. REMEDY (a) WAS TAKEN. THIS IS THE LIVE STATE.
+         =====================================================================
+
+         DECISION AND WHOSE IT IS. The user, 2026-08-21: "we don't need approval process on LOI
+         if it's related to disposition." Taken explicitly, as the three-remedy note above demands,
+         and not as a side effect of another change. Remedies (b) and (c) were NOT taken; (c) was
+         refused for exactly the reason recorded against it.
+
+         WHAT CHANGED, AND IT IS THE ONLY THING THAT CHANGED IN THIS FILE'S XML BODY. The
+         LOI__c.Submit_for_Approval entry gained a FIFTH criterion, and its booleanFilter moved
+         from '1 AND 2 AND 3 AND 4' to '1 AND 2 AND 3 AND 4 AND 5'. Still a pure chain of ANDs,
+         so the measured no-OR constraint above is respected. No other entry, and no other
+         region, was touched. Dynamic Actions was already on and was not toggled.
+
+         🔴 CORRECTED BY CODE REVIEW (C2), 2026-08-21, SAME DAY - READ BEFORE TRUSTING THE
+         OPERATOR BELOW. Criterion 5 was FIRST WRITTEN as
+         {!Record.RecordType.DeveloperName} EQUAL Acquisition_LOI. Code review caught that this
+         FAILS CLOSED on a Master-record-type LOI: RecordType.DeveloperName reads BLANK on a
+         Master row (established above, Is_Advance_Allowed__c's header), so blank EQUAL
+         'Acquisition_LOI' is FALSE and Submit for Approval would VANISH on a Master LOI - an
+         acquisition-visible regression, which the user explicitly forbade, and a direct
+         contradiction of this very object's Is_Advance_Allowed__c.field-meta.xml, which argues
+         at length that its own RecordType clause must fail OPEN on Master for exactly this
+         reason. THE OPERATOR WAS FIXED, NOT THE INTENT: criterion 5 now reads
+         {!Record.RecordType.DeveloperName} NE Disposition_LOI. Blank NE 'Disposition_LOI' is
+         TRUE, so a Master row fails OPEN (button stays) - matching the object's own convention
+         - while a Disposition_LOI row still reads TRUE for RecordType.DeveloperName EQUAL
+         'Disposition_LOI', making criterion 5 FALSE and correctly hiding the button there. It
+         remains a pure AND chain (booleanFilter unchanged, '1 AND 2 AND 3 AND 4 AND 5'), so the
+         measured no-OR constraint and the four-probe metadata validation below still apply
+         unchanged - NE was one of the same accepted comparison operators, not a new construct.
+
+         ⚠ THIS IS A ROBUSTNESS FIX, NOT AN OUTAGE FIX - SAY SO PLAINLY. Live counts measured
+         2026-08-21 against usman-dpeg: `SELECT COUNT(Id) FROM LOI__c` = 12,
+         `SELECT COUNT(Id) FROM LOI__c WHERE RecordTypeId = null` = 0. No live row is
+         Master-typed today, so the EQUAL-operator defect above never fired in production. The
+         NE fix closes a latent hazard (any future Master-typed LOI, or a TestDataFactory
+         fixture built without a record type per this repo's established scratch-org fallback
+         shape) rather than reversing an observed regression.
+
+         🔬 THE MEASUREMENT THAT BACKS IT, AND WHY IT IS NOT JUST "THE DEPLOY SUCCEEDED".
+         This page's own rule is that a successful deploy proves nothing, because this page has
+         already measured a construct (a parenthesised OR) that deploys, survives a retrieve and
+         is then ignored by the renderer. So a FOUR-PROBE CONTROL was run as check-only
+         validations against usman-dpeg on 2026-08-21, each probe a throwaway copy of this page
+         under a scratch name so nothing was created and this file was not deployed:
+
+           D  {!Record.RecordType.DeveloperName}            ACCEPTED  (Succeeded, 0 errors)
+           A  {!Record.Bogus_Nonexistent_Zzz__c}            REJECTED  "Field Bogus_Nonexistent_Zzz__c
+                                                                       does not exist. Check spelling."
+           B  {!Record.RecordType.Bogus_Nonexistent_Zzz__c} REJECTED  same message
+           C  {!Record.Zzz_Not_A_Rel__r.Name}               REJECTED  "Field Zzz_Not_A_Rel__r does
+                                                                       not exist. Check spelling."
+
+         🔴 PROBE B IS THE ONE THAT MATTERS. A bogus field placed BEHIND the RecordType hop was
+         rejected by name. That means the validator TRAVERSED the RecordType relationship and
+         resolved the field on the far side of it. So probe D's acceptance is a resolved
+         reference, not a string the validator waved through. That is a categorically stronger
+         result than "it deployed", and it is precisely the distinction the parenthesised-OR
+         precedent teaches: a booleanFilter is a logic expression with NO reference to resolve, so
+         nothing was ever going to reject it; a leftValue IS a reference and does get resolved.
+         The two are different failure classes and the OR precedent does not transfer here.
+
+         REPO SWEEP, RE-RUN RATHER THAN INHERITED. 31 flexipages, 108 <leftValue> criteria in
+         total, ZERO referencing RecordType before this change. The sweep claim in the falsified
+         bullet above was therefore accurate when written; it is now simply out of date, and this
+         entry is the first and only such criterion in the repo. The one pre-existing live mention
+         elsewhere is Opportunity_Record_Page's <fieldItem>Record.RecordTypeId</fieldItem>, which
+         is a field DISPLAYED on that page, not a visibility criterion, and is not a precedent.
+
+         ⚠ WHAT IS STILL NOT PROVEN, AND CANNOT BE PROVEN FROM A REPO. RENDERER BEHAVIOUR. A
+         check-only validation exercises the metadata layer only. Nobody has yet seen this rule
+         evaluated at runtime. The three-direction probe below is the ONLY thing that closes it,
+         and it must be run by a human after the real deploy. ALL THREE directions are required:
+         a rule the renderer silently ignores looks IDENTICAL to a rule that works, if you only
+         open the record where the button is supposed to be hidden. The third direction (Master)
+         was ADDED by code review (C2), because the NE-operator fix is the only thing this
+         criterion can newly affect - the EQUAL-operator version could never have shown the
+         button on a Master row in the first place, so direction 3 did not exist before the fix.
+           1. DISPOSITION_LOI at Stage__c = 'Under Review', opened by a user holding
+              Acquisition_Deal_Actions  =>  Submit for Approval MUST BE ABSENT.
+           2. ACQUISITION_LOI at Stage__c = 'Under Review' with LOI_Status__c neither
+              'Pending Approval' nor 'Approved', same user  =>  Submit for Approval MUST STILL
+              BE PRESENT. If this one is missing, the criterion is being evaluated but is
+              evaluating FALSE on the acquisition side, and the entry must be reverted.
+           3. MASTER-record-type LOI (no record type assigned) at Stage__c = 'Under Review' with
+              LOI_Status__c neither 'Pending Approval' nor 'Approved', same user  =>  Submit for
+              Approval MUST STILL BE PRESENT. No live row is Master-typed today (measured count
+              above is 0 of 12), so this direction has to be exercised against a throwaway
+              scratch/test row, not a production record - do not create a Master-typed row on
+              usman-dpeg to run this probe. If this direction fails (button absent on a Master
+              row), criterion 5 is failing closed exactly as the pre-fix EQUAL operator did, and
+              the fix must be re-examined before anything else in this block is trusted.
+         If direction 1 fails (button still shows on the disposition LOI), the criterion is being
+         ignored by the renderer exactly as the OR was, and remedy (b) is the fallback with its
+         FLS cost accepted. Do NOT fall back to (c).
+
+         FOUR ADJACENT FINDINGS, REPORTED AND DELIBERATELY NOT FIXED HERE. Each is a separate
+         decision and none was assumed:
+           1. THIS PAGE IS NOT THE ONLY SURFACE. layouts/LOI__c-LOI Layout.layout-meta.xml
+              carries LOI__c.Submit_for_Approval in its platformActionList at sortOrder 1. This
+              page's Dynamic Actions list overrides that list for the highlights panel, so the
+              layout entry is dormant WHILE this page is the assigned page. It is assigned by
+              actionOverride in BOTH Acquisition.app and Disposition.app, so there is no app
+              today that falls back to the layout. Any future context that renders LOI__c on the
+              default layout instead gets the button back, unconditionally and with no record-type
+              test at all. The same single layout serves both record types, and it also exposes
+              Approved_Date__c, Approved_By__c and Approval_Comments__c on a disposition LOI.
+           2. LOI_Status__c OFFERS 'Pending Approval' AND 'Approved' ON Disposition_LOI. Both
+              record types carry the identical nine-value set. Removing them from the disposition
+              record type is a picklist-removal sweep, not a page change, and is out of scope here.
+           3. LOI_Path_Disposition CONTAINS NO APPROVAL STEP. Verified 2026-08-21 against the
+              CURRENT four-step sequence (Received, Under Review, Negotiation, Signed - narrowed
+              the same day this finding's original five-step enumeration went stale; see that
+              file's own header). Still nothing to change - no step in either version named an
+              approval concept.
+           4. THERE IS NO APPROVAL PROCESS ON LOI__c AT ALL. approvalProcesses/ holds seven files
+              and none is parented by LOI__c; the only LOI approval in the org is
+              Opportunity.LOI_Approval. This page carries no approval-history related list either
+              (its only related list is CombinedAttachments), and the layout's only related list
+              is RelatedNoteList. So after this change the disposition LOI has no reachable
+              approval surface in the Lightning page itself.
+
          ⚠ TIMING - THIS FILE MUST DEPLOY AT P3-D2 WITH THE APEX, NOT EARLIER, AND THE REASON IS
          NOT SYMMETRY. The three repointed criteria are correct only AFTER the row migration; a
          transitional duplicate-entry shape (one entry per value, old and new, the shape the two
@@ -181,6 +322,70 @@
          would then write a RETIRED value onto a migrated LOI - moving the record backwards into
          a stage the new sequence has no entry for. A hidden button for the length of one
          maintenance window is strictly better than a visible button wired to the wrong constant.
+
+         =====================================================================================
+         🔴 G4 OVERRIDE RECORDED (C3), 2026-08-21. THE DESIGN'S GATE G4 SAID SHIP THE
+         Submit_for_Approval CHANGE FIRST, STANDALONE, THEN THE REST OF THIS WAVE - SO A FAILED
+         RENDERER PROBE HAS A CLEAN REVERT BOUNDARY. THAT DID NOT HAPPEN: THE Submit_for_Approval
+         CRITERION-5 EDIT AND THE A6 QUICK-ACTION DELETIONS BELOW BOTH LANDED IN THIS SAME FILE.
+         =====================================================================================
+
+         RESOLUTION TAKEN, NOT RE-LITIGATED HERE. LOI_Record_Page ships in DEPLOY STEP 1 (with
+         DPEG_Disposition_Edit, Disposition.app, and the offer approval process) - i.e. BEFORE
+         the stage wave - which honours G4's INTENT (a clean, early, isolated deploy of this
+         page) even though it does not honour G4's literal STANDALONE-FILE mechanism. The A6
+         action-entry deletions ride along in this same step, and that is safe for two
+         independent reasons: (1) removing a FlexiPage reference to a quick action that STILL
+         EXISTS in the org is harmless - nothing downstream breaks by a page simply no longer
+         pointing at a live action - and (2) the only live disposition LOI is at 'Under Review'
+         (see the runtime probe directions above), so neither retired button
+         (Mark_Countered_By_DPEG, Mark_Counter_Received - both gated on 'Countered by DPEG' /
+         'Counter Received from Buyer') is reachable from that record's current stage regardless
+         of whether their entries are present or absent.
+
+         PRECISE REVERT RECIPE IF PROBE DIRECTION 1 FAILS (button still shows on a disposition
+         LOI at 'Under Review'). Revert ONLY the five-criterion visibilityRule block on the
+         LOI__c.Submit_for_Approval valueListItems entry - NOT `git revert` of the deploying
+         commit. A full commit revert would ALSO resurrect the two deleted
+         LOI__c.Mark_Countered_By_DPEG / LOI__c.Mark_Counter_Received valueListItems entries
+         this same file removes under A6, and those two quick actions are staged for deletion
+         via destructiveChangesPost in this same wave - reverting their FlexiPage references
+         after that deletion runs would leave a live &lt;valueListItems&gt; reference to a
+         quick action that no longer exists, which blocks any subsequent deploy of this page. A
+         targeted revert of criterion 5 alone (restore Submit_for_Approval's booleanFilter to
+         '1 AND 2 AND 3 AND 4' and remove criterion 5) has no such dependency and is the correct
+         narrow fix.
+
+         =====================================================================================
+         🔴 AMENDED 2026-08-21 (disposition LOI stage narrowing, gate A6). THE TWO
+         Disposition_Deal_Actions ENTRIES FOR LOI__c.Mark_Countered_By_DPEG AND
+         LOI__c.Mark_Counter_Received ARE DELETED FROM THIS PAGE. NOTHING ELSE IN THIS FILE WAS
+         TOUCHED BY THIS EDIT - NOT Submit_for_Approval (which carries a separate, earlier,
+         already-uncommitted change - see its own criterion 5), NOT either Advance_Stage entry,
+         NOT Mark_Countered, NOT Mark_Completed, AND enableActionsConfiguration WAS NOT TOGGLED
+         (already true; toggling it silently empties this page's whole action bar - the same
+         hazard the 2026-08-09 note above already recorded).
+         =====================================================================================
+
+         WHY: 'Countered by DPEG' and 'Counter Received from Buyer' - the two Stage__c values
+         these buttons' visibilityRules named - are REMOVED from the Disposition_LOI record type
+         by this same change (user request: "Received, under review, negotiations, Signed"). The
+         negotiation LOOP these two buttons drove is retired; counter rounds are now recorded
+         entirely on Counter History (Counter_Offer__c / c/loiCounterOffer, unchanged) while the
+         record sits at the single 'Negotiation' stage, moved by the ordinary Advance Stage
+         action. Both quick actions and their LWC bundles (loiMarkCounteredByDpeg,
+         loiMarkCounterReceived) are retired in the same wave - staged as destructiveChangesPost,
+         not as a file removal alone, because a live FlexiPage &lt;valueListItems&gt; reference to
+         either quick action would otherwise block their deletion.
+
+         THE TWO ACQUISITION Mark_* ENTRIES (Mark_Countered, Mark_Completed) STAY SELF-LIMITING,
+         UNCHANGED, FOR THE SAME REASON THEY ALWAYS WERE: each is gated on
+         {!Record.Stage__c} EQUAL 'Submitted', and 'Submitted' is NOT added to Disposition_LOI by
+         this change (see that record type's own header, which retracts its "do not add for
+         symmetry" paragraph for 'Negotiation' and 'Signed' but explicitly states the 'Submitted'
+         half of that same warning STANDS). Adding 'Submitted' here would have surfaced both
+         acquisition-only buttons on a sale; it was not added, so this file needed no change to
+         either entry to keep that true.
     -->
     <flexiPageRegions>
         <itemInstances>
@@ -191,7 +396,7 @@
                         <valueListItems>
                             <value>LOI__c.Submit_for_Approval</value>
                             <visibilityRule>
-                                <booleanFilter>1 AND 2 AND 3 AND 4</booleanFilter>
+                                <booleanFilter>1 AND 2 AND 3 AND 4 AND 5</booleanFilter>
                                 <criteria>
                                     <leftValue>{!$Permission.CustomPermission.Acquisition_Deal_Actions}</leftValue>
                                     <operator>EQUAL</operator>
@@ -211,6 +416,11 @@
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>Under Review</rightValue>
+                                </criteria>
+                                <criteria>
+                                    <leftValue>{!Record.RecordType.DeveloperName}</leftValue>
+                                    <operator>NE</operator>
+                                    <rightValue>Disposition_LOI</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>
@@ -275,38 +485,6 @@
                                     <leftValue>{!Record.Stage__c}</leftValue>
                                     <operator>EQUAL</operator>
                                     <rightValue>Submitted</rightValue>
-                                </criteria>
-                            </visibilityRule>
-                        </valueListItems>
-                        <valueListItems>
-                            <value>LOI__c.Mark_Countered_By_DPEG</value>
-                            <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
-                                <criteria>
-                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>true</rightValue>
-                                </criteria>
-                                <criteria>
-                                    <leftValue>{!Record.Stage__c}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>Counter Received from Buyer</rightValue>
-                                </criteria>
-                            </visibilityRule>
-                        </valueListItems>
-                        <valueListItems>
-                            <value>LOI__c.Mark_Counter_Received</value>
-                            <visibilityRule>
-                                <booleanFilter>1 AND 2</booleanFilter>
-                                <criteria>
-                                    <leftValue>{!$Permission.CustomPermission.Disposition_Deal_Actions}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>true</rightValue>
-                                </criteria>
-                                <criteria>
-                                    <leftValue>{!Record.Stage__c}</leftValue>
-                                    <operator>EQUAL</operator>
-                                    <rightValue>Countered by DPEG</rightValue>
                                 </criteria>
                             </visibilityRule>
                         </valueListItems>

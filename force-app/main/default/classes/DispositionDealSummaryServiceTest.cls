@@ -263,14 +263,34 @@ private class DispositionDealSummaryServiceTest {
      * service header's C-10 / C-11 discussion. This proves both the positive shape (Stage__c,
      * Offer_Price__c, Ball_In_Court__c populate) and, by serializing the DTO, that no member named
      * for either excluded field exists on the wire at all.
+     *
+     * ⚠ REPOINTED 2026-08-21. The fixture stage was `'Executed'`, which the user removed from the
+     * Disposition_LOI record type; the sell-side terminal is now `'Signed'`. It is repointed
+     * because the state is wrong, not because it failed.
+     * ⚠ RETRACTED 2026-08-21 — the hedge that used to sit here read: "🔴 THIS TEST MIGHT NOT HAVE
+     * GONE RED ON ITS OWN — `'Executed'` stays ACTIVE on the master value set (design gate G3) and
+     * record-type picklist restriction is repo-asserted UI-only, so the insert could well have been
+     * accepted and the test would have gone on asserting a state no disposition LOI can
+     * legitimately occupy." The premise is false: `LOI__c.Stage__c` is `restricted`, and a
+     * restricted value set's record-type subset IS enforced by Apex DML (measured 2026-08-21 on
+     * this exact field and value — see RecordStageAdvanceService's class header). The old fixture
+     * would have gone RED at the INSERT with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST, loudly. The
+     * repoint is still correct; it just was not the rescue this paragraph claimed it was.
+     * ⚠ The DTO membership decisions (C-10 / C-11) are UNCHANGED — but C-11's REASON changed, and
+     * the assertion message below had to change with it or it would have become a lie. See the
+     * comment on that assertion.
      */
     @isTest
     static void summarise_loi_excludesStatusAndSignedDateFields() {
         Disposition__c d = newDisposition();
         LOI__c loi = TestDataFactory.createDispositionLoi(d.Id, false);
-        loi.Stage__c = 'Executed';
-        // Final_Agreed_Price__c is required by an active validation rule the instant Stage__c is
-        // 'Executed' (unconditional, not ISCHANGED-guarded — it fires on insert too).
+        loi.Stage__c = 'Signed';
+        // Final_Agreed_Price__c is required by Final_Price_Required_Before_Executed the instant
+        // Stage__c is the sell-side terminal. ⚠ From 2026-08-21 that rule reads
+        // OR(ISNEW(), ISCHANGED(Stage__c)) AND NOT(ISBLANK(Disposition__c)) AND
+        // TEXT(Stage__c) = 'Signed' AND ISBLANK(Final_Agreed_Price__c) — ISNEW() still means it
+        // fires on THIS insert, and createDispositionLoi parents the row to `d`, so the new
+        // discriminator term is TRUE here. The price is not optional.
         loi.Final_Agreed_Price__c = 2000000;
         loi.Offer_Price__c = 2000000;
         loi.Ball_In_Court__c = 'Buyer'; // 'Seller' is invalid on Disposition_LOI — see the tie-break test's header
@@ -280,17 +300,30 @@ private class DispositionDealSummaryServiceTest {
         DispositionDealSummaryService.DealSummary summary = DispositionDealSummaryService.summarise(d.Id);
         Test.stopTest();
 
-        Assert.areEqual('Executed', summary.loiStage, 'Stage__c is the real sell-side vocabulary');
+        Assert.areEqual('Signed', summary.loiStage,
+            'Stage__c is the real sell-side vocabulary, and the service passes it through with no '
+            + 'mapping. ⚠ "Signed" is now the terminal on BOTH LOI record types, so this assertion '
+            + 'no longer doubles as evidence that a disposition row was read');
         Assert.areEqual(2000000, summary.loiOfferPrice, 'Offer_Price__c must populate');
         Assert.areEqual('Buyer', summary.loiBallInCourt, 'Ball_In_Court__c must populate');
 
         String json = JSON.serialize(summary);
+        // 🔴 THE MESSAGE BELOW WAS REWRITTEN 2026-08-21 BECAUSE ITS OLD JUSTIFICATION BECAME FALSE
+        // WHILE THE ASSERTION STAYED GREEN. It read: "LOI_Signed_Date__c is structurally always
+        // blank on a sale (Signed Status Sync keys on the ACQUISITION terminal) and must never be a
+        // DTO member". LOI_Signed_Status_Sync is a before-save flow on LOI__c with no record-type
+        // and no lookup criterion, and 'Signed' is now the DISPOSITION terminal — so that flow
+        // fires on THIS VERY FIXTURE and LOI_Signed_Date__c is populated on it. The assertion
+        // passes either way (the DTO simply has no such member), which is exactly why the message
+        // had to be corrected rather than trusted.
         Assert.isFalse(json.contains('loiSignedDate'),
-            'LOI_Signed_Date__c is structurally always blank on a sale (Signed Status Sync keys on '
-            + 'the ACQUISITION terminal) and must never be a DTO member: ' + json);
+            'LOI_Signed_Date__c must not be a DTO member. ⚠ NOT because it is blank — since '
+            + '2026-08-21 LOI_Signed_Status_Sync fires on disposition LOIs reaching Signed and '
+            + 'stamps a REAL date on this fixture — but because the card deliberately does not show '
+            + 'it (design C-11, now a product decision rather than a structural fact): ' + json);
         Assert.isFalse(json.contains('loiStatus'),
             'LOI_Status__c is never set by any automation on a sale (would show its Draft default '
-            + 'beside an Executed Stage) and must never be a DTO member: ' + json);
+            + 'beside a Signed Stage) and must never be a DTO member: ' + json);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -302,7 +335,7 @@ private class DispositionDealSummaryServiceTest {
         Disposition__c d = newDisposition();
         List<Contract_Review__c> reviews = TestDataFactory.createDispositionContractReviews(2, d.Id, false);
         reviews[0].Negotiation_Status__c = 'Initial Draft';
-        reviews[1].Negotiation_Status__c = 'Revised';
+        reviews[1].Negotiation_Status__c = 'Negotiation';
         reviews[1].Execution_Date__c = null;
         insert reviews;
         DateTime tiedMoment = System.now();
@@ -325,22 +358,37 @@ private class DispositionDealSummaryServiceTest {
 
     /**
      * 🔴 `psaStatus` MUST carry `Negotiation_Status__c` (the SOURCE field), never `Stage__c` (a
-     * derived projection that collapses 'Revised' and 'Ready for Execution' into one 'Review'
-     * value). 'Revised' is asserted directly, and 'Review' — what the projection would show instead
-     * — is asserted absent, so a future refactor that swaps the selected field breaks this loudly.
+     * derived projection). The status is asserted directly, and 'Review' — what the projection
+     * would show instead — is asserted absent, so a future refactor that swaps the selected field
+     * breaks this loudly.
+     *
+     * ⚠ REPOINTED 2026-08-21 from 'Revised', which the user removed from the Disposition_PSA record
+     * type. The fixture is 'Negotiation' now.
+     * ✅ THE TEST GOT STRONGER, NOT WEAKER, AND IT IS WORTH SAYING WHY. This comment used to
+     * justify itself with "a derived projection that collapses 'Revised' and 'Ready for Execution'
+     * into one 'Review' value" — two source values mapping to one projected value. That is still
+     * exactly the situation: `Contract_Review_Stage_Sync` sends everything except Initial
+     * Draft/Draft/Executed to `Stage__c = 'Review'`, so BOTH surviving mid/late disposition
+     * statuses ('Negotiation' and 'Signed') now collapse into 'Review'. The projection is therefore
+     * MORE lossy on the sell side than before, not less — a disposition PSA sitting at its own
+     * TERMINAL 'Signed' projects to 'Review'. Reading the source field is what keeps this card
+     * honest, and that is now a user-visible difference rather than a purity argument.
+     * ⚠ That projection gap is a known open DECLARATIVE issue — see the block in
+     * RecordStageAdvanceService above CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE. It is not this test's
+     * to fix and this test must not be "corrected" to expect 'Review'.
      */
     @isTest
     static void summarise_psa_readsSourceNegotiationStatusNotStageProjection() {
         Disposition__c d = newDisposition();
         Contract_Review__c cr = TestDataFactory.createDispositionContractReview(d.Id, false);
-        cr.Negotiation_Status__c = 'Revised';
+        cr.Negotiation_Status__c = 'Negotiation';
         insert cr;
 
         Test.startTest();
         DispositionDealSummaryService.DealSummary summary = DispositionDealSummaryService.summarise(d.Id);
         Test.stopTest();
 
-        Assert.areEqual('Revised', summary.psaStatus,
+        Assert.areEqual('Negotiation', summary.psaStatus,
             'The source field value must pass through unmodified');
         Assert.areNotEqual('Review', summary.psaStatus,
             'The derived Stage__c projection value must never leak in here');
@@ -434,7 +482,7 @@ private class DispositionDealSummaryServiceTest {
         // validation rule that 'Executed' requires (see the tie-break test's header).
         LOI__c loi = TestDataFactory.createDispositionLoi(d.Id, true);
         Contract_Review__c cr = TestDataFactory.createDispositionContractReview(d.Id, false);
-        cr.Negotiation_Status__c = 'Ready for Execution';
+        cr.Negotiation_Status__c = 'Signed';
         insert cr;
 
         User restricted = userDeniedAccessTo('LOI__c');
@@ -459,7 +507,7 @@ private class DispositionDealSummaryServiceTest {
 
         Assert.isFalse(summary.psaUnavailable, 'The PSA read was fully granted and must succeed');
         Assert.isTrue(summary.hasPsa, 'The PSA read must find the real row');
-        Assert.areEqual('Ready for Execution', summary.psaStatus, 'The PSA row must carry its real status');
+        Assert.areEqual('Signed', summary.psaStatus, 'The PSA row must carry its real status'); // repointed 2026-08-21: 'Ready for Execution' is off Disposition_PSA
     }
 
     /**
@@ -530,7 +578,7 @@ private class DispositionDealSummaryServiceTest {
         loi.Stage__c = 'Under Review';
         insert loi;
         Contract_Review__c cr = TestDataFactory.createDispositionContractReview(d.Id, false);
-        cr.Negotiation_Status__c = 'Revised';
+        cr.Negotiation_Status__c = 'Negotiation';
         insert cr;
 
         User restricted = userDeniedAccessTo('NDA__c');
@@ -552,7 +600,7 @@ private class DispositionDealSummaryServiceTest {
         Assert.areEqual('Under Review', summary.loiStage, 'The LOI row must carry its real stage');
         Assert.isFalse(summary.psaUnavailable, 'The PSA read was fully granted and must succeed');
         Assert.isTrue(summary.hasPsa, 'The PSA read must find the real row');
-        Assert.areEqual('Revised', summary.psaStatus, 'The PSA row must carry its real status');
+        Assert.areEqual('Negotiation', summary.psaStatus, 'The PSA row must carry its real status'); // repointed 2026-08-21: 'Revised' is off Disposition_PSA
     }
 
     /** Symmetric proof on the PSA row: denying Contract_Review__c degrades only that row. */
@@ -566,7 +614,7 @@ private class DispositionDealSummaryServiceTest {
         loi.Stage__c = 'Under Review';
         insert loi;
         Contract_Review__c cr = TestDataFactory.createDispositionContractReview(d.Id, false);
-        cr.Negotiation_Status__c = 'Revised';
+        cr.Negotiation_Status__c = 'Negotiation';
         insert cr;
 
         User restricted = userDeniedAccessTo('Contract_Review__c');
@@ -614,7 +662,7 @@ private class DispositionDealSummaryServiceTest {
         loi.Stage__c = 'Under Review';
         insert loi;
         Contract_Review__c cr = TestDataFactory.createDispositionContractReview(d.Id, false);
-        cr.Negotiation_Status__c = 'Revised';
+        cr.Negotiation_Status__c = 'Negotiation';
         insert cr;
 
         User restricted = userDeniedAccessTo('Disposition__c');
@@ -672,7 +720,7 @@ private class DispositionDealSummaryServiceTest {
         insert lois;
         List<Contract_Review__c> reviews = TestDataFactory.createDispositionContractReviews(2, d.Id, false);
         reviews[0].Negotiation_Status__c = 'Initial Draft';
-        reviews[1].Negotiation_Status__c = 'Revised';
+        reviews[1].Negotiation_Status__c = 'Negotiation';
         insert reviews;
 
         DateTime tiedMoment = System.now();

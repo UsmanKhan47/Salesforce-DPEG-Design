@@ -151,12 +151,63 @@
          sentence explaining the over-cap fix contained a literal double hyphen, which an XML
          comment CANNOT contain, so the prose about a deploy defect introduced a deploy defect.
          Use a single hyphen, a semicolon or a reword. Never write two hyphens in a row anywhere
-         inside a comment body in this repo, including inside a quoted CLI flag. -->
+         inside a comment body in this repo, including inside a quoted CLI flag.
+
+         =====================================================================================
+         AMENDED 2026-08-21 (disposition LOI stage narrowing, user request). THE FORMULA IS
+         UNCHANGED, NOT ONE CHARACTER OF THE formula BELOW WAS EDITED. ONLY THIS COMMENT, THE
+         description AND THE inlineHelpText CHANGED. VERIFY BY DIFF, NOT BY THIS SENTENCE.
+         =====================================================================================
+
+         WHY NO FORMULA CHANGE WAS NEEDED. Disposition_LOI's terminal moved from 'Executed' to
+         'Signed' (objects/LOI__c/recordTypes/Disposition_LOI.recordType-meta.xml). Clause 1,
+         TEXT(Stage__c) &lt;&gt; "Signed", was ALREADY record-type-agnostic - it excludes
+         'Signed' regardless of which record type carries it - so it already covers the new
+         disposition terminal correctly with no edit. Re-verified against the new sequence: at
+         Received/Under Review/Negotiation the formula is TRUE (button shown); at Signed, clause 1
+         alone makes it FALSE (button hidden, correctly terminal on both record types now).
+
+         CLAUSE 2, TEXT(Stage__c) &lt;&gt; "Executed", IS RE-ARGUED HERE, NOT JUST RE-STATED.
+         THE ORIGINAL REASON FOR KEEPING IT IS PARTLY FALSIFIED BY A MEASUREMENT MADE THE SAME DAY.
+         The design pass that authorised this change originally argued the clause stays live
+         "because the repo's standing claim that record-type picklist restriction is UI-only means
+         a data load or direct Apex write can still park a row on it." THAT PREMISE IS NOW
+         MEASURED FALSE FOR ANY ROW THAT HAS A RECORD TYPE ASSIGNED: the developer agent reproduced
+         INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST inserting a Disposition_LOI row with
+         Stage__c = 'Signed' before the record type's picklistValues block included it - this field
+         is restricted=true (see valueSet on Stage__c), and restriction on a RESTRICTED value set
+         IS enforced by Apex DML on this org. A direct write or data load of Stage__c = 'Executed'
+         against an Acquisition_LOI- or Disposition_LOI-typed row would now be REJECTED at DML,
+         not silently accepted - clause 2 cannot fire for either population.
+
+         CLAUSE 2 IS KEPT ANYWAY, FOR A NARROWER AND STILL-REAL REASON: A MASTER-TYPE ROW. This
+         field's own header, above, already establishes that a Master-record-type LOI reads BLANK
+         on the RecordType merge field and is NOT constrained by either record type's
+         picklistValues allow-list - there is no "Master record type's inclusion list" for the
+         restriction to check against, so the DML enforcement just measured does not apply to a
+         Master-typed row. 'Executed' stays ACTIVE on the master Stage__c field (orphaned, not
+         deactivated - see that field's own 2026-08-21 retraction), so a Master-typed LOI
+         genuinely CAN still be saved at Stage__c = 'Executed' today, by a data load, a direct
+         Apex write, or a TestDataFactory fixture built without a record type (this repo's own
+         established scratch-org fallback shape, cited in RecordStageAdvanceService's and
+         NDA_Signed_Status_Sync's headers). For that one population, clause 2 is the only thing
+         hiding Advance Stage at a stage with no legitimate next step, and removing it would let
+         the button render on a Master-typed row stuck at 'Executed' with no clause left to catch
+         it.
+
+         WHAT THIS RETRACTS. Not the CONCLUSION ("keep clause 2") - that still holds - but the
+         REASON. It is no longer a live guard against "a data load or direct Apex write" on the
+         two real record types; it is a narrow guard against one specific degenerate shape,
+         Master-typed rows. The distinction matters for the next reader deciding whether to
+         remove it: removing it changes nothing observable for any Acquisition_LOI or
+         Disposition_LOI row today, but does remove real coverage for the Master-row edge case.
+         Revisit only if that edge case is itself ever closed off (e.g. by deactivating 'Executed'
+         on the field, which this pass deliberately did not do). -->
 
     <fullName>Is_Advance_Allowed__c</fullName>
     <label>Is Advance Allowed</label>
-    <description>Backs the Advance Stage button&apos;s visibility on the LOI record page, on BOTH record types. True when the generic one-hop advance is legitimate: not at a terminal stage (Signed on acquisition, Executed on disposition), not at the acquisition branch point (Submitted), not at the acquisition approval hop (Under Review) unless the LOI is Approved, and not while an approval is pending. The Under Review clause is guarded by RecordType because that value is SHARED with Disposition_LOI from 2026-08-14 - unguarded it would hide the sell-side button at step 2 of 5.</description>
-    <inlineHelpText>True when the Advance Stage button should be available on this LOI, on either record type. It turns off at the terminal stage (Signed/Executed), at the branch point (Submitted), and at Under Review on an acquisition LOI until it is approved.</inlineHelpText>
+    <description>Backs the Advance Stage button&apos;s visibility on the LOI record page, on BOTH record types. True when the generic one-hop advance is legitimate: not at a terminal stage (Signed, shared by both record types from 2026-08-21), not at the acquisition branch point (Submitted), not at the acquisition approval hop (Under Review) unless the LOI is Approved, and not while an approval is pending. The Under Review clause is guarded by RecordType because that value is SHARED with Disposition_LOI from 2026-08-14 - unguarded it would hide the sell-side button at step 2 of 5. The Executed clause is retained though Executed is now on no record type - see the XML comment for why.</description>
+    <inlineHelpText>True when the Advance Stage button should be available on this LOI, on either record type. It turns off at the terminal stage (Signed), at the branch point (Submitted), and at Under Review on an acquisition LOI until it is approved.</inlineHelpText>
     <type>Checkbox</type>
     <formula><![CDATA[AND(
   TEXT(Stage__c) <> "Signed",

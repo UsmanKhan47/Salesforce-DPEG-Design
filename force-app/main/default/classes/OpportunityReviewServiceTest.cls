@@ -632,14 +632,20 @@ private class OpportunityReviewServiceTest {
      * Observation 7 removes 'Initial Draft' from `Acquisition_PSA`, so the default became a value
      * this record type does not carry.
      *
-     * 🔴 AND THAT IS INVISIBLE WITHOUT THIS ASSERTION. Apex DML does NOT enforce record-type
-     * picklist restriction, so the insert commits happily on the off-set value: no exception, no
-     * error, a green deploy, and — critically — `contractReviewCreatesOnUpdate` and
-     * `contractReviewBlock_stampsTheAcquisitionRecordType` both stay GREEN, because neither looks at
-     * the status. The damage only surfaces in the UI: the Path renders blank, and
-     * `RecordStageAdvanceService.CONTRACT_REVIEW_ACQUISITION_NEXT_STAGE` has no entry for 'Initial
-     * Draft', so Advance Stage refuses on the very first click. Every deal entering
-     * 'Under Contract (PSA)' would produce one such record.
+     * ⚠ RETRACTED 2026-08-21 — THE PARAGRAPH THAT SAT HERE WAS THE STRONGEST ARGUMENT FOR THIS
+     * TEST AND ITS PREMISE IS FALSE. It read: "🔴 AND THAT IS INVISIBLE WITHOUT THIS ASSERTION.
+     * Apex DML does NOT enforce record-type picklist restriction, so the insert commits happily on
+     * the off-set value: no exception, no error, a green deploy, and — critically —
+     * `contractReviewCreatesOnUpdate` and `contractReviewBlock_stampsTheAcquisitionRecordType` both
+     * stay GREEN, because neither looks at the status. The damage only surfaces in the UI: the Path
+     * renders blank ... Every deal entering 'Under Contract (PSA)' would produce one such record."
+     * `Negotiation_Status__c` is `restricted` and this exact rejection was MEASURED on 2026-08-21.
+     * So the regression would NOT be invisible: the two sibling tests named above would go RED at
+     * their own fixture, because the trigger's insert throws and rolls their Opportunity save back.
+     * ⇒ WHAT THIS TEST IS STILL FOR, stated honestly and smaller than before: it is the only test
+     * that names the CORRECT value. The siblings would report "your Opportunity save failed" with a
+     * platform error code; this one reports which constant is wrong and why the field default is
+     * not the fix. Keep it — a diagnosis is worth having even when a detector already exists.
      *
      * ── WHY IT IS NOT SOLVED BY MOVING THE FIELD DEFAULT ─────────────────────
      * `Disposition_PSA` still runs on 'Initial Draft' — `DispositionStageEntryService` seeds it
@@ -675,10 +681,12 @@ private class OpportunityReviewServiceTest {
         Assert.areEqual('Draft', created.Negotiation_Status__c,
             'The auto-created ACQUISITION Contract Review must be seeded with Negotiation_Status__c '
             + '= Draft EXPLICITLY. "Initial Draft" here means the explicit stamp was removed and the '
-            + 'FIELD-LEVEL DEFAULT took over — a Disposition_PSA value. Apex DML does not enforce '
-            + 'record-type picklist restriction, so that commits silently and every deal entering '
-            + '"Under Contract (PSA)" gets a record whose Path is blank and whose Advance Stage '
-            + 'button refuses on the first click. Do NOT fix this by changing the field default: '
+            + 'FIELD-LEVEL DEFAULT took over — a Disposition_PSA value. ⚠ 2026-08-21: this message '
+            + 'used to continue "Apex DML does not enforce record-type picklist restriction, so '
+            + 'that commits silently"; it does not — the field is RESTRICTED, the insert throws '
+            + 'INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST inside the trigger, and every deal entering '
+            + '"Under Contract (PSA)" is BLOCKED rather than quietly damaged. '
+            + 'Do NOT fix this by changing the field default: '
             + 'Disposition_PSA still runs on Initial Draft (requirements O3, a hard stop).');
 
         // 🔴 THE SEED MUST BE ON THE SEQUENCE, NOT MERELY THE RIGHT STRING. This is what a

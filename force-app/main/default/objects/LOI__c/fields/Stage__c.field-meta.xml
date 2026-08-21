@@ -36,10 +36,18 @@
         the sequence that is now ambiguous, and the one live consequence is the approval gate:
         an acquisition LOI at 'Under Review' is awaiting approval, a disposition LOI at
         'Under Review' is being read by DPEG and has no approval concept at all.
+        🔴 RETRACTED 2026-08-21, verbatim: "The two terminals stay distinct - 'Signed' on
+        acquisition, 'Executed' on disposition - so every terminal-state test can still be
+        written by naming values." Disposition_LOI's terminal moved to 'Signed' (user request);
+        BOTH record types now terminate on the same value. See the master retraction block near
+        the end of this comment for the full consequence and how the one live terminal-state test
+        on this object, Is_Advance_Allowed__c, survived it anyway.
 
-        ORDERING - CHECKED, NOT ASSUMED. Runtime Path order comes from THIS file's value order
-        (sorted=false) filtered by the record type; a record type can only include or exclude,
-        never re-order. The three new values are APPENDED (positions 11-13), which yields:
+        ORDERING - CHECKED, NOT ASSUMED [ARITHMETIC BELOW WAS CORRECT 2026-08-14 TO 2026-08-21;
+        SEE THE MASTER RETRACTION NEAR THE END OF THIS COMMENT FOR THE CURRENT RENDERING]. Runtime
+        Path order comes from THIS file's value order (sorted=false) filtered by the record type;
+        a record type can only include or exclude, never re-order. The three new values are
+        APPENDED (positions 11-13), which yields:
           Acquisition_LOI  -> Draft(1), Under Review(7), Submitted(11), Negotiation(12), Signed(13)
           Disposition_LOI  -> Received(6), Under Review(7), Countered by DPEG(8),
                               Counter Received from Buyer(9), Executed(10)   [UNCHANGED]
@@ -121,8 +129,8 @@
         two record type files at the moment you need it. It has already inverted once.
 
         ================================================================================
-        ⚠ THE <inlineHelpText> BELOW IS AT 247 OF ITS 255-CHARACTER CAP, AND IT ENUMERATES
-        EVERY VALUE. THE NEXT VALUE ADDED TO EITHER RECORD TYPE BREACHES IT.
+        ⚠ THE <inlineHelpText> BELOW WAS AT 247 OF ITS 255-CHARACTER CAP AS OF 2026-08-14, AND IT
+        ENUMERATES EVERY VALUE. SEE THE 2026-08-21 MASTER RETRACTION BELOW FOR THE CURRENT COUNT.
         ================================================================================
         MEASURED 2026-08-14 with System.Xml.XmlDocument.Load() on the DECODED stored value, not
         with a grep - a Get-Content -Raw read mangles the non-ASCII characters this repo's files
@@ -144,10 +152,75 @@
         the choices differ by record type, which is the only part a user acts on. The full lists
         already live in <description> above and in the two record type files, neither of which
         is capped the same way (CustomField.description is 1000).
+
+        =====================================================================================
+        🔴 MASTER RETRACTION, 2026-08-21 (user request: "Received, under review, negotiations,
+        Signed" for the disposition LOI). THIS <valueSet> BLOCK IS BYTE-IDENTICAL - NO VALUE WAS
+        ADDED, REMOVED, RE-ORDERED OR DEACTIVATED BY THIS CHANGE. ONLY THIS COMMENT, THE
+        <description> AND THE <inlineHelpText> CHANGED. VERIFY THE FIRST CLAIM BY DIFFING THIS
+        FILE RATHER THAN TRUSTING THIS SENTENCE.
+        =====================================================================================
+
+        WHAT ACTUALLY MOVED: the Disposition_LOI record type's inclusion list (a different file -
+        objects/LOI__c/recordTypes/Disposition_LOI.recordType-meta.xml). 'Countered by DPEG',
+        'Counter Received from Buyer' and 'Executed' are REMOVED from that record type;
+        'Negotiation' and 'Signed' - both ALREADY on this master field since 2026-08-14, added for
+        Acquisition_LOI - are now ALSO included on Disposition_LOI. Every value this record type
+        needs already existed here; this pass needed no append, no insert, and no interleave -
+        the arithmetic that made prior LOI__c value additions load-bearing does not apply to this
+        change at all, because nothing was added to the FIELD.
+
+        NEW RENDERING, RE-DERIVED FROM THE UNCHANGED MASTER ORDER:
+          Disposition_LOI -> Received(6), Under Review(7), Negotiation(12), Signed(13)
+        Still strictly monotonic (6 &lt; 7 &lt; 12 &lt; 13), so this record type's new four-step
+        Path renders correctly with the master order exactly as it already stood. Acquisition_LOI
+        is unaffected: Draft(1), Under Review(7), Submitted(11), Negotiation(12), Signed(13),
+        byte-identical to before this change.
+
+        🔴 BOTH TERMINALS ARE NOW 'Signed'. The "terminals stay distinct" property this file
+        relied on twice above (the non-terminal-overlap paragraph and the PSA-analogy section) is
+        gone. The one terminal-state test on this object, Is_Advance_Allowed__c's
+        `TEXT(Stage__c) &lt;&gt; "Signed"` clause, SURVIVES this without any edit, because that
+        clause was already record-type-agnostic - it excludes 'Signed' on EITHER record type,
+        which is now correct for both rather than correct for one and coincidentally inert for
+        the other. See that field's own header for the full analysis of why its
+        `&lt;&gt; "Executed"` clause is RETAINED - not as dead code, but as a narrow, still-live
+        guard against one specific degenerate shape: a Master-record-type row. 'Executed' sits on
+        no record type as of this change, so the clause is inert for both Acquisition_LOI and
+        Disposition_LOI rows, but a Master-typed LOI is not constrained by either record type's
+        picklistValues allow-list and can still be saved at Stage__c = 'Executed' by a data load,
+        a direct Apex write, or a record-type-less TestDataFactory fixture - for that population
+        the clause is the only thing hiding Advance Stage at a stage with no legitimate next
+        step. Code review adjudicated this reading as correct (S2, 2026-08-21); do not describe
+        the clause as dead code.
+
+        🔴 'Countered by DPEG', 'Counter Received from Buyer' AND 'Executed' STAY ACTIVE ON THIS
+        FIELD, PERMANENTLY, FOR NOW - ORPHANED, NOT DEACTIVATED. They sit on NO record type as of
+        this change (Acquisition_LOI never carried them; Disposition_LOI just stopped). Consistent
+        with decision O3's precedent on the sibling PSA object: deactivating them is a further,
+        separate decision this pass does not make, not an oversight. Revisit if the disposition
+        LOI path is live for a full cycle with no incident.
+
+        🔴 RECORD-TYPE PICKLIST RESTRICTION ON THIS FIELD IS NOW MEASURED, NOT REPO-ASSERTED. The
+        developer agent reproduced `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` inserting a
+        Disposition_LOI row with Stage__c = 'Signed' before this record type's picklistValues
+        block included it - this field is `restricted=true` (see &lt;valueSet&gt; below), and
+        restriction on a RESTRICTED value set IS enforced by Apex DML on this org, independently
+        reproduced on Contract_Review__c.Negotiation_Status__c the same day. Every "UI-only, not
+        enforced by Apex DML" claim about record-type restriction elsewhere in this repo's LOI__c
+        and Contract_Review__c files is retracted by this finding; each file carrying that claim
+        should be corrected in place when next touched, not assumed still true.
+
+        THE inlineHelpText BELOW IS NOW SHORTER, NOT LONGER: the disposition enumeration dropped
+        from five values to four and lost its two longest labels ('Countered by DPEG',
+        'Counter Received from Buyer'). Re-measured 2026-08-21 with the same
+        System.Xml.XmlDocument.Load()-on-decoded-value technique: 210/255, comfortably under cap
+        again. The breach-risk warning above is retained as standing guidance for the NEXT value
+        added to either record type, not as a claim about the current state.
     -->
     <fullName>Stage__c</fullName>
-    <description>Lifecycle state of the LOI. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL THIRTEEN. Acquisition_LOI runs Draft, Under Review, Submitted, Negotiation, Signed. Disposition_LOI runs Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed. THE TWO SETS ARE NO LONGER DISJOINT - Under Review is on BOTH from 2026-08-14 - so this field alone DOES NOT identify the record type and a stage-keyed rule is NOT self-limiting by construction. The terminals do stay distinct (Signed vs Executed). Prepare/Review, Sent, Counter and Completed are retired acquisition values, inactive after the Phase 3 migration, never deleted. Drives LOI_Path_Acquisition / LOI_Path_Disposition and RecordStageAdvanceService.</description>
-    <inlineHelpText>Pick the stage this LOI is in. The choices differ by record type: an acquisition LOI runs Draft, Under Review, Submitted, Negotiation, Signed; a disposition LOI runs Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed.</inlineHelpText>
+    <description>Lifecycle state of the LOI. THE MASTER SET IS THE UNION OF TWO RECORD-TYPE SETS AND NO SINGLE RECORD TYPE SEES ALL THIRTEEN. Acquisition_LOI runs Draft, Under Review, Submitted, Negotiation, Signed. Disposition_LOI runs Received, Under Review, Negotiation, Signed (narrowed 2026-08-21; was Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed). THE TWO SETS NOW OVERLAP AT THREE VALUES - Under Review, Negotiation, Signed - AND BOTH TERMINALS ARE NOW Signed, so this field alone does NOT identify the record type; the discriminator is the parent lookup or the per-record-type allow-list, never the value alone. Countered by DPEG, Counter Received from Buyer and Executed stay ACTIVE though on no record type. Prepare/Review, Sent, Counter and Completed are retired acquisition values, inactive after the Phase 3 migration, never deleted. Drives LOI_Path_Acquisition / LOI_Path_Disposition and RecordStageAdvanceService.</description>
+    <inlineHelpText>Pick the stage this LOI is in. The choices differ by record type: an acquisition LOI runs Draft, Under Review, Submitted, Negotiation, Signed; a disposition LOI runs Received, Under Review, Negotiation, Signed.</inlineHelpText>
     <label>Stage</label>
     <required>false</required>
     <trackHistory>false</trackHistory>

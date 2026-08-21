@@ -64,17 +64,55 @@
         `RecordType.DeveloperName <> "Acquisition_LOI"` as its first disjunct; see that field's
         own header, where the instruction NOT to add a record-type test is retracted.
 
-        ⚠ THIS FILE'S Stage__c BLOCK MUST CONTINUE TO ENUMERATE EXACTLY ITS OWN FIVE VALUES.
-        'Submitted', 'Negotiation' and 'Signed' were added to the master value set and are
-        DELIBERATELY ABSENT here. Do not add them "for symmetry": 'Signed' in particular would put
-        the ACQUISITION terminal on the sell-side path, which already terminates at 'Executed', and
-        Is_Advance_Allowed__c would then hide the button two steps early.
+        =====================================================================
+        🔴 RETRACTED 2026-08-21 (disposition LOI stage narrowing, user request). THE PARAGRAPH
+        DIRECTLY BELOW IS FALSE FOR TWO OF ITS THREE NAMED VALUES. RETAINED VERBATIM, NOT
+        DELETED, PER STANDING CONVENTION.
+        =====================================================================
+
+        RETRACTED, verbatim: "THIS FILE'S Stage__c BLOCK MUST CONTINUE TO ENUMERATE EXACTLY ITS
+        OWN FIVE VALUES. 'Submitted', 'Negotiation' and 'Signed' were added to the master value
+        set and are DELIBERATELY ABSENT here. Do not add them 'for symmetry': 'Signed' in
+        particular would put the ACQUISITION terminal on the sell-side path, which already
+        terminates at 'Executed', and Is_Advance_Allowed__c would then hide the button two steps
+        early."
+
+        THE PREMISE DIED: 'Countered by DPEG', 'Counter Received from Buyer' and 'Executed' are
+        REMOVED from this record type by this same change (user request, 2026-08-21: "Received,
+        under review, negotiations, Signed" as the disposition sequence). 'Executed' is no longer
+        this record type's terminal, so the warning's own stated consequence - putting the
+        acquisition terminal on a path that "already terminates at Executed" - can no longer
+        happen, because there is no other terminal for it to collide with. This record type's new
+        four-stage sequence is Received, Under Review, Negotiation, Signed, and 'Negotiation' and
+        'Signed' are now DELIBERATELY INCLUDED, the exact opposite of what the retracted text
+        instructed.
+
+        🔴 THE 'Submitted' HALF OF THE WARNING STANDS, UNCHANGED, AND IS NOT PART OF THIS
+        RETRACTION. 'Submitted' is still NOT added to this record type. LOI__c.Mark_Countered and
+        LOI__c.Mark_Completed on LOI_Record_Page are still self-limited to acquisition by
+        {!Record.Stage__c} EQUAL 'Submitted'; adding 'Submitted' here would surface both
+        acquisition-only buttons on a disposition LOI. See flexipages/LOI_Record_Page's own header
+        for the confirmation that this page's A6 edit (retiring the two disposition Mark_* quick
+        actions) does not touch those two acquisition entries either.
+
         ⚠ The reason an omission is dangerous rather than merely untidy - that a record type file
         omitting a picklist ENTIRELY drops all of that picklist's values from the type - is stated
-        further down this comment and elsewhere in this repo as established fact. It is
-        REPO-ASSERTED AND UNMEASURED; no describe in this org has confirmed it. It is not the
-        reason for this paragraph. This paragraph is about which VALUES are listed inside a block
-        that is already present, which is ordinary, observable record-type behaviour.
+        further down this comment and elsewhere in this repo as established fact. 🔴 NO LONGER
+        UNMEASURED: the developer agent reproduced `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` on
+        this exact object (a `Disposition_LOI` insert with `Stage__c = 'Signed'` before this
+        record type's picklistValues block was updated to include it), confirming record-type
+        picklist restriction on a RESTRICTED value set IS enforced by Apex DML on this org, not
+        UI-only as every other paragraph in this file assumed. See Stage__c's own field header
+        for the full retraction of that repo-wide claim.
+
+        🔴 CORRECTED BY CODE REVIEW (W2), 2026-08-21. "EVERY EARLIER PARAGRAPH" ABOVE WAS WRONG
+        AND IS THE ROOT CAUSE OF TWO STALE SURVIVORS IN THIS SAME FILE. This paragraph sits
+        roughly in the MIDDLE of the file (the second retraction block), so its scope sentence
+        excused only paragraphs ABOVE it, and left the "UI-ONLY" claim standing, uncorrected, in
+        the WARNING paragraph below (record-type description section) and in the W2/Ball_In_Court
+        removal paragraph further down - both of which are LATER than this sentence, not earlier.
+        Both are retracted in place at their own locations; see the "🔴 RETRACTED BY CODE REVIEW
+        (W2)" markers at each site.
 
         STEP ORDER IS ENFORCED BY THE MASTER VALUE SET, NOT BY THE PATH FILE. Runtime display
         order comes from Stage__c's picklist value order (sorted=false), filtered by this
@@ -95,6 +133,18 @@
         so restricting Draft/Prepare/Review/Sent/Counter/Completed out here does not stop a
         direct write. The Apex-side allow-list in RecordStageAdvanceService must become
         record-type-aware in the same tranche; that is the parallel developer change.
+
+        🔴 RETRACTED BY CODE REVIEW (W2), 2026-08-21. THE PARAGRAPH ABOVE IS FALSE FOR A
+        RESTRICTED VALUE SET. Restriction on a RESTRICTED picklist (Stage__c is
+        `restricted=true` - see that field's own valueSet) IS enforced by Apex DML on this org,
+        measured directly on this record type: the developer agent reproduced
+        `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` inserting a Disposition_LOI row with
+        Stage__c = 'Signed' before this record type's picklistValues block included it. See the
+        later "RECORD-TYPE PICKLIST RESTRICTION ON THIS FIELD IS NOW MEASURED" block in this same
+        file, and Stage__c's own field header, for the full finding. The Apex-side allow-list
+        described above is still worth having as belt-and-braces defence, but the paragraph's
+        premise - that DML lets an illegal value through today - is false for Stage__c
+        specifically.
 
         ACQUISITION-DIRECTIONAL FIELDS ARE LAYOUT-EXCLUDED, NOT DELETED. Submitted_Date__c,
         Approved_By__c, Approved_Date__c, Approval_Comments__c and LOI_Status__c stay on the
@@ -222,6 +272,15 @@
         stops a USER picking 'Seller' on a sale; CounterOfferService is what stops CODE writing
         it, and that is where the enforcement actually lives.
 
+        🔴 RETRACTED BY CODE REVIEW (W2), 2026-08-21. THE SENTENCE ABOVE IS FALSE FOR A
+        RESTRICTED VALUE SET - Ball_In_Court__c on this record type, like Stage__c, is
+        restricted picklist restriction, and restriction on a RESTRICTED value set IS enforced
+        by Apex DML on this org (measured on Stage__c, this same file's other restricted
+        picklist; see the earlier "RECORD-TYPE PICKLIST RESTRICTION ON THIS FIELD IS NOW
+        MEASURED" block). CounterOfferService remains the only writer that matters in practice
+        - it never sends 'Seller' on a sale regardless - but the claim that DML alone would let
+        an illegal 'Seller' value through is false, not merely redundant.
+
         EVERY PICKLIST ON THE OBJECT IS ENUMERATED - Stage__c, LOI_Status__c and
         Ball_In_Court__c - because a record type file that omits a picklist silently drops all
         of its values from that type. Precedent:
@@ -244,7 +303,7 @@
     -->
     <fullName>Disposition_LOI</fullName>
     <active>true</active>
-    <description>The sell-side LOI, parented by Disposition. Five stages, all added 2026-08-09: Received, Under Review, Countered by DPEG, Counter Received from Buyer, Executed. The acquisition stages are restricted out. See the XML comment in this file.</description>
+    <description>The sell-side LOI, parented by Disposition. Four stages from 2026-08-21: Received, Under Review, Negotiation, Signed - terminal is Signed, not Executed. The acquisition stages are restricted out. See the XML comment in this file.</description>
     <label>Disposition LOI</label>
     <picklistValues>
         <picklist>Ball_In_Court__c</picklist>
@@ -307,15 +366,11 @@
             <default>false</default>
         </values>
         <values>
-            <fullName>Countered by DPEG</fullName>
+            <fullName>Negotiation</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Counter Received from Buyer</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Executed</fullName>
+            <fullName>Signed</fullName>
             <default>false</default>
         </values>
     </picklistValues>

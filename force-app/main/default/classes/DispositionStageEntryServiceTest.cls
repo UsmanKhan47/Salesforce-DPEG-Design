@@ -3,7 +3,8 @@
  * DispositionTrigger / DispositionTriggerHandler (decisions D15/Q3, D16.2, D19.1, D28/Q3). FOUR
  * stages, four children:
  *
- *   `NDA`            -> NDA__c (Party_Role__c = 'Buyer')     Tranche 3A
+ *   `NDA`            -> NDA__c (Party_Role__c = 'Buyer',     Tranche 3A
+ *                              Broker__c per record type)   + broker stamp 2026-08-21
  *   `LOI`            -> LOI__c (Disposition_LOI)             Tranche 3B fix pass (review C1)
  *   `PSA`            -> Contract_Review__c (Disposition_PSA) Tranche 3C fix pass (review C1)
  *   `Active Listing` -> Broker_Listing__c + the marketing clock   Tranche 5B
@@ -24,6 +25,11 @@
  *   DEFERRED STAMP   Primary_NDA__c is written by a Queueable, after commit — and the LOI and PSA
  *                    blocks enqueue NOTHING, which is asserted rather than left to inspection.
  *   BULK             251 records through the REAL trigger, per stage.
+ *   BROKER STAMP     (2026-08-21) `NDA__c.Broker__c` is resolved from a DIFFERENT SOURCE per
+ *                    record type, an unresolvable broker never blocks the NDA, and the extra read
+ *                    sits AFTER the idempotency early return. Its own section, with its own
+ *                    statement of what is unbuildable in this org and therefore untested. Every
+ *                    assertion there is "the RIGHT broker" — a wrong one satisfies "is it set?".
  *
  * ── 🔴 WHY THE LOI AND PSA BLOCKS HAVE NO QUEUEABLE, PINNED BY A TEST ───────
  * `Disposition__c` has exactly one Primary_* lookup (`Primary_NDA__c`), so those two blocks have
@@ -135,9 +141,13 @@ private class DispositionStageEntryServiceTest {
         TestDataFactory.signBuyerNdasOn(dispositions);
     }
 
+    /**
+     * ⚠ `Broker__c` WAS ADDED TO THIS SELECT ON 2026-08-21 with the broker stamp. Every existing
+     * caller ignores it; widening a test-local read costs nothing and saves a parallel helper.
+     */
     private static List<NDA__c> ndasOn(Id dispositionId) {
         return [
-            SELECT Id, Status__c, Party_Role__c, RecordTypeId, Disposition__c
+            SELECT Id, Status__c, Party_Role__c, RecordTypeId, Disposition__c, Broker__c
             FROM NDA__c
             WHERE Disposition__c = :dispositionId
         ];
@@ -181,9 +191,13 @@ private class DispositionStageEntryServiceTest {
             + 'service\'s idempotency key');
         Assert.areEqual('Not Sent', created[0].Status__c,
             'The NDA must start at Disposition_NDA\'s own default. "Pending" is the ACQUISITION '
-            + 'starting value and is restricted off this record type — but record-type picklist '
-            + 'restriction is UI-only, so Apex DML would accept it silently and produce an NDA '
-            + 'that RecordStageAdvanceService cannot advance.');
+            + 'starting value and is restricted off this record type. ⚠ 2026-08-21: this message '
+            + 'used to end "but record-type picklist restriction is UI-only, so Apex DML would '
+            + 'accept it silently and produce an NDA that RecordStageAdvanceService cannot '
+            + 'advance." NDA__c.Status__c is a RESTRICTED value set, whose record-type subset DML '
+            + 'DOES enforce, so the wrong constant fails the insert with an opaque '
+            + 'INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST — surfaced from a stage change the user '
+            + 'never connected to an NDA. This assertion is what turns that into a named failure.');
         Assert.areEqual(disposition.Id, created[0].Disposition__c,
             'The NDA must be parented to the disposition that opened it');
     }
@@ -616,6 +630,474 @@ private class DispositionStageEntryServiceTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // `NDA` STAGE — THE BROKER STAMP (2026-08-21)
+    //
+    // 🔴 WHAT THESE TESTS EXIST TO CATCH, AND WHY THE SUITE ABOVE DID NOT CATCH IT. Until
+    // 2026-08-21 `openBuyerNdas` set Disposition__c / Status__c / Party_Role__c and NOTHING ELSE,
+    // and every assertion above is about one of those three. `NDA__c.Broker__c` — the field that
+    // REPLACED the buyer as the NDA counterparty in the same month — was simply never written, and
+    // an entire green suite said so. Measured in usman-dpeg: NDA-0115, auto-created on DISP-0019,
+    // shipped with Broker__c = null. THE FALSIFIERS BELOW ARE ALL "the right broker", NEVER "a
+    // broker": a stamp that resolved the WRONG contact would satisfy any not-null assertion, and on
+    // a bulk chunk a cross-wired map is exactly the defect that produces 251 non-null wrong answers.
+    //
+    // ── THE TWO SOURCES, AND WHY EACH NEEDS ITS OWN TEST ────────────────────────────────────────
+    //   Off_Market -> Disposition__c.Broker__c          (in memory, on Trigger.new, zero queries)
+    //   On_Market  -> the `Selected` BOV_Submission__c's Broker__c   (one selector read per chunk)
+    // They are not two spellings of one thing. `Broker_Lookup_Is_Off_Market_Only` is an ACTIVE
+    // validation rule that REFUSES Disposition__c.Broker__c on an on-market row, so the on-market
+    // branch cannot be a fallback of the off-market one — `onMarketIgnoresTheDispositionsOwnBroker‑
+    // Lookup` below is the falsifier that pins that, and it is the one test here that must be
+    // driven by DIRECT INVOCATION rather than through the trigger, because the state it needs
+    // (an on-market record carrying a broker lookup) is one the platform will not let a test SAVE.
+    //
+    // ── ⚠ WHAT IS DELIBERATELY NOT TESTED, SAID OUT LOUD ───────────────────────────────────────
+    //   A `Selected` SUBMISSION WITH A NULL `Broker__c`. The selector filters those out with
+    //   `AND Broker__c != NULL`, and that predicate defends a LEGACY population — rows created
+    //   before `Broker_Required_On_Submission` existed. That rule is now active and unconditional
+    //   (`ISBLANK(Broker__c)`), so no test in this org can BUILD such a row: every insert path is
+    //   refused. The predicate is therefore unfalsifiable here by construction, not untested by
+    //   oversight. Do not delete it on the strength of "no test covers it".
+    //
+    //   TWO `Selected` SUBMISSIONS ON ONE DISPOSITION. `BovSubmissionSelectionGuardService` is a
+    //   before-context trigger guard that refuses precisely that save, so the ordering / first-wins
+    //   determinism in `resolveBrokers` likewise cannot be reached from a test. It is argued from
+    //   the total ORDER BY at the selector rather than pinned here.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** An OFF-MARKET disposition at Readiness whose broker lookup names `broker`. */
+    private static Disposition__c offMarketWithBroker(Id brokerContactId) {
+        Disposition__c d = TestDataFactory.createDisposition(
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET,
+            false
+        );
+        d.Broker__c = brokerContactId;
+        insert d;
+        return d;
+    }
+
+    /**
+     * Attaches one BOV submission to `dispositionId` at `status`, pointed at `brokerContactId`.
+     *
+     * ⚠ Built through `TestDataFactory.createBovSubmission(..., false)` and mutated rather than
+     * hand-constructed: `Broker_Required_On_Submission` and `BOV_Amount_Required_On_Submission`
+     * are both ACTIVE and unconditional, so a bare `new BOV_Submission__c(...)` here would be
+     * refused for reasons that have nothing to do with the broker stamp.
+     */
+    private static BOV_Submission__c bovOn(Id dispositionId, Id brokerContactId, String status) {
+        BOV_Submission__c sub = TestDataFactory.createBovSubmission(dispositionId, false);
+        sub.Broker__c = brokerContactId;
+        sub.Submission_Status__c = status;
+        insert sub;
+        return sub;
+    }
+
+    /** The On_Market record type Id, read back off a saved fixture rather than described again. */
+    private static Id onMarketRecordTypeId(Id dispositionId) {
+        return [SELECT RecordTypeId FROM Disposition__c WHERE Id = :dispositionId].RecordTypeId;
+    }
+
+    // ── OFF-MARKET: the disposition's own broker lookup ──────────────────────
+
+    @isTest
+    static void offMarketNdaCarriesTheDispositionsBrokerContact() {
+        Contact broker = TestDataFactory.createBrokerContact(null, true);
+        Disposition__c disposition = offMarketWithBroker(broker.Id);
+
+        Test.startTest();
+        update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = NDA_STAGE);
+        Test.stopTest();
+
+        List<NDA__c> created = ndasOn(disposition.Id);
+        Assert.areEqual(1, created.size(), 'Still exactly one buyer NDA — the stamp adds a column, '
+            + 'never a record');
+        Assert.areEqual(broker.Id, created[0].Broker__c,
+            'The auto-created NDA must carry the OFF-MARKET disposition\'s own Broker__c. This is '
+            + 'the field that replaced Buyer__c as the NDA counterparty on 2026-08-21 and that '
+            + 'this creation path was silently leaving null.');
+    }
+
+    /**
+     * 🔴 THE UNRESOLVABLE CASE, AND IT IS A REQUIREMENT RATHER THAN AN EDGE. An off-market
+     * disposition can legitimately reach the `NDA` stage before anyone has appointed a broker.
+     * The NDA must still be created — auto-create's job is that the record EXISTS. A change that
+     * "helpfully" refused or threw here would roll back the user's own stage change (the insert is
+     * allOrNone = true) over a field a human fills in five seconds from the related list.
+     */
+    @isTest
+    static void offMarketNdaWithNoBrokerIsStillCreatedUnstamped() {
+        Disposition__c disposition = offMarketAtReadiness();   // no Broker__c
+
+        Test.startTest();
+        update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = NDA_STAGE);
+        Test.stopTest();
+
+        List<NDA__c> created = ndasOn(disposition.Id);
+        Assert.areEqual(1, created.size(),
+            'An unresolvable broker must NOT block the NDA — the record existing matters more than '
+            + 'it being complete, and a refusal here would roll back the stage change itself');
+        Assert.isNull(created[0].Broker__c,
+            'With nothing to resolve, Broker__c stays null. Anything else means a broker was '
+            + 'fabricated from a source this path is not entitled to read.');
+    }
+
+    // ── ON-MARKET: the Selected BOV submission's broker ──────────────────────
+
+    @isTest
+    static void onMarketNdaCarriesTheSelectedBovSubmissionsBroker() {
+        Disposition__c disposition = onMarketAtReadiness();
+        Contact appointed = TestDataFactory.createBrokerContact(null, true);
+        bovOn(disposition.Id, appointed.Id, 'Selected');
+
+        Test.startTest();
+        update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = NDA_STAGE);
+        Test.stopTest();
+
+        List<NDA__c> created = ndasOn(disposition.Id);
+        Assert.areEqual(1, created.size(), 'Exactly one buyer NDA on the on-market path too');
+        Assert.areEqual(appointed.Id, created[0].Broker__c,
+            'On an ON-MARKET disposition the broker comes from the Selected BOV submission. '
+            + 'Disposition__c.Broker__c is null here by ENFORCEMENT — Broker_Lookup_Is_Off_Market_'
+            + 'Only refuses a value there — so this is the only source that exists.');
+    }
+
+    /**
+     * 🔴 THE `Submission_Status__c = 'Selected'` PREDICATE, PINNED. A disposition mid-outreach
+     * carries several `Backup` submissions and no Selected one; resolving a broker from any of them
+     * would appoint someone nobody chose, silently, on a legal document. Without this test a
+     * selector that dropped the status term would pass every assertion above.
+     */
+    @isTest
+    static void onMarketNdaIgnoresBackupSubmissions() {
+        Disposition__c disposition = onMarketAtReadiness();
+        Contact notAppointed = TestDataFactory.createBrokerContact(null, true);
+        bovOn(disposition.Id, notAppointed.Id, 'Backup');
+
+        Test.startTest();
+        update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = NDA_STAGE);
+        Test.stopTest();
+
+        List<NDA__c> created = ndasOn(disposition.Id);
+        Assert.areEqual(1, created.size(), 'The NDA is still created — an un-appointed broker is '
+            + 'the NORMAL state of a disposition still running its BOV outreach');
+        Assert.isNull(created[0].Broker__c,
+            'A Backup submission must NOT be resolved as the appointed broker. Only a Selected '
+            + 'one is the appointment.');
+    }
+
+    @isTest
+    static void onMarketNdaWithNoSubmissionsAtAllIsStillCreatedUnstamped() {
+        Disposition__c disposition = onMarketAtReadiness();
+
+        Test.startTest();
+        update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = NDA_STAGE);
+        Test.stopTest();
+
+        List<NDA__c> created = ndasOn(disposition.Id);
+        Assert.areEqual(1, created.size(),
+            'No BOV submissions at all must not block the NDA');
+        Assert.isNull(created[0].Broker__c, 'Nothing to resolve, so nothing is stamped');
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE FALSIFIER FOR THE SIMPLIFICATION SOMEONE WILL EVENTUALLY PROPOSE: "just read
+     *    Disposition__c.Broker__c first and fall back to the BOV." IT LOOKS EQUIVALENT AND IS NOT.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * That version passes every other test in this section, because `Broker_Lookup_Is_Off_Market_
+     * Only` keeps `Disposition__c.Broker__c` null on every on-market row that can be SAVED — so
+     * the fallback would always fire and always look right. The day the rule is relaxed, or a
+     * record type is changed on an existing row, or an API caller writes both, the "fallback"
+     * silently becomes the PRIMARY and the NDA names a broker who was never appointed to this sale.
+     *
+     * ⚠ DIRECT INVOCATION, NOT THE TRIGGER, AND THAT IS FORCED BY THE PLATFORM. The state this
+     * test needs — an on-market disposition whose broker lookup is populated — is exactly the state
+     * the validation rule refuses to persist, so it CANNOT be built with DML. An in-memory
+     * `Disposition__c` passed straight into the service reproduces what `Trigger.new` would carry
+     * without ever being saved. The disposition itself is real (the NDA's lookup needs a real
+     * parent); only the broker on the in-memory copy is synthetic.
+     */
+    @isTest
+    static void onMarketNdaIgnoresTheDispositionsOwnBrokerLookup() {
+        Disposition__c disposition = onMarketAtReadiness();
+        Contact appointed = TestDataFactory.createBrokerContact(null, true);
+        Contact decoy = TestDataFactory.createBrokerContact(null, true);
+        bovOn(disposition.Id, appointed.Id, 'Selected');
+        Assert.areNotEqual(appointed.Id, decoy.Id,
+            'The two fixture brokers must be different Contacts or this test cannot fail');
+
+        List<Disposition__c> newList = new List<Disposition__c>{
+            new Disposition__c(
+                Id = disposition.Id,
+                RecordTypeId = onMarketRecordTypeId(disposition.Id),
+                Disposition_Stage__c = NDA_STAGE,
+                Broker__c = decoy.Id          // the state the validation rule forbids saving
+            )
+        };
+        Map<Id, Disposition__c> oldMap = new Map<Id, Disposition__c>{
+            disposition.Id =>
+                new Disposition__c(Id = disposition.Id, Disposition_Stage__c = READINESS_STAGE)
+        };
+
+        Test.startTest();
+        DispositionStageEntryService.createStageEntryRecords(newList, oldMap);
+        Test.stopTest();
+
+        List<NDA__c> created = ndasOn(disposition.Id);
+        Assert.areEqual(1, created.size(), 'One NDA');
+        Assert.areEqual(appointed.Id, created[0].Broker__c,
+            'On the ON_MARKET record type the Selected BOV submission is the ONLY source. A '
+            + 'lookup-first-then-fall-back-to-the-BOV implementation returns the decoy here and '
+            + 'passes every other test in this section.');
+    }
+
+    /**
+     * The complement, and it pins the branch in the other direction: the record type — NOT the
+     * presence of a value — is what selects the source. An OFF-MARKET disposition that somehow has
+     * a Selected BOV submission must still take its broker from its own lookup.
+     *
+     * ⚠ This shape is reachable in production: `BOV_Submission__c` carries no record-type criterion
+     * of its own, so nothing stops a row being parented to an off-market disposition. Only the
+     * `Disposition_Stage__c` value set keeps `BOV Outreach` on-market-only, and a value set is not
+     * a constraint on a CHILD object.
+     */
+    @isTest
+    static void offMarketNdaIgnoresASelectedBovSubmission() {
+        Contact appointed = TestDataFactory.createBrokerContact(null, true);
+        Contact bovBroker = TestDataFactory.createBrokerContact(null, true);
+        Disposition__c disposition = offMarketWithBroker(appointed.Id);
+        bovOn(disposition.Id, bovBroker.Id, 'Selected');
+        Assert.areNotEqual(appointed.Id, bovBroker.Id,
+            'The two fixture brokers must be different Contacts or this test cannot fail');
+
+        Test.startTest();
+        update new Disposition__c(Id = disposition.Id, Disposition_Stage__c = NDA_STAGE);
+        Test.stopTest();
+
+        Assert.areEqual(appointed.Id, ndasOn(disposition.Id)[0].Broker__c,
+            'On the OFF_MARKET record type the disposition\'s own Broker__c wins. A BOV-first '
+            + 'implementation returns the submission\'s broker here.');
+    }
+
+    // ── BULK — 251 through the REAL trigger, both record types ───────────────
+
+    /**
+     * 251 OFF-MARKET dispositions, 251 DIFFERENT brokers, and the assertion is a per-record MATCH
+     * rather than a count of non-nulls.
+     *
+     * 🔴 DISTINCT BROKERS ARE THE WHOLE POINT. A cross-wired map — the classic two-collection bulk
+     * defect, where row i gets row j's value — produces 251 non-null, wrong answers and satisfies
+     * every "is it populated" assertion. With one shared broker Contact it would also satisfy a
+     * per-record equality assertion, which is why the fixture builds 251 of them in a single insert.
+     */
+    @isTest
+    static void bulkOffMarketAt251StampsEachDispositionsOwnBroker() {
+        List<Contact> brokers = TestDataFactory.createBrokerContacts(BULK_N, null, true);
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_OFF_MARKET,
+            false
+        );
+        Map<Id, Id> expectedBrokerByDisposition = new Map<Id, Id>();
+        for (Integer i = 0; i < BULK_N; i++) {
+            dispositions[i].Broker__c = brokers[i].Id;
+        }
+        insert dispositions;
+        List<Disposition__c> moves = new List<Disposition__c>();
+        for (Integer i = 0; i < BULK_N; i++) {
+            expectedBrokerByDisposition.put(dispositions[i].Id, brokers[i].Id);
+            moves.add(new Disposition__c(Id = dispositions[i].Id, Disposition_Stage__c = NDA_STAGE));
+        }
+
+        Test.startTest();
+        update moves;
+        Test.stopTest();
+
+        List<NDA__c> created = [
+            SELECT Id, Disposition__c, Broker__c FROM NDA__c WHERE Disposition__c IN :dispositions
+        ];
+        Assert.areEqual(BULK_N, created.size(),
+            'One NDA each across BOTH trigger chunks — 251 forces a second firing');
+        for (NDA__c nda : created) {
+            Assert.areEqual(expectedBrokerByDisposition.get(nda.Disposition__c), nda.Broker__c,
+                'Every NDA must carry ITS OWN disposition\'s broker. A single mismatch here is a '
+                + 'cross-wired map, which a not-null assertion would have passed.');
+        }
+    }
+
+    /**
+     * The on-market twin: 251 dispositions, 251 Selected BOV submissions, 251 distinct brokers,
+     * resolved through the selector in ONE query per trigger chunk.
+     *
+     * ⚠ THE FIXTURE BUILDS ITS SUBMISSIONS IN ONE `createBovSubmissions(BULK_N, null, false)` CALL
+     * AND RE-PARENTS THEM, rather than calling `createBovSubmission(d.Id, ...)` 251 times. The
+     * single-record overload resolves `bovBrokerContactIdsFor(1)`, which returns the SHARED
+     * `defaultBrokerContact()` every time — so 251 calls would produce 251 submissions naming the
+     * SAME broker, and the per-record match below would be vacuous (every expected value equal to
+     * every actual one). The bulk overload creates 251 distinct brokers in one insert.
+     */
+    @isTest
+    static void bulkOnMarketAt251StampsEachDispositionsSelectedBroker() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            true
+        );
+        List<BOV_Submission__c> submissions =
+            TestDataFactory.createBovSubmissions(BULK_N, null, false);
+        Map<Id, Id> expectedBrokerByDisposition = new Map<Id, Id>();
+        List<Disposition__c> moves = new List<Disposition__c>();
+        for (Integer i = 0; i < BULK_N; i++) {
+            submissions[i].Disposition__c = dispositions[i].Id;
+            submissions[i].Submission_Status__c = 'Selected';
+            expectedBrokerByDisposition.put(dispositions[i].Id, submissions[i].Broker__c);
+            moves.add(new Disposition__c(Id = dispositions[i].Id, Disposition_Stage__c = NDA_STAGE));
+        }
+        insert submissions;   // built in the loop, inserted once — never DML in a loop
+        Assert.areEqual(BULK_N, new Set<Id>(expectedBrokerByDisposition.values()).size(),
+            'The 251 expected brokers must be 251 DISTINCT Contacts, or a cross-wired map would '
+            + 'pass the per-record assertion below');
+
+        Test.startTest();
+        update moves;
+        Test.stopTest();
+
+        List<NDA__c> created = [
+            SELECT Id, Disposition__c, Broker__c FROM NDA__c WHERE Disposition__c IN :dispositions
+        ];
+        Assert.areEqual(BULK_N, created.size(), 'One NDA each, across both trigger chunks');
+        for (NDA__c nda : created) {
+            Assert.areEqual(expectedBrokerByDisposition.get(nda.Disposition__c), nda.Broker__c,
+                'Every NDA must carry the broker off ITS OWN disposition\'s Selected submission');
+        }
+    }
+
+    /**
+     * 🔴 THE PLACEMENT FALSIFIER, AND IT IS THE ONE ASSERTION IN THIS SECTION THAT IS EXACT.
+     * `resolveBrokers` is called AFTER the idempotency early return, so a chunk of 251 ON-MARKET
+     * dispositions that all already have their buyer NDA must still cost EXACTLY ONE query — the
+     * idempotency read — and ZERO DML. Moving the resolution above the early return (the obvious
+     * "resolve everything up front" refactor) makes this report 2, for 251 rows that are never
+     * written.
+     *
+     * ⚠ NO BOV SUBMISSIONS ARE BUILT HERE ON PURPOSE. The extra query would be issued on the
+     * strength of the entrants being on-market, not on the strength of a submission existing, so
+     * the fixture does not need one and 251 unnecessary submissions would only add noise.
+     *
+     * The service is invoked DIRECTLY so the measurement contains this service and nothing else —
+     * the same reason `suppressionPathCostsOneQueryAndNoDmlAt251` does, and the reason both stay on
+     * the suppression path: any test that actually CREATES an NDA also measures the
+     * `NDA_Signed_Rollup` flow's queries and could not be exact.
+     */
+    @isTest
+    static void onMarketSuppressionPathStillCostsExactlyOneQueryAt251() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            true
+        );
+        Id onMarketRtId = onMarketRecordTypeId(dispositions[0].Id);
+        List<NDA__c> existing = new List<NDA__c>();
+        for (Disposition__c d : dispositions) {
+            existing.addAll(TestDataFactory.createDispositionNdas(1, d.Id, false));
+        }
+        insert existing;   // built in the loop, inserted once — never DML in a loop
+
+        List<Disposition__c> newList = new List<Disposition__c>();
+        Map<Id, Disposition__c> oldMap = new Map<Id, Disposition__c>();
+        for (Disposition__c d : dispositions) {
+            newList.add(new Disposition__c(
+                Id = d.Id,
+                RecordTypeId = onMarketRtId,
+                Disposition_Stage__c = NDA_STAGE
+            ));
+            oldMap.put(d.Id, new Disposition__c(Id = d.Id, Disposition_Stage__c = READINESS_STAGE));
+        }
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Integer dmlBefore = Limits.getDmlStatements();
+        DispositionStageEntryService.createStageEntryRecords(newList, oldMap);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed,
+            'EXACTLY ONE query for 251 SUPPRESSED on-market dispositions. A 2 here means the '
+            + 'broker resolution moved ahead of the idempotency early return and is now paying for '
+            + 'rows that are never inserted.');
+        Assert.areEqual(0, dmlUsed,
+            'Zero DML — the broker stamp adds a COLUMN to an insert this block already performed, '
+            + 'never a statement of its own');
+    }
+
+    /**
+     * The creation path's cost, asserted as a BOUND rather than a number, and the bound is the
+     * honest shape of the claim rather than a weakening of it.
+     *
+     * WHY NOT EXACT: this chunk actually inserts 251 NDAs, so `NDA_Signed_Rollup` — an after-save
+     * flow on NDA__c that maintains the disposition's two counters — runs inside the measurement.
+     * Pinning a number would make this test red every time a parallel declarative change touched
+     * that flow, which is a false alarm about the wrong component (the class header makes the same
+     * argument for the suppression-path tests above).
+     *
+     * WHAT IT STILL FALSIFIES, WHICH IS THE PART THAT MATTERS: a resolution issued per record
+     * cannot reach this assertion at all — it throws `System.LimitException: Too many SOQL
+     * queries: 101` at the 101st disposition. So COMPLETING this test is the SOQL-in-a-loop
+     * falsifier, exactly as the 251-row trigger tests above are, and the bound then pins that the
+     * service's own contribution is the documented 2 (idempotency + resolution) rather than
+     * something that grows.
+     */
+    @isTest
+    static void onMarketCreationPathResolvesBrokersAtConstantQueryCostAt251() {
+        List<Disposition__c> dispositions = TestDataFactory.createDispositions(
+            BULK_N,
+            TestDataFactory.defaultPropertyAsset().Id,
+            TestDataFactory.DISPOSITION_RT_ON_MARKET,
+            true
+        );
+        Id onMarketRtId = onMarketRecordTypeId(dispositions[0].Id);
+        List<BOV_Submission__c> submissions =
+            TestDataFactory.createBovSubmissions(BULK_N, null, false);
+        List<Disposition__c> newList = new List<Disposition__c>();
+        Map<Id, Disposition__c> oldMap = new Map<Id, Disposition__c>();
+        for (Integer i = 0; i < BULK_N; i++) {
+            submissions[i].Disposition__c = dispositions[i].Id;
+            submissions[i].Submission_Status__c = 'Selected';
+            newList.add(new Disposition__c(
+                Id = dispositions[i].Id,
+                RecordTypeId = onMarketRtId,
+                Disposition_Stage__c = NDA_STAGE
+            ));
+            oldMap.put(
+                dispositions[i].Id,
+                new Disposition__c(Id = dispositions[i].Id, Disposition_Stage__c = READINESS_STAGE)
+            );
+        }
+        insert submissions;
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        DispositionStageEntryService.createStageEntryRecords(newList, oldMap);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.isTrue(queriesUsed <= 6,
+            'The NDA block costs TWO queries for a whole on-market chunk — the idempotency read '
+            + 'and the broker resolution — plus whatever NDA_Signed_Rollup spends on the insert. '
+            + 'The bound is loose on purpose (see this method\'s header); what it refuses is a cost '
+            + 'that GROWS with the chunk. Measured: ' + queriesUsed);
+        Assert.areEqual(BULK_N,
+            [SELECT COUNT() FROM NDA__c WHERE Disposition__c IN :dispositions AND Broker__c != NULL],
+            'All 251 NDAs must have been stamped — a query budget met by resolving nothing is not '
+            + 'the property being claimed');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // 🔴 `LOI` STAGE — the sell-side LOI. Tranche 3B fix pass (review C1: before this,
     // NOTHING in the application could create a disposition LOI, by any persona,
     // including an administrator.)
@@ -637,10 +1119,12 @@ private class DispositionStageEntryServiceTest {
             + 'record-type-scoped allow-lists all sit downstream of a record nothing can create.');
         Assert.areEqual('Received', created[0].Stage__c,
             'The LOI must start at Disposition_LOI\'s own default. "Draft" is the ACQUISITION '
-            + 'starting value and is restricted off this record type — but record-type picklist '
-            + 'restriction is UI-only, so Apex DML would accept it silently and produce an LOI '
-            + 'whose stage is off its own value set, which RecordStageAdvanceService could never '
-            + 'advance (Draft is acquisition-only, so the disposition sequence has no entry for '
+            + 'starting value and is restricted off this record type. ⚠ 2026-08-21: this message '
+            + 'used to end "but record-type picklist restriction is UI-only, so Apex DML would '
+            + 'accept it silently"; LOI__c.Stage__c is RESTRICTED and its record-type subset IS '
+            + 'enforced by DML (measured on this exact field), so the wrong constant fails the '
+            + 'insert outright rather than producing a bad row '
+            + '(Draft is acquisition-only, so the disposition sequence has no entry for '
             + 'it. ⚠ This used to say the two LOI value sets are fully disjoint; observation 5 '
             + 'ended that on 2026-08-14 by giving them a shared Under Review, but Draft '
             + 'specifically is still acquisition-only, which is the only part this assertion '

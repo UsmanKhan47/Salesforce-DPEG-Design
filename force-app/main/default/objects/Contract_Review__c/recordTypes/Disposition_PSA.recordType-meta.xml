@@ -140,10 +140,106 @@
         Disposition_PSA is inert past Executed. It is developer work and was explicitly out of
         3C's declarative scope, as is the OpportunityReviewService:100 acquisition stamp
         (D16.3) documented in Acquisition_PSA's header.
+        🔴 AMENDED 2026-08-21 - "AN EXECUTED SALE" ABOVE NOW NAMES THE WRONG VALUE FOR THIS
+        RECORD TYPE. See the 2026-08-21 retraction block below: the sell-side terminal is now
+        'Signed', and Disposition_PSA can no longer reach 'Executed' at all (the value stays on
+        the master field for Acquisition_PSA only). The handoff this paragraph describes -
+        moving Disposition__c.Disposition_Stage__c to 'Closing' - is still owed and still
+        developer work; it must now key off Negotiation_Status__c = 'Signed' AND
+        RecordType.DeveloperName = 'Disposition_PSA', not off 'Executed'. This paragraph is kept
+        because the handoff itself has not shipped and this is still the pointer to it.
+
+        =====================================================================================
+        🔴 RETRACTED 2026-08-21. THE USER CHANGED Negotiation_Status__c ON THIS RECORD TYPE
+        DIRECTLY IN SETUP THE SAME DAY THIS FILE WAS LAST TOUCHED. THIS FILE IS A HAND-MIRROR
+        OF THAT LIVE CHANGE, NOT A RETRIEVE - `sf project retrieve` CANNOT CAPTURE A
+        RECORD-TYPE-SCOPED picklistValues BLOCK (measured 2026-08-21: a retrieve against this
+        exact file returned 5 lines where 193 previously stood - it strips every
+        <picklistValues> block silently rather than erroring). Confirmed against the live org
+        via the UI API before and after this edit:
+        `sf api request rest "/services/data/v67.0/ui-api/object-info/Contract_Review__c/
+        picklist-values/012iw0000009yeUAAQ"` (the beta `sf api request rest` command, not
+        Tooling/Metadata API - both of those return empty for every Contract_Review__c record
+        type and their silence proves nothing either way).
+        =====================================================================================
+
+        Disposition_PSA now runs Initial Draft -> Negotiation -> Signed. 'Revised' and 'Ready
+        for Execution' are REMOVED from this record type; 'Executed' is REMOVED from this record
+        type. Acquisition_PSA is CONFIRMED UNCHANGED (Draft, Negotiation, Signed, Executed,
+        re-verified via the same UI API endpoint against its own record type Id,
+        012iw0000009yeTAAQ, immediately before this edit) - the user's "do not change anything on
+        acquisition" constraint holds.
+
+        RETRACTED (1), verbatim, from the paragraph beginning "Acquisition_PSA now runs Draft ->
+        Negotiation -> Signed -> Executed": "THIS record type still runs Initial Draft -> Revised
+        -> Ready for Execution -> Executed and NOT ONE LINE of its &lt;picklistValues&gt; changed".
+        A line changed. This is the second time this exact sentence has needed retracting on this
+        object pair for the same reason the 2026-08-14 block gives: never inherit a "this side is
+        untouched" claim past the moment you need it.
+
+        RETRACTED (2), verbatim: "⚠ THE ONLY SHARED VALUE IS NOW 'Executed', AND IT IS THE
+        TERMINAL ON BOTH SIDES. That is what keeps flexipages/Contract_Review_Record_Page correct
+        with no edit - both its Advance Stage entries gate on Negotiation_Status__c NE
+        'Executed'." The shared value is now 'Signed', not 'Executed', and it is the terminal on
+        BOTH sides now, not one. flexipages/Contract_Review_Record_Page did NOT stay correct with
+        no edit this time: its Disposition_Deal_Actions Advance_Stage entry still tested NE
+        'Executed', which is now always-true on a disposition row (this record type can never
+        equal 'Executed' again), so Advance Stage would have kept rendering past this record
+        type's actual terminal. FIXED in the same pass as this comment - that entry now tests NE
+        'Signed'. The Acquisition_Deal_Actions entry is untouched and correctly still tests NE
+        'Executed'.
+
+        RETRACTED (3), verbatim, from the "THE THREE VALUES THIS RECORD TYPE RUNS ON STAY ACTIVE"
+        paragraph: "'Initial Draft', 'Revised' and 'Ready for Execution' are removed from
+        Acquisition_PSA at P3-D3 and are NOT deactivated... Disposition_PSA still runs on all
+        three." Disposition_PSA now runs on only ONE of the three ('Initial Draft'). 'Revised' and
+        'Ready for Execution' sit on the master field but on NO record type as of this change -
+        the exact orphaned-value shape the sibling LOI__c.Stage__c wave calls out under its own
+        gate G3. Consistent with that precedent: NOT deactivating them in this pass, and not
+        deciding to here either - that is a call for whoever owns this field's header next,
+        not this record-type file.
+
+        RETRACTED (4), verbatim, from the PSA_Ready_Notify paragraph: "THIS RECORD TYPE'S
+        BEHAVIOUR IS UNCHANGED by that edit - it can never reach 'Signed'." It now can, and
+        'Signed' is this record type's terminal. flows/PSA_Ready_Notify's filter is
+        Negotiation_Status__c = 'Ready for Execution' OR 'Signed', with no record-type criterion,
+        so a disposition PSA reaching 'Signed' now triggers the SAME "PSA ready for execution"
+        notification to Acquisitions_Team that an acquisition PSA reaching 'Signed' does - even
+        though for THIS record type 'Signed' is completion, not "ready for", and the recipient
+        group name reads acquisition-shaped. NOT CHANGED in this pass - same shape as the sibling
+        LOI__c wave's gate G2 (an existing shared-vocabulary flow silently widening its reach) and
+        left for the same kind of explicit accept/reject decision rather than assumed. See the
+        deploy report for the full flag.
+
+        ✅ CLOSED IN THIS SAME WAVE - see flows/PSA_Ready_Notify.flow-meta.xml (code review W1,
+        2026-08-21). The "NOT CHANGED in this pass" sentence above is now stale - do not read it
+        as still describing an open TODO. filterLogic there is now '(1 OR 2) AND 3', which scopes
+        the disposition-side widening this paragraph flagged rather than leaving it unaddressed.
+        Retained verbatim above per this repo's retract-in-place convention; read that flow's own
+        header for the mechanism.
+
+        ⚠ A FIFTH CLAIM ELSEWHERE ON THIS OBJECT ALSO WENT STALE BUT IS OUT OF THIS FILE'S SCOPE
+        TO FIX: flows/Contract_Review_Stage_Sync projects 'Signed' to coarse Stage__c = 'Review'
+        for BOTH record types, with no record-type branch. For Acquisition_PSA that is still
+        correct (Signed precedes the Executed handoff there). For Disposition_PSA, 'Signed' is now
+        the terminal and arguably belongs at Stage__c = 'Contract Execution', not 'Review' - but
+        that flow's own acquisition-side comment explicitly warns against making 'Signed' project
+        to 'Contract Execution' "as a general rule", so a fix needs a record-type-scoped rule, not
+        a blanket edit. Flagged, not built, in this pass.
+
+        ✅ CLOSED IN THIS SAME WAVE - see flows/Contract_Review_Stage_Sync.flow-meta.xml (code
+        review W1, 2026-08-21). The "Flagged, not built, in this pass" sentence above is now
+        stale - do not read it as still describing an open TODO. A new, narrowly-scoped
+        Is_Disposition_Signed rule was added there (a record-type-scoped rule, not a blanket
+        edit, exactly as this paragraph called for) rather than changing the shared default
+        projection this paragraph explicitly warns against changing. Retained verbatim above per
+        this repo's retract-in-place convention; read that flow's own header for the mechanism
+        and for why ordering between it and the existing Set_Stage_Executed_Only assignment is
+        load-bearing.
     -->
     <fullName>Disposition_PSA</fullName>
     <active>true</active>
-    <description>Sell-side PSA. DPEG is seller; counterparty is Buyer (Ball In Court: Us / Buyer). Parented by Disposition. Keeps Initial Draft, Revised, Ready for Execution, Executed - unchanged 2026-08-14; only Executed now shared. See in-file comment.</description>
+    <description>Sell-side PSA. DPEG is seller; counterparty is Buyer (Ball In Court: Us / Buyer). Parented by Disposition. Hand-mirrored 2026-08-21 from a live Setup edit: now Initial Draft, Negotiation, Signed - terminal is Signed, not Executed. See in-file comment.</description>
     <label>Disposition PSA</label>
     <picklistValues>
         <picklist>Ball_In_Court__c</picklist>
@@ -163,15 +259,11 @@
             <default>true</default>
         </values>
         <values>
-            <fullName>Revised</fullName>
+            <fullName>Negotiation</fullName>
             <default>false</default>
         </values>
         <values>
-            <fullName>Ready for Execution</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Executed</fullName>
+            <fullName>Signed</fullName>
             <default>false</default>
         </values>
     </picklistValues>

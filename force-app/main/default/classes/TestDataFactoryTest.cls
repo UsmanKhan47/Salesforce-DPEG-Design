@@ -222,8 +222,11 @@ private class TestDataFactoryTest {
             + 'while the describe resolves a real Id is post-deploy gate T-A1, not a factory bug.');
         Assert.areEqual('Not Sent', created.Status__c,
             'The disposition seed status must be Not Sent — Disposition_NDA\'s default. Pending '
-            + 'is restricted OFF this record type, and Apex DML does not enforce that, so a '
-            + 'shared seed value would produce a fixture RecordStageAdvanceService cannot advance.');
+            + 'is restricted OFF this record type. ⚠ 2026-08-21: this message used to add "and '
+            + 'Apex DML does not enforce that, so a shared seed value would produce a fixture '
+            + 'RecordStageAdvanceService cannot advance." DML DOES enforce it on this restricted '
+            + 'field (see NdaSignedStatusSyncTest, which measured this exact field), so a shared '
+            + 'seed reds every disposition NDA fixture at the insert instead.');
         Assert.areEqual('Buyer', created.Party_Role__c,
             'Party_Role__c = Buyer is DispositionStageEntryService\'s idempotency key (D19.1). A '
             + 'fixture without it would stop suppressing auto-create, and the suppression tests '
@@ -502,8 +505,10 @@ private class TestDataFactoryTest {
             + 'no walk test would catch it. Phase 3 split the sequences AND this factory now seeds '
             + 'per type, so a name that slips past the guard would degrade to the platform default '
             + 'record type while taking the ACQUISITION seed — a row whose status and record type '
-            + 'disagree, inserted silently, because Apex DML does not enforce record-type picklist '
-            + 'restriction.');
+            + 'disagree. ⚠ 2026-08-21: this message used to end "inserted silently, because Apex '
+            + 'DML does not enforce record-type picklist restriction." It does enforce it here; '
+            + 'the disagreeing row is refused at the INSERT. The guard\'s value is that it names '
+            + 'the typo rather than letting a platform error code stand in for it.');
     }
 
     /** Both PSA constants are non-null literals, so a null argument is not equal to either. */

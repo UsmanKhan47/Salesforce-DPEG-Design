@@ -44,9 +44,18 @@
         Contract_Review_Stage_Sync on every save. A direct write to Stage__c commits and is
         silently discarded (measured repo trap, recorded on Contract_Review__c CTR-0000).
         Negotiation_Status__c is the field the deal driver actually moves via the Advance Stage
-        action (RecordStageAdvanceService), and 'Executed' is its terminal value on BOTH the
-        Acquisition_PSA and Disposition_PSA record types (see the XML comment on
-        Contract_Review__c.Negotiation_Status__c).
+        action (RecordStageAdvanceService), and 'Executed' is its terminal value on
+        Acquisition_PSA (see the XML comment on Contract_Review__c.Negotiation_Status__c).
+        🔴 RETRACTED 2026-08-21, verbatim: "'Executed' is its terminal value on BOTH the
+        Acquisition_PSA and Disposition_PSA record types." A live Setup edit that day moved
+        Disposition_PSA's terminal to 'Signed'; 'Executed' is now reachable by Acquisition_PSA
+        only (full measurement in the record type file's own header). This rule is UNAFFECTED and
+        needed no functional change: it lives on Opportunity, which only an acquisition Contract
+        Review's OpportunityReviewService-stamped Primary_Contract__c can ever point back to - a
+        disposition PSA has no Opportunity parent at all (Disposition_PSA's own record type header:
+        "Opportunity__c stays blank, and that blank is load-bearing"), so
+        Primary_Contract__r.Negotiation_Status__c on THIS object can never resolve to a disposition
+        row's status in the first place. The correction above is comment-only, for the next reader.
 
         =====================================================================
         🔴 NOT(ISBLANK(Primary_Contract__c)) IS MANDATORY, NOT DEFENSIVE POLISH.

@@ -1239,6 +1239,17 @@
 
         Diffed against HEAD: purely additive plus one flag flip, zero deletions elsewhere.
     -->
+    <!--
+        🔴 REVERTED 2026-08-21 (later the same day). Item 2 immediately above is SUPERSEDED, not
+        deleted, so both decisions stay visible to the next reader. The formula conversion it was
+        preparing for is CANCELLED FOR NOW: BOV_Score__c stays the Number field it already is, and
+        the user chose to make it hand-enterable on the Add Response form
+        (lwc/bovAddResponseModal). editable is flipped back to TRUE on THIS SET ONLY.
+        DPEG_Disposition_View stays editable=false/readable=true - that persona (the approver)
+        does not fill out the Add Response form. Nothing about this reversal makes a future
+        formula conversion harder: the day it resumes, this grant needs the same true -> false
+        flip Item 2 already describes.
+    -->
     <customPermissions>
         <enabled>true</enabled>
         <name>Disposition_Deal_Actions</name>
@@ -1250,7 +1261,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
+        <editable>true</editable>
         <field>BOV_Submission__c.BOV_Score__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1687,9 +1698,32 @@
         carries NO FLS for anyone, System Administrator included, so this grant and
         objects/Disposition_Offer__c/fields/Broker__c.field-meta.xml must deploy together.
         Appended at the tail of the Disposition_Offer__c run, following this file's convention.
+
+        ================================================================================
+        🔴 CORRECTED 2026-08-21 (live production defect, offer logged via
+        lwc/dispositionLogOfferModal came out with Broker__c null). THE PARAGRAPH ABOVE
+        MISCLASSIFIED THIS FIELD AND IS RETRACTED.
+        ================================================================================
+
+        RETRACTED: "this is a machine-owned field ... the same reasoning that keeps
+        Is_Selected__c and Approval_Status__c read-only here."
+
+        Is_Selected__c and Approval_Status__c are written EXCLUSIVELY by
+        DispositionApprovalService / a workflow field update, both SYSTEM_MODE, with no UI
+        entry point - that reasoning is correct for THOSE two fields. Broker__c is different:
+        dispositionLogOfferModal's handleSubmit/withResolvedFields sets
+        `fields.Broker__c = this._brokerId` and sends it through
+        `lightning-record-edit-form`'s CREATE (no record-id), which enforces FLS for the
+        running user like any other field in that payload - it is irrelevant that Broker__c
+        is rendered as read-only TEXT rather than an `lightning-input-field`; the write comes
+        from the submit-time `fields` object, not from a rendered input control.
+        editable=false on THIS set therefore made every offer save silently drop the broker:
+        no error surfaces anywhere, because LDS create simply omits a field the user cannot
+        write. editable is now TRUE. DPEG_Disposition_View stays read-only - that persona
+        (the approver) never opens this modal.
     -->
     <fieldPermissions>
-        <editable>false</editable>
+        <editable>true</editable>
         <field>Disposition_Offer__c.Broker__c</field>
         <readable>true</readable>
     </fieldPermissions>

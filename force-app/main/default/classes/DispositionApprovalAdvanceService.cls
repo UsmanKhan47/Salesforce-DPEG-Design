@@ -66,6 +66,11 @@
  * Service (ARCHITECTURE.md §2). ZERO inline SOQL — the re-read goes to
  * `DispositionSelector.selectStageAndTypeByIds`.
  *
+ * ⚠ SHARING: the class is `with sharing` and stays that way. EXACTLY ONE statement escapes it — the
+ * stage/semaphore `Database.update`, in the `private without sharing SemaphoreAdvanceWrites` inner
+ * class added 2026-08-21, whose declaration carries the full justification. The escape is not
+ * inherited by `enqueuePendingAdvances` or by anything else in this file.
+ *
  * ⚠ THE MAPPING AND THE WRITE LIVE HERE, NOT IN THE QUEUEABLE, AND THAT IS DELIBERATE. The
  * Queueable is a five-line async shell that calls `advance()`. Putting the stage map inside the
  * Queueable (which is where the design sketch put it) would make every assertion about the map
@@ -204,14 +209,23 @@ public with sharing class DispositionApprovalAdvanceService {
      * `with sharing`) IS SKIPPED. The write is driven by what came BACK, never by what went in, so
      * an unreadable row cannot be written wrongly — it just keeps its flag. See the selector.
      *
-     * ── allOrNone = false, SYSTEM_MODE, AND NEITHER COVERS THE OTHER'S OBSTACLE ──
+     * ── THREE DECISIONS ON ONE STATEMENT, AND NONE COVERS ANOTHER'S OBSTACLE ──
      * SYSTEM_MODE: this runs as the APPROVER, a read-only persona on `Disposition__c` — CRUD and
      * FLS would refuse the write outright. It does NOT bypass validation rules, which is the whole
      * point of choosing DML over a field update (class header, option (a)).
+     * `without sharing`: ⚠ ADDED 2026-08-21 AND NOT A RESTATEMENT OF THE LINE ABOVE. The approver
+     * does not OWN the disposition — the submitter does — and the object is OWD Private, so
+     * record-level EDIT is refused independently of CRUD/FLS. See `SemaphoreAdvanceWrites`.
      * allOrNone = false: one blocked disposition must not roll back the advance of the other 250 in
-     * the chunk. The results are deliberately NOT inspected — there is no recovery action available
-     * in an async job, and the residual is visible ON THE RECORD as a stuck semaphore, which is
-     * strictly more useful than a log line nobody reads.
+     * the chunk.
+     *
+     * ⚠ THE CLAUSE THAT USED TO CLOSE THAT LIST — *"the results are deliberately NOT inspected …
+     * the residual is visible ON THE RECORD as a stuck semaphore, which is strictly more useful than
+     * a log line nobody reads"* — IS RETRACTED IN PLACE 2026-08-21. Its FIRST half is still true and
+     * is why this method still cannot throw or retry. Its SECOND half was a false dichotomy: the
+     * stuck semaphore tells an admin THAT a row did not advance and never WHY, and "why" is the only
+     * part that was ever expensive. The two are complements, not alternatives. Both now happen —
+     * see `recordAdvanceFailures`.
      *
      * Bulk-safe and CONSTANT in the number of dispositions: ONE query, ONE `Database.update`, no
      * SOQL or DML in a loop.
@@ -240,7 +254,105 @@ public with sharing class DispositionApprovalAdvanceService {
         if (updates.isEmpty()) {
             return;
         }
-        Database.update(updates, false, AccessLevel.SYSTEM_MODE);
+        recordAdvanceFailures(new SemaphoreAdvanceWrites().apply(updates), updates);
+    }
+
+    /**
+     * Every advance failure from the most recent `advance` call, as
+     * `<dispositionId> -> <STATUS_CODE> | <message>`. Empty on a clean run and reset at the top of
+     * every `recordAdvanceFailures` call.
+     *
+     * ⚠ IT IS THE "WHY" THE STUCK SEMAPHORE CANNOT CARRY. A row left with
+     * `Approval_Advance_Pending__c = true` is indistinguishable whether it was blocked by a
+     * validation rule, by sharing, or by an unmapped stage — and until 2026-08-21 that was the only
+     * signal this method emitted. Asserted EMPTY by the non-owner approver test.
+     */
+    @TestVisible
+    private static List<String> lastRunAdvanceFailures = new List<String>();
+
+    /**
+     * Sends every refused row to the debug log at ERROR and to `lastRunAdvanceFailures`.
+     *
+     * Report, never recovery: nothing here rethrows or retries. Rethrowing inside the Queueable
+     * would fail the `AsyncApexJob` without helping any row, and the semaphore already carries the
+     * durable "this needs a human" marker. Shape copied from `DealFolderService.stampAll`.
+     *
+     * @param results   Parallel to `attempted`, in input order; never null.
+     * @param attempted The rows handed to the DML, used only for their Ids.
+     */
+    private static void recordAdvanceFailures(
+        List<Database.SaveResult> results,
+        List<Disposition__c> attempted
+    ) {
+        lastRunAdvanceFailures = new List<String>();
+        for (Integer i = 0; i < results.size(); i++) {
+            if (results[i].isSuccess()) {
+                continue;
+            }
+            List<Database.Error> errors = results[i].getErrors();
+            String detail = errors.isEmpty()
+                ? 'no error detail returned'
+                : errors[0].getStatusCode() + ' | ' + errors[0].getMessage();
+            lastRunAdvanceFailures.add(attempted[i].Id + ' -> ' + detail);
+            // NOT debug output — this is the failure channel; see lastRunAdvanceFailures. It runs
+            // inside a Queueable with `allOrNone = false` and no Finalizer (deliberate — the
+            // queueable header says why), so this line and the stuck semaphore are the ONLY two
+            // signals a lost advance emits. A lint pass will flag it; leave it.
+            System.debug(LoggingLevel.ERROR,
+                'DispositionApprovalAdvanceService.advance: LOST STAGE ADVANCE on Disposition__c '
+                + attempted[i].Id + ' -> ' + detail
+                + ' | the approval completed, the stage did NOT move, and '
+                + 'Approval_Advance_Pending__c remains true. Running user: '
+                + UserInfo.getUserId() + '.');
+        }
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ONE STATEMENT THAT ESCAPES SHARING, AND WHY IT HAS TO. ADDED 2026-08-21.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHO RUNS THIS CODE: the APPROVER. The chain is `finalApprovalActions` sets
+     * `Approval_Advance_Pending__c` -> `DispositionTrigger` after-update -> `System.enqueueJob` ->
+     * `DispositionApprovalAdvanceQueueable`. **A Queueable executes as the ENQUEUING user**, and the
+     * enqueuing transaction is the approval itself, so the async job runs as whoever clicked
+     * Approve. The async hop moves the LOCK problem (class header, option (c)) and moves NOTHING
+     * about identity.
+     *
+     * WHY THEY PREDICTABLY LACK RECORD-LEVEL EDIT ON THE TARGET — and here the target is the record
+     * UNDER APPROVAL, which makes the mismatch structural rather than incidental:
+     *   1. `Disposition__c` is OWD **Private** (measured via Tooling `EntityDefinition` 2026-08-21).
+     *   2. The row is owned by the person who SUBMITTED it for approval. An approval process exists
+     *      precisely because approver and submitter are different people — so "the approver does not
+     *      own this record" is not a configuration accident, it is the feature.
+     *   3. `DPEG_Disposition_View`, the Principal persona's set, grants `viewAllRecords = true` and
+     *      NO `modifyAllRecords`. The re-read in `advance` therefore SUCCEEDS and the write is
+     *      refused — measured on the sibling path (`DISP-0011`, 2026-08-21:
+     *      `HasReadAccess = true, HasEditAccess = false` for the approver).
+     *
+     * 🔴 `AccessLevel.SYSTEM_MODE` WAS NOT SUFFICIENT. The class header's option (c) presents
+     * SYSTEM_MODE as the answer to "the approver's own CRUD is irrelevant" — true, and only about
+     * CRUD/FLS. Per ARCHITECTURE.md §2: *"🔴 `SYSTEM_MODE` bypasses CRUD/FLS ONLY — it does NOT
+     * bypass sharing."* Option (c) cleared three obstacles and there was a fourth nobody counted.
+     * ⚠ IT DOES NOT INVALIDATE THE QUEUEABLE. The lock argument in the class header is independent
+     * and still correct; this fixes a DIFFERENT refusal that the async hop was never going to touch.
+     *
+     * WHY THE ESCAPE IS BOUNDED TO THIS ONE WRITE: this class stays `with sharing`, the selector
+     * stays `with sharing`, and this inner class holds ONE statement over a list `advance` built
+     * from rows a sharing-scoped read returned. A disposition the approver genuinely cannot SEE is
+     * still absent from that read and still never written — the "driven by what came BACK, never by
+     * what went in" contract above is unchanged and is what keeps this narrow.
+     * ARCHITECTURE.md §2 prescribes this exact shape; repo precedents are
+     * `DispositionOfferSelector.TractionReads` (read) and `NdaExpiryAlertBatch.stampMarkers` (write).
+     */
+    private without sharing class SemaphoreAdvanceWrites {
+        /**
+         * @param updates Disposition shells built by `advance` from rows a `with sharing` selector
+         *                returned; never null, never empty.
+         * @return One `Database.SaveResult` per row, in input order. The caller inspects them.
+         */
+        private List<Database.SaveResult> apply(List<Disposition__c> updates) {
+            return Database.update(updates, false, AccessLevel.SYSTEM_MODE);
+        }
     }
 
     // ⚠ THE PRIVATE `recordTypeNameOf` THAT USED TO LIVE HERE MOVED TO `DispositionDomain` ON

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+    Combined-payload validation manifest for the disposition LOI stage-narrowing wave
+    (agent-output/disposition-loi-stages.md, items A1-A6, A9). Lists every constructive
+    declarative component this admin pass touched, so it can be check-only validated in the
+    SAME transaction as manifest/loi-disposition-stage-narrow/destructiveChangesPost.xml -
+    exactly the ordering the design doc's §5.2 requires (A6's flexipage edit removing the two
+    LOI__c.Mark_Countered_By_DPEG / LOI__c.Mark_Counter_Received <valueListItems> references
+    MUST land before, or in the same transaction as, their QuickAction deletion in A7/A8, or
+    the delete fails with "This action is referenced elsewhere in Salesforce").
+
+    This is a validation-only convenience manifest. The REAL deploy for this wave uses
+    --source-dir force-app (the full constructive payload, including the Apex/LWC half the
+    developer agent owns) per the design doc's §5.2 atomicity requirement, not this narrow
+    list - do not use this file as the real deploy's --manifest.
+    -->
+    <types>
+        <members>LOI__c.Is_Advance_Allowed__c</members>
+        <members>LOI__c.Stage__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>LOI__c.Disposition_LOI</members>
+        <name>RecordType</name>
+    </types>
+    <types>
+        <members>LOI__c.Counter_Price_Is_Positive</members>
+        <members>LOI__c.Final_Price_Required_Before_Executed</members>
+        <name>ValidationRule</name>
+    </types>
+    <types>
+        <members>LOI_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <types>
+        <members>LOI_Path_Disposition</members>
+        <name>PathAssistant</name>
+    </types>
+    <version>67.0</version>
+</Package>

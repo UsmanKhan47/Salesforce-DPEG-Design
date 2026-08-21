@@ -39,6 +39,9 @@
  * picklist restriction is UI-only and that "PsaVersionService is the only writer and is where that
  * is actually enforced". Repo-wide grep confirms it IS the only writer of
  * Contract_Review__c.Ball_In_Court__c.
+ * ⚠ 2026-08-21 — the "UI-only" half of what those three files say is FALSE (see the retraction
+ * below); the "PsaVersionService is the only writer" half is still true and is the half that
+ * matters. Those files are metadata and are not edited from here.
  *
  * ── THE SHAPE IS PORTED FROM CounterOfferService, NOT INVENTED ──────────────
  * CounterOfferService solved the IDENTICAL inversion for the LOI in Tranche 3B. Everything below
@@ -47,7 +50,13 @@
  * fields; the 'Ours' / 'Seller' / 'Buyer' token contract; and the property that makes it work —
  * THE LABEL IS ALWAYS DERIVED FROM THE PARENT ROW AND NEVER TAKEN FROM THE CALLER, which is what
  * makes a cross-record-type picklist write structurally impossible rather than merely discouraged.
- * (Apex DML does not enforce record-type picklist restriction, so nothing else can.)
+ * ⚠ RETRACTED 2026-08-21 — the parenthetical here read: "(Apex DML does not enforce record-type
+ * picklist restriction, so nothing else can.)" False for a `restricted` value set, and
+ * `Contract_Review__c.Ball_In_Court__c` is restricted. The derivation is still the only real
+ * control, for the reason set out at CounterOfferService's identical note: the two record types
+ * SHARE 'Us' and 'Seller', and DML is blind to a shared-value error. It refuses only 'Buyer' on an
+ * acquisition PSA, opaquely. See also the three metadata files named above — their descriptions
+ * carry the same retracted claim and are OUT OF THIS CLASS'S REACH; flagged to the admin agent.
  *
  * ⚠ ONE DELIBERATE DIFFERENCE FROM CounterOfferService, and it is a difference in the OBJECT, not
  * in the design: `Contract_Review__c` has TWO record types that share ONE stage sequence, so its

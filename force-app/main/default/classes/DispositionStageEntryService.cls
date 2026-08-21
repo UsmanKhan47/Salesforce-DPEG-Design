@@ -7,7 +7,8 @@
  *
  *   | stage entered       | what happens                          | added  | DML mode    | parent stamp |
  *   | ------------------- | ------------------------------------- | ------ | ----------- | ------------ |
- *   | `NDA`               | OPENS NDA__c, Party_Role__c = 'Buyer' | 3A     | SYSTEM_MODE | DEFERRED     |
+ *   | `NDA`               | OPENS NDA__c, Party_Role__c = 'Buyer',| 3A     | SYSTEM_MODE | DEFERRED     |
+ *   |                     |   Broker__c resolved per record type  | +bkr   |             |              |
  *   | `LOI`               | OPENS LOI__c, Disposition_LOI         | 3B fix | SYSTEM_MODE | NONE         |
  *   | `PSA`               | OPENS Contract_Review__c, Disp_PSA    | 3C fix | SYSTEM_MODE | NONE         |
  *   | `Release Materials` | UPDATES existing buyer NDAs           | T2-D   | SYSTEM_MODE | NONE         |
@@ -80,7 +81,10 @@
  * NdaSelector.selectByDispositionIds (used TWICE, by two different stage blocks, for two different
  * questions), LoiSelector.selectByDispositionIds, ContractReviewSelector.selectByDispositionIds and
  * BrokerListingSelector.selectByDispositionIds, all `WITH SYSTEM_MODE` for automation-path reasons
- * documented at those methods.
+ * documented at those methods. ⚠ SINCE 2026-08-21 THERE IS A SIXTH READ AND IT IS NOT AN
+ * IDEMPOTENCY READ — `BovSubmissionSelector.selectSelectedBrokerByDispositionIds` resolves the
+ * appointed broker for the NDA block's ON-MARKET entrants. It is CONDITIONAL (see the budget
+ * below), which is why the count above still says FIVE for the idempotency family.
  *
  * Trigger-driven, so the `.claude/rules/bulk-test-rule.md` per-transaction-singleton exemption
  * does NOT apply and literal 251-record bulk tests exist for all five stages. Budget is
@@ -90,6 +94,17 @@
  * produced 251 children. A chunk that enters no target stage at all — the overwhelmingly common
  * case, since this trigger fires on EVERY Disposition write in the org — costs zero queries, zero
  * DML and zero enqueues.
+ *
+ * ⚠ THE SOQL CEILING IS **≤ 6**, NOT ≤ 5, SINCE 2026-08-21, AND THE SIXTH IS CONDITIONAL ON DATA
+ * RATHER THAN ON STAGE. The NDA block issues a SECOND query — the broker resolution above — and
+ * ONLY when, after the idempotency filter has run, at least one surviving entrant is on the
+ * `On_Market` record type. So: an off-market-only NDA chunk still costs exactly 1; a chunk where
+ * every entrant already has its buyer NDA still costs exactly 1 and returns before the resolution
+ * is reached; a mixed or on-market chunk costs 2 for the NDA stage. The DML ceiling is UNCHANGED at
+ * ≤ 5 — the broker is stamped onto rows the block was already inserting, so it adds a COLUMN, never
+ * a statement. Both facts have their own falsifier in DispositionStageEntryServiceTest; the
+ * "exactly ONE query on the suppression path" assertion that guards the constancy property is the
+ * one that would go red first if the resolution ever moved ahead of the early return.
  * ⚠ A SINGLE CHUNK THAT ENTERS BOTH `NDA` AND `Release Materials` ISSUES
  * `NdaSelector.selectByDispositionIds` TWICE. That is the per-stage budget working as documented,
  * not a duplicate read: the two calls carry DIFFERENT Id sets (a disposition cannot be entering both
@@ -226,6 +241,37 @@ public with sharing class DispositionStageEntryService {
     private static final String DISPOSITION_PSA_RECORD_TYPE = 'Disposition_PSA';
 
     /**
+     * The DISPOSITION record type whose appointed broker lives on a `Selected` BOV submission
+     * rather than on the disposition itself (2026-08-21 broker stamp — see `openBuyerNdas`).
+     *
+     * 🔴 IT IS THE **ONLY** RECORD-TYPE CRITERION IN THIS CLASS, AND EVERY OTHER BLOCK'S COMMENT
+     * SAYS NOT TO ADD ONE. That instruction is not being broken — read what it forbids. `NDA_STAGE`
+     * and `LISTING_STAGE` both argue, at length, that WHETHER A CHILD IS CREATED must key on the
+     * STAGE TRANSITION and never on the record type, because a record-type filter there silently
+     * strips the child from one whole path. This constant does not gate creation at all: every
+     * entrant gets its NDA on both record types, exactly as before. It selects WHICH FIELD holds
+     * the broker, which genuinely IS a property of the record type and is enforced as one by the
+     * `Broker_Lookup_Is_Off_Market_Only` validation rule.
+     *
+     * ⚠ `Is_On_Market__c` WAS REJECTED AS THE DISCRIMINATOR EVEN THOUGH IT IS THE FIELD THAT LOOKS
+     * PURPOSE-BUILT FOR THIS. It is a FORMULA over `RecordType.DeveloperName`, added (per its own
+     * XML comment) solely so a FlexiPage visibility rule could test the record type without a
+     * spanning merge field. A formula's value in `Trigger.new` is not a guarantee this code should
+     * lean on, and the formula reads BLANK — i.e. FALSE, i.e. "off-market" — on a Master-record-type
+     * row. `RecordTypeId` is a stored field, is always populated in trigger context, and is the
+     * same thing the validation rule ultimately keys on.
+     *
+     * ⚠ A MASTER-RECORD-TYPE ROW TAKES THE OFF-MARKET BRANCH, and that is the safe direction: it
+     * reads `Disposition__c.Broker__c`, which on such a row is whatever a human put there, and a
+     * blank simply yields a blank broker. Taking the ON-market branch instead would have gone
+     * looking for a `Selected` BOV that a Master row has no business having.
+     *
+     * Case must match objects/Disposition__c/recordTypes/ exactly — see `recordTypeIdFor`.
+     */
+    @TestVisible
+    private static final String ON_MARKET_RECORD_TYPE = 'On_Market';
+
+    /**
      * The counterparty role the auto-created NDA carries, and simultaneously the NDA block's
      * IDEMPOTENCY KEY (D19.1). Changing this constant silently changes both.
      */
@@ -237,8 +283,15 @@ public with sharing class DispositionStageEntryService {
      *
      * ⚠ IT IS A CONSTANT AND HAS TO BE. Apex describes expose a picklist's FIELD-level default,
      * not a RECORD-TYPE-level one, so "the record type's default" is not readable from Apex at
-     * any price — and record-type picklist restriction is UI-only, so DML would happily accept
-     * 'Pending' here and produce an NDA whose status is off its own value set. Keep this in step
+     * any price.
+     * ⚠ RETRACTED 2026-08-21 — this note used to continue: "and record-type picklist restriction is
+     * UI-only, so DML would happily accept 'Pending' here and produce an NDA whose status is off
+     * its own value set." False for a `restricted` value set, and `NDA__c.Status__c` is restricted.
+     * A wrong constant here is REFUSED by DML — which means it does not produce a bad row, it
+     * produces a failed NDA creation surfaced as an opaque INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST
+     * from a stage entry the user did not know triggered an NDA. Still worth getting right, and now
+     * the deploy ORDER matters too: the record type must carry this value before this class is
+     * deployed naming it. Keep this in step
      * with the `<default>true</default>` entry under Status__c in
      * objects/NDA__c/recordTypes/Disposition_NDA.recordType-meta.xml.
      */
@@ -296,7 +349,12 @@ public with sharing class DispositionStageEntryService {
         List<Disposition__c> newDispositions,
         Map<Id, Disposition__c> oldMap
     ) {
-        Set<Id> ndaStageEntrants = new Set<Id>();
+        // ⚠ THE NDA SET IS A MAP AND THE OTHER THREE ARE NOT. Since 2026-08-21 the NDA block reads
+        // TWO values off the parent — `RecordTypeId` and `Broker__c` — to resolve the broker to
+        // stamp, so it needs the WHOLE RECORD, exactly as the listing branch already did. A
+        // Map<Id, Disposition__c> rather than a List because the block's idempotency filter removes
+        // entrants BY PARENT ID, which a List cannot do without a scan per row.
+        Map<Id, Disposition__c> ndaStageEntrants = new Map<Id, Disposition__c>();
         Set<Id> loiStageEntrants = new Set<Id>();
         Set<Id> psaStageEntrants = new Set<Id>();
         Set<Id> materialsStageEntrants = new Set<Id>();
@@ -310,7 +368,7 @@ public with sharing class DispositionStageEntryService {
                 continue;
             }
             if (NDA_STAGE == d.Disposition_Stage__c) {
-                ndaStageEntrants.add(d.Id);
+                ndaStageEntrants.put(d.Id, d);
             } else if (LOI_STAGE == d.Disposition_Stage__c) {
                 loiStageEntrants.add(d.Id);
             } else if (PSA_STAGE == d.Disposition_Stage__c) {
@@ -479,13 +537,78 @@ public with sharing class DispositionStageEntryService {
      * ⚠ The check is deliberately NOT scoped to the Disposition_NDA record type. In the window
      * between the record-type deploy and post-deploy gate T-A1, a buyer NDA can legitimately sit on
      * MASTER — and suppressing on record type would then mint a second one.
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT ALSO STAMPS `NDA__c.Broker__c` SINCE 2026-08-21, AND THAT IS A BUG FIX, NOT A FEATURE.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * The buyer-to-broker change of 2026-08-21 replaced the NDA counterparty entirely — `Buyer__c`
+     * retired, `Broker__c` added, on the user's explicit instruction that "everything must be
+     * linked with broker contact as he is the only person that DPEG will be communicating." THIS
+     * CREATION PATH WAS MISSED. Measured in `usman-dpeg`: `NDA-0115`, auto-created by this method
+     * on `DISP-0019`, carried `Broker__c = null`; `NDA-0114` has one only because a human typed it.
+     * The counterparty field existed and nothing populated it, on the ONE code path that creates
+     * most of the rows.
+     *
+     * ── WHERE THE BROKER ACTUALLY LIVES: TWO ANSWERS, ONE PER RECORD TYPE ───────────────────────
+     *   `Off_Market`  ->  `Disposition__c.Broker__c`, straight off `Trigger.new`. Zero queries.
+     *   `On_Market`   ->  the `Selected` `BOV_Submission__c`'s `Broker__c`, via
+     *                     `BovSubmissionSelector.selectSelectedBrokerByDispositionIds`.
+     *
+     * 🔴 `Disposition__c.Selected_Broker__c` IS **NOT** THE SOURCE, AND IT IS THE FIELD A READER
+     * WILL REACH FOR FIRST BECAUSE OF ITS NAME. It is a **Text(255)** holding a FIRM name on the
+     * on-market path (measured: `"Colliers Houston"`) and a `Person - Firm` composite off-market —
+     * one field, two formats, and its own field file states in capitals that NO CONSUMER MAY PARSE
+     * IT. It cannot be assigned to a Contact lookup at all; it is a denormalised display copy with
+     * a documented staleness window. The block immediately below (`openBrokerListings`) copies it
+     * into `Broker_Listing__c.Broker_Firm__c`, which is a Text-to-Text copy and is the ONLY correct
+     * use of it in this file. Do not harmonise the two.
+     *
+     * 🔴 AND THE ON-MARKET BRANCH CANNOT BE COLLAPSED INTO THE OFF-MARKET ONE BY "just reading
+     * `Disposition__c.Broker__c` on both". `Broker_Lookup_Is_Off_Market_Only` is an ACTIVE
+     * validation rule that REFUSES a value in that field whenever `Is_On_Market__c` is true, so on
+     * an on-market row it is null by enforcement, not by convention — and it must stay that way
+     * (the rule's own header explains that an off-market stamp there would poison
+     * `Selected_Broker__c` and, through it, the listing's firm column). One lookup, two populations,
+     * genuinely two reads.
+     *
+     * ── 🔴 "NO BROKER RESOLVABLE" IS A NORMAL OUTCOME AND MUST NEVER BLOCK THE NDA ─────────────
+     * An off-market disposition whose `Broker__c` is blank, and an on-market one with no `Selected`
+     * submission yet (or a Selected one that names no broker), BOTH get their NDA — created with a
+     * null `Broker__c`, byte-identical to what this method produced before this change. There is no
+     * throw, no refusal and no partial path. THE REASON IS A RANKING, NOT AN OVERSIGHT: this insert
+     * is `allOrNone = true` and rides inside the user's own stage change, so ANY failure here rolls
+     * that stage change back. An NDA that exists but names no broker is a row a human completes in
+     * five seconds from the related list; a stage change refused because a broker was not appointed
+     * yet is a wall in front of a legitimate workflow, surfaced from an object the user never
+     * mentioned. Auto-create's whole job is that the record EXISTS; completeness is second.
+     * ⚠ A CONSEQUENCE, STATED SO IT IS NOT LATER FILED AS A BUG: nothing back-fills. An NDA created
+     * before the broker was appointed keeps `Broker__c = null` forever unless a human sets it —
+     * this method runs once, on stage ENTRY, and the idempotency key above guarantees it never
+     * revisits the row. Identical shape and identical accepted trade to
+     * `DispositionOfferFormService`'s "no broker appointed yet" path, which lets an offer be logged
+     * in the same window.
+     *
+     * ── ⚠ THE ONE RESIDUAL, NAMED RATHER THAN HIDDEN: THE LOOKUP FILTER ────────────────────────
+     * `NDA__c.Broker__c` carries an ACTIVE, NON-OPTIONAL lookup filter
+     * (`Contact.RecordType.DeveloperName = 'Broker'`), and a required lookup filter is enforced on
+     * API/Apex saves, not only in the UI. Every broker this method can resolve came out of a field
+     * carrying THE SAME filter (`Disposition__c.Broker__c` and `BOV_Submission__c.Broker__c` are
+     * byte-for-byte the same `<lookupFilter>`), so the value is filter-valid by construction.
+     * The one vector that breaks that is a Contact being moved OFF the Broker record type AFTER the
+     * source lookup was set — the source rows keep the now-invalid reference, and this insert would
+     * then fail and roll back the stage change. It is not defended here: defending it means either
+     * a Contact query per chunk (re-implementing a declarative filter in Apex, which then drifts
+     * from it) or a two-phase insert whose second phase no test can reach. It is also not measured
+     * — the state is unreachable through any UI or API path this application offers, because both
+     * source fields refuse a non-broker Contact on their own save. Recorded so the next reader of a
+     * `FIELD_FILTER_VALIDATION_EXCEPTION` from a stage change knows where to look.
      */
-    private static void openBuyerNdas(Set<Id> entrants) {
+    private static void openBuyerNdas(Map<Id, Disposition__c> entrants) {
         if (entrants.isEmpty()) {
             return;
         }
         // One query for the whole chunk — never one per record.
-        for (NDA__c existing : NdaSelector.selectByDispositionIds(entrants)) {
+        for (NDA__c existing : NdaSelector.selectByDispositionIds(entrants.keySet())) {
             if (BUYER_ROLE.equals(existing.Party_Role__c)) {
                 entrants.remove(existing.Disposition__c);
             }
@@ -494,15 +617,28 @@ public with sharing class DispositionStageEntryService {
             return;
         }
 
+        // 🔴 RESOLVED **AFTER** THE EARLY RETURN ABOVE, AND THE ORDER IS THE BUDGET. Every
+        // suppressed entrant is one this method will not insert, so resolving a broker for it would
+        // be a query bought for a row that is never written. It is also what keeps the documented
+        // "EXACTLY ONE query for 251 dispositions on the suppression path" property true — moving
+        // this line above the return is the change that falsifier exists to catch.
+        Map<Id, Id> brokerByDisposition = resolveBrokers(entrants);
+
         // Resolved ONCE for the whole chunk — a describe per record would be 251 describes for an
         // answer that cannot vary within a transaction.
         Id recordTypeId = recordTypeIdFor(NDA__c.SObjectType, DISPOSITION_NDA_RECORD_TYPE);
         List<NDA__c> toInsert = new List<NDA__c>();
-        for (Id dispositionId : entrants) {
+        for (Id dispositionId : entrants.keySet()) {
             NDA__c nda = new NDA__c(
                 Disposition__c = dispositionId,
                 Status__c = DISPOSITION_NDA_INITIAL_STATUS,
-                Party_Role__c = BUYER_ROLE
+                Party_Role__c = BUYER_ROLE,
+                // ⚠ ASSIGNED UNCONDITIONALLY, INCLUDING WHEN IT IS NULL, AND THAT IS DELIBERATE.
+                // A `Map.get` miss returns null, and null into a lookup on a NEW record is
+                // identical to leaving the field unset — so an `if (brokerId != null)` guard would
+                // add a branch with no behavioural difference and one more uncovered line. The
+                // unresolvable case is expressed by the map having no entry, not by a conditional.
+                Broker__c = brokerByDisposition.get(dispositionId)
             );
             if (recordTypeId != null) {
                 nda.RecordTypeId = recordTypeId;
@@ -551,6 +687,75 @@ public with sharing class DispositionStageEntryService {
         if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) {
             System.enqueueJob(new DispositionNdaStampQueueable(ndaByDisposition));
         }
+    }
+
+    /**
+     * The appointed broker Contact for each entrant, resolved PER RECORD TYPE — the source of
+     * `NDA__c.Broker__c` on every auto-created buyer NDA (2026-08-21). See `openBuyerNdas` for why
+     * the two record types have two different sources and why an unresolved broker is a normal
+     * answer rather than a failure.
+     *
+     * ── 🔴 AT MOST **ONE** QUERY, AND ZERO WHEN THE CHUNK IS ALL OFF-MARKET ────────────────────
+     * The off-market broker is already on `Trigger.new` (`Disposition__c.Broker__c`), so that half
+     * costs nothing at any record count. The on-market half is ONE set-based selector call for the
+     * whole chunk, issued only when the chunk actually contains an on-market entrant. So a 251-row
+     * off-market chunk adds zero queries and a 251-row on-market chunk adds exactly one — the
+     * constancy property the rest of this class asserts, extended rather than broken.
+     * ⚠ THE `onMarketIds.isEmpty()` RETURN IS NOT A MICRO-OPTIMISATION. `selectSelectedBrokerBy‑
+     * DispositionIds` is itself empty-safe, so removing this line would not change the RESULT — it
+     * would change the COST, from 0 queries to 1, on the off-market path that every existing
+     * governor test in this suite measures. Keep it.
+     *
+     * ── 🔴 FIRST NON-NULL WINS, AND THE "NON-NULL" HALF LIVES IN THE SELECTOR ──────────────────
+     * Exclusivity of the `Selected` submission is a SERVER invariant maintained by
+     * `BovSubmissionService.replaceSelectedBroker`, not a schema constraint, so a disposition with
+     * TWO `Selected` rows is a reachable data defect rather than an impossibility. The selector
+     * returns them oldest-first under a TOTAL order (`CreatedDate ASC, Id ASC`) and filters out
+     * rows whose `Broker__c` is null, so the `containsKey` guard below resolves the same broker on
+     * every run and can never resolve a null over a real one. Do not "simplify" it to an
+     * unconditional `put` — that would silently make the NEWEST duplicate win, disagreeing with
+     * `DispositionOfferFormService`, which takes `[0]` from the same ordering for the same
+     * disposition.
+     *
+     * ── ⚠ THE OFF-MARKET BRANCH IS FLS-FREE BY CONSTRUCTION, WHICH THE ON-MARKET ONE IS NOT ────
+     * Reading `d.Broker__c` off an in-memory `Trigger.new` sObject is not an FLS-checked operation
+     * at all, so the off-market half works for every persona unconditionally. The on-market half is
+     * a SOQL read and needed an explicit mode decision — `WITH SYSTEM_MODE`, argued at the selector
+     * method, on the measured ground that `DPEG_Admin_Access` holds no `FieldPermissions` row for
+     * `BOV_Submission__c.Broker__c` at all (re-verified live 2026-08-21). Two halves, two access
+     * stories; do not describe them as one.
+     *
+     * @param entrants Dispositions that just entered `NDA` and do NOT already have a buyer NDA,
+     *                 as WHOLE records — this method reads `RecordTypeId` and `Broker__c` off them.
+     * @return dispositionId -> broker Contact Id, containing an entry ONLY for the dispositions
+     *         whose broker could be resolved. A disposition absent from this map is the normal
+     *         "no broker appointed yet" case and its NDA is created with a null broker.
+     */
+    private static Map<Id, Id> resolveBrokers(Map<Id, Disposition__c> entrants) {
+        Map<Id, Id> brokerByDisposition = new Map<Id, Id>();
+        // ONE describe for the whole chunk, and null is a legitimate answer — see recordTypeIdFor.
+        // A null here sends EVERY entrant down the off-market branch, which degrades to "no broker
+        // resolved" rather than to a wrong broker.
+        Id onMarketRecordTypeId = recordTypeIdFor(Disposition__c.SObjectType, ON_MARKET_RECORD_TYPE);
+        Set<Id> onMarketIds = new Set<Id>();
+        for (Disposition__c d : entrants.values()) {
+            if (onMarketRecordTypeId != null && onMarketRecordTypeId == d.RecordTypeId) {
+                onMarketIds.add(d.Id);
+            } else if (d.Broker__c != null) {
+                brokerByDisposition.put(d.Id, d.Broker__c);
+            }
+        }
+        if (onMarketIds.isEmpty()) {
+            return brokerByDisposition;
+        }
+        // One query for the whole chunk — never one per record.
+        for (BOV_Submission__c selected
+             : BovSubmissionSelector.selectSelectedBrokerByDispositionIds(onMarketIds)) {
+            if (!brokerByDisposition.containsKey(selected.Disposition__c)) {
+                brokerByDisposition.put(selected.Disposition__c, selected.Broker__c);
+            }
+        }
+        return brokerByDisposition;
     }
 
     // ═════════════════════════════════════════════════════════════════════════

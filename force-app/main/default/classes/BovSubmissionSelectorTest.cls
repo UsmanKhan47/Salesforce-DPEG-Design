@@ -509,4 +509,174 @@ private class BovSubmissionSelectorTest {
         Assert.areEqual(0, result.size(), 'Null input returns an empty list');
         Assert.areEqual(0, queriesUsed, 'A null Id must not issue a query');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════
+    // selectSelectedBrokerByDispositionIds — the NDA auto-create broker stamp's ON-MARKET
+    // read (2026-08-21). ONE CHARACTER from the method above and NOT a bulk overload of it.
+    //
+    // 🔴 THREE THINGS DIFFER, AND EACH HAS A TEST BELOW:
+    //   the SET parameter   its caller is an after-trigger over a chunk, so a per-parent call
+    //                       would be SOQL in a loop;
+    //   `AND Broker__c != NULL` in the WHERE — the singular method has no such term, so the two
+    //                       deliberately DISAGREE on a Selected-but-brokerless row;
+    //   `WITH SYSTEM_MODE`  the singular one is USER_MODE. Not testable here (this org's
+    //                       custom-field FLS gap is 0 and the class-header note explains why no
+    //                       runAs test exists in this file), so it is argued at the declaration.
+    // ⚠ NO `Broker__r.Name` EITHER — the caller stamps an Id into a lookup and never renders a
+    // name. `…_selectsNoTraversal` below is what stops it being "helpfully" added back.
+    // ═════════════════════════════════════════════════════════════════════════════════════
+
+    @isTest
+    static void selectSelectedBrokerByDispositionIds_spansManyParentsAndReturnsOnlySelected() {
+        Id firstDisp = dispositionId();
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        Disposition__c secondDisp = TestDataFactory.createDisposition(asset.Id, true);
+
+        // Two distinct brokers so a cross-wired result cannot pass — createBovSubmissions(2, ...)
+        // builds two DIFFERENT broker Contacts in one insert (the singular overload reuses the
+        // shared defaultBrokerContact and would make the assertion vacuous).
+        List<BOV_Submission__c> firstPair =
+            TestDataFactory.createBovSubmissions(2, firstDisp, false);
+        firstPair[0].Submission_Status__c = 'Selected';
+        firstPair[1].Submission_Status__c = 'Backup';
+        BOV_Submission__c secondSelected =
+            TestDataFactory.createBovSubmission(secondDisp.Id, false);
+        secondSelected.Submission_Status__c = 'Selected';
+        insert new List<BOV_Submission__c>{ firstPair[0], firstPair[1], secondSelected };
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionIds(
+                new Set<Id>{ firstDisp, secondDisp.Id });
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed,
+            'ONE query for BOTH dispositions — the caller runs inside a trigger chunk');
+        Assert.areEqual(2, result.size(), 'One Selected row from each parent');
+        Map<Id, Id> brokerByDisposition = new Map<Id, Id>();
+        for (BOV_Submission__c row : result) {
+            brokerByDisposition.put(row.Disposition__c, row.Broker__c);
+        }
+        Assert.areEqual(firstPair[0].Broker__c, brokerByDisposition.get(firstDisp),
+            'The first parent resolves to ITS Selected submission\'s broker — not the Backup '
+            + 'row\'s, and not the other parent\'s');
+        Assert.areEqual(secondSelected.Broker__c, brokerByDisposition.get(secondDisp.Id),
+            'The second parent resolves to its own');
+        Assert.areNotEqual(
+            brokerByDisposition.get(firstDisp),
+            brokerByDisposition.get(secondDisp.Id),
+            'The two fixture brokers must be different Contacts, or the two assertions above '
+            + 'would both pass against a single cross-wired answer'
+        );
+    }
+
+    /**
+     * 🔴 `Broker__r` MUST NOT BE TRAVERSED. Under `SYSTEM_MODE` adding `Broker__r.Name` would not
+     * throw for anyone, so nothing would FAIL if someone added it — it would just materialise a
+     * child sObject per row inside an after-trigger, for a name the caller never renders. This is
+     * the only test that can notice.
+     */
+    @isTest
+    static void selectSelectedBrokerByDispositionIds_selectsNoTraversal() {
+        Id dispId = dispositionId();
+        BOV_Submission__c selected = TestDataFactory.createBovSubmission(dispId, false);
+        selected.Submission_Status__c = 'Selected';
+        insert selected;
+
+        Test.startTest();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionIds(new Set<Id>{ dispId });
+        Test.stopTest();
+
+        Assert.areEqual(1, result.size(), 'The Selected row comes back');
+        Assert.isNotNull(result[0].Broker__c, 'Broker__c is in the SELECT');
+        // 🔴 `getPopulatedFieldsAsMap()`, NOT `Assert.isNull(result[0].Broker__r, ...)`. Reading an
+        // un-queried relationship off a SOQL-retrieved sObject raises
+        // `System.SObjectException: SObject row was retrieved via SOQL without querying the
+        // requested field` — so the obvious assertion would ERROR rather than pass, on correct
+        // code. The populated-field map answers "was it selected?" without dereferencing it.
+        Assert.isFalse(result[0].getPopulatedFieldsAsMap().containsKey('Broker__r'),
+            'Broker__r must NOT be resolved. The caller stamps an Id into a lookup; a traversal '
+            + 'here is pure heap inside a trigger.');
+    }
+
+    /**
+     * A disposition with only `Backup` submissions resolves to NOTHING, and that empty answer is
+     * what makes the NDA auto-create stamp degrade to "no broker" instead of appointing a broker
+     * nobody chose.
+     */
+    @isTest
+    static void selectSelectedBrokerByDispositionIds_noSelectedRow_returnsEmptyNotAThrow() {
+        Id dispId = dispositionId();
+        TestDataFactory.createBovSubmissions(3, dispId, true);   // all default to Backup
+
+        Test.startTest();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionIds(new Set<Id>{ dispId });
+        Test.stopTest();
+
+        Assert.areEqual(0, result.size(),
+            'No Selected row means an empty list, never a throw — a throw here happens inside an '
+            + 'AFTER trigger and would roll back the user\'s own stage change');
+    }
+
+    /** Null/empty-safe and, on empty, issues NO query — the off-market chunk's zero-cost path. */
+    @isTest
+    static void selectSelectedBrokerByDispositionIds_nullAndEmptyInput_returnEmptyWithoutQuerying() {
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        Integer nullSize =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionIds(null).size();
+        Integer emptySize =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionIds(new Set<Id>()).size();
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(0, nullSize, 'Null input returns an empty list');
+        Assert.areEqual(0, emptySize, 'An empty set returns an empty list');
+        Assert.areEqual(0, queriesUsed,
+            'Neither may query. DispositionStageEntryService.resolveBrokers relies on this to keep '
+            + 'an all-off-market NDA chunk at zero extra queries.');
+    }
+
+    /**
+     * 251 parents, ONE query, every one resolved — `.claude/rules/bulk-test-rule.md`. 251 is the
+     * number because the CALLER is trigger-driven and a chunk spans two firings; the read itself
+     * has no chunking, so what this pins is that the cost does not grow with the set.
+     */
+    @isTest
+    static void selectSelectedBrokerByDispositionIds_bulk251_readsAllInOneQuery() {
+        Property_Asset__c asset = [SELECT Id FROM Property_Asset__c LIMIT 1];
+        List<Disposition__c> dispositions =
+            TestDataFactory.createDispositions(BULK_N, asset.Id, true);
+        List<BOV_Submission__c> submissions =
+            TestDataFactory.createBovSubmissions(BULK_N, null, false);
+        Set<Id> dispositionIds = new Set<Id>();
+        for (Integer i = 0; i < BULK_N; i++) {
+            submissions[i].Disposition__c = dispositions[i].Id;
+            submissions[i].Submission_Status__c = 'Selected';
+            dispositionIds.add(dispositions[i].Id);
+        }
+        insert submissions;   // built in the loop, inserted once — never DML in a loop
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<BOV_Submission__c> result =
+            BovSubmissionSelector.selectSelectedBrokerByDispositionIds(dispositionIds);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, queriesUsed, 'EXACTLY ONE query for 251 parents');
+        Assert.areEqual(BULK_N, result.size(), 'Every parent\'s Selected row is returned');
+        Set<Id> distinctParents = new Set<Id>();
+        for (BOV_Submission__c row : result) {
+            distinctParents.add(row.Disposition__c);
+            Assert.isNotNull(row.Broker__c,
+                'Every returned row names a broker — that is what AND Broker__c != NULL buys');
+        }
+        Assert.areEqual(BULK_N, distinctParents.size(),
+            '251 DISTINCT parents, so the caller\'s map is keyed one-to-one');
+    }
 }

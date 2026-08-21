@@ -402,4 +402,217 @@ private class DispositionApprovalAdvanceServiceTest {
         Assert.areEqual(0, jobsUsed,
             'A 251-row chunk with no false -> true transition anywhere must enqueue nothing at all');
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE NON-OWNER APPROVER (2026-08-21) — the fourth site of the `DISP-0011` sharing wave.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // ⚠ EVERY TEST ABOVE PASSED AGAINST THE PRE-FIX CODE, because they run as the admin test user
+    // who OWNS every fixture Disposition. A **Queueable executes as the ENQUEUING user**, and the
+    // enqueuing transaction is the approval's own field update — so in production `advance()` runs
+    // as the APPROVER, against a record OWNED BY THE SUBMITTER. On an OWD-Private object that is a
+    // record-level edit denial, and the async hop moves the LOCK problem while moving nothing at
+    // all about identity.
+    //
+    // ⚠ `advance()` IS CALLED DIRECTLY RATHER THAN THROUGH THE QUEUEABLE, matching every other test
+    // in this class and for the reason the service header gives: the mapping and the write live in
+    // the service precisely so they are reachable without contriving an approval. The identity the
+    // Queueable would carry is supplied here by `System.runAs`, which is the only part that matters
+    // to this test.
+
+    /**
+     * 🔴 KEEPS THE TEST BELOW HONEST. Run INSIDE `System.runAs` against `UserInfo.getUserId()`.
+     * `RecordId` must be in the SELECT — `UserRecordAccess` rejects a query without it at compile
+     * time.
+     */
+    private static void assertReadableButNotEditable(Id dispositionId) {
+        UserRecordAccess access = [
+            SELECT RecordId, HasReadAccess, HasEditAccess
+            FROM UserRecordAccess
+            WHERE UserId = :UserInfo.getUserId() AND RecordId = :dispositionId
+        ];
+        Assert.isTrue(access.HasReadAccess,
+            'FIXTURE PRECONDITION: the approver must READ the row — that is what lets '
+            + 'selectStageAndTypeByIds return it, which is why the write failure stays hidden.');
+        Assert.isFalse(access.HasEditAccess,
+            '🔴 FIXTURE PRECONDITION: the approver must NOT be able to EDIT the row. That is the '
+            + 'refusal under test; if this is true every assertion after it is vacuous.');
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴🔴 READ THIS BEFORE TRUSTING THIS TEST. IT IS **NOT** A FALSIFIER, AND THAT IS MEASURED.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * MUTATION-TESTED 2026-08-21: `SemaphoreAdvanceWrites` was flipped from `without sharing` to
+     * `with sharing` — i.e. the fix was fully reverted — and **this test STAYED GREEN**, while the
+     * five sibling tests on the other three sites all went RED with
+     * `INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY`. Its `UserRecordAccess` precondition passed in
+     * the same run, so the persona genuinely had `HasEditAccess = false`; the DML succeeded anyway.
+     *
+     * WHAT THE GREEN RESULT DOES AND DOES NOT SETTLE. The five working tests all reach the write
+     * through a real TRIGGER. This one calls `advance()` DIRECTLY from a test method, which is how
+     * every other test in this class is written and is what the service header asks for.
+     *
+     * ⚠ RETRACTED 2026-08-21 (code review W3) — THIS BLOCK REPORTED AN AMBIGUOUS RESULT AS AN
+     * UNAMBIGUOUS ONE, AND THAT IS WHY THE CHEAP EXPERIMENT WENT UNTRIED FOR A DAY. It concluded
+     * "in that entry shape the `with sharing` declaration did not produce a record-level refusal"
+     * and then argued the only repair was circular. A green mutation is consistent with TWO
+     * readings and this block asserted the first:
+     *   (a) BAD FALSIFIER — the direct call is the wrong entry shape and a better one would red;
+     *   (b) NO REFUSAL HERE AT ALL — this site has no record-level refusal to reproduce in ANY
+     *       non-trigger shape, in which case the escape at this site is unproven, full stop.
+     * 🔴 AND THE CIRCULARITY ARGUMENT WAS ABOUT THE WRONG HOP. It read: "Routing through the real
+     * trigger would mean flipping `Approval_Advance_Pending__c` INSIDE `System.runAs(approver)` so
+     * the after-update handler enqueues — but that flip is itself a write to the very Disposition
+     * the approver cannot edit, so it fails first ... Nothing short of an actual `Approval.process`
+     * walk reproduces that." True of the TRIGGER hop and irrelevant to the ESCAPE. What the escape
+     * depends on is ASYNC CONTEXT + APPROVER IDENTITY, and
+     * `DispositionApprovalAdvanceQueueable` supplies both directly: it takes a plain `Set<Id>`, the
+     * semaphore flip stays OUTSIDE `runAs` as admin exactly as it already is, and nothing is
+     * circular.
+     * ✅ THAT EXPERIMENT WAS RUN ON 2026-08-21 AND IT SETTLED THE QUESTION — AGAINST THE ESCAPE
+     * BEING FALSIFIABLE HERE AT ALL, not in favour of reading (a) or (b). The async shape looked
+     * green under a reverted mutation and then a `LastModifiedById` assertion showed WHY: 🔴
+     * `Test.stopTest()` drains the queue as the TEST-RUNNING user, so `System.runAs` never reached
+     * the queueable and the "async" run was the admin path in disguise. Full measurement in
+     * queueableEntryShape_doesNotInheritRunAs_soItCannotFalsifyTheSharingEscape below. ⇒ Reading
+     * (a) vs (b) above remains OPEN and is not decidable by any unit test in this class; the
+     * escape rests on its own argument plus the three trigger-reached sites, as stated below.
+     *
+     * ⇒ WHAT THIS TEST IS WORTH: it pins the mapping, the stage move and the semaphore clear for a
+     * non-admin principal, and it will still catch a regression that breaks the write for everyone.
+     * It does NOT on its own prove the sharing escape. **Do not cite this test as evidence the D-1
+     * path is sharing-safe, and do not delete `SemaphoreAdvanceWrites` on the strength of this test
+     * still passing** — read the queueable test's own banner for what the re-run measured.
+     *
+     * ⚠ THE SEMAPHORE HALF IS THE SHARPER ASSERTION OF THE TWO. A refused write leaves
+     * `Approval_Advance_Pending__c = true` — deliberately, per the class header — so the stuck-flag
+     * assertion distinguishes "the write was refused" from "the mapping did not match", which the
+     * stage assertion alone cannot.
+     */
+    @isTest
+    static void nonOwnerApprover_advancesTheStageAndClearsTheSemaphore() {
+        Disposition__c d = dispositionAt(
+            TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Disposition Readiness');
+        d.Approval_Advance_Pending__c = true;
+        // SYSTEM_MODE — the field carries NO FLS for anyone by design (see its own field-meta and
+        // the other tests in this class); only a workflow FieldUpdate or a SYSTEM_MODE write sets it.
+        Database.update(d, AccessLevel.SYSTEM_MODE);
+        User approver = TestDataFactory.createNonOwnerDispositionApprover('daa1');
+
+        System.runAs(approver) {
+            assertReadableButNotEditable(d.Id);
+            Test.startTest();
+            DispositionApprovalAdvanceService.advance(new Set<Id>{ d.Id });
+            Test.stopTest();
+        }
+
+        Assert.areEqual(new List<String>(),
+            DispositionApprovalAdvanceService.lastRunAdvanceFailures,
+            '🔴 THE ADVANCE WAS REFUSED. This list carries the platform StatusCode — read it in the '
+            + 'message above. INSUFFICIENT_ACCESS_OR_READONLY means the `without sharing` escape '
+            + '(SemaphoreAdvanceWrites) has been removed; SYSTEM_MODE cannot satisfy a '
+            + 'record-level check.');
+        Disposition__c after = reread(d.Id);
+        Assert.areEqual('BOV Outreach', after.Disposition_Stage__c,
+            'An approver who can SEE but not EDIT the sale must still advance it. Still reading '
+            + 'Disposition Readiness means the write was swallowed by allOrNone = false.');
+        Assert.isFalse(after.Approval_Advance_Pending__c,
+            'and the semaphore must be cleared by that same statement. Still true means the write '
+            + 'never landed — which is the production symptom: an approval that completed, a sale '
+            + 'that did not move, and a flag nobody can see on the page.');
+    }
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴🔴 THE ASYNC ENTRY SHAPE IS **NOT REPRODUCIBLE** IN A UNIT TEST, AND THIS METHOD IS THE
+     * MEASUREMENT THAT ESTABLISHED IT. ADDED 2026-08-21 (code review W3).
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * WHY IT WAS WRITTEN. Production is NEITHER a direct call NOR a trigger — it is a QUEUEABLE
+     * executing as the enqueuing user (the approver) after the approving transaction committed.
+     * The sibling test above reproduces the IDENTITY and not the ASYNC CONTEXT, and its banner
+     * used to conclude from a green mutation that the direct-call shape was simply a bad falsifier
+     * — a conclusion equally consistent with "there is no record-level refusal at this site at
+     * all". Review W3 correctly pointed out that `DispositionApprovalAdvanceQueueable` takes a
+     * plain `Set<Id>`, that the semaphore flip already happens as admin OUTSIDE `runAs`, and that
+     * the experiment was therefore ~3 lines and not circular. It was run. Here is what it found.
+     *
+     * ── 🔴 MEASURED 2026-08-21, TWO DRY-RUN VALIDATIONS AGAINST usman-dpeg ─────
+     * 1. Enqueue + `Test.stopTest()` INSIDE `System.runAs(approver)`, `SemaphoreAdvanceWrites`
+     *    MUTATED back to `with sharing` (the fix fully reverted): the stage moved, the semaphore
+     *    cleared, `lastRunAdvanceFailures` was empty — **GREEN**, exactly as the direct call had
+     *    been. On its face that reads as "the async shape does not falsify the escape either".
+     * 2. 🔴 IT IS NOT WHAT HAPPENED. A `LastModifiedById` assertion added to that same mutated run
+     *    FAILED: the row was stamped to the **test-running user**, not to `approver`.
+     *    `Test.stopTest()` drains the queue in the context of the user running the TEST METHOD —
+     *    `System.runAs` does not carry into the async execution. So run 1 never had a non-owner
+     *    writing anything; it was the admin path wearing a `runAs` block.
+     * ⇒ THE GREEN IN RUN 1 WAS VACUOUS, AND SO WAS THE PROPOSED EXPERIMENT. The async hop cannot
+     *   be given the approver's identity from a unit test at all — which is a stronger and much
+     *   more useful statement than the old banner's "the obvious repair is circular", because it
+     *   is measured and it names the precise mechanism that defeats it.
+     *
+     * ── WHAT THIS METHOD IS NOW, AND WHY IT IS NOT DELETED ─────────────────────
+     * It pins the PLATFORM BEHAVIOUR that makes the experiment impossible. If Salesforce ever
+     * makes `Test.stopTest()` honour the enclosing `runAs`, this method goes RED, and the person
+     * who reds it should immediately re-run the mutation described above — at that point the
+     * sharing escape becomes directly falsifiable for the first time. Until then, this is the
+     * documented dead end, kept so it is not rediscovered a third time.
+     * ⚠ It also still exercises the real `DispositionApprovalAdvanceQueueable.execute` shell,
+     * which nothing else in this class does.
+     *
+     * 🔴 WHAT THE ESCAPE AT THIS SITE STILL RESTS ON, UNCHANGED AND STATED PLAINLY: the argument
+     * at `SemaphoreAdvanceWrites`, plus the MEASURED `INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY`
+     * failures at the three structurally identical trigger-reached sites. No test in this class
+     * proves it, none can, and this method is now the evidence for why — not a substitute.
+     * **Do not delete `SemaphoreAdvanceWrites` on the strength of any test here staying green.**
+     */
+    @isTest
+    static void queueableEntryShape_doesNotInheritRunAs_soItCannotFalsifyTheSharingEscape() {
+        Disposition__c d = dispositionAt(
+            TestDataFactory.DISPOSITION_RT_ON_MARKET, 'Disposition Readiness');
+        d.Approval_Advance_Pending__c = true;
+        // SYSTEM_MODE and OUTSIDE runAs, deliberately — this is the production
+        // `Set_Approval_Advance_Pending` workflow field update's stand-in, which rides the
+        // approval's own save and is not subject to the approver's record access.
+        Database.update(d, AccessLevel.SYSTEM_MODE);
+        Id testRunningUserId = UserInfo.getUserId();
+        User approver = TestDataFactory.createNonOwnerDispositionApprover('daa2');
+
+        System.runAs(approver) {
+            assertReadableButNotEditable(d.Id);
+            Test.startTest();
+            System.enqueueJob(new DispositionApprovalAdvanceQueueable(new Set<Id>{ d.Id }));
+            Test.stopTest();
+        }
+
+        // The job ran and did its work — the shell delegates to advance() correctly.
+        Assert.areEqual(new List<String>(),
+            DispositionApprovalAdvanceService.lastRunAdvanceFailures,
+            'The queueable shell must delegate to advance() and complete. A non-empty list here is '
+            + 'a real regression in the async path, independent of everything this method measures '
+            + 'about identity.');
+        Disposition__c after = reread(d.Id);
+        Assert.areEqual('BOV Outreach', after.Disposition_Stage__c,
+            'DispositionApprovalAdvanceQueueable.execute must produce the same stage move as a '
+            + 'direct advance() call — this is the only coverage the shell has.');
+        Assert.isFalse(after.Approval_Advance_Pending__c,
+            'and the semaphore must be cleared by that same statement.');
+
+        // 🔴 THE POINT OF THE METHOD. See the banner: this is the measured reason the async shape
+        // is not a falsifier for the sharing escape.
+        Id writerId = [
+            SELECT LastModifiedById FROM Disposition__c WHERE Id = :d.Id WITH SYSTEM_MODE
+        ].LastModifiedById;
+        Assert.areNotEqual(approver.Id, writerId,
+            '🔴 MEASURED 2026-08-21: Test.stopTest() does NOT drain the queue as the runAs user. '
+            + 'If this now fails — i.e. the write IS stamped to the approver — the platform has '
+            + 'changed and the async entry shape has become falsifiable. RE-RUN THE MUTATION: flip '
+            + 'SemaphoreAdvanceWrites to `with sharing` and see whether this method reds. That '
+            + 'would be the first direct proof the sharing escape is load-bearing.');
+        Assert.areEqual(testRunningUserId, writerId,
+            'and the writer is specifically the TEST-RUNNING user, which is what makes the '
+            + 'enclosing System.runAs cosmetic for the async hop. Asserted as well as the '
+            + 'areNotEqual above so that a third identity (a future execution-context change) '
+            + 'cannot satisfy this method by accident.');
+    }
 }

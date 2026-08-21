@@ -35,12 +35,18 @@
  *
  *   - **`LOI__c.LOI_Status__c` is EXCLUDED.** No automation ever sets it (the
  *     `LOI_Signed_Status_Sync` flow's own header says so), so on a disposition LOI it holds its
- *     `Draft` default forever. Showing it would routinely print "Draft" beside a `Stage__c` of
- *     "Executed" — a card contradicting itself. Design §0 C-10.
- *   - **`LOI__c.LOI_Signed_Date__c` is EXCLUDED.** `LOI_Signed_Status_Sync` keys on
- *     `Stage__c = 'Signed'`, the ACQUISITION terminal; the disposition terminal is `Executed`, so
- *     that flow is acquisition-only BY CONSTRUCTION and the field is STRUCTURALLY always blank on
- *     a sale. It would render a permanent em-dash that reads as missing data. Design §0 C-11.
+ *     `Draft` default forever. Showing it would routinely print "Draft" beside a real `Stage__c`
+ *     — a card contradicting itself. Design §0 C-10. ⚠ Unchanged by the 2026-08-21 stage change.
+ *   - **`LOI__c.LOI_Signed_Date__c` is EXCLUDED — BUT NOT FOR THE REASON THIS BULLET USED TO
+ *     GIVE.** Retracted, verbatim: "`LOI_Signed_Status_Sync` keys on `Stage__c = 'Signed'`, the
+ *     ACQUISITION terminal; the disposition terminal is `Executed`, so that flow is
+ *     acquisition-only BY CONSTRUCTION and the field is STRUCTURALLY always blank on a sale. It
+ *     would render a permanent em-dash that reads as missing data."
+ *     On 2026-08-21 the user made `Signed` the DISPOSITION terminal too. `LOI_Signed_Status_Sync`
+ *     is a before-save flow on `LOI__c` with no record-type and no lookup criterion, so it now
+ *     fires on sell-side LOIs reaching Signed and stamps a REAL date. The exclusion survives as a
+ *     product decision (§0 C-11 stands), not as a structural fact. If it is ever revisited, weigh
+ *     a populated date — not an em-dash.
  *
  * The LOI row therefore shows `Stage__c`, `Offer_Price__c` and `Ball_In_Court__c`. ⚠ On a sale
  * `Ball_In_Court__c = 'Seller'` means DPEG and 'Buyer' means the counterparty — the value is
@@ -117,9 +123,19 @@ const NDA_TONE = {
 };
 
 // LOI__c.Stage__c carries BOTH vocabularies (the picklist is shared with the acquisition record
-// type). The disposition sequence is Received -> Under Review -> Countered by DPEG -> Counter
-// Received from Buyer -> Executed; the acquisition values are mapped too so a mis-typed record
-// still renders sensibly rather than falling to neutral.
+// type). The disposition sequence is Received -> Under Review -> Negotiation -> Signed; the
+// acquisition values are mapped too so a mis-typed record still renders sensibly rather than
+// falling to neutral.
+// ⚠ COMMENT REPOINTED 2026-08-21 — THE MAP BELOW IS UNCHANGED AND NEEDED NO EDIT. It already
+// mapped 'Negotiation' ('progress') and 'Signed' ('complete') as acquisition values, so the new
+// sell-side sequence renders correctly with no code change. The sequence read
+// "Received -> Under Review -> Countered by DPEG -> Counter Received from Buyer -> Executed" until
+// the user retired the sell-side counter loop.
+// 🔴 'Countered by DPEG', 'Counter Received from Buyer' and 'Executed' ARE DELIBERATELY RETAINED
+// as keys. They are on no record type any more, but they stay ACTIVE on the master value set
+// (design gate G3), so a data load or a direct Apex write can still land one here — and an
+// unmapped value falls to 'neutral', which reads as "no status" rather than as "unexpected value".
+// Do not prune them as dead code.
 const LOI_TONE = {
     Received: 'progress',
     'Under Review': 'progress',
@@ -137,7 +153,20 @@ const LOI_TONE = {
 };
 
 // Contract_Review__c.Negotiation_Status__c — the SOURCE field, not the derived Stage__c
-// projection, which collapses four negotiation states into three.
+// projection, which collapses several negotiation states into three.
+// The two record types' sequences (2026-08-21):
+//   Acquisition_PSA   Draft -> Negotiation -> Signed -> Executed
+//   Disposition_PSA   Initial Draft -> Negotiation -> Signed
+// ⚠ COMMENT ONLY — THE MAP BELOW IS UNCHANGED AND NEEDED NO EDIT. It already mapped 'Negotiation'
+// and 'Signed', so the harmonised sell-side sequence renders correctly with no code change.
+// 🔴 'Revised', 'Ready for Execution' and 'Executed' ARE DELIBERATELY RETAINED as keys, exactly as
+// in LOI_TONE above. 'Executed' is still live on ACQUISITION PSAs. The other two are on no record
+// type but remain ACTIVE on the master value set, so a data load can still land one here — and an
+// unmapped value falls to 'neutral', which reads as "no status" rather than "unexpected value".
+// 🔴 'Signed' MEANS DIFFERENT THINGS BY SIDE and this card cannot tell them apart: it is the
+// DISPOSITION terminal ('complete' is right) and a MID-SEQUENCE acquisition state ('complete' would
+// be premature). That is acceptable only because this component renders on a Disposition record
+// page and never on an Opportunity — do not reuse PSA_TONE behind an acquisition surface.
 const PSA_TONE = {
     'Initial Draft': 'neutral',
     Draft: 'neutral',

@@ -122,6 +122,17 @@
             ⚠ STALE SENTENCE: rule 4 above says "BOV_Score__c is likewise left editable". It is no
             longer on this layout at all, so there is nothing here to be editable. The reasoning
             (nothing writes it, only reads it) still holds and is why removing it is safe.
+            🔴 RE-ADDED 2026-08-21 (later the same day). The formula conversion this removal was
+            clearing the way for is CANCELLED FOR NOW - BOV_Score__c stays a hand-entered Number
+            field, and lwc/bovAddResponseModal now renders it (optional) on the create screen. A
+            field enterable at CREATE with no way to correct it on the record afterward is a gap:
+            an analyst who mistypes a score would have nowhere to fix it. Restored to "BOV Terms",
+            behavior=Edit (not Required - the create-modal field is optional, and no validation
+            rule names this field), same column as Hist_Success_Rate__c, which is the layout's
+            other optional BOV Terms field. DPEG_Disposition_Edit already grants editable=true
+            (restored the same day - see that permission set's own comment); DPEG_Disposition_View
+            stays readable-only, so the field renders Readonly-equivalent for that persona via FLS
+            regardless of this Edit behavior.
 
          3. The CustomLinks section gained customLabel=true and label "Custom Links".
          4. A <summaryLayout> block appeared. Both are artifacts of the layout having been opened
@@ -186,6 +197,10 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Hist_Success_Rate__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>BOV_Score__c</field>
             </layoutItems>
         </layoutColumns>
         <style>TwoColumnsTopToBottom</style>

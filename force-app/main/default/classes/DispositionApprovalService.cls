@@ -443,6 +443,19 @@ public with sharing class DispositionApprovalService {
 
         Savepoint beforeSelection = Database.setSavepoint();
         try {
+            // 🔴 THE TWO DML MODES BELOW DIFFER ON PURPOSE. DO NOT "HARMONISE" THEM — the
+            // difference IS the behaviour, and making them match either way breaks one of them.
+            //   SYSTEM_MODE (the flags): `Is_Selected__c` and its siblings carry no FLS for the
+            //     personas that select an offer, and the user did not ask for this write — it is
+            //     bookkeeping performed on their behalf. A USER_MODE refusal here would be an FLS
+            //     gap wearing a business error, and it would abort a selection that is otherwise
+            //     legitimate. ARCHITECTURE.md §2, automation-path exception.
+            //   BARE `update` (the stage): sharing- and FLS-enforcing DELIBERATELY. This is the
+            //     write the user DID ask for, on the record they are acting on, and a refusal is
+            //     the correct answer — it throws, the catch below rolls back the whole selection,
+            //     and the platform's own message (a validation rule's text, an access error)
+            //     reaches the user instead of a silent partial commit. Wrapping it in SYSTEM_MODE
+            //     would let someone with no edit rights on the sale move its stage.
             if (!flagUpdates.isEmpty()) {
                 Database.update(flagUpdates, true, AccessLevel.SYSTEM_MODE);
             }
@@ -466,6 +479,9 @@ public with sharing class DispositionApprovalService {
             // statements ago. Propagate RAW so the controller masks it with the fixed generic
             // message rather than leaking platform approval text (the OpportunityApprovalService
             // contract).
+            // NOT debug output — this is the failure channel. The rethrow is deliberately MASKED at
+            // the controller boundary, so this line is the only place the real cause and stack of a
+            // rolled-back offer selection is ever recorded. A lint pass will flag it; leave it.
             System.debug(LoggingLevel.ERROR, 'DispositionApprovalService.selectOffer rolled back on '
                 + dispositionId + '/' + offerId + ': ' + e.getMessage() + ' | '
                 + e.getStackTraceString());

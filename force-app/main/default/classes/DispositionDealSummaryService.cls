@@ -112,13 +112,28 @@ public with sharing class DispositionDealSummaryService {
         // ── LOI row ────────────────────────────────────────────────────────────────────────
         /**
          * Latest `LOI__c.Stage__c` — the sale's real LOI vocabulary (Received -> Under Review ->
-         * Countered by DPEG -> Counter Received from Buyer -> Executed).
+         * Negotiation -> Signed).
+         * ⚠ REPOINTED 2026-08-21 (comment only — this DTO member is unchanged and
+         * `summarise` still passes `Stage__c` straight through with no mapping). The sequence read
+         * "Received -> Under Review -> Countered by DPEG -> Counter Received from Buyer ->
+         * Executed" until the user retired the sell-side counter loop; counter rounds now live on
+         * Counter History (`Counter_Offer__c`).
+         *
          * 🔴 `LOI_Status__c` is NOT carried here and must not be added: no automation sets it, so
-         * on a disposition it reads its `Draft` default beside a Stage of `Executed` (§0 C-10).
-         * 🔴 `LOI_Signed_Date__c` is NOT carried either: `LOI_Signed_Status_Sync` keys on the
-         * ACQUISITION terminal `Stage__c = 'Signed'`, so on a sale it is structurally always blank
-         * (§0 C-11). Both exclusions are stated again on `LoiSelector.selectLatestByDispositionId`
-         * and in the LWC header, on purpose — an unexplained omission gets "fixed".
+         * on a disposition it reads its `Draft` default beside a real Stage (§0 C-10). UNCHANGED.
+         *
+         * 🔴 `LOI_Signed_Date__c` is NOT carried either — BUT ITS REASON DIED ON 2026-08-21 AND THE
+         * EXCLUSION IS NOW A PRODUCT DECISION RATHER THAN A STRUCTURAL FACT. Retracted, verbatim:
+         * "`LOI_Signed_Status_Sync` keys on the ACQUISITION terminal `Stage__c = 'Signed'`, so on a
+         * sale it is structurally always blank (§0 C-11)."
+         * `Signed` is now the DISPOSITION terminal too, and `LOI_Signed_Status_Sync` is a
+         * before-save flow on `LOI__c` with NO record-type or lookup criterion — so from this
+         * change it fires on sell-side LOIs as well, latching `LOI_Signed__c` and stamping
+         * `LOI_Signed_Date__c`. The field will therefore be POPULATED on a sale that reaches
+         * Signed. The exclusion stands (C-10/C-11 are unchanged as decisions), but anyone
+         * re-evaluating it must weigh a real date, not an em-dash. Restated on
+         * `LoiSelector.selectLatestByDispositionId` and in the LWC header, on purpose — an
+         * unexplained omission gets "fixed".
          */
         @AuraEnabled public String loiStage;
         /** Latest `LOI__c.Offer_Price__c`; null when not yet priced. */

@@ -16,23 +16,33 @@
  *     Tranche 2 Workstream A2)                        -> selectSelectedByDispositionIds
  *   - DispositionOfferFormService.getFormContext, the Log Offer modal's read-only
  *     broker on the ON-MARKET path (2026-08-21)       -> selectSelectedBrokerByDispositionId
+ *   - DispositionStageEntryService.openBuyerNdas, stamping NDA__c.Broker__c on the
+ *     auto-created buyer NDA, ON-MARKET path (2026-08-21)
+ *                                                     -> selectSelectedBrokerByDispositionIds
  *
  * ⚠ MIXED MODES SINCE 2026-08-19 — READ THE METHOD, NEVER THIS HEADER. ⚠ CORRECTED 2026-08-20: this
  * paragraph used to say "Two methods are `WITH USER_MODE`; `selectStatusesByDispositionId` is
  * `WITH SYSTEM_MODE`", which was a COUNT and counts decay. ⚠ RE-COUNTED 2026-08-21 (the Log Offer
- * modal added `selectSelectedBrokerByDispositionId`): it is now TWO of **FIVE** —
- * `selectStatusesByDispositionId` and `selectSelectedByDispositionIds` (the trigger guard's read)
- * are `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception, each justified at
+ * modal added `selectSelectedBrokerByDispositionId`): it was then TWO of **FIVE**. ⚠ RE-COUNTED
+ * AGAIN THE SAME DAY (the NDA broker stamp added `selectSelectedBrokerByDispositionIds`): it is now
+ * THREE of **SIX** — `selectStatusesByDispositionId`, `selectSelectedByDispositionIds` (the trigger
+ * guard's read) and `selectSelectedBrokerByDispositionIds` (the NDA stamp's read) are
+ * `WITH SYSTEM_MODE` under the ARCHITECTURE.md §2 automation-path exception, each justified at
  * its OWN declaration, which is where §2 says the authoritative inventory lives. 🔴 DO NOT TRUST A
  * NUMBER IN THIS HEADER — `NdaSelector`'s header records that this repo has already miscounted its
- * own SYSTEM_MODE inventory once, and this line has now decayed twice. Re-count; do not assert.
+ * own SYSTEM_MODE inventory once, and this line has now decayed THREE times. Re-count; do not
+ * assert. ⚠ AND NOTE THE NEAR-IDENTICAL NAMES: `…ByDispositionId` (singular, USER_MODE, modal) and
+ * `…ByDispositionIds` (plural, SYSTEM_MODE, trigger) differ by ONE CHARACTER and by their entire
+ * justification. Read the parameter type before quoting either one's reasoning.
  * ⚠ AN EARLIER SENTENCE HERE WAS REASONING FROM THE WRONG TEST and is retracted verbatim so nobody
  * re-derives it: "There is no guest path for the Disposition module, so no SYSTEM_MODE appears
  * here." The exception is about reads the running user never asked for, and about fields the running
  * user may not hold — not about anonymous ones.
  *
  * MODE (the THREE USER_MODE reads — `selectByDispositionId`, `selectSelectedByDispositionId` and,
- * since 2026-08-21, `selectSelectedBrokerByDispositionId`) — BOV_Submission__c is a custom object;
+ * since 2026-08-21, `selectSelectedBrokerByDispositionId`; the plural
+ * `selectSelectedBrokerByDispositionIds` added later the same day is NOT one of them) —
+ * BOV_Submission__c is a custom object;
  * P3 proved the custom-field FLS gap is 0, so USER_MODE is safe and enforces the running user's
  * sharing + FLS. None of the three touches `Approval_Status__c`, which is the field that forced
  * `selectStatusesByDispositionId` the other way. (`selectSelectedByDispositionIds` is SYSTEM_MODE
@@ -279,6 +289,122 @@ public with sharing class BovSubmissionSelector {
             FROM BOV_Submission__c
             WHERE Disposition__c = :dispositionId AND Submission_Status__c = :STATUS_SELECTED
             WITH USER_MODE
+            ORDER BY CreatedDate ASC, Id ASC
+        ];
+    }
+
+    /**
+     * THE APPOINTED BROKER CONTACT for a SET of ON-MARKET dispositions — the `Selected` submission's
+     * `Broker__c`, for each of them, in ONE query. Backs
+     * `DispositionStageEntryService.openBuyerNdas`, which stamps `NDA__c.Broker__c` on the NDA it
+     * auto-creates when a disposition enters the `NDA` stage (2026-08-21).
+     *
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 IT TAKES A SET, AND IT IS A FOURTH METHOD RATHER THAN A REUSE OF EITHER NEIGHBOUR.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * Two obvious "simplifications" exist and both are wrong:
+     *
+     *   `selectSelectedBrokerByDispositionId` (the SINGULAR, one method up) — REJECTED. Its caller
+     *       is a modal opening on ONE record. This caller runs inside an after-trigger chunk of up
+     *       to 200 dispositions, so reusing it means SOQL in a loop and a blown 100-query limit at
+     *       101 rows. Identical argument to `selectSelectedByDispositionIds` below; identical
+     *       instruction not to fold them back together.
+     *   `selectSelectedByDispositionIds` (the plural GUARD read, below) WIDENED BY ONE COLUMN —
+     *       REJECTED, and this is the closer call of the two, because that method is already
+     *       set-based and already `SYSTEM_MODE`, so `Broker__c` would add no FLS surface there
+     *       (exactly the argument `selectStatusesByDispositionId` uses to justify ITS `Broker__c`).
+     *       🔴 THE BLOCKER IS THE `WHERE`, NOT THE `SELECT`. This method carries
+     *       `AND Broker__c != NULL` (see below), and that predicate is POISON in the guard: the
+     *       guard COUNTS Selected rows in order to refuse a second one, so a `Broker__c != NULL`
+     *       term would make a Selected-but-brokerless row invisible to it and turn the exclusivity
+     *       guard into a silent permit. Two reads with different WHERE clauses are two reads.
+     *
+     * ── 🔴 `AND Broker__c != NULL` IS LOAD-BEARING, NOT TIDINESS ───────────────────────────────
+     * `Broker__c` CAN BE NULL ON A `Selected` ROW — the lookup was added after the object and
+     * legacy submissions carry only `Broker_Firm__c` / `Contact_Name__c` (the singular method's
+     * header records the same fact). The caller builds a `Map<Id dispositionId, Id brokerId>` and
+     * keeps the FIRST row per disposition. Without this predicate, a disposition that had somehow
+     * acquired two `Selected` rows — the oldest brokerless, the newest carrying the real broker —
+     * would resolve to NULL and the NDA would ship unstamped, which is the exact defect this
+     * method exists to close. With it, "no usable row" and "no row at all" collapse into the same
+     * answer, which is the answer the caller already handles.
+     * ⚠ THIS IS A DELIBERATE DIVERGENCE FROM THE SINGULAR METHOD, WHICH HAS NO SUCH PREDICATE, AND
+     * THE TWO CAN THEREFORE DISAGREE ON ONE (DEFECTIVE) SHAPE OF DATA. That is correct rather than
+     * an inconsistency: the modal DISPLAYS whatever the Selected row holds, so "the Selected row,
+     * broker or not" is the honest read there; this one STAMPS a value, so "the first Selected row
+     * that actually names a broker" is the honest read here. Both are fully deterministic under the
+     * same total order below.
+     *
+     * ── 🔴 WITH SYSTEM_MODE — BOTH THE CALLER **AND** THE FIELD FORCE IT, INDEPENDENTLY ────────
+     * 1. THE CALLER. ARCHITECTURE.md §2's automation-path exception in its purest form, and the
+     *    same argument `selectSelectedByDispositionIds` makes below: the running user asked to move
+     *    a disposition to the `NDA` stage, not to read its BOV submissions. `USER_MODE` THROWS
+     *    rather than degrades, and this read sits inside an AFTER-UPDATE trigger, so the throw
+     *    escapes as `CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY` and ROLLS BACK THE USER'S OWN STAGE
+     *    CHANGE — a stamp that takes down the save it was decorating.
+     * 2. THE FIELD, AND THIS LEG IS MEASURED RATHER THAN ARGUED. `BOV_Submission__c.Broker__c` is
+     *    NOT granted on `DPEG_Admin_Access` — no `FieldPermissions` row at all, measured in
+     *    `usman-dpeg` on 2026-08-21 and recorded in `selectSelectedBrokerByDispositionId`'s own
+     *    header, which is precisely why THAT method was kept separate rather than widened. So the
+     *    denial persona is not hypothetical: an administrator holding only that set who moved a
+     *    disposition to `NDA` would have the move refused under `USER_MODE`.
+     * ⚠ Do NOT read "the sibling three lines up is USER_MODE" as a precedent. That one is a read a
+     *   human ASKED for (they opened the Log Offer dialog) and it fails soft because its caller
+     *   catches the QueryException narrowly. This one is neither.
+     *
+     * ⚠ SHARING IS A SEPARATE QUESTION AND IS DELIBERATELY LEFT ALONE — `SYSTEM_MODE` lifts CRUD
+     * and FLS and NEVER sharing, and this class stays `with sharing`. A `Selected` submission the
+     * running user cannot SEE is absent from this result, so the NDA is created with a NULL broker
+     * rather than the wrong one. That degradation is bounded by measurement, not hope: both
+     * `DPEG_Disposition_View` and `DPEG_Disposition_Edit` carry `viewAllRecords = true` on
+     * `BOV_Submission__c` (read off the two permission-set files), and the running user just edited
+     * the parent Disposition, so they can already see it. This is NOT the shape that needed a
+     * `private without sharing` inner class — contrast `NdaSelector.ExpiryAlertReads`, whose rows
+     * belong to a different principal than the one running the automation.
+     *
+     * 🔴 NO `Approval_Status__c` TERM, DELIBERATELY. A `Selected` submission on a disposition that
+     * has reached the `NDA` stage has in practice been through `Broker_Finalize_Approval`, but
+     * `Submission_Status__c = 'Selected'` is the SAME predicate `selectSelectedBrokerByDispositionId`
+     * uses for the Log Offer modal's broker — so the NDA's broker and the offer form's broker are
+     * the same person on the same disposition BY CONSTRUCTION. Adding an approval term here would
+     * silently break that agreement on any disposition advanced by an admin ahead of the approval,
+     * and would additionally drag `Approval_Status__c` into the SELECT. If the appointed broker
+     * should ever mean "approved broker", that is one change to BOTH methods, not one to this one.
+     *
+     * ⚠ NO `Broker__r.Name`, UNLIKE THE SINGULAR METHOD. The caller stamps an Id into a lookup and
+     * never renders a name, so the traversal would buy nothing and would materialise a child
+     * sObject per row inside a trigger. (Under `SYSTEM_MODE` it would not add an FLS gate — the
+     * reason to omit it is heap and honesty about what is used, not access.)
+     *
+     * ⚠ `ORDER BY CreatedDate ASC, Id ASC` — OLDEST FIRST, AND IT IS CONSUMED. Exclusivity is a
+     * SERVER invariant maintained by `BovSubmissionService.replaceSelectedBroker`, not a schema
+     * constraint, so two `Selected` rows is a reachable data defect and the caller's "first row
+     * per disposition wins" is therefore a CHOICE. `Id ASC` makes the order total, so two rows
+     * created in the same transaction still resolve identically on every run. ⚠ Deliberately does
+     * NOT sort on `BOV_Score__c` — that field is becoming a formula returning null without an
+     * asking price, so every row ties and the leg would decide nothing. Same reasoning, same
+     * omission, as the singular method.
+     *
+     * @param dispositionIds Disposition__c Ids whose Selected submissions to read; null/empty-safe
+     *                       and issues NO query when the set is null or empty.
+     * @return Every `Selected` submission on those dispositions that NAMES a broker, with Id,
+     *         Disposition__c and Broker__c populated, oldest first; an EMPTY LIST when there are
+     *         none (never null).
+     * @example
+     * List&lt;BOV_Submission__c&gt; selected =
+     *     BovSubmissionSelector.selectSelectedBrokerByDispositionIds(dispositionIds);
+     */
+    public static List<BOV_Submission__c> selectSelectedBrokerByDispositionIds(Set<Id> dispositionIds) {
+        if (dispositionIds == null || dispositionIds.isEmpty()) {
+            return new List<BOV_Submission__c>();
+        }
+        return [
+            SELECT Id, Disposition__c, Broker__c
+            FROM BOV_Submission__c
+            WHERE Disposition__c IN :dispositionIds
+              AND Submission_Status__c = :STATUS_SELECTED
+              AND Broker__c != NULL
+            WITH SYSTEM_MODE
             ORDER BY CreatedDate ASC, Id ASC
         ];
     }

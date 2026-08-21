@@ -6,16 +6,37 @@
  * ── 🔴 SINCE TRANCHE 3C (2026-08-09) handleExecution HAS TWO ARMS, AND THE TESTS BELOW ARE SPLIT
  *      ACCORDINGLY ────────────────────────────────────────────────────────────
  * `Contract_Review__c` gained an Acquisition_PSA / Disposition_PSA record-type pair, so one
- * `Executed` event now means two different things:
+ * execution event meant two different things:
  *
  *   ACQUISITION  (Opportunity__c set)  -> stamp the Opportunity (Contract Signed, Day 0) + notify
  *   DISPOSITION  (Disposition__c set)  -> move Disposition__c.Disposition_Stage__c to 'Closing'
  *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 AND SINCE 2026-08-21 IT IS NOT ONE EVENT AT ALL. THE TWO ARMS WATCH TWO DIFFERENT VALUES.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * This block said "one `Executed` event now means two different things". The user harmonised the
+ * `Disposition_PSA` record type in Setup: 'Executed' is off it, and its terminal is 'Signed'.
+ *
+ *   ACQUISITION terminal 'Executed'   (Draft -> Negotiation -> Signed -> Executed)
+ *   DISPOSITION terminal 'Signed'     (Initial Draft -> Negotiation -> Signed)
+ *
+ * 🔴 THE TWO TERMINALS ARE NOT DISJOINT VALUES, WHICH IS THE WHOLE DIFFICULTY. 'Signed' is the
+ * disposition END and an acquisition MID-SEQUENCE step, so a single shared constant repointed to
+ * 'Signed' would fire the acquisition handoff one hop early and re-date the entire Day-0 checklist.
+ * `executingAnAcquisitionPsaThroughSignedDoesNotFireTheHandoff` is the ONLY test that catches that
+ * — read its header before touching either terminal constant.
+ * ⚠ `execute(...)` (the shared helper below) is no longer a blanket 'Executed' write either; it
+ * resolves the terminal per row from the parent lookup, mirroring the service. A blanket write
+ * would now be REFUSED by Apex DML on any sell-side row.
+ *
  * ⚠ THE ACQUISITION TESTS MATTER MORE THAN THE DISPOSITION ONES, NOT LESS. The acquisition arm is
  * LIVE, DEPLOYED behaviour; the disposition arm is new. Every acquisition test in this class was
- * left byte-identical on purpose, and two of the new tests
- * (acquisitionExecutionLeavesUnrelatedDispositionsAlone, mixedChunkRunsBothArmsIndependently) exist
- * specifically to prove the new arm did not reach into the old one.
+ * left byte-identical on purpose — and that is STILL TRUE after the 2026-08-21 terminal split: not
+ * one acquisition fixture, expectation or assertion changed, because ACQUISITION_TERMINAL is still
+ * 'Executed'. Only sell-side fixtures moved. Three tests
+ * (acquisitionExecutionLeavesUnrelatedDispositionsAlone, mixedChunkRunsBothArmsIndependently,
+ * executingAnAcquisitionPsaThroughSignedDoesNotFireTheHandoff) exist specifically to prove the new
+ * arm did not reach into the old one.
  *
  * ── 🔴 THE ONE THING THIS SUITE CANNOT REPRODUCE, STATED RATHER THAN IMPLIED ──
  * THE APPROVAL LOCK. `Disposition__c` is the entry object of three approval processes, all
@@ -110,10 +131,36 @@ private class ContractExecutionServiceTest {
         return stored;
     }
 
-    /** Executes a set of Contract Reviews in ONE update — the real trigger path. */
+    /**
+     * Executes a set of Contract Reviews in ONE update — the real trigger path.
+     *
+     * 🔴 REWRITTEN 2026-08-21. It used to be `cr.Negotiation_Status__c = 'Executed';` for every row,
+     * which was correct while both record types terminated at 'Executed'. They no longer do: the
+     * user removed 'Executed' from Disposition_PSA, whose terminal is now 'Signed'. A blanket
+     * 'Executed' would (a) be REFUSED by Apex DML on any sell-side row — `Negotiation_Status__c` is
+     * a restricted picklist and the record-type subset is enforced — and (b) silently stop
+     * exercising the disposition arm on any mixed chunk that survived.
+     *
+     * ⚠ IT RESOLVES THE TERMINAL FROM THE PARENT LOOKUP, MIRRORING THE SERVICE, AND IT HAS TO QUERY
+     * TO DO SO. Several callers pass bare `new Contract_Review__c(Id = x.Id)` stubs with no parent
+     * populated (that is the point — it proves the service reads the row, not the caller's copy), so
+     * the terminal cannot be derived from the objects handed in.
+     *
+     * ⚠ A row with NEITHER parent gets the ACQUISITION terminal. That is the historical default and
+     * keeps the orphan fixtures working; it is not a claim about correctness for such a row.
+     */
     private static void execute(List<Contract_Review__c> reviews) {
+        Set<Id> ids = new Map<Id, Contract_Review__c>(reviews).keySet();
+        Map<Id, Contract_Review__c> parents = new Map<Id, Contract_Review__c>([
+            SELECT Id, Opportunity__c, Disposition__c
+            FROM Contract_Review__c WHERE Id IN :ids
+        ]);
         for (Contract_Review__c cr : reviews) {
-            cr.Negotiation_Status__c = 'Executed';
+            Contract_Review__c parent = parents.get(cr.Id);
+            Boolean sellSide = parent != null
+                && parent.Disposition__c != null
+                && parent.Opportunity__c == null;
+            cr.Negotiation_Status__c = sellSide ? 'Signed' : 'Executed';
         }
         update reviews;
     }
@@ -766,6 +813,86 @@ private class ContractExecutionServiceTest {
      * reaches `OfferingService` at all. There is no record-type test and no guard anywhere — the
      * placement of the call IS the mechanism, and this test is what holds it there.
      */
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * 🔴 THE ACQUISITION-SAFETY PIN FOR THE 2026-08-21 TERMINAL SPLIT. THIS IS THE TEST THAT
+     * CATCHES THE OBVIOUS WRONG FIX, AND NOTHING ELSE IN THIS CLASS DOES.
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * The user harmonised Disposition_PSA to end at 'Signed'. The one-line "fix" is to repoint the
+     * single shared `EXECUTED = 'Executed'` constant to 'Signed'. THAT IS A LIVE ACQUISITION
+     * DEFECT, because 'Signed' is NOT terminal on Acquisition_PSA — it is the immediate PREDECESSOR
+     * of 'Executed' (Draft -> Negotiation -> Signed -> Executed), so EVERY acquisition PSA passes
+     * through it.
+     *
+     * Under a global repoint, this fixture's `-> Signed` step would fire the whole acquisition
+     * handoff one hop EARLY: Contract_Signed__c, Deal_Status__c, four notifications, the Offering
+     * shell — and, worst, `Contract_Executed_Date__c`, which is DAY 0 for the ~75-task transaction
+     * checklist. Every deadline on every acquisition deal would shift to the signature date.
+     *
+     * ⚠ THE ASSERTIONS ARE ON THE STATE AT 'Signed', BEFORE ANY EXECUTION HAPPENS. Asserting the
+     * end state would prove nothing — after the second update the deal is stamped either way, and
+     * an early fire followed by a correct one is indistinguishable from a single correct one. The
+     * ONLY observable window is between the two updates.
+     * ⚠ AND `reExecutingAnAcquisitionPsaNeverOpensASecondShell` does NOT cover this despite driving
+     * the same two hops: it asserts one Offering shell at the END, which stays 1 under both builds
+     * (the shell is idempotent). It would have stayed green through the defect.
+     */
+    @isTest
+    static void executingAnAcquisitionPsaThroughSignedDoesNotFireTheHandoff() {
+        Contract_Review__c cr = dealAtPsa();
+        Assert.isNull(
+            [SELECT Contract_Executed_Date__c FROM Opportunity WHERE Id = :cr.Opportunity__c]
+                .Contract_Executed_Date__c,
+            'PRECONDITION: Day 0 must be unset before the walk, or this test cannot tell an early '
+            + 'fire from a pre-existing stamp');
+
+        Test.startTest();
+        // The mid-sequence hop. On the ACQUISITION record type this is an ordinary step and MUST
+        // NOT hand anything off — it is the DISPOSITION terminal, not this one.
+        update new Contract_Review__c(Id = cr.Id, Negotiation_Status__c = 'Signed');
+
+        Opportunity atSigned = [
+            SELECT Contract_Signed__c, Contract_Executed_Date__c, Deal_Status__c
+            FROM Opportunity WHERE Id = :cr.Opportunity__c
+        ];
+        Integer shellsAtSigned = offeringsFor(cr.Opportunity__c).size();
+        Integer notificationsAtSigned = ContractExecutionService.lastRunNotifications.size();
+
+        // ...and now the REAL acquisition terminal, in the same transaction.
+        update new Contract_Review__c(Id = cr.Id, Negotiation_Status__c = 'Executed');
+        Test.stopTest();
+
+        Assert.isFalse(atSigned.Contract_Signed__c,
+            '🔴 CONSTRAINT VIOLATION IF RED: reaching "Signed" on an ACQUISITION PSA stamped '
+            + 'Contract_Signed__c. The terminal constant was repointed globally instead of split '
+            + 'per record type — see ContractExecutionService.DISPOSITION_TERMINAL.');
+        Assert.isNull(atSigned.Contract_Executed_Date__c,
+            '🔴 AND THIS IS THE EXPENSIVE ONE. Contract_Executed_Date__c is DAY 0 for the ~75-task '
+            + 'Day-0 checklist that openTransactionsOnAboutToClose reads back. Stamping it at '
+            + 'SIGNATURE instead of EXECUTION silently shifts every deadline on every acquisition '
+            + 'deal, with no error anywhere.');
+        Assert.areNotEqual('Contract Signed', atSigned.Deal_Status__c,
+            'and the deal status must not have moved at the signature step either');
+        Assert.areEqual(0, shellsAtSigned,
+            'and no IR Offering shell opens at signature');
+        Assert.areEqual(0, notificationsAtSigned,
+            'and not one of the four notifications is built at signature');
+
+        // The complement, without which every assertion above is satisfied by a service that
+        // simply never fires at all.
+        Opportunity atExecuted = [
+            SELECT Contract_Signed__c, Contract_Executed_Date__c, Deal_Status__c
+            FROM Opportunity WHERE Id = :cr.Opportunity__c
+        ];
+        Assert.isTrue(atExecuted.Contract_Signed__c,
+            'COMPLEMENT: the handoff must still fire at the ACQUISITION terminal "Executed". '
+            + 'Without this, a build that broke handleExecution entirely would pass every '
+            + 'assertion above.');
+        Assert.isNotNull(atExecuted.Contract_Executed_Date__c, 'and Day 0 lands at execution');
+        Assert.areEqual(1, offeringsFor(cr.Opportunity__c).size(),
+            'and the Offering shell opens at execution, exactly once');
+    }
+
     @isTest
     static void executingADispositionPsaOpensNoOfferingAtAll() {
         Disposition__c sale = TestDataFactory.createDisposition(
@@ -773,13 +900,19 @@ private class ContractExecutionServiceTest {
         Contract_Review__c psa = salePsa(sale.Id);
 
         Test.startTest();
-        psa.Negotiation_Status__c = 'Executed';
+        // ⚠ 'Signed', NOT 'Executed', SINCE 2026-08-21 — this is the DISPOSITION terminal. The old
+        // line is not merely stale: 'Executed' is off the Disposition_PSA record type and
+        // Negotiation_Status__c is restricted, so this update is now REFUSED by Apex DML. The test
+        // would have died on a DmlException before reaching its assertion.
+        psa.Negotiation_Status__c = 'Signed';
         update psa;
         Test.stopTest();
 
         Assert.areEqual(0, [SELECT COUNT() FROM Offering__c],
             'An executed SALE must not mint an acquisition artifact. If this ever goes red, '
-            + 'someone moved the OfferingService call out of stampOpportunities');
+            + 'someone moved the OfferingService call out of stampOpportunities — or gave the '
+            + 'acquisition arm the disposition terminal, which since 2026-08-21 would route this '
+            + 'row into stampOpportunities on a value the sell side owns');
     }
 
     @isTest
@@ -1061,5 +1194,91 @@ private class ContractExecutionServiceTest {
             + 'one. Observed refusal: ' + observed);
         Assert.areEqual(0, offeringsFor(dealId).size(),
             'and no Offering shell opens, since the whole transaction was rolled back');
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE NON-OWNER PSA EXECUTOR (2026-08-21) — obstacle 4 in
+    //    `advanceDispositionsToClosing`'s header: RECORD-LEVEL SHARING.
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // ⚠ EVERY DISPOSITION-ARM TEST ABOVE PASSED AGAINST THE PRE-FIX CODE. They run as the admin
+    // test user, who OWNS every fixture record; an owner of an OWD-Private record always holds
+    // record-level edit, so the service's `with sharing` `Database.update` was never asked the
+    // question. `Disposition__c` is OWD Private and the PSA executor (Legal, a transaction
+    // coordinator) is not in general the sale's owner.
+    //
+    // ⚠ THE CONTRACT REVIEW IS RE-OWNED TO THE EXECUTOR AND THE DISPOSITION IS NOT. That split is
+    // the fixture. MEASURED on the first attempt, which did NOT re-own it and failed with
+    // `INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY` on the Contract Review itself: a test class's
+    // own DML is NOT exempt from record-level sharing under `System.runAs`, and
+    // `DPEG_Acquisition_Edit` grants `viewAllRecords` on `Contract_Review__c` without
+    // `modifyAllRecords` — the same read-yes/edit-no shape as the bug, one object earlier. Re-owning
+    // the CR clears that so the test reaches the write it is actually about.
+    //
+    // 🔴 THAT FAILURE IS ITSELF EVIDENCE FOR THE FIX AND IS RECORDED RATHER THAN JUST FIXED: the
+    // "can see it, cannot edit it" shape is not peculiar to `Disposition__c`. Every DPEG permission
+    // set grants `viewAllRecords` and none grants `modifyAllRecords`, so it is the DEFAULT shape of
+    // this org and any read-then-write automation is exposed to it.
+
+    /**
+     * 🔴 KEEPS THE TEST BELOW HONEST. Run INSIDE `System.runAs` against `UserInfo.getUserId()`.
+     * `RecordId` must be in the SELECT — `UserRecordAccess` rejects a query without it at compile
+     * time.
+     */
+    private static void assertReadableButNotEditable(Id dispositionId) {
+        UserRecordAccess access = [
+            SELECT RecordId, HasReadAccess, HasEditAccess
+            FROM UserRecordAccess
+            WHERE UserId = :UserInfo.getUserId() AND RecordId = :dispositionId
+        ];
+        Assert.isTrue(access.HasReadAccess,
+            'FIXTURE PRECONDITION: the executor must be able to READ the sale — '
+            + '`DPEG_Disposition_View.viewAllRecords` is what grants it, and it is why '
+            + 'selectStagesByIds returns the row and the write failure stays hidden.');
+        Assert.isFalse(access.HasEditAccess,
+            '🔴 FIXTURE PRECONDITION: the executor must NOT be able to EDIT the sale. That is the '
+            + 'refusal under test. If this is true the persona gained record-level edit from '
+            + 'somewhere and every assertion after it is vacuous.');
+    }
+
+    /**
+     * Fails RED against the pre-2026-08-21 code, in which `advanceDispositionsToClosing` ended with
+     * a bare `Database.update(stageUpdates, false, AccessLevel.SYSTEM_MODE)` inside this
+     * `with sharing` service. `SYSTEM_MODE` lifts CRUD and FLS and NEVER sharing
+     * (ARCHITECTURE.md §2), so obstacle 1 and obstacle 4 need two different mechanisms.
+     */
+    @isTest
+    static void nonOwnerExecutor_advancesTheSaleToClosing() {
+        Disposition__c sale =
+            TestDataFactory.createDisposition(TestDataFactory.defaultPropertyAsset().Id, true);
+        TestDataFactory.signBuyerNdasOn(new List<Disposition__c>{ sale });
+        Contract_Review__c psa = salePsa(sale.Id);
+        User executor = TestDataFactory.createNonOwnerDispositionApprover('cesx');
+        // Re-owned as ADMIN, outside runAs — see the section header for the measured reason.
+        update new Contract_Review__c(Id = psa.Id, OwnerId = executor.Id);
+
+        System.runAs(executor) {
+            assertReadableButNotEditable(sale.Id);
+            Test.startTest();
+            execute(new List<Contract_Review__c>{ psa });
+            Test.stopTest();
+        }
+
+        Assert.areEqual(new List<String>(),
+            ContractExecutionService.lastRunStageWriteFailures,
+            '🔴 THE STAGE WRITE WAS REFUSED. This list carries the platform StatusCode — read it in '
+            + 'the message above. INSUFFICIENT_ACCESS_OR_READONLY means the `without sharing` '
+            + 'escape (ClosingStageWrites) has been removed or bypassed.');
+        Assert.areEqual('Closing', stageOf(sale.Id),
+            'A PSA executor who can SEE but not EDIT the sale must still move it to Closing. Still '
+            + 'reading ' + READINESS + ' or PSA means the parent update was swallowed by '
+            + 'allOrNone = false — the sale sits still while its Contract Review reads Signed, '
+            + 'which is the exact residual the service header calls "visible but wrong".');
+        // ⚠ 'Signed' since 2026-08-21 — the sell-side terminal. This asserted 'Executed', a value
+        // the Disposition_PSA record type no longer carries.
+        Assert.areEqual('Signed',
+            [SELECT Negotiation_Status__c FROM Contract_Review__c WHERE Id = :psa.Id]
+                .Negotiation_Status__c,
+            'and the legal state survives — asserted so a failure can be localised to the parent '
+            + 'write rather than to the execution itself.');
     }
 }

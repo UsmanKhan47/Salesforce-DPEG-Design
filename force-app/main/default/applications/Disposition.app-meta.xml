@@ -27,6 +27,24 @@
         <type>Flexipage</type>
         <pageOrSobjectType>Property_Asset__c</pageOrSobjectType>
     </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>LOI Record Page</comment>
+        <content>LOI_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>LOI__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Contract Review Record Page</comment>
+        <content>Contract_Review_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Contract_Review__c</pageOrSobjectType>
+    </actionOverrides>
     <brand>
         <headerColor>#1B7A4B</headerColor>
         <logo>DPEG_Logo_Clear</logo>
