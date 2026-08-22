@@ -117,9 +117,26 @@ public with sharing class TaskRollupTriggerHandler extends TriggerHandler {
     /**
      * Recomputes rollups for the supplied Onboardings, only when the set is
      * non-empty — so a Task with no `Onboarding__c` costs nothing at all.
+     *
+     * 🔴 AND ONLY WHEN THE FAN-OUT HAS NOT TAKEN OWNERSHIP. `fanOutNow` inserts
+     * CHUNK_SIZE x 45 = 4,500 Tasks in ONE statement, which the platform fires
+     * after-insert against in 200-row batches: 23 firings, each spending its own SOQL
+     * and DML to recompute counters for rows the same statement is still creating.
+     * The fan-out sets `OnboardingTaskRollupService.suppressTriggerRecalc(true)`
+     * around its DML and then calls `recalc` ONCE for the whole chunk, so the numbers
+     * still land — they just cost 1 SOQL + 1 DML instead of 23 + 23. The flag is
+     * false on every other path, so a standard-UI edit, an API write, Data Loader, a
+     * delete and an undelete all still roll up exactly as before; that is what
+     * `TaskRollupTriggerHandlerTest` pins.
+     *
+     * ⚠ Deliberately gates the ONBOARDING branch only. `recalcDeals` is untouched.
+     *
      * @param onboardingIds Onboarding__c ids to recompute.
      */
     private void recalcOnboardings(Set<Id> onboardingIds) {
+        if (OnboardingTaskRollupService.isTriggerRecalcSuppressed()) {
+            return;
+        }
         if (!onboardingIds.isEmpty()) {
             OnboardingTaskRollupService.recalc(onboardingIds);
         }

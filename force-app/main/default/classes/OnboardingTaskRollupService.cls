@@ -54,9 +54,71 @@
  */
 public with sharing class OnboardingTaskRollupService {
 
+    // ═════════════════════════════════════════════════════════════════════════════
+    // 🔴 THE FAN-OUT RE-ENTRANCY SWITCH — ADDED 2026-08-22
+    //
+    // Suppresses the TRIGGER-driven recalc only. `recalc` itself is never gated: a
+    // caller that asks for a recompute always gets one.
+    //
+    // WHY IT EXISTS. `OnboardingFanoutService.fanOutNow` inserts CHUNK_SIZE x 45 =
+    // 4,500 checklist Tasks in ONE `Database.insert`. Salesforce fires after-insert
+    // in 200-row batches, so that single statement fires `TaskRollupTriggerHandler`
+    // ceil(4500/200) = 23 times, and each firing spends one SOQL
+    // (`TaskSelector.selectByOnboardingIds`) and one DML — 23 SOQL + 23 DML against
+    // limits of 100 and 150, to compute counters for rows that are all being created
+    // by the same statement. Twenty-two of those twenty-three results are thrown away
+    // by the next batch.
+    //
+    // ⚠ SUPPRESSING IS ONLY HALF THE FIX, AND THE OTHER HALF IS NOT OPTIONAL.
+    // `fanOutNow` writes `Tasks_Total__c` itself but NONE of the other eleven
+    // counters. Suppressing the cascade without a replacement would leave a freshly
+    // fanned-out Onboarding reading "45 total, 0 open, 0 not started, 0% complete" on
+    // the PM dashboard (`OnboardingController` reads Tasks_Open__c,
+    // Tasks_Not_Started__c, Tasks_Due_7d__c and Completion_Pct__c) until somebody
+    // happened to edit a Task. So `fanOutNow` calls `recalc` ONCE per chunk, itself,
+    // after the insert — 1 SOQL + 1 DML, constant, instead of 23 + 23.
+    //
+    // SCOPE: onboarding rollups only. `TaskRollupService` (Transaction__c) is NOT
+    // gated by this flag, and fan-out Tasks carry a null `Transaction_Deal__c`
+    // anyway. The flag is transaction-scoped static state, set and restored in a
+    // `finally` by the one production caller, and defaults false so every other path
+    // — standard UI edit, API, Data Loader, delete, undelete — is untouched.
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    /** False except inside `OnboardingFanoutService.fanOutNow`'s DML window. */
+    @TestVisible
+    private static Boolean triggerRecalcSuppressed = false;
+
+    /**
+     * Whether the TRIGGER should skip its onboarding recalc right now. Read by
+     * `TaskRollupTriggerHandler.recalcOnboardings` and by nothing else.
+     *
+     * @return true while a fan-out owns the recompute for this transaction.
+     */
+    public static Boolean isTriggerRecalcSuppressed() {
+        return triggerRecalcSuppressed;
+    }
+
+    /**
+     * Sets the trigger-recalc suppression flag.
+     *
+     * ⚠ A caller that sets this to true TAKES OWNERSHIP of recomputing the affected
+     * Onboardings and MUST restore the previous value in a `finally`. Leaving it set
+     * silently disables every onboarding rollup for the rest of the transaction.
+     *
+     * @param suppressed true to suppress; null is treated as false.
+     */
+    public static void suppressTriggerRecalc(Boolean suppressed) {
+        triggerRecalcSuppressed = (suppressed == true);
+    }
+
     /**
      * Recomputes the summary/rollup fields on each `Onboarding__c` from its
      * checklist Tasks.
+     *
+     * ⚠ NEVER gated by `triggerRecalcSuppressed` — that flag stops the TRIGGER from
+     * calling this method, not this method from doing its job. `fanOutNow` sets the
+     * flag and then calls straight in here.
      *
      * @param onboardingIds Onboarding__c ids to recompute; null/empty-safe.
      */

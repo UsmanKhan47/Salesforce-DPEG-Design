@@ -28,12 +28,30 @@
  * cascade, and three things immediately consume that headroom:
  *   1. the `Tasks_Fanned_Out__c` flag update (another N rows);
  *   2. `TaskRollupTrigger`, which now routes `Onboarding__c` and therefore fires
- *      after-insert on all 9,000 new Tasks, spending its own SOQL + DML;
+ *      after-insert on all 9,000 new Tasks, spending its own SOQL + DML — see the
+ *      "STATEMENT COST" note below for how that was capped;
  *   3. the 10s SYNCHRONOUS CPU ceiling versus 60s async — the real binding
  *      constraint, which caps the synchronous path at roughly 222 Onboardings.
  * That is arithmetic, not inefficiency: no query tuning moves it, and any fix that
  * kept the work inline would only relocate the break. Hence one enqueue and a
  * chunked chain at `OnboardingFanoutQueueable.CHUNK_SIZE` = 100 (~4,500 rows/job).
+ *
+ * ═══ STATEMENT COST PER CHUNK: 2 SOQL, 3 DML — CONSTANT (amended 2026-08-22) ═══
+ * Not "1 SOQL, 2 DML". That was true until `TaskRollupTrigger` began routing
+ * `Onboarding__c`, at which point the chunk's single 4,500-row `Database.insert`
+ * started firing the after-insert handler in 200-row batches — ceil(4500/200) = 23
+ * firings, 23 SOQL and 23 DML, recomputing counters for rows the same statement was
+ * still creating. Against limits of 100 SOQL and 150 DML statements that still fit,
+ * but with far less headroom than the code claimed, and it grew with the definition
+ * count.
+ * `fanOutNow` now suppresses that cascade across its DML window and calls
+ * `OnboardingTaskRollupService.recalc` ONCE for the chunk instead, giving:
+ *   SOQL 2 = 1 `OnboardingSelector.selectByIdsForFanout`
+ *          + 1 `TaskSelector.selectByOnboardingIds` (inside the single recalc)
+ *   DML  3 = 1 flag update + 1 bulk Task insert + 1 rollup update
+ * Independent of the chunk size AND of the definition count. The suppression is
+ * onboarding-scoped and `finally`-restored — every non-fan-out path (standard UI,
+ * API, Data Loader, delete, undelete) still rolls up through the trigger.
  *
  * @see force-app/main/default/classes/TaskFanoutService.cls (the mirrored skeleton)
  * @see force-app/main/default/classes/OnboardingSelector.cls (both idempotency reads)
@@ -136,13 +154,16 @@ public with sharing class OnboardingFanoutService {
      * keeping the chunk small enough to fit the DML-row limit — at 45 Tasks each,
      * the ceiling is 222 Onboardings and the shipped chunk is 100.
      *
-     * ⚠ STATEMENT ORDER IS DELIBERATE: the flag update runs BEFORE the Task insert.
-     * The Task insert fires `TaskRollupTrigger`, which writes back to the same
+     * ⚠ STATEMENT ORDER IS DELIBERATE: the flag update runs BEFORE the Task insert,
+     * and the rollup recalc runs after both. The rollup writes back to the same
      * `Onboarding__c`; flagging first means that write-back happens with
      * `Tasks_Fanned_Out__c` ALREADY true, so it cannot possibly re-satisfy the
      * `Onboarding_Task_Fanout` flow's start filter and re-enter this method. Both
      * statements are `allOrNone = true` in one transaction, so a failed insert still
      * rolls the flag back — ordering buys re-entry safety at no cost to atomicity.
+     * (That argument was written when the write-back came from `TaskRollupTrigger`
+     * firing on the insert. It is unchanged in substance now that the write-back is
+     * this method's own explicit `recalc`: same target object, same later position.)
      *
      * @param onboardingIds Onboardings to fan out (chunked by the caller); null/empty-safe.
      */
@@ -173,6 +194,11 @@ public with sharing class OnboardingFanoutService {
 
         List<Task> toInsert = new List<Task>();
         List<Onboarding__c> toFlag = new List<Onboarding__c>();
+        // Exactly the Onboardings this call actually built a checklist for — the ones
+        // whose rollups this call therefore owns. Skipped (already-flagged) records
+        // are excluded on purpose: nothing about them changed, so recomputing them
+        // would be a write to a record this transaction never touched.
+        Set<Id> fannedOutIds = new Set<Id>();
 
         for (Onboarding__c o : onboardings.values()) {
             if (o.Tasks_Fanned_Out__c == true && !bypassDedupe) {
@@ -189,6 +215,7 @@ public with sharing class OnboardingFanoutService {
                 Tasks_Fanned_Out__c = true,
                 Tasks_Total__c = createdForOnboarding
             ));
+            fannedOutIds.add(o.Id);
         }
         runTasksBuilt += toInsert.size();
 
@@ -199,11 +226,43 @@ public with sharing class OnboardingFanoutService {
         // Create on Task. Both statements would throw System.TypeException under the
         // caller's own CRUD. allOrNone = true because a silently-absent checklist is
         // the bug being fixed.
-        if (!toFlag.isEmpty()) {
-            Database.update(toFlag, true, AccessLevel.SYSTEM_MODE);
+        //
+        // 🔴 THE TRIGGER ROLLUP IS SUPPRESSED ACROSS THIS WINDOW AND REPLACED BY ONE
+        // EXPLICIT RECALC BELOW. `toInsert` is CHUNK_SIZE x 45 = 4,500 rows, and the
+        // platform fires after-insert in 200-row batches — so this ONE statement
+        // fires `TaskRollupTriggerHandler` ceil(4500/200) = 23 times, each spending a
+        // SOQL and a DML to recompute counters for rows this same statement is still
+        // creating. Twenty-two of those twenty-three results are immediately
+        // superseded. Suppressed here, recomputed once at `fannedOutIds` scale below:
+        // 1 SOQL + 1 DML, constant, independent of both the chunk size and the
+        // definition count.
+        //
+        // ⚠ RESTORE IN A `finally`, NOT AFTER THE DML. Both statements are
+        // `allOrNone = true` and can throw; leaking a `true` flag would silently
+        // disable every onboarding rollup for the remainder of the transaction. The
+        // prior value is captured and restored (rather than hardcoding false) so a
+        // future nested caller cannot be un-suppressed by this one returning.
+        Boolean priorSuppression = OnboardingTaskRollupService.isTriggerRecalcSuppressed();
+        try {
+            OnboardingTaskRollupService.suppressTriggerRecalc(true);
+            if (!toFlag.isEmpty()) {
+                Database.update(toFlag, true, AccessLevel.SYSTEM_MODE);
+            }
+            if (!toInsert.isEmpty()) {
+                Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
+            }
+        } finally {
+            OnboardingTaskRollupService.suppressTriggerRecalc(priorSuppression);
         }
-        if (!toInsert.isEmpty()) {
-            Database.insert(toInsert, true, AccessLevel.SYSTEM_MODE);
+
+        // The recompute the suppressed cascade would have done — once, for the whole
+        // chunk. NOT optional and NOT redundant with the `Tasks_Total__c` written
+        // above: that is ONE of twelve counters, and `OnboardingController`'s PM
+        // dashboard reads Tasks_Open__c, Tasks_Not_Started__c, Tasks_Due_7d__c and
+        // Completion_Pct__c. Without this line a freshly fanned-out property reads
+        // "45 total, 0 open, 0% complete" until somebody happens to edit a Task.
+        if (!fannedOutIds.isEmpty()) {
+            OnboardingTaskRollupService.recalc(fannedOutIds);
         }
 
         runQueryCount += Limits.getQueries() - queriesBefore;

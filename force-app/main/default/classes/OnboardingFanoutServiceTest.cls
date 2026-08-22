@@ -26,8 +26,18 @@
  *    invoke the service DIRECTLY leave it true and use the `bypassDedupe` seam so the flow
  *    cannot race the call being measured.
  *
+ * 4. THE CHUNK'S BUDGET IS 2 SOQL / 3 DML, AND IT IS CONSTANT BY CONSTRUCTION, NOT BY LUCK.
+ *    `TaskRollupTrigger` routes `Onboarding__c` (added 2026-08-22), so the chunk's single
+ *    bulk Task insert would otherwise fire `TaskRollupTriggerHandler` once per 200-row
+ *    trigger batch — 23 firings, 23 SOQL and 23 DML, at the production definition count of
+ *    45. `fanOutNow` suppresses that cascade and recomputes once per chunk instead. The
+ *    budget assertions in `bulk251Onboardings_enqueuesOnceAndBuildsExactlyOneChunk` name
+ *    that cascade explicitly so a reader is never told "constant" without being told what
+ *    the constant is protecting against.
+ *
  * `.claude/rules/bulk-test-rule.md` applies at 251 and is met by
- * `bulk251Onboardings_enqueuesOnceAndBuildsOneChunkWithinLimits`.
+ * `bulk251Onboardings_enqueuesOnceAndBuildsExactlyOneChunk` and
+ * `bulk251AlreadyFlagged_createsNothing`.
  */
 @isTest
 private class OnboardingFanoutServiceTest {
@@ -37,6 +47,22 @@ private class OnboardingFanoutServiceTest {
 
     /** Small enough to keep fixtures readable, large enough to prove ordering and mapping. */
     private static final Integer DEF_COUNT = 5;
+
+    /**
+     * The REAL number of `Onboarding_Task_Def__mdt` rows in production, loaded by
+     * `scripts/load-onboarding-task-defs.apex`. The tests inject DEF_COUNT (5) for
+     * readability, so every production-scale claim below must be computed from THIS
+     * number instead — otherwise the sizing proofs describe the fixture, not the org.
+     */
+    private static final Integer PROD_DEF_COUNT = 45;
+
+    /**
+     * The platform's trigger batch size. A DML statement touching N rows fires each after-
+     * context ceil(N / 200) times — which is the entire reason the onboarding rollup cascade
+     * was expensive, and the reason `.claude/rules/bulk-test-rule.md` mandates 251 rather
+     * than 200. Named rather than inlined so the arithmetic below is legible.
+     */
+    private static final Integer TRIGGER_BATCH_SIZE = 200;
 
     private static void injectDefs(Integer count) {
         OnboardingFanoutService.taskDefsOverride = TestDataFactory.buildOnboardingTaskDefs(count);
@@ -417,23 +443,152 @@ private class OnboardingFanoutServiceTest {
             'and the same number is actually in the database — read back, not inferred from the '
             + 'counter the service maintains about itself');
 
-        // 🔴 SIZING PROOF. At the PRODUCTION definition count of 45 this same chunk is 4,500
-        // rows. Asserted against the real limit so the chunk size cannot be raised without this
+        // 🔴 SIZING PROOF — DML *ROWS*. At the PRODUCTION definition count of 45 this same
+        // chunk is 4,500 Task rows, plus CHUNK_SIZE flag rows, plus CHUNK_SIZE rollup rows.
+        // Asserted against the real limit so the chunk size cannot be raised without this
         // arithmetic being re-done.
-        Assert.isTrue(chunkSize * 45 <= 10000,
-            'CHUNK_SIZE x the 45 production definitions must stay under the 10,000 DML-row limit '
-            + '— that sizing is the entire reason the fan-out is chunked rather than attempted '
-            + 'at 251 synchronously (251 x 45 = 11,295 would blow it)');
+        Integer prodTaskRows = chunkSize * PROD_DEF_COUNT;
+        Assert.isTrue(prodTaskRows + (2 * chunkSize) <= 10000,
+            'CHUNK_SIZE x the 45 production definitions, plus the flag update and the rollup '
+            + 'update (CHUNK_SIZE rows each), must stay under the 10,000 DML-row limit — that '
+            + 'sizing is the entire reason the fan-out is chunked rather than attempted at 251 '
+            + 'synchronously (251 x 45 = 11,295 would blow it on Tasks alone). '
+            + 'Actual at production scale: ' + (prodTaskRows + (2 * chunkSize)) + ' rows');
 
+        // ═════════════════════════════════════════════════════════════════════════════════
         // 🔴 CONSTANT-COST PROOF, read from counters captured INSIDE the async context.
         // `Limits.getQueries()` after Test.stopTest() is restored to its pre-test value and
         // would make this silently vacuous.
-        Assert.areEqual(1, OnboardingFanoutService.runQueryCount,
-            'CONSTANT 1 SOQL per chunk regardless of how many Onboardings it carries — the CMDT '
-            + 'read is getAll() and costs none. If this grew with the record count, a query moved '
-            + 'into a per-record loop');
-        Assert.areEqual(2, OnboardingFanoutService.runDmlCount,
-            'CONSTANT 2 DML per chunk: one flag update, one bulk Task insert');
+        //
+        // ⚠ THE NUMBERS BELOW ARE 2 AND 3, NOT 1 AND 2, AND THE DIFFERENCE IS A REAL CASCADE
+        // THAT MUST NOT BE PAPERED OVER. `TaskRollupTrigger` routes `Onboarding__c` (added
+        // 2026-08-22), so the chunk's single bulk Task insert fires
+        // `TaskRollupTriggerHandler` once per 200-row trigger batch —
+        // ceil(chunkSize x defs / 200) firings, each spending its own SOQL and DML. At the
+        // PRODUCTION definition count that is 23 firings: 23 SOQL and 23 DML against limits of
+        // 100 and 150, for counters the same statement is still creating.
+        // `fanOutNow` therefore SUPPRESSES that cascade across its DML window and calls
+        // `OnboardingTaskRollupService.recalc` ONCE for the chunk instead. What is left is
+        // genuinely constant — the same 2 and 3 in this test at 5 definitions and in
+        // production at 45.
+        // ═════════════════════════════════════════════════════════════════════════════════
+        Integer suppressedTriggerBatches =
+            (Integer) Math.ceil((Decimal) (chunkSize * PROD_DEF_COUNT) / TRIGGER_BATCH_SIZE);
+
+        Assert.areEqual(2, OnboardingFanoutService.runQueryCount,
+            'CONSTANT 2 SOQL per chunk — one OnboardingSelector.selectByIdsForFanout, one '
+            + 'TaskSelector.selectByOnboardingIds inside the single explicit rollup recalc. The '
+            + 'CMDT read is getAll() and costs none. THIS IS THE SAME 2 IN PRODUCTION AT 45 '
+            + 'DEFINITIONS: it does not scale with the record count or the definition count. If '
+            + 'it reads ' + (1 + suppressedTriggerBatches) + ' instead, the TaskRollupTrigger '
+            + 'onboarding cascade has been un-suppressed and is firing once per 200-row batch '
+            + '(' + suppressedTriggerBatches + ' batches at production scale). If it grew some '
+            + 'other way, a query moved into a per-record loop');
+        Assert.areEqual(3, OnboardingFanoutService.runDmlCount,
+            'CONSTANT 3 DML STATEMENTS per chunk: one flag update, one bulk Task insert, one '
+            + 'rollup update. THIS IS THE SAME 3 IN PRODUCTION AT 45 DEFINITIONS. If it reads '
+            + (2 + suppressedTriggerBatches) + ' instead, the trigger cascade is back');
+
+        // 🔴 SIZING PROOF — SOQL AND DML *STATEMENT* COUNTS AT PRODUCTION SCALE. The row proof
+        // above says nothing about statement counts, and the statement counts are what the
+        // cascade actually threatened. Because the cost is constant, the production figure IS
+        // the measured figure — which is exactly the property being pinned.
+        Assert.isTrue(OnboardingFanoutService.runQueryCount + suppressedTriggerBatches <= 100,
+            'Even if the suppression were removed tomorrow, the chunk would need '
+            + (OnboardingFanoutService.runQueryCount + suppressedTriggerBatches) + ' SOQL at the '
+            + 'production definition count against a limit of 100 — this is the headroom the '
+            + 'suppression buys back, and raising CHUNK_SIZE or the definition count without '
+            + 'redoing this arithmetic is what would spend it');
+        Assert.isTrue(OnboardingFanoutService.runDmlCount + suppressedTriggerBatches <= 150,
+            'and ' + (OnboardingFanoutService.runDmlCount + suppressedTriggerBatches)
+            + ' DML statements against a limit of 150');
+    }
+
+    /**
+     * 🔴 THE REGRESSION GUARD FOR THE SUPPRESSION ITSELF. Suppressing the trigger cascade
+     * without replacing it would be a silent data defect, not a visible failure:
+     * `fanOutNow` writes `Tasks_Total__c` and NOTHING ELSE, so a freshly fanned-out property
+     * would read "45 total, 0 open, 0 not started, 0% complete" on the PM dashboard —
+     * `OnboardingController` reads Tasks_Open__c, Tasks_Not_Started__c, Tasks_Due_7d__c and
+     * Completion_Pct__c — until somebody happened to edit a Task and re-fire the trigger.
+     *
+     * So this asserts the ELEVEN counters `fanOutNow` does not write, read back from the
+     * database. If someone deletes the explicit `recalc` call because "the trigger does it",
+     * the constant-cost assertion above goes green and THIS one reds.
+     */
+    @isTest
+    static void fanOutPopulatesEveryRollupCounter_notJustTasksTotal() {
+        injectDefs(DEF_COUNT);
+        // Due dates land on start + 0..4 days, i.e. today .. today+4 — all inside the
+        // 7-day window and none overdue, which makes every counter below predictable.
+        Onboarding__c o = inertOnboarding(Date.today());
+        OnboardingFanoutService.bypassDedupe = true;
+
+        Test.startTest();
+        OnboardingFanoutService.fanOutNow(new List<Id>{ o.Id });
+        Test.stopTest();
+        OnboardingFanoutService.bypassDedupe = false;
+
+        Onboarding__c after = [
+            SELECT Tasks_Total__c, Tasks_Complete__c, Tasks_In_Progress__c, Tasks_Not_Started__c,
+                   Tasks_Blocked__c, Tasks_NA__c, Tasks_Open__c, Tasks_Overdue__c,
+                   Tasks_Blocked_Now__c, Tasks_Stalled__c, Tasks_Due_7d__c, Completion_Pct__c
+            FROM Onboarding__c WHERE Id = :o.Id
+        ];
+        Assert.areEqual(DEF_COUNT, after.Tasks_Total__c, 'Tasks_Total__c — the one fanOutNow writes itself');
+        Assert.areEqual(DEF_COUNT, after.Tasks_Not_Started__c,
+            '🔴 Tasks_Not_Started__c — fanOutNow does NOT write this. It can only be right if the '
+            + 'rollup actually ran, so this is the assertion that fails if the explicit recalc is '
+            + 'removed on the theory that the trigger still covers it');
+        Assert.areEqual(DEF_COUNT, after.Tasks_Open__c, 'Tasks_Open__c — every new item is open');
+        Assert.areEqual(DEF_COUNT, after.Tasks_Due_7d__c,
+            'Tasks_Due_7d__c — offsets 0..4 all fall inside the 7-day window');
+        Assert.areEqual(0, after.Tasks_Complete__c, 'Nothing is complete on creation');
+        Assert.areEqual(0, after.Tasks_In_Progress__c, 'Nothing is in progress on creation');
+        Assert.areEqual(0, after.Tasks_Blocked__c, 'Nothing is blocked on creation');
+        Assert.areEqual(0, after.Tasks_Blocked_Now__c, 'Nothing is blocked on creation');
+        Assert.areEqual(0, after.Tasks_NA__c, 'Nothing is N/A on creation');
+        Assert.areEqual(0, after.Tasks_Overdue__c, 'Nothing is overdue — due dates are today onward');
+        Assert.areEqual(0, after.Tasks_Stalled__c, 'Nothing is stalled on creation');
+        Assert.areEqual(0, after.Completion_Pct__c, '0 of ' + DEF_COUNT + ' complete = 0%');
+    }
+
+    /**
+     * 🔴 THE SUPPRESSION IS SCOPED TO THE FAN-OUT AND IS RESTORED. A leaked `true` would
+     * disable every onboarding rollup for the rest of the transaction — invisible, because
+     * nothing throws. This proves (a) the flag is false again on return and (b) an ORDINARY
+     * Task write after a fan-out still rolls up through the trigger, which is the path
+     * `TaskRollupTriggerHandlerTest` covers and that work item E existed to create.
+     */
+    @isTest
+    static void theRollupSuppressionIsRestoredAndOrdinaryTaskWritesStillRollUp() {
+        injectDefs(DEF_COUNT);
+        Onboarding__c o = inertOnboarding(Date.today());
+        OnboardingFanoutService.bypassDedupe = true;
+
+        Test.startTest();
+        OnboardingFanoutService.fanOutNow(new List<Id>{ o.Id });
+        Assert.isFalse(OnboardingTaskRollupService.isTriggerRecalcSuppressed(),
+            'fanOutNow restores the flag in a `finally` — a leak here silently disables every '
+            + 'onboarding rollup for the remainder of the transaction');
+
+        // An ordinary edit, exactly as the standard UI / API / Data Loader would make it.
+        List<Task> checklist = checklistFor(o.Id);
+        Task t = checklist[0];
+        t.Onboarding_Status__c = 'Complete';
+        update t; // must fire TaskRollupTrigger -> OnboardingTaskRollupService.recalc
+        Test.stopTest();
+        OnboardingFanoutService.bypassDedupe = false;
+
+        Onboarding__c after = [
+            SELECT Tasks_Complete__c, Tasks_Open__c, Completion_Pct__c
+            FROM Onboarding__c WHERE Id = :o.Id
+        ];
+        Assert.areEqual(1, after.Tasks_Complete__c,
+            'The trigger rollup is LIVE again after the fan-out — routing Onboarding__c into '
+            + 'TaskRollupTrigger was the whole point of work item E, and the fan-out suppression '
+            + 'must not regress it');
+        Assert.areEqual(DEF_COUNT - 1, after.Tasks_Open__c, 'and the open count moved with it');
     }
 
     /**
