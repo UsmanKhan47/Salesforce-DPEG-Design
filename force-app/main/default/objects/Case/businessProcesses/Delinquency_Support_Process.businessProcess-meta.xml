@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BusinessProcess xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment above the root breaks sf
+      at source conversion. Precedent: objects/Opportunity/businessProcesses/Land.
+
+      The seven FSD 5.9.5 delinquency stages, and nothing else. A Case record type REQUIRES a
+      business process; this org had none before this build.
+
+      TWO THINGS THAT WILL BITE IF CHANGED CARELESSLY:
+
+      1. 'Legal %2F Eviction' IS ENCODED, and must stay encoded HERE. The same value is
+         LITERAL ('Legal / Eviction') in standardValueSets/CaseStatus and in
+         pathAssistants/Delinquency_Path. The encoding applies inside BusinessProcess and
+         RecordType metadata only, and to slashes only - it is not a general escaping rule.
+         Precedent: 'Dead%2FPass' here vs 'Dead/Pass' in OpportunityStage and
+         Acquisitions_Deal_Path.
+      2. Record-type picklist restriction IS ENFORCED AT DML on this project - measured four
+         times, despite roughly twenty in-repo comments claiming it is UI-only. A status value
+         missing from this list cannot be written by Apex, a Flow or a test, not merely hidden
+         in the UI. Therefore: this file must deploy BEFORE any Apex or test that writes a
+         delinquency status, and a stage added to the FSD must be added HERE as well as to
+         CaseStatus or every write of it fails at DML.
+
+      The stock statuses (New / Working / Escalated / Closed) are deliberately EXCLUDED. They
+      remain in standardValueSets/CaseStatus for any future stock-Case record type, but a
+      Delinquency Case must not be able to sit in a support status.
+    -->
+    <fullName>Delinquency_Support_Process</fullName>
+    <description>The seven FSD 5.9.5 delinquency stages, from the nightly sync flagging a balance through to resolution. Excludes the stock support statuses so a Delinquency Case cannot drift into a support lifecycle.</description>
+    <isActive>true</isActive>
+    <values>
+        <fullName>Identified</fullName>
+        <default>true</default>
+    </values>
+    <values>
+        <fullName>PM Follow-Up</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Notice Sent</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Payment Plan Agreed</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Escalated to Principal</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Legal %2F Eviction</fullName>
+        <default>false</default>
+    </values>
+    <values>
+        <fullName>Resolved</fullName>
+        <default>false</default>
+    </values>
+</BusinessProcess>

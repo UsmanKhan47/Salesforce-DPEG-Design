@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <StandardValueSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment above the root breaks sf
+      at source conversion.
+
+      A StandardValueSet deploy REPLACES THE WHOLE SET - it does not merge. The four stock
+      values (New / Working / Escalated / Closed) below are retained verbatim for that reason,
+      not because anything uses them. Deleting one here deletes it from the org.
+
+      The seven values added below are the FSD 5.9.5 Delinquency stages. Two consequences,
+      both deliberate:
+
+      1. This org has NO Case record types today, so until Case.Delinquency deploys these seven
+         values are offered on every Case. Case is currently granted by no permission set at
+         all, so nothing sees them yet - but if stock Case ever goes into service it needs its
+         own record type and business process listing only the four stock values.
+      2. 'Legal / Eviction' is LITERAL here. It is encoded 'Legal %2F Eviction' inside
+         BusinessProcess and RecordType metadata only. Precedent: 'Dead/Pass' in
+         standardValueSets/OpportunityStage vs 'Dead%2FPass' in
+         objects/Opportunity/businessProcesses/*.
+
+      'Resolved' carries closed = true so it drives IsClosed and ClosedDate. There is
+      deliberately no custom Stage__c field alongside Status: two state fields for one
+      lifecycle is the failure this project has already paid for elsewhere.
+    -->
     <sorted>false</sorted>
     <standardValue>
         <fullName>New</fullName>
@@ -23,6 +47,48 @@
         <fullName>Closed</fullName>
         <default>false</default>
         <label>Closed</label>
+        <closed>true</closed>
+    </standardValue>
+    <standardValue>
+        <fullName>Identified</fullName>
+        <default>false</default>
+        <label>Identified</label>
+        <closed>false</closed>
+    </standardValue>
+    <standardValue>
+        <fullName>PM Follow-Up</fullName>
+        <default>false</default>
+        <label>PM Follow-Up</label>
+        <closed>false</closed>
+    </standardValue>
+    <standardValue>
+        <fullName>Notice Sent</fullName>
+        <default>false</default>
+        <label>Notice Sent</label>
+        <closed>false</closed>
+    </standardValue>
+    <standardValue>
+        <fullName>Payment Plan Agreed</fullName>
+        <default>false</default>
+        <label>Payment Plan Agreed</label>
+        <closed>false</closed>
+    </standardValue>
+    <standardValue>
+        <fullName>Escalated to Principal</fullName>
+        <default>false</default>
+        <label>Escalated to Principal</label>
+        <closed>false</closed>
+    </standardValue>
+    <standardValue>
+        <fullName>Legal / Eviction</fullName>
+        <default>false</default>
+        <label>Legal / Eviction</label>
+        <closed>false</closed>
+    </standardValue>
+    <standardValue>
+        <fullName>Resolved</fullName>
+        <default>false</default>
+        <label>Resolved</label>
         <closed>true</closed>
     </standardValue>
 </StandardValueSet>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Dashboard_Flag__c</fullName>
+    <description>The amber and red flags FSD 5.9.7 rows 2 and 3 require on the dashboard. Purely derived from the refreshed days-past-due, with zero automation behind it - the flag cannot drift out of step with the balance because it has no stored state of its own.</description>
+    <formula><![CDATA[IF(Current_Days_Past_Due__c >= 90, "Red", IF(Current_Days_Past_Due__c >= 60, "Amber", "Green"))]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>Green under 60 days, Amber at 60, Red at 90.</inlineHelpText>
+    <label>Dashboard Flag</label>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+</CustomField>

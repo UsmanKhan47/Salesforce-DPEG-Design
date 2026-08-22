@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Provider_Name__c</fullName>
+    <externalId>false</externalId>
+    <description>The utility company that bills this meter. Text rather than a lookup to Account, matching the shipped Property Management precedent Work_Order__c.Vendor__c. See the comment below and the open question raised with this build.</description>
+    <inlineHelpText>The utility company name exactly as it appears on the invoice, for example CenterPoint Energy. Keep the spelling consistent across meters so that reporting groups them together.</inlineHelpText>
+    <label>Provider</label>
+    <length>120</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+    <!--
+      FSD 5.10.4 specifies Lookup(Account) for Provider. Text is recommended instead and the
+      deviation is flagged, not taken silently:
+
+      1. Precedent. The only comparable field already shipped in Property Management is
+         Work_Order__c.Vendor__c, which is Text(120).
+      2. There is no utility provider Account population, and no Account record type for
+         vendors; the only two are Broker_Firm and Investor_Entity.
+      3. Every criteria sharing rule on Account is keyed on RecordTypeId equals Broker Firm
+         or Investor Entity. A provider Account matching neither would fall through all of
+         them and be visible only through ownership or OWD, which is the same class of
+         defect this build rejected standard Asset over.
+
+      Deliberately named Provider_Name__c and not Provider__c. ARCHITECTURE section 1 asks
+      for a _Name__c suffix on Text carrying a human label, and this leaves the API name
+      Provider__c free for a future Lookup(Account), so the migration is additive: add the
+      lookup, backfill from this field, repoint, retire. Never a rename.
+    -->
+</CustomField>

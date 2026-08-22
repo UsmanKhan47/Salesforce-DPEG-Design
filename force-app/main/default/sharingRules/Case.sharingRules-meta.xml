@@ -1,3 +1,76 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata"/>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment above the root breaks sf
+      at source conversion. This file was previously an empty <SharingRules/> root; nothing is
+      being removed.
 
+      🔴 WHY THIS FILE EXISTS AT ALL. Case OWD in this org is PRIVATE (queried from
+      EntityDefinition 2026-08-22; the repo file had drifted to ReadWriteTransfer behind the
+      old blanket ignore, and has been corrected). A Delinquency Case is owned by ONE property
+      manager, so with no sharing rule:
+        - no other PM can work it,
+        - a principal cannot open the Case they are being asked to approve a write-off on,
+        - and any approval-triggered write fails for every approver who does not OWN the record.
+      That last one is not hypothetical on this project - it has already happened once, and it
+      was invisible because SYSTEM_MODE lifts CRUD and FLS but NEVER sharing, and the DML was
+      running with allOrNone = false, which swallowed the failure. Principals therefore get
+      Edit, not Read: a write-off decision writes to the Case.
+
+      🔴 THIS DOES NOT COVER THE NIGHTLY JOB. Sharing rules share to groups; the sync's
+      never-duplicate guard must see open Cases owned by ANYONE, including users outside both
+      groups. If that read is sharing-filtered it does not merely miss a Case - it INVERTS the
+      feature into a duplicate-maker, silently. The fix belongs in the integration permission
+      set (viewAllRecords + modifyAllRecords on Case, scoped to the integration principal
+      only), not here. See HUB FILE REQUESTS.
+
+      🔴 DEPLOY ONE RULE AT A TIME - see the note in
+      sharingRules/Receivables_Summary__c.sharingRules-meta.xml. A check-only dry run cannot prove this.
+
+      CRITERIA CHOICE. booleanFilter is "1 OR 2" so the rule catches both a Case the sync
+      created (Yardi_AR_Id__c always stamped) and one a PM raised by hand before any sync row
+      existed (Resolution_Path__c set, external id blank). Record Type would be the obvious
+      criterion but its metadata value format is unverified in this repo and there is no Case
+      sharing rule to copy - these two fields are verified to exist and are non-formula.
+    -->
+    <sharingCriteriaRules>
+        <fullName>Delinquency_Cases_PM_Team_Edit</fullName>
+        <accessLevel>Edit</accessLevel>
+        <booleanFilter>1 OR 2</booleanFilter>
+        <description>Lets the whole Property Management team work any delinquency Case, not only the ones they personally own. Cover, handover and escalation all depend on a second PM being able to comment and advance the stage.</description>
+        <label>Delinquency Cases PM Team Edit</label>
+        <criteriaItems>
+            <field>Yardi_AR_Id__c</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <criteriaItems>
+            <field>Resolution_Path__c</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Property_Mgmt_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Delinquency_Cases_Principals_Edit</fullName>
+        <accessLevel>Edit</accessLevel>
+        <booleanFilter>1 OR 2</booleanFilter>
+        <description>Edit rather than Read, deliberately. A principal is the write-off approver, and an approval that writes back to a Case they do not own fails silently without record-level edit access - the exact incident this project has already had. Read access alone would let them open the Case and then quietly refuse the decision.</description>
+        <label>Delinquency Cases Principals Edit</label>
+        <criteriaItems>
+            <field>Yardi_AR_Id__c</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <criteriaItems>
+            <field>Resolution_Path__c</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Principals</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+</SharingRules>

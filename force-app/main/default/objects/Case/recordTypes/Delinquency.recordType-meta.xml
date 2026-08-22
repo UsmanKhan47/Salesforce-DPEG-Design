@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment above the root breaks sf
+      at source conversion.
+
+      🔴 DO NOT "CLEAN SYNC" THIS FILE FROM THE ORG. A RecordType retrieve comes back carrying
+      only fullName / active / businessProcess / label - every <picklistValues> block is
+      STRIPPED. Committing that retrieve deletes every restriction below, and because an
+      omitted picklist drops all its values for this record type, the result is a silent
+      production regression that no API can read back. This file is the only record of these
+      restrictions.
+
+      Every picklist on Case is enumerated below EXCEPT Status, which is governed by
+      <businessProcess> instead. Reason is deliberately cut to the four FSD 5.9.5 delinquency
+      reasons - the seven stock equipment-support reasons stay in standardValueSets/CaseReason
+      for a future stock-Case record type but must never appear on a delinquency.
+
+      Record-type picklist restriction IS ENFORCED AT DML on this project (measured four
+      times). Consequence: this file must deploy BEFORE any Apex or test that writes one of
+      these values, and adding a value to a record type silently REMOVES a platform backstop
+      that was previously refusing bad writes.
+    -->
+    <fullName>Delinquency</fullName>
+    <active>true</active>
+    <businessProcess>Delinquency_Support_Process</businessProcess>
+    <description>Tenant delinquency follow-up (FSD 5.9). The Case holds all workflow state - stage, escalation, commitments, write-off - while the balance itself stays in the read-only Receivables Summary mirror.</description>
+    <label>Delinquency</label>
+    <picklistValues>
+        <picklist>Origin</picklist>
+        <values>
+            <fullName>Email</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Phone</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Web</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Priority</picklist>
+        <values>
+            <fullName>High</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Low</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Medium</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Reason</picklist>
+        <values>
+            <fullName>Billing dispute</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Non-payment</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Prior-owner balance</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Short payment</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Resolution_Path__c</picklist>
+        <values>
+            <fullName>Collect</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Correct</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Type</picklist>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Write_Off_Decision__c</picklist>
+        <values>
+            <fullName>Approved</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pending</fullName>
+            <default>true</default>
+        </values>
+        <values>
+            <fullName>Rejected</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

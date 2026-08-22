@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PathAssistant xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment above the root breaks sf
+      at source conversion.
+
+      Drives off the STANDARD Case.Status field, not a custom Stage__c. FSD 5.9.2 chose standard
+      Case precisely to inherit its lifecycle field, and two state fields for one lifecycle is a
+      failure class this project has already paid for (a derived stage field that silently
+      discards writes, and shared terminal values that split a handoff predicate).
+
+      'Legal / Eviction' is LITERAL here, matching standardValueSets/CaseStatus. It is encoded
+      'Legal %2F Eviction' ONLY inside objects/Case/businessProcesses and objects/Case/recordTypes.
+      Precedent: 'Dead/Pass' in pathAssistants/Acquisitions_Deal_Path vs 'Dead%2FPass' in
+      objects/Opportunity/businessProcesses.
+
+      STEP ORDER IS NOT SET BY THIS FILE. The Path renders in master-value-set order, filtered by
+      the record type's business process. The seven delinquency statuses were APPENDED to
+      standardValueSets/CaseStatus in FSD 5.9.5 order after the four stock values, and the stock
+      four are excluded by Delinquency_Support_Process - so the rendered order is
+      Identified -> PM Follow-Up -> Notice Sent -> Payment Plan Agreed -> Escalated to Principal
+      -> Legal / Eviction -> Resolved. INSERTING a future stage rather than appending it will
+      change the rendered order of everything after it; check CaseStatus before adding one.
+
+      The info text deliberately describes what the user should DO, and never promises that an
+      email or notification will be sent. Alerts are a separate build stream and a Path that
+      promises one it does not own becomes a lie the moment that stream changes.
+
+      POST-DEPLOY GATE: a Path is invisible ORG-WIDE unless the pathAssistantEnabled master
+      switch is on in Setup. It is a master switch, not a page problem, and an org rebuild loses
+      it. Separately, record pages are assigned PER APP - a Case opened outside the app carrying
+      the assignment lands on the object default page, which has no Path component at all.
+    -->
+    <active>true</active>
+    <entityName>Case</entityName>
+    <fieldName>Status</fieldName>
+    <masterLabel>Delinquency Path</masterLabel>
+    <pathAssistantSteps>
+        <fieldNames>Current_Balance_Amount__c</fieldNames>
+        <fieldNames>Current_Days_Past_Due__c</fieldNames>
+        <fieldNames>Resolution_Path__c</fieldNames>
+        <fieldNames>Reason</fieldNames>
+        <info>The nightly sync flagged this balance and opened the Case. Nobody has acted yet. First job: confirm whether this is a real debt (Collect) or a billing error, duplicate or prior-owner balance (Correct) - about a third turn out to be corrections, and those must never be chased.</info>
+        <picklistValueName>Identified</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Next_Follow_Up_Date__c</fieldNames>
+        <fieldNames>Last_Follow_Up_DateTime__c</fieldNames>
+        <info>Contact has been made - email, call or site visit. Log every touch as a Case Comment; comments are appended and time-stamped, never overwritten, which is the whole reason this replaced the spreadsheet notes column. Set a next follow-up date before you leave the record.</info>
+        <picklistValueName>PM Follow-Up</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Next_Follow_Up_Date__c</fieldNames>
+        <info>A formal demand or default notice has been issued. Record what was sent and when as a Case Comment, and attach the notice to the Case.</info>
+        <picklistValueName>Notice Sent</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Next_Follow_Up_Date__c</fieldNames>
+        <info>The tenant has committed to a schedule. Create a Payment Commitment for each instalment with its own due date - a commitment breaches on its own when that date passes unpaid, and a missed instalment can reopen this Case after it resolves.</info>
+        <picklistValueName>Payment Plan Agreed</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Escalation_Level__c</fieldNames>
+        <fieldNames>Write_Off_Requested__c</fieldNames>
+        <fieldNames>Write_Off_Requested_Amount__c</fieldNames>
+        <fieldNames>Write_Off_Decision__c</fieldNames>
+        <info>Handed to the principal for a decision. If a write-off is being sought, tick Write Off Requested and enter the amount - the Case is held here until the decision is recorded, so do not advance it in the meantime.</info>
+        <picklistValueName>Escalated to Principal</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Escalation_Level__c</fieldNames>
+        <fieldNames>Escalated_DateTime__c</fieldNames>
+        <info>Handed to legal; lockout or eviction is under way. Keep logging Case Comments - the timeline is the record of what was tried before it got here, and the nightly sync never touches it.</info>
+        <picklistValueName>Legal / Eviction</picklistValueName>
+    </pathAssistantSteps>
+    <pathAssistantSteps>
+        <fieldNames>Auto_Closed_By_Sync__c</fieldNames>
+        <fieldNames>Current_Balance_Amount__c</fieldNames>
+        <info>Paid in full, plan completed, corrected in Yardi, or written off. The nightly sync closes this on its own once the balance clears - if it is ticked as Auto Closed By Sync, nothing was chased and the balance simply went away. Comments and commitments are retained.</info>
+        <picklistValueName>Resolved</picklistValueName>
+    </pathAssistantSteps>
+    <recordTypeName>Delinquency</recordTypeName>
+</PathAssistant>

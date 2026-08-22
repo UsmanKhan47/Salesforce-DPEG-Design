@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Cases_Opened__c</fullName>
+    <description>Delinquency Cases created by this run (FSD 5.9.6 step 4). Must be zero on any halted run.</description>
+    <inlineHelpText>New Delinquency Cases this run opened.</inlineHelpText>
+    <label>Cases Opened</label>
+    <precision>6</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

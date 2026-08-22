@@ -1,6 +1,65 @@
+/**
+ * Recomputes the twelve summary/rollup fields on `Onboarding__c` from its checklist
+ * Tasks (counts per status, open / overdue / stalled / due-in-7-days, and
+ * Completion_Pct__c). `Task` is a lookup child of `Onboarding__c`, not
+ * master-detail, so no roll-up summary field is possible and no formula can
+ * aggregate the children — this service is the only way these numbers move.
+ *
+ * ═══ 🔴 AMENDED 2026-08-22 — THE CALLER SET CHANGED, AND THAT MADE THE OLD DML
+ * UNSAFE ═══
+ * Until this change `recalc` had exactly one caller: `OnboardingService.completeTask`,
+ * i.e. a property manager ticking a box on their own checklist in the Onboarding LWC.
+ * Its last line was a bare `update upd.values();`, and that worked ONLY because of
+ * who was running it.
+ *
+ * `TaskRollupTriggerHandler` now routes `Onboarding__c` on all four after-contexts,
+ * so this method fires for **any** user who inserts, updates, deletes or undeletes
+ * **any** Task carrying an `Onboarding__c` — including the fan-out job creating 4,500
+ * checklist rows, and including a deal driver whose Closed Won save cascaded all the
+ * way down here. Two independent things had to be fixed for that to be safe, and they
+ * are separate decisions:
+ *
+ *   1. CRUD/FLS — `AccessLevel.SYSTEM_MODE`. `Onboarding__c`'s counter fields are
+ *      Metadata-API-deployed custom fields, which arrive with NO FLS for any profile
+ *      (System Administrator included) until a permission set grants them. A
+ *      user-mode write throws `System.TypeException`, which inside a trigger escapes
+ *      as CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY and rolls back the user's own save.
+ *
+ *   2. SHARING — the `RollupWrites` inner class. `SYSTEM_MODE` lifts CRUD and FLS and
+ *      **NEVER** sharing. `Onboarding__c` is Private OWD
+ *      (`Onboarding__c.object-meta.xml`), shared by ONE criteria rule to
+ *      `DPEG_Property_Mgmt_Team` where `Status__c != ''`. Under `with sharing` a
+ *      write by anyone outside that group — or against a row with a blank Status —
+ *      simply does not apply. This project already has a live incident of exactly
+ *      that shape: an approval's parent write failed silently for every approver who
+ *      did not OWN the record, worked in every test because the test's approver WAS
+ *      the owner, and was swallowed by `allOrNone = false`.
+ *
+ * `allOrNone = true` so this can never fail silently again. If the write is genuinely
+ * impossible the caller's save fails loudly, which is the correct outcome for a
+ * rollup that the dashboard, the KPIs and the risk alerts all read.
+ *
+ * ⚠ `OnboardingService.completeTask` no longer calls this method. With the trigger
+ * routing in place its `update t` fires the after-update context on the same Task, so
+ * an explicit call would recompute twice per click.
+ *
+ * All SOQL is delegated to `TaskSelector.selectByOnboardingIds` (already
+ * `WITH SYSTEM_MODE`, for the same automation-path reason). This service holds none.
+ *
+ * BULK SHAPE: one selector call and one DML statement per invocation regardless of
+ * how many Onboardings are passed. Never call it per record.
+ *
+ * @see force-app/main/default/classes/TaskRollupTriggerHandler.cls (the new caller)
+ * @see force-app/main/default/classes/TaskSelector.cls (all SOQL)
+ */
 public with sharing class OnboardingTaskRollupService {
 
-    // Recompute the summary/rollup fields on each Onboarding__c from its checklist Tasks.
+    /**
+     * Recomputes the summary/rollup fields on each `Onboarding__c` from its
+     * checklist Tasks.
+     *
+     * @param onboardingIds Onboarding__c ids to recompute; null/empty-safe.
+     */
     public static void recalc(Set<Id> onboardingIds) {
         if (onboardingIds == null || onboardingIds.isEmpty()) return;
         Date today = Date.today();
@@ -17,6 +76,7 @@ public with sharing class OnboardingTaskRollupService {
 
         for (Task t : TaskSelector.selectByOnboardingIds(onboardingIds)) {
             Onboarding__c o = upd.get(t.Onboarding__c);
+            if (o == null) continue;
             String st = t.Onboarding_Status__c;
             o.Tasks_Total__c += 1;
             Boolean isComplete = (st == 'Complete');
@@ -38,6 +98,41 @@ public with sharing class OnboardingTaskRollupService {
             Decimal comp = (o.Tasks_Complete__c == null) ? 0 : o.Tasks_Complete__c;
             o.Completion_Pct__c = (tot > 0) ? (Integer) Math.round(100 * comp / tot) : 0;
         }
-        update upd.values();
+        // 🔴 SYSTEM_MODE **and** without sharing — two separate reasons, both in the
+        // class header. Do not collapse them: SYSTEM_MODE alone leaves this write
+        // silently inapplicable for every user outside DPEG_Property_Mgmt_Team.
+        new RollupWrites().commitRollups(upd.values());
+    }
+
+    /**
+     * 🔴 THE ROLLUP WRITE, WHICH MUST RUN **WITHOUT SHARING**.
+     *
+     * Scoped as narrowly as Apex allows: `private`, one method, one statement, reached
+     * only from `recalc` above. Inner classes do NOT inherit the outer class's sharing,
+     * so this is declared explicitly and `OnboardingTaskRollupService` itself STAYS
+     * `with sharing`. It writes ONLY derived counters onto `Onboarding__c` — no field a
+     * user supplied, nothing read back, nothing returned to a caller — so it cannot
+     * leak a row the running user could not otherwise see.
+     *
+     * PRECEDENT: `PropertyAssetSelector.AssetCreationReads`,
+     * `OnboardingSelector.IdempotencyReads`.
+     *
+     * ⚠ Apex forbids static methods on inner classes, hence the instance method and the
+     * `new RollupWrites()` at the call site.
+     */
+    private without sharing class RollupWrites {
+
+        /**
+         * Persists the recomputed counters.
+         *
+         * @param records Onboarding__c records carrying Id + the twelve counters.
+         * @throws System.DmlException on a platform save failure (allOrNone = true, by design).
+         */
+        private void commitRollups(List<Onboarding__c> records) {
+            if (records == null || records.isEmpty()) {
+                return;
+            }
+            Database.update(records, true, AccessLevel.SYSTEM_MODE);
+        }
     }
 }

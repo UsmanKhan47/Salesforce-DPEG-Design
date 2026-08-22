@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Usage_Variance_Amount__c</fullName>
+    <description>FSD 5.10.5 usage variance: the change in consumption valued at the PRIOR unit rate. It isolates how much of the dollar change was caused by using more or less, holding price constant. Blank until a prior bill exists.</description>
+    <inlineHelpText>How much of the change versus last month came from using more or less, priced at last month rate. A positive number means more was consumed. Blank on a first bill or where last month consumption was zero.</inlineHelpText>
+    <label>Usage Variance</label>
+    <formula><![CDATA[IF( OR( ISBLANK(Prior_Utility_Bill__c), Prior_Utility_Bill__r.Consumption__c = 0 ), null, ( Consumption__c - Prior_Utility_Bill__r.Consumption__c ) * ( Prior_Utility_Bill__r.Total_Charges_Amount__c / Prior_Utility_Bill__r.Consumption__c ) )]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+    <!--
+      Uses the prior rate computed inline from the prior total and prior consumption, rather
+      than reading Prior_Utility_Bill__r.Rate_Per_Unit__c. Two reasons: it avoids chaining a
+      cross object reference onto another formula, and it avoids inheriting that field's
+      2 decimal rounding into a dollar figure.
+    -->
+</CustomField>

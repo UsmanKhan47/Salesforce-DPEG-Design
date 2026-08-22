@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Total_Outstanding_Amount__c</fullName>
+    <description>Total balance owed across every charge type. FSD 5.9.1 names this blended single figure as the core problem, which is why the four charge-type splits below exist alongside it. This is the SUM column for the FSD 5.9.9 dollar-exposure ranking.</description>
+    <inlineHelpText>Everything the tenant owes, all charge types combined. Yardi-sourced and overwritten on every nightly sync. Never edit this value in Salesforce - it will be replaced.</inlineHelpText>
+    <label>Total Outstanding Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Unit__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>THE GRAIN KEY (user decision D-AR-4). One Receivables Summary per occupied unit. There is no Tenant object in this org; Unit__c is the existing Yardi rent-roll mirror and already carries Yardi_Unit_Id__c, Tenant_Name__c and Current_Monthly_Rent__c. A tenant in several suites produces several rows - see the object description for the exposure roll-up.</description>
+    <inlineHelpText>The Yardi unit this balance belongs to. A tenant occupying more than one suite has one row per suite.</inlineHelpText>
+    <label>Unit</label>
+    <referenceTo>Unit__c</referenceTo>
+    <relationshipLabel>Receivables Summaries</relationshipLabel>
+    <relationshipName>Receivables_Summaries</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

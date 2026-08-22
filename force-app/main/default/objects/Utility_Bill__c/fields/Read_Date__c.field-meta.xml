@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Read_Date__c</fullName>
+    <description>The date the meter was actually read. FSD 5.10.5 keeps this separate from the bill date. This is the field that orders bills into a consumption sequence, so it, not the bill date, determines which bill is the prior bill.</description>
+    <inlineHelpText>The date the meter reading was taken, as printed on the invoice. Bills are sequenced by this date, so an inaccurate read date will attribute consumption to the wrong period.</inlineHelpText>
+    <label>Read Date</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+    <!--
+      Date, not DateTime. ARCHITECTURE section 1 forbids a Date suffix on a DateTime field;
+      a meter read is recorded to the day on the invoice, so a date only field is correct
+      and the Date suffix is right.
+    -->
+</CustomField>

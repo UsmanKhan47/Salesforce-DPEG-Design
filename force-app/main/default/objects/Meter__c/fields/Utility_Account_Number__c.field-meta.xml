@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Utility_Account_Number__c</fullName>
+    <externalId>true</externalId>
+    <description>The account number the utility provider bills under. FSD 5.10.4 calls this the match key to the payables invoice, so it is the field a monthly bill import joins on. Marked as an external id because it is a foreign key from the payables side.</description>
+    <inlineHelpText>The account number that appears on the provider invoice, not the meter number. A master meter and its sub meters often share one account number, so duplicates here are expected and allowed.</inlineHelpText>
+    <label>Utility Account Number</label>
+    <length>80</length>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+    <!--
+      externalId is true but unique is false, deliberately. Several meters on one provider
+      account is normal, so this cannot be an upsert key; the external id flag is here for
+      the index and to mark the field as a foreign match key from the payables system.
+    -->
+</CustomField>

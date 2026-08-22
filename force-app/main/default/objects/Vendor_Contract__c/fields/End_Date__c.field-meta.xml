@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>End_Date__c</fullName>
+    <description>The date the fixed monthly service ends. Blank means open ended or evergreen, which is common for trash. A past date is how an expired contract is recognised, because this object carries no status field.</description>
+    <inlineHelpText>Leave blank for an open ended or auto renewing agreement. A date in the past means the contract has ended and should no longer be billed.</inlineHelpText>
+    <label>End Date</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Date</type>
+    <!--
+      No validation rule enforcing End_Date__c after Start_Date__c, and no status field.
+      FSD 5.10.3 gives this object one sentence and no field table, and 5.10 asks for no
+      validation rules anywhere. Both are raised as open questions rather than invented here.
+    -->
+</CustomField>

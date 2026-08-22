@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      One row per nightly receivables ingestion run. This object exists so that FSD 5.9.6 step 2
+      - halt rather than escalate if the sync is stale or incomplete - is AUDITABLE and
+      UNIT-TESTABLE rather than a claim in a debug log.
+
+      Lifecycle_Ran__c is the single assertable boolean for that safety rule: on any halt it is
+      false and zero Cases were created, refreshed, escalated or closed. Halt_Reason__c is the
+      assertable enum. Tests should assert on those two fields, not on Case counts alone.
+
+      Feed_As_Of_DateTime__c is deliberately separate from Started_DateTime__c: staleness is
+      measured against the FEED's own clock, never against the Salesforce clock. A feed that is
+      three days old but was fetched two minutes ago is stale.
+
+      Admin/audit object - no tab is requested. Reachable through reports and Setup.
+    -->
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Audit record for one nightly receivables ingestion run (FSD 5.9.6): when it started and finished, which provider actually ran, the feed's own as-of timestamp, row counts, whether the health check halted it and why, and whether the Case lifecycle was allowed to run. Written only by the sync job.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+    <label>Sync Run</label>
+    <nameField>
+        <displayFormat>SYNC-{0000}</displayFormat>
+        <label>Sync Run Number</label>
+        <trackHistory>false</trackHistory>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Sync Runs</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

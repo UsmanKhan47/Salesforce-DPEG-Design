@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Allocation_Basis__c</fullName>
+    <description>How this share of the meter was arrived at. The five values are exactly the arrangements FSD 5.10.1 names as what the utility workbooks capture: shared meters, management paid vacant spaces, square footage splits and tenant to tenant settlements.</description>
+    <inlineHelpText>Square Footage means the share tracks the space size and should agree with Square Feet below. Fixed Percentage means the split was negotiated and does not move with area.</inlineHelpText>
+    <label>Allocation Basis</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Square Footage</fullName>
+                <default>false</default>
+                <label>Square Footage</label>
+            </value>
+            <value>
+                <fullName>Fixed Percentage</fullName>
+                <default>false</default>
+                <label>Fixed Percentage</label>
+            </value>
+            <value>
+                <fullName>Equal Split</fullName>
+                <default>false</default>
+                <label>Equal Split</label>
+            </value>
+            <value>
+                <fullName>Tenant-to-Tenant Settlement</fullName>
+                <default>false</default>
+                <label>Tenant-to-Tenant Settlement</label>
+            </value>
+            <value>
+                <fullName>Management-Paid Vacant</fullName>
+                <default>false</default>
+                <label>Management-Paid Vacant</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <!--
+      Restricted, unlike Charge_Line__c.Charge_Type__c. The difference is the data path:
+      these five come from the FSD verbatim and are entered by a person in the UI, where a
+      restricted list is a helpful guard rail. Charge types arrive through a monthly import,
+      where a restricted list is a rejected row.
+    -->
+</CustomField>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Finished_DateTime__c</fullName>
+    <description>When the run finished, whether it completed, halted or failed. Blank on a run that died without a finalizer, which is itself a signal.</description>
+    <inlineHelpText>When this run finished. Blank means it never got that far.</inlineHelpText>
+    <label>Finished</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Unit__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The unit or space this meter serves. FSD 5.10.4: leave blank where the meter serves the whole building. A blank value is therefore meaningful data, not missing data.</description>
+    <inlineHelpText>Leave blank if this meter serves the whole building. Fill it in only when the meter serves one specific suite or space.</inlineHelpText>
+    <label>Unit Space</label>
+    <referenceTo>Unit__c</referenceTo>
+    <relationshipLabel>Meters</relationshipLabel>
+    <relationshipName>Meters</relationshipName>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

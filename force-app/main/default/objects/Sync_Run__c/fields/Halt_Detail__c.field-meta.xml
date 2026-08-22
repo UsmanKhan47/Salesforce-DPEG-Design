@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Halt_Detail__c</fullName>
+    <description>Free-text detail behind the halt, and the capture point for partial-upsert failures. The upsert runs with allOrNone = false, which makes partial failure SILENT - the failed-row list must land here rather than being discarded.</description>
+    <inlineHelpText>Detail behind the halt, including any rows that failed to upsert.</inlineHelpText>
+    <label>Halt Detail</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Delinquency_Compact</fullName>
+    <fields>Status</fields>
+    <fields>Current_Balance_Amount__c</fields>
+    <fields>Current_Days_Past_Due__c</fields>
+    <fields>Dashboard_Flag__c</fields>
+    <fields>Resolution_Path__c</fields>
+    <label>Delinquency Compact</label>
+</CompactLayout>

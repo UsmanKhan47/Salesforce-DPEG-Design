@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Utility_Type__c</fullName>
+    <description>The utility this meter measures. Values are exactly the five FSD 5.10.4 names them, no more. Drives which charge components are expected on the bill and which unit the rate per unit is expressed in.</description>
+    <inlineHelpText>Which utility this meter measures. Trash normally has no meter at all and belongs on a Vendor Contract instead; only pick Trash if a real trash meter exists.</inlineHelpText>
+    <label>Utility Type</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Electricity</fullName>
+                <default>false</default>
+                <label>Electricity</label>
+            </value>
+            <value>
+                <fullName>Water</fullName>
+                <default>false</default>
+                <label>Water</label>
+            </value>
+            <value>
+                <fullName>Sewer</fullName>
+                <default>false</default>
+                <label>Sewer</label>
+            </value>
+            <value>
+                <fullName>Gas</fullName>
+                <default>false</default>
+                <label>Gas</label>
+            </value>
+            <value>
+                <fullName>Trash</fullName>
+                <default>false</default>
+                <label>Trash</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Service_Status__c</fullName>
+    <description>Current state of utility service at this meter. Values are exactly the four in FSD 5.10.4. Disconnected (Vacant) is distinct from Inactive because a disconnected vacant space still belongs to the register and still costs management a standing charge.</description>
+    <inlineHelpText>Disconnected (Vacant) means service is off while the space is empty. Transferred means the account moved to a tenant. Inactive means the meter is no longer part of the register at all.</inlineHelpText>
+    <label>Service Status</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Active</fullName>
+                <default>true</default>
+                <label>Active</label>
+            </value>
+            <value>
+                <fullName>Disconnected (Vacant)</fullName>
+                <default>false</default>
+                <label>Disconnected (Vacant)</label>
+            </value>
+            <value>
+                <fullName>Transferred</fullName>
+                <default>false</default>
+                <label>Transferred</label>
+            </value>
+            <value>
+                <fullName>Inactive</fullName>
+                <default>false</default>
+                <label>Inactive</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

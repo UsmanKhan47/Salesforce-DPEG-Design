@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Square_Feet__c</fullName>
+    <description>Area of the allocated space, derived from the Unit rather than copied. Unit.Square_Feet__c is the single source of truth, so a re-measured suite corrects every square footage allocation that depends on it without a backfill.</description>
+    <inlineHelpText>Pulled from the Unit record, so it cannot be edited here. If it is wrong, correct Square Feet on the Unit and every allocation using it updates.</inlineHelpText>
+    <label>Square Feet</label>
+    <formula><![CDATA[Unit__r.Square_Feet__c]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+    <!--
+      Derived, not duplicated. Reads 0 where the Unit is blank or its area is unset, which is
+      indistinguishable from a genuine zero; that is acceptable here because a zero area
+      space cannot carry a square footage allocation in the first place.
+    -->
+</CustomField>

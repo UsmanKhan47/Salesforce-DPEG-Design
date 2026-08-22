@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Utility_Bill__c</fullName>
+    <description>The bill this charge component belongs to. Master detail, which is what allows Utility_Bill__c.Total_Charges_Amount__c to be a roll up summary rather than an Apex maintained total. FSD 5.10.3.</description>
+    <inlineHelpText>The utility bill this line is part of. A charge line cannot be moved to another bill, because that would silently change two bill totals and two variance figures at once.</inlineHelpText>
+    <label>Utility Bill</label>
+    <referenceTo>Utility_Bill__c</referenceTo>
+    <relationshipLabel>Charge Lines</relationshipLabel>
+    <relationshipName>Charge_Lines</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+    <!--
+      REQUIRED by the platform, as every master detail is, so it must NEVER appear in a
+      permission set fieldPermissions block.
+
+      This completes a three level master detail chain, Meter to Utility Bill to Charge Line.
+      Three levels is the platform maximum for custom objects, so nothing can be added as a
+      master detail child BELOW Charge_Line__c. Any future child of a charge line has to be
+      a lookup.
+    -->
+</CustomField>

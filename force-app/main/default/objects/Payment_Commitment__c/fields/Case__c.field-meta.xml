@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Case__c</fullName>
+    <description>The Delinquency Case this commitment belongs to. Master-Detail, not Lookup: FSD 5.9.2 requires that the Case hold ALL workflow state, so a commitment must inherit the Case’s sharing and must never outlive it. Named for the target object per ARCHITECTURE.md.</description>
+    <inlineHelpText>The Delinquency Case this promise-to-pay or instalment belongs to.</inlineHelpText>
+    <label>Case</label>
+    <referenceTo>Case</referenceTo>
+    <relationshipLabel>Payment Commitments</relationshipLabel>
+    <relationshipName>Payment_Commitments</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Previous_Reading__c</fullName>
+    <externalId>false</externalId>
+    <description>The register reading at the start of the billing period, as printed on the invoice. FSD 5.10.5 requires previous and current readings to be stored so consumption can be recalculated and audited rather than taken on trust from the provider.</description>
+    <inlineHelpText>The opening reading from the invoice, exactly as printed. Do not adjust it for a rollover; the rollover is handled for you using the Register Modulus on the meter.</inlineHelpText>
+    <label>Previous Reading</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>4</scale>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

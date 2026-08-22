@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Current_Balance_Amount__c</fullName>
+    <description>Balance refreshed from the mirror on every nightly run (FSD 5.9.6 step 3). Compare against Balance At Open to see whether chasing has moved anything.</description>
+    <inlineHelpText>The balance as of the last nightly sync.</inlineHelpText>
+    <label>Current Balance Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      READ-ONLY YARDI MIRROR (FSD 5.9.2/5.9.3). This comment is INSIDE the root element on
+      purpose - a comment ABOVE the root breaks sf at source conversion.
+
+      The guiding rule from FSD 5.9.2: the mirror holds no state and is overwritten on every
+      sync, while the Case holds all workflow state and is never touched by the sync. Two
+      consequences are encoded here and must not be reversed:
+
+      1. enableHistory = false. The whole row is rewritten nightly; field history would record
+         the sync, not a business event, and would be pure volume.
+      2. NO persona permission set may grant Create/Edit/Delete on this object. The pattern to
+         copy is Work_Order__c, which DPEG_PropertyMgmt_Edit's own description records as
+         "deliberately excluded (Yardi read-only mirror)". Delinquency__c is the ANTI-pattern:
+         it grants Edit to the whole PM group via sharingRules and DPEG_PropertyMgmt_Edit,
+         which inverts the design. See HUB FILE REQUESTS in this build's report.
+
+      GRAIN (user decision D-AR-4): one row per occupied UNIT, not per tenant. There is no
+      Tenant object in this org; Unit__c is the existing Yardi mirror and already carries
+      Yardi_Unit_Id__c, Property_Asset__c, Tenant_Name__c and Current_Monthly_Rent__c. A tenant
+      occupying several suites therefore produces several rows - portfolio exposure per tenant
+      is a REPORT-LEVEL roll-up (group on Tenant_Name__c, SUM Total_Outstanding_Amount__c), not
+      a field on this object. Account__c is the seam for a future entity-level key.
+    -->
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <compactLayoutAssignment>Receivables_Summary_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Read-only nightly mirror of the Yardi receivables ledger, one row per occupied unit (FSD 5.9.3/5.9.4). Holds the charge-type split, five aging buckets, days past due and months outstanding. Never edited by a human and never holds workflow state - all follow-up lives on the Delinquency Case. Overwritten in full on every sync run.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+    <label>Receivables Summary</label>
+    <nameField>
+        <displayFormat>RCV-{0000}</displayFormat>
+        <label>Receivables Summary Number</label>
+        <trackHistory>false</trackHistory>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Receivables Summaries</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

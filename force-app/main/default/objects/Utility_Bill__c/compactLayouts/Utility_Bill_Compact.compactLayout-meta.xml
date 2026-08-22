@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Utility_Bill_Compact</fullName>
+    <fields>Meter__c</fields>
+    <fields>Read_Date__c</fields>
+    <fields>Total_Charges_Amount__c</fields>
+    <fields>Total_Variance_Amount__c</fields>
+    <fields>Total_Variance_Pct__c</fields>
+    <label>Utility Bill Compact</label>
+</CompactLayout>

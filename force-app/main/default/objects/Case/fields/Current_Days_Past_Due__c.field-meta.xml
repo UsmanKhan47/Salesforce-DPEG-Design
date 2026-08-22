@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Current_Days_Past_Due__c</fullName>
+    <description>Days past due refreshed from the mirror on every nightly run (FSD 5.9.6 step 3). Drives the escalation ladder and the dashboard flag.</description>
+    <inlineHelpText>How far past due the tenant is as of the last nightly sync.</inlineHelpText>
+    <label>Current Days Past Due</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

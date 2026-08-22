@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Breach_Notified__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>ONE-WAY LATCH. Set true when the breach alert has been sent, and never cleared. FSD 5.9.7 requires that an alert never re-fires, and without a latch the nightly job would re-notify on every subsequent run for as long as the commitment stays breached.</description>
+    <inlineHelpText>Ticked once the breach alert has gone out. Never unticked - clearing it would re-send the alert.</inlineHelpText>
+    <label>Breach Notified</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

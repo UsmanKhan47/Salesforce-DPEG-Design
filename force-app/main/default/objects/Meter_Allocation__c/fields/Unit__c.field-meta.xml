@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Unit__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The space that receives this share of the meter consumption. Blank is meaningful where the share is not attributable to a leasable space, for example a common area share carried by management.</description>
+    <inlineHelpText>The suite or space taking this share. Leave blank only where the share belongs to common area or to management rather than to a specific space.</inlineHelpText>
+    <label>Unit Space</label>
+    <referenceTo>Unit__c</referenceTo>
+    <relationshipLabel>Meter Allocations</relationshipLabel>
+    <relationshipName>Meter_Allocations</relationshipName>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+    <!--
+      SetNull rather than Restrict. Restrict would block a Unit delete outright, and the
+      field level comments across this repo avoid Restrict. The consequence is that deleting
+      a Unit silently orphans its allocations rather than refusing; the allocation survives
+      with a blank space, which is at least visible, where a cascade would destroy the split
+      history without trace.
+    -->
+</CustomField>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Staleness_Tolerance_Hours__c</fullName>
+    <description>How old the FEED’s own as-of timestamp may be before FSD 5.9.6 step 2 halts the run. Measured against Sync_Run__c.Feed_As_Of_DateTime__c, never against the Salesforce clock. There is no hardcoded fallback in Apex: if this is unset the run halts.</description>
+    <inlineHelpText>Halt if the Yardi data is older than this many hours.</inlineHelpText>
+    <label>Staleness Tolerance Hours</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

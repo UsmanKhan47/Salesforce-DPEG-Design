@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Escalation_Basis_Days__c</fullName>
+    <description>DESIGNED, NOT SPECIFIED. Snapshot of Days Past Due at the moment the escalation level was last raised. Without it, a monotone level can never re-arm: if Yardi later CORRECTS the aging downward and it climbs again, the level is already at its high-water mark and the alert never re-fires. That is not hypothetical here - a billing correction, which is the FSD 5.9.5 Correct path, is exactly that scenario.</description>
+    <inlineHelpText>The days-past-due figure the current escalation level was calculated from. Lets escalation re-arm if Yardi corrects the aging.</inlineHelpText>
+    <label>Escalation Basis Days</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <compactLayoutAssignment>Utility_Bill_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>One utility bill per meter per billing month (FSD 5.10.5). Captures bill date and read date separately because billing and consumption periods differ, stores previous and current meter readings, and carries the usage and rate variance decomposition.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>true</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>ControlledByParent</externalSharingModel>
+    <label>Utility Bill</label>
+    <nameField>
+        <displayFormat>UB-{00000}</displayFormat>
+        <label>Utility Bill Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Utility Bills</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>ControlledByParent</sharingModel>
+    <visibility>Public</visibility>
+    <!--
+      sharingModel is ControlledByParent because Meter__c is the master in a master detail
+      relationship. That is deliberate, not incidental: a bill must be visible to exactly
+      the people who can see its meter, and inheriting removes the risk of two independent
+      criteria sharing rules drifting apart. FSD 5.10.3 calls this object a child of Meter.
+      Justified as a custom object because no standard object models a periodic consumption
+      and charge record.
+    -->
+</CustomObject>

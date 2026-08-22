@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Yardi_AR_Id__c</fullName>
+    <caseSensitive>false</caseSensitive>
+    <description>The upsert key for the nightly sync. UNIQUE on this object - deliberately the opposite of Case.Yardi_AR_Id__c, which must NOT be unique because closed Cases accumulate for a tenant who re-delinquents. Length 50 matches the already-deployed Case field so the denormalised copy can never truncate.</description>
+    <externalId>true</externalId>
+    <inlineHelpText>Yardi’s identifier for this receivable. System-managed - do not change it or the next sync will create a duplicate row.</inlineHelpText>
+    <label>Yardi AR Id</label>
+    <length>50</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

@@ -88,5 +88,10 @@
     <tabs>Property_Management_Dashboard</tabs>
     <tabs>Leasing_Dashboard</tabs>
     <tabs>Work_Order_Dashboard</tabs>
+    <tabs>Meter__c</tabs>
+    <tabs>Utility_Bill__c</tabs>
+    <tabs>Vendor_Contract__c</tabs>
+    <tabs>Receivables_Summary__c</tabs>
+    <tabs>standard-Case</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>

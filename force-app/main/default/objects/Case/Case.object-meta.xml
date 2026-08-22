@@ -220,5 +220,12 @@
         <searchResultsAdditionalFields>CASES.CREATED_DATE</searchResultsAdditionalFields>
         <searchResultsAdditionalFields>CORE.USERS.ALIAS</searchResultsAdditionalFields>
     </searchLayouts>
-    <sharingModel>ReadWriteTransfer</sharingModel>
+    <!--
+      OWD is Private, matching the live org (verified 2026-08-22 against usman-dpeg via
+      EntityDefinition.InternalSharingModel). This file previously carried ReadWriteTransfer,
+      which was stale drift hidden by the blanket objects/Case/** .forceignore entry. Removing
+      that entry for the FSD v1.1 AR build made the drift deployable, and it would have silently
+      downgraded every Case to org-wide read/write/transfer. Do not "restore" ReadWriteTransfer.
+    -->
+    <sharingModel>Private</sharingModel>
 </CustomObject>

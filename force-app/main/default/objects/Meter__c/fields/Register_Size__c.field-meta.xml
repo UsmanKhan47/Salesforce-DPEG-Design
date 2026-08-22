@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Register_Size__c</fullName>
+    <externalId>false</externalId>
+    <description>The register size exactly as FSD 5.10.4 names it. Needed to handle meter rollover on import. Its meaning, dial count or modulus, is an OPEN QUESTION; enter whichever the provider states and let Register Modulus derive the arithmetic.</description>
+    <inlineHelpText>Enter either the number of dials on the meter, for example 5, or the value it rolls over at, for example 100000. Register Modulus works out which you meant, so use whichever the provider states.</inlineHelpText>
+    <label>Register Size</label>
+    <precision>9</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+    <!--
+      OPEN QUESTION, DELIBERATELY LEFT OPEN PER USER DECISION D-UM-8.
+
+      FSD 5.10.4 says only "Register Size ... Needed to handle meter rollover on import".
+      That phrase is ambiguous between the dial COUNT of a meter (a 5 dial register) and the
+      MODULUS it wraps at (100000). Getting it wrong makes every rollover consumption figure
+      wrong by orders of magnitude, silently, on the exact numbers a variance alert keys on.
+
+      This field is named with the FSD phrase and stores whatever the provider states. The
+      interpretation lives in exactly ONE place, the Register_Modulus__c formula, so when the
+      question is answered the fix is a one field formula edit and not a schema change, a
+      data migration or a rename. That is the point of splitting the two fields.
+    -->
+</CustomField>

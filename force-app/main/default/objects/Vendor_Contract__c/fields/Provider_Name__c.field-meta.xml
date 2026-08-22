@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Provider_Name__c</fullName>
+    <externalId>false</externalId>
+    <description>The vendor supplying this fixed monthly service. Text rather than a lookup to Account, for exactly the same reasons recorded on Meter.Provider_Name__c, and kept identical so the two can be reported together.</description>
+    <inlineHelpText>The vendor name exactly as it appears on the invoice. Keep the spelling identical to the same vendor on any meter, so reporting groups them together.</inlineHelpText>
+    <label>Provider</label>
+    <length>120</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+    <!--
+      Deliberately named Provider_Name__c, not Provider__c, so that the API name Provider__c
+      stays free for a future Lookup(Account) on both this object and Meter__c. See the
+      fuller reasoning in Meter__c/fields/Provider_Name__c.field-meta.xml.
+    -->
+</CustomField>

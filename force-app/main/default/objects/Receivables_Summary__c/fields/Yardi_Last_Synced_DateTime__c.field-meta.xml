@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Yardi_Last_Synced_DateTime__c</fullName>
+    <description>When this row was last written by the receivables sync. FSD 4 requires the last-synced timestamp to be visible on screen, and no Property Management object carried one before this build. Naming follows the existing &lt;Source&gt;_Last_Synced_DateTime__c convention (Opportunity.CoStar_Last_Synced_DateTime__c, Property__c.Placer_Last_Synced_DateTime__c).</description>
+    <inlineHelpText>When this row was last refreshed from Yardi. If it looks old, the nightly sync may have halted - check the Sync Run.</inlineHelpText>
+    <label>Yardi Last Synced</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

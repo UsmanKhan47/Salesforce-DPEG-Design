@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Feed_As_Of_DateTime__c</fullName>
+    <description>THE FEED’S OWN TIMESTAMP, not Salesforce’s clock. FSD 5.9.6 step 2 halts on a stale sync, and staleness is only meaningful against the source: a feed that is three days old but was fetched two minutes ago IS stale, and measuring against Started_DateTime__c would call it fresh.</description>
+    <inlineHelpText>How old the Yardi data itself is. Staleness is judged against this, not against when the job ran.</inlineHelpText>
+    <label>Feed As Of</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

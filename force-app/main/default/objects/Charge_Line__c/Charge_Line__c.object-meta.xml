@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <compactLayoutAssignment>Charge_Line_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Per component charge amount on a utility bill (FSD 5.10.3). Components vary by utility and appear irregularly, for example energy, pass through and taxes on electricity, and surface water, wastewater, stormwater, grease trap and fire on water.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>false</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>ControlledByParent</externalSharingModel>
+    <label>Charge Line</label>
+    <nameField>
+        <displayFormat>CL-{000000}</displayFormat>
+        <label>Charge Line Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Charge Lines</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>ControlledByParent</sharingModel>
+    <visibility>Public</visibility>
+    <!--
+      Justified as a custom object because fixed columns on the bill cannot absorb charge
+      components that appear irregularly and differ per utility. Master detail to
+      Utility_Bill__c is required so that Utility_Bill__c.Total_Charges_Amount__c can be a
+      roll up summary; a lookup would push that total into Apex.
+      enableSearch is false because an autonumber line item is not a useful global search
+      result; charge lines are reached through their parent bill.
+    -->
+</CustomObject>

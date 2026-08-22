@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Opening_Threshold_Months__c</fullName>
+    <description>The months-of-rent threshold at which the nightly job opens a Delinquency Case. Exists alongside the dollar threshold because FSD 5.9.1 records that the team reasons in months of rent rather than days; a small tenant at 3 months is a bigger problem than a large tenant at the same dollar figure. There is no hardcoded fallback in Apex: if this is unset the run halts.</description>
+    <inlineHelpText>Open a Case once the balance reaches this many months of rent.</inlineHelpText>
+    <label>Opening Threshold Months</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>1</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

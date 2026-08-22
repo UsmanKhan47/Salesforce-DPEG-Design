@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Prior_Utility_Bill__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The immediately preceding bill for the same meter, ordered by read date. Written by Apex. Every variance figure on this record is measured against it, so a wrong or stale pointer silently produces wrong variance rather than an error.</description>
+    <inlineHelpText>Set automatically to the previous bill for this meter. Blank on the first ever bill for a meter, which is why a first bill correctly shows no variance rather than a 100 percent rise.</inlineHelpText>
+    <label>Prior Utility Bill</label>
+    <referenceTo>Utility_Bill__c</referenceTo>
+    <relationshipLabel>Successor Bills</relationshipLabel>
+    <relationshipName>Successor_Bills</relationshipName>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+    <!--
+      Apex written; there is no declarative way to find "the preceding bill for this meter".
+
+      A lookup and not a master detail: this object already has its one master detail to
+      Meter__c, and a cascade delete down a bill chain would be actively wrong.
+      deleteConstraint is SetNull so that deleting a middle bill blanks the pointer rather
+      than blocking the delete. That blanking is DETECTABLE, which is what lets the
+      afterDelete re-link find and repair the chain.
+
+      The chain is invalidated by a back dated insert as well as by a delete: if January and
+      March exist and February is added afterwards, March still points at January. Re-linking
+      must therefore run on afterInsert, afterUpdate when Read_Date__c or Meter__c changed,
+      AND afterDelete.
+    -->
+</CustomField>

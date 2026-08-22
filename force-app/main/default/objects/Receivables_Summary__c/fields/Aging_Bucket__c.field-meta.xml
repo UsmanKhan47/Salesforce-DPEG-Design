@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Aging_Bucket__c</fullName>
+    <description>Single derived label answering "how old is the oldest money on this row" - the highest non-zero bucket wins. This is a DIFFERENT question from the five currency buckets, which split one balance across ages; this puts the whole row in one age. The numeric prefixes are load-bearing, not decoration: a report grouping on a text formula sorts ASCII-ascending, which would otherwise place Current last.</description>
+    <formula><![CDATA[IF(Aging_90_Plus_Amount__c > 0, "5. 90+ Days",
+IF(Aging_61_90_Amount__c > 0, "4. 61-90 Days",
+IF(Aging_31_60_Amount__c > 0, "3. 31-60 Days",
+IF(Aging_1_30_Amount__c > 0, "2. 1-30 Days",
+IF(Current_Amount__c > 0, "1. Current", "0. None")))))]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>The oldest bucket this row has money in. Used to group the aging charts.</inlineHelpText>
+    <label>Aging Bucket</label>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+</CustomField>

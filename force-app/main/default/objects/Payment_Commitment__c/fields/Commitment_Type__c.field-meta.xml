@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Commitment_Type__c</fullName>
+    <description>Distinguishes a one-off promise to pay from one instalment of an agreed payment plan. FSD 5.9.7 treats them differently: a missed instalment can reopen a resolved Case, a broken single promise escalates it.</description>
+    <inlineHelpText>A single promise to pay, or one instalment of an agreed plan.</inlineHelpText>
+    <label>Commitment Type</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Promise to Pay</fullName>
+                <default>true</default>
+                <label>Promise to Pay</label>
+            </value>
+            <value>
+                <fullName>Payment Plan Instalment</fullName>
+                <default>false</default>
+                <label>Payment Plan Instalment</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

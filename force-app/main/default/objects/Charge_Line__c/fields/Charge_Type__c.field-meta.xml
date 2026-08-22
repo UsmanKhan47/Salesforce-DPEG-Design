@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Charge_Type__c</fullName>
+    <description>Which component of the bill this line represents. FSD 5.10.3 notes that components vary by utility and appear irregularly, which is the reason charges are lines rather than fixed columns. Deliberately UNRESTRICTED, see the comment below.</description>
+    <inlineHelpText>Pick the closest match to the wording on the invoice. New component names can be entered when a provider introduces one, so an unfamiliar charge does not have to be forced into Other.</inlineHelpText>
+    <label>Charge Type</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>false</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Energy</fullName>
+                <default>false</default>
+                <label>Energy</label>
+            </value>
+            <value>
+                <fullName>Pass-Through</fullName>
+                <default>false</default>
+                <label>Pass-Through</label>
+            </value>
+            <value>
+                <fullName>Taxes</fullName>
+                <default>false</default>
+                <label>Taxes</label>
+            </value>
+            <value>
+                <fullName>Surface Water</fullName>
+                <default>false</default>
+                <label>Surface Water</label>
+            </value>
+            <value>
+                <fullName>Wastewater</fullName>
+                <default>false</default>
+                <label>Wastewater</label>
+            </value>
+            <value>
+                <fullName>Stormwater</fullName>
+                <default>false</default>
+                <label>Stormwater</label>
+            </value>
+            <value>
+                <fullName>Grease Trap</fullName>
+                <default>false</default>
+                <label>Grease Trap</label>
+            </value>
+            <value>
+                <fullName>Fire</fullName>
+                <default>false</default>
+                <label>Fire</label>
+            </value>
+            <value>
+                <fullName>Base Charge</fullName>
+                <default>false</default>
+                <label>Base Charge</label>
+            </value>
+            <value>
+                <fullName>Other</fullName>
+                <default>false</default>
+                <label>Other</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <!--
+      UNRESTRICTED, and that is a deliberate exception to the project default of restricted.
+
+      Restricted picklists on this project ARE enforced at DML, measured four separate
+      times. FSD 5.10.3 says charge components appear irregularly, so a monthly bill import
+      carrying a component name that is not on the list would HARD FAIL the row under a
+      restricted picklist. The failure mode of unrestricted is a typo in a report grouping;
+      the failure mode of restricted is a rejected bill. The first is recoverable.
+
+      The ten seeded values are taken from the FSD 5.10.2 examples only: energy, pass
+      through and taxes for electricity, and surface water, wastewater, stormwater, grease
+      trap and fire for water, plus Base Charge and Other.
+    -->
+</CustomField>

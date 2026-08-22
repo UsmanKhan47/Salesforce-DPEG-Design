@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Property_Asset__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The property this fixed monthly service covers. Lookup rather than master detail because a service can legitimately be contracted at portfolio level with no single property, which a master detail would forbid.</description>
+    <inlineHelpText>The property the service is provided at. Leave blank only for a portfolio wide agreement that genuinely covers no single property.</inlineHelpText>
+    <label>Property</label>
+    <referenceTo>Property_Asset__c</referenceTo>
+    <relationshipLabel>Vendor Contracts</relationshipLabel>
+    <relationshipName>Vendor_Contracts</relationshipName>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

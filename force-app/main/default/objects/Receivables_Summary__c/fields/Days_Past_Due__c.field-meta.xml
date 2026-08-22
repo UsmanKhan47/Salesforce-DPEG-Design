@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Days_Past_Due__c</fullName>
+    <description>Age in days of the OLDEST unpaid item, per FSD 5.9.4. Not the average and not the newest - the oldest, because that is what escalation is measured against.</description>
+    <inlineHelpText>Age of the oldest unpaid item, in days. Yardi-sourced and overwritten on every nightly sync. Never edit this value in Salesforce - it will be replaced.</inlineHelpText>
+    <label>Days Past Due</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

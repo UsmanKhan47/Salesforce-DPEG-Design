@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      Promise-to-pay / payment-plan instalment, child of the Delinquency Case (FSD 5.9.3).
+      "A due date that breaches on its own" - Due_Date__c plus Status__c are what the nightly
+      job evaluates; Breach_Notified__c is a one-way latch so the same breach never re-alerts
+      (FSD 5.9.7 requires that an alert never re-fires).
+
+      sharingModel is ControlledByParent because Case__c is a Master-Detail. That is required by
+      the platform, not a choice - but it is also the right answer: FSD 5.9.2 says the Case holds
+      ALL workflow state, so a commitment must never be visible to someone who cannot see its
+      Case, and must never survive its Case.
+    -->
+    <allowInChatterGroups>false</allowInChatterGroups>
+    <compactLayoutAssignment>Payment_Commitment_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>A tenant promise-to-pay or payment-plan instalment hanging off a Delinquency Case (FSD 5.9.3/5.9.7). Carries its own due date and breaches on its own when that date passes unpaid, which flags the commitment and can reopen or escalate the parent Case.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>true</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <label>Payment Commitment</label>
+    <nameField>
+        <displayFormat>PC-{0000}</displayFormat>
+        <label>Payment Commitment Number</label>
+        <trackHistory>false</trackHistory>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Payment Commitments</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>ControlledByParent</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

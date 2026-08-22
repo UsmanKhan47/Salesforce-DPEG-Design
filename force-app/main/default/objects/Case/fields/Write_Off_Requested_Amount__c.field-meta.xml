@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Write_Off_Requested_Amount__c</fullName>
+    <description>The amount being put forward for write-off. Deliberately separate from Current Balance Amount - a partial write-off is common, and the balance keeps moving underneath while the request is pending.</description>
+    <inlineHelpText>How much is being requested for write-off. May be less than the full balance.</inlineHelpText>
+    <label>Write Off Requested Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

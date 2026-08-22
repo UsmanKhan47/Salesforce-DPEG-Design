@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Last_Follow_Up_DateTime__c</fullName>
+    <description>Stamped when a Case Comment is added. FSD 5.9.1 records that the overwritten notes column destroyed follow-up history, so the trail itself lives in append-only Case Comments and this field is only the derived clock over it.</description>
+    <inlineHelpText>When follow-up was last logged. Set automatically when you add a Case Comment.</inlineHelpText>
+    <label>Last Follow Up</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

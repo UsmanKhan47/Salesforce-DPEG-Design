@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Write_Off_Decided_DateTime__c</fullName>
+    <description>When the write-off decision was recorded. Gives the turnaround time on principal decisions, which FSD 6.5 surfaces as a queue.</description>
+    <inlineHelpText>When the write-off decision came back.</inlineHelpText>
+    <label>Write Off Decided</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

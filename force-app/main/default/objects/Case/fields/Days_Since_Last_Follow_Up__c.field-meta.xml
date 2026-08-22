@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Days_Since_Last_Follow_Up__c</fullName>
+    <description>Whole days since the last Case Comment, falling back to when the Case was created so a brand-new Case with no comments still ages. Feeds the FSD 6.5 "no follow-up in 7 days" view. Because it contains NOW(), the nightly job must compute staleness in Apex from Last_Follow_Up_DateTime__c rather than filtering on this field.</description>
+    <formula><![CDATA[FLOOR( NOW() - IF(ISBLANK(Last_Follow_Up_DateTime__c), CreatedDate, Last_Follow_Up_DateTime__c) )]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>Days since follow-up was last logged. Counts from when the Case opened if nothing has been logged yet.</inlineHelpText>
+    <label>Days Since Last Follow Up</label>
+    <precision>18</precision>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+</CustomField>

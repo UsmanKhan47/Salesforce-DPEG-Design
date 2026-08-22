@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Master_Meter__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The master meter this meter sits underneath. FSD 5.10.3 models a master meter with sub meters as a parent child relationship. Blank means this meter is itself a master, or stands alone.</description>
+    <inlineHelpText>Set this only on a sub meter, pointing at the master meter that feeds it. Leave blank on a master meter or a standalone meter, and never point a meter at itself.</inlineHelpText>
+    <label>Master Meter</label>
+    <referenceTo>Meter__c</referenceTo>
+    <relationshipLabel>Sub-Meters</relationshipLabel>
+    <relationshipName>Sub_Meters</relationshipName>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+    <!--
+      A self lookup, replacing the standard Asset ParentId that FSD 5.10.3 assumed, since
+      standard Asset was rejected by user decision D-UM-1.
+
+      Named for its ROLE rather than for its target object. ARCHITECTURE section 1 says a
+      relationship field is named for the target object, but a field called Meter__c on
+      Meter__c would be meaningless, and the same section already carries a role name
+      exception for self referencing and role bearing lookups.
+
+      relationshipName is the CHILD side name, so the related list that appears on the
+      master meter is Sub-Meters. That is the intended direction.
+
+      There is no platform guard against a cycle, for example two meters naming each other
+      as master. FSD 5.10 asks for no validation rules, so none is created; any Apex that
+      walks this chain must bound its own traversal.
+    -->
+</CustomField>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Promised_Amount__c</fullName>
+    <description>The amount the tenant committed to pay by the due date. Suffixed Amount because it is a total, per the ARCHITECTURE.md currency naming rule.</description>
+    <inlineHelpText>How much the tenant committed to pay by the due date.</inlineHelpText>
+    <label>Promised Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

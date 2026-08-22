@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Halt_Reason__c</fullName>
+    <description>Why the health check stopped the run. This is the ASSERTABLE value in the FSD 5.9.6 step 2 tests - a test should assert this enum plus Lifecycle_Ran__c, not merely that no Cases appeared, because "no Cases" is also what a silently broken job produces.</description>
+    <inlineHelpText>Why this run stopped. None means it was not halted.</inlineHelpText>
+    <label>Halt Reason</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>None</fullName>
+                <default>true</default>
+                <label>None</label>
+            </value>
+            <value>
+                <fullName>Disabled</fullName>
+                <default>false</default>
+                <label>Disabled</label>
+            </value>
+            <value>
+                <fullName>Config Missing</fullName>
+                <default>false</default>
+                <label>Config Missing</label>
+            </value>
+            <value>
+                <fullName>Stale Feed</fullName>
+                <default>false</default>
+                <label>Stale Feed</label>
+            </value>
+            <value>
+                <fullName>Row Count Below Minimum</fullName>
+                <default>false</default>
+                <label>Row Count Below Minimum</label>
+            </value>
+            <value>
+                <fullName>Row Count Change Exceeded</fullName>
+                <default>false</default>
+                <label>Row Count Change Exceeded</label>
+            </value>
+            <value>
+                <fullName>Callout Failure</fullName>
+                <default>false</default>
+                <label>Callout Failure</label>
+            </value>
+            <value>
+                <fullName>Parse Failure</fullName>
+                <default>false</default>
+                <label>Parse Failure</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

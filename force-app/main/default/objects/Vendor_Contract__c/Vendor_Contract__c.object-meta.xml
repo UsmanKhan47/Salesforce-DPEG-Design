@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <compactLayoutAssignment>Vendor_Contract_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Fixed monthly vendor service agreement for trash and maintenance (FSD 5.10.3). These services have no meter and no consumption, so they carry a recurring monthly amount instead of meter readings and charge lines.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>true</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+    <label>Vendor Contract</label>
+    <nameField>
+        <displayFormat>VC-{00000}</displayFormat>
+        <label>Vendor Contract Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Vendor Contracts</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+    <!--
+      Standard Contract was evaluated and rejected, because ARCHITECTURE and FSD section 2
+      principle 4 require standard objects first, with each custom object justified.
+      Standard Contract is AccountId scoped and carries its own activation, status and
+      ContractTerm lifecycle; this record is property scoped and has no activation lifecycle
+      at all. The only shape the two share is a start and an end date.
+
+      Private OWD plus a criteria sharing rule, matching Property_Asset__c and
+      Work_Order__c. Not ControlledByParent, because Property_Asset__c is a lookup here
+      rather than a master detail: a vendor contract can legitimately cover a portfolio
+      level service with no single property, which a master detail would forbid.
+    -->
+</CustomObject>

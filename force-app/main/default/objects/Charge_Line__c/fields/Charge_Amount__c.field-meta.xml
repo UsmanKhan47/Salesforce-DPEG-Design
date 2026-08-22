@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Charge_Amount__c</fullName>
+    <description>The dollar amount of this single charge component. Rolls up into the bill total, so the components always reconcile to the invoice. ARCHITECTURE section 1 forbids a bare Fee or Cost name; the Amount suffix marks it as a total in dollars.</description>
+    <inlineHelpText>Enter the amount for this component only, not the invoice total, and enter credits as a negative number so the bill total still reconciles.</inlineHelpText>
+    <label>Charge Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

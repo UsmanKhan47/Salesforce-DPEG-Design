@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Allocation_Pct__c</fullName>
+    <externalId>false</externalId>
+    <description>The share of this meter consumption attributed to this space. Rolls up into Meter.Total Allocated Percent so an incomplete or double counted split is visible on the meter itself.</description>
+    <inlineHelpText>Enter 25 for a quarter share, not 0.25. The shares on one meter would normally add up to 100; check Total Allocated Percent on the meter after editing.</inlineHelpText>
+    <label>Allocation Percent</label>
+    <precision>5</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Percent</type>
+    <unique>false</unique>
+</CustomField>

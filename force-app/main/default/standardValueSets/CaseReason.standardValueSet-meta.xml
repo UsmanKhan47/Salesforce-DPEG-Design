@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <StandardValueSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment above the root breaks sf
+      at source conversion.
+
+      A StandardValueSet deploy REPLACES THE WHOLE SET. The seven stock equipment-support
+      values below are retained verbatim for that reason; deleting one here deletes it from
+      the org.
+
+      The four values added at the end are the FSD 5.9.5 delinquency reasons, and each maps to
+      a Resolution Path:
+          Non-payment          -> Collect
+          Short payment        -> Collect
+          Billing dispute      -> Correct
+          Prior-owner balance  -> Correct
+      That mapping is NOT enforced by this file. It is enforced by the validation rule
+      Reason_Matches_Resolution_Path on Case, so that a Case cannot be saved claiming to chase
+      a tenant for a charge DPEG should not have billed. Keep the two in step: adding a reason
+      here without adding it to that rule leaves the new reason unconstrained.
+    -->
     <sorted>false</sorted>
     <standardValue>
         <fullName>Installation</fullName>
@@ -41,6 +60,30 @@
         <fullName>Other</fullName>
         <default>false</default>
         <label>Other</label>
+        <cssExposed>false</cssExposed>
+    </standardValue>
+    <standardValue>
+        <fullName>Non-payment</fullName>
+        <default>false</default>
+        <label>Non-payment</label>
+        <cssExposed>false</cssExposed>
+    </standardValue>
+    <standardValue>
+        <fullName>Short payment</fullName>
+        <default>false</default>
+        <label>Short payment</label>
+        <cssExposed>false</cssExposed>
+    </standardValue>
+    <standardValue>
+        <fullName>Billing dispute</fullName>
+        <default>false</default>
+        <label>Billing dispute</label>
+        <cssExposed>false</cssExposed>
+    </standardValue>
+    <standardValue>
+        <fullName>Prior-owner balance</fullName>
+        <default>false</default>
+        <label>Prior-owner balance</label>
         <cssExposed>false</cssExposed>
     </standardValue>
 </StandardValueSet>

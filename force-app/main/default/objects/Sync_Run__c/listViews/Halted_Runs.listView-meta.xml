@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Halted_Runs</fullName>
+    <columns>NAME</columns>
+    <columns>Started_DateTime__c</columns>
+    <columns>Finished_DateTime__c</columns>
+    <columns>Source__c</columns>
+    <columns>Provider_Class_Name__c</columns>
+    <columns>Feed_As_Of_DateTime__c</columns>
+    <columns>Row_Count__c</columns>
+    <columns>Status__c</columns>
+    <columns>Halt_Reason__c</columns>
+    <columns>Lifecycle_Ran__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Status__c</field>
+        <operation>notEqual</operation>
+        <value>Completed</value>
+    </filters>
+    <label>Halted Runs</label>
+</ListView>

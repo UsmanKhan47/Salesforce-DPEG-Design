@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Write_Off_Requested__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Set when a write-off is put to the principal (FSD 5.9.7 row 7). The Case is held at Escalated to Principal until the decision comes back.</description>
+    <inlineHelpText>Ticked when a write-off has been requested for this balance.</inlineHelpText>
+    <label>Write Off Requested</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

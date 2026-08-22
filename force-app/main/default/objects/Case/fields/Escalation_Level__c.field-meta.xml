@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Escalation_Level__c</fullName>
+    <defaultValue>0</defaultValue>
+    <description>DESIGNED, NOT SPECIFIED. FSD 5.9.6 step 5 and 5.9.7 both operate on an escalation level and state it is one-way - the level never drops without a payment - but the FSD never defines it. Modelled as a monotone marker: 0 none, 1 = 60 days, 2 = 90 days, 3 = write-off or legal. Raised only upward by the nightly job and reset only on close or payment. Its whole purpose is that an alert fires once.</description>
+    <inlineHelpText>How far this Case has escalated. 0 none, 1 sixty days, 2 ninety days, 3 write-off or legal. Only goes up.</inlineHelpText>
+    <label>Escalation Level</label>
+    <precision>1</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

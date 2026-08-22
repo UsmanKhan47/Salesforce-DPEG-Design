@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Service_Type__c</fullName>
+    <description>Which fixed monthly service this contract covers. FSD 5.10.3 names only trash and maintenance, and gives this object no field table at all, so only those two values are seeded and the picklist is left open.</description>
+    <inlineHelpText>Trash and Maintenance are the two the specification names. If the service is something else, type it in rather than forcing it into one of these.</inlineHelpText>
+    <label>Service Type</label>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>false</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Trash</fullName>
+                <default>false</default>
+                <label>Trash</label>
+            </value>
+            <value>
+                <fullName>Maintenance</fullName>
+                <default>false</default>
+                <label>Maintenance</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <!--
+      UNRESTRICTED, and only two values, both deliberate. FSD 5.10.3 gives this object one
+      sentence and no field table, so a restricted two value list would freeze a guess into
+      a picklist that this project has measured to be enforced at DML. Inventing extra
+      values to pad the list would be worse: they would look specified when they are not.
+      Tighten to restricted once the real service taxonomy is confirmed.
+    -->
+</CustomField>

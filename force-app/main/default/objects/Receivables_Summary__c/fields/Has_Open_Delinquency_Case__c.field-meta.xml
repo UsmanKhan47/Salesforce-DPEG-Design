@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Has_Open_Delinquency_Case__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>STORED, WRITTEN BY THE SYNC ONLY - deliberately NOT a formula (user decision D-AR-7). A formula on this object could only traverse a lookup FROM the mirror, and the relationship runs the other way (Case -&gt; mirror); a roll-up would need Case to be a master-detail child, which it cannot be. This field is a projection of a SOQL guard, recomputed from scratch every run, so losing it costs nothing. It also lets the FSD 6.1 Delinquent Tenants tile count what the job actually decided, instead of hardcoding the opening threshold a second time in report XML - a report cannot read a Custom Setting.</description>
+    <inlineHelpText>Ticked when an open Delinquency Case exists for this row. Set by the nightly sync; do not edit.</inlineHelpText>
+    <label>Has Open Delinquency Case</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

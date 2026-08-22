@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Maximum_Row_Count_Change_Pct__c</fullName>
+    <description>Upper bound on how far the row count may move from the previous completed run, as a percentage. A minimum alone cannot catch a feed that DOUBLED, which is just as suspect as one that collapsed. Named with the Pct suffix per ARCHITECTURE.md so the unit is unambiguous. There is no hardcoded fallback in Apex: if this is unset the run halts.</description>
+    <inlineHelpText>Halt if the row count moves more than this percentage from the last completed run.</inlineHelpText>
+    <label>Maximum Row Count Change Pct</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

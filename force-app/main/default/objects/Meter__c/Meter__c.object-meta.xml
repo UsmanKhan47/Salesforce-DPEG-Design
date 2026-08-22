@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <compactLayoutAssignment>Meter_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Utility meter register (FSD 5.10.3/5.10.4). One row per physical meter per property and space. Custom object rather than standard Asset, which is ControlledByParent on Account and so cannot be scoped to the Private Property Asset. See the comment below.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>true</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+    <label>Meter</label>
+    <nameField>
+        <displayFormat>MTR-{00000}</displayFormat>
+        <label>Meter Record Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Meters</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+    <!--
+      DEVIATION FROM FSD 5.10.3, APPROVED BY THE USER ON 2026-08-22 AS DECISION D-UM-1.
+
+      FSD 5.10.3 states that the meter is the standard Asset object, used per the
+      architecture rule. That is rejected here. Two blockers were measured in this repo:
+
+      1. force-app/main/default/objects/Asset/** is force-ignored at .forceignore line 250.
+         Every custom Asset field, record type and object change would be dropped from every
+         deploy silently, with zero errors and zero warnings. The Account narrative at
+         .forceignore lines 224 to 248 documents the same failure and records that a
+         gitignore style negation cannot rescue a path already pruned by a directory ignore.
+
+      2. Asset.object-meta.xml line 127 sets sharingModel ControlledByParent, and the Asset
+         sharing parent is AccountId falling back to ContactId. It can never be
+         Property_Asset__c. So meter account numbers and service identifiers would inherit
+         Account visibility while Property_Asset__c is deliberately Private, and a
+         ControlledByParent object cannot carry sharing rules, so there is no declarative
+         repair.
+
+      Meter__c therefore takes Private OWD plus a criteria based sharing rule to
+      DPEG_Property_Mgmt_Team, the same posture as Work_Order__c and Property_Asset__c.
+      Consequences of the deviation: the standard SerialNumber field no longer applies, so
+      the meter number is the ordinary field Meter_Number__c; and the standard Asset ParentId
+      self lookup no longer applies, so the master meter to sub meter relationship is the
+      ordinary self lookup Master_Meter__c.
+    -->
+</CustomObject>

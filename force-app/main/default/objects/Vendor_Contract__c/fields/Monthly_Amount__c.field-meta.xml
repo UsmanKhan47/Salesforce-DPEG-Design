@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Monthly_Amount__c</fullName>
+    <description>The fixed amount billed each month under this contract. FSD 5.10.3 describes these services as the fixed monthly shape with no meter and no consumption, so a recurring amount replaces readings and charge lines entirely.</description>
+    <inlineHelpText>The recurring monthly charge, not an annual total and not a one off. If the amount changes, update it here and note the effective date, since only the current amount is stored.</inlineHelpText>
+    <label>Monthly Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+    <!--
+      ARCHITECTURE section 1 requires a currency name to make its unit unambiguous and to
+      carry the period for a periodic amount, matching Unit__c.Current_Monthly_Rent__c.
+      A bare Cost__c or Fee__c is explicitly forbidden.
+      History tracking is on because this is the only record of a price change; the object
+      stores the CURRENT amount, not a rate history.
+    -->
+</CustomField>

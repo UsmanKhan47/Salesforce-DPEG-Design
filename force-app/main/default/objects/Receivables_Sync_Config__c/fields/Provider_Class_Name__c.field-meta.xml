@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Provider_Class_Name__c</fullName>
+    <description>The pluggability pivot: the Apex class name resolved at runtime to fetch the feed. Stub provider today, ASB provider once the spoke exists - a config change, not a rebuild. A class named only by a config string can be deleted without a compile error, so an unresolvable name must HALT rather than silently fall back to the stub. There is no hardcoded fallback in Apex: if this is unset the run halts.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Apex class that fetches the feed. An unknown name halts the run - it does not fall back.</inlineHelpText>
+    <label>Provider Class Name</label>
+    <length>80</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

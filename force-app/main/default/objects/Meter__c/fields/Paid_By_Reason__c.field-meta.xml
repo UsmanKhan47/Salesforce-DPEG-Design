@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Paid_By_Reason__c</fullName>
+    <externalId>false</externalId>
+    <description>Why management pays this utility rather than the tenant. FSD 5.10.4 asks only for the reason management pays, with no value list, so this is free text rather than an invented picklist.</description>
+    <inlineHelpText>Fill this in when Paid By is Management or Shared, for example vacant space, common area, or landlord obligation under the lease. Leave blank when the tenant pays.</inlineHelpText>
+    <label>Reason Management Pays</label>
+    <length>255</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+    <!--
+      Text, not a picklist. A picklist would be more reportable, but FSD 5.10.4 supplies no
+      value list, and inventing one would bake guesses into a restricted picklist that this
+      project has measured to be enforced at DML. Converting Text to a picklist later is
+      additive; removing invented restricted values later is not.
+    -->
+</CustomField>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Service_Identifier__c</fullName>
+    <externalId>false</externalId>
+    <description>The durable service point identifier, called the ESID in Texas electricity. FSD 5.10.4: it survives meter swaps, so it, not the meter number, is what identifies a service point across a physical device change.</description>
+    <inlineHelpText>The service point id from the provider, for example the ESID on a Texas electricity account. This stays the same when the physical meter is swapped, so do not change it when a meter is replaced.</inlineHelpText>
+    <label>Service Identifier (ESID)</label>
+    <length>80</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+    <!--
+      Named generically rather than ESID__c because ESID is specific to Texas electricity;
+      water and gas service points carry differently named identifiers. The label carries
+      the ESID wording so users recognise it.
+    -->
+</CustomField>

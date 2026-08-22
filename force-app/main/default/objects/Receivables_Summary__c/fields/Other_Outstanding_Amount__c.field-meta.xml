@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Other_Outstanding_Amount__c</fullName>
+    <description>Portion of the total balance that is neither base rent, NNN/CAM nor late fees - typically prior-owner balances and miscellaneous billings. FSD 5.9.1 records that roughly a third of delinquency notes are DPEG billing corrections, and this bucket is where those usually sit.</description>
+    <inlineHelpText>Everything not base rent, NNN/CAM or late fees - often prior-owner or billing-correction balances. Yardi-sourced and overwritten on every nightly sync. Never edit this value in Salesforce - it will be replaced.</inlineHelpText>
+    <label>Other Outstanding Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

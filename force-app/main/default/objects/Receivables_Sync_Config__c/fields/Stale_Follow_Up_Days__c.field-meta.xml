@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stale_Follow_Up_Days__c</fullName>
+    <description>How many days a Delinquency Case may go without a Case Comment before it flags as stale (FSD 5.9.7 trigger 6 and the FSD 6.5 no-follow-up list). There is no hardcoded fallback in Apex: if this is unset the run halts.</description>
+    <inlineHelpText>Flag a Case as needing follow-up after this many quiet days.</inlineHelpText>
+    <label>Stale Follow Up Days</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

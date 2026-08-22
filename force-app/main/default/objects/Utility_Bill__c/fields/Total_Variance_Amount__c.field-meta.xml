@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Total_Variance_Amount__c</fullName>
+    <description>The raw dollar change in the bill against the prior bill for the same meter. Usage variance plus rate variance reconciles to this figure exactly, which is the check that the FSD 5.10.5 decomposition is correct.</description>
+    <inlineHelpText>This month total charges minus last month total charges. It should always equal Usage Variance plus Rate Variance; if it does not, one of the two components is wrong.</inlineHelpText>
+    <label>Total Variance</label>
+    <formula><![CDATA[IF( ISBLANK(Prior_Utility_Bill__c), null, Total_Charges_Amount__c - Prior_Utility_Bill__r.Total_Charges_Amount__c )]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

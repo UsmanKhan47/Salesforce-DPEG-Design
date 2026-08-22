@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Rate_Per_Unit__c</fullName>
+    <description>Effective blended unit rate for the period: total charges divided by consumption. This is the rate the FSD 5.10.5 rate variance is measured against. Blank where consumption is zero, because the rate is undefined rather than zero.</description>
+    <inlineHelpText>Total charges divided by consumption, so it includes taxes and pass through charges, not just the energy rate. Blank means consumption was zero, for example a vacant space or a trash service.</inlineHelpText>
+    <label>Rate Per Unit</label>
+    <formula><![CDATA[IF( Consumption__c = 0, null, Total_Charges_Amount__c / Consumption__c )]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+    <!--
+      Named for its unit as ARCHITECTURE section 1 requires of a rate, not with an Amount
+      suffix, which section 1 reserves for a total. A literal unit cannot be baked into the
+      name the way Rent_PSF__c can, because the unit changes with the utility: kWh, gallons,
+      therms. Per Unit names the denominator instead.
+
+      Returns blank, not zero, when consumption is zero. Zero would be a lie that then
+      propagates into the rate variance as a fabricated collapse in price.
+      Scale 2 rounds sub cent rates. Where a provider quotes a rate to four or five decimals
+      this field is a display convenience; the variance figures below are computed from the
+      raw totals and consumption, not from this rounded field.
+    -->
+</CustomField>

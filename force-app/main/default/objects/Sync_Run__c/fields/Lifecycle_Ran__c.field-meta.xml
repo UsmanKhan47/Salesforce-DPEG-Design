@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lifecycle_Ran__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>THE SINGLE ASSERTABLE BOOLEAN for FSD 5.9.6’s first safety rule. False whenever the health check halted the run, and when it is false no Case was created, refreshed, escalated or closed. Every halt test asserts on this rather than on downstream counts.</description>
+    <inlineHelpText>Ticked only if the Case lifecycle was allowed to run. Unticked means the health check stopped it.</inlineHelpText>
+    <label>Lifecycle Ran</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

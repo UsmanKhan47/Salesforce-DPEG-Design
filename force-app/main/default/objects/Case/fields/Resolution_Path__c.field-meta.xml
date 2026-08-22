@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Resolution_Path__c</fullName>
+    <description>FSD 5.9.5’s two tracks. Collect means the tenant genuinely owes the money - contact, promise, notice, escalation. Correct means the charge is wrong, duplicated or carried forward from a previous owner - fix it in Yardi and the balance clears on the next sync WITHOUT contacting the tenant. This separation is what stops tenants being pursued for charges DPEG should not have billed, and roughly a third of today’s delinquency notes are corrections rather than collections.</description>
+    <inlineHelpText>Collect = the tenant owes it. Correct = the charge is wrong and gets fixed in Yardi, not chased.</inlineHelpText>
+    <label>Resolution Path</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Collect</fullName>
+                <default>false</default>
+                <label>Collect</label>
+            </value>
+            <value>
+                <fullName>Correct</fullName>
+                <default>false</default>
+                <label>Correct</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

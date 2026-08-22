@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Opening_Threshold_Amount__c</fullName>
+    <description>The dollar balance at which the nightly job opens a Delinquency Case. FSD references an opening threshold five times and never quantifies it - see the open questions in this build’s report, which also asks whether this and the months threshold combine with AND or OR. There is no hardcoded fallback in Apex: if this is unset the run halts.</description>
+    <inlineHelpText>Open a Case once the balance reaches this amount.</inlineHelpText>
+    <label>Opening Threshold Amount</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

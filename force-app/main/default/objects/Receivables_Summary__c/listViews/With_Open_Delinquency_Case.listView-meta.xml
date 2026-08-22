@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>With_Open_Delinquency_Case</fullName>
+    <columns>NAME</columns>
+    <columns>Tenant_Name__c</columns>
+    <columns>Property_Asset__c</columns>
+    <columns>Unit__c</columns>
+    <columns>Total_Outstanding_Amount__c</columns>
+    <columns>Months_Outstanding__c</columns>
+    <columns>Days_Past_Due__c</columns>
+    <columns>Aging_Bucket__c</columns>
+    <columns>Responsible_Property_Manager__c</columns>
+    <columns>Yardi_Last_Synced_DateTime__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Has_Open_Delinquency_Case__c</field>
+        <operation>equals</operation>
+        <value>1</value>
+    </filters>
+    <label>With Open Delinquency Case</label>
+</ListView>

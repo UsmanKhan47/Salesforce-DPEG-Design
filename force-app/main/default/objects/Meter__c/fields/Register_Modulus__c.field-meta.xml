@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Register_Modulus__c</fullName>
+    <description>The value the meter register wraps at, derived from Register Size. This is the number the consumption calculation adds back when a current reading is lower than the previous reading. Zero means rollover handling is not configured for this meter.</description>
+    <inlineHelpText>Calculated from Register Size. A 5 dial register shows 100000 here. If this shows 0, Register Size is missing and consumption cannot be rollover corrected.</inlineHelpText>
+    <label>Register Modulus</label>
+    <formula><![CDATA[IF( Register_Size__c <= 12, IF( Register_Size__c < 1, 0, CASE( Register_Size__c, 1, 10, 2, 100, 3, 1000, 4, 10000, 5, 100000, 6, 1000000, 7, 10000000, 8, 100000000, 9, 1000000000, 10, 10000000000, 11, 100000000000, 12, 1000000000000, 0 ) ), Register_Size__c )]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+    <!--
+      This formula is the single place the Register Size ambiguity is resolved, and it is
+      written so that it absorbs EITHER answer without a schema change (user decision
+      D-UM-8 keeps the semantic question open).
+
+      A value of 12 or less can only be a dial count, because no real meter wraps at 12.
+      A value of 1000 or more can only be a modulus, because no meter has 1000 dials. The
+      two domains are disjoint, so the inference is safe at both ends. Blank arrives as 0
+      through BlankAsZero and returns 0, so a missing register size can never be mistaken
+      for a modulus of 1.
+
+      Values between 13 and 999 are undefined and are treated as a modulus. No validation
+      rule is created to reject that range, because FSD 5.10 asks for no validation rules;
+      recommend adding one once the semantics are confirmed.
+    -->
+</CustomField>

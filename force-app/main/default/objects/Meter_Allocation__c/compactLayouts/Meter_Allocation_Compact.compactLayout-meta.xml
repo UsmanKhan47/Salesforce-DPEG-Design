@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Meter_Allocation_Compact</fullName>
+    <fields>Unit__c</fields>
+    <fields>Allocation_Pct__c</fields>
+    <fields>Allocation_Basis__c</fields>
+    <fields>Square_Feet__c</fields>
+    <label>Meter Allocation Compact</label>
+</CompactLayout>

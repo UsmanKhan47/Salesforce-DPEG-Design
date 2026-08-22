@@ -118,11 +118,28 @@
  *    exists. Adding one would re-open the `ENTITY_IS_LOCKED` class of defect that forced
  *    `LoiPrimaryStampQueueable` and `DispositionNdaStampQueueable` into existence, for no
  *    requested benefit.
- *  - **Starts no downstream automation.** Verified four ways at design time: no
- *    `Property_Asset__c` trigger, no flow with it as the start object, no `listViews/`
- *    directory, and its only Apex readers are `PropertyAssetSelector`,
- *    `DispositionService.findOrCreate`, `SellMeterController` and the child selectors that
- *    read UP to it.
+ *  - ~~**Starts no downstream automation.**~~ 🔴 **NO LONGER TRUE — AMENDED 2026-08-22.**
+ *    This bullet used to read "Verified four ways at design time: no `Property_Asset__c`
+ *    trigger, no flow with it as the start object, no `listViews/` directory, and its only
+ *    Apex readers are `PropertyAssetSelector`, `DispositionService.findOrCreate`,
+ *    `SellMeterController` and the child selectors that read UP to it." It was accurate when
+ *    written and is corrected in place rather than deleted, because the next reader will
+ *    otherwise trust it.
+ *    `triggers/PropertyAssetTrigger.trigger` now exists (`after insert, after update`) and
+ *    routes to `OnboardingAutoCreateService`, which opens a PM `Onboarding__c` for every
+ *    asset whose `Closing_Date__c` transitions to non-null. **`Closing_Date__c` is written
+ *    HERE, at line ~361, and nowhere else in the codebase — so THIS METHOD is what starts
+ *    that cascade**, and the cascade runs on to the `Onboarding_Task_Fanout` flow, which
+ *    enqueues a 45-Task-per-onboarding checklist fan-out.
+ *    ⚠ Consequences to carry when editing this class:
+ *      • `runQueryCount` / `runDmlCount` below now measure the DOWNSTREAM trigger too — the
+ *        `Database.insert` they wrap fires it synchronously. Their asserted values in
+ *        `PropertyAssetServiceTest` were updated in the same change; do not "restore" them.
+ *      • `OnboardingAutoCreateService` is written so it can NEVER roll this save back
+ *        (`allOrNone = false` + a catch-all). Do not add a rethrow to it: a broken
+ *        onboarding checklist must not stop Acquisitions closing a signed deal.
+ *      • The remaining three verifications (no flow with it as the start object, no
+ *        `listViews/`, the reader list) are still accurate.
  *  - **The new asset is INVISIBLE to the Sell Meter, and that is CORRECT.**
  *    `PropertyAssetSelector` filters both meter queries on `Peak_Sell_Date__c != null`, which
  *    an auto-created asset will not have (it is Argus-derived). Recorded because the natural

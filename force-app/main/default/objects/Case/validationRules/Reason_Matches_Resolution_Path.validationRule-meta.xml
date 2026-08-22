@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE. A comment above the root breaks sf at
+      source conversion.
+
+      WHY THE RATIONALE LIVES HERE AND NOT IN description: a ValidationRule description caps at
+      255 characters and the deploy is the ONLY thing that catches an overrun. The first version
+      of this file failed the dry run on exactly that, so keep description short and put the
+      reasoning in this block.
+
+      WHY THIS RULE EXISTS. FSD 5.9.5 splits delinquency into two tracks. Collect means the tenant
+      genuinely owes the money. Correct means the charge is wrong, duplicated, or carried forward
+      from a previous owner, and the fix is in Yardi rather than a phone call to the tenant.
+      FSD 5.9.1 measured that roughly a third of today's delinquency notes are DPEG billing
+      corrections, not collections. A Billing dispute silently sitting on the Collect track is
+      therefore not a data quality nit: it is a tenant being chased for money DPEG should never
+      have billed, which is the single failure FSD 5.9.5 exists to prevent.
+
+      WHY IT IS INERT WHILE EITHER FIELD IS BLANK. The nightly sync creates the Case before it has
+      necessarily derived a resolution path, and Yardi may not supply a reason at all. A rule that
+      fired on a blank would block the sync's own insert and take the whole feature down.
+
+      KEEP IN STEP WITH standardValueSets/CaseReason. A reason added there is completely
+      unconstrained until it is added to the formula below. There is no platform link between the
+      two files.
+    -->
+    <fullName>Reason_Matches_Resolution_Path</fullName>
+    <active>true</active>
+    <description>Enforces the FSD 5.9.5 Case Reason to Resolution Path mapping on the Delinquency record type: Non-payment and Short payment must route to Collect, Billing dispute and Prior-owner balance must route to Correct. Inert while either field is blank.</description>
+    <errorConditionFormula><![CDATA[AND(
+  RecordType.DeveloperName = "Delinquency",
+  NOT(ISBLANK(TEXT(Reason))),
+  NOT(ISBLANK(TEXT(Resolution_Path__c))),
+  OR(
+    AND(
+      OR(ISPICKVAL(Reason, "Non-payment"), ISPICKVAL(Reason, "Short payment")),
+      NOT(ISPICKVAL(Resolution_Path__c, "Collect"))
+    ),
+    AND(
+      OR(ISPICKVAL(Reason, "Billing dispute"), ISPICKVAL(Reason, "Prior-owner balance")),
+      NOT(ISPICKVAL(Resolution_Path__c, "Correct"))
+    )
+  )
+)]]></errorConditionFormula>
+    <errorDisplayField>Resolution_Path__c</errorDisplayField>
+    <errorMessage>Non-payment and Short payment must use the Collect path. Billing dispute and Prior-owner balance must use the Correct path - fix the charge in Yardi rather than chasing the tenant.</errorMessage>
+</ValidationRule>

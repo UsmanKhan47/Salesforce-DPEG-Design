@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Total_Allocated_Pct__c</fullName>
+    <description>Sum of the allocation percentages recorded against this meter. Lets a reviewer see at a glance that a shared meter is fully, over or under allocated. Zero or blank on a meter that serves a single space and needs no split.</description>
+    <inlineHelpText>Adds up the Allocation Percent on the Meter Allocations below. On a shared meter this should normally reach 100. Anything else means the split is incomplete or double counted.</inlineHelpText>
+    <label>Total Allocated Percent</label>
+    <summarizedField>Meter_Allocation__c.Allocation_Pct__c</summarizedField>
+    <summaryForeignKey>Meter_Allocation__c.Meter__c</summaryForeignKey>
+    <summaryOperation>sum</summaryOperation>
+    <trackTrending>false</trackTrending>
+    <type>Summary</type>
+    <!--
+      This roll up is the reason Meter_Allocation__c is a master detail child rather than a
+      lookup child. It answers the "do the allocations add up" question declaratively.
+      It reports the number only. No validation rule enforces 100 percent, because FSD 5.10
+      does not require it and whether it is mandatory is an open question.
+      DEPLOY ORDER: Meter_Allocation__c, its Meter__c master detail and its Allocation_Pct__c
+      must all exist before this field deploys.
+    -->
+</CustomField>

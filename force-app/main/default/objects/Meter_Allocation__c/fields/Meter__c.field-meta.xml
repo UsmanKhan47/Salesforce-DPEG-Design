@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Meter__c</fullName>
+    <description>The shared meter being split. FSD 5.10.3 makes allocation a child of Meter, and says allocations exist only where one meter serves several spaces. Master detail so the meter can roll up its total allocated percentage.</description>
+    <inlineHelpText>The meter whose consumption is being divided. Allocations are only needed where one meter serves more than one space; a meter serving a single space needs none at all.</inlineHelpText>
+    <label>Meter</label>
+    <referenceTo>Meter__c</referenceTo>
+    <relationshipLabel>Meter Allocations</relationshipLabel>
+    <relationshipName>Meter_Allocations</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+    <!--
+      REQUIRED by the platform, as every master detail is, so it must NEVER appear in a
+      permission set fieldPermissions block.
+    -->
+</CustomField>

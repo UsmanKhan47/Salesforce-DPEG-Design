@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Property_Asset__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>The property this meter serves. FSD 5.10.4 requires the register to be maintained by property and space. Lookup rather than master detail so that a meter survives a property record being replaced, and so the object can keep its own Private OWD.</description>
+    <inlineHelpText>The property this meter is installed at. Always set this, even when the meter serves the whole building rather than one suite.</inlineHelpText>
+    <label>Property</label>
+    <referenceTo>Property_Asset__c</referenceTo>
+    <relationshipLabel>Meters</relationshipLabel>
+    <relationshipName>Meters</relationshipName>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

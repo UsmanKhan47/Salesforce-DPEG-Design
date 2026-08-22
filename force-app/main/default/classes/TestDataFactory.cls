@@ -3006,7 +3006,27 @@ public with sharing class TestDataFactory {
      * @param count           Number of Onboardings.
      * @param propertyAssetId Parent Property_Asset__c (nullable).
      * @param doInsert        Insert when true.
-     * @return Onboardings at stage 'Property Set up'.
+     * @return Onboardings at stage 'Property Set up', PRE-FLAGGED as already fanned out.
+     *
+     * 🔴 `Tasks_Fanned_Out__c = true` IS DELIBERATE AND LOAD-BEARING — READ BEFORE
+     * REMOVING IT. The `Onboarding_Task_Fanout` flow fires on any `Onboarding__c` with a
+     * non-null `Start_Date__c` and `Tasks_Fanned_Out__c = false`, and this factory sets
+     * `Start_Date__c`. Without the flag, EVERY factory-built Onboarding in the suite would
+     * enqueue a checklist fan-out that materialises 45 Tasks at `Test.stopTest()` — and
+     * those Tasks fire `TaskRollupTrigger`, which recomputes the parent's counters. Every
+     * existing exact-count assertion (`Assert.areEqual(4, r.Tasks_Total__c, ...)` in
+     * `OnboardingTaskRollupServiceTest`, the checklist assertions in
+     * `OnboardingControllerTest`) would then be measuring 49 rows, not 4.
+     *
+     * Setting it here makes the whole pre-existing suite immune BY CONSTRUCTION — the same
+     * technique, for the same reason, as keying the onboarding auto-create on
+     * `Property_Asset__c.Closing_Date__c`, which this factory also leaves blank.
+     *
+     * ⚠ A test that WANTS the fan-out must clear it explicitly:
+     *     Onboarding__c o = TestDataFactory.createOnboarding(assetId, false);
+     *     o.Tasks_Fanned_Out__c = false;
+     *     insert o;
+     * `OnboardingFanoutServiceTest` does exactly that and is the only class that should.
      */
     public static List<Onboarding__c> createOnboardings(Integer count, Id propertyAssetId, Boolean doInsert) {
         requirePositive(count);
@@ -3019,6 +3039,7 @@ public with sharing class TestDataFactory {
                 Onboarding_Lead__c = UserInfo.getUserId(),
                 Start_Date__c = Date.today(),
                 Target_Completion_Date__c = Date.today().addDays(30),
+                Tasks_Fanned_Out__c = true,
                 Tasks_Total__c = 0,
                 Tasks_Complete__c = 0,
                 Tasks_Open__c = 0,
@@ -3040,6 +3061,53 @@ public with sharing class TestDataFactory {
     /** Single Onboarding. @param propertyAssetId Parent asset. @param doInsert Insert when true. @return The Onboarding. */
     public static Onboarding__c createOnboarding(Id propertyAssetId, Boolean doInsert) {
         return createOnboardings(1, propertyAssetId, doInsert)[0];
+    }
+
+    /**
+     * IN-MEMORY `Onboarding_Task_Def__mdt` rows for the checklist fan-out.
+     *
+     * ⚠ CUSTOM METADATA CANNOT BE INSERTED IN A TEST, but it CAN be constructed in
+     * memory — which is the entire reason `OnboardingFanoutService.taskDefsOverride`
+     * exists. Assign the result to that seam; do not try to `insert` these.
+     *
+     * ⚠ AND THE REAL ROWS ARE NOT IN THE REPO. `.forceignore` excludes
+     * the customMetadata directory glob, so the 45 production rows are loaded asynchronously by
+     * `scripts/load-onboarding-task-defs.apex`. A test that relies on the ORG's rows is
+     * therefore order-dependent and will behave differently in a freshly built scratch
+     * org. Use this builder instead.
+     *
+     * Values match the shape the real rows carry: `Category__c` and `Source_System__c`
+     * are drawn from the RESTRICTED picklists on `Task.Onboarding_Category__c` /
+     * `Task.Source_System__c` (restricted picklists ARE enforced by DML in this org, so
+     * an off-list value fails the fan-out insert at runtime, not at compile time).
+     *
+     * @param count Number of definition rows (sequence 1..count, offsets 0..count-1).
+     * @return Unsaved, un-insertable Onboarding_Task_Def__mdt rows.
+     */
+    public static List<Onboarding_Task_Def__mdt> buildOnboardingTaskDefs(Integer count) {
+        requirePositive(count);
+        List<String> categories = new List<String>{
+            'Property Set up', 'Unit & Tenant Setup', 'Vendor & Expense Management',
+            'NNN Reconciliation & Billing Setup', 'Tenant Communication & Transition',
+            'Performance Tracking', 'Leasing'
+        };
+        List<String> sources = new List<String>{ 'Yardi', 'Excel', 'Salesforce', 'Email' };
+        List<Onboarding_Task_Def__mdt> defs = new List<Onboarding_Task_Def__mdt>();
+        for (Integer i = 0; i < count; i++) {
+            // ⚠ No DeveloperName / MasterLabel: those are system fields on a __mdt sObject
+            // and are not needed by any consumer. `TaskFanoutServiceTest` sets neither.
+            defs.add(new Onboarding_Task_Def__mdt(
+                Category__c = categories[Math.mod(i, categories.size())],
+                Subject__c = 'Test checklist item ' + i,
+                Sequence__c = i + 1,
+                Owner_Label__c = 'Isha Patel',
+                Source_System__c = sources[Math.mod(i, sources.size())],
+                Due_Day_Offset__c = i,
+                Default_Status__c = 'Not Started',
+                Conditional__c = false
+            ));
+        }
+        return defs;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

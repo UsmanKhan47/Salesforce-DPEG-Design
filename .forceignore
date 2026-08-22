@@ -247,9 +247,17 @@ force-app/main/default/objects/WorkTypeGroupMember/**
 # and do not assume `!`-negation will rescue a path buried under a `dir/**` ignore elsewhere in
 # this file without re-testing against a live dry-run first.
 force-app/main/default/objects/Account/fields/**
+
+# Case (2026-08-22, FSD v1.1 AR build): the blanket objects/Case/** ignore was removed so the
+# Delinquency record type, fields, business process and layout can deploy. Doing that un-ignored
+# 35 pre-existing standard-field stubs; exactly one of them does not resolve in this EE org.
+# Same shape as the Account/fields/** fix above: narrow to the ONE broken file rather than
+# restoring the blanket line, which would silently eat the whole tree again.
+# Proof it works: dry-run 2026-08-22 against usman-dpeg reported Case.Yardi_AR_Id__c state=Created
+# in the deploy files array. A green result alone is NOT proof - read the files array.
+force-app/main/default/objects/Case/fields/AssetWarrantyId.field-meta.xml
 force-app/main/default/objects/Asset/**
 force-app/main/default/objects/Campaign/**
-force-app/main/default/objects/Case/**
 force-app/main/default/objects/CommSubscriptionChannelType/**
 force-app/main/default/objects/Entitlement/**
 force-app/main/default/objects/Location/**
@@ -278,7 +286,20 @@ force-app/main/default/layouts/AssetAction-*
 force-app/main/default/layouts/AssetActionSource-*
 force-app/main/default/layouts/AssetStatePeriod-*
 force-app/main/default/layouts/AssignedResource-*
-force-app/main/default/layouts/Case-*
+
+# Case layouts (2026-08-22, FSD v1.1 AR build): the blanket `layouts/Case-*` ignore was removed so
+# the new Delinquency record-type layout can deploy. That un-ignored the four STOCK Case layouts,
+# and `Case-Case Layout` fails validation against usman-dpeg with "no QuickAction named
+# Case.CaseComment found" - a pre-existing org/repo mismatch unrelated to this build, which the
+# blanket ignore had been hiding. Narrowed to the four stock files BY EXACT NAME rather than
+# restoring `Case-*`, because that pattern would also swallow every new Case layout we add.
+# Verified 2026-08-22: with these four ignored, `Layout:Case-Case Layout` is excluded and a new
+# Case layout still appears in the deploy files array.
+force-app/main/default/layouts/Case-Case Layout.layout-meta.xml
+force-app/main/default/layouts/Case-Case %28Marketing%29 Layout.layout-meta.xml
+force-app/main/default/layouts/Case-Case %28Sales%29 Layout.layout-meta.xml
+force-app/main/default/layouts/Case-Case %28Support%29 Layout.layout-meta.xml
+
 force-app/main/default/layouts/ContractLineOutcome-*
 force-app/main/default/layouts/ContractLineOutcomeData-*
 force-app/main/default/layouts/CredentialStuffingEventStore-*

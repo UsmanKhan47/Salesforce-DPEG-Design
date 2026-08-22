@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Consumption__c</fullName>
+    <externalId>false</externalId>
+    <description>Units consumed in the period, rollover corrected. Written by Apex, not a formula, so that an estimated read, a corrected read or a mid period meter swap can be overridden by hand and the override audited. FSD 5.10.5.</description>
+    <inlineHelpText>Normally calculated for you from the two readings and the register modulus. Only type over it when the provider estimated the read or the meter was swapped mid period, and say why in Chatter or a note.</inlineHelpText>
+    <label>Consumption</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>4</scale>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+    <!--
+      STORED AND APEX WRITTEN, deliberately not a formula.
+
+      A cross object formula could express the rollover as
+        IF(Current < Previous, Current + Meter__r.Register_Modulus__c - Previous,
+           Current - Previous)
+      but a formula cannot be overridden, and it cannot be history tracked. Meter swaps and
+      estimated reads both require an override, so the value is stored. History tracking is
+      on, which is what makes an override visible after the fact.
+
+      This field is legitimately ZERO for a vacant space and BLANK before the first read.
+      Every downstream rate and variance formula guards for both.
+    -->
+</CustomField>

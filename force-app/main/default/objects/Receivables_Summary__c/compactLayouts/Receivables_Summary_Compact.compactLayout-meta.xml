@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompactLayout xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Receivables_Summary_Compact</fullName>
+    <fields>Tenant_Name__c</fields>
+    <fields>Total_Outstanding_Amount__c</fields>
+    <fields>Months_Outstanding__c</fields>
+    <fields>Aging_Bucket__c</fields>
+    <fields>Yardi_Last_Synced_DateTime__c</fields>
+    <label>Receivables Summary Compact</label>
+</CompactLayout>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <compactLayoutAssignment>Meter_Allocation_Compact</compactLayoutAssignment>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Split basis where one meter serves several spaces (FSD 5.10.3). Exists only where an allocation is required. Covers the arrangements FSD 5.10.1 names: shared meters, management paid vacant spaces, square footage splits, tenant settlements.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>true</enableHistory>
+    <enableLicensing>false</enableLicensing>
+    <enableReports>true</enableReports>
+    <enableSearch>false</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>ControlledByParent</externalSharingModel>
+    <label>Meter Allocation</label>
+    <nameField>
+        <displayFormat>MA-{00000}</displayFormat>
+        <label>Meter Allocation Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Meter Allocations</pluralLabel>
+    <searchLayouts></searchLayouts>
+    <sharingModel>ControlledByParent</sharingModel>
+    <visibility>Public</visibility>
+    <!--
+      Master detail to Meter__c rather than a lookup, because that is what makes
+      Meter__c.Total_Allocated_Pct__c a roll up summary. With a lookup, the question of
+      whether allocations sum to 100 percent could only be answered in Apex. The roll up is
+      published as a number only; no validation rule is created here, because FSD 5.10 does
+      not ask for one and whether 100 percent is mandatory is still an open question.
+    -->
+</CustomObject>

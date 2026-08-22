@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+      THIS COMMENT IS INSIDE THE ROOT ELEMENT ON PURPOSE - a comment above the root breaks sf
+      at source conversion.
+
+      READ, NEVER EDIT. This object is a read-only Yardi mirror. The pattern being copied is
+      Work_Order__c (excluded from DPEG_PropertyMgmt_Edit, "Yardi read-only mirror"), NOT
+      sharingRules/Delinquency__c, whose Delinquency_PM_All_RW rule grants Edit to the entire
+      PM group and inverts the design this build exists to implement.
+
+      Rows are owned by whichever principal the nightly job runs as, and the object's OWD is
+      Private - so WITHOUT these rules no property manager can see any receivable at all.
+
+      🔴 DEPLOY THESE ONE AT A TIME. On this project a SharingRules payload carrying more than
+      one rule fails on sharing recalculation. Deploy the file with the first rule, wait for
+      recalculation to finish, then add the second and deploy again. A check-only dry run CANNOT catch
+      this: check-only never performs the recalculation, so a green validation is not evidence
+      that a two-rule deploy will succeed.
+
+      CRITERIA CHOICE. Record Type would be the natural criterion for the Case rule, but for
+      this object the criterion has to be a real, non-formula field: Aging_Bucket__c and
+      Months_Outstanding__c are FORMULAS and criteria-based sharing cannot reference them.
+      Yardi_AR_Id__c is stamped on every row the sync writes and is therefore equivalent to
+      "every synced row", while still excluding hand-created junk.
+    -->
+    <sharingCriteriaRules>
+        <fullName>Receivables_Summary_PM_Read</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>Gives the Property Management team read access to every synced receivable. Read and never Edit - the mirror is overwritten nightly, so an edit is silently discarded on the next run, which is worse than being refused.</description>
+        <label>Receivables Summary PM Read</label>
+        <criteriaItems>
+            <field>Yardi_AR_Id__c</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <sharedTo>
+            <group>DPEG_Property_Mgmt_Team</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>Receivables_Summary_Principals_Read</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>Gives the principals read access to every synced receivable, so the FSD 5.9.9 dollar-exposure ranking and the 60/90-day escalations resolve to records they can actually open. Read only - principals decide on write-offs against the Case, never against the mirror.</description>
+        <label>Receivables Summary Principals Read</label>
+        <criteriaItems>
+            <field>Yardi_AR_Id__c</field>
+            <operation>notEqual</operation>
+            <value></value>
+        </criteriaItems>
+        <sharedTo>
+            <group>Principals</group>
+        </sharedTo>
+    </sharingCriteriaRules>
+</SharingRules>

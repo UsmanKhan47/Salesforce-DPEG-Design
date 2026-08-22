@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Yardi_AR_Id__c</fullName>
+    <caseSensitive>false</caseSensitive>
+    <description>Denormalises the Receivables Summary external id onto the Case for the duplicate-Case guard. Deliberately NOT unique: a tenant who clears a balance and later re-delinquents must be able to get a SECOND Case.</description>
+    <externalId>true</externalId>
+    <label>Yardi AR Id</label>
+    <length>50</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,8 +1,29 @@
 /**
- * Generic in-app notifier for the acquisition deal lifecycle. Sends a custom
- * notification (type: Acquisitions_Deal_Update) to every user member of a public
- * group or queue, identified by DeveloperName. Callable from flows (invocable)
- * and directly from Apex services.
+ * Generic in-app notifier. Sends a custom notification to every user member of a
+ * public group or queue, identified by DeveloperName. Callable from flows
+ * (invocable) and directly from Apex services.
+ *
+ * ═══ ⚠ AMENDED 2026-08-22 — THE NOTIFICATION TYPE IS NOW A PARAMETER ═══
+ * It was a hardcoded private constant, `Acquisitions_Deal_Update`, with no override.
+ * That was correct while every caller WAS an acquisitions deal event, and stopped
+ * being correct the moment Property Management started using this class: a
+ * "new property onboarding opened" alert would have arrived in the PM team's bell
+ * branded **"Acquisitions – Deal Update"**, which is not a cosmetic complaint —
+ * a user's notification settings are per TYPE, so PM alerts would have been
+ * un-muteable independently of acquisitions ones, and vice versa.
+ *
+ * `Request.notificationType` is OPTIONAL and defaults to
+ * `DEFAULT_NOTIF_TYPE_DEV_NAME`, so all five pre-existing callers
+ * (`ContractExecutionService`, `CallForOffersAlertBatch`, the `send()` convenience
+ * overload, and both Flow entry points) are byte-for-byte unaffected and keep
+ * sending under `Acquisitions_Deal_Update`. Only a caller that ASKS for a different
+ * type gets one.
+ *
+ * 🔴 A NAMED TYPE THAT DOES NOT EXIST IN THE ORG SENDS NOTHING, SILENTLY (a
+ * `System.debug(WARN)` and a `false` outcome). `CustomNotificationType` is
+ * deployable metadata but is NOT created by this class. Whoever introduces a new
+ * type name must ship the `notificationtypes/` metadata in the same change — see
+ * the HUB FILE REQUESTS for `DPEG_Property_Mgmt_Update`.
  *
  * Groups are kept flat by convention (no nested groups); user members are
  * resolved one level deep. A notification failure must never roll back the
@@ -19,7 +40,11 @@
  */
 public without sharing class GroupNotifier {
 
-    private static final String NOTIF_TYPE_DEV_NAME = 'Acquisitions_Deal_Update';
+    /**
+     * The type every pre-existing caller sends under. Used whenever a Request leaves
+     * `notificationType` blank, which preserves their behaviour exactly.
+     */
+    @TestVisible private static final String DEFAULT_NOTIF_TYPE_DEV_NAME = 'Acquisitions_Deal_Update';
     private static final String USER_KEY_PREFIX = '005';
 
     // Test hook: custom notifications cannot be queried in Apex tests, so tests
@@ -32,8 +57,10 @@ public without sharing class GroupNotifier {
     // ContractExecutionService, 1,800 for a 200-record trigger chunk). Callers
     // should batch into a single notify() - these caches are the guardrail that
     // keeps a looping caller from silently reintroducing a governor break.
-    private static Id cachedNotificationTypeId;
-    private static Boolean notificationTypeResolved = false;
+    // Keyed by DeveloperName now that the type is a parameter. A name that resolved to
+    // nothing is cached as an explicit null so a missing type costs ONE query per
+    // transaction, not one per request.
+    private static final Map<String, Id> NOTIF_TYPE_CACHE = new Map<String, Id>();
     private static final Map<String, Set<String>> RECIPIENTS_CACHE = new Map<String, Set<String>>();
 
     public class Request {
@@ -45,15 +72,43 @@ public without sharing class GroupNotifier {
         public String body;
         @InvocableVariable(label='Target Record Id' required=true)
         public Id targetRecordId;
+        /**
+         * OPTIONAL CustomNotificationType DeveloperName. Blank ⇒
+         * `DEFAULT_NOTIF_TYPE_DEV_NAME` ('Acquisitions_Deal_Update'), which is what
+         * every caller written before 2026-08-22 relies on. Set it only when the
+         * message genuinely is not an acquisitions deal update — see the class header.
+         */
+        @InvocableVariable(label='Notification Type DeveloperName' required=false)
+        public String notificationType;
     }
 
-    /** Direct entry point for Apex callers. */
+    /** Direct entry point for Apex callers. Sends under the default notification type. */
     public static void send(String groupDevName, String title, String body, Id targetId) {
+        send(groupDevName, title, body, targetId, null);
+    }
+
+    /**
+     * Direct entry point for Apex callers that need a specific notification type.
+     *
+     * ⚠ SINGLE-REQUEST. Do NOT call this in a loop — `notify(List&lt;Request&gt;)` is the
+     * batched entry point and the caches above are the guardrail against exactly that
+     * mistake (measured: 9 queries per record for a looping caller). Build a
+     * `List&lt;Request&gt;` and call `notify` once.
+     *
+     * @param groupDevName        Public group or queue DeveloperName.
+     * @param title               Notification title.
+     * @param body                Notification body.
+     * @param targetId            Record the notification links to.
+     * @param notificationTypeDevName CustomNotificationType DeveloperName; null/blank ⇒ the default.
+     */
+    public static void send(String groupDevName, String title, String body, Id targetId,
+            String notificationTypeDevName) {
         Request r = new Request();
         r.recipientGroup = groupDevName;
         r.title = title;
         r.body = body;
         r.targetRecordId = targetId;
+        r.notificationType = notificationTypeDevName;
         notify(new List<Request>{ r });
     }
 
@@ -107,12 +162,6 @@ public without sharing class GroupNotifier {
             outcomes.add(false);
         }
 
-        Id notificationTypeId = resolveNotificationTypeId();
-        if (notificationTypeId == null) {
-            System.debug(LoggingLevel.WARN, 'GroupNotifier: notification type missing: ' + NOTIF_TYPE_DEV_NAME);
-            return outcomes;
-        }
-
         Set<String> groupNames = new Set<String>();
         for (Request r : requests) {
             if (r != null && String.isNotBlank(r.recipientGroup)) {
@@ -129,6 +178,16 @@ public without sharing class GroupNotifier {
             Set<String> recipients = recipientsByGroup.get(r.recipientGroup);
             if (recipients == null || recipients.isEmpty()) {
                 System.debug(LoggingLevel.WARN, 'GroupNotifier: no recipients for group ' + r.recipientGroup);
+                continue;
+            }
+            // Resolved PER REQUEST now that the type is a parameter, but cached by name,
+            // so a homogeneous batch (the normal case) still costs exactly one query.
+            String typeName = String.isNotBlank(r.notificationType)
+                ? r.notificationType
+                : DEFAULT_NOTIF_TYPE_DEV_NAME;
+            Id notificationTypeId = resolveNotificationTypeId(typeName);
+            if (notificationTypeId == null) {
+                System.debug(LoggingLevel.WARN, 'GroupNotifier: notification type missing: ' + typeName);
                 continue;
             }
             Messaging.CustomNotification n = new Messaging.CustomNotification();
@@ -170,19 +229,20 @@ public without sharing class GroupNotifier {
     }
 
     /**
-     * Resolves the notification type Id once per transaction. Cached because a
-     * looping caller would otherwise re-query it per send.
-     * @return The Acquisitions_Deal_Update notification type Id, or null when absent.
+     * Resolves a notification type Id once per DeveloperName per transaction. Cached
+     * (negatives included) because a looping caller would otherwise re-query per send.
+     *
+     * @param devName CustomNotificationType DeveloperName; never blank (the caller defaults it).
+     * @return The notification type Id, or null when no such type exists in this org.
      */
-    private static Id resolveNotificationTypeId() {
-        if (!notificationTypeResolved) {
-            notificationTypeResolved = true;
+    private static Id resolveNotificationTypeId(String devName) {
+        if (!NOTIF_TYPE_CACHE.containsKey(devName)) {
             // SOQL relocated to NotificationTypeSelector (P4 §2 layering).
             CustomNotificationType notifType =
-                NotificationTypeSelector.selectByDeveloperName(NOTIF_TYPE_DEV_NAME);
-            cachedNotificationTypeId = (notifType == null) ? null : notifType.Id;
+                NotificationTypeSelector.selectByDeveloperName(devName);
+            NOTIF_TYPE_CACHE.put(devName, (notifType == null) ? null : notifType.Id);
         }
-        return cachedNotificationTypeId;
+        return NOTIF_TYPE_CACHE.get(devName);
     }
 
     /**

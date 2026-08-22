@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Rate_Variance_Amount__c</fullName>
+    <description>FSD 5.10.5 rate variance: the change in unit rate valued at the CURRENT consumption. It isolates how much of the dollar change was caused by price, holding usage constant. Together with usage variance it accounts for the whole change.</description>
+    <inlineHelpText>How much of the change versus last month came from a change in price, at this month volume. A positive number means the provider charged more per unit. Blank on a first bill or where last month consumption was zero.</inlineHelpText>
+    <label>Rate Variance</label>
+    <formula><![CDATA[IF( OR( ISBLANK(Prior_Utility_Bill__c), Prior_Utility_Bill__r.Consumption__c = 0 ), null, Total_Charges_Amount__c - ( Prior_Utility_Bill__r.Total_Charges_Amount__c / Prior_Utility_Bill__r.Consumption__c ) * Consumption__c )]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+    <!--
+      Written in its algebraically identical simplified form. FSD 5.10.5 states it as
+        (Rate_B - Rate_P) * Consumption_B
+      Expanding Rate_B as Total_B / Consumption_B, the first product collapses to Total_B:
+        (Total_B / C_B - R_P) * C_B  =  Total_B - R_P * C_B
+      which is what is written here. The simplification removes a division by the CURRENT
+      consumption, so this field survives a zero consumption month, where the literal form
+      would divide by zero.
+
+      THE INVARIANT, which a developer test must assert on decimals:
+        Usage Variance + Rate Variance = Total Variance = Total_B - Total_P
+        (C_B - C_P)R_P + (R_B - R_P)C_B = C_B.R_P - C_P.R_P + R_B.C_B - R_P.C_B
+                                        = R_B.C_B - R_P.C_P = Total_B - Total_P
+      The decomposition is exactly additive with no residual. That equality is the cheapest
+      possible catch for a sign error in either component.
+    -->
+</CustomField>

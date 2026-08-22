@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Monthly_Rent__c</fullName>
+    <description>Contractual monthly rent for the unit. This is the DENOMINATOR of Months Outstanding - the metric FSD 5.9.1 says the business actually reasons in. If it is blank or zero, Months Outstanding is blank and the FSD 5.9.9 PM ranking loses this row entirely.</description>
+    <inlineHelpText>Monthly rent from the Yardi feed. If blank, Months Outstanding cannot be calculated. Yardi-sourced and overwritten on every nightly sync. Never edit this value in Salesforce - it will be replaced.</inlineHelpText>
+    <label>Monthly Rent</label>
+    <precision>16</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

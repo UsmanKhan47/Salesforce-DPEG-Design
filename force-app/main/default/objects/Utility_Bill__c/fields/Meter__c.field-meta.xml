@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Meter__c</fullName>
+    <description>The meter this bill was issued against. FSD 5.10.5 defines one bill per meter per billing month. Master detail so that the bill inherits the sharing of its meter and so the meter can roll up its bills.</description>
+    <inlineHelpText>The meter being billed. This cannot be changed after the bill is saved, because moving a bill to a different meter would invalidate the consumption and variance history on both meters.</inlineHelpText>
+    <label>Meter</label>
+    <referenceTo>Meter__c</referenceTo>
+    <relationshipLabel>Utility Bills</relationshipLabel>
+    <relationshipName>Utility_Bills</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+    <!--
+      Master detail, not a lookup. Both sides are custom now that standard Asset was rejected
+      (user decision D-UM-1), so master detail is available where the original design could
+      not assume it.
+
+      writeRequiresMasterRead is false so that Read on the meter is enough to edit its bills.
+      reparentableMasterDetail is false because re-pointing a bill silently corrupts the
+      prior bill chain on two meters at once.
+
+      This field is REQUIRED by the platform, as every master detail is. It must therefore
+      NEVER appear in a permission set fieldPermissions block; that fails the deploy.
+    -->
+</CustomField>

@@ -1,41 +1,88 @@
 /**
- * Trigger handler for Task. Recomputes Transaction__c rollups
- * (Tasks_Complete__c / Tasks_Overdue__c / Wire_Open_Risks__c) whenever a
- * deal's checklist Tasks change. Checklist Tasks relate to the deal via the
- * Transaction_Deal__c lookup (not WhatId), so they stay off the Activity
- * timeline. Only Transaction__c is updated downstream, so there is no Task
- * re-entry.
+ * Trigger handler for Task. Two responsibilities, both keyed on a custom lookup so
+ * the vast majority of Tasks in the org are untouched:
  *
- * Context sourcing preserves the original trigger exactly:
- *   - insert / undelete: collect deal ids from the new records.
- *   - delete:            collect deal ids from the old records.
- *   - update:            collect deal ids from BOTH new and old (a re-parent
- *                        must recompute the losing and the gaining deal).
- * TaskRollupService.recalc is called once per context, only when at least one
- * deal id was collected.
+ *   1. ROLLUPS. Recomputes `Transaction__c` rollups (Tasks_Complete__c /
+ *      Tasks_Overdue__c / Wire_Open_Risks__c) whenever a deal's checklist Tasks
+ *      change, and `Onboarding__c` rollups (Tasks_Total__c / Tasks_Complete__c /
+ *      Completion_Pct__c and the eight other counters) whenever an onboarding
+ *      checklist Task changes.
+ *   2. THE COMPLETION STAMP. In the BEFORE contexts, sets or clears
+ *      `Task.Onboarding_Completed_Date__c` — see `OnboardingTaskDomain`.
  *
- * The id collection is a mechanical projection of a lookup field, not a
- * per-object business rule, so it lives here in the handler rather than in a
- * Domain class (see the phase report for the Domain-vs-handler decision).
+ * Checklist Tasks relate to their parent via `Transaction_Deal__c` /
+ * `Onboarding__c` (not `WhatId`), so they stay off the Activity timeline.
+ *
+ * ⚠ AMENDED 2026-08-22 — TWO CHANGES WITH ORG-WIDE BLAST RADIUS, STATED PLAINLY
+ * RATHER THAN BURIED:
+ *
+ * (a) `Onboarding__c` IS NOW ROUTED. Before this change the rollups fired from ONE
+ *     LWC only (`OnboardingService.completeTask` called
+ *     `OnboardingTaskRollupService.recalc` directly), so a checklist item completed
+ *     from the standard UI, the API or Data Loader — or DELETED — never moved the
+ *     Onboarding's counters. It does now, on all four after-contexts.
+ *     🔴 That routing is exactly what turned `OnboardingTaskRollupService`'s bare
+ *     `update` into a sharing hazard: it used to run only as a PM completing their
+ *     own checklist; it now runs as WHOEVER edits any Task, against a Private-OWD
+ *     object they may not own. That service was fixed in the SAME change — read its
+ *     header before separating the two.
+ *
+ * (b) THE TRIGGER GAINED `before insert` / `before update`. It was after-only. Those
+ *     two contexts now fire on EVERY Task in the org — the 82-row Transaction Day-0
+ *     fan-out, Broker Protection pipeline Tasks, EAC companion Tasks, Disposition
+ *     closing Tasks, and every hand-created Activity. The added cost is bounded at
+ *     ONE null comparison per Task by `OnboardingTaskDomain.stampCompletion`'s
+ *     `Onboarding__c == null` early return: no query, no DML, and no statement that
+ *     can fail and roll back an unrelated save. There is no cheaper way to make a
+ *     completion stamp survive a standard-UI edit, and the alternative (stamping in
+ *     the service) leaves every non-LWC path unstamped — the defect being fixed.
+ *
+ * Context sourcing (unchanged in shape, now applied to both parents):
+ *   - insert / undelete: collect parent ids from the new records.
+ *   - delete:            collect parent ids from the old records.
+ *   - update:            collect from BOTH new and old (a re-parent must recompute
+ *                        the losing and the gaining parent).
+ * Each recalc service is called ONCE per context, only when at least one id was
+ * collected — so a Task with neither lookup costs zero queries and zero DML.
+ *
+ * The Transaction id collection is a mechanical projection of a lookup field, not a
+ * per-object business rule, so it stays here in the handler. The Onboarding
+ * projection lives on `OnboardingTaskDomain` because that class already owns the
+ * onboarding-checklist rules and the two belong together.
  */
 public with sharing class TaskRollupTriggerHandler extends TriggerHandler {
 
+    protected override void beforeInsert() {
+        OnboardingTaskDomain.stampCompletion((List<Task>) newList, null);
+    }
+
+    protected override void beforeUpdate() {
+        OnboardingTaskDomain.stampCompletion((List<Task>) newList, (Map<Id, Task>) oldMap);
+    }
+
     protected override void afterInsert() {
         recalcDeals(collectDealIds((List<Task>) newList));
+        recalcOnboardings(OnboardingTaskDomain.collectOnboardingIds((List<Task>) newList));
     }
 
     protected override void afterUpdate() {
         Set<Id> dealIds = collectDealIds((List<Task>) newList);
         dealIds.addAll(collectDealIds((List<Task>) oldList));
         recalcDeals(dealIds);
+
+        Set<Id> onboardingIds = OnboardingTaskDomain.collectOnboardingIds((List<Task>) newList);
+        onboardingIds.addAll(OnboardingTaskDomain.collectOnboardingIds((List<Task>) oldList));
+        recalcOnboardings(onboardingIds);
     }
 
     protected override void afterDelete() {
         recalcDeals(collectDealIds((List<Task>) oldList));
+        recalcOnboardings(OnboardingTaskDomain.collectOnboardingIds((List<Task>) oldList));
     }
 
     protected override void afterUndelete() {
         recalcDeals(collectDealIds((List<Task>) newList));
+        recalcOnboardings(OnboardingTaskDomain.collectOnboardingIds((List<Task>) newList));
     }
 
     /**
@@ -64,6 +111,17 @@ public with sharing class TaskRollupTriggerHandler extends TriggerHandler {
     private void recalcDeals(Set<Id> dealIds) {
         if (!dealIds.isEmpty()) {
             TaskRollupService.recalc(dealIds);
+        }
+    }
+
+    /**
+     * Recomputes rollups for the supplied Onboardings, only when the set is
+     * non-empty — so a Task with no `Onboarding__c` costs nothing at all.
+     * @param onboardingIds Onboarding__c ids to recompute.
+     */
+    private void recalcOnboardings(Set<Id> onboardingIds) {
+        if (!onboardingIds.isEmpty()) {
+            OnboardingTaskRollupService.recalc(onboardingIds);
         }
     }
 }

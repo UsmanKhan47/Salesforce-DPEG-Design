@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Months_Outstanding__c</fullName>
+    <description>Total outstanding divided by monthly rent. FSD 5.9.4 calls this "the metric the business uses" and FSD 5.9.1 records that the team reasons in months of rent rather than days. Guarded against a zero or blank denominator - a blank result is correct and honest here, because a made-up zero would rank a rent-less row as healthy.</description>
+    <formula><![CDATA[IF(Monthly_Rent__c > 0, Total_Outstanding_Amount__c / Monthly_Rent__c, null)]]></formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>How many months of rent the balance represents. Blank when Monthly Rent is missing or zero.</inlineHelpText>
+    <label>Months Outstanding</label>
+    <precision>18</precision>
+    <scale>1</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+</CustomField>

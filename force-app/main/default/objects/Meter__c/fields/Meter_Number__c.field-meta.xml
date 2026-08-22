@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Meter_Number__c</fullName>
+    <externalId>false</externalId>
+    <description>The physical meter number stamped on the device. FSD 5.10.4 names this as the number handed to an incoming tenant at move in, which is one of the two use cases the whole register exists to serve.</description>
+    <inlineHelpText>The number printed on the meter itself. This is the number you give an incoming tenant at move in, so copy it exactly, including any leading zeros.</inlineHelpText>
+    <label>Meter Number</label>
+    <length>80</length>
+    <required>false</required>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+    <!--
+      FSD 5.10.4 maps this to the standard Asset SerialNumber field. Standard Asset was
+      rejected by user decision D-UM-1 (see the object description), so this is an ordinary
+      Text field. Deliberately not unique: a meter number is only unique within a provider,
+      and a replaced meter can reuse a number.
+    -->
+</CustomField>

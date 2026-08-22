@@ -188,6 +188,9 @@ private class PropertyAssetServiceTest {
         List<Opportunity> opps = dealsReadyToClose(1, 'Retail', properties);
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         // STAGE ONLY. A fresh SObject carrying just Id + StageName — not the `close()` helper and
         // not the in-memory `opps` list, either of which would ship a full field set and could
@@ -209,8 +212,18 @@ private class PropertyAssetServiceTest {
             'On the route production actually takes, the asset must carry whatever CloseDate the '
             + 'save committed — this reds if the carry-over is ever dropped, under either reading '
             + 'of the org-side rewrite documented in the service header');
-        Assert.areEqual(1, PropertyAssetService.runDmlCount,
+        // ⚠ NETTED, NOT RELAXED (2026-08-22). `runDmlCount` is a Limits delta measured AROUND
+        // `Database.insert`, and that insert now fires `PropertyAssetTrigger` ->
+        // `OnboardingAutoCreateService` synchronously, whose own DML lands inside the same
+        // window. Subtracting the downstream's separately-measured cost keeps this assertion
+        // saying exactly what it always said — "this service performs ONE bulk insert" — while
+        // the line below pins the new cost on its own terms. Do NOT collapse them into a bare
+        // `areEqual(2, ...)`: that would pass if either half doubled and the other halved.
+        Assert.areEqual(1,
+            PropertyAssetService.runDmlCount - OnboardingAutoCreateService.runDmlCount,
             'and the stage-only shape costs the same single bulk insert as any other close');
+        Assert.areEqual(1, OnboardingAutoCreateService.runDmlCount,
+            'the onboarding auto-create it now cascades into costs exactly ONE bulk insert too');
     }
 
     /** The remaining four mapped values, so the allow-list is pinned entry by entry. */
@@ -259,6 +272,9 @@ private class PropertyAssetServiceTest {
         List<Opportunity> opps = dealsReadyToClose(1, 'Land', properties);
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         close(opps);
         Test.stopTest();
@@ -302,6 +318,9 @@ private class PropertyAssetServiceTest {
         List<Opportunity> opps = dealsReadyToClose(1, null, properties);
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         close(opps);
         Test.stopTest();
@@ -353,6 +372,9 @@ private class PropertyAssetServiceTest {
         Assert.areEqual(1, assetsFor(properties).size(), 'Precondition: the first close built one asset');
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         opps[0].Description = 'a later, unrelated edit';
         update opps; // still Closed Won — did NOT just enter it
@@ -380,6 +402,9 @@ private class PropertyAssetServiceTest {
         Property_Asset__c preexisting = TestDataFactory.createPropertyAsset(properties[0].Id, true);
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         close(opps);
         Test.stopTest();
@@ -430,6 +455,9 @@ private class PropertyAssetServiceTest {
         opps[1].CloseDate = Date.today().addDays(60);
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         close(opps);
         Test.stopTest();
@@ -440,7 +468,11 @@ private class PropertyAssetServiceTest {
         Assert.areEqual(0,
             [SELECT COUNT() FROM Property_Asset__c WHERE Property__c = :properties[1].Id],
             'The orphaned second property is not touched — nothing closed against it');
-        Assert.areEqual(1, PropertyAssetService.runDmlCount, 'One bulk insert, not two');
+        // Netted against the downstream onboarding auto-create — see the note on
+        // closingByStageAlone_carriesWhateverCloseDateTheSaveCommitted.
+        Assert.areEqual(1,
+            PropertyAssetService.runDmlCount - OnboardingAutoCreateService.runDmlCount,
+            'One bulk insert, not two');
         // Pins the tie-break the Closing_Date__c carry-over introduces. A tie-break exists
         // whether or not it is documented — a bare `put` in the collect loop is last-wins on
         // Trigger.new order, which is not a guarantee. EARLIEST is the deterministic rule: the
@@ -470,6 +502,9 @@ private class PropertyAssetServiceTest {
         Assert.isNull(opps[0].Property__c, 'Precondition: a manually built deal has no Property');
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         close(opps); // must NOT throw
         Test.stopTest();
@@ -490,6 +525,9 @@ private class PropertyAssetServiceTest {
         List<Opportunity> opps = dealsReadyToClose(1, 'Retail', properties);
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         opps[0].StageName = 'Under Review';
         update opps;
@@ -556,6 +594,9 @@ private class PropertyAssetServiceTest {
         List<Opportunity> opps = dealsReadyToClose(BULK_N, 'Retail', properties);
 
         PropertyAssetService.resetRunCounters();
+        // The asset insert now cascades into OnboardingAutoCreateService, whose counters the
+        // budget assertions below net out. Reset both at the same point or the subtraction lies.
+        OnboardingAutoCreateService.resetRunCounters();
         Test.startTest();
         close(opps);
         Test.stopTest();
@@ -576,10 +617,42 @@ private class PropertyAssetServiceTest {
 
         Assert.areEqual(2, PropertyAssetService.runInvocations,
             '251 records is two trigger chunks (200 + 51)');
-        Assert.areEqual(4, PropertyAssetService.runQueryCount,
+        // ⚠ NETTED AGAINST THE DOWNSTREAM CASCADE (2026-08-22), NOT RELAXED. These are Limits
+        // deltas measured around `Database.insert`, which now fires `PropertyAssetTrigger` ->
+        // `OnboardingAutoCreateService` inside the same window. Subtracting that service's own
+        // separately-measured counters keeps these two assertions saying precisely what they
+        // always said about THIS service, and the four lines after them pin the new cost.
+        Assert.areEqual(4,
+            PropertyAssetService.runQueryCount - OnboardingAutoCreateService.runQueryCount,
             'CONSTANT 2 SOQL per invocation regardless of chunk size — 2 chunks = 4 queries. '
             + 'If this reds because the number grew with the record count, a query moved into a loop');
-        Assert.areEqual(2, PropertyAssetService.runDmlCount,
+        Assert.areEqual(2,
+            PropertyAssetService.runDmlCount - OnboardingAutoCreateService.runDmlCount,
             'CONSTANT 1 bulk DML per invocation — 2 chunks = 2 statements');
+
+        // 🔴 THE NEW BUDGET, PINNED ON ITS OWN TERMS. 251 closes now also open 251 onboardings,
+        // and this is the assertion that fails HERE rather than in production if someone adds a
+        // query per asset. The arithmetic:
+        //   2 chunks x 1 idempotency read                         -> 2
+        //   + GroupNotifier's ONE-TIME cost, cached statically for the rest of the transaction:
+        //     notification type + group, and group MEMBERS only if the group exists in the
+        //     target org (GroupMemberSelector short-circuits an empty Id set) -> 2 or 3
+        //                                                            = 4 or 5, and INDEPENDENT
+        //   of the 251 either way. The ceiling is what discriminates; the exact one-time term is
+        //   org state, and `OnboardingAutoCreateServiceTest` pins the per-chunk cost exactly by
+        //   warming the notifier caches first. Do NOT "tighten" this to an areEqual here.
+        Assert.areEqual(2, OnboardingAutoCreateService.runInvocations,
+            'The asset trigger fires once per asset-insert chunk, mirroring the deal chunks');
+        Assert.areEqual(BULK_N, OnboardingAutoCreateService.runCreated,
+            'Every one of the 251 closing assets opens exactly one Onboarding');
+        Assert.isTrue(OnboardingAutoCreateService.runQueryCount <= 5,
+            'The onboarding auto-create must stay CONSTANT in asset count: at most 2 idempotency '
+            + 'reads plus the notifier\'s one-time lookups. Found '
+            + OnboardingAutoCreateService.runQueryCount
+            + ' — anything near 251 means a query moved into a per-record loop');
+        Assert.areEqual(2, OnboardingAutoCreateService.runDmlCount,
+            'ONE bulk Onboarding insert per chunk — 2 chunks = 2 statements');
+        Assert.areEqual(0, OnboardingAutoCreateService.runFailed,
+            'and nothing was refused — a non-zero here is a real defect, not test noise');
     }
 }
