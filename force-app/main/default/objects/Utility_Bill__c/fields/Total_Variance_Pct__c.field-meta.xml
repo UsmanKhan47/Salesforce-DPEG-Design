@@ -4,7 +4,7 @@
     <description>The dollar change against the prior bill expressed as a percentage of that prior bill. Pairs with the absolute figure so that a small bill doubling and a large bill moving a few percent can be told apart during the monthly review.</description>
     <inlineHelpText>Percentage change against last month total charges. Blank on a first bill, and blank where last month total was zero, because a percentage change from zero has no meaning.</inlineHelpText>
     <label>Total Variance Percent</label>
-    <formula><![CDATA[IF( OR( ISBLANK(Prior_Utility_Bill__c), Prior_Utility_Bill__r.Total_Charges_Amount__c = 0 ), null, ( Total_Charges_Amount__c - Prior_Utility_Bill__r.Total_Charges_Amount__c ) / Prior_Utility_Bill__r.Total_Charges_Amount__c * 100 )]]></formula>
+    <formula><![CDATA[IF( OR( ISBLANK(Prior_Utility_Bill__c), Prior_Utility_Bill__r.Total_Charges_Amount__c = 0 ), null, ( Total_Charges_Amount__c - Prior_Utility_Bill__r.Total_Charges_Amount__c ) / Prior_Utility_Bill__r.Total_Charges_Amount__c )]]></formula>
     <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
     <precision>18</precision>
     <required>false</required>
@@ -12,10 +12,13 @@
     <trackTrending>false</trackTrending>
     <type>Percent</type>
     <!--
-      A Percent FORMULA field displays the raw result with a percent sign; it does not
-      multiply by 100 the way a Percent input field does. The trailing * 100 is therefore
-      required, and removing it would silently render every variance as a hundredth of its
-      real value.
+      🔴 CORRECTED 2026-08-22 — the previous version of this comment was empirically WRONG and
+      caused a live 100x overstatement bug. A Percent FORMULA field IS already scaled by the
+      platform for display, exactly like a Percent input field; it does not need a trailing * 100.
+      Measured against usman-dpeg with real data (then rolled back): CURRENT=172.50, PRIOR=100.00
+      gave Total_Variance_Amount__c=72.50 (correct) but Total_Variance_Pct__c=7250.00 (should be
+      72.50) while the formula still had "* 100" appended. Removing "* 100" is the fix, confirmed
+      by re-running the same scenario after deploy: Total_Variance_Pct__c=72.50.
       _Pct__c is the ARCHITECTURE section 1 suffix for a number that would otherwise read
       as categorical.
     -->

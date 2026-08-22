@@ -2,15 +2,6 @@
 <CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
     <actionOverrides>
         <actionName>View</actionName>
-        <comment>Onboarding Record Page</comment>
-        <content>Onboarding_Record_Page</content>
-        <formFactor>Large</formFactor>
-        <skipRecordTypeSelect>false</skipRecordTypeSelect>
-        <type>Flexipage</type>
-        <pageOrSobjectType>Onboarding__c</pageOrSobjectType>
-    </actionOverrides>
-    <actionOverrides>
-        <actionName>View</actionName>
         <comment>Broker Assignment Record Page</comment>
         <content>Broker_Assignment_Record_Page</content>
         <formFactor>Large</formFactor>
@@ -29,6 +20,15 @@
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>
+        <comment>Lease Renewal Record Page</comment>
+        <content>Lease_Renewal_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Lease_Renewal__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
         <comment>Lease Record Page</comment>
         <content>Lease_Record_Page</content>
         <formFactor>Large</formFactor>
@@ -38,12 +38,21 @@
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>
-        <comment>Lease Renewal Record Page</comment>
-        <content>Lease_Renewal_Record_Page</content>
+        <comment>Onboarding Record Page</comment>
+        <content>Onboarding_Record_Page</content>
         <formFactor>Large</formFactor>
         <skipRecordTypeSelect>false</skipRecordTypeSelect>
         <type>Flexipage</type>
-        <pageOrSobjectType>Lease_Renewal__c</pageOrSobjectType>
+        <pageOrSobjectType>Onboarding__c</pageOrSobjectType>
+    </actionOverrides>
+    <actionOverrides>
+        <actionName>View</actionName>
+        <comment>Property Asset Record Page</comment>
+        <content>Property_Asset_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
+        <pageOrSobjectType>Property_Asset__c</pageOrSobjectType>
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>
@@ -54,14 +63,21 @@
         <type>Flexipage</type>
         <pageOrSobjectType>Work_Order__c</pageOrSobjectType>
     </actionOverrides>
+    <!--
+      NEW, 2026-08-22. Without this override, flexipages/Utility_Bill_Record_Page.flexipage-meta.xml
+      (also new this pass) is an orphaned page - a FlexiPage alone is inert without an org-wide
+      default or an app actionOverride, same reasoning as the Portfolio_Deal_Record_Page precedent.
+      Utility_Bill__c already has a tab in this app (line below); this override is what makes clicking
+      into a record actually render c:utilityBillDetail instead of the platform default page.
+    -->
     <actionOverrides>
         <actionName>View</actionName>
-        <comment>Property Asset Record Page</comment>
-        <content>Property_Asset_Record_Page</content>
+        <comment>Utility Bill Record Page</comment>
+        <content>Utility_Bill_Record_Page</content>
         <formFactor>Large</formFactor>
         <skipRecordTypeSelect>false</skipRecordTypeSelect>
         <type>Flexipage</type>
-        <pageOrSobjectType>Property_Asset__c</pageOrSobjectType>
+        <pageOrSobjectType>Utility_Bill__c</pageOrSobjectType>
     </actionOverrides>
     <brand>
         <headerColor>#2E844A</headerColor>
