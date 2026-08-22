@@ -1,0 +1,122 @@
+/*
+ * SLDS 2 global styling hooks only - no hard-coded colours or spacing
+ * (ARCHITECTURE.md section 5). Every hook carries its canonical fallback so the
+ * component still renders if a hook is unavailable.
+ *
+ * Note on the on-surface scale: -1 is the GREY one (#757575), -2 is #2e2e2e and -3 is the
+ * darkest. The numbering reads like an ascending emphasis scale and is the reverse, so the
+ * headline figure below sits on -3 and the secondary hint text on -1, not the other way
+ * round.
+ */
+
+.ubv {
+    padding: var(--slds-g-spacing-3, 0.75rem) 0;
+}
+
+.ubv-total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--slds-g-spacing-3, 0.75rem);
+    flex-wrap: wrap;
+}
+
+.ubv-total-label {
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+    text-transform: uppercase;
+    letter-spacing: var(--slds-g-spacing-1, 0.125rem);
+}
+
+.ubv-total-figures {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+}
+
+.ubv-total-amount {
+    font-size: var(--slds-g-font-scale-3, 1.25rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+}
+
+.ubv-pct {
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.ubv-prior {
+    margin-top: var(--slds-g-spacing-1, 0.25rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.ubv-rows {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: var(--slds-g-spacing-4, 1rem);
+    row-gap: var(--slds-g-spacing-2, 0.5rem);
+    margin-top: var(--slds-g-spacing-4, 1rem);
+    padding-top: var(--slds-g-spacing-3, 0.75rem);
+    border-top: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+}
+
+.ubv-row-label {
+    display: flex;
+    flex-direction: column;
+}
+
+.ubv-row-name {
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.ubv-row-hint {
+    font-size: var(--slds-g-font-scale-neg-2, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.ubv-row-value {
+    text-align: right;
+    align-self: center;
+}
+
+/*
+ * Coloured BY DIRECTION, not by a good/bad judgement. A fall in consumption is not
+ * automatically good news - it often means a vacancy - so the panel states which way the
+ * number moved and leaves the interpretation to the reader.
+ */
+.ubv-amount {
+    font-weight: var(--slds-g-font-weight-6, 600);
+}
+
+.ubv-amount_up {
+    color: var(--slds-g-color-error-base-30, #8c1d18);
+}
+
+.ubv-amount_down {
+    color: var(--slds-g-color-success-base-30, #194e31);
+}
+
+.ubv-amount_flat {
+    color: var(--slds-g-color-on-surface-2, #2e2e2e);
+}
+
+.ubv-note {
+    margin-top: var(--slds-g-spacing-3, 0.75rem);
+    font-size: var(--slds-g-font-scale-neg-2, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.ubv-error {
+    display: flex;
+    align-items: flex-start;
+    margin-top: var(--slds-g-spacing-3, 0.75rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+}
+
+.ubv-empty {
+    color: var(--slds-g-color-on-surface-1, #757575);
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+}

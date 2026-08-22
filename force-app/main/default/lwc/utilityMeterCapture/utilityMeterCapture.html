@@ -1,0 +1,172 @@
+<template>
+    <lightning-modal-header label="Capture Meters"></lightning-modal-header>
+
+    <lightning-modal-body>
+        <div class="umc slds-is-relative">
+            <template lwc:if={isSaving}>
+                <lightning-spinner
+                    alternative-text="Saving meters"
+                    size="small"
+                ></lightning-spinner>
+            </template>
+
+            <p class="umc-subtitle">{subtitle}</p>
+
+            <template lwc:if={error}>
+                <div class="umc-error slds-text-color_error" role="alert">
+                    <lightning-icon
+                        icon-name="utility:error"
+                        size="x-small"
+                        variant="error"
+                        alternative-text="Error"
+                        class="slds-m-right_x-small"
+                    ></lightning-icon>
+                    <span>{errorMessage}</span>
+                </div>
+            </template>
+
+            <template lwc:if={isLoaded}>
+                <ul class="umc-rows">
+                    <template for:each={rows} for:item="row">
+                        <li key={row.key} class="umc-row">
+                            <div class="umc-grid">
+                                <lightning-combobox
+                                    class="umc-unit"
+                                    label="Space"
+                                    data-key={row.key}
+                                    data-field="unitId"
+                                    value={row.unitId}
+                                    options={unitOptions}
+                                    onchange={handleFieldChange}
+                                    field-level-help="Leave as Whole building when the meter serves the entire property rather than one suite."
+                                ></lightning-combobox>
+
+                                <lightning-combobox
+                                    class="umc-type"
+                                    label="Utility"
+                                    data-key={row.key}
+                                    data-field="utilityType"
+                                    value={row.utilityType}
+                                    options={utilityTypeOptions}
+                                    onchange={handleFieldChange}
+                                ></lightning-combobox>
+
+                                <lightning-input
+                                    class="umc-number"
+                                    label="Meter number"
+                                    data-key={row.key}
+                                    data-field="meterNumber"
+                                    value={row.meterNumber}
+                                    onchange={handleFieldChange}
+                                    field-level-help="The number printed on the meter itself - this is what you give an incoming tenant at move-in."
+                                ></lightning-input>
+
+                                <lightning-input
+                                    class="umc-account"
+                                    label="Utility account number"
+                                    data-key={row.key}
+                                    data-field="utilityAccountNumber"
+                                    value={row.utilityAccountNumber}
+                                    onchange={handleFieldChange}
+                                    field-level-help="From the provider invoice, not the meter. Several meters can share one account number."
+                                ></lightning-input>
+
+                                <lightning-input
+                                    class="umc-esid"
+                                    label="Service identifier (ESID)"
+                                    data-key={row.key}
+                                    data-field="serviceIdentifier"
+                                    value={row.serviceIdentifier}
+                                    onchange={handleFieldChange}
+                                    field-level-help="The durable service-point id. It survives a meter swap, so do not change it when the physical meter is replaced."
+                                ></lightning-input>
+
+                                <lightning-input
+                                    class="umc-provider"
+                                    label="Provider"
+                                    data-key={row.key}
+                                    data-field="providerName"
+                                    value={row.providerName}
+                                    onchange={handleFieldChange}
+                                ></lightning-input>
+
+                                <lightning-combobox
+                                    class="umc-paidby"
+                                    label="Paid by"
+                                    data-key={row.key}
+                                    data-field="paidBy"
+                                    value={row.paidBy}
+                                    options={paidByOptions}
+                                    onchange={handleFieldChange}
+                                ></lightning-combobox>
+
+                                <lightning-input
+                                    class="umc-reason"
+                                    label="Reason management pays"
+                                    data-key={row.key}
+                                    data-field="paidByReason"
+                                    value={row.paidByReason}
+                                    onchange={handleFieldChange}
+                                    field-level-help="Fill this in when Paid by is Management or Shared - for example vacant space, common area, or a landlord obligation."
+                                ></lightning-input>
+
+                                <lightning-input
+                                    class="umc-register"
+                                    type="number"
+                                    label="Register size"
+                                    data-key={row.key}
+                                    data-field="registerSize"
+                                    value={row.registerSize}
+                                    onchange={handleFieldChange}
+                                    field-level-help="Either the number of dials (for example 5) or the value the register rolls over at (for example 100000). Both are understood."
+                                ></lightning-input>
+
+                                <lightning-combobox
+                                    class="umc-status"
+                                    label="Service status"
+                                    data-key={row.key}
+                                    data-field="serviceStatus"
+                                    value={row.serviceStatus}
+                                    options={serviceStatusOptions}
+                                    onchange={handleFieldChange}
+                                ></lightning-combobox>
+                            </div>
+
+                            <lightning-button-icon
+                                class="umc-remove"
+                                icon-name="utility:close"
+                                variant="bare"
+                                alternative-text="Remove this row from the grid"
+                                title="Remove this row from the grid. A meter already saved is not deleted."
+                                data-key={row.key}
+                                onclick={handleRemoveRow}
+                            ></lightning-button-icon>
+                        </li>
+                    </template>
+                </ul>
+
+                <lightning-button
+                    class="umc-add slds-m-top_small"
+                    label="Add another meter"
+                    icon-name="utility:add"
+                    onclick={handleAddRow}
+                ></lightning-button>
+            </template>
+        </div>
+    </lightning-modal-body>
+
+    <lightning-modal-footer>
+        <lightning-button
+            class="umc-cancel"
+            label="Cancel"
+            onclick={handleCancel}
+        ></lightning-button>
+        <lightning-button
+            class="umc-save slds-m-left_x-small"
+            variant="brand"
+            label="Save Meters"
+            onclick={handleSave}
+            disabled={saveDisabled}
+        ></lightning-button>
+    </lightning-modal-footer>
+</template>

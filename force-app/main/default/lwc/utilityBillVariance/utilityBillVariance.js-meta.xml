@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <!-- isExposed=false: presentational child of c-utility-bill-detail, never dropped on a
+         page directly, so it needs no target and must not appear in App Builder. -->
+    <isExposed>false</isExposed>
+    <masterLabel>Utility Bill Variance</masterLabel>
+    <description>Read-only FSD 5.10.5 variance breakdown: usage and rate components against the prior bill, with a live reconciliation check.</description>
+</LightningComponentBundle>

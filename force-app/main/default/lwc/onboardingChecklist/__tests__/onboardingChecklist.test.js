@@ -13,7 +13,8 @@ import { createElement } from 'lwc';
 import OnboardingChecklist from 'c/onboardingChecklist';
 import getChecklist from '@salesforce/apex/OnboardingController.getChecklist';
 import completeTask from '@salesforce/apex/OnboardingController.completeTask';
-import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
+import { notifyRecordUpdateAvailable, getRecord } from 'lightning/uiRecordApi';
+import UtilityMeterCapture from 'c/utilityMeterCapture';
 
 jest.mock(
     '@salesforce/apex/OnboardingController.getChecklist',
@@ -26,6 +27,13 @@ jest.mock(
 jest.mock(
     '@salesforce/apex/OnboardingController.completeTask',
     () => ({ default: jest.fn() }),
+    { virtual: true }
+);
+// UT-001: the modal MODULE is replaced, not spied. lightning/modal's stub makes the static
+// open() throw on purpose, so letting the real one run would kill the suite on resolution.
+jest.mock(
+    'c/utilityMeterCapture',
+    () => ({ __esModule: true, default: { open: jest.fn() } }),
     { virtual: true }
 );
 
@@ -105,7 +113,55 @@ const GROUPS = [
             }
         ]
     }
-];
+]
+/* UT-001 fixture. The category and Subject are verbatim from row 28 of
+   scripts/load-onboarding-task-defs.apex, which is what seeds the
+   Onboarding_Task_Def__mdt record every new onboarding fans out from. If either string
+   drifts from that file, UT-001 stops firing SILENTLY - no error, the modal just never
+   appears - and these two tests are the only thing that would notice. */
+const UTILITY_CATEGORY = 'Vendor & Expense Management';
+const UTILITY_SUBJECT = 'Set up utility accounts & transfers';
+const UTILITY_TASK_ID = '00T5g000001AbhAEAV';
+const OTHER_VENDOR_TASK_ID = '00T5g000001AbiAEAV';
+
+const VENDOR_GROUP = {
+    category: UTILITY_CATEGORY,
+    total: 2,
+    complete: 0,
+    items: [
+        {
+            id: UTILITY_TASK_ID,
+            name: UTILITY_SUBJECT,
+            status: 'Not Started',
+            sourceSystem: 'Email',
+            owner: 'Endya Williams',
+            due: '2026-03-01',
+            reason: null,
+            hasNotes: false,
+            overdue: false
+        },
+        {
+            id: OTHER_VENDOR_TASK_ID,
+            name: 'Enter vendor list & W-9s',
+            status: 'Not Started',
+            sourceSystem: 'Yardi',
+            owner: 'Accounting Queue',
+            due: '2026-03-02',
+            reason: null,
+            hasNotes: false,
+            overdue: false
+        }
+    ]
+};
+
+const ONBOARDING_RECORD = {
+    id: RECORD_ID,
+    apiName: 'Onboarding__c',
+    fields: {
+        Property_Asset__c: { value: 'a0a5g000000PrpAAAS', displayValue: null },
+        Property_Name__c: { value: 'Park North', displayValue: null }
+    }
+};;
 
 describe('c-onboarding-checklist', () => {
     afterEach(() => {
@@ -311,5 +367,195 @@ describe('c-onboarding-checklist', () => {
         await Promise.resolve();
 
         await expect(element).toBeAccessible();
+    });
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       FSD UAT UT-001 — "Onboarding utility-transfer task completed → meter capture
+       screen opens; meters saved against property and spaces."
+
+       🔴 A BEHAVIOUR CHANGE TO A SHIPPED FEATURE, CROSSING A MODULE BOUNDARY
+       (Onboarding → Utilities). The three tests below are the whole guarantee that
+       it is SCOPED: one proves the modal opens for the utility row, and two prove
+       it does NOT open for the 44 other rows or for a completion that failed.
+       ══════════════════════════════════════════════════════════════════════════ */
+
+    /** Completes a specific task in the Vendor & Expense Management group. */
+    async function completeVendorTask(element, taskId) {
+        getChecklist.emit([GROUPS[0], VENDOR_GROUP]);
+        await Promise.resolve();
+
+        // Select the vendor group (tile index 1) so its rows are the ones rendered.
+        element.shadowRoot.querySelectorAll('.oc-gchip')[1].click();
+        await Promise.resolve();
+
+        const checkbox = [...element.shadowRoot.querySelectorAll('.oc-check')].find(
+            (el) => el.dataset.id === taskId
+        );
+        checkbox.dispatchEvent(new CustomEvent('change'));
+        await Promise.resolve();
+
+        element.shadowRoot.querySelector('button.slds-button_brand').click();
+        await flushPromises();
+        await flushPromises();
+        await flushPromises();
+    }
+
+    it('UT-001: completing the utility-transfer task opens the meter capture screen', async () => {
+        completeTask.mockResolvedValue(undefined);
+        UtilityMeterCapture.open.mockResolvedValue(undefined);
+
+        const element = createComponent();
+        getRecord.emit(ONBOARDING_RECORD);
+        await completeVendorTask(element, UTILITY_TASK_ID);
+
+        expect(completeTask).toHaveBeenCalledWith({ taskId: UTILITY_TASK_ID, notes: '' });
+        expect(UtilityMeterCapture.open).toHaveBeenCalledTimes(1);
+        const args = UtilityMeterCapture.open.mock.calls[0][0];
+        // The property comes from the Onboarding via LDS - no Apex was widened to supply it.
+        expect(args.propertyAssetId).toBe('a0a5g000000PrpAAAS');
+        expect(args.propertyName).toBe('Park North');
+    });
+
+    it('UT-001 SCOPE: another task in the SAME category closes silently', async () => {
+        // The falsifier. Matching on the category alone would fire on all eight Vendor &
+        // Expense Management rows; matching on the subject alone would fire on an
+        // identically-worded row added to another category later. BOTH must match.
+        completeTask.mockResolvedValue(undefined);
+
+        const element = createComponent();
+        getRecord.emit(ONBOARDING_RECORD);
+        await completeVendorTask(element, OTHER_VENDOR_TASK_ID);
+
+        expect(completeTask).toHaveBeenCalledWith({
+            taskId: OTHER_VENDOR_TASK_ID,
+            notes: ''
+        });
+        expect(UtilityMeterCapture.open).not.toHaveBeenCalled();
+        expect(element.shadowRoot.querySelector('[role="dialog"]')).toBeNull();
+    });
+
+    it('UT-001 SCOPE: a task in a different category closes silently', async () => {
+        // The pre-existing behaviour of the other 44 checklist rows, pinned so this change
+        // cannot quietly widen. Without this, a regression to "open on every completion"
+        // would still pass every other test in this suite.
+        completeTask.mockResolvedValue(undefined);
+
+        const element = createComponent();
+        getRecord.emit(ONBOARDING_RECORD);
+        getChecklist.emit(GROUPS);
+        await Promise.resolve();
+
+        element.shadowRoot
+            .querySelector('.oc-check:not([disabled])')
+            .dispatchEvent(new CustomEvent('change'));
+        await Promise.resolve();
+        element.shadowRoot.querySelector('button.slds-button_brand').click();
+        await flushPromises();
+        await flushPromises();
+
+        expect(completeTask).toHaveBeenCalledTimes(1);
+        expect(UtilityMeterCapture.open).not.toHaveBeenCalled();
+    });
+
+    it('UT-001: a FAILED completion never opens the capture screen', async () => {
+        // The modal opens only AFTER the completion is persisted. Asking a user to record
+        // meters for a task that did not complete would be worse than not opening at all.
+        completeTask.mockRejectedValue({ body: { message: 'Task is locked.' } });
+
+        const element = createComponent();
+        getRecord.emit(ONBOARDING_RECORD);
+        await completeVendorTask(element, UTILITY_TASK_ID);
+
+        expect(UtilityMeterCapture.open).not.toHaveBeenCalled();
+        // And the confirm dialog stays open so the user can retry.
+        expect(element.shadowRoot.querySelector('[role="dialog"]')).not.toBeNull();
+    });
+
+    it('UT-001: an onboarding with no property warns instead of opening an unsaveable grid', async () => {
+        completeTask.mockResolvedValue(undefined);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        getRecord.emit({
+            ...ONBOARDING_RECORD,
+            fields: {
+                Property_Asset__c: { value: null, displayValue: null },
+                Property_Name__c: { value: null, displayValue: null }
+            }
+        });
+        await completeVendorTask(element, UTILITY_TASK_ID);
+
+        expect(UtilityMeterCapture.open).not.toHaveBeenCalled();
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('warning');
+        // Opening the grid without a property would let a user type a whole register that
+        // the save then refuses - MeterCaptureService requires one.
+        expect(toastHandler.mock.calls[0][0].detail.message).toContain('no property linked');
+    });
+
+    it('UT-001: a saved capture toasts what happened, warnings separately and sticky', async () => {
+        completeTask.mockResolvedValue(undefined);
+        UtilityMeterCapture.open.mockResolvedValue({
+            result: {
+                created: 3,
+                updated: 0,
+                skipped: 2,
+                meterIds: [],
+                warnings: ['Service identifier ESID-1 is already on the register under 5512345.']
+            }
+        });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        getRecord.emit(ONBOARDING_RECORD);
+        await completeVendorTask(element, UTILITY_TASK_ID);
+
+        expect(toastHandler).toHaveBeenCalledTimes(2);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('success');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe('3 created, 0 updated.');
+        const warning = toastHandler.mock.calls[1][0].detail;
+        expect(warning.variant).toBe('warning');
+        // STICKY: a possible physical meter swap is the one thing here a person has to act
+        // on later, so it must not vanish after four seconds.
+        expect(warning.mode).toBe('sticky');
+    });
+
+    it('UT-001: a cancelled capture says nothing at all', async () => {
+        completeTask.mockResolvedValue(undefined);
+        // Falsy, not undefined: the Jest stub's close() with no argument arrives as
+        // detail === null while the real LightningModal resolves undefined. Both mean
+        // "cancelled" and the component must not distinguish them.
+        UtilityMeterCapture.open.mockResolvedValue(null);
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        getRecord.emit(ONBOARDING_RECORD);
+        await completeVendorTask(element, UTILITY_TASK_ID);
+
+        expect(UtilityMeterCapture.open).toHaveBeenCalledTimes(1);
+        expect(toastHandler).not.toHaveBeenCalled();
+    });
+
+    it('UT-001: a failed capture raises a sticky error toast', async () => {
+        completeTask.mockResolvedValue(undefined);
+        UtilityMeterCapture.open.mockResolvedValue({
+            error: { body: { message: 'The meters could not be saved.' } }
+        });
+
+        const element = createComponent();
+        const toastHandler = jest.fn();
+        element.addEventListener('lightning__showtoast', toastHandler);
+        getRecord.emit(ONBOARDING_RECORD);
+        await completeVendorTask(element, UTILITY_TASK_ID);
+
+        expect(toastHandler).toHaveBeenCalledTimes(1);
+        expect(toastHandler.mock.calls[0][0].detail.variant).toBe('error');
+        expect(toastHandler.mock.calls[0][0].detail.mode).toBe('sticky');
+        expect(toastHandler.mock.calls[0][0].detail.message).toBe(
+            'The meters could not be saved.'
+        );
     });
 });

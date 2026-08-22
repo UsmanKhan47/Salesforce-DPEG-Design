@@ -1,0 +1,33 @@
+/*
+ * SLDS 2 global styling hooks (ARCHITECTURE.md section 5). The .hdr / .hdr-icon / .hdr-title
+ * and .view-all-footer names match lwc/workOrderList so the PM list cards read as one family,
+ * but LWC CSS is bundle-scoped - these are re-declared here, not shared, and the palette is
+ * tokenised rather than copied from that bundle's hard-coded hex values.
+ *
+ * Reminder on the on-surface scale: -1 is the GREY one (#757575), -3 is the darkest. The
+ * numbering reads like an ascending emphasis scale and is the reverse.
+ */
+
+.hdr { display: flex; align-items: center; gap: var(--slds-g-spacing-2, 0.5rem); }
+.hdr-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.hdr-title {
+    font-size: var(--slds-g-font-scale-2, 1rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.view-all-footer { text-align: center; }
+
+.view-all-footer a {
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-brand-base-50, #0b5cab);
+    text-decoration: none;
+}
+
+.view-all-footer a:hover { text-decoration: underline; }
+
+.mr-empty {
+    padding: var(--slds-g-spacing-4, 1rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}

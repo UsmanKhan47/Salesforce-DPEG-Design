@@ -1,0 +1,51 @@
+/*
+ * SLDS 2 global styling hooks only (ARCHITECTURE.md section 5).
+ *
+ * The grid is a responsive auto-fit rather than a media query: `minmax(min(12rem, 100%), 1fr)`
+ * collapses to a single column in a narrow modal and expands on a wide one, with no magic
+ * breakpoints and no hard-coded pixel values for the linter to flag.
+ */
+
+.umc {
+    min-height: var(--slds-g-sizing-10, 5rem);
+}
+
+.umc-subtitle {
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
+}
+
+.umc-error {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+}
+
+.umc-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.umc-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--slds-g-spacing-2, 0.5rem);
+    padding: var(--slds-g-spacing-3, 0.75rem) 0;
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+}
+
+.umc-grid {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+    gap: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+}
+
+.umc-remove {
+    flex: 0 0 auto;
+    margin-top: var(--slds-g-spacing-5, 1.5rem);
+}

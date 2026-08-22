@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        THE DESCRIPTION BELOW IS CAPPED AT 255 CHARACTERS AND ONLY A DEPLOY CATCHES A BREACH -
+        Jest, the SLDS linter and code review have all passed a 258-character one in this repo.
+        It was counted before this file was written; count it again before editing it.
+
+        Place on the Property Asset record page only. recordId must be a Property_Asset__c Id;
+        a misplaced instance would NOT error - the read is WHERE Property_Asset__c = :id, which
+        matches no rows rather than throwing, so the card would render its empty state forever
+        and that empty state is the normal one for a property before capture. Hence the
+        targetConfig restriction below rather than a comment asking nicely.
+    -->
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Meter Register</masterLabel>
+    <description>Utility meters at this property with their latest bill total and variance, plus a Capture Meters action. Sub-meters name their master inline; a meter with no prior bill shows a dash rather than a zero variance.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <!-- The ELEMENT form; the objects= ATTRIBUTE form is rejected by the Metadata API. -->
+            <objects>
+                <object>Property_Asset__c</object>
+            </objects>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

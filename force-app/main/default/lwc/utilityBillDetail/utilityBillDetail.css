@@ -1,0 +1,108 @@
+/*
+ * SLDS 2 global styling hooks only (ARCHITECTURE.md section 5). Structure copied from
+ * lwc/workOrderList - lightning-card + slot="title" with .hdr / .hdr-icon / .hdr-title -
+ * but NOT its palette: that bundle hardcodes hex values and this one must not.
+ *
+ * Reminder on the on-surface scale: -1 is the GREY one (#757575), -3 is the darkest. The
+ * numbering reads like an ascending emphasis scale and is the reverse.
+ */
+
+.hdr { display: flex; align-items: center; gap: var(--slds-g-spacing-2, 0.5rem); }
+.hdr-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.hdr-title {
+    font-size: var(--slds-g-font-scale-2, 1rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.ubd { padding: 0 var(--slds-g-spacing-4, 1rem) var(--slds-g-spacing-4, 1rem); }
+
+.ubd-subject {
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.ubd-location {
+    font-size: var(--slds-g-font-scale-neg-2, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+    margin-bottom: var(--slds-g-spacing-3, 0.75rem);
+}
+
+.ubd-readings {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: var(--slds-g-spacing-4, 1rem);
+    row-gap: var(--slds-g-spacing-1, 0.25rem);
+}
+
+.ubd-key {
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.ubd-val {
+    text-align: right;
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+/*
+ * The consumption-refusal notice. Soft warning tint from the *-base-NN scale, with an inset
+ * ring - the disabled-* hooks would be near-invisible on a white card.
+ */
+.ubd-warning {
+    display: flex;
+    align-items: flex-start;
+    margin-top: var(--slds-g-spacing-3, 0.75rem);
+    padding: var(--slds-g-spacing-2, 0.5rem) var(--slds-g-spacing-3, 0.75rem);
+    border-radius: var(--slds-g-radius-border-2, 0.25rem);
+    background: var(--slds-g-color-warning-base-95, #fff1ea);
+    color: var(--slds-g-color-warning-base-40, #825101);
+    box-shadow: inset 0 0 0 var(--slds-g-sizing-border-1, 1px)
+        var(--slds-g-color-warning-base-80, #ffba90);
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+}
+
+.ubd-section {
+    margin-top: var(--slds-g-spacing-4, 1rem);
+    padding-top: var(--slds-g-spacing-3, 0.75rem);
+    border-top: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+    font-size: var(--slds-g-font-scale-1, 0.875rem);
+    font-weight: var(--slds-g-font-weight-7, 700);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.ubd-charges { list-style: none; margin: var(--slds-g-spacing-2, 0.5rem) 0 0; padding: 0; }
+
+.ubd-charge {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    column-gap: var(--slds-g-spacing-3, 0.75rem);
+    align-items: baseline;
+    padding: var(--slds-g-spacing-1, 0.25rem) 0;
+    border-bottom: var(--slds-g-sizing-border-1, 1px) solid
+        var(--slds-g-color-border-base-1, #e5e5e5);
+}
+
+.ubd-charge-type {
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.ubd-charge-share {
+    font-size: var(--slds-g-font-scale-neg-2, 0.75rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}
+
+.ubd-charge-amount {
+    font-weight: var(--slds-g-font-weight-6, 600);
+    color: var(--slds-g-color-on-surface-3, #181818);
+}
+
+.ubd-empty {
+    margin-top: var(--slds-g-spacing-2, 0.5rem);
+    font-size: var(--slds-g-font-scale-neg-1, 0.8125rem);
+    color: var(--slds-g-color-on-surface-1, #757575);
+}

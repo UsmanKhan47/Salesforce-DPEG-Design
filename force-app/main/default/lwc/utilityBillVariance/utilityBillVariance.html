@@ -1,0 +1,74 @@
+<template>
+    <div class="ubv">
+        <template lwc:if={showBreakdown}>
+            <!-- Total first: the headline, then what it is made of. -->
+            <div class="ubv-total">
+                <span class="ubv-total-label">Change vs prior bill</span>
+                <span class="ubv-total-figures">
+                    <lightning-formatted-number
+                        class={totalClass}
+                        value={totalVariance}
+                        format-style="currency"
+                        currency-code="USD"
+                        maximum-fraction-digits="2"
+                    ></lightning-formatted-number>
+                    <span class="ubv-pct">{percentLabel}</span>
+                </span>
+            </div>
+
+            <template lwc:if={priorLabel}>
+                <p class="ubv-prior">Measured against {priorLabel}</p>
+            </template>
+
+            <!-- The FSD 5.10.5 split. dt/dd only, in order, no wrapper elements -
+                 axe's definition-list rule is strict and the two-column layout is
+                 done entirely in CSS. -->
+            <dl class="ubv-rows">
+                <template for:each={rows} for:item="row">
+                    <dt key={row.key} class="ubv-row-label">
+                        <span class="ubv-row-name">{row.label}</span>
+                        <span class="ubv-row-hint">{row.hint}</span>
+                    </dt>
+                    <dd key={row.key} class="ubv-row-value">
+                        <lightning-formatted-number
+                            class={row.amountClass}
+                            value={row.value}
+                            format-style="currency"
+                            currency-code="USD"
+                            maximum-fraction-digits="2"
+                        ></lightning-formatted-number>
+                    </dd>
+                </template>
+            </dl>
+
+            <p class="ubv-note">
+                Usage variance plus rate variance equals the total change exactly - the two
+                components account for the whole move with nothing left over.
+            </p>
+
+            <!-- Live reconciliation check. Only ever visible if a formula has broken. -->
+            <template lwc:if={showReconciliationWarning}>
+                <div class="ubv-error slds-text-color_error" role="alert">
+                    <lightning-icon
+                        icon-name="utility:warning"
+                        size="x-small"
+                        variant="error"
+                        alternative-text="Warning"
+                        class="slds-m-right_x-small"
+                    ></lightning-icon>
+                    <span>
+                        The usage and rate components do not add up to the total change. One
+                        of the variance formulas is wrong - do not act on these figures.
+                    </span>
+                </div>
+            </template>
+        </template>
+
+        <template lwc:else>
+            <p class="ubv-empty">
+                No variance to show. This is the first bill recorded for this meter, so there
+                is nothing to measure it against.
+            </p>
+        </template>
+    </div>
+</template>
